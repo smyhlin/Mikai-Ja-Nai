@@ -23,14 +23,21 @@ QStringList animeJanaiFilterLabels(const native::AnimeJanaiPlan& plan) {
     QStringList labels;
     static const QRegularExpression labelPattern(QStringLiteral("@([A-Za-z0-9_]+):"));
     for (const native::AnimeJanaiPlanStage& stage : plan.stages) {
+        // T-315: the labels are collected per stage, because every stage is its
+        // own vf entry and the fallback must name exactly the stages whose spec
+        // carried no @label. The old form stopped at the first stage and
+        // silently dropped the fallback names of every later one.
+        QStringList stageLabels;
         QRegularExpressionMatchIterator matches = labelPattern.globalMatch(
             QString::fromUtf8(stage.filterSpec));
         while (matches.hasNext()) {
-            const QString label = matches.next().captured(1);
+            stageLabels.append(matches.next().captured(1));
+        }
+        if (stageLabels.isEmpty() && !stage.filterLabel.isEmpty())
+            stageLabels.append(stage.filterLabel);
+        for (const QString& label : stageLabels) {
             if (!labels.contains(label)) labels.append(label);
         }
-        if (labels.isEmpty() && !stage.filterLabel.isEmpty())
-            labels.append(stage.filterLabel);
     }
     if (labels.isEmpty() && plan.requiresAji)
         labels.append(QString::fromLatin1(native::kAnimeJanaiFilterLabel));
@@ -42,7 +49,14 @@ QStringList animeJanaiFilterLabels(const native::AnimeJanaiPlan& plan) {
 void VideoSurface::removeAnimeJanaiFilters(uint64_t epoch, quint64 generation,
                                            std::function<void()> completion) {
     if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
-        generation != animeJanaiGeneration_) return;
+        generation != animeJanaiGeneration_) {
+        // T-315: the removal is moot, but the caller's continuation is not - it
+        // releases the frame hold, the busy flag and the build lease, and the
+        // old early-out left all three to the open() self-heal, which never
+        // runs for a source that keeps playing.
+        if (completion) completion();
+        return;
+    }
     if (animeJanaiBoundFilterLabels_.isEmpty()) {
         animeJanaiFilterBound_ = false;
         if (completion) completion();
@@ -54,7 +68,12 @@ void VideoSurface::removeAnimeJanaiFilters(uint64_t epoch, quint64 generation,
         [this, epoch, generation, completion = std::move(completion)](
             const AsyncReply& reply) mutable {
             if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
-                generation != animeJanaiGeneration_) return;
+                generation != animeJanaiGeneration_) {
+                // T-315: same rule as the entry guard - the superseded removal
+                // still owes its caller the cleanup continuation.
+                if (completion) completion();
+                return;
+            }
             animeJanaiRequest_ = {};
             if (!reply.ok()) {
                 animeJanaiBusy_ = false;
@@ -218,6 +237,21 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
                        QStringLiteral("available AnimeJaNai plan has no executable filter stages"));
         return;
     }
+    const bool sourceAllowed =
+        !sourceColorProfile_.requiresSdrGate() ||
+        (sourceColorProfile_.isHdr() && animeJanaiHdrOverride());
+    if (hdrRenderingFixesEnabled() && plan.enabled && !sourceAllowed) {
+        if (animeJanaiFilterBound_ || animeJanaiEngineBuildActive_ || animeJanaiBusy_) {
+            enforceAnimeJanaiHdrGate();
+        } else {
+            animeJanaiSourceGated_ = true;
+            setAnimeJanaiStatus(sourceColorProfile_.isHdr()
+                                    ? tr("Skipped on HDR: native stages force 8-bit NV12")
+                                    : tr("Skipped: source transfer metadata is unknown"));
+        }
+        return;
+    }
+    if (sourceAllowed) animeJanaiSourceGated_ = false;
     if (plan.requiresAji &&
         std::none_of(plan.stages.cbegin(), plan.stages.cend(),
                      [](const native::AnimeJanaiPlanStage& stage) {
@@ -693,6 +727,16 @@ void VideoSurface::cancelAnimeJanaiOperation() {
 
 void VideoSurface::processAnimeJanaiPlan() {
     if (!mpv_ || !animeJanaiPlan_.enabled || !animeJanaiPlan_.available) return;
+    // Unknown transfer metadata is not proof of SDR; the explicit override
+    // applies only to a source positively identified as HDR.
+    if (hdrRenderingFixesEnabled() && sourceColorProfile_.requiresSdrGate() &&
+        !(sourceColorProfile_.isHdr() && animeJanaiHdrOverride())) {
+        animeJanaiSourceGated_ = true;
+        setAnimeJanaiStatus(sourceColorProfile_.isHdr()
+                                ? tr("Skipped on HDR: native stages force 8-bit NV12")
+                                : tr("Skipped: source transfer metadata is unknown"));
+        return;
+    }
     try {
         mpv_->setBackendLogObservationEnabled(animeJanaiBackendLogsNeeded());
     } catch (const MpvError& error) {
@@ -729,9 +773,13 @@ void VideoSurface::processAnimeJanaiPlan() {
             if (animeJanaiPreviousHwdec_.isEmpty()) {
                 animeJanaiPreviousHwdec_ = QString::fromStdString(prior.text);
             }
+            // T-413: `d3d11`, the canonical mpv spelling, everywhere a core is
+            // aligned for DirectML - the probe path (backendHwdec) spells it the
+            // same way, so the write/readback comparison cannot drift on the
+            // legacy `d3d11va` alias.
             const QString required = animeJanaiPlan_.backend == native::Backend::TensorRT
                                          ? QStringLiteral("nvdec")
-                                         : QStringLiteral("d3d11va");
+                                         : QStringLiteral("d3d11");
             const auto write = mpv_->commandAsync(
                 {"set", "hwdec", required.toStdString()},
                 [this, epoch, generation, required](const AsyncReply& written) {

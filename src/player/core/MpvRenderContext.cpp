@@ -106,7 +106,7 @@ GlApi loadGlApi() {
 
 MpvRenderContext::MpvRenderContext(MpvHandle& mpv, const GlApi& gl, std::function<void()> onUpdate,
                                    bool advancedControl)
-    : gl_(gl), onUpdate_(std::move(onUpdate)) {
+    : mpv_(mpv.raw()), gl_(gl), onUpdate_(std::move(onUpdate)) {
     MpvApi& api = MpvApi::instance();
     if (!api.loaded()) {
         throw MpvError("no mpv runtime is selected: a render context cannot be created before "
@@ -172,6 +172,12 @@ bool MpvRenderContext::nextFrameInfo(mpv_render_frame_info& info) const {
     return api_->renderContextGetInfo(ctx_, p) == 0;
 }
 
+int64_t MpvRenderContext::timeUs() const {
+    return mpv_ != nullptr && api_ != nullptr && api_->getTimeUs != nullptr
+               ? api_->getTimeUs(mpv_)
+               : 0;
+}
+
 bool isRealNewFrame(const mpv_render_frame_info& info) {
     const uint64_t f = info.flags;
     return (f & MPV_RENDER_FRAME_INFO_PRESENT) != 0 &&
@@ -196,7 +202,8 @@ int MpvRenderContext::skipRendering() {
     return api_->renderContextRender(ctx_, params);
 }
 
-int MpvRenderContext::render(int fbo, int width, int height, int internalFormat) {
+int MpvRenderContext::render(int fbo, int width, int height, int internalFormat,
+                             int depthBitsPerChannel) {
     if (ctx_ == nullptr || api_ == nullptr || width <= 0 || height <= 0) return 0;
 
     mpv_opengl_fbo target{};
@@ -209,6 +216,7 @@ int MpvRenderContext::render(int fbo, int width, int height, int internalFormat)
     mpv_render_param params[] = {
         {MPV_RENDER_PARAM_OPENGL_FBO, &target},
         {MPV_RENDER_PARAM_FLIP_Y, &flipY_},
+        {MPV_RENDER_PARAM_DEPTH, &depthBitsPerChannel},
         {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &blockForTargetTime},
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };

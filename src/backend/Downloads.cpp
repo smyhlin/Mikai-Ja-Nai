@@ -2,8 +2,10 @@
 
 #include "Cancellation.hpp"
 #include "Diagnostics.hpp"
+#include "HttpTransport.hpp"
 #include "Runtime.hpp"
 
+#include <QByteArrayView>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QElapsedTimer>
@@ -19,8 +21,9 @@
 #include <QMutexLocker>
 #include <QStandardPaths>
 #include <QTemporaryDir>
-#include <QThread>
+#include <QTemporaryFile>
 #include <QTimer>
+#include <QWaitCondition>
 
 #include <functional>
 #include <stdexcept>
@@ -28,20 +31,15 @@
 namespace mikai::backend {
 namespace {
 
-/// How long a streaming download may go without a single byte before it is
-/// treated as dead. Generous, because the assets are hundreds of megabytes and a
-/// slow link can pause between chunks, but finite, because the alternative is a
-/// thread that never comes back.
+/// Silence limit for a streaming response.
 constexpr int kStallTimeoutMs = 60000;
 
-/// How often an in-flight download asks whether it has been cancelled. Short
-/// enough that a Cancel press feels immediate, long enough to be free.
+/// Cancellation polling interval.
 constexpr int kCancelPollMs = 200;
 
-/// How often the progress callback is allowed to fire. Per-chunk reporting
-/// posts a GUI update for every 4 KB of a 400 MB asset, and the two surfaces
-/// consuming it re-format and repaint on each one.
+/// Minimum interval between progress updates.
 constexpr int kProgressIntervalMs = 100;
+constexpr qsizetype kDownloadChunkBytes = 64 * 1024;
 
 #ifdef Q_OS_WIN
 const QUrl& sevenZipUrl() {
@@ -69,6 +67,12 @@ QString findSevenZip(const QString& toolsDirectory) {
     // would let a planted binary in the working directory pass as trusted.
     if (toolsDirectory.isEmpty()) return {};
 #ifdef Q_OS_WIN
+    // Prefer the bundled, verified executable over PATH.
+    const QString bundled = QDir(toolsDirectory).filePath(QStringLiteral("7z.exe"));
+    const QString library = QDir(toolsDirectory).filePath(QStringLiteral("7z.dll"));
+    if (QFileInfo(bundled).isFile() && QFileInfo(library).isFile()) {
+        return bundled;
+    }
     const QString found = QStandardPaths::findExecutable(QStringLiteral("7z.exe"));
     if (!found.isEmpty()) {
         return found;
@@ -79,9 +83,7 @@ QString findSevenZip(const QString& toolsDirectory) {
             return candidate;
         }
     }
-    const QString bundled = QDir(toolsDirectory).filePath(QStringLiteral("7z.exe"));
-    const QString library = QDir(toolsDirectory).filePath(QStringLiteral("7z.dll"));
-    return QFileInfo(bundled).isFile() && QFileInfo(library).isFile() ? bundled : QString{};
+    return {};
 #else
     for (const QString& name : {QStringLiteral("7zz"), QStringLiteral("7zzs"), QStringLiteral("7z")}) {
         const QString bundled = QDir(toolsDirectory).filePath(name);
@@ -109,122 +111,145 @@ QString findSevenZip(const QString& toolsDirectory) {
 #endif
 }
 
-QNetworkAccessManager& managerForThread() {
-    static thread_local QNetworkAccessManager* manager = [] {
-        auto* created = new QNetworkAccessManager;
-        if (QThread* thread = QThread::currentThread()) {
-            QObject::connect(thread, &QThread::finished, created, &QObject::deleteLater);
+void throwIfBootstrapCancelled() {
+    if (WorkCancellationScope::cancellationRequested()) {
+        throw std::runtime_error("the request was cancelled");
+    }
+}
+
+void stopBootstrapProcess(QProcess& process) {
+    if (process.state() != QProcess::NotRunning) {
+        process.kill();
+        process.waitForFinished(1000);
+    }
+}
+
+bool waitForBootstrapStart(QProcess& process, int timeoutMs) {
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (process.state() == QProcess::Starting) {
+        if (WorkCancellationScope::cancellationRequested()) {
+            stopBootstrapProcess(process);
+            throw std::runtime_error("the request was cancelled");
         }
-        return created;
-    }();
-    return *manager;
+        const int remaining = timeoutMs - static_cast<int>(elapsed.elapsed());
+        if (remaining <= 0) {
+            stopBootstrapProcess(process);
+            return false;
+        }
+        process.waitForStarted(qMin(kCancelPollMs, remaining));
+    }
+    if (WorkCancellationScope::cancellationRequested()) {
+        stopBootstrapProcess(process);
+        throw std::runtime_error("the request was cancelled");
+    }
+    return process.state() == QProcess::Running;
+}
+
+bool waitForBootstrapFinish(QProcess& process, int timeoutMs) {
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (process.state() != QProcess::NotRunning) {
+        if (WorkCancellationScope::cancellationRequested()) {
+            stopBootstrapProcess(process);
+            throw std::runtime_error("the request was cancelled");
+        }
+        const int remaining = timeoutMs - static_cast<int>(elapsed.elapsed());
+        if (remaining <= 0) {
+            stopBootstrapProcess(process);
+            return false;
+        }
+        process.waitForFinished(qMin(kCancelPollMs, remaining));
+    }
+    throwIfBootstrapCancelled();
+    return true;
 }
 
 }  // namespace
 
 QByteArray fetchUrlBytes(const QUrl& url, const QMap<QString, QString>& headers, int timeoutMs) {
-    if (WorkCancellationScope::cancellationRequested()) {
-        throw std::runtime_error("the request was cancelled");
-    }
+    // Cancellation takes precedence over transport and status errors.
     QNetworkRequest request(url);
     for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
         request.setRawHeader(it.key().toUtf8(), it.value().toUtf8());
     }
-    QNetworkReply* reply = managerForThread().get(request);
-    QEventLoop loop;
-    QTimer timer;
-    timer.setSingleShot(true);
-    QTimer cancelTimer;
-    cancelTimer.setInterval(kCancelPollMs);
-    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
-    QObject::connect(&cancelTimer, &QTimer::timeout, &loop, [&]() {
-        if (WorkCancellationScope::cancellationRequested()) {
-            loop.quit();
-        }
-    });
-    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    timer.start(timeoutMs);
-    cancelTimer.start();
-    loop.exec();
-    cancelTimer.stop();
-    if (reply->isRunning()) {
-        reply->abort();
-        // abort() can emit finished synchronously. Never enter a second loop
-        // after that signal has already been delivered; a delayed abort still
-        // has a finite drain deadline.
-        if (reply->isRunning()) {
-            timer.start(2000);
-            loop.exec();
-        }
-    }
-    timer.stop();
-    const QByteArray body = reply->readAll();
-    const QString error =
-        reply->error() == QNetworkReply::NoError ? QString{} : reply->errorString();
-    reply->deleteLater();
-    if (WorkCancellationScope::cancellationRequested()) {
+    const HttpFetchResult result =
+        runBlockingFetch(transportManagerForThread(), request, HttpFetchOptions{timeoutMs, false, {}});
+    if (result.cancelled || WorkCancellationScope::cancellationRequested()) {
         throw std::runtime_error("the request was cancelled");
     }
-    if (!error.isEmpty()) {
-        // `url` may carry a signed path or query; it never reaches the message
-        // as the transport built it.
+    if (result.timedOut) {
         const QString message = redactDiagnostic(
-            QStringLiteral("GET %1 failed: %2").arg(url.toString(), error));
+            QStringLiteral("GET %1 timed out after %2 ms").arg(url.toString()).arg(timeoutMs));
         throw std::runtime_error(message.toStdString());
     }
-    return body;
+    if (result.status != 0 && (result.status < 200 || result.status >= 300)) {
+        const QString message = redactDiagnostic(
+            QStringLiteral("GET %1 returned HTTP status %2").arg(url.toString()).arg(result.status));
+        throw std::runtime_error(message.toStdString());
+    }
+    if (!result.networkError.isEmpty()) {
+        const QString message = redactDiagnostic(
+            QStringLiteral("GET %1 failed: %2").arg(url.toString(), result.networkError));
+        throw std::runtime_error(message.toStdString());
+    }
+    return result.body;
 }
 
 bool downloadToFile(const QUrl& url, const QString& destination, qint64 expectedBytes,
                     const QString& expectedSha256,
                     const std::function<void(qint64 received, qint64 total)>& progress,
                     const std::function<bool()>& cancelled, QString* reason) {
-    bool created = false;
-    // A refusal removes nothing. This invocation owns a file only once it has
-    // opened it with exclusive creation, so that and nothing else is ever
-    // deleted: a destination that already existed - or one that raced into place
-    // between the existence check and the open - belongs to whoever put it
-    // there and is reported untouched.
+    // Only this call's private partial is removed on failure.
     auto refuse = [&](const QString& text) {
         if (reason) {
             *reason = text;
         }
         return false;
     };
-    // `created` tracks this invocation's own partial. It is the only path this
-    // call will ever remove, so a cancellation, a verification failure or a
-    // storage error cannot destroy a neighbour's file.
+    // The private partial is a sibling of the destination and is the only path
+    // failure cleanup removes.
+    QString ownedPartial;
     auto fail = [&](const QString& text) {
-        if (created) {
-            created = false;
-            QFile::remove(destination);
+        if (!ownedPartial.isEmpty()) {
+            QFile::remove(ownedPartial);
+            ownedPartial.clear();
         }
         if (reason) {
             *reason = text;
         }
         return false;
     };
-    // Both quoted names are user-visible and loggable text, so both go through
-    // the diagnostic scrubber: a signed asset URL carries its credentials in the
-    // path or query, and quoting it whole would copy a token into a log or a
-    // fault report.
+    // Redact paths and signed URLs before composing caller-visible errors.
     const QString namedDestination = redactDiagnostic(destination);
     const QString namedUrl = redactDiagnostic(url.toString());
     if (QFileInfo::exists(destination)) {
         return refuse(QStringLiteral("refusing to overwrite %1").arg(namedDestination));
     }
-    // NewOnly is the exclusive-create flag: the open fails outright when the path
-    // appeared after the check above, instead of truncating the file that just
-    // arrived. WriteOnly | Truncate cannot make that promise, which is what let a
-    // concurrent writer's data be destroyed by a caller that never touched it.
-    QFile file(destination);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+    // Publish only a fully written, size- and digest-verified sibling partial.
+    const QFileInfo destinationInfo(destination);
+    QTemporaryFile file(QDir(destinationInfo.absolutePath())
+                            .filePath(destinationInfo.fileName() +
+                                      QStringLiteral(".part-XXXXXX")));
+    if (!file.open()) {
         return refuse(QStringLiteral("could not write %1").arg(namedDestination));
     }
-    created = true;
+    ownedPartial = file.fileName();
+    // Refuse a destination that appeared while the partial was being written.
+    auto publish = [&]() {
+        if (QFileInfo::exists(destination)) {
+            return fail(QStringLiteral("refusing to overwrite %1").arg(namedDestination));
+        }
+        if (!file.rename(destination)) {
+            return fail(QStringLiteral("could not finalize %1: %2")
+                            .arg(namedDestination, file.errorString()));
+        }
+        file.setAutoRemove(false);
+        ownedPartial.clear();
+        return true;
+    };
 
-    // Support upstream ANIMEJANAI_PACKS_DIR local directory override and file:// URLs
-    // while enforcing the exact same size, SHA-256, and cancellation contracts.
+    // Local sources use the same verification and cancellation path.
     QString localSourcePath;
     if (url.isLocalFile()) {
         localSourcePath = url.toLocalFile();
@@ -247,25 +272,34 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
         QCryptographicHash localHash(QCryptographicHash::Sha256);
         const qint64 localTotal = localIn.size();
         qint64 localReceived = 0;
-        QByteArray buffer(64 * 1024, Qt::Uninitialized);
+        QByteArray buffer(kDownloadChunkBytes, Qt::Uninitialized);
+        QElapsedTimer localProgressClock;
+        localProgressClock.start();
+        const auto reportLocalProgress = [&](bool terminal) {
+            if (progress && (terminal || localProgressClock.elapsed() >= kProgressIntervalMs)) {
+                localProgressClock.restart();
+                progress(localReceived, localTotal);
+            }
+        };
         while (!localIn.atEnd()) {
             if ((cancelled && cancelled()) || WorkCancellationScope::cancellationRequested()) {
                 file.close();
+                reportLocalProgress(true);
                 return fail(QStringLiteral("cancelled while copying %1").arg(namedDestination));
             }
             const qint64 n = localIn.read(buffer.data(), buffer.size());
             if (n < 0 || file.write(buffer.constData(), n) != n) {
                 file.close();
+                reportLocalProgress(true);
                 return fail(QStringLiteral("could not write all of %1 to disk").arg(namedDestination));
             }
             localHash.addData(QByteArrayView(buffer.constData(), static_cast<qsizetype>(n)));
             localReceived += n;
-            if (progress) progress(localReceived, localTotal);
+            reportLocalProgress(false);
         }
         const bool flushed = file.flush();
         file.close();
-        // A final progress publication can itself cancel the copy. There may
-        // be no next chunk on which to observe that request.
+        reportLocalProgress(true);
         if ((cancelled && cancelled()) || WorkCancellationScope::cancellationRequested()) {
             return fail(QStringLiteral("cancelled while copying %1").arg(namedDestination));
         }
@@ -283,13 +317,15 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
         if (QString::fromLatin1(localHash.result().toHex()).compare(expectedSha256, Qt::CaseInsensitive) != 0) {
             return fail(QStringLiteral("sha256 mismatch for %1").arg(namedDestination));
         }
-        return true;
+        return publish();
     }
 
     QNetworkAccessManager manager;
     QNetworkRequest request(url);
     request.setRawHeader("User-Agent", "MPVBackend");
     QNetworkReply* reply = manager.get(request);
+    QByteArray buffer(kDownloadChunkBytes, Qt::Uninitialized);
+    reply->setReadBufferSize(buffer.size());
     QCryptographicHash hash(QCryptographicHash::Sha256);
     qint64 received = 0;
     qint64 total = 0;
@@ -297,52 +333,36 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
     QElapsedTimer progressClock;
     progressClock.start();
     const auto maybeReport = [&] {
-        if (!progress) {
-            return;
-        }
-        // The terminal chunk always reports, so the final state lands even
-        // when the interval has not elapsed yet.
-        if (received != expectedBytes && progressClock.elapsed() < kProgressIntervalMs) {
+        if (!progress || progressClock.elapsed() < kProgressIntervalMs) {
             return;
         }
         progressClock.restart();
         progress(received, total);
     };
     const auto consume = [&] {
-        const QByteArray chunk = reply->readAll();
-        if (chunk.isEmpty()) {
-            return;
+        while (!writeError && reply->bytesAvailable() > 0) {
+            const qint64 count = reply->read(buffer.data(), buffer.size());
+            if (count <= 0) {
+                break;
+            }
+            const qint64 written = file.write(buffer.constData(), count);
+            if (written == count) {
+                hash.addData(QByteArrayView(buffer.constData(), static_cast<qsizetype>(count)));
+                received += count;
+            } else {
+                writeError = true;
+            }
+            if (total == 0) {
+                total = reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
+            }
+            maybeReport();
         }
-        // Bytes count only when the write returned every one of them. A short
-        // write and a storage failure look identical to the network layer, and
-        // the digest below is computed over the chunk rather than over what the
-        // file accepted - so crediting the chunk before it reached disk would
-        // certify a file that is not there.
-        const qint64 written = file.write(chunk);
-        if (written == chunk.size()) {
-            hash.addData(chunk);
-            received += chunk.size();
-        } else {
-            writeError = true;
-        }
-        if (total == 0) {
-            total = reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
-        }
-        maybeReport();
         if (writeError) {
-            // Storage is gone; the stall watchdog has nothing left to guard
-            // against. Drop the connection now rather than keep draining bytes
-            // into a file that cannot take them.
             reply->abort();
         }
     };
     QEventLoop loop;
-    // A stall watchdog, because a connection that is accepted and then goes quiet
-    // produces neither readyRead nor finished: without this the loop below never
-    // returns, the pool thread is pinned for the life of the process, and the
-    // cancellation callback - which is only consulted when data arrives - can
-    // never be observed either. Restarted on every chunk, so it bounds silence
-    // rather than total duration, which is what a 200 MB asset needs.
+    // Bound silence rather than total download time; restart on each data event.
     QTimer stall;
     stall.setSingleShot(true);
     bool stalled = false;
@@ -352,13 +372,7 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
     });
     stall.start(kStallTimeoutMs);
 
-    // Cancellation is polled on its own clock rather than only when a chunk
-    // arrives: a download that has gone quiet is exactly when a viewer presses
-    // Cancel, and waiting for the stall watchdog would leave the button dead for
-    // a minute. The shared work-cancellation state is consulted as well, so a
-    // cancel that arrived through the Runner's pools - a shutdown, a page that
-    // tore itself down - is answered here without the caller having to rewire its
-    // predicate to see it.
+    // Poll independently of data so a quiet reply remains cancellable.
     QTimer cancelPoll;
     cancelPoll.setInterval(kCancelPollMs);
     const auto cancellationPending = [&] {
@@ -385,25 +399,29 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
     loop.exec();
     stall.stop();
     cancelPoll.stop();
-    // The loop has ended but the file must be settled too: flush pushes the last
-    // buffer out and close reports any deferred failure. Neither was inspected
-    // before, so a full disk could produce a completed download that no later
-    // reader could open.
+    // Check deferred storage errors before publishing the file.
     const bool flushed = file.flush();
     file.close();
     const bool storageFinished =
         flushed && !writeError && file.error() == QFileDevice::NoError;
+    if (progress) {
+        progress(received, total);
+    }
     const bool wasCancelled = cancellationPending();
     const QString error =
         reply->error() == QNetworkReply::NoError ? QString{} : reply->errorString();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     reply->deleteLater();
+    if (wasCancelled) {
+        return fail(QStringLiteral("cancelled while downloading %1").arg(namedUrl));
+    }
     if (stalled) {
         return fail(QStringLiteral("%1 sent nothing for %2 seconds")
                         .arg(namedUrl)
                         .arg(kStallTimeoutMs / 1000));
     }
-    if (wasCancelled) {
-        return fail(QStringLiteral("cancelled while downloading %1").arg(namedUrl));
+    if (status != 0 && (status < 200 || status >= 300)) {
+        return fail(QStringLiteral("GET %1 returned HTTP status %2").arg(namedUrl).arg(status));
     }
     if (!error.isEmpty()) {
         return fail(QStringLiteral("GET %1 failed: %2").arg(namedUrl, error));
@@ -427,104 +445,178 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
         0) {
         return fail(QStringLiteral("sha256 mismatch for %1").arg(namedDestination));
     }
-    if (progress) {
-        progress(received, total);
-    }
-    return true;
+    return publish();
 }
 
 QString ensureSevenZip(const QString& toolsDirectory) {
+    throwIfBootstrapCancelled();
     if (toolsDirectory.isEmpty()) return {};
-    static QMutex bootstrapMutex;
-    const QMutexLocker locker(&bootstrapMutex);
-    const QString found = findSevenZip(toolsDirectory);
-    if (!found.isEmpty()) {
-        return found;
+    // Return an existing install before waiting for another bootstrap.
+    const QString present = findSevenZip(toolsDirectory);
+    if (!present.isEmpty()) {
+        throwIfBootstrapCancelled();
+        return present;
     }
 
     const QString tools = toolsDirectory;
     if (!QDir().mkpath(tools)) {
         throw std::runtime_error("could not create " + tools.toStdString());
     }
-    QTemporaryDir staging(QDir(tools).filePath(QStringLiteral(".7zip-bootstrap-XXXXXX")));
-    if (!staging.isValid()) {
-        throw std::runtime_error("could not create a temporary 7-Zip bootstrap directory");
-    }
 
-    auto writeVerified = [](const QString& path, const QUrl& url, const char* digest) {
-        const QByteArray bytes =
-            fetchUrlBytes(url, {{QStringLiteral("User-Agent"), QStringLiteral("MPVBackend")}},
-                          60000);
-        if (sha256(bytes) != QLatin1String(digest)) {
-            throw std::runtime_error("official 7-Zip download SHA-256 mismatch");
+    // Reserve a single bootstrap; network and extraction work stay outside the lock.
+    static QMutex bootstrapMutex;
+    static QWaitCondition bootstrapSettled;
+    static bool bootstrapInFlight = false;
+    QMutexLocker locker(&bootstrapMutex);
+    while (true) {
+        throwIfBootstrapCancelled();
+        const QString installed = findSevenZip(tools);
+        if (!installed.isEmpty()) {
+            return installed;
         }
-        QFile file(path);
-        if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly) ||
-            file.write(bytes) != bytes.size() || !file.flush()) {
-            throw std::runtime_error("could not write " + path.toStdString());
+        if (bootstrapInFlight) {
+            bootstrapSettled.wait(&bootstrapMutex, kCancelPollMs);
+            throwIfBootstrapCancelled();
+            continue;
         }
-    };
+        throwIfBootstrapCancelled();
+        bootstrapInFlight = true;
+        locker.unlock();
 
+        QTemporaryDir staging(QDir(tools).filePath(QStringLiteral(".7zip-bootstrap-XXXXXX")));
+        QString failure;
+        if (!staging.isValid()) {
+            failure = QStringLiteral("could not create a temporary 7-Zip bootstrap directory");
+        } else {
+            try {
+                auto writeVerified = [](const QString& path, const QUrl& url, const char* digest) {
+                    const QByteArray bytes =
+                        fetchUrlBytes(url, {{QStringLiteral("User-Agent"), QStringLiteral("MPVBackend")}},
+                                      60000);
+                    if (sha256(bytes) != QLatin1String(digest)) {
+                        throw std::runtime_error("official 7-Zip download SHA-256 mismatch");
+                    }
+                    QFile file(path);
+                    if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly) ||
+                        file.write(bytes) != bytes.size() || !file.flush()) {
+                        throw std::runtime_error("could not write " + path.toStdString());
+                    }
+                };
 #ifdef Q_OS_WIN
-    // 7zr can unpack the official self-extracting installer, but cannot handle
-    // ZIP/NuGet archives used by runtime provisioning. Verify both official
-    // artifacts before executing/extracting anything from them.
-    constexpr auto bootstrapSha = "ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d";
-    constexpr auto installerSha = "0859c524b8a63551848f0c246abddcb1d0b7b656b0fbfe879f8d85e61a9e6edd";
-    const QString bootstrap = QDir(staging.path()).filePath(QStringLiteral("7zr.exe"));
-    const QString installer = QDir(staging.path()).filePath(QStringLiteral("7z2603-x64.exe"));
+                // 7zr can unpack the official self-extracting installer, but cannot handle
+                // ZIP/NuGet archives used by runtime provisioning. Verify both official
+                // artifacts before executing/extracting anything from them.
+                constexpr auto bootstrapSha = "ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d";
+                constexpr auto installerSha = "0859c524b8a63551848f0c246abddcb1d0b7b656b0fbfe879f8d85e61a9e6edd";
+                const QString bootstrap = QDir(staging.path()).filePath(QStringLiteral("7zr.exe"));
+                const QString installer =
+                    QDir(staging.path()).filePath(QStringLiteral("7z2603-x64.exe"));
+                // Extract into staging; publish only after verification.
+                const QString staged =
+                    QDir(staging.path()).filePath(QStringLiteral("staged"));
 
-    writeVerified(bootstrap, sevenZipUrl(), bootstrapSha);
-    writeVerified(installer, sevenZipInstallerUrl(), installerSha);
-    QProcess extract;
-    extract.start(bootstrap, {QStringLiteral("x"), QStringLiteral("-o%1").arg(tools),
-                              QStringLiteral("-y"), installer});
-    if (!extract.waitForStarted() || !extract.waitForFinished(60000) ||
-        extract.exitStatus() != QProcess::NormalExit || extract.exitCode() != 0) {
-        const QString details = QString::fromLocal8Bit(extract.readAllStandardError()).right(500);
-        throw std::runtime_error(
-            QStringLiteral("could not extract the verified x64 7-Zip package: %1")
-                .arg(details).toStdString());
-    }
-    const QString tool = QDir(tools).filePath(QStringLiteral("7z.exe"));
-    if (!QFileInfo(tool).isFile() ||
-        !QFileInfo(QDir(tools).filePath(QStringLiteral("7z.dll"))).isFile()) {
-        throw std::runtime_error("verified x64 7-Zip package did not contain 7z.exe and 7z.dll");
-    }
-    QFile::remove(bootstrap);
-    QFile::remove(installer);
-    staging.remove();
-    return tool;
+                writeVerified(bootstrap, sevenZipUrl(), bootstrapSha);
+                writeVerified(installer, sevenZipInstallerUrl(), installerSha);
+                throwIfBootstrapCancelled();
+                QProcess extract;
+                extract.start(bootstrap, {QStringLiteral("x"), QStringLiteral("-o%1").arg(staged),
+                                          QStringLiteral("-y"), installer});
+                if (!waitForBootstrapStart(extract, 5000) ||
+                    !waitForBootstrapFinish(extract, 60000) ||
+                    extract.exitStatus() != QProcess::NormalExit || extract.exitCode() != 0) {
+                    const QString details =
+                        QString::fromLocal8Bit(extract.readAllStandardError()).right(500);
+                    throw std::runtime_error(
+                        QStringLiteral("could not extract the verified x64 7-Zip package: %1")
+                            .arg(details).toStdString());
+                }
 #else
-    constexpr auto linuxTarSha = "dc99eff5008f1ab79bd7084c68513701547a808a89502bf4133683535ab3c695";
-    const QString archive = QDir(staging.path()).filePath(QStringLiteral("7z2603-linux-x64.tar.xz"));
-    writeVerified(archive, sevenZipLinuxUrl(), linuxTarSha);
-    QProcess extract;
-    extract.start(QStringLiteral("tar"),
-                  {QStringLiteral("-xJf"), archive, QStringLiteral("-C"), tools});
-    if (!extract.waitForStarted(5000) || !extract.waitForFinished(60000) ||
-        extract.exitStatus() != QProcess::NormalExit || extract.exitCode() != 0) {
-        const QString details = QString::fromLocal8Bit(extract.readAllStandardError()).right(500);
-        throw std::runtime_error(
-            QStringLiteral("could not extract the verified Linux x64 7-Zip package: %1")
-                .arg(details).toStdString());
-    }
-    for (const QString& candidateName : {QStringLiteral("7zz"), QStringLiteral("7zzs")}) {
-        const QString tool = QDir(tools).filePath(candidateName);
-        if (QFileInfo::exists(tool)) {
-            QFile::setPermissions(tool, QFileDevice::ReadOwner | QFileDevice::WriteOwner |
-                                        QFileDevice::ExeOwner | QFileDevice::ReadGroup |
-                                        QFileDevice::ExeGroup | QFileDevice::ReadOther |
-                                        QFileDevice::ExeOther);
-            if (QFileInfo(tool).isFile() && QFileInfo(tool).isExecutable()) {
-                QFile::remove(archive);
-                staging.remove();
-                return tool;
+                constexpr auto linuxTarSha = "dc99eff5008f1ab79bd7084c68513701547a808a89502bf4133683535ab3c695";
+                const QString archive =
+                    QDir(staging.path()).filePath(QStringLiteral("7z2603-linux-x64.tar.xz"));
+                const QString staged =
+                    QDir(staging.path()).filePath(QStringLiteral("staged"));
+                if (!QDir().mkpath(staged)) {
+                    throw std::runtime_error(
+                        "could not create a staging directory for the 7-Zip bootstrap");
+                }
+                writeVerified(archive, sevenZipLinuxUrl(), linuxTarSha);
+                throwIfBootstrapCancelled();
+                QProcess extract;
+                extract.start(QStringLiteral("tar"),
+                              {QStringLiteral("-xJf"), archive, QStringLiteral("-C"), staged});
+                if (!waitForBootstrapStart(extract, 5000) ||
+                    !waitForBootstrapFinish(extract, 60000) ||
+                    extract.exitStatus() != QProcess::NormalExit || extract.exitCode() != 0) {
+                    const QString details =
+                        QString::fromLocal8Bit(extract.readAllStandardError()).right(500);
+                    throw std::runtime_error(
+                        QStringLiteral("could not extract the verified Linux x64 7-Zip package: %1")
+                            .arg(details).toStdString());
+                }
+#endif
+            } catch (const std::exception& error) {
+                failure = QString::fromUtf8(error.what());
             }
         }
-    }
-    throw std::runtime_error("verified Linux x64 7-Zip package did not contain 7zz or 7zzs");
+
+        locker.relock();
+        bootstrapInFlight = false;
+        bootstrapSettled.wakeAll();
+        if (failure.isEmpty() && WorkCancellationScope::cancellationRequested()) {
+            failure = QStringLiteral("the request was cancelled");
+        }
+        if (!failure.isEmpty()) {
+            throw std::runtime_error(failure.toStdString());
+        }
+
+#ifdef Q_OS_WIN
+        // Publish the verified pair while holding the bootstrap reservation.
+        const QString staged = QDir(staging.path()).filePath(QStringLiteral("staged"));
+        const QString tool = QDir(tools).filePath(QStringLiteral("7z.exe"));
+        const QString library = QDir(tools).filePath(QStringLiteral("7z.dll"));
+        if (!QFile::rename(QDir(staged).filePath(QStringLiteral("7z.exe")), tool) ||
+            !QFile::rename(QDir(staged).filePath(QStringLiteral("7z.dll")), library)) {
+            QFile::remove(tool);
+            QFile::remove(library);
+            throw std::runtime_error("could not publish the verified x64 7-Zip package");
+        }
+        if (!QFileInfo(tool).isFile() || !QFileInfo(library).isFile()) {
+            throw std::runtime_error("verified x64 7-Zip package did not contain 7z.exe and 7z.dll");
+        }
+        QFile::remove(QDir(staging.path()).filePath(QStringLiteral("7zr.exe")));
+        QFile::remove(QDir(staging.path()).filePath(QStringLiteral("7z2603-x64.exe")));
+        staging.remove();
+        return tool;
+#else
+        const QString staged = QDir(staging.path()).filePath(QStringLiteral("staged"));
+        for (const QString& candidateName : {QStringLiteral("7zz"), QStringLiteral("7zzs")}) {
+            const QString stagedTool = QDir(staged).filePath(candidateName);
+            if (!QFileInfo::exists(stagedTool)) {
+                continue;
+            }
+            // The executable bit is granted before the rename so a reader can
+            // never observe a bundled binary findSevenZip would refuse.
+            QFile::setPermissions(stagedTool, QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                                  QFileDevice::ExeOwner | QFileDevice::ReadGroup |
+                                                  QFileDevice::ExeGroup | QFileDevice::ReadOther |
+                                                  QFileDevice::ExeOther);
+            if (!QFileInfo(stagedTool).isFile() || !QFileInfo(stagedTool).isExecutable()) {
+                throw std::runtime_error("verified Linux x64 7-Zip package did not contain 7zz or 7zzs");
+            }
+            const QString tool = QDir(tools).filePath(candidateName);
+            if (!QFile::rename(stagedTool, tool)) {
+                QFile::remove(tool);
+                throw std::runtime_error("could not publish the verified Linux x64 7-Zip package");
+            }
+            QFile::remove(QDir(staging.path()).filePath(
+                QStringLiteral("7z2603-linux-x64.tar.xz")));
+            staging.remove();
+            return tool;
+        }
+        throw std::runtime_error("verified Linux x64 7-Zip package did not contain 7zz or 7zzs");
 #endif
+    }
 }
 
 bool extractArchive(const QString& sevenZip, const QString& archive, const QString& destination,

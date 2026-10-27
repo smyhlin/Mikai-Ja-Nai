@@ -5,6 +5,7 @@
 
 #include <cstdio>
 
+#include <QtCore/QDebug>
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -225,6 +226,20 @@ void TestDiagnostics::aMediaLogLineCarriesNoSignedUrl() {
   // the redaction doing the work.
   QVERIFY(mpvLine.contains(QStringLiteral("SE.MARKER_TOKEN")));
   QVERIFY(redacted.contains(QStringLiteral("<redacted")));
+}
+
+void TestDiagnostics::qtMessageHandlerPreservesTheOriginalMessage() {
+  mikai::app::installCrashLog();
+  const QString path = mikai::app::logPath();
+  QVERIFY(!path.isEmpty());
+
+  const QString marker =
+      QStringLiteral("qt-message-preservation-%1").arg(QDateTime::currentMSecsSinceEpoch());
+  qWarning().noquote() << marker;
+
+  QFile file(path);
+  QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+  QVERIFY(QString::fromUtf8(file.readAll()).contains(marker));
 }
 
 void TestDiagnostics::aSignedUrlWrittenToTheLogFileIsRedactedOnDisk() {

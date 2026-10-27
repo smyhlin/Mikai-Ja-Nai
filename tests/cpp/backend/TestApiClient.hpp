@@ -52,6 +52,12 @@ class TestApiClient : public QObject {
   // server answering an error.
   void aTransportFailureIsNotAnApiFailure();
   void aCrossOriginRedirectDoesNotForwardTheApiCredential();
+  void aCrossOriginValidationRedirectDoesNotForwardTheCandidateCredential();
+  void aCredentialedTransportRequestBlocksCrossOriginRedirects();
+  void aCustomRequestHeaderIsNotForwardedAcrossOriginRedirects();
+  void aSameOriginRedirectKeepsTheApiCredential();
+  void aThreadLocalTransportManagerIsDeletedWhenItsThreadFinishes();
+  void explicitApiKeyConfigurationKeepsItsEnvironmentPrecedence();
 
   // Validating a candidate key is the same reading path: a named failure comes
   // back named, so the dialog can offer the API's reason rather than a guess.

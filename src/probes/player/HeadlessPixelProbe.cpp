@@ -96,6 +96,7 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
     QGuiApplication app(argc, argv);
     if (!mplayer::probes::selectRuntime()) {
         return 2;
@@ -127,7 +128,9 @@ int main(int argc, char** argv) {
 
     const int width = 320;
     const int height = 180;
-    QOpenGLFramebufferObject fbo(width, height);
+    QOpenGLFramebufferObjectFormat fboFormat;
+    fboFormat.setInternalTextureFormat(kGlInternalFormatRgba8);
+    QOpenGLFramebufferObject fbo(width, height, fboFormat);
     if (!fbo.isValid()) {
         note(QStringLiteral("FAIL: FBO invalid"));
         return 2;
@@ -135,6 +138,11 @@ int main(int argc, char** argv) {
     note(QStringLiteral("fbo valid, handle=%1").arg(fbo.handle()));
 
     gl->glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(fbo.handle()));
+    GLint targetDepthBits = 0;
+    gl->glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                               0x8212, &targetDepthBits);
+    const int targetFormat = static_cast<int>(fbo.format().internalTextureFormat());
+    const int targetDepth = targetDepthBits > 0 ? targetDepthBits : 0;
     gl->glViewport(0, 0, width, height);
     gl->glClearColor(0.f, 0.f, 0.f, 1.f);
     gl->glClear(GL_COLOR_BUFFER_BIT);
@@ -216,7 +224,8 @@ int main(int argc, char** argv) {
                 ++frameUpdates;
             }
             gl->glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(fbo.handle()));
-            if (rc.render(static_cast<int>(fbo.handle()), width, height, 0) != 0) {
+            if (rc.render(static_cast<int>(fbo.handle()), width, height, targetFormat,
+                          targetDepth) != 0) {
                 ++renderErrors;
             }
             rc.reportSwap();

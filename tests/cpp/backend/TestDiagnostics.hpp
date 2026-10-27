@@ -46,4 +46,5 @@ class TestDiagnostics : public QObject {
   // crash report is cut from, so a token that redacted only inside the helper
   // and was written raw here would still be a disclosure.
   void aSignedUrlWrittenToTheLogFileIsRedactedOnDisk();
+  void qtMessageHandlerPreservesTheOriginalMessage();
 };

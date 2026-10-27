@@ -23,6 +23,7 @@ class TestI18n : public QObject {
   void titleNamesFollowTheirOwnLanguageAndFallBack();
   void nativePlanErrorsFollowTheActiveLanguage();
   void failedReplacementPreservesWorkingLanguage();
+  void hdrPlaybackSaveAndCancelRespectDeferredChanges();
   void appliedLanguageDrivesDefaultLocaleNumbers();
 
   /// The behaviour a restart-only language switch cannot produce: an open

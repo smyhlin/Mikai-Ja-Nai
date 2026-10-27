@@ -35,11 +35,14 @@
 #include <QPushButton>
 #include <QProgressBar>
 #include <QScreen>
+#include <QScrollArea>
 #include <QScrollBar>
 #include <QSaveFile>
+#include <QStackedWidget>
 #include <QSettings>
 #include <QSpinBox>
 #include <QStyle>
+#include <QStyleOptionButton>
 #include <QStyleOptionFrame>
 #include <QToolButton>
 #include <QThread>
@@ -2178,6 +2181,116 @@ QPushButton* accessibleAction(QWidget& root, const QString& actionName) {
     return nullptr;
 }
 
+void exerciseHdrPresentation(mikai::backend::MikaiClient& client, Runner& runner,
+                             QSize requestedSize, const QString& language,
+                             const QString& catalog) {
+    check(mikai::app::applyInterfaceLanguage(language, catalog),
+          "the General HDR presentation language was installed");
+    SettingsDialog dialog(client, runner);
+    requestedSize = fitSettingsDialogSize(dialog, requestedSize);
+    dialog.resize(requestedSize);
+    auto* scroll = dialog.findChild<QScrollArea*>(QStringLiteral("nativeGeneralScroll"));
+    auto* stack = dialog.findChild<QStackedWidget*>(QStringLiteral("settingsStack"));
+    auto* policy = dialog.findChild<QComboBox*>(QStringLiteral("hdrPolicyCombo"));
+    auto* overrideCheck =
+        dialog.findChild<QCheckBox*>(QStringLiteral("nativeHdrOverrideCheck"));
+    QWidget* hdrCard = policy != nullptr ? policy->parentWidget() : nullptr;
+    const bool controlsExist = scroll != nullptr && stack != nullptr && policy != nullptr &&
+                               overrideCheck != nullptr && hdrCard != nullptr;
+    if (!controlsExist) {
+        std::fprintf(stderr,
+                     "HDR UI lookup: general-scroll=%d settings-stack=%d policy=%d override=%d card=%d\n",
+                     scroll != nullptr, stack != nullptr, policy != nullptr, overrideCheck != nullptr,
+                     hdrCard != nullptr);
+    }
+    check(controlsExist,
+          "the actual General page exposes both HDR controls and their card");
+    if (!controlsExist) {
+        dialog.reject();
+        return;
+    }
+
+    check(dialog.showPage(QStringLiteral("access")),
+          "the actual General settings page was selected");
+    dialog.show();
+    QApplication::processEvents();
+    mikai::probes::revealWidget(hdrCard);
+    QApplication::processEvents();
+
+    const QRect cardRect(hdrCard->mapTo(scroll->viewport(), QPoint()), hdrCard->size());
+    bool captionsFit = true;
+    for (QLabel* label : hdrCard->findChildren<QLabel*>()) {
+        if (!label->isVisibleTo(&dialog)) continue;
+        captionsFit &= label->height() >= label->heightForWidth(label->width());
+    }
+    const QRect policyRect(policy->mapTo(scroll->viewport(), QPoint()), policy->size());
+    const QRect overrideRect(overrideCheck->mapTo(scroll->viewport(), QPoint()),
+                             overrideCheck->size());
+    QStyleOptionButton overrideOption;
+    overrideOption.initFrom(overrideCheck);
+    const QRect overrideTextRect = overrideCheck->style()->subElementRect(
+        QStyle::SE_CheckBoxContents, &overrideOption, overrideCheck);
+    const QRect overrideTextViewportRect(
+        overrideCheck->mapTo(scroll->viewport(), overrideTextRect.topLeft()),
+        overrideTextRect.size());
+    const int overrideTextWidth =
+        QFontMetrics(overrideCheck->font()).horizontalAdvance(overrideCheck->text());
+    const bool overrideCaptionFits =
+        overrideTextRect.width() >= overrideTextWidth &&
+        cardRect.contains(overrideTextViewportRect) &&
+        scroll->viewport()->rect().contains(overrideTextViewportRect);
+    const bool controlsVisible = policy->isVisibleTo(&dialog) &&
+                                 overrideCheck->isVisibleTo(&dialog);
+    const bool cardFullyVisible = scroll->viewport()->rect().contains(cardRect);
+    if (!controlsVisible || !cardFullyVisible || !captionsFit || !overrideCaptionFits ||
+        scroll->horizontalScrollBar()->maximum() != 0) {
+        const QRect viewportRect = scroll->viewport()->rect();
+        const QRect pageRect(scroll->widget()->mapTo(scroll->viewport(), QPoint()),
+                             scroll->widget()->size());
+        std::fprintf(stderr,
+                     "HDR layout geometry: window=%dx%d general-scroll=%d,%d %dx%d viewport=%d,%d %dx%d page=%d,%d %dx%d card=%d,%d %dx%d policy=%d,%d %dx%d override=%d,%d %dx%d caption=%d,%d %dx%d text-width=%d caption-fits=%d hscroll=%d controls-visible=%d captions-fit=%d\n",
+                     dialog.width(), dialog.height(), scroll->x(), scroll->y(),
+                     scroll->width(), scroll->height(), viewportRect.x(), viewportRect.y(),
+                     viewportRect.width(), viewportRect.height(), pageRect.x(), pageRect.y(),
+                     pageRect.width(), pageRect.height(), cardRect.x(), cardRect.y(),
+                     cardRect.width(), cardRect.height(), policyRect.x(), policyRect.y(),
+                     policyRect.width(), policyRect.height(), overrideRect.x(), overrideRect.y(),
+                     overrideRect.width(), overrideRect.height(),
+                     overrideTextViewportRect.x(), overrideTextViewportRect.y(),
+                     overrideTextViewportRect.width(), overrideTextViewportRect.height(),
+                     overrideTextWidth, overrideCaptionFits,
+                     scroll->horizontalScrollBar()->maximum(), controlsVisible, captionsFit);
+        for (QLabel* label : hdrCard->findChildren<QLabel*>()) {
+            if (!label->isVisibleTo(&dialog)) continue;
+            const QRect labelRect(label->mapTo(scroll->viewport(), QPoint()), label->size());
+            std::fprintf(stderr, "HDR label geometry: text=%s rect=%d,%d %dx%d viewport-contained=%d hfw=%d\n",
+                         qPrintable(label->text()), labelRect.x(), labelRect.y(),
+                         labelRect.width(), labelRect.height(),
+                         viewportRect.contains(labelRect), label->heightForWidth(label->width()));
+        }
+    }
+    check(dialog.currentPageId() == QStringLiteral("access") &&
+              stack->currentWidget() == scroll && scroll->isVisibleTo(&dialog),
+          "the actual General page is selected in the settings stack and its scroll area is visible");
+    check(overrideCaptionFits,
+          "the Native HDR override caption fits inside the visible card and viewport");
+    check(controlsVisible && cardFullyVisible && captionsFit &&
+              scroll->horizontalScrollBar()->maximum() == 0,
+          "the complete HDR card, labels, and controls fit the real viewport without horizontal clipping");
+    check(mikai::probes::dialogActionsFit(dialog, requestedSize),
+          "Save and Cancel remain accessible while the HDR card is in view");
+
+    const QString suffix =
+        requestedSize.width() <= mikai::app::theme::kSettingsDialogMinWidth
+            ? QStringLiteral("compact") : QStringLiteral("wide");
+    const QString capture = QStringLiteral("native-general-hdr-%1-%2.png")
+                                .arg(language, suffix);
+    check(dialog.grab().save(capture),
+          "the actual General HDR settings surface was captured");
+    dialog.reject();
+    QApplication::processEvents();
+}
+
 void exerciseProcessing(SettingsDialog& dialog, mikai::backend::MikaiClient& client,
                         Runner& runner, QSize requestedSize, const QString& language) {
     QSettings before;
@@ -2670,6 +2783,7 @@ int main(int argc, char** argv) {
     if (gate != Gate::RunHere) return exitCode();
 
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+    QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
     QApplication app(argc, argv);
     if (!mikai::probes::initializeUi(app)) return 2;
     QCommandLineParser parser;
@@ -2682,9 +2796,14 @@ int main(int argc, char** argv) {
         QStringLiteral("component-progress-only"),
         QStringLiteral("Run only the isolated synthetic Components progress presentation scenario."));
     parser.addOption(componentProgressOnlyOption);
+    QCommandLineOption hdrSettingsOnlyOption(
+        QStringLiteral("hdr-settings-only"),
+        QStringLiteral("Run only the actual General HDR settings presentation scenario."));
+    parser.addOption(hdrSettingsOnlyOption);
     parser.process(app);
     const bool installRuntime = parser.isSet(installRuntimeOption);
     const bool componentProgressOnly = parser.isSet(componentProgressOnlyOption);
+    const bool hdrSettingsOnly = parser.isSet(hdrSettingsOnlyOption);
     QCoreApplication::setOrganizationName(QStringLiteral("MikaiNativeSettingsProbe"));
     QCoreApplication::setApplicationName(QStringLiteral("NativeSettingsProbe"));
 
@@ -2714,8 +2833,10 @@ int main(int argc, char** argv) {
         settings.setValue(QLatin1String(mplayer::native::kNativeBackendKey),
                           QStringLiteral("directml"));
         settings.setValue(QLatin1String(mplayer::native::kNativeRecipeKey), recipeId);
-        settings.setValue(QLatin1String(mplayer::native::kNativeCustomModelsDirKey),
-                          QStringLiteral("foreign-model-store-path"));
+        if (!hdrSettingsOnly) {
+            settings.setValue(QLatin1String(mplayer::native::kNativeCustomModelsDirKey),
+                              QStringLiteral("foreign-model-store-path"));
+        }
         settings.setValue(QStringLiteral("runtimeChoice"), QStringLiteral("standard"));
         settings.endGroup();
         settings.sync();
@@ -2743,6 +2864,45 @@ int main(int argc, char** argv) {
 
     mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
     Runner runner;
+
+    const QString hdrLanguageBefore = mikai::app::activeInterfaceLanguage();
+    const QSize hdrCompact(mikai::app::theme::kSettingsDialogMinWidth,
+                           mikai::app::theme::kSettingsDialogDefaultHeight);
+    const QSize hdrWide(mikai::app::theme::kSettingsDialogDefaultWidth,
+                        mikai::app::theme::kSettingsDialogDefaultHeight);
+    const QString hdrCatalog = qEnvironmentVariable("MIKAI_PROBE_TRANSLATION");
+    if (hdrSettingsOnly || !componentProgressOnly) {
+        for (const QString& language : {QStringLiteral("en"), QStringLiteral("uk")}) {
+            exerciseHdrPresentation(client, runner, hdrCompact, language, hdrCatalog);
+            exerciseHdrPresentation(client, runner, hdrWide, language, hdrCatalog);
+        }
+        check(mikai::app::applyInterfaceLanguage(hdrLanguageBefore, hdrCatalog),
+              "the probe restores its original interface language after HDR captures");
+    }
+
+    if (hdrSettingsOnly) {
+        QJsonObject evidence;
+        evidence.insert(QStringLiteral("probe"), QStringLiteral("native_settings_probe"));
+        evidence.insert(QStringLiteral("scenario"), QStringLiteral("hdr_settings_presentation"));
+        evidence.insert(QStringLiteral("passed"), failures == 0);
+        evidence.insert(QStringLiteral("checks"), checks);
+        evidence.insert(QStringLiteral("failures"), failures);
+        QJsonArray screenshots;
+        screenshots.append(QStringLiteral("native-general-hdr-en-compact.png"));
+        screenshots.append(QStringLiteral("native-general-hdr-en-wide.png"));
+        screenshots.append(QStringLiteral("native-general-hdr-uk-compact.png"));
+        screenshots.append(QStringLiteral("native-general-hdr-uk-wide.png"));
+        evidence.insert(QStringLiteral("screenshots"), screenshots);
+        QFile evidenceFile(QStringLiteral("native-hdr-settings-evidence.json"));
+        if (evidenceFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            evidenceFile.write(QJsonDocument(evidence).toJson(QJsonDocument::Indented));
+        } else {
+            check(false, "HDR settings presentation evidence was written");
+        }
+        std::fprintf(stderr, "[native_settings_probe hdr-settings-only] %s (%d failures)\n",
+                     failures == 0 ? "PASS" : "FAIL", failures);
+        return failures == 0 ? 0 : 1;
+    }
 
     if (componentProgressOnly) {
         mikai::app::NativeComponentProvisioner provisioner(runner);
@@ -3340,6 +3500,10 @@ int main(int argc, char** argv) {
     evidence.insert(QStringLiteral("failures"), failures);
     QJsonArray screenshots;
     screenshots.append(QStringLiteral("native-animejanai-manager.png"));
+    screenshots.append(QStringLiteral("native-general-hdr-en-compact.png"));
+    screenshots.append(QStringLiteral("native-general-hdr-en-wide.png"));
+    screenshots.append(QStringLiteral("native-general-hdr-uk-compact.png"));
+    screenshots.append(QStringLiteral("native-general-hdr-uk-wide.png"));
     screenshots.append(QStringLiteral("native-processing-en-compact.png"));
     screenshots.append(QStringLiteral("native-processing-en-wide.png"));
     screenshots.append(QStringLiteral("native-processing-en-compact-native.png"));

@@ -6,6 +6,7 @@
 #include <QFileInfo>
 
 #include <algorithm>
+#include <optional>
 
 namespace mplayer {
 namespace anime4k {
@@ -20,8 +21,15 @@ namespace {
 /// merge, reorder or "tidy" one: a chain is an image pipeline, and the order is
 /// the filter graph. `files` is the only copy of a chain - nothing else in the
 /// tree holds a second one.
-const QVector<ModeInfo>& catalogue() {
-    static const QVector<ModeInfo> kModes = {
+///
+/// T-307: the table is REBUILT on every call, not cached as a function-local
+/// static. The labels and hints are translate() results, and a static would
+/// freeze the first language ever used for the process's whole life - a live
+/// QEvent::LanguageChange must re-read fresh translations (CompareWindow
+/// already re-reads this catalogue for exactly that reason). Callers use these
+/// tables at user-interaction frequency, so the rebuild is microseconds.
+QVector<ModeInfo> catalogue() {
+    const QVector<ModeInfo> kModes = {
         {Mode::Off, QStringLiteral("off"), QCoreApplication::translate("Anime4K", "Disabled"),
          QCoreApplication::translate("Anime4K", "Original image"), QStringLiteral("anime4k"), {}},
         {Mode::FastA, QStringLiteral("fast_a"),
@@ -204,9 +212,10 @@ const QVector<ModeInfo>& catalogue() {
 }
 
 /// Only implemented Anime4K categories are navigable; unsupported model
-/// families do not get inert placeholder pages.
-const QVector<CategoryInfo>& categories() {
-    static const QVector<CategoryInfo> kCategories = {
+/// families do not get inert placeholder pages. Rebuilt per call with the
+/// catalogue, for the same live-retranslation reason (T-307).
+QVector<CategoryInfo> categories() {
+    const QVector<CategoryInfo> kCategories = {
         {QStringLiteral("anime4k"), QString(), QStringLiteral("Anime4K"),
          QCoreApplication::translate("Anime4K", "Anime4K presets: upscaling and image restoration")},
         {QStringLiteral("anime4k/speed"), QStringLiteral("anime4k"),
@@ -243,22 +252,24 @@ const QVector<CategoryInfo>& categories() {
     return kCategories;
 }
 
-const ModeInfo* infoForMode(Mode mode) {
+std::optional<ModeInfo> infoForMode(Mode mode) {
+    // T-307: a copy, never a pointer into storage - the catalogue is rebuilt
+    // per call, so a pointer would dangle into a destroyed temporary.
     for (const ModeInfo& info : catalogue()) {
         if (info.mode == mode) {
-            return &info;
+            return info;
         }
     }
-    return nullptr;
+    return std::nullopt;
 }
 
-const CategoryInfo* categoryForId(const QString& id) {
+std::optional<CategoryInfo> categoryForId(const QString& id) {
     for (const CategoryInfo& category : categories()) {
         if (category.id == id) {
-            return &category;
+            return category;
         }
     }
-    return nullptr;
+    return std::nullopt;
 }
 
 /// The x2/x3/x4 a shader name states, 0 when it does not scale. Read from the
@@ -380,8 +391,8 @@ QString kindLabel(Kind kind) {
 }
 
 QString modeId(Mode mode) {
-    const ModeInfo* info = infoForMode(mode);
-    return info != nullptr ? info->id : QString();
+    const std::optional<ModeInfo> info = infoForMode(mode);
+    return info.has_value() ? info->id : QString();
 }
 
 Mode modeForId(const QString& id) {
@@ -394,40 +405,42 @@ Mode modeForId(const QString& id) {
 }
 
 QVector<ModeInfo> availableModes() {
-    // Returned by value, as before: callers range over a temporary. The copy is
-    // a refcount bump on the same QVector, not a rebuild of the table.
+    // Rebuilt with the catalogue, so labels carry the language that is live
+    // right now rather than the one the process first used (T-307).
     return catalogue();
 }
 
 QString categoryLabel(const QString& categoryId) {
-    const CategoryInfo* category = categoryForId(categoryId);
-    return category != nullptr ? category->label : QString();
+    const std::optional<CategoryInfo> category = categoryForId(categoryId);
+    return category.has_value() ? category->label : QString();
 }
 
 QString displayLabel(Mode mode) {
-    const ModeInfo* info = infoForMode(mode);
-    if (info == nullptr) {
+    const std::optional<ModeInfo> info = infoForMode(mode);
+    if (!info.has_value()) {
         return QString();
     }
     // A leaf deeper than one category reads as a bare "HQ" or "Fast" on its
     // own, so it is qualified with the group it sits in. A leaf of a top-level
     // group already says what it is ("A (Fast)", "3D Graphics"), so the four
     // main categories add nothing and are left off.
-    const CategoryInfo* parent = categoryForId(info->category);
-    const bool nested = parent != nullptr && !parent->parent.isEmpty() &&
+    const std::optional<CategoryInfo> parent = categoryForId(info->category);
+    const bool nested = parent.has_value() && !parent->parent.isEmpty() &&
                         parent->parent != QLatin1String("anime4k");
     return nested ? parent->label + QStringLiteral(" · ") + info->label : info->label;
 }
 
 bool categoryContainsPreset(const QString& categoryId, const QString& presetId) {
-    const ModeInfo* info = nullptr;
+    // T-307: an early-return search instead of a pointer into storage, which
+    // would dangle now that the catalogue is rebuilt per call.
+    std::optional<ModeInfo> info;
     for (const ModeInfo& candidate : catalogue()) {
         if (candidate.id == presetId) {
-            info = &candidate;
+            info = candidate;
             break;
         }
     }
-    if (info == nullptr) {
+    if (!info.has_value()) {
         return false;
     }
     // A preset sits in its own category or in one nested below it, which is how

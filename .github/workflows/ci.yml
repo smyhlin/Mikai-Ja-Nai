@@ -86,3 +86,188 @@ jobs:
           path: ci-artifacts/
           if-no-files-found: error
           retention-days: 14
+
+  sanitizers:
+    # T-402: TSan first (the async/epoch machinery in MpvHandle, the status
+    # consumer and the state pump is exactly what TSan is for), then UBSan and
+    # ASan+UBSan, each as its own configure/build/ctest step inside this one
+    # job to save runners. A manual canary lane: sanitizer builds are several
+    # times slower than the default build, so it is gated to workflow_dispatch
+    # and is deliberately not part of the per-push/per-PR contract; the
+    # release workflow_call path skips it too, so a red sanitizer run can
+    # never block a release.
+    if: github.event_name == 'workflow_dispatch'
+    name: Sanitizer matrix (tsan / ubsan / asan)
+    runs-on: ubuntu-24.04
+    # Three sequential Debug configure/build/ctest rounds on 2 build workers;
+    # instrumented builds and runs are each several times slower than the
+    # release lane's single round, which build.py bounds at 60 minutes alone.
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source without retained credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Install Linux compiler, runtime and software display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential cmake ninja-build pkg-config patchelf libmpv-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libgl1-mesa-dri libglu1-mesa-dev \
+            libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 \
+            libxcb-xkb1 libx11-xcb1 libfontconfig1 libdbus-1-3 \
+            xvfb xauth
+      - name: Install public SDK acquisition tooling
+        run: python -m pip install aqtinstall==3.3.0 ninja==1.11.1.4
+      - name: Provision Qt 6.12
+        run: python packaging/ci/provision.py --root "$RUNNER_TEMP/mikai-sdk" --evidence "$RUNNER_TEMP/sanitizer-evidence"
+      - name: Build and test under ThreadSanitizer
+        env:
+          QT_QPA_PLATFORM: offscreen
+          MIKAI_LIVE: '0'
+        run: |
+          cmake --preset linux-tsan \
+            -DCMAKE_PREFIX_PATH="$MIKAI_QT_PREFIX" \
+            -DCMAKE_CXX_COMPILER="${MIKAI_CXX:-g++}" \
+            -DMIKAI_WITH_NATIVE=OFF -DMIKAI_WITH_MODEL_INSPECTION=OFF
+          cmake --build --preset tests-linux-tsan --parallel 2
+          # Same ctest surface as the build lane, minus the Release-only
+          # package contract (these are Debug builds) and minus the one-shot
+          # mikai_tests blob (T-417): the per-suite entries carry the suites.
+          ctest --test-dir build/linux-tsan --output-on-failure --no-tests=error \
+            --timeout 900 --label-exclude mikai_tests_blob -E '^LinuxPackageContracts$'
+      - name: Build and test under UndefinedBehaviorSanitizer
+        env:
+          QT_QPA_PLATFORM: offscreen
+          MIKAI_LIVE: '0'
+        run: |
+          cmake --preset linux-ubsan \
+            -DCMAKE_PREFIX_PATH="$MIKAI_QT_PREFIX" \
+            -DCMAKE_CXX_COMPILER="${MIKAI_CXX:-g++}" \
+            -DMIKAI_WITH_NATIVE=OFF -DMIKAI_WITH_MODEL_INSPECTION=OFF
+          cmake --build --preset tests-linux-ubsan --parallel 2
+          # -fno-sanitize-recover=all means the first UB aborts the process;
+          # one ctest entry per suite is what keeps that abort from hiding
+          # the rest of the run.
+          ctest --test-dir build/linux-ubsan --output-on-failure --no-tests=error \
+            --timeout 900 --label-exclude mikai_tests_blob -E '^LinuxPackageContracts$'
+      - name: Build and test under AddressSanitizer with UBSan
+        env:
+          QT_QPA_PLATFORM: offscreen
+          MIKAI_LIVE: '0'
+          # Leak reports need their own triaged baseline before they can gate
+          # anything; this lane's contract is heap errors and UB, not
+          # exit-time leak accounting over third-party runtime teardown.
+          ASAN_OPTIONS: detect_leaks=0
+        run: |
+          cmake --preset linux-asan \
+            -DCMAKE_PREFIX_PATH="$MIKAI_QT_PREFIX" \
+            -DCMAKE_CXX_COMPILER="${MIKAI_CXX:-g++}" \
+            -DMIKAI_WITH_NATIVE=OFF -DMIKAI_WITH_MODEL_INSPECTION=OFF
+          cmake --build --preset tests-linux-asan --parallel 2
+          ctest --test-dir build/linux-asan --output-on-failure --no-tests=error \
+            --timeout 900 --label-exclude mikai_tests_blob -E '^LinuxPackageContracts$'
+
+  bundled-runtime-smoke:
+    # T-418: exercise the closure that actually ships, not the build tree.
+    # The build job compiles against distro libmpv-dev headers, and its smoke
+    # stages a private runtime copied out of the build's extraction cache;
+    # the tarball that users receive carries the pinned private libmpv under
+    # bin/mpv with $ORIGIN RUNPATHs, and only this lane plays through that
+    # exact packaged closure. The pinned Linux bundle artifact exists
+    # (MIKAI_LINUX_BUNDLE_MPV=ON is what the release build configures, and
+    # packaging/provenance/linux-runtime.json records bin/mpv/libmpv.so.2),
+    # so the straightforward primary path is possible and no Windows-only
+    # skip is needed. Gated to workflow_dispatch like the sanitizer lane:
+    # it re-runs the full build+package recipe, so it must not tax every
+    # push, and the release workflow_call path skips it too.
+    if: github.event_name == 'workflow_dispatch'
+    name: Bundled runtime smoke (packaged private libmpv)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source without retained credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Install Linux compiler, runtime and software display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential cmake ninja-build pkg-config patchelf libmpv-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libgl1-mesa-dri libglu1-mesa-dev \
+            libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 \
+            libxcb-xkb1 libx11-xcb1 libfontconfig1 libdbus-1-3 \
+            xvfb xauth
+      - name: Install public SDK acquisition tooling
+        run: python -m pip install aqtinstall==3.3.0 ninja==1.11.1.4
+      - name: Provision Qt 6.12
+        run: python packaging/ci/provision.py --root "$RUNNER_TEMP/mikai-sdk" --evidence ci-artifacts/evidence
+      - name: Build, hermetic CTest, isolated software renderer smoke, package
+        run: >-
+          python packaging/ci/build.py
+          --build-dir "$RUNNER_TEMP/mikai-build"
+          --output-dir ci-artifacts/packages
+          --evidence ci-artifacts/evidence
+      - name: Extract the packaged archive and locate the bundled private libmpv
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bundled-smoke"
+          archives=(ci-artifacts/packages/*.tar.gz)
+          if [ ! -f "${archives[0]}" ]; then
+            echo "no packaged Linux archive under ci-artifacts/packages" >&2
+            exit 1
+          fi
+          tar -xf "${archives[0]}" -C "$RUNNER_TEMP/bundled-smoke"
+          stage_dir="$RUNNER_TEMP/bundled-smoke/$(basename "${archives[0]}" .tar.gz)"
+          if [ ! -f "$stage_dir/bin/mpv/libmpv.so.2" ]; then
+            echo "the packaged stage does not carry the bundled libmpv at bin/mpv/libmpv.so.2: $stage_dir" >&2
+            exit 1
+          fi
+          echo "STAGE_DIR=$stage_dir" >> "$GITHUB_ENV"
+      - name: Run the surface smoke through the packaged runtime closure
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          QT_OPENGL: software
+          QT_QPA_PLATFORM: xcb
+        run: |
+          set -euo pipefail
+          stage_dir="$STAGE_DIR"
+          build_dir="$RUNNER_TEMP/mikai-build"
+          # The probe resolves its runtime as <executable directory>/mpv
+          # before anything else, so running the build-tree probe binary from
+          # inside the packaged stage makes the exact closure the tarball
+          # ships the module it loads; LD_LIBRARY_PATH points at the bundled
+          # libmpv directory and the packaged Qt so the whole process runs on
+          # shipped libraries. The xvfb/software-GL environment mirrors the
+          # build lane's renderer smoke.
+          cp "$build_dir/mpv_surface_smoke" "$stage_dir/bin/mpv_surface_smoke"
+          cp -r "$GITHUB_WORKSPACE/shaders" "$stage_dir/bin/shaders"
+          cd "$stage_dir/bin"
+          xvfb-run -a -s '-screen 0 1280x800x24 +extension GLX' \
+            env LD_LIBRARY_PATH="$stage_dir/bin/mpv:$stage_dir/lib" \
+            QT_PLUGIN_PATH="$stage_dir/plugins" \
+            ./mpv_surface_smoke av://lavfi:testsrc2=size=640x360:rate=25 \
+            2>&1 | tee "$RUNNER_TEMP/bundled-smoke-run.log"
+      - name: Verify the smoke loaded the packaged private module
+        run: |
+          set -euo pipefail
+          grep -F "module=$STAGE_DIR/bin/mpv/libmpv.so.2" "$RUNNER_TEMP/bundled-smoke-run.log"

@@ -16,6 +16,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QStringList>
 #include <QtCore/QTemporaryFile>
+#include <QtCore/QTemporaryDir>
 #include <QtCore/QTimer>
 #include <QtCore/QtGlobal>
 #include <QtNetwork/QAbstractSocket>
@@ -72,6 +73,7 @@ class LoopbackServer : public QObject {
   QUrl url() const { return url(QStringLiteral("/payload.bin")); }
 
   void setChunkBytes(int bytes) { chunkBytes_ = qMax(1, bytes); }
+  void setStatus(int status) { status_ = status; }
   void setDelayMs(int ms) { delayMs_ = ms; }
 
   int chunksServed() const { return chunks_; }
@@ -113,7 +115,10 @@ class LoopbackServer : public QObject {
 
   void serve(QTcpSocket* socket) {
     ++requests_;
-    const QByteArray header = QByteArrayLiteral("HTTP/1.1 200 OK\r\n") +
+    const QByteArray reason = status_ == 200 ? QByteArrayLiteral("OK")
+        : status_ == 404 ? QByteArrayLiteral("Not Found") : QByteArrayLiteral("Response");
+    const QByteArray header = QByteArrayLiteral("HTTP/1.1 ") + QByteArray::number(status_) + " " +
+                              reason + QByteArrayLiteral("\r\n") +
                               QByteArrayLiteral("Content-Type: application/octet-stream\r\n") +
                               QByteArrayLiteral("Content-Length: ") +
                               QByteArray::number(body_.size()) +
@@ -168,6 +173,7 @@ class LoopbackServer : public QObject {
 
   QTcpServer server_;
   QByteArray body_;
+  int status_ = 200;
   int chunkBytes_ = 1024;
   int delayMs_ = 0;
   int chunks_ = 0;
@@ -261,6 +267,64 @@ void TestDownloads::aDownloadedFileIsTheBytesThatWereSentAndWritten() {
   // only thing "verified" can honestly mean.
   QCOMPARE(sha256Of(onDisk), sha256Of(body));
   QCOMPARE(server.chunksServed(), 1);
+}
+
+void TestDownloads::anHttpErrorDoesNotPublishMatchingResponseBytes() {
+  const QByteArray body = payload();
+  LoopbackServer server(body);
+  server.setStatus(404);
+  QString error;
+  QVERIFY2(server.start(&error), qPrintable(error));
+
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  const QString destination = QDir(directory.path()).filePath(QStringLiteral("not-found.bin"));
+
+  QString reason;
+  const bool ok = downloadToFile(server.url(), destination, body.size(), sha256Of(body), {},
+                                 {}, &reason);
+
+  QVERIFY2(!ok, "a matching response body from HTTP 404 was accepted");
+  QVERIFY2(!reason.isEmpty(), "an HTTP failure must report a reason");
+  QVERIFY2(reason.contains(QStringLiteral("HTTP status 404")),
+           qPrintable(QStringLiteral("the HTTP status lost precedence: %1").arg(reason)));
+  QVERIFY2(!QFileInfo::exists(destination), "an HTTP error left a published file");
+}
+
+void TestDownloads::fetchUrlBytesPrefersHttpStatusToQtReplyError() {
+  const QByteArray body = payload();
+  LoopbackServer server(body);
+  server.setStatus(404);
+  QString error;
+  QVERIFY2(server.start(&error), qPrintable(error));
+
+  QString failure;
+  try {
+    mikai::backend::fetchUrlBytes(server.url(), {}, 5000);
+  } catch (const std::runtime_error& caught) {
+    failure = QString::fromUtf8(caught.what());
+  }
+  QVERIFY2(failure.contains(QStringLiteral("HTTP status 404")), qPrintable(failure));
+}
+
+void TestDownloads::anHttpRedirectWithoutLocationDoesNotPublishMatchingResponseBytes() {
+  const QByteArray body = payload();
+  LoopbackServer server(body);
+  server.setStatus(302);
+  QString error;
+  QVERIFY2(server.start(&error), qPrintable(error));
+
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  const QString destination = QDir(directory.path()).filePath(QStringLiteral("redirect.bin"));
+
+  QString reason;
+  const bool ok = downloadToFile(server.url(), destination, body.size(), sha256Of(body), {},
+                                 {}, &reason);
+
+  QVERIFY2(!ok, "an HTTP redirect response was accepted as an asset");
+  QVERIFY2(!reason.isEmpty(), "an HTTP redirect failure must report a reason");
+  QVERIFY2(!QFileInfo::exists(destination), "an HTTP redirect left a published file");
 }
 
 void TestDownloads::theProgressCallbackEndsOnTheWrittenSize() {
@@ -484,6 +548,61 @@ void TestDownloads::cancellingTheFinalLocalChunkRemovesTheCopy() {
   QVERIFY(reason.contains(QStringLiteral("cancel"), Qt::CaseInsensitive));
   QVERIFY(!QFileInfo::exists(destination));
   QCOMPARE(readFile(source), body);
+}
+
+void TestDownloads::cancellationTakesPrecedenceWhenSevenZipIsAlreadyInstalled() {
+  QTemporaryDir tools;
+  QVERIFY(tools.isValid());
+
+#ifdef Q_OS_WIN
+  const QString tool = QDir(tools.path()).filePath(QStringLiteral("7z.exe"));
+  const QString library = QDir(tools.path()).filePath(QStringLiteral("7z.dll"));
+  QVERIFY(writeFile(tool, QByteArrayLiteral("fixture")));
+  QVERIFY(writeFile(library, QByteArrayLiteral("fixture")));
+#else
+  const QString tool = QDir(tools.path()).filePath(QStringLiteral("7z"));
+  QVERIFY(writeFile(tool, QByteArrayLiteral("fixture")));
+  QVERIFY(QFile::setPermissions(tool, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+#endif
+
+  std::atomic_bool cancelled{true};
+  const mikai::backend::WorkCancellationScope scope(&cancelled);
+  QString failure;
+  try {
+    mikai::backend::ensureSevenZip(tools.path());
+  } catch (const std::runtime_error& error) {
+    failure = QString::fromUtf8(error.what());
+  }
+
+  QVERIFY2(failure.contains(QStringLiteral("cancelled"), Qt::CaseInsensitive),
+           qPrintable(QStringLiteral("cancelled work returned the installed tool: %1").arg(failure)));
+}
+
+void TestDownloads::aQuietFetchReportsItsDeadline() {
+  QTcpServer server;
+  QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+  bool requested = false;
+  connect(&server, &QTcpServer::newConnection, &server, [&] {
+    while (QTcpSocket* socket = server.nextPendingConnection()) {
+      connect(socket, &QTcpSocket::readyRead, &server, [&, socket] {
+        socket->readAll();
+        requested = true;
+      });
+    }
+  });
+
+  QElapsedTimer elapsed;
+  elapsed.start();
+  QString failure;
+  try {
+    mikai::backend::fetchUrlBytes(
+        QUrl(QStringLiteral("http://127.0.0.1:%1/quiet").arg(server.serverPort())), {}, 100);
+  } catch (const std::runtime_error& error) {
+    failure = QString::fromUtf8(error.what());
+  }
+  QVERIFY(requested);
+  QVERIFY2(failure.contains(QStringLiteral("timed out")), qPrintable(failure));
+  QVERIFY2(elapsed.elapsed() < 2000, "the deadline did not stop the quiet request");
 }
 
 void TestDownloads::cancellingAQuietFetchReturnsWithoutWaitingForAnotherSignal() {

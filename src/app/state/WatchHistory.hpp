@@ -23,6 +23,12 @@ public:
     void setCurrent(const QString& ref, const QString& episode);
     void setWatched(const QString& ref, const QString& episode, bool watched);
     void setEpisodesWatched(const QString& ref, const QStringList& episodes, bool watched);
+    /// Clear this store and persist the empty history.
+    void clear();
+
+    /// Wait until queued history writes are committed. Safe to call again if
+    /// the application continues mutating history afterward.
+    static void flushHistoryWrites();
 
 private:
     void load();

@@ -4,6 +4,7 @@
 #include <QString>
 
 #ifdef Q_OS_WIN
+#include "gui/Win32Support.hpp"
 #include <QByteArray>
 #include <QDir>
 #include <QList>
@@ -16,6 +17,13 @@
 
 namespace {
 
+// T-407: the shared registry plumbing lives in gui/Win32Support.hpp; these
+// names bring it into this translation unit unqualified, so every call site
+// below reads exactly as it did when the helpers were private copies.
+using mikai::gui::win32::RegistryKey;
+using mikai::gui::win32::missing;
+using mikai::gui::win32::wide;
+
 constexpr auto ownerName = "MikaiRegistrationOwner";
 constexpr auto ownerId = "{7D1829D9-6F44-47BA-B79B-871D57145C86}";
 
@@ -23,15 +31,6 @@ constexpr auto ownerId = "{7D1829D9-6F44-47BA-B79B-871D57145C86}";
 constexpr const char* videoExtensions[] = {
     ".mkv", ".mp4", ".webm", ".avi", ".mov", ".m4v",
     ".ts", ".m2ts", ".mpeg", ".mpg", ".flv"
-};
-
-const wchar_t* wide(const QString& value) {
-    return reinterpret_cast<const wchar_t*>(value.utf16());
-}
-
-struct RegistryKey {
-    HKEY handle = nullptr;
-    ~RegistryKey() { if (handle != nullptr) RegCloseKey(handle); }
 };
 
 struct OwnedValue {
@@ -49,21 +48,16 @@ struct OwnedValue {
 };
 
 QString failureText(const QString& path, LSTATUS status) {
-    wchar_t* buffer = nullptr;
-    const DWORD length = FormatMessageW(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        nullptr, status, 0, reinterpret_cast<wchar_t*>(&buffer), 0, nullptr);
-    const QString reason = length != 0 ? QString::fromWCharArray(buffer, length).trimmed()
-                                      : QCoreApplication::translate(
-                                            "SystemContextMenu", "Unknown Windows error");
-    if (buffer != nullptr) LocalFree(buffer);
+    // T-407: the FormatMessageW plumbing is shared; this module keeps its own
+    // translated sentence and fallback so no user-facing string moved context.
+    const QString reason = mikai::gui::win32::systemMessage(static_cast<DWORD>(status));
     return QCoreApplication::translate(
         "SystemContextMenu", "Registry operation failed for HKCU\\%1: %2 (Windows error %3).")
-        .arg(path, reason).arg(status);
-}
-
-bool missing(LSTATUS status) {
-    return status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND;
+        .arg(path, reason.isEmpty()
+                       ? QCoreApplication::translate("SystemContextMenu",
+                                                     "Unknown Windows error")
+                       : reason)
+        .arg(status);
 }
 
 QList<OwnedValue> ownedValues() {

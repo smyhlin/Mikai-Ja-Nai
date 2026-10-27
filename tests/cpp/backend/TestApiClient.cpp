@@ -3,6 +3,7 @@
 #include "TestSupport.hpp"
 
 #include <backend/Cancellation.hpp>
+#include <backend/HttpTransport.hpp>
 #include <backend/Errors.hpp>
 #include <backend/MikaiClient.hpp>
 #include <backend/Models.hpp>
@@ -33,8 +34,17 @@
 #include <QtCore/QUrlQuery>
 #include <QtCore/QtGlobal>
 #include <QtNetwork/QHostAddress>
+#include <QtNetwork/QNetworkAccessManager>
+#include <QtNetwork/QNetworkRequest>
 #include <QtNetwork/QTcpServer>
 #include <QtNetwork/QTcpSocket>
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <aclapi.h>
+#endif
 
 using mikai::backend::ApiErrorEnvelope;
 using mikai::backend::ApiKeySaveResult;
@@ -398,6 +408,51 @@ QByteArray readFile(const QString& path) {
   if (!file.open(QIODevice::ReadOnly)) return {};
   return file.readAll();
 }
+#ifdef Q_OS_WIN
+bool hasCurrentUserOnlyDacl(const QString& path) {
+  HANDLE file = CreateFileW(reinterpret_cast<LPCWSTR>(path.utf16()), READ_CONTROL,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) return false;
+
+  PACL dacl = nullptr;
+  PSECURITY_DESCRIPTOR descriptor = nullptr;
+  bool privateDacl = false;
+  const DWORD securityStatus =
+      GetSecurityInfo(file, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr, &dacl,
+                      nullptr, &descriptor);
+  if (securityStatus == ERROR_SUCCESS && dacl != nullptr && dacl->AceCount == 1) {
+    SECURITY_DESCRIPTOR_CONTROL control = 0;
+    DWORD revision = 0;
+    HANDLE token = nullptr;
+    if (GetSecurityDescriptorControl(descriptor, &control, &revision) &&
+        (control & SE_DACL_PROTECTED) != 0 &&
+        OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+      DWORD tokenBytes = 0;
+      GetTokenInformation(token, TokenUser, nullptr, 0, &tokenBytes);
+      if (GetLastError() == ERROR_INSUFFICIENT_BUFFER && tokenBytes != 0) {
+        QByteArray tokenInfo(static_cast<qsizetype>(tokenBytes), Qt::Uninitialized);
+        if (GetTokenInformation(token, TokenUser, tokenInfo.data(), tokenBytes, &tokenBytes)) {
+          void* rawAce = nullptr;
+          if (GetAce(dacl, 0, &rawAce)) {
+            auto* ace = static_cast<ACCESS_ALLOWED_ACE*>(rawAce);
+            const DWORD required = FILE_ALL_ACCESS;
+            privateDacl = ace->Header.AceType == ACCESS_ALLOWED_ACE_TYPE &&
+                          (ace->Mask == GENERIC_ALL ||
+                           (ace->Mask & required) == required) &&
+                          EqualSid(&ace->SidStart,
+                                   reinterpret_cast<TOKEN_USER*>(tokenInfo.data())->User.Sid);
+          }
+        }
+      }
+      CloseHandle(token);
+    }
+  }
+  if (descriptor != nullptr) LocalFree(descriptor);
+  CloseHandle(file);
+  return privateDacl;
+}
+#endif
 
 constexpr auto kOldKey = "mk_old_key_synthetic";
 constexpr auto kNewKey = "mk_new_key_synthetic";
@@ -469,8 +524,9 @@ class CallOutcome {
 }  // namespace
 
 void TestApiClient::initTestCase() {
-  // The client walks up from the executable directory to find a .env, which
-  // would find the repository's: point it at a scratch file for the suite.
+  // The client searches the working directory and the executable's
+  // neighbourhood for a .env (T-304), which would find the repository's: point
+  // it at a scratch file for the suite.
   QVERIFY2(envDirectory_.isValid(), "cannot create the isolated .env directory");
   setEnvFilePathOverride(QDir(envDirectory_.path()).filePath(QStringLiteral(".env")));
 }
@@ -1201,6 +1257,139 @@ void TestApiClient::aCrossOriginRedirectDoesNotForwardTheApiCredential() {
   QCOMPARE(source.headerOf(0, QStringLiteral("X-API-Key")), QString::fromLatin1(kOldKey));
   QCOMPARE(destination.requestCount(), 0);
 }
+void TestApiClient::aCrossOriginValidationRedirectDoesNotForwardTheCandidateCredential() {
+  LoopbackApi source;
+  LoopbackApi destination;
+  QString error;
+  QVERIFY2(source.start(&error), qPrintable(error));
+  QVERIFY2(destination.start(&error), qPrintable(error));
+  source.setRoute([&destination](const CapturedRequest&) {
+    return WireReply{302, {}, {{QStringLiteral("Location"),
+                                destination.baseUrl() + QStringLiteral("/me")}}};
+  });
+
+  MikaiClient client(QString::fromLatin1(kOldKey), source.baseUrl());
+  const QMap<QString, QVariant> verdict = client.validateApiKey(QString::fromLatin1(kNewKey));
+  QVERIFY(!verdict.value(QStringLiteral("valid")).toBool());
+  QCOMPARE(source.requestCount(), 1);
+  QCOMPARE(source.headerOf(0, QStringLiteral("X-API-Key")), QString::fromLatin1(kNewKey));
+  QCOMPARE(destination.requestCount(), 0);
+}
+
+void TestApiClient::aCredentialedTransportRequestBlocksCrossOriginRedirects() {
+  LoopbackApi source;
+  LoopbackApi destination;
+  QString error;
+  QVERIFY2(source.start(&error), qPrintable(error));
+  QVERIFY2(destination.start(&error), qPrintable(error));
+  source.setRoute([&destination](const CapturedRequest&) {
+    return WireReply{302, {}, {{QStringLiteral("Location"),
+                                destination.baseUrl() + QStringLiteral("/data")}}};
+  });
+
+  QNetworkRequest request{QUrl(source.baseUrl() + QStringLiteral("/data"))};
+  request.setRawHeader("Authorization", "Bearer transport-marker");
+  const auto result = mikai::backend::runBlockingFetch(
+      mikai::backend::transportManagerForThread(), request,
+      mikai::backend::HttpFetchOptions{5000, false, {}});
+
+  QCOMPARE(source.requestCount(), 1);
+  QCOMPARE(source.headerOf(0, QStringLiteral("Authorization")),
+           QStringLiteral("Bearer transport-marker"));
+  QCOMPARE(destination.requestCount(), 0);
+  QVERIFY(result.status == 302 || !result.networkError.isEmpty());
+}
+
+void TestApiClient::aCustomRequestHeaderIsNotForwardedAcrossOriginRedirects() {
+  LoopbackApi source;
+  LoopbackApi destination;
+  QString error;
+  QVERIFY2(source.start(&error), qPrintable(error));
+  QVERIFY2(destination.start(&error), qPrintable(error));
+  source.setRoute([&destination](const CapturedRequest&) {
+    return WireReply{302, {}, {{QStringLiteral("Location"),
+                                destination.baseUrl() + QStringLiteral("/data")}}};
+  });
+
+  QNetworkRequest request{QUrl(source.baseUrl() + QStringLiteral("/data"))};
+  request.setRawHeader("X-Session-Token", "opaque-custom-secret");
+  const auto result = mikai::backend::runBlockingFetch(
+      mikai::backend::transportManagerForThread(), request,
+      mikai::backend::HttpFetchOptions{5000, false, {}});
+
+  QCOMPARE(source.requestCount(), 1);
+  QCOMPARE(source.headerOf(0, QStringLiteral("X-Session-Token")),
+           QStringLiteral("opaque-custom-secret"));
+  QCOMPARE(destination.requestCount(), 0);
+  QVERIFY(result.status == 302 || !result.networkError.isEmpty());
+}
+
+void TestApiClient::aSameOriginRedirectKeepsTheApiCredential() {
+  LoopbackApi source;
+  QString error;
+  QVERIFY2(source.start(&error), qPrintable(error));
+  int requests = 0;
+  source.setRoute([&source, &requests](const CapturedRequest&) {
+    if (requests++ == 0) {
+      return WireReply{302, {}, {{QStringLiteral("Location"),
+                                  source.baseUrl() + QStringLiteral("/redirected")}}};
+    }
+    return WireReply{200, okListPayload(), {}};
+  });
+
+  MikaiClient client(QString::fromLatin1(kOldKey), source.baseUrl());
+  AnimeQuery query;
+  query.search = QStringLiteral("redirect");
+  const SearchResult result = client.search(query);
+
+  QCOMPARE(result.items.size(), 1);
+  QCOMPARE(source.requestCount(), 2);
+  QCOMPARE(source.headerOf(0, QStringLiteral("X-API-Key")), QString::fromLatin1(kOldKey));
+  QCOMPARE(source.headerOf(1, QStringLiteral("X-API-Key")), QString::fromLatin1(kOldKey));
+}
+
+void TestApiClient::aThreadLocalTransportManagerIsDeletedWhenItsThreadFinishes() {
+  std::atomic_bool destroyed{false};
+  QThread* worker = QThread::create([&destroyed] {
+    QNetworkAccessManager* manager = mikai::backend::transportManagerForThread();
+    QObject::connect(manager, &QObject::destroyed,
+                     [&destroyed] { destroyed.store(true); });
+  });
+  worker->start();
+  QVERIFY2(worker->wait(5000), "the worker thread did not finish");
+  delete worker;
+  QVERIFY2(destroyed.load(), "the worker-owned network manager outlived its thread");
+}
+
+void TestApiClient::explicitApiKeyConfigurationKeepsItsEnvironmentPrecedence() {
+  setEnvFilePathOverride(QDir(envDirectory_.path()).filePath(QStringLiteral(".env")));
+  const bool hadValue = qEnvironmentVariableIsSet("MIKAI_API_KEY");
+  const QByteArray previous = qgetenv("MIKAI_API_KEY");
+  struct RestoreEnvironment {
+    bool present;
+    QByteArray value;
+    ~RestoreEnvironment() {
+      if (present) {
+        qputenv("MIKAI_API_KEY", value);
+      } else {
+        qunsetenv("MIKAI_API_KEY");
+      }
+    }
+  } restore{hadValue, previous};
+
+  const QString baseUrl = QStringLiteral("http://127.0.0.1:1/public/v1");
+  QVERIFY(qputenv("MIKAI_API_KEY", QByteArrayLiteral("mk_environment_key_synthetic")));
+  MikaiClient fromEnvironment({}, baseUrl);
+  MikaiClient explicitKey(QString::fromLatin1(kOldKey), baseUrl);
+  QCOMPARE(fromEnvironment.apiKey(), QStringLiteral("mk_environment_key_synthetic"));
+  QCOMPARE(explicitKey.apiKey(), QString::fromLatin1(kOldKey));
+
+  QVERIFY(qunsetenv("MIKAI_API_KEY"));
+  QVERIFY(writeFile(QDir(envDirectory_.path()).filePath(QStringLiteral(".env")),
+                    QByteArrayLiteral("X-API-Key: mk_file_key_synthetic\n")));
+  MikaiClient fromFile({}, baseUrl);
+  QCOMPARE(fromFile.apiKey(), QStringLiteral("mk_file_key_synthetic"));
+}
 
 void TestApiClient::aKeyChangedWhileARequestWasParkedDoesNotSendTheOldKey() {
   LoopbackApi api;
@@ -1293,6 +1482,15 @@ void TestApiClient::aSavedKeyIsReportedAsSaved() {
   QVERIFY2(contents.contains(QByteArrayLiteral("mk_new_key_synthetic")),
            qPrintable(QStringLiteral("the saved .env does not carry the key: %1")
                           .arg(QString::fromUtf8(contents))));
+#ifdef Q_OS_WIN
+  QVERIFY2(hasCurrentUserOnlyDacl(path), "the saved .env ACL exposes the API key to other users");
+#else
+  const QFile::Permissions permissions = QFile::permissions(path);
+  QVERIFY(permissions.testFlag(QFile::ReadOwner));
+  QVERIFY(permissions.testFlag(QFile::WriteOwner));
+  QVERIFY(!(permissions & (QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup |
+                           QFile::ReadOther | QFile::WriteOther | QFile::ExeOther)));
+#endif
   setEnvFilePathOverride(QString());
 }
 

@@ -21,6 +21,15 @@ namespace mplayer {
 
 class MpvHandle;
 
+// Sized internal formats for mpv_opengl_fbo.internal_format. The GL 1.1 headers
+// this file includes (notably Windows GL/gl.h) do not define the sized forms,
+// and 0 only asks mpv to assume a default 8-bit target: an explicit value lets
+// mpv dither and quantize for the FBO the surface really renders into (T-105).
+constexpr int kGlInternalFormatRgba8 = 0x8058;
+constexpr int kGlInternalFormatRgb10A2 = 0x8059;
+constexpr int kGlInternalFormatRgba16 = 0x805B;
+constexpr int kGlInternalFormatRgba16F = 0x881A;
+
 // mpv calls back through get_proc_address, so it needs more than the surface.
 struct GlApi {
     // Must be the full resolver (wglGetProcAddress plus GetProcAddress on
@@ -79,9 +88,9 @@ public:
     mpv_render_context* get() const noexcept { return ctx_; }
     explicit operator bool() const noexcept { return ctx_ != nullptr; }
 
-    // Caller must have the FBO bound and mpv's update() called since the last
-    // swap. Returns mpv's render error code (0 on success).
-    int render(int fbo, int width, int height, int internalFormat);
+    // Caller binds the FBO and calls update() since the last swap. A zero
+    // depthBitsPerChannel uses mpv's documented 8-bit default for unknown targets.
+    int render(int fbo, int width, int height, int internalFormat, int depthBitsPerChannel);
 
     // Tells mpv a frame was presented, so it can schedule the next. Required for
     // every frame mpv handed out under advanced control, including one that was
@@ -98,6 +107,7 @@ public:
     uint64_t update();
 
     bool nextFrameInfo(mpv_render_frame_info& info) const;
+    int64_t timeUs() const;
 
     // Set once, right after construction, before the first render.
     void setFlipY(bool flip);
@@ -110,6 +120,7 @@ private:
     static void sUpdate(void* ctx);
 
     mpv_render_context* ctx_ = nullptr;
+    mpv_handle* mpv_ = nullptr;
     // Held by value: mpv calls get_proc_address for the whole life of the
     // context, so this cannot be a caller's local.
     GlApi gl_;

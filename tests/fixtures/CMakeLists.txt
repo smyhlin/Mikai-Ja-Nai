@@ -45,13 +45,26 @@ target_compile_definitions(mikai_http_fixture PRIVATE
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/media/motion_320x180_24fps_8bit_hevc.mp4")
   message(STATUS
     "mikai_http_fixture: fixture media not generated yet -- run "
-    "tests/fixtures/generate_media.cmd (set FFMPEG=<path to ffmpeg.exe>) before "
-    "serving. The target still builds; the server reports a missing directory "
-    "at startup.")
+    "tests/fixtures/generate_media.cmd (set FFMPEG=<path to ffmpeg.exe>) or, "
+    "on Linux, tests/fixtures/generate_media.sh (FFMPEG=<path/to/ffmpeg>) "
+    "before serving. The target still builds; the server reports a missing "
+    "directory at startup.")
 endif()
 
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/hls/v180/playlist.m3u8")
   message(STATUS
     "mikai_http_fixture: HLS renditions not generated yet -- run "
-    "tests/fixtures/generate_media.cmd before serving.")
+    "tests/fixtures/generate_media.cmd (or generate_media.sh on Linux) "
+    "before serving.")
 endif()
+foreach(_mikai_acceptance_clip IN ITEMS
+    "hdr_dark_gradient_1280x720_24fps_10bit_pq_hevc.mp4"
+    "hdr_dark_noise_1280x720_24fps_10bit_pq_hevc.mp4"
+    "motion_frame_id_1280x720_24fps_10bit_hevc.mp4")
+  if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/media/${_mikai_acceptance_clip}")
+    message(STATUS
+      "Acceptance media missing: ${_mikai_acceptance_clip}; run "
+      "tests/fixtures/generate_media.sh (FFmpeg with libx265 required; use Bash "
+      "on Windows).")
+  endif()
+endforeach()

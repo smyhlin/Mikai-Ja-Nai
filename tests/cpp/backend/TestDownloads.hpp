@@ -27,6 +27,9 @@ class TestDownloads : public QObject {
   // The verdict has to describe the disk, not the socket: same length, same
   // digest, and the progress callback's final number matching the file.
   void aDownloadedFileIsTheBytesThatWereSentAndWritten();
+  void anHttpErrorDoesNotPublishMatchingResponseBytes();
+  void fetchUrlBytesPrefersHttpStatusToQtReplyError();
+  void anHttpRedirectWithoutLocationDoesNotPublishMatchingResponseBytes();
   void theProgressCallbackEndsOnTheWrittenSize();
 
   // A rating that did not match what reached the disk is a failure, and the
@@ -45,6 +48,8 @@ class TestDownloads : public QObject {
   void aCancelledDownloadReportsThatItWasCancelled();
   void cancellingTheFinalLocalChunkRemovesTheCopy();
   void cancellingAQuietFetchReturnsWithoutWaitingForAnotherSignal();
+  void aQuietFetchReportsItsDeadline();
+  void cancellationTakesPrecedenceWhenSevenZipIsAlreadyInstalled();
 };
 
 /// Standalone entry point for the mikai_tests runner; the class above carries

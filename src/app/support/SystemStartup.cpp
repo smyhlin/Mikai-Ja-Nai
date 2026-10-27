@@ -4,6 +4,7 @@
 #include <QDir>
 
 #ifdef Q_OS_WIN
+#include "gui/Win32Support.hpp"
 #include <QtCore/qt_windows.h>
 #endif
 
@@ -11,26 +12,24 @@ namespace mikai::app {
 namespace {
 
 #ifdef Q_OS_WIN
+// T-407: the shared registry plumbing lives in gui/Win32Support.hpp; these
+// names bring it into this translation unit unqualified, so every call site
+// below reads exactly as it did when the helpers were private copies.
+using mikai::gui::win32::RegistryKey;
+using mikai::gui::win32::missing;
+
 constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 constexpr wchar_t kRunValue[] = L"Mikai";
 
-struct RegistryKey {
-    HKEY handle = nullptr;
-    ~RegistryKey() {
-        if (handle != nullptr) RegCloseKey(handle);
-    }
-};
-
 QString windowsError(LSTATUS code) {
-    wchar_t* buffer = nullptr;
-    const DWORD length = FormatMessageW(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        nullptr, static_cast<DWORD>(code), 0, reinterpret_cast<wchar_t*>(&buffer), 0, nullptr);
-    const QString detail = length != 0
-                               ? QString::fromWCharArray(buffer, static_cast<int>(length)).trimmed()
-                               : QCoreApplication::translate("SystemStartup", "Unknown Windows error");
-    if (buffer != nullptr) LocalFree(buffer);
-    return QCoreApplication::translate("SystemStartup", "%1 (Windows error %2)").arg(detail).arg(code);
+    // T-407: the FormatMessageW plumbing is shared; this module keeps its own
+    // translated sentence and fallback so no user-facing string moved context.
+    const QString detail = mikai::gui::win32::systemMessage(static_cast<DWORD>(code));
+    return QCoreApplication::translate("SystemStartup", "%1 (Windows error %2)")
+        .arg(detail.isEmpty()
+                 ? QCoreApplication::translate("SystemStartup", "Unknown Windows error")
+                 : detail)
+        .arg(code);
 }
 
 bool fail(QString* error, const QString& operation, LSTATUS code) {
@@ -117,7 +116,7 @@ bool setSystemStartupEnabled(bool enabled, QString* error) {
     RegistryKey key;
     LSTATUS result = RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0,
                                    KEY_QUERY_VALUE | KEY_SET_VALUE, &key.handle);
-    if (result == ERROR_FILE_NOT_FOUND || result == ERROR_PATH_NOT_FOUND) {
+    if (missing(result)) {
         if (!enabled) return true;
         result = RegCreateKeyExW(HKEY_CURRENT_USER, kRunKey, 0, nullptr, 0,
                                  KEY_QUERY_VALUE | KEY_SET_VALUE, nullptr, &key.handle, nullptr);

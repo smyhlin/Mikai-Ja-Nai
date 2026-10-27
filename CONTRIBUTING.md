@@ -8,6 +8,7 @@ Mikai is a C++20 / Qt Widgets desktop client. Before making a change, read the r
 - Explain the user-visible effect and any important design trade-offs in the pull request. Link related issues when applicable; do not include private user data or secrets.
 - For bug reports, include reproducible steps, expected and actual behavior, platform, and relevant sanitized logs. See the issue templates.
 - Add or update focused automated coverage for behavior changes where appropriate. Do not claim checks you did not run; list the exact checks and results in the pull request.
+- Documentation claims: a README or doc sentence of the form "X is the only copy", "N finished, 0 unfinished", or any other countable invariant about the tree must name the command that verifies it — the ctest entry, script or probe that fails when the sentence stops being true (for example, `mikai_provenance_check` is the ctest entry that fails when the mpv archive pin in `cmake/FindOrFetchMpv.cmake` stops matching the record in `packaging/provenance/windows-runtime.json`; a doc section that restates that pin should name it). A claim no command can check is drift waiting to happen; either name the verifying command in the same sentence or section, or delete the claim.
 - Follow the license and third-party notices in the repository. Do not add dependencies, media, icons, fonts, or other assets unless their provenance and redistribution terms are clear.
 
 ## Build and checks

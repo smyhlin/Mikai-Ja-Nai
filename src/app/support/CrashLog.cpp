@@ -3,6 +3,7 @@
 #include "backend/Diagnostics.hpp"
 
 #include <QCoreApplication>
+#include <QByteArray>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -11,6 +12,7 @@
 #include <QStringList>
 
 #include <cstdio>
+#include <cerrno>
 #include <cstring>
 
 #ifdef _WIN32
@@ -574,14 +576,104 @@ const char* posixSignalName(int sig) {
     }
 }
 
+/// T-301: writes the same `yyyy-MM-ddTHH-mm-ss` header shape the Windows
+/// filter builds (writeLocalTime), from a broken-down UTC time instead of a
+/// SYSTEMTIME.
+void writeUtcTime(ReportWriter* out, const struct tm& utc) {
+    char scratch[16];
+    const int fields[6] = {utc.tm_year + 1900, utc.tm_mon + 1, utc.tm_mday,
+                           utc.tm_hour, utc.tm_min, utc.tm_sec};
+    for (int index = 0; index < 6; ++index) {
+        if (index > 0 && index != 3) {
+            writeLiteral(out, "-");
+        }
+        if (index == 3) {
+            writeLiteral(out, "T");
+        }
+        unsigned int value = fields[index] > 0 ? static_cast<unsigned int>(fields[index]) : 0u;
+        unsigned int count = 0;
+        do {
+            scratch[count++] = static_cast<char>('0' + (value % 10));
+            value /= 10;
+        } while (value != 0 && count < sizeof(scratch));
+        for (unsigned int position = 0; position < count / 2; ++position) {
+            const char swap = scratch[position];
+            scratch[position] = scratch[count - 1 - position];
+            scratch[count - 1 - position] = swap;
+        }
+        writeBytes(out, scratch, count);
+    }
+}
+
+/// T-301: formats `yyyyMMdd-HHmmss` for the report filename so every fault
+/// writes its own file instead of overwriting the previous report.
+size_t formatStampNarrow(char* target, size_t capacity, const struct tm& utc) {
+    const unsigned int fields[6] = {static_cast<unsigned int>(utc.tm_year + 1900),
+                                    static_cast<unsigned int>(utc.tm_mon + 1),
+                                    static_cast<unsigned int>(utc.tm_mday),
+                                    static_cast<unsigned int>(utc.tm_hour),
+                                    static_cast<unsigned int>(utc.tm_min),
+                                    static_cast<unsigned int>(utc.tm_sec)};
+    size_t used = 0;
+    for (unsigned int index = 0; index < 6; ++index) {
+        char digits[8] = {};
+        size_t digitCount = 0;
+        unsigned int value = fields[index];
+        do {
+            digits[digitCount++] = static_cast<char>('0' + (value % 10));
+            value /= 10;
+        } while (value != 0);
+        if (digitCount < 2) {
+            digits[digitCount++] = '0';
+        }
+        for (size_t position = 0; position < digitCount / 2; ++position) {
+            const char swap = digits[position];
+            digits[position] = digits[digitCount - 1 - position];
+            digits[digitCount - 1 - position] = swap;
+        }
+        for (size_t position = 0; position < digitCount && used + 1 < capacity; ++position) {
+            target[used++] = digits[position];
+        }
+        if (index == 2 && used + 1 < capacity) {
+            target[used++] = '-';
+        }
+    }
+    target[used < capacity ? used : capacity - 1] = '\0';
+    return used;
+}
+
+void writeAll(int fd, const char* data, size_t length) {
+    size_t offset = 0;
+    while (offset < length) {
+        const ssize_t written = ::write(fd, data + offset, length - offset);
+        if (written > 0) {
+            offset += static_cast<size_t>(written);
+        } else if (written < 0 && errno == EINTR) {
+            continue;
+        } else {
+            break;
+        }
+    }
+}
+
 void posixCrashHandler(int sig, siginfo_t* info, void*) {
     if (g_reportBlock != nullptr && g_fault.ready && g_fault.crashPrefixNarrowLength > 0) {
         ReportWriter writer{g_reportBlock, kReportCapacityBytes, 0, false};
         ReportWriter* out = &writer;
 
+        // T-301: a real UTC stamp instead of the previous hardcoded fake time;
+        // clock_gettime is async-signal-safe and the broken-down conversion is
+        // the same allocation-free compromise the rest of this handler makes.
+        struct timespec nowSpec{};
+        ::clock_gettime(CLOCK_REALTIME, &nowSpec);
+        struct tm utc{};
+        ::gmtime_r(&nowSpec.tv_sec, &utc);
+
         writeLiteral(out, "mikai crash report\n");
         writeLiteral(out, "==================\n");
-        writeLiteral(out, "time      : 2026-10-14T00:00:00\n");
+        writeLiteral(out, "time      : ");
+        writeUtcTime(out, utc);
+        writeLiteral(out, "\n");
         writeLiteral(out, "app       : ");
         if (g_fault.appIdentityLength > 0) {
             writeBytes(out, g_fault.appIdentity, g_fault.appIdentityLength);
@@ -628,18 +720,33 @@ void posixCrashHandler(int sig, siginfo_t* info, void*) {
             writeLiteral(out, "\nlast log lines:\n----------------\n(no log tail available)\n----------------\nend of report\n");
         }
 
+        if (out->overflow) {
+            const char* marker = "[truncated]";
+            const size_t markerLength = std::strlen(marker);
+            const size_t room = kReportCapacityBytes - 1 > markerLength
+                                    ? kReportCapacityBytes - 1 - markerLength
+                                    : 0;
+            std::memcpy(g_reportBlock + room, marker, markerLength);
+            out->length = kReportCapacityBytes - 1;
+        }
+
         char reportPath[kPathWideChars] = {};
         size_t used = g_fault.crashPrefixNarrowLength;
         if (used + 24 < sizeof(reportPath)) {
             std::memcpy(reportPath, g_fault.crashPrefixNarrow, used);
-            const char* suffix = "20261014-000000.txt";
+            // T-301: the filename derives from the same stamp as the header
+            // time, so concurrent or successive crashes never overwrite each
+            // other's evidence.
+            char stamp[24] = {};
+            const size_t stampLength = formatStampNarrow(stamp, sizeof(stamp), utc);
+            std::memcpy(reportPath + used, stamp, stampLength);
+            const char* suffix = ".txt";
             const size_t sLen = std::strlen(suffix);
-            std::memcpy(reportPath + used, suffix, sLen);
-            reportPath[used + sLen] = '\0';
+            std::memcpy(reportPath + used + stampLength, suffix, sLen);
+            reportPath[used + stampLength + sLen] = '\0';
             const int fd = ::open(reportPath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (fd >= 0) {
-                const ssize_t w = ::write(fd, g_reportBlock, out->length);
-                (void)w;
+                writeAll(fd, g_reportBlock, out->length);
                 ::fsync(fd);
                 ::close(fd);
             }
@@ -676,7 +783,7 @@ void reportPreviousCrashes(const QString& dir) {
     }
 }
 
-void messageHandler(QtMsgType type, const QMessageLogContext& context, const QString& message) {
+void messageHandler(QtMsgType type, const QMessageLogContext& context, const QString& message) noexcept {
     const char* level = "INFO";
     switch (type) {
         case QtDebugMsg:
@@ -695,12 +802,23 @@ void messageHandler(QtMsgType type, const QMessageLogContext& context, const QSt
             level = "FATAL";
             break;
     }
-    QString line = QStringLiteral("[%1] %2").arg(QLatin1String(level), message);
-    if (context.file != nullptr) {
-        line += QStringLiteral("  (%1:%2)").arg(QLatin1String(context.file)).arg(context.line);
+    try {
+        QString line = QStringLiteral("[%1] %2").arg(QLatin1String(level), message);
+        if (context.file != nullptr) {
+            line += QStringLiteral("  (%1:%2)").arg(QLatin1String(context.file)).arg(context.line);
+        }
+        const QString safe = appendToLog(line);
+        std::fprintf(stderr, "%s\n", qPrintable(safe));
+    } catch (...) {
+        std::fprintf(stderr, "[%s] logging failed; original message: ", level);
+        try {
+            const QByteArray fallback = message.toUtf8();
+            (void)std::fwrite(fallback.constData(), 1, static_cast<size_t>(fallback.size()), stderr);
+            std::fputc('\n', stderr);
+        } catch (...) {
+            std::fputs("<message unavailable>\n", stderr);
+        }
     }
-    const QString safe = appendToLog(line);
-    std::fprintf(stderr, "%s\n", qPrintable(safe));
     if (type == QtFatalMsg) {
         std::fflush(stderr);
     }

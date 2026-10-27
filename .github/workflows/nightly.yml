@@ -1,0 +1,190 @@
+name: Nightly soak canary
+
+# Runs a 30-minute continuous frame-ID/audio source canary with software GL
+# and a PulseAudio null sink. The separate 60-minute fork/stock acceptance
+# uses hardware video/audio outputs.
+#
+# This is a CANARY lane: nothing in release.yml (or anywhere else) depends on
+# this workflow succeeding, so it can never block a release or a push. A red
+# nightly means the frame-order regression class should be investigated, not
+# that anything is blocked.
+
+on:
+  schedule:
+    # 03:00 UTC daily; the soak itself is schedule-constrained to 30 minutes.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-soak-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  soak:
+    name: Continuous-source pacing canary (30 min, software GL and null audio sink)
+    runs-on: ubuntu-24.04
+    # build.py's own build+ctest+package recipe is bounded at 60 minutes inside
+    # the release lane, and the soak step below is capped at 45 minutes by
+    # `timeout`; the job ceiling must cover both plus the probe build.
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source without retained credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Install Linux compiler, runtime and software display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential cmake ninja-build pkg-config patchelf libmpv-dev ffmpeg \
+            libgl1-mesa-dev libegl1-mesa-dev libgl1-mesa-dri libglu1-mesa-dev \
+            libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 \
+            libxcb-xkb1 libx11-xcb1 libfontconfig1 libdbus-1-3 \
+            pulseaudio pulseaudio-utils xvfb xauth
+      - name: Install public SDK acquisition tooling
+        run: python -m pip install aqtinstall==3.3.0 ninja==1.11.1.4
+      - name: Provision Qt 6.12
+        run: python packaging/ci/provision.py --root "$RUNNER_TEMP/mikai-sdk" --evidence nightly-soak-evidence
+      - name: Build, hermetic CTest, isolated software renderer smoke, package
+        # The identical command the ci build lane runs, so the soak exercises
+        # the same Linux build, the same ctest surface and the same bundled
+        # private libmpv that lane produces (build.py configures
+        # MIKAI_LINUX_BUNDLE_MPV=ON on Linux).
+        run: >-
+          python packaging/ci/build.py
+          --build-dir "$RUNNER_TEMP/mikai-build"
+          --output-dir "$RUNNER_TEMP/nightly-packages"
+          --evidence nightly-soak-evidence
+      - name: Build acceptance probe targets
+        run: |
+          cmake --build "$RUNNER_TEMP/mikai-build" --target frame_order_soak_probe hdr_playback_probe --parallel 2
+      - name: Generate required frame-identity and HDR fixtures
+        run: |
+          set -euo pipefail
+          FRAME_ID_SIZE=640x360 FRAME_ID_DURATION_SECONDS=1860 \
+            bash tests/fixtures/generate_media.sh
+          media="$GITHUB_WORKSPACE/tests/fixtures/media"
+          for candidate in \
+            continuous_frame_id_audio_640x360_24fps_10bit_hevc.mp4 \
+            motion_320x180_24fps_8bit_hevc.mp4 \
+            hdr_dark_gradient_1280x720_24fps_10bit_pq_hevc.mp4 \
+            hdr_dark_noise_1280x720_24fps_10bit_pq_hevc.mp4; do
+            test -s "$media/$candidate" || {
+              echo "Required generated acceptance fixture is missing: $media/$candidate" >&2
+              exit 1
+            }
+          done
+          {
+            echo "SOAK_MEDIA=$media/continuous_frame_id_audio_640x360_24fps_10bit_hevc.mp4"
+            echo "SOAK_SDR=$media/motion_320x180_24fps_8bit_hevc.mp4"
+            echo "SOAK_HDR_GRADIENT=$media/hdr_dark_gradient_1280x720_24fps_10bit_pq_hevc.mp4"
+            echo "SOAK_HDR_NOISE=$media/hdr_dark_noise_1280x720_24fps_10bit_pq_hevc.mp4"
+          } >> "$GITHUB_ENV"
+      - name: Stage runtime, run HDR probes and continuous-source soak
+        run: |
+          set -euo pipefail
+          pulseaudio --start --exit-idle-time=-1 --log-target=file:"$RUNNER_TEMP/pulseaudio.log"
+          pactl load-module module-null-sink sink_name=mikai_ci_sink
+          pactl set-default-sink mikai_ci_sink
+          echo "PULSE_SINK=mikai_ci_sink" >> "$GITHUB_ENV"
+          soak_dir="$RUNNER_TEMP/soak-run"
+          mkdir -p "$soak_dir/mpv"
+          cp "$RUNNER_TEMP/mikai-build/frame_order_soak_probe" "$soak_dir/"
+          cp "$RUNNER_TEMP/mikai-build/hdr_playback_probe" "$soak_dir/"
+          cp -r "$GITHUB_WORKSPACE/shaders" "$soak_dir/shaders"
+          receipt="$RUNNER_TEMP/mikai-build/mikai-runtime-Release.json"
+          module="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["module"])' "$receipt")"
+          root="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["dependencyRoot"])' "$receipt")"
+          if [ ! -f "$module" ]; then
+            echo "the runtime receipt names a module that does not exist: $module" >&2
+            exit 1
+          fi
+          cp -L "$root"/*.so* "$soak_dir/mpv/"
+          cd "$soak_dir"
+          run_hdr_probe() {
+            local label="$1"
+            local hdr="$2"
+            local -a probe_options=()
+            if [[ "${3:-}" == "--fbo10" ]]; then
+              probe_options+=(--fbo10)
+            fi
+            timeout --kill-after=20s 120s \
+              xvfb-run -a -s '-screen 0 1280x800x24 +extension GLX' \
+              env LIBGL_ALWAYS_SOFTWARE=1 QT_OPENGL=software QT_QPA_PLATFORM=xcb \
+                PULSE_SINK=mikai_ci_sink \
+              ./hdr_playback_probe --hdr "$hdr" --sdr "$SOAK_SDR" \
+                --artifacts "$soak_dir/hdr-artifacts/$label" \
+                "${probe_options[@]}" \
+                2>&1 | tee "$soak_dir/hdr-$label.log"
+          }
+          run_hdr_probe gradient "$SOAK_HDR_GRADIENT" --fbo10
+          run_hdr_probe noise "$SOAK_HDR_NOISE"
+          timeout --kill-after=60s 2700 \
+            xvfb-run -a -s '-screen 0 1280x800x24 +extension GLX' \
+            env LIBGL_ALWAYS_SOFTWARE=1 QT_OPENGL=software QT_QPA_PLATFORM=xcb \
+              PULSE_SINK=mikai_ci_sink \
+            ./frame_order_soak_probe --media "$SOAK_MEDIA" --minutes 30 \
+              --no-loop --require-audio \
+              --frame-timing-log "$soak_dir/soak-timing.log" 2>&1 | tee "$soak_dir/soak-run.log"
+      - name: Preserve soak evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mikai-nightly-soak-evidence
+          path: |
+            ${{ runner.temp }}/soak-run/soak-run.log
+            ${{ runner.temp }}/soak-run/soak-timing.log
+            ${{ runner.temp }}/soak-run/soak-timing.log.probe
+            ${{ runner.temp }}/soak-run/hdr-gradient.log
+            ${{ runner.temp }}/soak-run/hdr-noise.log
+            ${{ runner.temp }}/soak-run/hdr-artifacts/
+            ${{ runner.temp }}/pulseaudio.log
+            nightly-soak-evidence/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Record the canary summary
+        if: always()
+        run: |
+          {
+            echo '# Nightly continuous-source pacing canary'
+            echo ''
+            echo 'This 30-minute canary uses one 1860-second AAC frame-ID source and two'
+            echo 'short HDR policy probes under software GL and a PulseAudio null sink.'
+            echo 'It does not claim physical HDR output or replace 60-minute fork/stock acceptance.'
+            echo 'Nothing in the release workflow depends on this canary.'
+            echo ''
+            echo "- media: \`${SOAK_MEDIA:-unselected}\`"
+            echo '- run: `frame_order_soak_probe --minutes 30 --no-loop --require-audio --frame-timing-log soak-timing.log`'
+            if [ -f "$RUNNER_TEMP/soak-run/soak-timing.log" ]; then
+              echo ''
+              echo 'Timing-log tail:'
+              echo '```'
+              tail -n 12 "$RUNNER_TEMP/soak-run/soak-timing.log"
+              echo '```'
+              if [ -f "$RUNNER_TEMP/soak-run/soak-timing.log.probe" ]; then
+                echo ''
+                echo 'Probe observation-log tail:'
+                echo '```'
+                tail -n 12 "$RUNNER_TEMP/soak-run/soak-timing.log.probe"
+                echo '```'
+              fi
+            fi
+            if [ -f "$RUNNER_TEMP/soak-run/soak-run.log" ]; then
+              echo ''
+              echo 'Run log tail:'
+              echo '```'
+              tail -n 24 "$RUNNER_TEMP/soak-run/soak-run.log"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

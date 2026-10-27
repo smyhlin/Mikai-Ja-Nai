@@ -2,6 +2,8 @@
 
 #include <state/QualityCache.hpp>
 
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
 #include <QtCore/QDateTime>
 #include <QtCore/QSettings>
 
@@ -84,7 +86,7 @@ void TestQualityCache::anExpiredEntryIsPrunedRatherThanFlushed() {
                  stamp(-kQualityCacheTtlMs - 1));
   // A stale entry must not be written back out, or the file grows with URLs
   // that can never work again.
-  cache.flush();
+  cache.flushNow();
   QualityCache reloaded(QString::fromLatin1(kTestSettingsKey));
   reloaded.load();
   QVERIFY(reloaded.qualities(QStringLiteral("https://ashdi.vip/vod/268104")).isEmpty());
@@ -163,7 +165,7 @@ void TestQualityCache::freshEntriesSurviveAFlushAndReload() {
     QualityCache cache(QString::fromLatin1(kTestSettingsKey));
     cache.load();
     cache.remember(embed, qualities(720, urlFor(720)));
-    cache.flush();
+    cache.flushNow();
   }
   QualityCache reloaded(QString::fromLatin1(kTestSettingsKey));
   reloaded.load();
@@ -171,6 +173,81 @@ void TestQualityCache::freshEntriesSurviveAFlushAndReload() {
   // signed URL that is still valid.
   QCOMPARE(reloaded.qualities(embed).value(720), urlFor(720));
   QCOMPARE(reloaded.size(), 1);
+}
+
+void TestQualityCache::loadingPrunesExpiredEntriesBeforePersisting() {
+  const QString expired = embedFor(0);
+  const QString fresh = embedFor(1);
+  const auto record = [](qint64 fetchedAt, const QString& url) {
+    return QJsonObject{
+        {QStringLiteral("at"), fetchedAt / 1000.0},
+        {QStringLiteral("heights"), QJsonObject{{QStringLiteral("720"), url}}}};
+  };
+  const QJsonObject entries{
+      {expired, record(stamp(-kQualityCacheTtlMs - 1), urlFor(0))},
+      {fresh, record(stamp(), urlFor(1))}};
+  const QJsonObject root{{QStringLiteral("entries"), entries}};
+  {
+    QSettings settings;
+    settings.setValue(QString::fromLatin1(kTestSettingsKey),
+                      QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact)));
+    settings.sync();
+  }
+
+  QualityCache cache(QString::fromLatin1(kTestSettingsKey));
+  cache.load();
+  QVERIFY(cache.qualities(expired).isEmpty());
+  QCOMPARE(cache.qualities(fresh).value(720), urlFor(1));
+  cache.flushNow();
+
+  QualityCache reloaded(QString::fromLatin1(kTestSettingsKey));
+  reloaded.load();
+  QCOMPARE(reloaded.size(), 1);
+  QVERIFY(reloaded.qualities(expired).isEmpty());
+  QCOMPARE(reloaded.qualities(fresh).value(720), urlFor(1));
+}
+
+void TestQualityCache::loadingEnforcesTheEntryCap() {
+  QJsonObject entries;
+  const int total = kQualityCacheMaxEntries + 5;
+  for (int index = 0; index < total; ++index) {
+    const QJsonObject record{
+        {QStringLiteral("at"), stamp(index) / 1000.0},
+        {QStringLiteral("heights"), QJsonObject{{QStringLiteral("720"), urlFor(index)}}}};
+    entries.insert(embedFor(index), record);
+  }
+  const QJsonObject root{{QStringLiteral("entries"), entries}};
+  {
+    QSettings settings;
+    settings.setValue(QString::fromLatin1(kTestSettingsKey),
+                      QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact)));
+    settings.sync();
+  }
+
+  QualityCache cache(QString::fromLatin1(kTestSettingsKey));
+  cache.load();
+  QCOMPARE(cache.size(), kQualityCacheMaxEntries);
+  QVERIFY(cache.qualities(embedFor(0)).isEmpty());
+  QCOMPARE(cache.qualities(embedFor(total - 1)).value(720), urlFor(total - 1));
+  cache.flushNow();
+
+  QualityCache reloaded(QString::fromLatin1(kTestSettingsKey));
+  reloaded.load();
+  QCOMPARE(reloaded.size(), kQualityCacheMaxEntries);
+}
+
+void TestQualityCache::loadingDoesNotDiscardPendingChanges() {
+  const QString embed = QStringLiteral("https://ashdi.vip/vod/268104");
+  QualityCache cache(QString::fromLatin1(kTestSettingsKey));
+  cache.load();
+  cache.remember(embed, qualities(720, urlFor(720)));
+
+  cache.load();
+  cache.flushNow();
+
+  QualityCache reloaded(QString::fromLatin1(kTestSettingsKey));
+  reloaded.load();
+  QCOMPARE(reloaded.qualities(embed).value(720), urlFor(720));
 }
 
 void TestQualityCache::noSourceIsRemembered() {
@@ -191,7 +268,7 @@ void TestQualityCache::noSourceIsNotWrittenToDisk() {
     QualityCache cache(QString::fromLatin1(kTestSettingsKey));
     cache.load();
     cache.markNoSource(embed);
-    cache.flush();
+    cache.flushNow();
   }
   QualityCache reloaded(QString::fromLatin1(kTestSettingsKey));
   reloaded.load();
@@ -224,13 +301,13 @@ void TestQualityCache::forgetSurvivesAFlushAndReload() {
     QualityCache cache(QString::fromLatin1(kTestSettingsKey));
     cache.load();
     cache.remember(embed, qualities(720, urlFor(720)));
-    cache.flush();
+    cache.flushNow();
   }
   {
     QualityCache cache(QString::fromLatin1(kTestSettingsKey));
     cache.load();
     cache.forget(embed);
-    cache.flush();
+    cache.flushNow();
   }
   QualityCache reloaded(QString::fromLatin1(kTestSettingsKey));
   reloaded.load();

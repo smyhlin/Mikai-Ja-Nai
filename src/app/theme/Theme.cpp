@@ -23,6 +23,10 @@ void mikaiInitAssetResources() {
 namespace mikai::app::theme {
 namespace {
 
+// T-302: %24 carries the chosen accent's RGB triplet for the translucent
+// accent washes below, mirroring the %9 mechanism titlePage() uses; the washes
+// must follow the user's accent like the solid accent %11 does instead of
+// staying on the default purple.
 QString base() {
     return QStringLiteral(R"QSS(
 QWidget {
@@ -74,7 +78,7 @@ QFrame#settingsCard QPushButton, QWidget#settingsCard QPushButton {
 }
 QFrame#settingsCard QPushButton:hover, QWidget#settingsCard QPushButton:hover {
     background: %9;
-    border-color: rgba(189, 172, 255, 0.45);
+    border-color: rgba(%24, 0.45);
 }
 QFrame#settingsCard QPushButton:disabled, QWidget#settingsCard QPushButton:disabled {
     color: %4;
@@ -96,7 +100,7 @@ QWidget#presetShortcutRow {
 }
 QWidget#presetShortcutRow:hover {
     background: %8;
-    border-color: rgba(189, 172, 255, 0.35);
+    border-color: rgba(%24, 0.35);
 }
 QWidget#presetShortcutRow QLabel { background: transparent; }
 QWidget#settingsFooter {
@@ -113,23 +117,23 @@ QGroupBox#nativeComponentPackCard {
 }
 QGroupBox#nativeComponentPackCard:hover {
     background: %8;
-    border-color: rgba(189, 172, 255, 0.40);
+    border-color: rgba(%24, 0.40);
 }
 QGroupBox#nativeComponentPackCard[recommended="true"] {
-    border-color: rgba(189, 172, 255, 0.55);
+    border-color: rgba(%24, 0.55);
 }
 QGroupBox#nativeComponentPackCard[selected="true"] {
     border-color: %11;
-    background: rgba(189, 172, 255, 0.08);
+    background: rgba(%24, 0.08);
 }
 QGroupBox#nativeComponentPackCard::title { subcontrol-origin: margin;
     left: %7px; padding: 0 %15px; color: %2; font-weight: 600; }
 QGroupBox#nativeComponentPackCard QLabel { background: transparent; }
 QGroupBox#nativeComponentPackCard QCheckBox { background: transparent; }
 QLabel#componentRecommendationBanner {
-    background: rgba(189, 172, 255, 0.10);
+    background: rgba(%24, 0.10);
     color: %2;
-    border: 1px solid rgba(189, 172, 255, 0.38);
+    border: 1px solid rgba(%24, 0.38);
     border-radius: %6px;
     padding: %3px %7px;
 }
@@ -139,8 +143,8 @@ QLabel[textRole="muted"], QGroupBox#nativeComponentPackCard QLabel[textRole="mut
 }
 QLabel[textRole="recommendation"], QGroupBox#nativeComponentPackCard QLabel[textRole="recommendation"] {
     color: %11;
-    background: rgba(189, 172, 255, 0.14);
-    border: 1px solid rgba(189, 172, 255, 0.35);
+    background: rgba(%24, 0.14);
+    border: 1px solid rgba(%24, 0.35);
     border-radius: %21px;
     padding: 2px %3px;
     font-size: 12px;
@@ -148,8 +152,8 @@ QLabel[textRole="recommendation"], QGroupBox#nativeComponentPackCard QLabel[text
 }
 QLabel[badgeRole="installed"], QGroupBox#nativeComponentPackCard QLabel[badgeRole="installed"] {
     color: %11;
-    background: rgba(189, 172, 255, 0.12);
-    border: 1px solid rgba(189, 172, 255, 0.30);
+    background: rgba(%24, 0.12);
+    border: 1px solid rgba(%24, 0.30);
     border-radius: %21px;
     padding: 2px %3px;
     font-size: 12px;
@@ -190,9 +194,9 @@ QPushButton {
     background: %5; border: 1px solid %10; border-radius: %6px;
     padding: %3px %7px; min-height: 22px;
 }
-QPushButton:hover { background: %8; border-color: rgba(189, 172, 255, 0.35); }
+QPushButton:hover { background: %8; border-color: rgba(%24, 0.35); }
 QPushButton:pressed { background: %9; }
-QPushButton:checked { background: rgba(189, 172, 255, 0.14); border-color: %11; color: %2; }
+QPushButton:checked { background: rgba(%24, 0.14); border-color: %11; color: %2; }
 QPushButton:focus { border-color: %11; }
 QPushButton:disabled { color: %4; background: %5; border-color: transparent; }
 QPushButton#primary { background: %11; color: %1; border: none; font-weight: 600;
@@ -200,9 +204,9 @@ QPushButton#primary { background: %11; color: %1; border: none; font-weight: 600
 QPushButton#primary:hover { background: %12; }
 QPushButton#primary:disabled { background: %8; color: %4; }
 QPushButton#textAction {
-    background: rgba(189, 172, 255, 0.08);
+    background: rgba(%24, 0.08);
     color: %11;
-    border: 1px solid rgba(189, 172, 255, 0.22);
+    border: 1px solid rgba(%24, 0.22);
     border-radius: %21px;
     padding: 2px 10px;
     min-height: 24px;
@@ -211,11 +215,11 @@ QPushButton#textAction {
 }
 QPushButton#textAction:hover {
     color: %12;
-    background: rgba(189, 172, 255, 0.16);
-    border-color: rgba(189, 172, 255, 0.45);
+    background: rgba(%24, 0.16);
+    border-color: rgba(%24, 0.45);
 }
 QPushButton#textAction:checked {
-    background: rgba(189, 172, 255, 0.18);
+    background: rgba(%24, 0.18);
     border-color: %11;
     color: %12;
 }
@@ -223,16 +227,16 @@ QPushButton#settingsChip { padding: 0; min-width: %13px;
     max-width: %13px; min-height: %13px; max-height: %13px; border: 1px solid transparent; }
 QPushButton#animeCard { background: %5; border: 1px solid %10;
     border-radius: %6px; padding: 0; }
-QPushButton#animeCard:hover { background: %8; border-color: rgba(189, 172, 255, 0.45); }
+QPushButton#animeCard:hover { background: %8; border-color: rgba(%24, 0.45); }
 QPushButton#animeCard:focus { border-color: %11; }
 QPushButton#carouselControl { background: %5; color: %2; border: 1px solid %10;
     border-radius: 8px; padding: 0; min-width: 30px; max-width: 30px;
     min-height: 30px; max-height: 30px; }
-QPushButton#carouselControl:hover { background: %8; border-color: rgba(189, 172, 255, 0.45); color: %11; }
+QPushButton#carouselControl:hover { background: %8; border-color: rgba(%24, 0.45); color: %11; }
 QPushButton#carouselControl:pressed { background: %9; }
 QPushButton#carouselControl:disabled { color: rgba(%23, 0.22); background: rgba(%23, 0.03); border-color: rgba(%23, 0.06); }
 QWidget#homeFeedRow { background: %5; border: 1px solid %10; border-radius: %6px; }
-QWidget#homeFeedRow:hover { background: %8; border-color: rgba(189, 172, 255, 0.30); }
+QWidget#homeFeedRow:hover { background: %8; border-color: rgba(%24, 0.30); }
 QPushButton#homeFeedTitle { text-align: left; background: transparent; border: none;
     padding: %15px; font-weight: 600; }
 QLabel#homeFeedMeta { background: transparent; color: %4; font-size: 12px; }
@@ -245,7 +249,7 @@ QLabel#carouselKind { background: transparent; color: %11; font-size: 11px; font
 QLabel#carouselTitle { background: transparent; color: %2; font-weight: 600; font-size: 13px; }
 QLabel#carouselStatus { background: rgba(%23, 0.06); color: %4;
     font-size: 11px; font-weight: 600; border-radius: 4px; padding: 2px 6px; }
-QLabel#carouselStatusLive { background: rgba(189, 172, 255, 0.16); color: %11;
+QLabel#carouselStatusLive { background: rgba(%24, 0.16); color: %11;
     font-size: 11px; font-weight: 700; border-radius: 4px; padding: 2px 6px; }
 QLabel#carouselEpisodes { background: transparent; color: %4; font-size: 12px; }
 QMenu { background: %5; color: %2; border: 1px solid %10;
@@ -271,7 +275,7 @@ QTabBar::tab { background: transparent; color: %4; border: none;
     border-bottom: 2px solid transparent; padding: 7px %18px; margin-right: 2px;
     font-weight: 600; }
 QTabBar::tab:selected { color: %2; border-bottom: 2px solid %11;
-    background: rgba(189, 172, 255, 0.08); border-top-left-radius: %21px;
+    background: rgba(%24, 0.08); border-top-left-radius: %21px;
     border-top-right-radius: %21px; }
 QTabBar::tab:hover:!selected { color: %2; background: rgba(%23, 0.03);
     border-top-left-radius: %21px; border-top-right-radius: %21px; }
@@ -282,7 +286,7 @@ QTableWidget {
     border: 1px solid %10;
     border-radius: %6px;
     gridline-color: %10;
-    selection-background-color: rgba(189, 172, 255, 0.20);
+    selection-background-color: rgba(%24, 0.20);
     selection-color: %2;
     outline: none;
 }
@@ -922,7 +926,8 @@ QString buildStylesheet(const Appearance& appearance) {
             .arg(p.videoBackground, 20)
             .arg(radiusPill(appearance), 21)
             .arg(p.danger, 22)
-            .arg(p.wash, 23);
+            .arg(p.wash, 23)
+            .arg(p.accentRgb, 24);
     return application + titlePage(p, appearance);
 }
 

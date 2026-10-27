@@ -95,8 +95,7 @@ constexpr int kPlayerMinWidth = 860;
 constexpr int kPlayerMinHeight = 520;
 constexpr int kPlayerDefaultWidth = 1120;
 constexpr int kPlayerDefaultHeight = 700;
-constexpr int kPipDefaultWidth = 480;
-constexpr int kPipDefaultHeight = 270;
+// T-404: kPipDefaultWidth/Height live in PipFloat.hpp now.
 
 // The shell's speed control tops out at 2.0x. The engine has no such limit, so
 // only the value handed to the shell is clamped; mpv gets what was asked for.
@@ -106,14 +105,11 @@ constexpr double kShellRateMax = 2.0;
 constexpr auto kAnime4KSettingKey = "player/anime4k";
 constexpr auto kAnimeJanaiBackendSettingKey = "player/animejanai/backend";
 
-QString animeJanaiBackendName(native::Backend backend) {
-    return backend == native::Backend::DirectML ? QStringLiteral("directml")
-                                                 : QStringLiteral("tensorrt");
-}
-
 constexpr int kSeriesWidth = 190;
 constexpr int kStripHeight = 30;
-constexpr int kStatusMs = 1900;
+// T-404: kStatusMs is declared once on the class (PlayerDialog.hpp); the
+// duplicated file-local copies this TU and PlayerDialogProcessing.cpp used
+// to carry are gone so the two cannot drift.
 constexpr int kStripMargin = 8;
 
 QString chipQss() {
@@ -191,6 +187,13 @@ QIcon glyphIcon(void (*glyph)(QPainter&, qreal, qreal, qreal, const QColor&), qr
 //  PlayerDialog
 // ═══════════════════════════════════════════════════════════════════════════
 
+// T-404: the one definition of the class's backend spelling; the former
+// duplicate in PlayerDialogProcessing.cpp is gone and its TU uses this member.
+QString PlayerDialog::animeJanaiBackendName(native::Backend backend) {
+    return backend == native::Backend::DirectML ? QStringLiteral("directml")
+                                                 : QStringLiteral("tensorrt");
+}
+
 PlayerDialog::PlayerDialog(const QString& caption, const QString& url, QWidget* parent)
     : PlayerDialog(caption, url, {}, 0, nullptr, parent) {}
 
@@ -233,6 +236,11 @@ PlayerDialog::PlayerDialog(const QString& caption,
     shell_ = new PlayerShell(this, false);
     shell_->setFocusPolicy(Qt::StrongFocus);
     surface_ = shell_->videoSurface();
+    // T-205: the shipped player consumes none of the raw counter poll (the
+    // benchmark/compare probes are the only readers, and they own their own
+    // surfaces with polling on), so this surface performs no recurring mpv
+    // reads during playback at all.
+    surface_->setDiagnosticsPolling(false);
 
     const QString initialEpisode = !directMedia_ && caption_.contains(QStringLiteral(" · "))
                                        ? caption_.split(QStringLiteral(" · ")).first().trimmed()
@@ -297,6 +305,12 @@ PlayerDialog::PlayerDialog(const QString& caption,
     refreshNativeInputs();
     connect(surface_, &VideoSurface::animeJanaiStatusChanged, this,
             &PlayerDialog::onAnimeJanaiStatusChanged);
+    connect(surface_, &VideoSurface::anime4kGated, this, [this](const QString& notice) {
+        // T-103: the HDR gate's one-line notice rides the same transient status
+        // path every other player message uses; the choice itself stays
+        // recorded and silently re-applies on an SDR source.
+        flashStatus(notice, /*error=*/false);
+    });
     connect(surface_, &VideoSurface::animeJanaiFailure, this,
             &PlayerDialog::onAnimeJanaiFailure);
     connect(surface_, &VideoSurface::animeJanaiEngineBuildChanged, this,
@@ -357,6 +371,10 @@ PlayerDialog::~PlayerDialog() {
     if (animeJanaiCancellation_) {
         animeJanaiCancellation_->store(true);
     }
+    // T-306: the worker resolves the dialog through this slot, so retiring it
+    // here (the GUI thread) makes every in-flight reply read a null owner
+    // without depending on this store alone.
+    if (animeJanaiDialogSlot_) animeJanaiDialogSlot_->dialog = nullptr;
     if (statusTimer_) {
         statusTimer_->stop();
     }
@@ -644,12 +662,11 @@ void PlayerDialog::connectEngine() {
     connect(surface_, &VideoSurface::durationChanged, this, &PlayerDialog::onEngineDuration);
     connect(surface_, &VideoSurface::positionChanged, this, &PlayerDialog::onEnginePosition);
     connect(surface_, &VideoSurface::playingChanged, this, &PlayerDialog::onEnginePlaying);
-    // The engine is the only authority on whether the video runs: after a PiP
-    // hand-back the shell's cached flag and the core can disagree, and a play
-    // control stuck on pause is unreadable.
-    connect(surface_, &VideoSurface::playingChanged, shell_, [shell = shell_](bool) {
-        shell->updatePlayIcon();
-    });
+    // T-420: one play-icon path. Every playingChanged already runs
+    // onEnginePlaying -> shell_->setPlaying -> updatePlayIcon, and
+    // updatePlayIcon itself reads the ENGINE as the authority (a stale cached
+    // flag cannot misdraw the control), so the second, direct connection this
+    // slot used to install here was a pure duplicate run per event.
     connect(surface_, &VideoSurface::videoSizeChanged, this, &PlayerDialog::onEngineVideoSize);
     connect(surface_, &VideoSurface::streamStatsChanged, shell_, &PlayerShell::setStreamStats);
     // The filter's own status arrives from the surface's reader, which is the
@@ -1637,6 +1654,10 @@ void PlayerDialog::flashStatus(const QString& message, bool failure) {
         retryButton_->hide();
         statusTimer_->start(kStatusMs);
     }
+    // T-411: the panel can have been laid out while hidden, after a resize, so
+    // its cached geometry is stale for this window. Relayout is idempotent and
+    // cheap; without it the flash appears at the pre-resize position.
+    layoutPanels();
     statusPanel_->show();
     statusPanel_->raise();
     if (failure) {
@@ -1957,7 +1978,14 @@ void PlayerDialog::keyPressEvent(QKeyEvent* event) {
     if (onShellKey(event)) {
         return;
     }
-    if (forwardingKey_) {
+    // T-410: one dispatch chain, one run per key. A key that reaches this
+    // handler while the shell side owns focus is the shell's own IGNORED
+    // propagation - sending it back would run the shell's keyPressEvent a
+    // second time and hand onShellKey a second shot - so it only continues
+    // up the dialog chain. The forwarding guard below covers the remaining
+    // re-entry (the filter must not re-run onShellKey for a key this function
+    // itself delivered to the shell).
+    if (forwardingKey_ || shell_->isAncestorOf(QApplication::focusWidget())) {
         QDialog::keyPressEvent(event);
         return;
     }
@@ -1980,7 +2008,10 @@ bool PlayerDialog::eventFilter(QObject* watched, QEvent* event) {
         }
         return false;
     }
-    if (watched == shell_ && event->type() == QEvent::KeyPress) {
+    if (watched == shell_ && event->type() == QEvent::KeyPress && !forwardingKey_) {
+        // T-410: physical keys aimed at the shell get the panels' first refusal
+        // here; keys this dialog FORWARDED to the shell (forwardingKey_) have
+        // already had their onShellKey run and must not get a second one.
         return onShellKey(static_cast<QKeyEvent*>(event));
     }
     // Panel activity counts as user presence: re-arm the shell's idle timer
@@ -2040,6 +2071,15 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
     // restore the status this dialog was holding, not leave it blank.
     const bool runtimePendingWasVisible = runtimePendingVisible_;
     runtimePendingVisible_ = false;
+    // T-316: same rule for the engine preparation. The flag, the paused surface
+    // and the surface's pause hold are all cleared optimistically below, but a
+    // refused close keeps the dialog - and the still-running build - alive, and
+    // without restoring these the build's events are dropped at the
+    // enginePreparationActive_ gate, the ProcessingOverlay never receives its
+    // finish(), and its 1 Hz elapsed clock keeps counting a build this dialog no
+    // longer follows.
+    const bool enginePreparationWasActive = enginePreparationActive_;
+    QPointer<VideoSurface> enginePreparationSurfaceAtClose = enginePreparationSurface_;
     enginePreparationActive_ = false;
     if (enginePreparationSurface_ != nullptr) {
         enginePreparationSurface_->setEnginePreparationPaused(false, false);
@@ -2047,6 +2087,8 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
     }
     ++animeJanaiSequence_;
     if (animeJanaiCancellation_) animeJanaiCancellation_->store(true);
+    // T-306: see the destructor - the slot is the other half of the retire.
+    if (animeJanaiDialogSlot_) animeJanaiDialogSlot_->dialog = nullptr;
     const bool statusTimerWasActive = statusTimer_->isActive();
     statusTimer_->stop();
     audioPopup_->close();
@@ -2088,6 +2130,17 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
                        "it can be retried."));
         closed_ = false;
         shuttingDown_ = false;
+        // T-316: put the engine preparation back exactly as the close found it:
+        // the flag gates the build's event handlers, the surface re-takes the
+        // pause hold (capturing whatever the viewer's intent is NOW), and the
+        // overlay's clock keeps ticking for a build this dialog follows again.
+        if (enginePreparationWasActive) {
+            enginePreparationActive_ = true;
+            if (enginePreparationSurfaceAtClose != nullptr) {
+                enginePreparationSurface_ = enginePreparationSurfaceAtClose;
+                enginePreparationSurface_->setEnginePreparationPaused(true, true);
+            }
+        }
         // The close was refused, so the dialog keeps the status it had: a
         // runtime wait that refused to close is still waiting.
         if (runtimePendingWasVisible && !engineReady_ &&

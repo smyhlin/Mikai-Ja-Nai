@@ -469,6 +469,14 @@ private:
     /// Picks a height: the requested one when it is on offer, else the best.
     int pickTargetHeight(int requested) const;
     bool onShellKey(QKeyEvent* event);
+    // T-404: the status-flash cadence and the backend spelling used to exist
+    // as duplicated file-local copies in PlayerDialog.cpp AND
+    // PlayerDialogProcessing.cpp; they live on the class now so the two TUs
+    // cannot drift apart.
+    static constexpr int kStatusMs = 1900;
+    /// The persisted spelling of a backend name ("tensorrt"/"directml"): one
+    /// writer for the settings key and the shell's selector, defined once.
+    static QString animeJanaiBackendName(native::Backend backend);
     /// Reads the stored Anime4K preset bindings and installs one window shortcut
     /// per usable one. Empty, unparsable, reserved and already-taken sequences
     /// are skipped rather than installed: a binding is a preference that can be
@@ -584,6 +592,16 @@ private:
     quint64 animeJanaiSequence_ = 0;
     quint64 animeJanaiPlanGeneration_ = 0;
     std::shared_ptr<std::atomic_bool> animeJanaiCancellation_;
+    // T-306: the AnimeJaNai worker task carries THIS slot instead of a raw
+    // dialog address. The QPointer inside is created, read and cleared on the
+    // GUI thread only, so nothing thread-affine ever crosses into the pool;
+    // the shared_ptr travels instead, and the queued body resolves the dialog
+    // through it - a destroyed dialog reads as a null pointer by construction
+    // rather than by every supersede/destruction path remembering a flag.
+    struct AnimeJanaiDialogSlot {
+        QPointer<PlayerDialog> dialog;
+    };
+    std::shared_ptr<AnimeJanaiDialogSlot> animeJanaiDialogSlot_;
     bool animeJanaiWaitingForSourceContext_ = false;
     uint64_t animeJanaiPreparationSourceEpoch_ = 0;
     uint64_t animeJanaiPendingPreparationSourceEpoch_ = 0;

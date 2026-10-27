@@ -1449,6 +1449,7 @@ int main(int argc, char** argv) {
     int filteredArgc = static_cast<int>(passthrough.size());
     // QApplication requires argv[argc] == nullptr, which a vector of exactly
     // argc char* pointers does not provide.
+    QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
     passthrough.push_back(nullptr);
     QApplication app(filteredArgc, passthrough.data());
     app.setQuitOnLastWindowClosed(false);

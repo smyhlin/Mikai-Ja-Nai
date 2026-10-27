@@ -399,7 +399,6 @@ private:
     QPointer<MenuPopup> pendingEnhancementHoverPanel_;
     QPointer<QWidget> pendingEnhancementHoverRow_;
     int pendingEnhancementHoverSpot_ = -1;
-    QElapsedTimer sincePosition_;
 
     QVector<QPointer<QWidget>> overlays_;
     /// Whether a corner mask is currently installed on the surface. Tracked

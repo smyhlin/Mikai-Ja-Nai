@@ -12,12 +12,14 @@ constexpr auto kTestSettingsKey = "tests/cpp/watchHistory";
 }  // namespace
 
 void TestWatchHistory::init() {
+  WatchHistory::flushHistoryWrites();
   QSettings settings;
   settings.remove(QString::fromLatin1(kTestSettingsKey));
   settings.sync();
 }
 
 void TestWatchHistory::cleanup() {
+  WatchHistory::flushHistoryWrites();
   QSettings settings;
   settings.remove(QString::fromLatin1(kTestSettingsKey));
   settings.sync();
@@ -121,6 +123,69 @@ void TestWatchHistory::batchMarkingPreservesUnrelatedProgressAndPersists() {
   QVERIFY(!reloaded.isWatched(QStringLiteral("100"), QStringLiteral("OVA 1")));
   QCOMPARE(reloaded.current(QStringLiteral("200")), QStringLiteral("2"));
   QVERIFY(reloaded.isWatched(QStringLiteral("200"), QStringLiteral("OVA 1")));
+}
+
+void TestWatchHistory::coalescedUpdatesFromSeparateInstancesKeepTheLatestMergedState() {
+  WatchHistory first(QString::fromLatin1(kTestSettingsKey));
+  WatchHistory second(QString::fromLatin1(kTestSettingsKey));
+  const QString ref = QStringLiteral("7428");
+  first.setCurrent(ref, QStringLiteral("start"));
+  QStringList episodes;
+  for (int index = 0; index < 40; ++index) {
+    const QString episode = QStringLiteral("episode-%1").arg(index);
+    episodes.append(episode);
+    second.setWatched(ref, episode, true);
+    first.setCurrent(ref, episode);
+  }
+
+  WatchHistory::flushHistoryWrites();
+  WatchHistory reloaded(QString::fromLatin1(kTestSettingsKey));
+  QCOMPARE(reloaded.current(ref), QStringLiteral("episode-39"));
+  for (const QString& episode : episodes) {
+    QVERIFY2(reloaded.isWatched(ref, episode), qPrintable(episode));
+  }
+}
+
+void TestWatchHistory::writesAfterAFlushRemainDurable() {
+  const QString ref = QStringLiteral("7428");
+  WatchHistory store(QString::fromLatin1(kTestSettingsKey));
+  store.setCurrent(ref, QStringLiteral("12"));
+  WatchHistory::flushHistoryWrites();
+
+  store.setWatched(ref, QStringLiteral("12"), true);
+  WatchHistory::flushHistoryWrites();
+
+  WatchHistory reloaded(QString::fromLatin1(kTestSettingsKey));
+  QCOMPARE(reloaded.current(ref), QStringLiteral("12"));
+  QVERIFY(reloaded.isWatched(ref, QStringLiteral("12")));
+}
+
+void TestWatchHistory::clearingHistoryRemovesThePersistedAndPendingSnapshot() {
+  const QString ref = QStringLiteral("7428");
+  WatchHistory store(QString::fromLatin1(kTestSettingsKey));
+  store.setCurrent(ref, QStringLiteral("12"));
+  store.setWatched(ref, QStringLiteral("12"), true);
+  store.clear();
+  WatchHistory::flushHistoryWrites();
+
+  WatchHistory reloaded(QString::fromLatin1(kTestSettingsKey));
+  QVERIFY(reloaded.current(ref).isEmpty());
+  QVERIFY(!reloaded.isWatched(ref, QStringLiteral("12")));
+}
+
+void TestWatchHistory::anExternalSettingsRemovalIsNotShadowedByAnOldSnapshot() {
+  const QString ref = QStringLiteral("7428");
+  WatchHistory store(QString::fromLatin1(kTestSettingsKey));
+  store.setCurrent(ref, QStringLiteral("12"));
+  WatchHistory::flushHistoryWrites();
+
+  QSettings settings;
+  settings.remove(QString::fromLatin1(kTestSettingsKey));
+  settings.sync();
+  QCOMPARE(settings.status(), QSettings::NoError);
+
+  WatchHistory reloaded(QString::fromLatin1(kTestSettingsKey));
+  QVERIFY(reloaded.current(ref).isEmpty());
 }
 
 void TestWatchHistory::aCorruptedBlobReadsAsEmpty() {

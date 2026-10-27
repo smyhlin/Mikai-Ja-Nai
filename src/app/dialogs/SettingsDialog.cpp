@@ -37,6 +37,8 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScreen>
+#include <VideoSurface.hpp>
+
 #include <QSettings>
 #include <QTabBar>
 #include <QTabWidget>
@@ -552,6 +554,23 @@ void SettingsDialog::save() {
     QSettings settings;
     settings.setValue(QString::fromLatin1(kUiLanguageSettingKey), chosenLanguage);
     settings.setValue(feeds::settingsKey(), feeds::serialize(chosen));
+    // T-101/T-104: the HDR tone-mapping policy and the native-on-HDR override
+    // commit with the rest: the statics are the live truth every engine reads
+    // at creation and every running surface adopts through its own pump, so no
+    // player restart and no per-surface plumbing is needed here.
+    const int committedHdrPolicy = hdrPolicy_->currentData().toInt();
+    settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kHdrToneMappingSettingKey),
+                     committedHdrPolicy);
+    settings.setValue(
+        QString::fromLatin1(mplayer::VideoSurface::kAnimeJanaiHdrOverrideSettingKey),
+        nativeHdrOverride_->isChecked());
+    using HdrPolicy = mplayer::VideoSurface::HdrToneMappingPolicy;
+    switch (committedHdrPolicy) {
+        case 1: mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Stable); break;
+        case 2: mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Vivid); break;
+        default: mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Auto); break;
+    }
+    mplayer::VideoSurface::setAnimeJanaiHdrOverride(nativeHdrOverride_->isChecked());
     settings.beginGroup(QLatin1String(mplayer::shell::kPresetShortcutSettingsGroup));
     for (const PresetRow& row : presetRows_) {
         if (presets.contains(row.id)) {

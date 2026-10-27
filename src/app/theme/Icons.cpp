@@ -3,16 +3,20 @@
 #include "theme/Colors.hpp"
 #include "theme/Metrics.hpp"
 
+#include <QApplication>
 #include <QColor>
+#include <QIconEngine>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPalette>
 #include <QPixmap>
+#include <QPixmapCache>
+#include <QtMath>
 #include <QPolygonF>
 #include <QRectF>
 #include <QTransform>
 
-#include <cmath>
-#include <map>
+#include <utility>
 
 namespace mikai::app::theme {
 namespace {
@@ -190,103 +194,121 @@ QPixmap renderChevron(int size, const QColor& color, bool left) {
     return pixmap;
 }
 
-QIcon buildChevronIcon(int size, bool left) {
-    const int pixels = (size > 0 ? size : 16) * 2;
-    QIcon icon;
-    icon.addPixmap(renderChevron(pixels, QColor(QString::fromLatin1(kText)), left),
-                   QIcon::Normal, QIcon::Off);
-    icon.addPixmap(renderChevron(pixels, QColor(QString::fromLatin1(kAccentHover)), left),
-                   QIcon::Active, QIcon::Off);
-    icon.addPixmap(renderChevron(pixels, QColor(242, 242, 247, 65), left),
-                   QIcon::Disabled, QIcon::Off);
-    return icon;
+enum class Glyph {
+    Gear,
+    Keyboard,
+    Sliders,
+    Package,
+    ChevronLeft,
+    ChevronRight
+};
+
+class GlyphIconEngine final : public QIconEngine {
+public:
+    GlyphIconEngine(Glyph glyph, QColor normal, QColor active, QColor disabled)
+        : glyph_(glyph), normal_(std::move(normal)), active_(std::move(active)),
+          disabled_(std::move(disabled)) {}
+
+    QIconEngine* clone() const override { return new GlyphIconEngine(*this); }
+
+    QString key() const override { return QStringLiteral("MikaiGlyph"); }
+
+    void paint(QPainter* painter, const QRect& rect, QIcon::Mode mode,
+               QIcon::State state) override {
+        if (painter == nullptr || !painter->isActive() || rect.isEmpty()) return;
+        const qreal scale = painter->device() != nullptr
+                                ? painter->device()->devicePixelRatioF()
+                                : 1.0;
+        painter->drawPixmap(rect, scaledPixmap(rect.size(), mode, state, scale));
+    }
+
+    QPixmap pixmap(const QSize& size, QIcon::Mode mode, QIcon::State state) override {
+        return scaledPixmap(size, mode, state, 1.0);
+    }
+
+    QPixmap scaledPixmap(const QSize& size, QIcon::Mode mode, QIcon::State state,
+                         qreal scale) override {
+        const QColor color = mode == QIcon::Disabled ? disabled_
+                            : mode == QIcon::Active || mode == QIcon::Selected ? active_
+                                                                              : normal_;
+        const QString cacheKey = QStringLiteral("mikai-glyph:%1:%2x%3:%4:%5:%6:%7")
+                                     .arg(static_cast<int>(glyph_))
+                                     .arg(size.width())
+                                     .arg(size.height())
+                                     .arg(scale, 0, 'g', 8)
+                                     .arg(static_cast<int>(mode))
+                                     .arg(static_cast<int>(state))
+                                     .arg(color.name(QColor::HexArgb));
+        QPixmap pixmap;
+        if (QPixmapCache::find(cacheKey, &pixmap)) return pixmap;
+
+        const int logicalSize = qMax(1, qMin(size.width(), size.height()));
+        const int pixelSize = qMax(1, qCeil(logicalSize * scale));
+        switch (glyph_) {
+            case Glyph::Gear: pixmap = renderGear(pixelSize, color); break;
+            case Glyph::Keyboard: pixmap = renderKeyboard(pixelSize, color); break;
+            case Glyph::Sliders: pixmap = renderSliders(pixelSize, color); break;
+            case Glyph::Package: pixmap = renderPackage(pixelSize, color); break;
+            case Glyph::ChevronLeft: pixmap = renderChevron(pixelSize, color, true); break;
+            case Glyph::ChevronRight: pixmap = renderChevron(pixelSize, color, false); break;
+        }
+        pixmap.setDevicePixelRatio(scale);
+        QPixmapCache::insert(cacheKey, pixmap);
+        return pixmap;
+    }
+
+    QSize actualSize(const QSize& size, QIcon::Mode, QIcon::State) override {
+        const int side = qMin(size.width(), size.height());
+        return QSize(side, side);
+    }
+
+private:
+    Glyph glyph_;
+    QColor normal_;
+    QColor active_;
+    QColor disabled_;
+};
+
+QIcon glyphIcon(Glyph glyph, int size, const QColor& normal, const QColor& active,
+                const QColor& disabled) {
+    Q_UNUSED(size);
+    return QIcon(new GlyphIconEngine(glyph, normal, active, disabled));
 }
 
 }  // namespace
 
 QIcon gearIcon(int size, const QString& color) {
-    const int pixels = size > 0 ? size : kIconSize;
-    const QColor fill(color.isEmpty() ? QString::fromLatin1(kText) : color);
-    // The transport re-picks its glyphs on every state change elsewhere in the
-    // app, so rasterising the same gear repeatedly is pure waste; one pixmap
-    // serves every widget, and QIcon is value-shared.
-    static const std::map<QString, QIcon> kCache = [] {
-        std::map<QString, QIcon> cache;
-        for (const char* hex : {kText, kAccent, kMuted}) {
-            const QIcon icon(renderGear(kIconSize * 2, QColor(QString::fromLatin1(hex))));
-            cache.emplace(QString::fromLatin1(hex), icon);
-        }
-        return cache;
-    }();
-    const auto it = kCache.find(fill.name());
-    if (it != kCache.end()) {
-        return it->second;
-    }
-    return QIcon(renderGear(pixels * 2, fill));
+    const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
+    return glyphIcon(Glyph::Gear, size, fill, fill, fill);
 }
 
 QIcon keyboardIcon(int size, const QString& color) {
-    const int pixels = size > 0 ? size : kIconSize;
-    const QColor fill(color.isEmpty() ? QString::fromLatin1(kText) : color);
-    static const std::map<QString, QIcon> kCache = [] {
-        std::map<QString, QIcon> cache;
-        for (const char* hex : {kText, kAccent, kMuted}) {
-            const QIcon icon(renderKeyboard(kIconSize * 2, QColor(QString::fromLatin1(hex))));
-            cache.emplace(QString::fromLatin1(hex), icon);
-        }
-        return cache;
-    }();
-    const auto it = kCache.find(fill.name());
-    if (it != kCache.end()) {
-        return it->second;
-    }
-    return QIcon(renderKeyboard(pixels * 2, fill));
+    const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
+    return glyphIcon(Glyph::Keyboard, size, fill, fill, fill);
 }
 
 QIcon slidersIcon(int size, const QString& color) {
-    const int pixels = size > 0 ? size : kIconSize;
-    const QColor fill(color.isEmpty() ? QString::fromLatin1(kText) : color);
-    static const std::map<QString, QIcon> kCache = [] {
-        std::map<QString, QIcon> cache;
-        for (const char* hex : {kText, kAccent, kMuted}) {
-            const QIcon icon(renderSliders(kIconSize * 2, QColor(QString::fromLatin1(hex))));
-            cache.emplace(QString::fromLatin1(hex), icon);
-        }
-        return cache;
-    }();
-    const auto it = kCache.find(fill.name());
-    if (it != kCache.end()) {
-        return it->second;
-    }
-    return QIcon(renderSliders(pixels * 2, fill));
+    const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
+    return glyphIcon(Glyph::Sliders, size, fill, fill, fill);
 }
 
 QIcon packageIcon(int size, const QString& color) {
-    const int pixels = size > 0 ? size : kIconSize;
-    const QColor fill(color.isEmpty() ? QString::fromLatin1(kText) : color);
-    static const std::map<QString, QIcon> kCache = [] {
-        std::map<QString, QIcon> cache;
-        for (const char* hex : {kText, kAccent, kMuted}) {
-            const QIcon icon(renderPackage(kIconSize * 2, QColor(QString::fromLatin1(hex))));
-            cache.emplace(QString::fromLatin1(hex), icon);
-        }
-        return cache;
-    }();
-    const auto it = kCache.find(fill.name());
-    if (it != kCache.end()) {
-        return it->second;
-    }
-    return QIcon(renderPackage(pixels * 2, fill));
+    const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
+    return glyphIcon(Glyph::Package, size, fill, fill, fill);
 }
 
 QIcon chevronLeftIcon(int size) {
-    static const QIcon kDefault = buildChevronIcon(16, true);
-    return (size <= 0 || size == 16) ? kDefault : buildChevronIcon(size, true);
+    const QPalette palette = QApplication::palette();
+    return glyphIcon(Glyph::ChevronLeft, size, palette.color(QPalette::Text),
+                     palette.color(QPalette::Highlight),
+                     palette.color(QPalette::Disabled, QPalette::Text));
 }
 
 QIcon chevronRightIcon(int size) {
-    static const QIcon kDefault = buildChevronIcon(16, false);
-    return (size <= 0 || size == 16) ? kDefault : buildChevronIcon(size, false);
+    const QPalette palette = QApplication::palette();
+    return glyphIcon(Glyph::ChevronRight, size, palette.color(QPalette::Text),
+                     palette.color(QPalette::Highlight),
+                     palette.color(QPalette::Disabled, QPalette::Text));
 }
 
 }  // namespace mikai::app::theme

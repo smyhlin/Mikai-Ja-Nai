@@ -76,6 +76,10 @@ Testing/
 # Generated translation binaries: the .ts is the source, lrelease produces the .qm
 translations/*.qm
 
+/tests/fixtures/media/hdr_*.mp4
+/tests/fixtures/media/motion_frame_id_*.mp4
+/tests/fixtures/media/continuous_frame_id_*.mp4
+
 # Python bytecode and caches
 __pycache__/
 *.pyc

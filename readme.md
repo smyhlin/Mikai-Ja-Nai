@@ -55,13 +55,24 @@ See [release status](docs/release-status.md) for the exercised platform checks, 
 
 ## Download and install
 
-There is no public download URL configured in this source checkout. Do not download binaries from an unofficial mirror. Windows portable/installer packages and Linux archives can be assembled locally using the [release guide](docs/releasing.md), but no package is approved for publication. Linux packaging can independently opt into Qt deployment and the pinned private `libmpv` bundle; without those options it uses host Qt and system `libmpv`. Bundling either does not remove the host glibc/loader, graphics-driver and audio requirements, and the bundled-mpv profile is not a universal Linux package. Current local packages include the pinned runtimes and have recorded build, runtime and installer acceptance. They are unsigned and unpublished; public binary distribution is on hold while the upstream source/license closure is incomplete. See [release status](docs/release-status.md) for exact artifacts and scope.
+There is no public download URL configured in this source checkout. Do not download binaries from an unofficial mirror. Private Windows portable/setup and Linux archive QA packages from the current HDR/frame-timing source are recorded with their exact local paths and hashes in [release status](docs/release-status.md); they are not public downloads, and no package is approved for publication. Linux packaging can independently opt into Qt deployment and the pinned private `libmpv` bundle; without those options it uses host Qt and system `libmpv`. Bundling either does not remove the host glibc/loader, graphics-driver and audio requirements, and the bundled-mpv profile is not a universal Linux package. The separate October 24 packages in release status are historical baseline artifacts, not builds of the current changes. Linux final-payload process smokes completed, including local video plus AAC; visual review of both playing captures confirmed a clear moving test pattern with no black or striped output. The final-source hour matrix completed with three PASS results and one unresolved Linux-stock black/frozen-output FAIL; the Windows setup is unsigned. Public binary distribution remains on hold while the upstream source/license closure is incomplete.
 
 ## Quick start
 
 For Windows, the portable ZIP is extracted and launched from its own folder; the setup executable is per-user. Linux runtime dependencies depend on the selected package profile; see its [installation notes](docs/releasing.md#linux-x86_64). The API key is optional; it raises API rate limits and can be configured in **Settings → General**. Keep any key private.
 
 To build from source, see [Building](docs/building.md). On first startup, the app can offer optional component setup; decline it to use ordinary playback. Search the catalogue, open a title and select a provider episode, or choose **Open video** to play a local file. Choose an enhancement explicitly from the player's processing menu when the required runtime and models are installed.
+
+## HDR playback verification
+
+The player supports HDR-source-to-SDR playback policies (Auto, Stable and
+Vivid); this is not a claim of native HDR display output. Dedicated probe
+instructions for natural footage, explicit natural-media mode, bounded scene
+selection, fullscreen aging, strict fixture assertions and diagnostic-only
+black-candidate interpretation are in the [fixture and probe guide](tests/fixtures/README.md).
+Original-film evidence and captures remain external to the repository. See
+[release status](docs/release-status.md) for the scoped verification and
+publication hold.
 
 ## Platform support
 

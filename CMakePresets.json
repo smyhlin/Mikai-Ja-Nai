@@ -67,6 +67,39 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "MIKAI_WITH_MODEL_INSPECTION": "OFF"
       }
+    },
+    {
+      "name": "linux-tsan",
+      "displayName": "Debug + ThreadSanitizer (Linux)",
+      "description": "T-402: Linux Debug build with -fsanitize=thread. The async/epoch machinery in MpvHandle, NativeStatusConsumer and the state pump is exactly what TSan is for; the flag is carried on the compiler driver so it reaches the link line of every C++ executable as well.",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MIKAI_WITH_MODEL_INSPECTION": "OFF",
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer"
+      }
+    },
+    {
+      "name": "linux-asan",
+      "displayName": "Debug + AddressSanitizer/UBSan (Linux)",
+      "description": "T-402: Linux Debug build with -fsanitize=address,undefined and frame pointers preserved, so heap errors and UB both abort with usable backtraces.",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MIKAI_WITH_MODEL_INSPECTION": "OFF",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+      }
+    },
+    {
+      "name": "linux-ubsan",
+      "displayName": "Debug + UndefinedBehaviorSanitizer (Linux)",
+      "description": "T-402: Linux Debug build with -fsanitize=undefined -fno-sanitize-recover=all, so the first UB the suite hits aborts the run instead of printing and continuing.",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MIKAI_WITH_MODEL_INSPECTION": "OFF",
+        "CMAKE_CXX_FLAGS": "-fsanitize=undefined -fno-sanitize-recover=all"
+      }
     }
   ],
   "buildPresets": [
@@ -75,6 +108,9 @@
     { "name": "app-native", "configurePreset": "native", "targets": ["mikai"] },
     { "name": "tests-native", "configurePreset": "native", "targets": ["mikai_tests"] },
     { "name": "app-linux", "configurePreset": "linux-release", "targets": ["mikai"] },
-    { "name": "tests-linux", "configurePreset": "linux-release", "targets": ["mikai_tests"] }
+    { "name": "tests-linux", "configurePreset": "linux-release", "targets": ["mikai_tests"] },
+    { "name": "tests-linux-tsan", "configurePreset": "linux-tsan", "targets": ["mikai_tests", "mikai_launcher_child"] },
+    { "name": "tests-linux-asan", "configurePreset": "linux-asan", "targets": ["mikai_tests", "mikai_launcher_child"] },
+    { "name": "tests-linux-ubsan", "configurePreset": "linux-ubsan", "targets": ["mikai_tests", "mikai_launcher_child"] }
   ]
 }

@@ -1,15 +1,11 @@
 #include "Streams.hpp"
 
-#include "Cancellation.hpp"
+#include "HttpTransport.hpp"
 
 #include <QByteArray>
-#include <QEventLoop>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QRegularExpression>
 #include <QThread>
-#include <QTimer>
 #include <QUrl>
 
 #include <cmath>
@@ -60,79 +56,6 @@ double retryDelaySeconds(const QMap<QString, QString>& headers, int attempt) {
     return 0.4 * (attempt + 1);
 }
 
-struct HttpResult {
-    int status = 0;
-    QByteArray body;
-    QMap<QString, QString> headers;
-    QString error;
-};
-
-// The one blocking primitive every other fetch builds on: run a request to
-// completion on a private event loop so callers stay synchronous like the
-// Python implementation.
-HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& request) {
-    HttpResult result;
-    if (WorkCancellationScope::cancellationRequested()) {
-        result.error = QStringLiteral("the request was cancelled");
-        return result;
-    }
-    QNetworkReply* reply = manager->get(request);
-    QEventLoop loop;
-    QTimer timer;
-    QTimer abortDrainTimer;
-    timer.setSingleShot(true);
-    abortDrainTimer.setSingleShot(true);
-    QTimer cancelTimer;
-    cancelTimer.setInterval(200);
-    bool timedOut = false;
-    bool cancelled = false;
-    QObject::connect(&timer, &QTimer::timeout, &loop, [&]() {
-        timedOut = reply->isRunning();
-        loop.quit();
-    });
-    QObject::connect(&abortDrainTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
-    QObject::connect(&cancelTimer, &QTimer::timeout, &loop, [&]() {
-        if (WorkCancellationScope::cancellationRequested()) {
-            cancelled = true;
-            loop.quit();
-        }
-    });
-    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    timer.start(kTimeoutMs);
-    cancelTimer.start();
-    loop.exec();
-    timer.stop();
-    cancelTimer.stop();
-    if (reply->isRunning()) {
-        // The deadline fired first: abort so the reply cannot outlive us. The
-        // drain is on the same timer rather than an unbounded wait, because an
-        // abort can complete late and this thread belongs to a pool.
-        reply->abort();
-        if (reply->isRunning()) {
-            abortDrainTimer.start(2000);
-            loop.exec();
-        }
-    }
-    timer.stop();
-    abortDrainTimer.stop();
-
-    result.status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    const auto pairs = reply->rawHeaderPairs();
-    for (const auto& pair : pairs) {
-        result.headers.insert(QString::fromUtf8(pair.first), QString::fromUtf8(pair.second));
-    }
-    if (cancelled) {
-        result.error = QStringLiteral("the request was cancelled");
-    } else if (timedOut) {
-        result.error = QStringLiteral("the request timed out after %1 ms").arg(kTimeoutMs);
-    } else if (reply->error() != QNetworkReply::NoError) {
-        result.error = reply->errorString();
-    }
-    result.body = reply->readAll();
-    reply->deleteLater();
-    return result;
-}
-
 }  // namespace
 
 QString detectSite(const QString& pageUrl) {
@@ -157,20 +80,51 @@ QString fetchText(QNetworkAccessManager* manager, const QString& url,
             request.setRawHeader(it.key().toUtf8(), it.value().toUtf8());
         }
 
-        const HttpResult result = runBlocking(manager, request);
-        if (result.error.isEmpty()) {
-            if (retryableStatus(result.status) && attempt < kFetchRetries) {
-                QThread::msleep(
-                    static_cast<unsigned long>(retryDelaySeconds(result.headers, attempt) * 1000.0));
+        // T-403: the shared transport loop carries this scraper's timeout and
+        // collects the raw headers the backoff below consults.
+        const HttpFetchResult result =
+            runBlockingFetch(manager, request, HttpFetchOptions{kTimeoutMs, true, {}});
+        // T-305: transport failures - a timeout, a remote close, a refused
+        // connection - retry with the same clamp-and-backoff the 429/5xx
+        // path uses. Qt reports a definite HTTP error answer as a network
+        // error too, so a bare error string is not enough to classify: a
+        // status this scraper treats as final (403, 404, ...) fails at once
+        // instead of burning the budget on an answer that cannot change.
+        // Only a cancellation is final for the transport classes, because the
+        // caller asked to stop. The budget is the loop counter itself, shared
+        // with the HTTP status retries, so the total attempt count stays
+        // bounded.
+        const bool transportFailure =
+            (result.timedOut || !result.networkError.isEmpty()) && result.status < 400;
+        const bool retryable =
+            !result.cancelled && (transportFailure || retryableStatus(result.status));
+        if (result.cancelled) {
+            throw StreamError(
+                QStringLiteral("GET failed for %1: the request was cancelled").arg(url));
+        }
+        if (retryable) {
+            if (attempt < kFetchRetries) {
+                QThread::msleep(static_cast<unsigned long>(
+                    retryDelaySeconds(result.headers, attempt) * 1000.0));
                 continue;
             }
-            if (result.status >= 400) {
-                throw StreamError(
-                    QStringLiteral("GET failed for %1: HTTP %2").arg(url).arg(result.status));
-            }
-            return QString::fromUtf8(result.body);
+            // T-305: reachable now that transport classes joined the retry
+            // budget - the last attempt failed in a retryable way and there
+            // are no attempts left to spend on it, so name what it was.
+            const QString detail =
+                result.timedOut
+                    ? QStringLiteral("timed out after %1 ms").arg(kTimeoutMs)
+                    : result.status >= 400
+                          ? QStringLiteral("HTTP %1").arg(result.status)
+                          : result.networkError;
+            throw StreamError(
+                QStringLiteral("GET failed for %1: exhausted retries (%2)").arg(url, detail));
         }
-        throw StreamError(QStringLiteral("GET failed for %1: %2").arg(url, result.error));
+        if (result.status >= 400) {
+            throw StreamError(
+                QStringLiteral("GET failed for %1: HTTP %2").arg(url).arg(result.status));
+        }
+        return QString::fromUtf8(result.body);
     }
     throw StreamError(QStringLiteral("GET failed for %1: exhausted retries").arg(url));
 }
@@ -384,16 +338,12 @@ QStringList listSegments(QNetworkAccessManager* manager, const QString& qualityU
 
 QMap<int, QString> qualityStreams(const QString& pageUrl) {
     const QString site = detectSite(pageUrl);
-    // One manager per worker thread rather than one per call: a fresh manager
-    // means a fresh cookie jar and a fresh TLS handshake, so a local one paid
-    // for the provider handshake again on every episode click. Tied to the
-    // thread's lifetime so an expiring pool thread leaves nothing behind.
-    static thread_local QNetworkAccessManager* manager = [] {
-        auto* created = new QNetworkAccessManager;
-        QObject::connect(QThread::currentThread(), &QThread::finished, created,
-                         &QObject::deleteLater);
-        return created;
-    }();
+    // T-403: the shared per-thread manager. One manager per worker thread
+    // rather than one per call: a fresh manager means a fresh cookie jar and a
+    // fresh TLS handshake, so a local one paid for the provider handshake
+    // again on every episode click. Tied to the thread's lifetime so an
+    // expiring pool thread leaves nothing behind.
+    QNetworkAccessManager* manager = transportManagerForThread();
     const QString master = extractMaster(manager, pageUrl);
     const QMap<QString, QString> headers =
         (site == QLatin1String("ashdi") || site == QLatin1String("tortuga")) ? bareHeaderSet()

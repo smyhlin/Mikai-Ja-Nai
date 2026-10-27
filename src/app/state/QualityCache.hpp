@@ -13,10 +13,6 @@ namespace mikai::app {
 extern const qint64 kQualityCacheTtlMs;
 /// Cap, so a long browsing session cannot grow the settings blob without end.
 extern const int kQualityCacheMaxEntries;
-/// Shortest gap between two writes of the settings blob. Long enough to
-/// collapse a burst of title opens into one write, short enough that a session
-/// which ends abruptly loses almost nothing.
-extern const qint64 kQualityCacheFlushIntervalMs;
 
 /// Cross-session store for extracted HLS quality URLs, keyed by embed URL.
 ///
@@ -33,17 +29,7 @@ public:
 
     /// Read the persisted entries, dropping anything past the TTL.
     void load();
-    /// Write the live entries back, dropping anything past the TTL first, but
-    /// only when something changed and the previous write is at least
-    /// `kQualityCacheFlushIntervalMs` old. Browsing re-extracts constantly, and
-    /// rewriting the whole blob on every title open is a registry write of a
-    /// few hundred kilobytes each time for entries that are all still valid.
-    /// A session that ends without reaching the interval still persists through
-    /// flushNow(); a hard kill costs only the entries from the last interval,
-    /// which simply extract again.
-    void flush();
-    /// Write the live entries back regardless of the debounce. This is the
-    /// teardown path, where leaving entries unwritten would lose them.
+    /// Persist changed entries after dropping expired URLs.
     void flushNow();
     /// Drop everything, in memory and on disk.
     void clear();
@@ -72,6 +58,7 @@ public:
 
 private:
     void prune();
+    bool trimToLimit();
 
     struct Entry {
         qint64 fetchedAt = 0;
@@ -81,10 +68,8 @@ private:
     QString key_;
     QMap<QString, Entry> entries_;
     QSet<QString> noSource_;
-    // Set by anything that changes what a write would produce, so a flush with
-    // nothing to say costs nothing.
+    // Remains set if QSettings reports a failed write, allowing a later retry.
     bool dirty_ = false;
-    qint64 lastFlushAtMs_ = 0;
 };
 
 }  // namespace mikai::app

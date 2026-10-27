@@ -122,8 +122,13 @@ int pageCount(const UpdatesResult& result, int limit) {
 
 UpdateFeedState refreshUpdateFeed(const MikaiClient& client, const UpdateFeedState& previous,
                                   int retainedLimit) {
-    constexpr int incrementalPageSize = 100;
-    constexpr int maximumPageSize = 100;
+    // T-311: the API family caps a page at 50 rows whatever `limit` asks for -
+    // the same documented cap the search pager already strides at. Asking for
+    // 100 only made the refresh count pages the server disagrees with, and it
+    // burned quota recounting them on every incremental refresh.
+    constexpr int apiPageSize = 50;
+    constexpr int incrementalPageSize = apiPageSize;
+    constexpr int maximumPageSize = apiPageSize;
     const bool bootstrap = previous.watermark.isEmpty() && previous.items.isEmpty();
     const QDateTime previousWatermark = parsedTime(previous.watermark);
     if (!bootstrap && !previousWatermark.isValid()) {

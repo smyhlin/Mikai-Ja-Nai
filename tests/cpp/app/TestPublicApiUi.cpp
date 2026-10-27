@@ -448,7 +448,10 @@ struct IsolatedSettings {
     }
     mikai::backend::setEnvFilePathOverride(envPath);
   }
-  ~IsolatedSettings() { mikai::backend::setEnvFilePathOverride(QString()); }
+  ~IsolatedSettings() {
+    mikai::app::WatchHistory::flushHistoryWrites();
+    mikai::backend::setEnvFilePathOverride(QString());
+  }
 };
 
 QString labelText(const QWidget& root, const char* name) {

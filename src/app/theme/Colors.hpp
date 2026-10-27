@@ -1,7 +1,11 @@
 #pragma once
 
-// Central color palette for the desktop client. Every color the app paints or
-// styles comes from here; no raw hex literal is allowed anywhere else in src/app.
+// Central color palette for the desktop client. This header's tokens are the
+// sanctioned path for every colour src/app paints or styles. Raw hex literals
+// do still exist in a few deliberate, documented spots: Palette.cpp's light
+// theme value table, the fixed accent presets in Appearance.cpp/.hpp and
+// SwatchButton.cpp's accent swatches, and the RGB literal Icons.cpp paints a
+// chevron's disabled state with - everywhere else goes through a theme token.
 namespace mikai::app::theme {
 
 inline constexpr const char* kBackground = "#0b0b0f";

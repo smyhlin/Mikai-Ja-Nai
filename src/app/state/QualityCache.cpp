@@ -12,7 +12,6 @@ namespace mikai::app {
 
 const qint64 kQualityCacheTtlMs = 1800000;
 const int kQualityCacheMaxEntries = 240;
-const qint64 kQualityCacheFlushIntervalMs = 5000;
 
 namespace {
 
@@ -41,11 +40,11 @@ void QualityCache::prune() {
 }
 
 void QualityCache::load() {
+    if (dirty_) {
+        return;
+    }
     entries_.clear();
-    // What is in memory now is what is on disk, so there is nothing to write
-    // until something changes.
     dirty_ = false;
-    lastFlushAtMs_ = 0;
     QSettings settings;
     const QString raw = settings.value(key_).toString();
     if (raw.isEmpty()) {
@@ -58,11 +57,13 @@ void QualityCache::load() {
     }
     const QJsonObject entries = document.object().value(QStringLiteral("entries")).toObject();
     const qint64 cutoff = QDateTime::currentMSecsSinceEpoch() - kQualityCacheTtlMs;
+    bool needsWrite = false;
     for (auto it = entries.constBegin(); it != entries.constEnd(); ++it) {
         const QJsonObject record = it.value().toObject();
         const qint64 fetchedAt =
             static_cast<qint64>(record.value(QStringLiteral("at")).toDouble() * 1000.0);
         if (fetchedAt < cutoff) {
+            needsWrite = true;
             continue;
         }
         const QJsonObject heights = record.value(QStringLiteral("heights")).toObject();
@@ -75,23 +76,32 @@ void QualityCache::load() {
         }
         if (!map.isEmpty()) {
             entries_.insert(it.key(), Entry{fetchedAt, map});
+            needsWrite = trimToLimit() || needsWrite;
+        } else {
+            needsWrite = true;
         }
     }
+    dirty_ = needsWrite;
 }
 
-void QualityCache::flush() {
-    const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    if (lastFlushAtMs_ != 0 && now - lastFlushAtMs_ < kQualityCacheFlushIntervalMs) {
-        return;
+bool QualityCache::trimToLimit() {
+    bool trimmed = false;
+    while (entries_.size() > kQualityCacheMaxEntries) {
+        auto oldest = entries_.begin();
+        for (auto it = entries_.begin(); it != entries_.end(); ++it) {
+            if (it->fetchedAt < oldest->fetchedAt) {
+                oldest = it;
+            }
+        }
+        entries_.erase(oldest);
+        trimmed = true;
     }
-    flushNow();
+    return trimmed;
 }
 
 void QualityCache::flushNow() {
     if (!dirty_) {
-        // Memory already matches the file, so writing it again would produce a
-        // byte-identical blob. Skipping here is what lets the teardown paths
-        // call this unconditionally.
+        // Avoid rewriting unchanged settings during teardown.
         return;
     }
     prune();
@@ -110,8 +120,8 @@ void QualityCache::flushNow() {
     root.insert(QStringLiteral("entries"), entries);
     QSettings settings;
     settings.setValue(key_, QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact)));
-    dirty_ = false;
-    lastFlushAtMs_ = QDateTime::currentMSecsSinceEpoch();
+    settings.sync();
+    dirty_ = settings.status() != QSettings::NoError;
 }
 
 void QualityCache::clear() {
@@ -119,8 +129,8 @@ void QualityCache::clear() {
     noSource_.clear();
     QSettings settings;
     settings.remove(key_);
-    // The key is gone from disk, so there is nothing left for a flush to write.
-    dirty_ = false;
+    settings.sync();
+    dirty_ = settings.status() != QSettings::NoError;
 }
 
 QMap<int, QString> QualityCache::qualities(const QString& embed) const {
@@ -143,17 +153,7 @@ void QualityCache::remember(const QString& embed, const QMap<int, QString>& map,
         nowMsecsSinceEpoch != 0 ? nowMsecsSinceEpoch : QDateTime::currentMSecsSinceEpoch();
     entries_.insert(embed, Entry{stamp, map});
     dirty_ = true;
-    // Evict the oldest until the cap holds: a signed URL that is nearly expired
-    // is worth less than a fresh one, so recency is the right order to drop in.
-    while (entries_.size() > kQualityCacheMaxEntries) {
-        auto oldest = entries_.begin();
-        for (auto it = entries_.begin(); it != entries_.end(); ++it) {
-            if (it->fetchedAt < oldest->fetchedAt) {
-                oldest = it;
-            }
-        }
-        entries_.erase(oldest);
-    }
+    trimToLimit();
 }
 
 void QualityCache::forget(const QString& embed) {

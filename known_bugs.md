@@ -30,7 +30,7 @@ PASS**: `mikai_tests` (all suites PASS, `TestLiveOracle` SKIP without a key),
 | KB-06, KB-11 | `Runner.{hpp,cpp}` (no blocking teardown, `cancel()`, `shutdownAll`, `post()` binder), `NativeComponentProvisioner`, `NativeAssetsPanel`, `ComponentStoreTab` | `TestRunner` PASS 21/21: destroying a Runner with work in flight returns in well under two seconds, cancel retires queued work and stops a running one at the real backend gate, `shutdownAll` drains while the GUI keeps answering, and no delivery reaches a dead owner |
 | KB-07, KB-28 | `CrashLog.{hpp,cpp}` (fixed report block, Win32-only fault path, no Qt allocation, retained redacted tail) and new `Diagnostics.hpp` (`redactDiagnostic`), wired into `VideoSurface` and `Downloads` | `TestDiagnostics` PASS; `crash_probe --crash` produced a real report through the unhandled-exception filter (exception, address, module, access type, thread, tail) that contained **none** of the planted tokens while carrying the redaction markers |
 | KB-12 | `ComponentStoreTab` (off-GUI `VerifyRequest`, indeterminate progress, non-reentrant controls), `main.cpp` (startup resolution as Runner work), `NativeRuntimeSelection` (`ResolutionLease`, `runtimeResolutionPending`, `whenRuntimeResolutionFinishes`), `MainWindow`/`TitlePage`/`PlayerDialog` (join the pending resolution, truthful pending line, answer after the commit) | `TestRuntimeSelection`, `TestNativeComponents` and `TestRunner` PASS; the app's own log reaches its runtime line ~0.7 s after `mikai started`, and a 25 s smoke run produced no crash report |
-| KB-14 | The five setup-prompt literals ride `QT_TRANSLATE_NOOP` through the file's `translate()` helper; `RuntimeSelection`'s new strings use the same form | `lupdate` extracted 1016 strings (15 new, 3 obsolete removed); every new entry was translated and `lrelease` reports **1016 finished, 0 unfinished** |
+| KB-14 | The five setup-prompt literals ride `QT_TRANSLATE_NOOP` through the file's `translate()` helper; `RuntimeSelection`'s new strings use the same form | `lupdate` extracted 1016 strings (15 new, 3 obsolete removed); every new entry was translated. T-416 correction: that count described the catalog as of KB-14's fix; the catalog has since grown to **1756 messages across 55+ contexts with 0 unfinished entries** (the 4 RuntimeSelection strings that had drifted unfinished were finished in this pass, and the configure-time drift gate in `CMakeLists.txt` fails the build if unfinished entries ever return) |
 | KB-15, KB-21, KB-24, KB-26, KB-27 | Root `CMakeLists.txt`, `CMakePresets.json`, `cmake/MikaiTestLauncher.cpp`: minimum 3.25, `-march=x86-64`, real build presets in the comments, launcher deadline plus suspended-child job join, six duplicated native TUs compiled once | `LauncherContracts` PASS against a real hung child: exit 3, the child **and** its descendant gone by PID+creation-time identity, the owned scratch removed, neighbouring files byte-identical; the six TUs appear once in the target lists |
 | KB-20 | `AnimeJanaiInstallation.cpp` + `NativeComponentProvisioning.cpp`: the runtime archive is downloaded once, digest-verified, handed to provisioning through `VerifiedComponentArchive` and then reused for the `trtexec` extraction; `animeJanaiMissingDownloads`/`…Bytes` answer from stored-pack and install-record state only | `TestAnimeJanaiRuntime` PASS; the Components prompt prices the same queue the installer builds, with the Aji archive included and the runtime counted once |
 | KB-22 | `MpvApi::load` reads the module's own PE imports and refuses by name when a required Windows system driver (the Vulkan loader) is missing from `%SystemRoot%\System32`; nothing is copied and no fallback module is tried | `TestRuntimeSelection::aModuleSystemDriverImportIsReadFromItsOwnImage` PASS; docs record the prerequisite as a supporting-loader fact, not a renderer |
@@ -344,3 +344,300 @@ Excluded from broad maintained-doc/source accounting: generated build/external d
 - [Qt 6.8 QThreadPool destruction and timed waiting](https://doc.qt.io/qt-6.8/qthreadpool.html).
 - [Qt 6.8 QIODevice write return value](https://doc.qt.io/qt-6.8/qiodevice.html#write).
 - [GCC x86 architecture options](https://gcc.gnu.org/onlinedocs/gcc/x86-Options.html).
+
+## KB-29 / KB-30 — owner-reported playback issues (2026-10-26)
+
+The observations below distinguish source-level hypotheses from runtime
+evidence. Neither original owner-reported issue has a closed causal diagnosis:
+the comparison runtime is not a controlled A/B build differing only in
+libplacebo, and the historical reports are not a reproduction by themselves.
+
+### KB-29 — HDR dark-scene instability
+
+**Scope and remaining diagnosis.** Earlier static inspection identified
+candidate contributors, not a reproduced failure or proven root cause.
+`internal_format=0` is the default/unspecified attachment request and does not
+necessarily mean an 8-bit FBO; actual probing on the tested Windows NVIDIA
+path reported `GL_RGBA8` with 8 red bits. This is not evidence of a 10-bit
+attachment, HDR display output or passthrough. The pre-depth build omitted
+`MPV_RENDER_PARAM_DEPTH`; the checked mpv 0.37 header defaults that parameter
+to 8 bits when omitted. Current source now passes the probed channel depth to
+that parameter, while the widget attachment's `internal_format` remains a
+separate value and `dither-depth=auto` does not set it. The measured FBO was
+`GL_RGBA8` on the normal player path. A separate
+`hdr_playback_probe --fbo10` requests `RGB10_A2` before showing its
+`QOpenGLWidget` and reports actual RGB10_A2, 10-bit R/G/B and render depth;
+its paused-PQ scanline contains values off the 8-bit lattice. This verifies
+the dedicated probe path, not the normal player's FBO or physical HDR output.
+Current-source acceptance remains pending. A controlled same-layout,
+same-metadata Linux probe with a real RGB10_A2 target showed that omitting only
+`MPV_RENDER_PARAM_DEPTH` made the renderer assume 8-bit depth: 0/768 RGB
+channels were off the 8-bit lattice, versus 385/768 after restoring the row.
+That precision difference did not explain the observed black/stripe corruption. Dither policy is
+configurable, not a proven static-dither defect. The fork and stock mpv DLLs
+differ in more than the libplacebo patch, so a libplacebo cause, phase-wrap
+defect, or API-contract violation is not established. Controlled hardware A/B
+and physical HDR-display gates remain open.
+
+**Implemented behavior.** Settings → General → HDR playback exposes Auto
+(default), Stable and Vivid. Policies configure `tone-mapping` (Auto / Stable
+`bt.2390` / Vivid `mobius`), `tone-mapping-param` (default or `0.3`),
+`hdr-compute-peak` (Stable off; Auto and Vivid on),
+`hdr-peak-percentile=99.995`, `gamut-mapping-mode` (Stable `clip`, otherwise
+`auto`) and `dither-depth=auto`. Unsupported options are applied tolerantly so
+older system runtimes can reject them without failing playback; Vivid is not
+guaranteed to be brighter on every source. A pre-correction GPU run warned
+that Stable `perceptual` is unsupported by `vo_gpu` and falls back. Current source uses Stable `clip`, verified accepted in the current depth+`clip`
+HDR probes; full acceptance still awaits the current long timing runs and
+hardware/display gates. PQ/HLG metadata gates
+Anime4K to SDR and the requested preset is restored on known SDR. Native AJE/AJI
+is blocked unless metadata positively identifies HDR and the user explicitly enables the override; unknown metadata does not qualify. The actual widget FBO attachment `internal_format` is queried and sent in the
+FBO descriptor. Current source also passes the probed channel depth through
+the separate `MPV_RENDER_PARAM_DEPTH`; the earlier measured build omitted it
+and used the mpv 0.37 default of 8 bits. The dedicated `--fbo10` probe
+requests and verifies `RGB10_A2`, 10-bit R/G/B and render depth, plus paused-PQ
+samples off the 8-bit lattice. This is not evidence that the normal player
+widget uses that attachment or that output reaches a physical HDR display.
+Full current-source acceptance remains pending; generated packages are
+private QA artifacts, not release-approved. `MIKAI_HDR_FIXES=0` disables HDR policy
+changes and the Anime4K/AJE/AJI processing gates, not truthful FBO probing.
+The October 26 original-film follow-up is HDR-to-SDR evidence: bounded
+original-film HDR/playback checks and Windows/Linux hermetic suites passed
+54/54 each (137.39 s and 1,000.18 s). The first fork-Auto fullscreen hour
+failed 1/705 requirements with 110 VO drops over the unchanged budget of 3;
+decoder drops were zero, with 118 content samples, no frozen hashes or media
+errors, and 146 ms maximum inter-swap gap. Muted WASAPI audio PTS progressed.
+It recorded 86,211 center observations, including 4,489 low-luma samples;
+these are diagnostic, not proof of black flashes. A 109/110 drop/hash-sample
+temporal correlation does not establish cause.
+
+The probe subsequently moved unchanged upright full-resolution center 3/4
+crop SHA-256 and the full-frame vertical flip to one `std::async` job. GL readback remains on
+the GUI thread; sample metadata is immutable, GUI polling nonblocking, and
+shutdown pauses/snapshots clock and drop counters before joining. A 10-minute
+async run and a preserved pre-async binary replay under the same remote/no-audio
+conditions both failed the required-audio gate (1/13) with zero drops; their
+80/81 ms maximum inter-swap gaps do not prove that async hashing resolved the
+earlier drop count. WaveOut availability and framebuffer geometry changed
+between runs, and later observations reported a remote session; the earlier
+remote-session flag was not recorded. These were not controlled A/V or
+pixel-load comparisons. In the async run, GUI readback took 3.591–7.678 ms, worker flip
+7.183–12.761 ms and worker hashing 65.321–88.150 ms. Source-center windows
+decoded 19/96/24 frames, consistent with dark coded PQ center content but not
+exact SDR output or whole-frame blackness.
+
+The final-program original-film fullscreen matrix failed all three runs 2/13
+(drop budget and required audio): fork Auto 64 VO drops (3,600.3 s, 119 hashes,
+778 ms max gap), fork Stable 73 (3,600.3 s, 119 hashes, 824 ms), and stock
+Stable 13 (3,600.4 s, 119 hashes, 422 ms). Each had zero decoder drops,
+frozen hashes and media errors; audio was unavailable. All retained the
+three-drop maximum and required-audio gate. The first two runs' captured-frame dimensions transitioned from 2732×1950 to
+5464×3900; stock remained 2732×1950. Drop clusters near the first two
+dimension transitions are a possible DPI/capture-load confound, not a proven
+cause. Capture correlation was only 4/64, 4/73 and 2/13 within one second, so
+the initial 109/110 correlation was not reproduced. Full 4K content remained
+unchanged. A bounded fork-Stable windowed control with the same final program
+ran 600.2 s from source 3,000.122 s, with 20 hashes, zero decoder/VO/frozen/
+media errors, 61 ms maximum gap, and an 854×480 framebuffer throughout. It
+still failed 1/13 for unavailable required audio. This is diagnostic only,
+not causal proof, an all-clear or a replacement for the failed fullscreen
+gates (`evidence/windowed-control-summary.json`). No acceptance budget increase
+or application GPU fix is claimed. Hash analysis did not downsample captured
+FBO pixels; mpv still scaled the 4K source to the Qt viewport. The separate Linux
+natural-media probe also remains unresolved: a 9-second WSLg/Pulse run printed
+its failed verdict but did not exit; the owned-process timeout killed the
+process group. Native GDB captured main-thread teardown blocked in
+`mpv_render_context_free` via `VideoSurface::releaseRenderContext` and
+`~VideoSurface`, while the libmpv core thread waited in its playloop/audio
+path and the AO thread waited in PulseAudio. Render-context free was reached;
+terminate/destroy was not. No hash job remained pending, and the trace does
+not identify whether the underlying cause is the WSLg server, endpoint or
+client wait. No safe minimal app-owned interrupt was identified. A private
+Pulse software-clock control progressed audio PTS but failed the unchanged
+VO-drop budget (102 drops); it does not prove the hang's cause or physical
+Linux playback. These observations are unresolved and are not passes. Fresh
+final-snapshot CTest passed 55/55 entries on Windows (282.51 s) and Linux
+(942.06 s), including the combined blob and 48 individual C++ suite entries;
+these hermetic checks do not override the failed playback gates. Earlier synthetic frame-ID 60-minute
+results, including the unresolved Linux-stock black/frozen output, remain a
+separate historical test and do not establish original-film behavior. The initial read-only display query reported HDR-capable hardware operating in
+SDR with HDR disabled and 8-bit output; the later remote session's HDR/display
+state was not queried. Physical HDR output and full Dolby Vision
+enhancement-layer use remain uncertified.
+
+**Observed runtime gates.** On Windows NVIDIA, generated 10-bit PQ BT.2020
+highlight-ramp and near-black-noise sources reached the actual CUDA decode and
+render path; the queried FBO was `GL_RGBA8`, the observed HDR shader list was
+empty while the SDR list was nonempty, Stable and Vivid produced different
+paused pixels, rollback suppressed policy changes, and no GL errors were
+observed. These gates do not establish a physical HDR panel or a 30-minute
+luma-variance limit. The Linux bundled-fork HDR probe passed for 19 seconds;
+its 30-second AAC-required pilot passed with PulseAudio null sink selected,
+p010/yuv10 and strict identity hash
+`d1b87ddd80f314a80fc66d2d8f626eb26027e45b8bfaeba22c4197a16ae357ce`.
+Linux software-GL/null-sink evidence is not physical audio/GPU evidence.
+The current depth+Stable-`clip` `--fbo10` probes passed 27/27 for Windows fork
+and stock (RGB10_A2; 10-bit RGB/depth; 346/768 and 370/768 RGB channels off
+the 8-bit lattice; zero GL errors) and 29/29 for Linux fork (385/768; zero GL
+errors). The normal player widget's previously measured FBO remains RGBA8;
+the test probe's 10-bit target is not a physical HDR output claim. A prior
+`perceptual` setting warned unsupported by `vo_gpu`; current source uses
+supported `clip`. Current Windows depth+clip CTest passed 54/54 (147.79 s);
+Linux depth+`clip` CTest passed 54/54 (1,102.19 s). Final-code Windows HDR
+rollback probes passed on default FBO8 noise and `--fbo10`; no physical HDR
+output is established. The final-source 60-minute matrix completed with
+Windows fork/stock and Linux fork PASS; Linux stock failed with black/frozen
+output and remains unresolved (details in KB-30).
+Those earlier Windows runs had no WASAPI endpoint; the original-film
+follow-up above used an available muted WASAPI output.
+
+### KB-30 — periodic frame substitution
+
+**Scope and remaining diagnosis.** The periodic substitution report is an
+owner-reported symptom, not a static reproduction. Earlier clock/pacing
+inspection is not proof of a phase-wrap defect or a violated mpv API contract:
+mpv `target_time` units differ by API version, and the application now uses a
+module-bound clock with version-aware normalization. The stock and fork
+runtimes are not a controlled patch-only comparison; no libplacebo cause is
+proven. The original symptom still requires a controlled hardware comparison
+and an uninterrupted aging run.
+
+**Implemented behavior.** Client-side pacing defers rendering using the
+module-bound mpv clock and version-aware deadline conversion. Qt precise-timer
+work is canceled on pause, source or context changes and repaint invalidation;
+redraw/repeat frames are handled immediately. `MIKAI_CLIENT_FRAME_PACING=0`
+rolls back client-side pacing. `--frame-timing-log <path>` is buffered (32 KiB
+or one second) and reports contextual one-shot logging failures; formatting is
+avoided when disabled. Other relevant P2 fixes include coalesced serialized
+background history writes and suspending the hidden PiP pump. These changes
+have no common rollback switch.
+
+**Verification boundary.** On the pre-depth revision, Windows CTest passed
+54/54 groups after the final checkbox-label fix (152.81 seconds); Linux CTest
+passed 54/54 groups after the final layout, translation and surface-AA changes
+(813.53 seconds). Current depth+`clip` Windows CTest passed 54/54 (147.79
+seconds). Current Windows fork/stock
+`--fbo10` probes passed 27/27 each and Linux fork passed 29/29; Linux current
+CTest passed 54/54 (1,102.19 s). The final-source 60-minute matrix completed
+three PASS and one Linux-stock FAIL; detailed metrics follow.
+1,759-message translation catalog has zero unfinished entries. Settings UI
+acceptance passed UI07's 34/34 stronger checkbox-content assertions and
+visual review of English/Ukrainian native-font/catalog captures at 580×820
+and 940×820; all captions and risk text fit without horizontal scrolling.
+Windows and Linux CI/release Python checks had
+13 passes plus one Windows symlink-privilege skip and 14/14 passes,
+respectively; source packaging contracts passed 5/5 on both platforms.
+
+Final-source 60-minute paint-stage results used the 3,660-second continuous
+no-loop source and unchanged 3-drop VO budget. The three passing runs had zero
+decoder drops; pacing operations were immediate only (no deferred Qt timer
+waits), so they do not explain the original drift report. Receipt matrix:
+`F:/ZKS/mikai-hdr-pacing-acceptance-20261026/evidence/final-source-hour-matrix.json`.
+
+| Platform/runtime | Duration | VO drops | Barcode readbacks | Content samples (advanced) | Max gap | Audio / checks | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| Windows fork | 3,600.4 s | 0 | 86,389 | 119 (118) | 112 ms | Video-only; 0/10 failed | PASS |
+| Windows stock | 3,600.4 s | 1 | 86,388 | 119 (118) | 113 ms | Video-only; 0/10 failed | PASS |
+| Linux fork | 3,600.1 s | 3 (budget) | 86,384 | 119 (118) | 132 ms | AAC PTS progressed; PulseAudio null sink; 0.148 s max skew; 0/667 failed | PASS |
+| Linux stock 0.37 | 3,600.2 s | 3 (budget) | 86,383 | 110 (0) | 178 ms | AAC/source clocks progressed; max skew 0.055 s; 109 frozen-hash failures; 903/1,581 failed | FAIL |
+
+Linux stock was black in first, final and composite images; identity 0 froze
+from source time 4.417 s while source/audio clocks continued. No new
+20-minute transition was observed, and no cause is assigned. The Linux fork
+final composite was visually clear and advancing. Windows program SHA-256:
+`082aca12c4ec98b822a68b3b3e3ca5796271ddb28130afd7c2df2a6d5aa49110`;
+Linux program SHA-256:
+`a776f3f635bdaa3daaa6af67d2b77a5c146be2af62bd7cd7914d51a89e0b26ed`.
+The earlier Windows 60-minute old-post-swap run remains a failure: fork had
+0 decoder / 0 VO drops; stock had 0 decoder drops but 5 VO drops against
+budget 3, near 1,708.332 seconds. Barcode checks were 86,381 / 86,377,
+119 moving hashes each and zero frozen/order/media errors. Retain source `c13`;
+do not widen the budget. The preliminary Linux fork audio-required old-sampler
+run also remains a failure: 3,600.1 seconds, 210 VO drops against budget 3,
+0 decoder drops, 86,167 barcode checks, 119 moving hashes, no frozen/order/
+media errors, 398 ms maximum gap, and progressing audio PTS with 0.02-second
+skew. Its cause is unassigned; host pressure is possible but unproven.
+
+The older pre-depth revision's four 60-minute paint-stage runs completed PASS
+with the ordinary VO-drop budget unchanged at 3, no decoder drops, and zero
+frozen-frame, identity-order or media failures. Each used the continuous
+3,660-second no-loop source. They are historical evidence, not verification
+of the current depth+`clip` revision:
+| Platform/runtime | Duration | VO drops | Barcode IDs | Moving hashes | Max inter-swap gap | Audio |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Windows fork | 3,600.1 s | 1 | 86,376 | 118 | 95 ms | Video-only |
+| Windows stock | 3,600.0 s | 3 | 86,374 | 119 | 118 ms | Video-only |
+| Linux fork | 3,600.4 s | 0 | 86,395 | 119 | 66 ms | AAC selected; PulseAudio null sink; final A/V skew 0.031/0.032 s |
+| Linux stock | 3,600.2 s | 1 | 86,390 | 119 | 75 ms | AAC selected; PulseAudio null sink; final A/V skew 0.034 s |
+
+Windows pacing-path counters for those pre-depth hour runs were 86,385
+immediate / 0 deferred for fork and 86,382 immediate / 0 deferred for stock;
+stock's timing log was 15.84 MB. See
+`evidence/windows-pacing-path-counts.json`.
+These runs had already-expired deadlines, so they exercise the immediate path,
+not future-deadline Qt timer waiting. Clock-unit normalization/raw-nanosecond
+comparisons were exercised separately from the 32 ms future-deadline helper
+contract tests. The soak therefore does not show that timer deferral ran or
+causally explain the original drift report.
+
+Pre-depth Windows application SHA-256:
+`b92ebc3188f122768fcce71cb5e8ef3fddac5e251f03bc8d48401676a0e323d8`.
+Pre-depth Linux application SHA-256:
+`2fc1415e52f591ec86e8a8e49fd290611ff7e0a05e0414d83891a47879dab3c5`.
+The paint-stage sampler reads cached FBO data correlated to `frameSwapped`,
+without forced repaints or product rendering-default changes. Linux used software OpenGL and a PulseAudio null sink; Windows had no WASAPI
+playback devices and was video-only. The runs establish only the exercised
+timing, identity-order and audio-clock criteria, not physical
+GPU/display/audio output or uninterrupted unobscured desktop operation.
+In the older pre-depth runs, visual review found full-height thin black
+vertical stripes in Linux stock cached-FBO and composited PNGs; the fork
+composite was clean. The current final-source matrix is different: Linux
+stock's first/final/composited images are black and its identity remains
+frozen, while the Linux fork's final composite is clear and advancing (see
+the final-source matrix above). Standalone stock mpv 0.37 NVDEC-p010 and CPU-yuv10 raw/windowed captures
+were clean. Earlier minimal Qt/libmpv Mesa controls rendered black in GLX and
+a visually clean image in the `xcb_egl` variant, but these results are invalid
+for attribution: the harness called `report_swap` without verifying the
+current-context guard required by the API. Production swap callers already
+have that guard; no production regression or fix was made there. Those
+controls cannot establish GLX/EGL output sensitivity or validate the
+core-profile/FBO/painter/callback variations. The separate 30-second
+in-process stock-app EGL/no-log run met its counter gates (0 decoder/VO drops,
+6 advancing hashes, 696 barcode IDs, 723 ms maximum gap, 0.010 s A/V skew),
+but its composited image still showed vertical stripes. Old-stock visual
+behavior remains unresolved; no root cause or new-pacing causality is
+assigned. No valid controlled test yet attributes the legacy runtime/
+graphics compatibility behavior. No forced EGL/core profile,
+hardware-decoding downgrade, or product GL workaround is justified.
+Timing-soak PASS is not visual-quality certification; no stock visual-quality
+pass is claimed. Stock and fork builds use different commits, so this is not
+a controlled patch-only A/B and does not prove the original symptom's cause.
+Physical-output gates and controlled causal comparison remain open.
+
+A separate stock `mpv_surface_smoke` 10-bit-target run on mpv 0.37 failed
+15/113 requirements, with 1 skipped and 1 instrumentation-unavailable.
+During playback the image was near-black with no measured motion; parked,
+resized and reparented views were black. A subsequent RGB24 `lavfi` recovery
+was lit and moving. Evidence: `evidence/linux/stock-render-lifecycle-10bit/run.log`;
+application SHA-256
+`03a767355dbd6f407769f2fe1aef0773ba5b1c1ed488ecff5ad0d84ebcb40c20`;
+stock mpv runtime SHA-256
+`f2aa472878adee5f44419b6cce90ccecc43bf81595ac16dbf223de190cdead0a`.
+This is a failed visual/lifecycle probe, not a stock runtime visual-quality
+pass or a root-cause diagnosis.
+
+The 3-second SIGSTOP fault-injection check failed on a measured 3.041-second
+output/source-progress gap; its 1,000-drop allowance applied only to that
+negative test, not ordinary acceptance (budget 3). The legacy Linux stock
+mpv 0.37/API 2.2 pilot passed HDR gates. AAC was selected at 48 kHz through
+PulseAudio with finite progressing audio PTS. Linux stock/fork 30-second
+audio-required paint-stage pilots and Windows stock/fork 30-second video-only
+paint-stage pilots passed. The earlier black post-swap sample (647 renders)
+was resolved as a sampler-stage issue; sampling now uses cached FBO at paint
+stage correlated to `frameSwapped`. The EOF regression check showed an early
+12.8-second run could previously exit 0 for a requested 30 seconds; strict
+completion now fails an early-EOF run (exit 1) without message-text
+classification. Windows WASAPI audio acceptance remains unavailable; Linux
+null sink/software-GL and Windows video-only results do not prove physical
+hardware output. Private QA packages do not imply public distribution,
+tagging, push or release.

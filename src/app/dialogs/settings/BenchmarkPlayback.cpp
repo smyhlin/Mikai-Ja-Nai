@@ -119,12 +119,20 @@ BenchmarkSampleResult runBenchmarkSample(
     }
     // Render resources must be destroyed while their OpenGL context is current.
     CurrentContextGuard currentContext{context};
-    QOpenGLFramebufferObject framebuffer(targetSize);
-    if (!framebuffer.isValid()) {
+    QOpenGLFramebufferObjectFormat framebufferFormat;
+    framebufferFormat.setInternalTextureFormat(mplayer::kGlInternalFormatRgba8);
+    QOpenGLFramebufferObject framebuffer(targetSize, framebufferFormat);
+    if (!framebuffer.isValid() || !framebuffer.bind()) {
         result.error = PlaybackText::tr("Could not allocate the benchmark framebuffer.");
         return result;
     }
     QOpenGLFunctions* const gl = context.functions();
+    GLint targetDepthBits = 0;
+    gl->glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                               0x8212, &targetDepthBits);
+    const int targetFormat =
+        static_cast<int>(framebuffer.format().internalTextureFormat());
+    const int targetDepth = targetDepthBits > 0 ? targetDepthBits : 0;
     QString playbackError;
     QStringList backendLog;
     std::mutex wakeMutex;
@@ -289,7 +297,8 @@ BenchmarkSampleResult runBenchmarkSample(
                 }
                 gl->glBindFramebuffer(GL_FRAMEBUFFER, framebuffer.handle());
                 const int renderError = renderer.render(static_cast<int>(framebuffer.handle()),
-                                                        targetSize.width(), targetSize.height(), 0);
+                                                        targetSize.width(), targetSize.height(),
+                                                        targetFormat, targetDepth);
                 if (renderError < 0) {
                     result.error = withDetail(
                         PlaybackText::tr("Rendering failed: %1")

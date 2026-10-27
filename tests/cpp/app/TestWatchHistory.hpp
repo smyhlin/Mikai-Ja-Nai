@@ -15,5 +15,9 @@ class TestWatchHistory : public QObject {
   void markingWatchedKeepsTheCurrentEpisode();
   void interleavedWritersPreserveUnrelatedProgress();
   void batchMarkingPreservesUnrelatedProgressAndPersists();
+  void coalescedUpdatesFromSeparateInstancesKeepTheLatestMergedState();
+  void writesAfterAFlushRemainDurable();
+  void anExternalSettingsRemovalIsNotShadowedByAnOldSnapshot();
+  void clearingHistoryRemovesThePersistedAndPendingSnapshot();
   void aCorruptedBlobReadsAsEmpty();
 };

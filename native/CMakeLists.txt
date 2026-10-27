@@ -96,6 +96,16 @@ if(AJI_REPRODUCIBLE)
   add_link_options(/Brepro)
 endif()
 
+# T-402: MSVC defaults to /W3, which under-reports in a shim whose every
+# signature crosses a C ABI boundary. /W4 raises the bar for the whole native
+# directory (targets configured below this point) without /WX: warnings are
+# surfaced for review, not promoted to build breakers, because the staged
+# upstream sources this tree patches are not warning-clean at /W4 and
+# breaking on them would couple the build to foreign code's hygiene.
+if(MSVC)
+  add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/W4>)
+endif()
+
 # ---------------------------------------------------------------------------
 # CUDA and TensorRT discovery
 # ---------------------------------------------------------------------------

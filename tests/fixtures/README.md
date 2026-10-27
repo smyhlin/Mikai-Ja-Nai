@@ -7,8 +7,14 @@ third-party footage is downloaded, copied or re-encoded. The AJI fixtures below
 are source-generated ONNX bytes and a test-only dispatcher, not production
 models or inference binaries.
 
-- `generate_media.cmd` — reproduces the media/HLS assets from scratch.
-- `media/` — the clip matrix (10 HEVC MP4s).
+- `generate_media.cmd` — reproduces the media/HLS assets from scratch on Windows.
+- `generate_media.sh` — the Linux/bash port: the same clips under the same
+  filenames, plus the HDR regression clips (blocks 12–13) and the moving
+  frame-identity clip (block 14). Skips loudly per block when `ffmpeg` or the
+  block's encoder is missing; acceptance jobs must fail if required assets are
+  absent rather than substituting a synthetic source.
+- `media/` — the clip matrix (10 committed HEVC MP4s, plus generated-on-demand
+  HDR and frame-identity clips described below).
 - `hls/` — three real HLS renditions with real MPEG-TS segments.
 - `http_fixture.cpp` — the loopback fixture server (CMake target `mikai_http_fixture`).
 
@@ -23,9 +29,22 @@ tests\fixtures\generate_media.cmd
 runs `ffmpeg`: lavfi sources → `libx265`/`libx264` → MP4 and HLS. Nothing else
 is required, and nothing reaches the network.
 
-`generate_media.cmd` rewrites the full matrix, so it is also the way to recover
-a damaged or partial `media/`/`hls/`. The script is self-documenting: each
-block states what the clip is for and which later gate consumes it.
+On Linux, the port works the same way:
+
+```bash
+FFMPEG=/path/to/ffmpeg tests/fixtures/generate_media.sh
+```
+
+`MEDIA_DIR`/`HLS_DIR` optionally relocate the output roots. Missing tools and
+failed encodes are named per block, and the final summary exits nonzero if any
+required clip, HLS playlist, or HLS segment is absent. Acceptance jobs also
+check their selected assets explicitly; the nightly soak lane does not fall
+back to a generic lavfi source.
+
+`generate_media.cmd` (and its Linux port) rewrites the full matrix, so either
+is also the way to recover a damaged or partial `media/`/`hls/`. The scripts
+are self-documenting: each block states what the clip is for and which later
+gate consumes it.
 
 ## The clip matrix
 
@@ -37,10 +56,185 @@ block states what the clip is for and which later gate consumes it.
 | `motion_1920x1080_24fps_8bit_hevc.mp4` | 1920×1080 | 8 | HEVC Main | 24 | 6 s | HD, limited range (tv) BT.709. |
 | `motion_1920x1080_24fps_10bit_hevc.mp4` | 1920×1080 | 10 | HEVC Main10 | 24 | 6 s | HD 10-bit, limited range. |
 | `motion_1920x1080_23976fps_8bit_hevc.mp4` | 1920×1080 | 8 | HEVC Main | 24000/1001 | 6 s | HD 23.976. |
-| `fullrange_1920x1080_24fps_8bit_hevc.mp4` | 1920×1080 | 8 | HEVC Main | 24 | 6 s | **Full range (pc)** BT.709. Every other clip is limited range, so plan §7.4's `range`/`matrix` pass-through has both cases. |
+| `fullrange_1920x1080_24fps_8bit_hevc.mp4` | 1920×1080 | 8 | HEVC Main | 24 | 6 s | **Full range (pc)** BT.709. Every other clip is limited range. No range/matrix pass-through code consumes this case today; see “Current consumers” below for what actually reads these fixtures. |
 | `cut_saturated_black_320x180_24fps_8bit_hevc.mp4` | 320×180 | 8 | HEVC Main | 24 | 6 s | Hard cut + saturated + near-black, **with AAC audio**. |
 | `nonmult32_motion_1920x1072_24fps_8bit_hevc.mp4` | 1920×1072 | 8 | HEVC Main | 24 | 4 s | Height 1072 is even but **not a multiple of 32** (1072/32 = 33.5) — the dyn-HW graph case. |
 | `portrait_motion_1080x1920_24fps_8bit_hevc.mp4` | 1080×1920 | 8 | HEVC Main | 24 | 4 s | Portrait rotate/fit and preparation-plan geometry. |
+| `hdr_dark_gradient_1280x720_24fps_10bit_pq_hevc.mp4` | 1280×720 | 10 | HEVC Main10, BT.2020 + PQ (SMPTE ST 2084) | 24 | 16 s | Generated, uncommitted 10-bit PQ dark-level ramp with a right-edge 150–1000-nit highlight ramp. |
+| `hdr_dark_noise_1280x720_24fps_10bit_pq_hevc.mp4` | 1280×720 | 10 | HEVC Main10, BT.2020 + PQ | 24 | 16 s | Generated, uncommitted lossless near-black temporal shadow-noise fixture, encoded losslessly to preserve its signal. |
+| `motion_frame_id_1280x720_24fps_10bit_hevc.mp4` | 1280×720 | 10 | HEVC Main10, BT.709 | 24 | 16 s | Generated moving `testsrc2` with an 8-bit per-frame barcode; frame-order soak decodes identity from the rendered framebuffer. |
+| `continuous_frame_id_audio_640x360_24fps_10bit_hevc.mp4` | 640×360 | 10 | HEVC Main10, BT.709 + AAC | 24 | 3660 s | Generated continuous 8-bit frame-ID barcode with 48 kHz stereo AAC for no-loop aging and audio-PTS acceptance. |
+
+### The HDR regression clips (blocks 12–13)
+
+The two `hdr_*` clips are generated on demand, not committed. Both are 10-bit HEVC Main10 with BT.2020 primaries and SMPTE ST 2084 (PQ) transfer. The authored gradient fixture combines slowly changing dark levels with a right-edge highlight ramp spanning approximately 150–1000 nits, exercising tone mapping below the peak rather than relying on a flat peak patch. The companion fixture is lossless near-black temporal shadow-noise; lossless encoding preserves its signal. Do not claim these source shapes prove a particular flicker mechanism or root cause. Their presence is mandatory for HDR acceptance; do not substitute a generic source. Generated media resides outside the source tree in the acceptance setup.
+
+### Native HDR Settings UI capture (Windows)
+
+Use the real Windows Qt platform and the built Ukrainian catalog so font
+metrics and translated captions match the UI acceptance capture; do not use
+the fontless `offscreen` QPA for layout claims. The probe's isolation launcher
+creates an owned executable copy and separate empty native store. Do not
+manually place/run the probe beside a populated application `native` store.
+
+```powershell
+cmake --build build/release --target native_settings_probe
+$env:QT_QPA_PLATFORM = 'windows'
+$env:MIKAI_PROBE_TRANSLATION = (Resolve-Path 'build/release/mikai_uk.qm').Path
+.\build\release\native_settings_probe.exe --hdr-settings-only
+```
+
+### Continuous frame-order and HDR acceptance
+
+The frame-ID clip defaults to 16 seconds. Its visible 8-bit barcode identifies advancing frames in the decoded/rendered image. For continuous same-source-epoch aging, generate a 61-minute clip (3660 seconds) with an ffmpeg build that includes `libx265`; do not loop a short file:
+
+```bash
+FRAME_ID_SIZE=640x360 FRAME_ID_DURATION_SECONDS=3660 \
+  MEDIA_DIR=/path/to/acceptance/media \
+  HLS_DIR=/path/to/acceptance/hls \
+  FFMPEG=/path/to/ffmpeg tests/fixtures/generate_media.sh
+```
+
+Build the standalone probes and run the continuous source with EOF treated as a
+failure:
+
+```powershell
+cmake --build build/release --target frame_order_soak_probe hdr_playback_probe
+$env:MIKAI_PROBE_BUNDLE = 'C:\isolated\mpv-runtime-bundle'
+$env:MIKAI_CLIENT_FRAME_PACING = '1'
+.\build\release\frame_order_soak_probe.exe `
+  --media 'C:\isolated\media\continuous_frame_id_audio_640x360_24fps_10bit_hevc.mp4' `
+  --minutes 60 --no-loop --require-audio `
+  --frame-timing-log 'C:\isolated\evidence\fork-timing.log' `
+  --artifacts 'C:\isolated\evidence\fork-frames'
+```
+
+On Linux, use the same continuous fixture and acceptance options with the Linux
+probe executable and bundle directory:
+
+```bash
+MIKAI_PROBE_BUNDLE=/path/to/isolated/mpv-runtime-bundle \
+MIKAI_CLIENT_FRAME_PACING=1 \
+  build/linux-release/frame_order_soak_probe \
+  --media /path/to/acceptance/media/continuous_frame_id_audio_640x360_24fps_10bit_hevc.mp4 \
+  --minutes 60 --no-loop --require-audio \
+  --frame-timing-log /path/to/evidence/fork-timing.log \
+  --artifacts /path/to/evidence/fork-frames
+```
+
+Use a separate run and distinct outputs for stock mpv. A host without a real
+audio endpoint cannot establish physical audio output; a null sink can test
+AAC/PTS progression only, not a physical DAC.
+
+Repeat in a separate executable working directory with the stock runtime bundle
+and distinct log/artifact paths. Keep both bundles and outputs outside the app's
+normal native/user-data tree. The probe reads an 8-bit barcode from a cached
+FBO at paint stage, correlated to `frameSwapped` for each distinct mpv
+rendered-output frame; it checks modulo-forward identity order and `time-pos`
+progress and reports readback overhead. Sampling is observational: it does not
+force repaints or alter product rendering defaults. The
+2-second output/source-progress gap and 1-second audio-PTS skew are explicit
+limits. It allows forward frame skips; a backward identity jump, stale identity,
+source-clock stall, missing drop counters, missing/non-progressing audio PTS
+when `--require-audio` is set, or early EOF fails. Strict completion also
+fails if the source ends before the requested duration; an observed EOF
+regression changed from an earlier 12.8-second run exiting 0 for a 30-second
+request to an early-EOF failure (exit 1). Failure handling does not classify
+the outcome by comparing message text. The probe's
+`--frame-timing-log <path>` also sets mpv's global engine timing-log path and
+writes probe-specific timing samples to `<path>.probe`. The application's
+separate buffered timing log uses the same option name in the app executable.
+The optional
+`--artifacts` directory receives `first-frame.png` and `last-frame.png`, captured
+from cached FBO samples and saved only after the probe stops. Do not save
+images periodically during a run.
+
+### Natural footage
+
+Use `--natural-media` explicitly for a lawfully available film without the
+authored frame-ID barcode. Both probes accept `--start <seconds>`; non-finite,
+negative and nonnumeric offsets are rejected. A requested seek must be
+observed near that position before comparisons or the aging baseline begin.
+For HDR-source-to-SDR verification, keep the original movie at a lawful local
+path and outside the repository; pass that path as `--hdr` (or aging `--media`)
+and an owned SDR fixture as `--sdr` where required. Select `--natural-media`
+explicitly, use a bounded `--start <seconds>`, and use `--fullscreen` for
+visible aging runs. The HDR probe verifies source metadata, seek/readiness,
+render-target/depth and policy gates; it does not certify native HDR output,
+full Dolby Vision enhancement-layer use, or physical display behavior.
+
+The HDR probe captures `auto.png`, `stable.png` and `vivid.png` at the same
+paused source position/epoch, plus `sdr.png` for SDR recovery. The strict HDR
+visibility check uses the settled Auto capture after post-seek frame progress;
+it does not retry until a non-black frame appears.
+In natural-media mode, the Stable/Vivid comparison is diagnostic: a dark frame
+can legitimately fall below the authored fixture's material-difference
+threshold. That threshold is not an exact pixel-equality test. Without
+`--natural-media`, the fixture's visible-policy-effect assertion remains
+required.
+
+The aging probe accepts `--hdr-policy auto|stable|vivid` and optional
+`--fullscreen`. It keeps source-clock, content-hash, drop-counter, EOF,
+duration and optional audio-PTS checks. Natural mode disables only the
+authored barcode/order contract and reports it unavailable. At least one
+valid content sample is required, or two when the requested and observed
+runtime permit the sampling interval and retry allowance. Playback is muted;
+`--require-audio` checks an actual selected AO/clock, not audible output.
+
+When natural-media timing evidence is enabled, center-pixel RGB/luma and
+low-luma transition timestamps are diagnostic only. A dark pixel, intentional
+black cut or fade is not automatically a rendering failure. Correlate
+candidate timestamps with decoded source frames; sparse content hashes and
+a single center pixel do not certify the absence of brief black flashes.
+Full-frame hash work may be offloaded to one asynchronous job, but OpenGL
+readback remains on the GUI thread; this does not itself prove that readback
+or capture has no timing cost. Run-hour comparisons require comparable display
+geometry and audio-device availability: a missing AO/playback device fails
+`--require-audio`, and a run in a changed remote-session/display/audio state
+is not a controlled load or A/V comparison.
+
+Original films and their captured images belong outside the repository and
+must not be added to the generated fixture set or public source archive.
+
+Run HDR playback acceptance once with fixes enabled and once with the kill
+switch:
+
+```powershell
+$hdr = 'C:\isolated\media\hdr_dark_gradient_1280x720_24fps_10bit_pq_hevc.mp4'
+$sdr = 'C:\isolated\media\motion_frame_id_1280x720_24fps_10bit_hevc.mp4'
+$env:MIKAI_HDR_FIXES = '1'
+.\build\release\hdr_playback_probe.exe --hdr $hdr --sdr $sdr --fbo10
+$env:MIKAI_HDR_FIXES = '0'
+.\build\release\hdr_playback_probe.exe --hdr $hdr --sdr $sdr --fbo10
+Remove-Item Env:MIKAI_HDR_FIXES
+```
+
+The probe requires mpv-reported PQ/10-bit metadata, the Anime4K HDR refusal
+and SDR activation, distinct stable and vivid rendered results with fixes
+enabled, unchanged policy output under rollback, and no OpenGL errors. With
+`--fbo10`, it requests `RGB10_A2` before showing the widget and verifies the
+actual attachment's RGB channel bits and mpv render depth, plus paused-PQ
+samples off the 8-bit lattice. This verifies the probe's requested target,
+not the normal player widget or physical HDR output. Run on a real visible
+OpenGL surface, not `QT_QPA_PLATFORM=offscreen`. `MIKAI_HDR_FIXES=0` rolls
+back the HDR policy changes and processing gates; it does not disable truthful
+FBO-format probing.
+
+### Current consumers
+
+- `motion_320x180_24fps_8bit_hevc.mp4` is the clip `mikai_http_fixture` serves
+  as `/media.mp4` and `/retry.mp4`, which `external_media_probe` plays back
+  over HTTP; the `hls/` renditions are what `hls_recovery_probe` streams
+  through the same fixture server.
+- `frame_order_soak_probe` (T-401/T-210, built from
+  `src/probes/player/FrameOrderSoakProbe.cpp`) replays the clip given via
+  `--media`; its order-acceptance source is the frame-ID clip above. The probe
+  asserts the decoded barcode from the displayed framebuffer, rendered-frame
+  progress, monotonic mpv source time and per-segment drop budgets.
+- No range/matrix pass-through test exists, and no code consumes the
+  fullrange, 10-bit, 23.976, non-mult-32 or portrait clips' metadata cases
+  today; those matrix entries are future gate inputs. When a pass-through
+  test lands, this section must say so and name it.
 
 ### The cut clip's structure
 

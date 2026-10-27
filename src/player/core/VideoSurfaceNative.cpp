@@ -150,7 +150,10 @@ QByteArray frameDigest(const QByteArray& rgb) {
 
 /// The real hwdec method name a backend consumes, as mpv names it. These are
 /// mpv's own method names (vd_lavc.c's hwdec_autoprobe_info), not a guess about
-/// what the machine happens to have.
+/// what the machine happens to have. `d3d11` is the canonical spelling; the
+/// AJE/Compare paths used to write the legacy `d3d11va` alias (T-413) - both
+/// decode through the same d3d11va methods, but one spelling everywhere keeps
+/// the write/readback comparison honest across every path that aligns a core.
 QString backendHwdec(const native::Backend backend) {
     return backend == native::Backend::TensorRT ? QStringLiteral("nvdec")
                                                 : QStringLiteral("d3d11");
@@ -311,10 +314,6 @@ void VideoSurface::armNativeProbe(native::Backend backend) {
     beginNativeProbeAlignment({backend, mpv_->sourceEpoch(), backendHwdec(backend)});
 }
 
-bool VideoSurface::decoderServesBackend(const QString& decoder, native::Backend backend) {
-    return decoderFeedsBackend(decoder, backend);
-}
-
 QString VideoSurface::hwdecForBackend(native::Backend backend) { return backendHwdec(backend); }
 
 void VideoSurface::beginNativeProbeAlignment(const NativeProbeAlignment& alignment) {
@@ -391,7 +390,7 @@ void VideoSurface::applyNativeProbeAlignmentReply(const NativeProbeRead& read) {
         // answer is not evidence of a software decode - it is no answer at all.
         reasonKey = QStringLiteral("native.probe.decoderUnreported");
         reason = tr("the core did not report which decoder it is using");
-    } else if (!decoderServesBackend(read.hwdec, alignment.backend)) {
+    } else if (!decoderFeedsBackend(read.hwdec, alignment.backend)) {
         reasonKey = QStringLiteral("native.probe.decoderIncompatible");
         reason = tr("the core is decoding with '%1', which cannot feed the requested provider "
                     "(%2)")
@@ -819,6 +818,17 @@ void VideoSurface::requestNativeReferenceFrame(int frameIndex) {
                                         frameIndex);
         return;
     }
+    // T-208: the capture is documented to run on a paused core (its steps are a
+    // seek out and back), so a caller that forgot to pause is refused by name
+    // here instead of buying a visible one-frame jump on the live core. The
+    // requested intent counts too: a pause write still in flight means the
+    // caller DID ask for a pause, and the capture may proceed under it.
+    if (!observedPaused_ && !requestedPause()) {
+        emit nativeReferenceFrameFailed(
+            QStringLiteral("native.reference.notPaused"),
+            tr("A reference capture requires playback to be paused first."), frameIndex);
+        return;
+    }
     // The settle is part of the capture, not an idle gap between two of them:
     // the capture request is already answered and the step flag is already down
     // while the held frame waits for the core's own clock, so neither flag alone
@@ -883,9 +893,13 @@ void VideoSurface::requestNativeReferenceFrame(int frameIndex) {
     }
     // Only a seekable source can go back to where it was, so a neighbour that
     // cannot be undone is refused rather than taken.
-    nativeProbeAlignRequest_ = mpv_->getPropertyAsync(
+    // T-308: the capture's seekability read lives in its OWN request slot. The
+    // shared nativeProbeAlignRequest_ let a capture cancel (or be cancelled by)
+    // an unrelated probe alignment, and the two machines only survived each
+    // other because their epoch checks happened to self-heal the clobber.
+    nativeReferenceReadRequest_ = mpv_->getPropertyAsync(
         "seekable", MPV_FORMAT_FLAG, [this, epoch, frameIndex, cadence](const AsyncReply& reply) {
-            nativeProbeAlignRequest_ = AsyncRequestId{};
+            nativeReferenceReadRequest_ = AsyncRequestId{};
             if (!reply.ok() || !reply.flag) {
                 discardNativeReferenceStep(
                     QStringLiteral("native.reference.notSeekable"),
@@ -903,7 +917,7 @@ void VideoSurface::requestNativeReferenceFrame(int frameIndex) {
             // own clock rather than the last position this widget observed.
             readNativeReferencePosition(epoch, frameIndex);
         });
-    if (!nativeProbeAlignRequest_.valid()) {
+    if (!nativeReferenceReadRequest_.valid()) {
         discardNativeReferenceStep(QStringLiteral("native.reference.request"),
                                    tr("The core would not take the seekability read."));
     }
@@ -911,9 +925,10 @@ void VideoSurface::requestNativeReferenceFrame(int frameIndex) {
 
 void VideoSurface::readNativeReferencePosition(uint64_t epoch, int frameIndex) {
     if (mpv_ == nullptr) return;
-    nativeProbeAlignRequest_ = mpv_->getPropertyAsync(
+    // T-308: the capture's position read - same dedicated slot as above.
+    nativeReferenceReadRequest_ = mpv_->getPropertyAsync(
         "time-pos", MPV_FORMAT_DOUBLE, [this, epoch, frameIndex](const AsyncReply& reply) {
-            nativeProbeAlignRequest_ = AsyncRequestId{};
+            nativeReferenceReadRequest_ = AsyncRequestId{};
             if (mpv_ == nullptr || epoch != mpv_->sourceEpoch()) {
                 discardNativeReferenceStep(QStringLiteral("native.reference.staleSource"),
                                            tr("The source changed while the capture was being "
@@ -947,7 +962,7 @@ void VideoSurface::readNativeReferencePosition(uint64_t epoch, int frameIndex) {
                 static_cast<double>(cadence->den) / static_cast<double>(cadence->num);
             stepToAdjacentNativeFrame(position, position + interval, frameIndex);
         });
-    if (!nativeProbeAlignRequest_.valid()) {
+    if (!nativeReferenceReadRequest_.valid()) {
         discardNativeReferenceStep(QStringLiteral("native.reference.request"),
                                    tr("The core would not take the position read."));
     }
@@ -1334,12 +1349,15 @@ void VideoSurface::abandonNativeReferenceFrame(const QString& reasonKey, const Q
     if (!nativeReferenceRequest_.valid() && !nativeReferenceStepping_ && !settling) return;
     if (mpv_ != nullptr) {
         if (nativeReferenceRequest_.valid()) mpv_->cancelAsync(nativeReferenceRequest_);
-        if (nativeProbeAlignRequest_.valid()) mpv_->cancelAsync(nativeProbeAlignRequest_);
+        // T-308: the capture's own preparation read, never the probe
+        // alignment's slot - the two machines no longer clobber each other.
+        if (nativeReferenceReadRequest_.valid())
+            mpv_->cancelAsync(nativeReferenceReadRequest_);
         if (nativeReferenceRestoreRequest_.valid())
             mpv_->cancelAsync(nativeReferenceRestoreRequest_);
     }
     nativeReferenceRequest_ = AsyncRequestId{};
-    nativeProbeAlignRequest_ = AsyncRequestId{};
+    nativeReferenceReadRequest_ = AsyncRequestId{};
     nativeReferenceRestoreRequest_ = AsyncRequestId{};
     // The restore is deliberately NOT issued: the source this surface moved is gone,
     // and seeking whatever replaced it to the old source's position would be worse
@@ -1367,8 +1385,5 @@ void VideoSurface::discardNativeReferenceStep(const QString& reasonKey, const QS
     }
     emit nativeReferenceFrameFailed(reasonKey, reason, nativeReferenceFrameIndex_);
 }
-
-// ── raw playback diagnostics ─────────────────────────────────────────────
-
 
 }  // namespace mplayer

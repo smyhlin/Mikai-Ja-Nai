@@ -31,8 +31,8 @@ constexpr int kRowHeight = 28;
 // geometry a previous popupNear left behind.
 constexpr int kUnlimited = 16777215;
 
-const char* const kText = "#f0f0f5";
-const char* const kMuted = "#9a9aa6";
+const char* const kPopupText = "#f0f0f5";
+const char* const kPopupMuted = "#9a9aa6";
 
 constexpr auto kPanelQss =
     "QFrame[chromePanel=\"true\"] {"
@@ -88,14 +88,14 @@ QString disabledRowQss() {
                "  color: %1;"
                "  background: rgba(255, 255, 255, 0.03);"
                "  border: 1px solid transparent; border-radius: 6px; text-align: left;"
-               "  padding: 0 %3px; min-height: 28px; font-size: 13px; font-weight: 500; }")
-        .arg(QLatin1String(kMuted))
+               "  padding: 0 %2px; min-height: 28px; font-size: 13px; font-weight: 500; }")
+        .arg(QLatin1String(kPopupMuted))
         .arg(kSpacingSmall);
 }
 
 QString captionQss(int size) {
     return QStringLiteral("color: %1; font-size: %2px; font-weight: 700; background: transparent; letter-spacing: 0.5px;")
-        .arg(QLatin1String(kMuted))
+        .arg(QLatin1String(kPopupMuted))
         .arg(size);
 }
 
@@ -561,8 +561,8 @@ void SeriesDrawer::setEntries(const QStringList& labels, int current) {
         connect(button, &QPushButton::clicked, this, [this, spot] { emit picked(spot); });
         rowsLayout_->addWidget(button);
         rows_.append(button);
-        button->setStyleSheet(spot == current ? rowQss(kText, "rgba(189, 172, 255, 0.20)")
-                                              : rowQss(kMuted, "transparent"));
+        button->setStyleSheet(spot == current ? rowQss(kPopupText, "rgba(189, 172, 255, 0.20)")
+                                              : rowQss(kPopupMuted, "transparent"));
     }
     rowsLayout_->addStretch(1);
 }
@@ -598,12 +598,12 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
 
     auto* layout = new QVBoxLayout(this);
     title_ = new QLabel(this);
-    title_->setStyleSheet(QStringLiteral("color: %1; font-weight: 600;").arg(kText));
+    title_->setStyleSheet(QStringLiteral("color: %1; font-weight: 600;").arg(kPopupText));
     title_->setWordWrap(true);
     layout->addWidget(title_);
 
     detail_ = new QLabel(this);
-    detail_->setStyleSheet(QStringLiteral("color: %1;").arg(kMuted));
+    detail_->setStyleSheet(QStringLiteral("color: %1;").arg(kPopupMuted));
     detail_->setWordWrap(true);
     layout->addWidget(detail_);
 
@@ -623,7 +623,7 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
     layout->addWidget(progress_);
 
     elapsedLabel_ = new QLabel(this);
-    elapsedLabel_->setStyleSheet(QStringLiteral("color: %1;").arg(kMuted));
+    elapsedLabel_->setStyleSheet(QStringLiteral("color: %1;").arg(kPopupMuted));
     layout->addWidget(elapsedLabel_);
     elapsedTimer_ = new QTimer(this);
     elapsedTimer_->setInterval(1000);
@@ -639,7 +639,7 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
 
     cancel_ = new QPushButton(this);
     cancel_->setObjectName(QStringLiteral("processingOverlayCancel"));
-    cancel_->setStyleSheet(rowQss(kText, "rgba(255, 255, 255, 0.08)"));
+    cancel_->setStyleSheet(rowQss(kPopupText, "rgba(255, 255, 255, 0.08)"));
     cancel_->setAccessibleName(tr("Cancel preparation"));
     // One connection for the window's whole life, dispatched on what the window
     // is showing: rewiring it per run is how a second build inherited the

@@ -12,6 +12,7 @@ endif()
 
 add_executable(mikai_test_launcher cmake/MikaiTestLauncher.cpp)
 target_link_libraries(mikai_test_launcher PRIVATE Qt6::Core)
+add_dependencies(mikai_test_launcher mikai_launcher_child)
 
 add_test(NAME LauncherContracts
   COMMAND ${CMAKE_COMMAND}
@@ -61,6 +62,47 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )
   set_tests_properties(LinuxPackageContracts PROPERTIES TIMEOUT 360)
+endif()
+
+# T-419: provenance/pin lockstep. The mpv archive pin in FindOrFetchMpv.cmake
+# and the hand-curated provenance JSON in packaging/provenance/ must move
+# together; nothing else in the tree cross-checks them, and a pin bump that
+# misses the JSON (or the reverse) ships a provenance record describing a
+# runtime the build never used. The check is registered unconditionally: it
+# parses two source files, needs neither probes nor Qt, and runs on any
+# platform's ctest. CI reaches it through the plain ctest invocation in
+# packaging/ci/build.py (which runs every registered entry), so no separate
+# wiring exists or is needed.
+find_program(MIKAI_PYTHON3_EXECUTABLE NAMES python3 python)
+if(MIKAI_PYTHON3_EXECUTABLE)
+  add_custom_target(check_translations
+    COMMAND "${MIKAI_PYTHON3_EXECUTABLE}"
+      "${CMAKE_SOURCE_DIR}/packaging/ci/check_translations.py"
+      --catalog "${CMAKE_SOURCE_DIR}/translations/mikai_uk.ts"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    VERBATIM
+  )
+  add_test(NAME mikai_translation_completeness
+    COMMAND "${MIKAI_PYTHON3_EXECUTABLE}"
+      "${CMAKE_SOURCE_DIR}/packaging/ci/check_translations.py"
+      --catalog "${CMAKE_SOURCE_DIR}/translations/mikai_uk.ts"
+  )
+  set_tests_properties(mikai_translation_completeness PROPERTIES
+    TIMEOUT 120
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+  )
+  add_test(NAME mikai_provenance_check
+    COMMAND "${MIKAI_PYTHON3_EXECUTABLE}"
+      "${CMAKE_SOURCE_DIR}/packaging/ci/check_provenance.py"
+      --source-root "${CMAKE_SOURCE_DIR}"
+  )
+  set_tests_properties(mikai_provenance_check PROPERTIES
+    TIMEOUT 120
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+  )
+else()
+  message(STATUS "mikai_provenance_check and translation completeness check are not registered: "
+    "no Python 3 interpreter found")
 endif()
 
 if(MIKAI_BUILD_PROBES)
@@ -119,6 +161,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/player/TestPlaybackDiagnostics.cpp
     tests/cpp/player/TestMediaInformation.hpp
     tests/cpp/player/TestMediaInformation.cpp
+    tests/cpp/player/TestHdrRenderContracts.hpp
+    tests/cpp/player/TestHdrRenderContracts.cpp
     # Native bundle, component, model, preparation & status suites
     tests/cpp/native/TestAnimeJanaiRuntime.hpp
     tests/cpp/native/TestAnimeJanaiRuntime.cpp
@@ -169,6 +213,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/app/TestPublicApiUi.cpp
     tests/cpp/app/TestI18n.hpp
     tests/cpp/app/TestI18n.cpp
+    tests/cpp/app/TestThemeIcons.hpp
+    tests/cpp/app/TestThemeIcons.cpp
     tests/cpp/app/TestLayering.hpp
     tests/cpp/app/TestLayering.cpp
     tests/cpp/app/TestPagers.hpp
@@ -225,12 +271,7 @@ if(MIKAI_BUILD_PROBES)
     )
   endif()
 
-  add_custom_command(TARGET mikai_tests POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-      "${CMAKE_SOURCE_DIR}/shaders"
-      "$<TARGET_FILE_DIR:mikai_tests>/shaders"
-    COMMENT "Deploying Anime4K shader fixtures for mikai_tests"
-  )
+  add_dependencies(mikai_tests mikai_shader_deployment)
 
   set(_mikai_tests_launcher_args
     "$<TARGET_FILE:mikai_tests>"
@@ -247,10 +288,82 @@ if(MIKAI_BUILD_PROBES)
   add_test(NAME mikai_tests COMMAND mikai_test_launcher
     ${_mikai_tests_launcher_args}
   )
+  # The plain entry stays the "run everything" contract for local use
+  # (`ctest -R ^mikai_tests$`, the docs' plain `ctest`). CI excludes it through
+  # the mikai_tests_blob label (see packaging/ci/build.py) so the per-suite
+  # entries below are what a hermetic CI run actually exercises; a hard crash
+  # in one suite can then no longer hide the rest.
   set_tests_properties(mikai_tests PROPERTIES
     TIMEOUT 900
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    LABELS "mikai_tests_blob"
   )
+
+  # Separate entries ensure a failure in one suite does not hide later suites.
+  set(MIKAI_TEST_SUITES
+    TestAnimeJanaiRuntime
+    TestRuntimeSelection
+    TestNativeTypes
+    TestNativeRecipe
+    TestNativeProfiles
+    TestNativeRife
+    TestNativeBundle
+    TestNativePrepPlan
+    TestNativeManifest
+    TestNativeBuilder
+    TestNativePreparationReferences
+    TestNativeComponents
+    TestNativeStoredModels
+    TestNativePreparedPlan
+    TestNativePlaybackController
+    TestNativeStatus
+    TestPlaybackDiagnostics
+    TestMediaInformation
+    TestHdrRenderContracts
+    TestNativePrefs
+    TestNativeMenu
+    TestNativeUserRecipes
+    TestNativeAssets
+    TestMpvAsync
+    TestCompareGif
+    TestModels
+    TestReleases
+    TestAnime4K
+    TestBenchmarkReport
+    TestI18n
+    TestThemeIcons
+    TestStreams
+    TestPagers
+    TestQualityCache
+    TestRateLimiter
+    TestWatchHistory
+    TestDownloads
+    TestDiagnostics
+    TestApiClient
+    TestFeedRender
+    TestUpdateFeed
+    TestPublicApiUi
+    TestRunner
+    TestLayering
+    TestWindowRaise
+    TestSystemIntegration
+    TestClipboard
+    TestLiveOracle
+  )
+  # Order in the list is cosmetic (every entry runs exactly one suite); the
+  # conditional native suite is appended rather than spliced into position.
+  if(MIKAI_WITH_MODEL_INSPECTION)
+    list(APPEND MIKAI_TEST_SUITES TestNativeCatalog)
+  endif()
+  foreach(_mikai_suite IN LISTS MIKAI_TEST_SUITES)
+    add_test(NAME mikai_tests_${_mikai_suite}
+      COMMAND mikai_test_launcher ${_mikai_tests_launcher_args} ${_mikai_suite})
+    set_tests_properties(mikai_tests_${_mikai_suite} PROPERTIES
+      TIMEOUT 900
+      ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+      LABELS "mikai_tests_suite"
+    )
+  endforeach()
   add_dependencies(mikai_tests mikai_bundle)
   set(_mikai_bundle_cli_args
     -DBUNDLE_TOOL=$<TARGET_FILE:mikai_bundle>

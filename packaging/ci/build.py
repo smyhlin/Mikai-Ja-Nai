@@ -89,6 +89,8 @@ def main():
         run('python-dependencies', [sys.executable, '-m', 'pip', 'freeze'])
         run('release-contracts', [sys.executable, '-m', 'unittest', 'discover',
                                   '-s', ROOT / 'packaging/ci', '-p', 'test_release.py'])
+        run('translation-contracts', [sys.executable, '-m', 'unittest', 'discover',
+                                      '-s', ROOT / 'packaging/ci', '-p', 'test_translations.py'])
         if not windows:
             run('system-dependencies', ['dpkg-query', '-W', '-f=${binary:Package}\t${Version}\n'])
         configure = ['cmake', '-S', ROOT, '-B', build, '-G', 'Ninja',
@@ -108,9 +110,17 @@ def main():
         run('configure', configure)
         shutil.copy2(build / 'CMakeCache.txt', evidence / 'CMakeCache.txt')
         run('build', ['cmake', '--build', build, '--parallel', '2', '--target', 'mikai',
-                      'mikai_tests', 'mikai_launcher_child', 'mpv_surface_smoke', 'mikai_manifest_check'], timeout=3600)
+                      'mikai_tests', 'mikai_launcher_child', 'mpv_surface_smoke',
+                      'mikai_manifest_check', 'check_translations'], timeout=3600)
+        # T-417: the label-excluded entry is the one-shot mikai_tests blob,
+        # which a hard crash in an early suite would exit without ever running
+        # the rest. The per-suite mikai_tests_<suite> entries carry the same
+        # hermetic launcher and properties, so CI still exercises every suite -
+        # now with one ctest result per suite instead of one for all of them.
+        # Running both would merely execute every suite twice.
         run('ctest', ['ctest', '--test-dir', build, '--output-on-failure', '--no-tests=error',
-                      '--timeout', '900', '--output-junit', evidence / 'ctest.xml'], timeout=2400)
+                      '--timeout', '900', '--label-exclude', 'mikai_tests_blob',
+                      '--output-junit', evidence / 'ctest.xml'], timeout=2400)
         # Exit 2 is missing externally-owned source roots; exit 3 remains an
         # actual redistribution block, not a successful native verification.
         code = run('optional-native-manifest', [build / ('mikai_manifest_check' + suffix),

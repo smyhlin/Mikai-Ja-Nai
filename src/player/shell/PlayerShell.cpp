@@ -1008,6 +1008,12 @@ bool PlayerShell::hasVisibleOverlay() const {
 }
 
 void PlayerShell::enterAutoHidden() {
+    // T-317: chrome auto-hide is a fullscreen affordance. In windowed mode the
+    // viewer still has window chrome and a taskbar entry to see the player by,
+    // and an auto-hidden HUD would also misreport FULLSCREEN_AUTO_HIDDEN to
+    // every consumer that gates on the state name (strip and drawer hiding),
+    // so the request is refused instead of honored wrongly.
+    if (!fullscreen_) return;
     // Never yank the chrome away mid-gesture: an open overlay or a live drag
     // means the user is interacting even though no move crossed the shell.
     if ((videoDrop_ != nullptr && videoDrop_->active()) || hasVisibleOverlay()) {

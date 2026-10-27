@@ -1,5 +1,6 @@
 #include "SystemDefaultPlayer.hpp"
 #include "SystemDefaultPlayerLaunch.hpp"
+#include "Win32Support.hpp"
 
 #include <QCoreApplication>
 
@@ -11,10 +12,16 @@
 #include <QStringList>
 #include <algorithm>
 #include <utility>
-#include <QtCore/qt_windows.h>
 #include <shlobj.h>
 
 namespace {
+
+// T-407: the shared registry plumbing lives in gui/Win32Support.hpp; these
+// names bring it into this translation unit unqualified, so every call site
+// below reads exactly as it did when the helpers were private copies.
+using mikai::gui::win32::RegistryKey;
+using mikai::gui::win32::missing;
+using mikai::gui::win32::wide;
 
 // These are application identities, not translated display labels. In
 // particular, registeredAppUser must match the RegisteredApplications value.
@@ -30,33 +37,15 @@ constexpr const char* videoExtensions[] = {
     ".ts", ".m2ts", ".mpeg", ".mpg", ".flv"
 };
 
-const wchar_t* wide(const QString& value) {
-    return reinterpret_cast<const wchar_t*>(value.utf16());
-}
-
-struct RegistryKey {
-    HKEY handle = nullptr;
-    RegistryKey() = default;
-    RegistryKey(const RegistryKey&) = delete;
-    RegistryKey& operator=(const RegistryKey&) = delete;
-    ~RegistryKey() { if (handle != nullptr) RegCloseKey(handle); }
-};
-
-bool missing(LSTATUS status) {
-    return status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND;
-}
-
 QString windowsError(DWORD status) {
-    wchar_t* buffer = nullptr;
-    const DWORD length = FormatMessageW(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        nullptr, status, 0, reinterpret_cast<wchar_t*>(&buffer), 0, nullptr);
-    const QString reason = length != 0 ? QString::fromWCharArray(buffer, length).trimmed()
-                                      : QCoreApplication::translate(
-                                            "SystemDefaultPlayer", "Unknown Windows error");
-    if (buffer != nullptr) LocalFree(buffer);
+    // T-407: the FormatMessageW plumbing is shared; this module keeps its own
+    // translated sentence and fallback so no user-facing string moved context.
+    const QString reason = mikai::gui::win32::systemMessage(status);
     return QCoreApplication::translate("SystemDefaultPlayer", "%1 (Windows error %2).")
-        .arg(reason).arg(status);
+        .arg(reason.isEmpty()
+                 ? QCoreApplication::translate("SystemDefaultPlayer", "Unknown Windows error")
+                 : reason)
+        .arg(status);
 }
 
 bool registryFailure(const QString& path, LSTATUS status, QString* error) {

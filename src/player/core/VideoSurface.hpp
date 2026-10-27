@@ -5,6 +5,7 @@
 
 #include <QByteArray>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QImage>
 #include <QMetaType>
 #include <QOpenGLWidget>
@@ -17,6 +18,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -25,6 +27,7 @@
 
 #include "Anime4K.hpp"
 #include "MpvHandle.hpp"
+#include "MpvRenderContext.hpp"
 #include "MediaTracks.hpp"
 #include "MediaInformation.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
@@ -80,6 +83,23 @@ struct ResolvedStreamFps {
     double framesPerSecond = 0.0;
     StreamFpsSource source = StreamFpsSource::Unknown;
 };
+/// API 2.2+ reports target_time in nanoseconds; API 2.1 uses microseconds.
+inline std::optional<int> clientPacingDelayMilliseconds(
+    int64_t rawTargetTime, int64_t nowUs, double renderLeadMs, uint64_t apiVersion) {
+    if (rawTargetTime <= 0 || !std::isfinite(renderLeadMs) || renderLeadMs < 0.0)
+        return std::nullopt;
+    const uint64_t major = apiVersion >> 16;
+    const uint64_t minor = apiVersion & 0xffffu;
+    const bool targetInNanoseconds = major > 2 || (major == 2 && minor >= 2);
+    const int64_t targetUs = targetInNanoseconds ? rawTargetTime / 1000 : rawTargetTime;
+    if (targetUs <= nowUs ||
+        (nowUs < 0 && targetUs > std::numeric_limits<int64_t>::max() + nowUs))
+        return std::nullopt;
+    const int64_t remainingUs =
+        targetUs - nowUs - static_cast<int64_t>(renderLeadMs * 1000.0);
+    if (remainingUs <= 0 || remainingUs > 100000) return std::nullopt;
+    return static_cast<int>((remainingUs + 999) / 1000);
+}
 
 /// Resolves current-source FPS observations for display; never infers Native
 /// execution from an FPS value.
@@ -192,6 +212,65 @@ public:
     /// for Off vs On; the probe proves the rest with pixels.
     QString effectiveShaderChain() const;
 
+    enum class HdrToneMappingPolicy {
+        Auto,
+        Stable,
+        Vivid
+    };
+    static void setHdrToneMappingPolicy(HdrToneMappingPolicy policy);
+    static HdrToneMappingPolicy hdrToneMappingPolicy();
+    /// Settings keys the app persists the process-wide policies under. Declared
+    /// here - like the shell's preset-shortcut group - so every reader and
+    /// writer spells them identically.
+    inline static constexpr char kHdrToneMappingSettingKey[] = "playback/hdrToneMapping";
+    inline static constexpr char kAnimeJanaiHdrOverrideSettingKey[] = "playback/nativeOnHdr";
+
+    /// The observed color profile of the current source (T-102). Read from
+    /// mpv's own `video-params` notifications and reset at each source epoch.
+    /// Unknown or unsupported transfer metadata remains gated until a known
+    /// SDR transfer is observed.
+    struct SourceColorProfile {
+        QString gamma;        ///< video-params/gamma ("bt.1886", "pq", "hlg", ...)
+        QString primaries;   ///< video-params/primaries ("bt.709", "bt.2020", ...)
+        QString pixelformat;  ///< video-params/pixelformat ("yuv420p", "p010", ...)
+
+        /// HDR by transfer function: PQ and HLG are the only HDR transfers this
+        /// build treats specially. Primaries alone say nothing about the curve,
+        /// so bt.2020 SDR content stays ungated.
+        bool hasTransferMetadata() const { return !gamma.isEmpty(); }
+        bool isHdr() const {
+            return gamma == QStringLiteral("pq") || gamma == QStringLiteral("hlg") ||
+                   gamma == QStringLiteral("smpte2084");
+        }
+        bool hasKnownSdrTransfer() const {
+            return gamma == QStringLiteral("bt.1886") || gamma == QStringLiteral("srgb") ||
+                   gamma == QStringLiteral("linear") || gamma == QStringLiteral("gamma1.8") ||
+                   gamma == QStringLiteral("gamma2.0") || gamma == QStringLiteral("gamma2.2") ||
+                   gamma == QStringLiteral("gamma2.4") || gamma == QStringLiteral("gamma2.6") ||
+                   gamma == QStringLiteral("prophoto") || gamma == QStringLiteral("st428");
+        }
+        bool requiresSdrGate() const { return !hasKnownSdrTransfer(); }
+    };
+    const SourceColorProfile& sourceColorProfile() const { return sourceColorProfile_; }
+
+    /// Explicitly allows AnimeJanai processing on sources identified as HDR.
+    static void setAnimeJanaiHdrOverride(bool allowed);
+    static bool animeJanaiHdrOverride();
+    static bool hdrRenderingFixesEnabled();
+
+    /// Optional timing diagnostics; the application supplies the log path.
+    static void setFrameTimingLogPath(const QString& path);
+    static QString frameTimingLogPath();
+
+    struct RenderTargetColorBits {
+        int red = 0;
+        int green = 0;
+        int blue = 0;
+    };
+    int renderTargetInternalFormat() const { return renderInternalFormat_; }
+    RenderTargetColorBits renderTargetColorBits() const { return renderTargetColorBits_; }
+    int renderTargetDepthBitsPerChannel() const { return renderDepthBitsPerChannel_; }
+    bool renderTargetFormatProbed() const { return renderFormatProbed_; }
     bool isContextReady() const { return contextReady_; }
     /// Spins the event loop until the render context exists. A surface that has
     /// been constructed but not yet shown never gets one, so a caller that
@@ -374,6 +453,15 @@ public:
 
     // ── raw playback diagnostics ──────────────────────────────────────────
     PlaybackDiagnostics playbackDiagnostics() const;
+    void setDiagnosticsPolling(bool enabled);
+
+    /// T-207: stops (or restarts) this surface's 50 ms state pump. A pooled,
+    /// paused, hidden surface - a parked PiP float - needs no observer, and the
+    /// pump is pure Qt work, so it can be parked at any pool boundary and the
+    /// next drain resumes exactly where the paused core left off. Only call
+    /// this for surfaces nothing is actively watching (the PiP pool does it
+    /// from its show/hide events); playback surfaces keep their pump for life.
+    void setPumpSuspended(bool suspended);
 
 signals:
     void playingChanged(bool playing);
@@ -389,6 +477,12 @@ signals:
     void mediaEnded(quint64 mediaToken);
     /// The loaded source changed, invalidating any frame captured under the old epoch.
     void sourceEpochChanged(uint64_t epoch);
+    /// The observed source color profile changed (T-102). Emitted after mpv
+    /// reports a new `video-params` set for the loaded source; consumers that
+    /// gate enhancement chains on SDR re-evaluate here.
+    void sourceColorProfileChanged(const mplayer::VideoSurface::SourceColorProfile& profile);
+    /// Notice emitted when a shader chain is gated by source transfer metadata.
+    void anime4kGated(const QString& notice);
     /// A seek intent can precede, or never change, the observed position.
     void seekRequested(double seconds);
     void positionChanged(double seconds);
@@ -531,12 +625,6 @@ private:
         /// The exact hwdec value the core must be aligned to for `backend`.
         QString required;
     };
-    /// True when the decoder the core reported can actually feed `backend`: the
-    /// CUDA interop TensorRT consumes, or the D3D11 textures DirectML consumes.
-    /// A software-decoded frame is compatible with neither, and `copy` variants
-    /// are refused: they download to system memory, so the frames the backend
-    /// would receive carry no device at all.
-    static bool decoderServesBackend(const QString& decoder, native::Backend backend);
     /// The hwdec value that aligns a core to `backend`, or empty when this build
     /// names none - which is itself a refusal, never a fallback to whatever the
     /// core happened to pick.
@@ -667,6 +755,10 @@ private:
     std::optional<double> nativeProbeResumePosition_;
     /// The one capture in flight. valid() is the in-flight flag.
     AsyncRequestId nativeReferenceRequest_;
+    /// T-308: the capture's OWN preparation read slot (seekability + position),
+    /// separate from nativeProbeAlignRequest_ so a capture and a probe
+    /// alignment can no longer cancel or clobber each other's request ids.
+    AsyncRequestId nativeReferenceReadRequest_;
     /// The one settle read in flight, i.e. the outstanding `time-pos` round that
     /// decides whether the held frame may be published. valid() is the in-flight
     /// flag; it is cancelled by refuseNativeReferenceRestore, so a named failure
@@ -714,6 +806,17 @@ private:
     /// window gets no paint event, so a frame kept for one would never be
     /// presented - nor acknowledged.
     bool paintCanHappen() const;
+    /// Schedules a pending frame against mpv's target_time without blocking.
+    void schedulePacedPaint();
+    /// The deferred paint slot arrived: repaint now, and remember when this
+    /// paint was released so paintGL can measure the scheduling lead.
+    void onPacingTick();
+    /// Runtime rollback for client-side frame pacing.
+    static bool clientFramePacingEnabled();
+    /// Queries the widget color attachment's actual internal format.
+    void probeFboColorDepth();
+    /// Adds one record to the optional timing log.
+    void logFrameTiming(const QString& line);
     /// Consumes the swap report owed for the frame this paint rendered. Called
     /// from frameSwapped, so the report names an actual presentation.
     void onFrameSwapped();
@@ -781,12 +884,22 @@ private:
     /// reports as the chain stays mpv's observed value, never the submission.
     void applyShaderChainRequest(const QString& shaders);
 
+    /// The resolved chain, or empty while source transfer metadata is gated.
+    QString resolvedChainForCurrentSource(const QString& candidateId) const;
+    /// Re-evaluates shader and AnimeJanai gates after a profile change.
+    void handleSourceColorProfileChanged();
+    /// Refuses an enabled AnimeJanai plan while source metadata is unknown/HDR.
+    void enforceAnimeJanaiHdrGate();
+    /// Applies the current process-wide HDR options to this core.
+    void applyHdrPolicyToEngine();
+
     // Held so the render context can be freed with it current at teardown.
     QOpenGLContext* context_ = nullptr;
     /// The context's own destruction signal, so it is not fired against a
     /// widget that already let the renderer go.
     QMetaObject::Connection contextDestroyedConnection_;
     std::unique_ptr<MpvHandle> mpv_;
+    uint64_t mpvApiVersion_ = 0;
     std::unique_ptr<MpvRenderContext> render_;
     QString url_;
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
@@ -848,6 +961,33 @@ private:
     // read off a wall clock that can step.
     QElapsedTimer nativeStatusClock_;
 
+    // Client pacing remains nonblocking; the timer is canceled on direct paint
+    // and source/context teardown.
+    QTimer pacingTimer_;
+    /// Raw target_time in the loaded API's units; 0 with no timer armed.
+    qint64 pacingTargetTime_ = 0;
+    bool pacingTimerArmed_ = false;
+    /// Estimated render lead subtracted from mpv's target time.
+    double renderLeadMs_ = 1.5;
+    /// Steady-clock ns of the moment the pacing timer released the paint whose
+    /// lead the next paintGL should measure.
+    qint64 pacingFiredAtNs_ = 0;
+    bool pacingMeasurePending_ = false;
+    /// T-204: consecutive advanceRenderState rounds that could not paint.
+    /// Skip/drop mode is latched only after this exceeds the grace bound, so a
+    /// transiently empty visibleRegion() no longer discards frames.
+    int unpaintableStreak_ = 0;
+    /// T-204: the return from skip mode forces one redraw so no frame is left
+    /// stranded in the buffer mpv already handed over.
+    bool skippingFrames_ = false;
+    /// Buffered timing log, written in batches while enabled.
+    QFile frameTimingLog_;
+    QByteArray timingLogBuffer_;
+    QElapsedTimer timingLogFlushClock_;
+    qint64 lastSwapNs_ = 0;
+    /// Stops retries after a timing-log failure.
+    bool timingLogBroken_ = false;
+
     // The one native-status reader this surface owns, bound to its own core.
     native::NativeStatusConsumer nativeStatus_;
     bool nativeStatusPolling_ = false;
@@ -885,6 +1025,10 @@ private:
     DiagnosticRequest diagnosticRequests_[kDiagnosticSlotCount];
     qint64 diagnosticsLastPollMs_ = 0;
     bool diagnosticsActive_ = false;
+    /// T-205: the shipped app (which has no diagnostics consumer) switches the
+    /// poll off on every surface it owns; probes keep the constructor default
+    /// (on) because their verdicts assert on the polled counters.
+    bool diagnosticsPolling_ = true;
     PlaybackDiagnostics diagnostics_;
 
     bool contextReady_ = false;
@@ -964,6 +1108,19 @@ private:
     double observedCacheSpeed_ = 0.0;
     double observedContainerFps_ = 0.0;
     QString shaderChain_;
+    /// Actual widget FBO color format/depth, or unknown before probing.
+    int renderInternalFormat_ = 0;
+    RenderTargetColorBits renderTargetColorBits_;
+    int renderDepthBitsPerChannel_ = 0;
+    bool renderFormatProbed_ = false;
+    int appliedHdrPolicyRevision_ = 0;
+    int appliedAnimeJanaiOverrideRevision_ = 0;
+    SourceColorProfile sourceColorProfile_;
+    /// Staged by the video-params observers; handleSourceColorProfileChanged()
+    /// diffs it against the published profile so three property events in one
+    /// drain cause one re-evaluation, not three.
+    SourceColorProfile observedColorProfile_;
+    bool animeJanaiSourceGated_ = false;
     /// The subscriptions this widget owns, released before the core.
     std::vector<uint64_t> observers_;
 };
@@ -976,6 +1133,7 @@ private:
 Q_DECLARE_METATYPE(mplayer::native::NativeStatusView)
 Q_DECLARE_METATYPE(mplayer::native::NativePlaybackController::Status)
 Q_DECLARE_METATYPE(mplayer::StreamFpsSource)
+Q_DECLARE_METATYPE(mplayer::VideoSurface::SourceColorProfile)
 // NativePreparationContext is declared by its owning header and SelectionState /
 // FrameFixture need no declaration at all: Qt6 instantiates QMetaTypeId for any
 // complete type. Declaring them here would be a redefinition, because a

@@ -3,10 +3,12 @@
 #include "WindowRaisePolicy.hpp"
 #include "pages/MainWindow.hpp"
 #include "state/AppearanceStore.hpp"
+#include "state/WatchHistory.hpp"
 #include "theme/Theme.hpp"
 #include "workers/Runner.hpp"
 
 #include <ShellTheme.hpp>
+#include <VideoSurface.hpp>
 
 #include <backend/MikaiClient.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
@@ -18,6 +20,7 @@
 #include <QIcon>
 #include <QMessageBox>
 #include <QPointer>
+#include <QSettings>
 #include <QStringList>
 #include <QTimer>
 
@@ -51,12 +54,14 @@ QStringList launchArguments(int argc, char** argv) {
 struct LaunchRequest {
     QString video;
     QString error;
+    QString frameTimingLog;
 };
 
 LaunchRequest parseLaunchRequest(const QStringList& arguments) {
     LaunchRequest request;
     bool positionalOnly = false;
     bool supplied = false;
+    bool frameTimingLogSupplied = false;
     for (qsizetype index = 1; index < arguments.size(); ++index) {
         const QString& argument = arguments[index];
         if (!positionalOnly && argument == QStringLiteral("--")) {
@@ -73,6 +78,25 @@ LaunchRequest parseLaunchRequest(const QStringList& arguments) {
             // Consume exactly one literal argument. A filename that starts with
             // '-' is a filename here, never another application or Qt option.
             path = arguments[index];
+        } else if (!positionalOnly && argument == QStringLiteral("--frame-timing-log")) {
+            if (frameTimingLogSupplied) {
+                request.error = QCoreApplication::translate(
+                    "CommandLine", "Specify --frame-timing-log only once.");
+                return request;
+            }
+            if (++index == arguments.size()) {
+                request.error = QCoreApplication::translate(
+                    "CommandLine", "The --frame-timing-log option requires a file path.");
+                return request;
+            }
+            if (arguments[index].isEmpty()) {
+                request.error = QCoreApplication::translate(
+                    "CommandLine", "The frame timing log path cannot be empty.");
+                return request;
+            }
+            request.frameTimingLog = QFileInfo(arguments[index]).absoluteFilePath();
+            frameTimingLogSupplied = true;
+            continue;
         } else if (!positionalOnly && argument.startsWith(QLatin1Char('-'))) {
             request.error = QCoreApplication::translate(
                 "CommandLine", "Unknown command-line option: %1").arg(argument);
@@ -211,6 +235,31 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    // The process-wide playback policies are read before any surface exists so
+    // every engine is created with them already in place (T-101/T-104): the HDR
+    // tone-mapping policy and the native-on-HDR override. The Settings dialog
+    // applies changes live later; this is only the startup truth.
+    {
+        QSettings settings;
+        using HdrPolicy = mplayer::VideoSurface::HdrToneMappingPolicy;
+        const int storedPolicy = settings.value(
+            QString::fromLatin1(mplayer::VideoSurface::kHdrToneMappingSettingKey),
+            static_cast<int>(HdrPolicy::Auto)).toInt();
+        switch (storedPolicy) {
+            case 1: mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Stable); break;
+            case 2: mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Vivid); break;
+            default: mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Auto); break;
+        }
+        mplayer::VideoSurface::setAnimeJanaiHdrOverride(
+            settings.value(
+                QString::fromLatin1(mplayer::VideoSurface::kAnimeJanaiHdrOverrideSettingKey),
+                false).toBool());
+    }
+    if (!launch.frameTimingLog.isEmpty()) {
+        mplayer::VideoSurface::setFrameTimingLogPath(launch.frameTimingLog);
+        qInfo().noquote() << "mikai: frame timing log:" << launch.frameTimingLog;
+    }
+
     // After the application object exists (the policy installs an event filter
     // on it) and before any window is shown, so the first window - the shell -
     // already behaves like every window that follows it: a newly opened player,
@@ -275,6 +324,9 @@ int main(int argc, char** argv) {
         // its own teardown ran before anything a worker may still referenced.
         // The client stays alive until it leaves this scope.
     }
+
+    // Drain pending history writes before teardown.
+    mikai::app::WatchHistory::flushHistoryWrites();
 
     // The loop is done and the backend objects are gone, so no pool a worker
     // used can still reference them. This last call retires anything left from a

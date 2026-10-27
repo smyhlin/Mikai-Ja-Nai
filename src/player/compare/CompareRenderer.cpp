@@ -125,7 +125,9 @@ struct CompareRenderer::State {
             return false;
         }
         if (!framebuffer || framebuffer->size() != size) {
-            framebuffer = std::make_unique<QOpenGLFramebufferObject>(size);
+            QOpenGLFramebufferObjectFormat format;
+            format.setInternalTextureFormat(kGlInternalFormatRgba8);
+            framebuffer = std::make_unique<QOpenGLFramebufferObject>(size, format);
         }
         if (!framebuffer->isValid()) {
             error = QCoreApplication::translate("CompareRenderer", "The comparison framebuffer could not be created.");
@@ -200,7 +202,9 @@ struct CompareRenderer::State {
         const ScopedCurrent current(context, &target);
         if (!current || !target.isValid()) return false;
         if (!upscaleFramebuffer || upscaleFramebuffer->size() != desired) {
-            upscaleFramebuffer = std::make_unique<QOpenGLFramebufferObject>(desired);
+            QOpenGLFramebufferObjectFormat format;
+            format.setInternalTextureFormat(kGlInternalFormatRgba8);
+            upscaleFramebuffer = std::make_unique<QOpenGLFramebufferObject>(desired, format);
         }
         return upscaleFramebuffer->isValid();
     }
@@ -245,8 +249,10 @@ struct CompareRenderer::State {
                 gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
                 gl->glClear(GL_COLOR_BUFFER_BIT);
             }
+            const int targetFormat =
+                static_cast<int>(activeFbo->format().internalTextureFormat());
             const int result = rendering->render(activeFbo->handle(), activeFbo->width(),
-                                                 activeFbo->height(), 0);
+                                                 activeFbo->height(), targetFormat, 8);
             rendering->reportSwap();
             if (result < 0) {
                 error = QCoreApplication::translate("CompareRenderer", "The comparison renderer failed: %1")
@@ -415,13 +421,26 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
         // video on a 1080p display or in a windowed viewport), rendering into an
         // internal 2x FBO ensures mpv executes the Upscale stages instead of
         // skipping them.
+        //
+        // T-313: the old `source <= 1080p` gate left bigger sources rendering
+        // their x2 candidates as silent passthrough (the WHEN condition never
+        // fired), which reported "no difference" as though the shader ran. The
+        // gate is gone: every source gets the same internal target, and the
+        // 3840x2160 clamp bounds the allocation to what a 1080p source already
+        // used to allocate here - no new worst case. A source wider than the
+        // clamp can still not satisfy WHEN (see the annotation below).
+        bool upscaleCapped = false;
         if (!plan.enabled && chain.contains(QLatin1String("Upscale"), Qt::CaseInsensitive) &&
-            state.sourceFrame.width() <= 1920 && state.sourceFrame.height() <= 1080 &&
             (state.framebuffer->width() <= state.sourceFrame.width() * 1.2 ||
              state.framebuffer->height() <= state.sourceFrame.height() * 1.2)) {
             const QSize upscaleSize(
                 std::min(3840, std::max(state.framebuffer->width(), state.sourceFrame.width() * 2)),
                 std::min(2160, std::max(state.framebuffer->height(), state.sourceFrame.height() * 2)));
+            // T-313: the clamp is what bounds the allocation - and when it bites,
+            // the target still cannot satisfy the WHEN condition, so the
+            // annotation below says so instead of letting the candidate read as
+            // a shader that executed.
+            upscaleCapped = upscaleSize.width() <= state.sourceFrame.width() * 1.2;
             if (upscaleSize.width() > state.framebuffer->width() &&
                 upscaleSize.height() > state.framebuffer->height() &&
                 state.ensureUpscaleFramebuffer(upscaleSize)) {
@@ -436,8 +455,10 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
         // between two AnimeJaNai models cannot leave the first one running and
         // answering for the second. The full ordered plan is then attached as
         // one vf pipeline, with unique app-owned labels for its native stages.
+        // T-413: `d3d11` (the canonical mpv spelling), matching backendHwdec and
+        // the AJE alignment path, so every DirectML core writes one token.
         const std::string targetHwdec =
-            (plan.enabled && plan.backend == native::Backend::DirectML) ? "d3d11va" : "nvdec";
+            (plan.enabled && plan.backend == native::Backend::DirectML) ? "d3d11" : "nvdec";
         state.ajiLabels.clear();
         for (const native::AnimeJanaiPlanStage& stage : plan.stages) {
             if (stage.kind == native::AnimeJanaiPlanStage::Kind::Aji)
@@ -473,6 +494,22 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
                 return {};
             }
         }
+        // T-314: the lease must not outlive a failed render. It was released
+        // only on the success path, so every null-output return below left it
+        // held until the owner called stop() - which a torn-down window might
+        // never do. The scope guard gives it back on ANY exit from this
+        // function; the success path disowns it first so the release stays
+        // where the reader can see it.
+        struct BuildLeaseGuard {
+            std::shared_ptr<native::AnimeJanaiStageBuildLease>* slot = nullptr;
+            ~BuildLeaseGuard() {
+                if (slot != nullptr && *slot) {
+                    (*slot)->release();
+                    slot->reset();
+                }
+            }
+        } leaseGuard;
+        leaseGuard.slot = &state.stageBuildLease;
         state.requestedSlot = plan.requiresAji
                                   ? (plan.stages.size() > 1 ? 1 : plan.slot)
                                   : 0;
@@ -482,6 +519,17 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
         state.buildGate = {};
         state.configuredStages = 0;
         state.diagnosticTail.clear();
+        if (upscaleCapped) {
+            // T-313: appended after the clear, so the note survives into the
+            // render's diagnostic tail: a source beyond the 4K internal-target
+            // clamp may run its x2 Upscale candidates as passthrough, and the
+            // comparison must say so rather than read as an executed shader.
+            state.diagnosticTail.append(
+                QCoreApplication::translate(
+                    "CompareRenderer",
+                    "This source exceeds the internal comparison target, so x2 upscaling "
+                    "candidates may render unchanged."));
+        }
         if (!state.waitForCommand(state.command({"stop"}), cancelled) ||
             !state.waitForCommand(state.command({"set", "vf", ""}), cancelled) ||
             !state.waitForCommand(state.command({"set", "hwdec", targetHwdec}), cancelled) ||
@@ -499,6 +547,9 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
         state.core->loadFile(state.framePath.toStdString());
         QImage output = state.settle(true, plan.requiresAji, cancelled, progress);
         if (!output.isNull()) {
+            // T-314: disown first - the guard must not double-release a lease
+            // the success path has already given back.
+            leaseGuard.slot = nullptr;
             if (state.stageBuildLease) state.stageBuildLease->release();
             state.stageBuildLease.reset();
         }

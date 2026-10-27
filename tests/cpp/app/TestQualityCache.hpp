@@ -22,6 +22,9 @@ class TestQualityCache : public QObject {
   void staysAtTheCapAfterManyInserts();
   void clearDropsEveryEntry();
   void freshEntriesSurviveAFlushAndReload();
+  void loadingPrunesExpiredEntriesBeforePersisting();
+  void loadingEnforcesTheEntryCap();
+  void loadingDoesNotDiscardPendingChanges();
 
   void noSourceIsRemembered();
   void noSourceIsNotWrittenToDisk();

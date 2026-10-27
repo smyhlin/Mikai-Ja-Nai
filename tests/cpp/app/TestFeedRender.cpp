@@ -680,9 +680,9 @@ bool episodeWatchedMarkShown(QPushButton* pill) {
 }
 
 void clearEpisodeHistory() {
-  QSettings settings;
-  settings.remove(QString::fromLatin1(mikai::app::kWatchHistoryKey));
-  settings.sync();
+  WatchHistory history;
+  history.clear();
+  WatchHistory::flushHistoryWrites();
 }
 struct ContextMenuActionResult {
   bool found = false;

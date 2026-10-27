@@ -2,8 +2,10 @@
 
 #include <QCoreApplication>
 #include <QDirIterator>
+#include <QFile>
 #include <QFileInfo>
 #include <QSet>
+#include <QStandardPaths>
 #include <QVector>
 
 namespace mikai::backend {
@@ -58,11 +60,28 @@ QVector<QDir> candidateDirs(const QString& hint) {
 }  // namespace
 
 QDir cacheDir() {
+#ifdef Q_OS_WIN
     QString base = qEnvironmentVariable("LOCALAPPDATA");
     if (base.isEmpty()) {
         base = QDir::homePath();
     }
     return QDir(QDir(base).filePath(QStringLiteral("MPVBackend/runtime")));
+#else
+    // T-414: the non-Windows cache lives under the platform's cache location
+    // instead of squatting directly in $HOME; the trailing MPVBackend/runtime
+    // subfolder keeps the on-disk layout predictable for anything that
+    // recognises that tree. A legacy ~/MPVBackend/runtime is migrated into
+    // place once, when the new path does not exist yet - best-effort, because
+    // a cache that refuses to move is only a stale copy, never a lost one.
+    const QString base = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    const QString target = QDir(base).filePath(QStringLiteral("MPVBackend/runtime"));
+    const QString legacy = QDir(QDir::homePath()).filePath(QStringLiteral("MPVBackend/runtime"));
+    if (QFileInfo::exists(legacy) && !QFileInfo::exists(target)) {
+        QDir().mkpath(QFileInfo(target).absolutePath());
+        QFile::rename(legacy, target);
+    }
+    return QDir(target);
+#endif
 }
 
 QStringList libraryNames() {

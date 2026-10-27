@@ -52,6 +52,8 @@ add_library(mikai_backend STATIC
   src/backend/Downloads.hpp
   src/backend/Errors.cpp
   src/backend/Errors.hpp
+  src/backend/HttpTransport.cpp
+  src/backend/HttpTransport.hpp
   src/backend/MikaiClient.cpp
   src/backend/MikaiClient.hpp
   src/backend/Models.cpp
@@ -67,6 +69,9 @@ add_library(mikai_backend STATIC
 )
 target_include_directories(mikai_backend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(mikai_backend PUBLIC Qt6::Core Qt6::Network)
+if(WIN32)
+  target_link_libraries(mikai_backend PUBLIC advapi32)
+endif()
 
 # ---------------------------------------------------------------------------
 # 2. mikai_native_support — Core libmpv Transport & Native Support (GUI-free)
@@ -206,6 +211,7 @@ set(PLAYER_SOURCES
   src/gui/VideoDropTarget.cpp
   src/gui/SystemDefaultPlayer.cpp
   src/gui/SystemDefaultPlayerLaunch.cpp
+  src/gui/Win32Support.cpp
   # OpenGL render bridge & video surface
   src/player/core/MpvRenderContext.cpp
   src/player/core/VideoSurface.cpp
@@ -242,6 +248,7 @@ set(PLAYER_HEADERS
   src/gui/VideoDropTarget.hpp
   src/gui/SystemDefaultPlayer.hpp
   src/gui/SystemDefaultPlayerLaunch.hpp
+  src/gui/Win32Support.hpp
   src/player/core/MpvRenderContext.hpp
   src/player/core/VideoSurface.hpp
   src/player/core/MediaInformation.hpp
@@ -456,6 +463,7 @@ set(MIKAI_TRANSLATION_TARGETS mikai mikai_app mikai_backend mikai_player mikai_n
 if(TARGET mikai_model_inspection)
   list(APPEND MIKAI_TRANSLATION_TARGETS mikai_model_inspection)
 endif()
+
 qt_add_translations(mikai
   SOURCE_TARGETS ${MIKAI_TRANSLATION_TARGETS}
   TS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/translations/mikai_uk.ts
@@ -490,13 +498,22 @@ if(WIN32 AND MIKAI_MPV_DLL AND EXISTS "${MIKAI_MPV_DLL}")
   )
 endif()
 
-add_custom_command(TARGET mikai POST_BUILD
+file(GLOB_RECURSE MIKAI_SHADER_FILES CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*")
+set(MIKAI_SHADER_DEPLOYMENT_STAMP
+  "${CMAKE_CURRENT_BINARY_DIR}/mikai-shaders-$<CONFIG>.stamp")
+add_custom_command(
+  OUTPUT "${MIKAI_SHADER_DEPLOYMENT_STAMP}"
   COMMAND ${CMAKE_COMMAND} -E copy_directory
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
     "$<TARGET_FILE_DIR:mikai>/shaders"
+  COMMAND ${CMAKE_COMMAND} -E touch "${MIKAI_SHADER_DEPLOYMENT_STAMP}"
+  DEPENDS ${MIKAI_SHADER_FILES}
   COMMENT "Deploying Anime4K shaders to output directory"
   VERBATIM
 )
+add_custom_target(mikai_shader_deployment DEPENDS "${MIKAI_SHADER_DEPLOYMENT_STAMP}")
+add_dependencies(mikai mikai_shader_deployment)
 
 # ---------------------------------------------------------------------------
 # 5. Distribution, Probes, Tests & Release Tuning

@@ -43,8 +43,10 @@ struct QualityVariant {
 
 QString detectSite(const QString& pageUrl);  // throws std::invalid_argument
 
-// Blocking GET honouring kTimeoutMs and kFetchRetries on 429/5xx. Throws
-// StreamError once the retries are exhausted.
+// Blocking GET honouring kTimeoutMs and kFetchRetries. Transport failures -
+// timeout, remote close, a refused connection - retry under the same budget
+// as the 429/5xx statuses; a cancellation and a definite non-retryable 4xx
+// answer are final. Throws StreamError once the retries are exhausted.
 QString fetchText(QNetworkAccessManager* manager, const QString& url,
                   const QMap<QString, QString>& headers = {});
 

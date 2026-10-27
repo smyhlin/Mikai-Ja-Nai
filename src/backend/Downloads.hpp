@@ -14,11 +14,14 @@ QByteArray fetchUrlBytes(const QUrl& url, const QMap<QString, QString>& headers,
 // Streams `url` to `destination` and only reports success once the file on disk
 // carries exactly `expectedBytes` bytes whose SHA-256 matches `expectedSha256`.
 //
-// `destination` is created exclusively: a path that already exists is refused
-// with a reason naming it and is left byte-for-byte untouched, and a file that
-// appears between the existence check and the open is refused rather than
-// truncated. Only this call's own partial is removed, so a cancelled, failed or
-// refused download never destroys a neighbour's file.
+// The bytes go to a unique sibling partial (`<name>.part-XXXXXX`) and only a
+// fully written, verified partial is renamed over `destination`, so a hard
+// crash mid-transfer can never leave a partial at the final path. A path that
+// already exists is refused with a reason naming it and is left byte-for-byte
+// untouched, and a file that appears while this call was writing is refused at
+// the rename rather than clobbered. Only this call's own partial is removed,
+// so a cancelled, failed or refused download never destroys a neighbour's
+// file.
 //
 // Every chunk's write result, the final flush and the close error are checked;
 // a short write or a storage error aborts the transfer and reports failure. The

@@ -23,12 +23,7 @@ function(mikai_add_probe target_name source_file)
     set_target_properties(${target_name} PROPERTIES WIN32_EXECUTABLE FALSE)
   endif()
   if(PROBE_DEPLOY_SHADERS)
-    add_custom_command(TARGET ${target_name} POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_SOURCE_DIR}/shaders"
-        "$<TARGET_FILE_DIR:${target_name}>/shaders"
-      COMMENT "Deploying Anime4K shader fixtures for ${target_name}"
-    )
+    add_dependencies(${target_name} mikai_shader_deployment)
   endif()
 endfunction()
 
@@ -65,6 +60,15 @@ endif()
 mikai_add_probe(engine_popup_probe src/probes/player/EnginePopupProbe.cpp
   LINKS mikai_player Qt6::Widgets)
 mikai_add_probe(mpv_surface_smoke src/probes/player/mpv_surface_smoke.cpp
+  LINKS mikai_player Qt6::Widgets
+  GUI_EXECUTABLE DEPLOY_SHADERS)
+# T-401/T-210: the long-soak frame-order/pacing canary. EXCLUDE_FROM_ALL like
+# every probe above: the default CI build must stay unchanged, and only the
+# nightly soak lane names this target explicitly.
+mikai_add_probe(frame_order_soak_probe src/probes/player/FrameOrderSoakProbe.cpp
+  LINKS mikai_player Qt6::Widgets
+  GUI_EXECUTABLE DEPLOY_SHADERS)
+mikai_add_probe(hdr_playback_probe src/probes/player/HdrPlaybackProbe.cpp
   LINKS mikai_player Qt6::Widgets
   GUI_EXECUTABLE DEPLOY_SHADERS)
 mikai_add_probe(animejanai_probe src/probes/player/AnimeJanaiProbe.cpp

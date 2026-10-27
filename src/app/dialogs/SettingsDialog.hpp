@@ -351,6 +351,12 @@ private:
     Runner& runner_;
     QLineEdit* token_ = nullptr;
     QComboBox* language_ = nullptr;
+    // ── HDR playback (T-101/T-104) ───────────────────────────────────────
+    QLabel* playbackTitle_ = nullptr;
+    QLabel* playbackHint_ = nullptr;
+    QComboBox* hdrPolicy_ = nullptr;
+    QCheckBox* nativeHdrOverride_ = nullptr;
+    QLabel* nativeHdrOverrideHint_ = nullptr;
     QCheckBox* systemStartup_ = nullptr;
     QCheckBox* systemContextMenu_ = nullptr;
     QLabel* systemIntegrationTitle_ = nullptr;

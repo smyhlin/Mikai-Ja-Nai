@@ -29,8 +29,9 @@ struct CredentialSlot {
 };
 
 // The .env the Python client wrote next to the repo root. The C++ build has no
-// __file__, so the search walks up from the executable until a .env shows up
-// and falls back to the current working directory. A caller that must never
+// __file__, so the search checks the current working directory, then the
+// executable's directory and its immediate parent; anything further above an
+// installed binary is deliberately not adopted. A caller that must never
 // touch whatever file that search would find - a test, a probe - installs an
 // override instead; an empty override restores the search.
 QString envFilePath();
@@ -93,6 +94,11 @@ public:
                     int statusCode);
 
 private:
+    // T-415: forgets an advertised window that has rolled over. A mutator
+    // concern: the const state() snapshot presents the same view without
+    // writing.
+    void forgetElapsedWindow();
+
     mutable QMutex mutex_;
     QWaitCondition condition_;
     std::optional<int> limit_;

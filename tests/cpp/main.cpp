@@ -8,6 +8,7 @@
 #include "TestAnime4K.hpp"
 #include "TestBenchmarkReport.hpp"
 #include "TestI18n.hpp"
+#include "TestThemeIcons.hpp"
 #include "TestLayering.hpp"
 #include "TestWatchHistory.hpp"
 #include "TestWindowRaise.hpp"
@@ -47,6 +48,7 @@
 #include "TestNativeStatus.hpp"
 #include "TestPlaybackDiagnostics.hpp"
 #include "TestMediaInformation.hpp"
+#include "TestHdrRenderContracts.hpp"
 #include "TestNativeTypes.hpp"
 #include "TestRuntimeSelection.hpp"
 #ifdef MIKAI_WITH_MODEL_INSPECTION
@@ -88,13 +90,14 @@ constexpr const char* kSuites[] = {
     "TestRuntimeSelection", "TestNativeTypes", "TestNativeRecipe", "TestNativeProfiles", "TestNativeRife",
     "TestNativeBundle", "TestNativePrepPlan", "TestNativeManifest", "TestNativeBuilder",
     "TestNativePreparationReferences", "TestNativeComponents", "TestNativeStoredModels", "TestNativePreparedPlan", "TestNativePlaybackController", "TestNativeStatus",
-    "TestPlaybackDiagnostics", "TestMediaInformation",
+    "TestPlaybackDiagnostics", "TestMediaInformation", "TestHdrRenderContracts",
     "TestNativePrefs",
     "TestNativeMenu", "TestNativeUserRecipes", "TestNativeAssets", "TestMpvAsync", "TestCompareGif",
 #ifdef MIKAI_WITH_MODEL_INSPECTION
     "TestNativeCatalog",
 #endif
     "TestModels", "TestReleases", "TestAnime4K", "TestBenchmarkReport", "TestI18n",
+    "TestThemeIcons",
     "TestStreams", "TestPagers",
     "TestQualityCache", "TestRateLimiter", "TestWatchHistory", "TestDownloads", "TestDiagnostics",
     "TestApiClient", "TestFeedRender", "TestUpdateFeed", "TestPublicApiUi", "TestRunner",
@@ -164,22 +167,13 @@ int runOne(const char* name, QObject* suite, const QStringList& arguments, bool 
   return rc;
 }
 
-bool wantsSuite(const QStringList& arguments, const char* name) {
-  for (const QString& arg : arguments) {
-    if (arg == QString::fromLatin1(name)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-bool suiteFilterActive(const QStringList& arguments) {
+QString selectedSuite(const QStringList& arguments) {
+  if (arguments.size() < 2) return {};
+  const QString& candidate = arguments.at(1);
   for (const char* suite : kSuites) {
-    if (wantsSuite(arguments, suite)) {
-      return true;
-    }
+    if (candidate == QString::fromLatin1(suite)) return candidate;
   }
-  return false;
+  return {};
 }
 
 }  // namespace
@@ -235,6 +229,7 @@ int main(int argc, char** argv) {
   TestNativeStatus nativeStatus;
   TestPlaybackDiagnostics playbackDiagnostics;
   TestMediaInformation mediaInformation;
+  TestHdrRenderContracts hdrRenderContracts;
   TestNativePrefs nativePrefs;
   TestNativeMenu nativeMenu;
   TestNativeUserRecipes nativeUserRecipes;
@@ -249,6 +244,7 @@ int main(int argc, char** argv) {
   TestAnime4K anime4k;
   TestBenchmarkReport benchmarkReport;
   TestI18n i18n;
+  TestThemeIcons themeIcons;
   TestStreams streams;
   TestPagers pagers;
   TestQualityCache qualityCache;
@@ -269,38 +265,29 @@ int main(int argc, char** argv) {
   // QTest's own (a function name, -v2, -o ...), and stripping a coincidence
   // there would silently unfilter the run: `-v2` is safe today only because no
   // suite is called that, which is luck, not a rule.
+  //
   QStringList qtestArgs;
   qtestArgs.reserve(arguments.size());
-  qtestArgs << arguments.first();
-  {
-    int suiteArgIndex = -1;
-    for (int i = 1; i < arguments.size(); ++i) {
-      const QString& candidate = arguments.at(i);
-      for (const char* suite : kSuites) {
-        if (candidate == QString::fromLatin1(suite)) {
-          suiteArgIndex = i;
-          break;
-        }
-      }
-      if (suiteArgIndex >= 0) {
-        break;
-      }
-    }
-    for (int i = 1; i < arguments.size(); ++i) {
-      if (i == suiteArgIndex) {
-        continue;
-      }
-      qtestArgs << arguments.at(i);
-    }
+  const QString selected = selectedSuite(arguments);
+  if (arguments.size() > 1 && arguments.at(1).startsWith(QStringLiteral("Test")) &&
+      selected.isEmpty()) {
+    std::fprintf(stderr, "[mikai_tests] unknown suite: %s\n",
+                 qPrintable(arguments.at(1)));
+    return 2;
   }
-  const bool filtered = suiteFilterActive(arguments);
+  qtestArgs << arguments.first();
+  for (int i = 1; i < arguments.size(); ++i) {
+    if (i == 1 && !selected.isEmpty()) continue;
+    qtestArgs << arguments.at(i);
+  }
+  const bool filtered = !selected.isEmpty();
   int failures = 0;
   // `admitted` carries a suite's own gate: false means the suite is about to
   // skip itself, and the verdict has to say so rather than claim a pass.
   QSet<QString> executed;
   const auto run = [&](const char* name, QObject* suite, bool admitted) {
     executed.insert(QString::fromLatin1(name));
-    if (!filtered || wantsSuite(arguments, name)) {
+    if (!filtered || selected == QString::fromLatin1(name)) {
       failures |= runOne(name, suite, qtestArgs, admitted);
     }
   };
@@ -322,7 +309,7 @@ int main(int argc, char** argv) {
   // is what hid TestFeedRender's results.
   const auto runWrapper = [&](const char* name, int (*wrapper)(int, char**)) {
     executed.insert(QString::fromLatin1(name));
-    if (!filtered || wantsSuite(arguments, name)) {
+    if (!filtered || selected == QString::fromLatin1(name)) {
       const int rc = wrapper(static_cast<int>(qtestArgs.size()), wrapperArgv.data());
       failures |= rc;
       const char* verdict = rc != 0 ? "FAIL" : "PASS";
@@ -348,6 +335,7 @@ int main(int argc, char** argv) {
   run("TestNativeStatus", &nativeStatus, true);
   run("TestPlaybackDiagnostics", &playbackDiagnostics, true);
   run("TestMediaInformation", &mediaInformation, true);
+  run("TestHdrRenderContracts", &hdrRenderContracts, true);
   run("TestNativePrefs", &nativePrefs, true);
   run("TestNativeMenu", &nativeMenu, true);
   run("TestNativeUserRecipes", &nativeUserRecipes, true);
@@ -369,6 +357,7 @@ int main(int argc, char** argv) {
   run("TestAnime4K", &anime4k, true);
   run("TestBenchmarkReport", &benchmarkReport, true);
   run("TestI18n", &i18n, true);
+  run("TestThemeIcons", &themeIcons, true);
   run("TestStreams", &streams, true);
   run("TestPagers", &pagers, true);
   run("TestQualityCache", &qualityCache, true);

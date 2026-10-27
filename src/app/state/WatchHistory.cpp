@@ -1,5 +1,6 @@
 #include "state/WatchHistory.hpp"
 
+#include <QHash>
 #include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -8,12 +9,132 @@
 #include <QSettings>
 #include <QSet>
 
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+
 namespace mikai::app {
 namespace {
 
 QString defaultKey() { return QString::fromLatin1(kWatchHistoryKey); }
 
+class HistoryWriter {
+public:
+    static HistoryWriter& instance() {
+        static HistoryWriter writer;
+        return writer;
+    }
+
+    QString snapshot(const QString& key) {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        const auto cached = latest_.constFind(key);
+        if (cached != latest_.constEnd()) {
+            return cached.value();
+        }
+
+        QSettings settings;
+        const QString payload = settings.value(key).toString();
+        latest_.insert(key, payload);
+        return payload;
+    }
+
+    void submit(QString key, QString payload) {
+        {
+            const std::lock_guard<std::mutex> lock(mutex_);
+            latest_.insert(key, payload);
+            for (Item& item : pending_) {
+                if (item.key == key) {
+                    item.payload = std::move(payload);
+                    return;
+                }
+            }
+            pending_.append(Item{std::move(key), std::move(payload)});
+        }
+        condition_.notify_one();
+    }
+
+    void flush() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        drained_.wait(lock, [this] { return pending_.isEmpty() && !writing_; });
+        if (!writeFailed_) {
+            latest_.clear();
+        }
+    }
+
+    ~HistoryWriter() {
+        {
+            const std::lock_guard<std::mutex> lock(mutex_);
+            stopping_ = true;
+        }
+        condition_.notify_all();
+        if (thread_.joinable()) {
+            thread_.join();
+        }
+    }
+
+private:
+    struct Item {
+        QString key;
+        QString payload;
+    };
+
+    HistoryWriter()
+        : thread_([this] {
+              for (;;) {
+                  Item item;
+                  {
+                      std::unique_lock<std::mutex> lock(mutex_);
+                      condition_.wait(lock, [this] { return stopping_ || !pending_.isEmpty(); });
+                      if (pending_.isEmpty()) {
+                          if (stopping_) {
+                              return;
+                          }
+                          continue;
+                      }
+                      item = pending_.takeFirst();
+                      writing_ = true;
+                  }
+
+                  QSettings settings;
+                  if (item.payload.isEmpty()) {
+                      settings.remove(item.key);
+                  } else {
+                      settings.setValue(item.key, item.payload);
+                  }
+                  settings.sync();
+                  const bool saved = settings.status() == QSettings::NoError;
+                  if (!saved) {
+                      qWarning() << "mikai: could not save episode history, settings status:"
+                                 << settings.status();
+                  }
+
+                  {
+                      const std::lock_guard<std::mutex> lock(mutex_);
+                      writeFailed_ = writeFailed_ || !saved;
+                      writing_ = false;
+                      if (pending_.isEmpty()) {
+                          drained_.notify_all();
+                      }
+                  }
+              }
+          }) {}
+
+    std::thread thread_;
+    std::mutex mutex_;
+    std::condition_variable condition_;
+    std::condition_variable drained_;
+    QHash<QString, QString> latest_;
+    QList<Item> pending_;
+    bool writing_ = false;
+    bool stopping_ = false;
+    bool writeFailed_ = false;
+};
+
 }  // namespace
+
+void WatchHistory::flushHistoryWrites() {
+    HistoryWriter::instance().flush();
+}
 
 WatchHistory::WatchHistory(const QString& settingsKey)
     : key_(settingsKey.isEmpty() ? defaultKey() : settingsKey) {
@@ -22,8 +143,7 @@ WatchHistory::WatchHistory(const QString& settingsKey)
 
 void WatchHistory::load() {
     titles_.clear();
-    QSettings settings;
-    const QByteArray raw = settings.value(key_).toString().toUtf8();
+    const QByteArray raw = HistoryWriter::instance().snapshot(key_).toUtf8();
     if (raw.isEmpty()) {
         return;
     }
@@ -73,18 +193,10 @@ void WatchHistory::save() {
         }
         root.insert(it.key(), record);
     }
-    QSettings settings;
-    if (root.isEmpty()) {
-        settings.remove(key_);
-    } else {
-        settings.setValue(key_,
-                          QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact)));
-    }
-    settings.sync();
-    if (settings.status() != QSettings::NoError) {
-        qWarning() << "mikai: could not save episode history, settings status:"
-                   << settings.status();
-    }
+    HistoryWriter::instance().submit(
+        key_, root.isEmpty()
+                 ? QString()
+                 : QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact)));
 }
 
 TitleWatchProgress WatchHistory::progress(const QString& ref) const {
@@ -194,6 +306,11 @@ void WatchHistory::setEpisodesWatched(const QString& ref, const QStringList& epi
             titles_.erase(it);
         }
     }
+    save();
+}
+
+void WatchHistory::clear() {
+    titles_.clear();
     save();
 }
 

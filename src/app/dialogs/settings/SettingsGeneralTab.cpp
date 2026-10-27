@@ -1,5 +1,7 @@
 #include "dialogs/SettingsDialog.hpp"
 
+#include <VideoSurface.hpp>
+
 #include "I18n.hpp"
 #include "dialogs/settings/SettingsHelpers.hpp"
 #include "dialogs/settings/SettingsUi.hpp"
@@ -28,6 +30,7 @@
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
+#include <QSizePolicy>
 #include <QSettings>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -51,6 +54,7 @@ QWidget* SettingsDialog::buildGeneralTab() {
     // ── Card 1: Mikai API Access Token & Live Rate-Limit Telemetry ───────────
     QVBoxLayout* apiLayout = nullptr;
     QFrame* apiCard = makeSettingsCard(page, &apiLayout);
+    apiCard->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     apiLayout->setSpacing(theme::kSpacingSmall);
 
     auto* headerRow = new QHBoxLayout();
@@ -149,6 +153,7 @@ QWidget* SettingsDialog::buildGeneralTab() {
     // ── Card 2: Home Page Feed Sections (2-Column Selectable Tile Grid) ──────
     QVBoxLayout* feedsLayout = nullptr;
     QFrame* feedsCard = makeSettingsCard(page, &feedsLayout);
+    feedsCard->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     feedsLayout->setSpacing(theme::kSpacingSmall);
 
     feedsTitle_ = new QLabel(tr("Home page sections"), feedsCard);
@@ -188,6 +193,7 @@ QWidget* SettingsDialog::buildGeneralTab() {
     // ── Card 3: Interface Language ───────────────────────────────────────────
     QVBoxLayout* languageLayout = nullptr;
     QFrame* languageCard = makeSettingsCard(page, &languageLayout);
+    languageCard->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     languageLayout->setSpacing(theme::kSpacingSmall);
 
     languageTitle_ = new QLabel(tr("Interface language"), languageCard);
@@ -220,6 +226,56 @@ QWidget* SettingsDialog::buildGeneralTab() {
     languageLayout->addWidget(language_);
 
     root->addWidget(languageCard);
+
+    // ── Card 4: HDR playback (T-101/T-104) ─────────────────────────────
+    QVBoxLayout* hdrLayout = nullptr;
+    QFrame* hdrCard = makeSettingsCard(page, &hdrLayout);
+    hdrCard->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    hdrLayout->setSpacing(theme::kSpacingSmall);
+
+    playbackTitle_ = new QLabel(tr("HDR playback"), hdrCard);
+    styleSectionHeading(playbackTitle_);
+    hdrLayout->addWidget(playbackTitle_);
+
+    playbackHint_ = new QLabel(
+        tr("HDR tone mapping controls how HDR video is mapped to the display. "
+           "It is separate from Native enhancement; saved changes reach a running player "
+           "within a moment."),
+        hdrCard);
+    styleMutedCaption(playbackHint_);
+    hdrLayout->addWidget(playbackHint_);
+
+    hdrPolicy_ = new QComboBox(hdrCard);
+    hdrPolicy_->setObjectName(QStringLiteral("hdrPolicyCombo"));
+    polishInteractiveControl(hdrPolicy_, theme::kSettingsControlSize);
+    hdrPolicy_->addItem(tr("Auto (recommended)"), 0);
+    hdrPolicy_->addItem(tr("Stable - no per-frame adaptation"), 1);
+    hdrPolicy_->addItem(tr("Vivid - Mobius curve"), 2);
+    QSettings policySettings;
+    const int storedPolicy = policySettings.value(
+        QString::fromLatin1(mplayer::VideoSurface::kHdrToneMappingSettingKey), 0).toInt();
+    const int policyIndex = hdrPolicy_->findData(storedPolicy);
+    hdrPolicy_->setCurrentIndex(policyIndex >= 0 ? policyIndex : 0);
+    hdrPolicy_->setAccessibleName(tr("HDR tone mapping"));
+    hdrLayout->addWidget(hdrPolicy_);
+
+    nativeHdrOverride_ = new QCheckBox(tr("Native enhancement for HDR"), hdrCard);
+    nativeHdrOverride_->setObjectName(QStringLiteral("nativeHdrOverrideCheck"));
+    polishInteractiveControl(nativeHdrOverride_, theme::kSettingsControlSize);
+    nativeHdrOverride_->setChecked(policySettings.value(
+        QString::fromLatin1(mplayer::VideoSurface::kAnimeJanaiHdrOverrideSettingKey),
+        false).toBool());
+    hdrLayout->addWidget(nativeHdrOverride_);
+
+    nativeHdrOverrideHint_ = new QLabel(
+        tr("Native enhancement stages require 8-bit NV12 and are normally skipped for HDR "
+           "sources. Enabling this allows that processing on HDR video; it does not convert "
+           "the source to SDR, and may reduce HDR image quality."),
+        hdrCard);
+    styleMutedCaption(nativeHdrOverrideHint_);
+    hdrLayout->addWidget(nativeHdrOverrideHint_);
+
+    root->addWidget(hdrCard);
 
     root->addStretch();
     scroll->setWidget(page);
@@ -487,6 +543,25 @@ void SettingsDialog::retranslateGeneralTab() {
     restateLanguage(QStringLiteral("en"), tr("English"));
     restateLanguage(QStringLiteral("uk"), tr("Ukrainian"));
     language_->setAccessibleName(tr("Interface language"));
+
+    playbackTitle_->setText(tr("HDR playback"));
+    playbackHint_->setText(
+        tr("HDR tone mapping controls how HDR video is mapped to the display. "
+           "It is separate from Native enhancement; saved changes reach a running player "
+           "within a moment."));
+    const auto restatePolicy = [this](int data, const QString& caption) {
+        const int index = hdrPolicy_->findData(data);
+        if (index >= 0) hdrPolicy_->setItemText(index, caption);
+    };
+    restatePolicy(0, tr("Auto (recommended)"));
+    restatePolicy(1, tr("Stable - no per-frame adaptation"));
+    restatePolicy(2, tr("Vivid - Mobius curve"));
+    hdrPolicy_->setAccessibleName(tr("HDR tone mapping"));
+    nativeHdrOverride_->setText(tr("Native enhancement for HDR"));
+    nativeHdrOverrideHint_->setText(
+        tr("Native enhancement stages require 8-bit NV12 and are normally skipped for HDR "
+           "sources. Enabling this allows that processing on HDR video; it does not convert "
+           "the source to SDR, and may reduce HDR image quality."));
 
     refreshQuota();
 }

@@ -16,6 +16,7 @@
 #include <native/prepare/NativePreparationContext.hpp>
 #include <player/shell/PlayerPopups.hpp>
 #include <player/shell/PlayerShell.hpp>
+#include <VideoSurface.hpp>
 #include <player/shell/ShellTheme.hpp>
 #include <player/shell/ShellWidgets.hpp>
 #include <widgets/FailureView.hpp>
@@ -1299,6 +1300,95 @@ void TestI18n::cancelChangesNoLanguageAtAll() {
   settings.sync();
   QCOMPARE(settings.contains(key), storedPresent);
   QCOMPARE(settings.value(key), storedValue);
+}
+
+void TestI18n::hdrPlaybackSaveAndCancelRespectDeferredChanges() {
+  using HdrPolicy = mplayer::VideoSurface::HdrToneMappingPolicy;
+  QSettings settings;
+  settings.sync();
+  QVariantMap priorSettings;
+  for (const QString& key : settings.allKeys()) {
+    priorSettings.insert(key, settings.value(key));
+  }
+  const auto restoreSettings = qScopeGuard([&settings, priorSettings] {
+    settings.clear();
+    for (auto it = priorSettings.constBegin(); it != priorSettings.constEnd(); ++it) {
+      settings.setValue(it.key(), it.value());
+    }
+    settings.sync();
+  });
+  Q_UNUSED(restoreSettings);
+
+  const HdrPolicy priorPolicy = mplayer::VideoSurface::hdrToneMappingPolicy();
+  const bool priorOverride = mplayer::VideoSurface::animeJanaiHdrOverride();
+  const auto restoreRuntimePolicy = qScopeGuard([priorPolicy, priorOverride] {
+    mplayer::VideoSurface::setHdrToneMappingPolicy(priorPolicy);
+    mplayer::VideoSurface::setAnimeJanaiHdrOverride(priorOverride);
+  });
+  Q_UNUSED(restoreRuntimePolicy);
+
+  const QString policyKey =
+      QString::fromLatin1(mplayer::VideoSurface::kHdrToneMappingSettingKey);
+  const QString overrideKey =
+      QString::fromLatin1(mplayer::VideoSurface::kAnimeJanaiHdrOverrideSettingKey);
+  settings.setValue(policyKey, static_cast<int>(HdrPolicy::Stable));
+  settings.setValue(overrideKey, false);
+  settings.sync();
+  mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Stable);
+  mplayer::VideoSurface::setAnimeJanaiHdrOverride(false);
+
+  mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
+  mikai::app::Runner runner;
+  {
+    mikai::app::SettingsDialog dialog(client, runner);
+    dialog.show();
+    QCoreApplication::processEvents();
+    auto* policy = dialog.findChild<QComboBox*>(QStringLiteral("hdrPolicyCombo"));
+    auto* nativeOverride =
+        dialog.findChild<QCheckBox*>(QStringLiteral("nativeHdrOverrideCheck"));
+    QVERIFY(policy != nullptr && nativeOverride != nullptr);
+    QVERIFY(policy->findData(static_cast<int>(HdrPolicy::Vivid)) >= 0);
+    policy->setCurrentIndex(policy->findData(static_cast<int>(HdrPolicy::Vivid)));
+    nativeOverride->setChecked(true);
+
+    QCOMPARE(mplayer::VideoSurface::hdrToneMappingPolicy(), HdrPolicy::Stable);
+    QVERIFY(!mplayer::VideoSurface::animeJanaiHdrOverride());
+    dialog.reject();
+    QCoreApplication::processEvents();
+
+    settings.sync();
+    QCOMPARE(settings.value(policyKey).toInt(), static_cast<int>(HdrPolicy::Stable));
+    QVERIFY(!settings.value(overrideKey).toBool());
+    QCOMPARE(mplayer::VideoSurface::hdrToneMappingPolicy(), HdrPolicy::Stable);
+    QVERIFY(!mplayer::VideoSurface::animeJanaiHdrOverride());
+  }
+
+  {
+    mikai::app::SettingsDialog dialog(client, runner);
+    dialog.show();
+    QCoreApplication::processEvents();
+    auto* policy = dialog.findChild<QComboBox*>(QStringLiteral("hdrPolicyCombo"));
+    auto* nativeOverride =
+        dialog.findChild<QCheckBox*>(QStringLiteral("nativeHdrOverrideCheck"));
+    auto* footer = dialog.findChild<QWidget*>(QStringLiteral("settingsFooter"));
+    auto* save = footer != nullptr ? footer->findChild<QPushButton*>(QStringLiteral("primary"))
+                                   : nullptr;
+    QVERIFY(policy != nullptr && nativeOverride != nullptr && save != nullptr);
+    policy->setCurrentIndex(policy->findData(static_cast<int>(HdrPolicy::Vivid)));
+    nativeOverride->setChecked(true);
+
+    QCOMPARE(mplayer::VideoSurface::hdrToneMappingPolicy(), HdrPolicy::Stable);
+    QVERIFY(!mplayer::VideoSurface::animeJanaiHdrOverride());
+    save->click();
+    QCoreApplication::processEvents();
+
+    QVERIFY(!dialog.isVisible());
+    settings.sync();
+    QCOMPARE(settings.value(policyKey).toInt(), static_cast<int>(HdrPolicy::Vivid));
+    QVERIFY(settings.value(overrideKey).toBool());
+    QCOMPARE(mplayer::VideoSurface::hdrToneMappingPolicy(), HdrPolicy::Vivid);
+    QVERIFY(mplayer::VideoSurface::animeJanaiHdrOverride());
+  }
 }
 
 void TestI18n::dialogPreviewAndSavePersistWithoutRestart() {

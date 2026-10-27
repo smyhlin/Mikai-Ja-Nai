@@ -20,6 +20,8 @@
 #include <QWindow>
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 
@@ -44,6 +46,48 @@ constexpr int kRestoreSettleMaxAttempts = 5;
 // A probe read is answered in microseconds or not at all; the bound only exists
 // so a manifest can never hang the GUI thread on a core that stopped answering.
 constexpr int kProbeReadTimeoutMs = 250;
+
+constexpr int kUnpaintableGraceTicks = 2;
+constexpr double kMinRenderLeadMs = 0.25;
+constexpr double kMaxRenderLeadMs = 8.0;
+
+/// Monotonic nanoseconds for local duration measurements only. MPV target_time
+/// comparisons use mpv_get_time_us(), because it is a distinct clock domain.
+qint64 steadyClockNowNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
+// Process-wide options are adopted by each live surface on its state pump.
+VideoSurface::HdrToneMappingPolicy g_hdrToneMappingPolicy =
+    VideoSurface::HdrToneMappingPolicy::Auto;
+int g_hdrToneMappingPolicyRevision = 1;
+bool g_animeJanaiHdrOverride = false;
+int g_animeJanaiHdrOverrideRevision = 1;
+QString g_frameTimingLogPath;
+
+int hdrToneMappingPolicyRevision() { return g_hdrToneMappingPolicyRevision; }
+
+int animeJanaiHdrOverrideRevision() { return g_animeJanaiHdrOverrideRevision; }
+bool hdrFixesEnabled() {
+    static const bool disabled = qEnvironmentVariable("MIKAI_HDR_FIXES") == QStringLiteral("0");
+    return !disabled;
+}
+
+auto hdrPolicyOptionList(VideoSurface::HdrToneMappingPolicy policy) {
+    const bool stable = policy == VideoSurface::HdrToneMappingPolicy::Stable;
+    const bool vivid = policy == VideoSurface::HdrToneMappingPolicy::Vivid;
+    using Option = std::pair<const char*, const char*>;
+    return std::array{
+        Option{"dither-depth", "auto"},
+        Option{"tone-mapping", vivid ? "mobius" : "bt.2390"},
+        Option{"tone-mapping-param", vivid ? "0.3" : "default"},
+        Option{"hdr-compute-peak", stable ? "no" : "yes"},
+        Option{"hdr-peak-percentile", "99.995"},
+        Option{"gamut-mapping-mode", stable ? "clip" : "auto"},
+    };
+}
 
 /// Numeric argument for an mpv command. mpv parses these itself, so a
 /// locale-formatted value ("1,5") would be a parse error: the number is rendered
@@ -146,6 +190,10 @@ std::optional<int64_t> playlistEntryIdFromCommand(const mpv_event_command& comma
 
 }  // namespace
 
+bool VideoSurface::hdrRenderingFixesEnabled() {
+    return hdrFixesEnabled();
+}
+
 void VideoSurface::ensureEngine() {
     if (mpv_) return;
     // Entry ids belong to one core's playlist; a core created here has never
@@ -184,14 +232,14 @@ void VideoSurface::ensureEngine() {
         // only capture this app's oracle may use. Nothing else in the player
         // reads mpv screenshots.
         {"screenshot-sw", "yes"},
-        // Rendering here is driven by Qt's compositor, so mpv cannot block for a
-        // display time it does not own: every render call passes
-        // BLOCK_FOR_TARGET_TIME=0 and mpv keeps video timed to audio through this
-        // option instead. Leave it out and A/V sync drifts by the headroom mpv
-        // would otherwise have waited out.
+        // Qt owns presentation, so render calls stay nonblocking. mpv documents
+        // video-timing-offset=0 as an alternative to its render-time wait; this
+        // client also schedules against target_time using mpv's own clock.
         {"video-timing-offset", "0"},
     };
     mpv_ = std::make_unique<MpvHandle>(options);
+    mpvApiVersion_ = MpvHandle::apiVersion();
+    applyHdrPolicyToEngine();
     // A plan may have been selected before the core existed. Request its backend
     // reports before any source or official filter command reaches this core.
     mpv_->setBackendLogObservationEnabled(animeJanaiBackendLogsNeeded());
@@ -371,9 +419,14 @@ void VideoSurface::ensureEngine() {
     // first frame.
     const QString chainId =
         anime4kChainId_.isEmpty() ? anime4k::modeId(anime4kMode_) : anime4kChainId_;
-    const QString shaders = anime4k::shaderStringForCandidate(chainId);
-    if (!shaders.isEmpty()) {
-        applyShaderChainRequest(shaders);
+    const QString requested = anime4k::shaderStringForCandidate(chainId);
+    if (!requested.isEmpty()) {
+        const QString shaders = resolvedChainForCurrentSource(chainId);
+        if (shaders.isEmpty()) {
+            emit anime4kGated(tr("Anime4K skipped: source transfer metadata is unknown or HDR"));
+        } else {
+            applyShaderChainRequest(shaders);
+        }
     }
 }
 
@@ -398,7 +451,11 @@ void VideoSurface::setAnime4KChain(const QString& candidateId) {
     if (!mpv_) {
         return;
     }
-    const QString shaders = anime4k::shaderStringForCandidate(candidateId);
+    const QString requested = anime4k::shaderStringForCandidate(candidateId);
+    const QString shaders = resolvedChainForCurrentSource(candidateId);
+    if (!requested.isEmpty() && shaders.isEmpty()) {
+        emit anime4kGated(tr("Anime4K skipped: source transfer metadata is unknown or HDR"));
+    }
     applyShaderChainRequest(shaders);
     // vo=libmpv rebuilds the filter chain on the next rendered frame, and a
     // paused video produces none, so without this the change would appear to
@@ -419,7 +476,13 @@ void VideoSurface::setAnime4KMode(anime4k::Mode mode) {
     if (!mpv_) return;
     // The id is resolved, so a mode and a chain go through one path - and only
     // one of the two can name a chain that is not on disk.
-    const QString shaders = anime4k::shaderStringForCandidate(anime4kChainId_);
+    const QString requested = anime4k::shaderStringForCandidate(anime4kChainId_);
+    // Unknown or HDR transfer metadata gates the chain; the requested id remains
+    // remembered so it can be restored when a known SDR source arrives.
+    const QString shaders = resolvedChainForCurrentSource(anime4kChainId_);
+    if (!requested.isEmpty() && shaders.isEmpty()) {
+        emit anime4kGated(tr("Anime4K skipped: source transfer metadata is unknown or HDR"));
+    }
     applyShaderChainRequest(shaders);
     // vo=libmpv only rebuilds the filter chain when a new frame is rendered,
     // and a paused video produces none, so the mode would appear to have no
@@ -461,6 +524,10 @@ VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
     // The swap report mpv asks for names the moment its frame was presented, and
     // that is what Qt reports here, after the composition it belongs to.
     connect(this, &QOpenGLWidget::frameSwapped, this, &VideoSurface::onFrameSwapped);
+    // One nonblocking timer defers pending frames to mpv's presentation slot.
+    pacingTimer_.setSingleShot(true);
+    pacingTimer_.setTimerType(Qt::PreciseTimer);
+    connect(&pacingTimer_, &QTimer::timeout, this, [this] { onPacingTick(); });
     // Keep a replayable snapshot ahead of external listeners: a dialog that
     // reconnects after missing the original signal can synchronize from these
     // typed getters without dynamic properties or a second event source.
@@ -571,9 +638,11 @@ bool VideoSurface::captureEngineFrameHold() {
         releaseRenderContextCurrent(previous);
         return false;
     }
-    auto snapshot = std::make_unique<QOpenGLFramebufferObject>(
-        size, QOpenGLFramebufferObject::NoAttachment);
-    if (!snapshot->isValid()) {
+    QOpenGLFramebufferObjectFormat snapshotFboFormat;
+    snapshotFboFormat.setAttachment(QOpenGLFramebufferObject::NoAttachment);
+    snapshotFboFormat.setInternalTextureFormat(kGlInternalFormatRgba8);
+    auto snapshot = std::make_unique<QOpenGLFramebufferObject>(size, snapshotFboFormat);
+    if (!snapshot->isValid() || !snapshot->bind()) {
         snapshot.reset();
         releaseRenderContextCurrent(previous);
         return false;
@@ -584,7 +653,15 @@ bool VideoSurface::captureEngineFrameHold() {
     // blitting it would bake HUD pixels into the transition image.
     const uint64_t updateFlags = render_->update();
     const bool frameConsumed = framePending_ || (updateFlags & MPV_RENDER_UPDATE_FRAME) != 0;
-    const int result = render_->render(snapshot->handle(), size.width(), size.height(), 0);
+    const int snapshotFormat =
+        static_cast<int>(snapshot->format().internalTextureFormat());
+    GLint snapshotDepth = 0;
+    if (QOpenGLExtraFunctions* extra = context_->extraFunctions()) {
+        extra->glGetFramebufferAttachmentParameteriv(
+            GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 0x8212, &snapshotDepth);
+    }
+    const int result = render_->render(snapshot->handle(), size.width(), size.height(),
+                                       snapshotFormat, snapshotDepth > 0 ? snapshotDepth : 0);
     if (QOpenGLExtraFunctions* extra = context_->extraFunctions()) {
         extra->glBindVertexArray(0);
         extra->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
@@ -631,6 +708,15 @@ bool VideoSurface::drawEngineFrameHold(unsigned int target, int width, int heigh
 
 VideoSurface::~VideoSurface() {
     cancelMediaInformation();
+    if (frameTimingLog_.isOpen() && !timingLogBuffer_.isEmpty()) {
+        const qint64 written = frameTimingLog_.write(timingLogBuffer_);
+        if (written != timingLogBuffer_.size()) {
+            timingLogBroken_ = true;
+            qWarning("VideoSurface timing log: final flush failed for '%s'",
+                     qUtf8Printable(frameTimingLog_.fileName()));
+        }
+        timingLogBuffer_.resize(0);
+    }
     cancelAnimeJanaiOperation();
     // The render context holds a pointer to the mpv core, so it has to go first,
     // and with THIS widget's context current: freeing it releases GL objects.
@@ -749,6 +835,11 @@ bool VideoSurface::open(const QString& url, quint64 mediaToken) {
 
 bool VideoSurface::startPendingUrl(double resumeAt) {
     pendingOpen_ = false;
+    pacingTimer_.stop();
+    pacingTimerArmed_ = false;
+    pacingTargetTime_ = 0;
+    pacingMeasurePending_ = false;
+    framePending_ = false;
     if (url_.isEmpty() || mpv_ == nullptr) {
         animeJanaiSourceRequested_ = false;
         return false;
@@ -772,6 +863,13 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
     observedPosition_ = 0.0;
     observedVideoWidth_ = observedVideoHeight_ = 0.0;
     hasVideo_ = false;
+    observedColorProfile_ = {};
+    sourceColorProfile_ = {};
+    const QString activeChainId =
+        anime4kChainId_.isEmpty() ? anime4k::modeId(anime4kMode_) : anime4kChainId_;
+    if (!anime4k::shaderStringForCandidate(activeChainId).isEmpty() && hdrFixesEnabled())
+        applyShaderChainRequest(QString());
+    emit sourceColorProfileChanged(sourceColorProfile_);
     videoWidth_ = videoHeight_ = 0;
     position_ = 0.0;
     duration_ = 0.0;
@@ -786,7 +884,12 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
     std::string options = "aid=" + option(selection.audio) + ",sid=" + option(selection.subtitle) +
                           ",sub-auto=exact,audio-file-auto=exact";
     if (resumeAt > 0.0) options += ",start=" + mpvNumber(resumeAt);
-    std::vector<std::string> load{"loadfile", url_.toStdString(), "replace", "-1", std::move(options)};
+    std::vector<std::string> load{"loadfile", url_.toStdString(), "replace"};
+    if ((mpvApiVersion_ >> 16) > 2 ||
+        ((mpvApiVersion_ >> 16) == 2 && (mpvApiVersion_ & 0xffffu) >= 3)) {
+        load.emplace_back("-1");
+    }
+    load.push_back(std::move(options));
     issueCoreCommand(std::move(load), "loadfile", /*reportRefusal=*/true, mediaToken_);
     // mpv also comes up paused when a render context is its only consumer: it
     // has no window of its own to drive playback. Without this the core decodes
@@ -813,10 +916,27 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
 }
 
 void VideoSurface::close() {
+    if (frameTimingLog_.isOpen() && !timingLogBuffer_.isEmpty()) {
+        const qint64 written = frameTimingLog_.write(timingLogBuffer_);
+        if (written != timingLogBuffer_.size()) {
+            timingLogBroken_ = true;
+            qWarning("VideoSurface timing log: close flush failed for '%s'",
+                     qUtf8Printable(frameTimingLog_.fileName()));
+        }
+        timingLogBuffer_.resize(0);
+    }
     // A later GL recreation may restore only an open source, never a stopped
+    pacingTimer_.stop();
+    pacingTimerArmed_ = false;
+    pacingTargetTime_ = 0;
+    pacingMeasurePending_ = false;
+    framePending_ = false;
     // pooled surface's last URL.
     url_.clear();
     invalidateEngineFrameHold();
+    observedColorProfile_ = {};
+    sourceColorProfile_ = {};
+    emit sourceColorProfileChanged(sourceColorProfile_);
     resetMediaTracks();
     nextMediaTrackSelection_.reset();
     pendingMediaTrackSelection_ = {};
@@ -1265,6 +1385,9 @@ void VideoSurface::hideEvent(QHideEvent* event) {
 }
 
 void VideoSurface::paintGL() {
+    pacingTimer_.stop();
+    pacingTimerArmed_ = false;
+    pacingTargetTime_ = 0;
     QOpenGLWidget::paintGL();
     if (!contextReady_ || !render_) {
         // No engine, so there is no frame to render - but NoPartialUpdate leaves
@@ -1322,6 +1445,9 @@ void VideoSurface::paintGL() {
     gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     gl->glClear(GL_COLOR_BUFFER_BIT);
 
+    // Query the widget color attachment once per GL context.
+    if (!renderFormatProbed_) probeFboColorDepth();
+
     // The boundary around mpv's raw GL, which maps logical widget coordinates
     // onto this framebuffer. mpv leaves the vertex-array binding and unpack row
     // length behind and Qt only re-establishes its own state on the next paint,
@@ -1335,7 +1461,8 @@ void VideoSurface::paintGL() {
             if (renderResult == 0) render_->reportSwap();
         }
     } else {
-        renderResult = render_->render(static_cast<int>(target), targetWidth, targetHeight, 0);
+        renderResult = render_->render(static_cast<int>(target), targetWidth, targetHeight,
+                                       renderInternalFormat_, renderDepthBitsPerChannel_);
         presentedFrame = haveFrame;
     }
     if (QOpenGLExtraFunctions* extra = glContext->extraFunctions()) {
@@ -1345,6 +1472,22 @@ void VideoSurface::paintGL() {
     }
     gl->glBindFramebuffer(GL_FRAMEBUFFER, target);
     painter.endNativePainting();
+    if (pacingMeasurePending_) {
+        pacingMeasurePending_ = false;
+        const double tookMs = static_cast<double>(steadyClockNowNs() - pacingFiredAtNs_) / 1.0e6;
+        if (tookMs > 0.0 && tookMs < 1000.0) {
+            renderLeadMs_ = std::clamp(0.8 * renderLeadMs_ + 0.2 * tookMs, kMinRenderLeadMs,
+                                       kMaxRenderLeadMs);
+        }
+    }
+    if (!g_frameTimingLogPath.isEmpty()) {
+        logFrameTiming(QStringLiteral("paint result=%1 newframe=%2 pending=%3 forced=%4 lead_ms=%5")
+                           .arg(renderResult)
+                           .arg(static_cast<int>(newOutputFrame))
+                           .arg(static_cast<int>(framePending_))
+                           .arg(static_cast<int>(forceRender_))
+                           .arg(QString::number(renderLeadMs_, 'f', 2)));
+    }
     lastRenderedFboSize_ = deviceSize;
     hasRenderedFrame_ = hasRenderedFrame_ || renderResult == 0;
     if (renderResult < 0 && engineFrameHoldFbo_ &&
@@ -1414,9 +1557,42 @@ void VideoSurface::advanceRenderState() {
     const uint64_t flags = render_->update();
     const bool frame = (flags & MPV_RENDER_UPDATE_FRAME) != 0;
     if (paintCanHappen()) {
+        // T-204: the return from skip mode forces one redraw, because the
+        // buffer mpv last handed over may have been consumed by a skip and no
+        // frame would otherwise ever repaint the widget.
+        if (skippingFrames_) {
+            skippingFrames_ = false;
+            forceRender_ = true;
+            if (!g_frameTimingLogPath.isEmpty())
+                logFrameTiming(QStringLiteral("skip-mode left; forced redraw"));
+        }
+        unpaintableStreak_ = 0;
         framePending_ = framePending_ || frame;
-        if (framePending_ || forceRender_) update();
+        if (framePending_ || forceRender_) {
+            // T-202: the paint lands in the compositor slot mpv named for the
+            // frame (or at once, when nothing is pending or pacing is off).
+            schedulePacedPaint();
+        }
     } else {
+        // T-204: a single transient non-paintable round (a popup, an occlusion,
+        // a DWM operation) must not discard a frame - the streak has to persist
+        // first, so the frame is held pending and one skip-mode pass answers
+        // mpv only after the widget really stayed unpaintable.
+        ++unpaintableStreak_;
+        if (unpaintableStreak_ < kUnpaintableGraceTicks) {
+            framePending_ = framePending_ || frame;
+            if (!g_frameTimingLogPath.isEmpty())
+                logFrameTiming(QStringLiteral("unpaintable streak=%1 (grace; frame held)")
+                                   .arg(unpaintableStreak_));
+            releaseRenderContextCurrent(previous);
+            return;
+        }
+        if (!skippingFrames_) {
+            skippingFrames_ = true;
+            if (!g_frameTimingLogPath.isEmpty())
+                logFrameTiming(QStringLiteral("skip-mode entered (streak=%1)")
+                                   .arg(unpaintableStreak_));
+        }
         // Nothing can be composited now, so the work mpv waits on is answered
         // here with ONE report: its new frame is consumed by a skip (which the
         // render API counts as rendered), or the frame this surface painted but
@@ -1452,6 +1628,16 @@ void VideoSurface::onFrameSwapped() {
     if (!contextReady_ || render_ == nullptr) return;
     QOpenGLContext* previous = nullptr;
     if (!makeRenderContextCurrent(&previous)) return;
+    // T-201: the swap interval mpv's VO timing feeds on. A re-time burst - the
+    // signature of the periodic frame-order glitch - shows here as a
+    // discontinuity long before it shows anywhere else.
+    if (!g_frameTimingLogPath.isEmpty()) {
+        const qint64 nowNs = steadyClockNowNs();
+        const qint64 deltaMs = lastSwapNs_ != 0 ? (nowNs - lastSwapNs_) / 1000000 : -1;
+        logFrameTiming(QStringLiteral("swap now=%1 delta_ms=%2")
+                           .arg(QString::number(nowNs), QString::number(deltaMs)));
+        lastSwapNs_ = nowNs;
+    }
     // mpv reads the moment this arrives as the moment the frame reached the
     // screen, which is exactly what the signal it is sent from reports.
     render_->reportSwap();
@@ -1473,6 +1659,346 @@ void VideoSurface::refreshRenderState() {
     // redraw even when mpv announces no new frame.
     forceRender_ = true;
     advanceRenderState();
+}
+
+bool VideoSurface::clientFramePacingEnabled() {
+    // The kill-switch is read once per process: it exists for a rollback (see
+    // plan.md Phase 2a) and for field diagnostics, both of which relaunch. An
+    // unset variable keeps the fix on; only an explicit "0" disables it.
+    static const bool disabled =
+        qEnvironmentVariable("MIKAI_CLIENT_FRAME_PACING") == QStringLiteral("0");
+    return !disabled;
+}
+
+void VideoSurface::schedulePacedPaint() {
+    // A forced repaint (resize, re-show, an engine hold) or pacing disabled
+    // paints at once: the deferred path exists only to place a decoded frame
+    // into the compositor slot mpv named for it, and nothing else may wait.
+    if (forceRender_ || !framePending_ || !clientFramePacingEnabled()) {
+        pacingTimer_.stop();
+        pacingTimerArmed_ = false;
+        pacingTargetTime_ = 0;
+        update();
+        return;
+    }
+    mpv_render_frame_info info{};
+    bool haveTarget = false;
+    bool repeatedOrRedraw = false;
+    qint64 targetTime = 0;
+    if (render_->nextFrameInfo(info)) {
+        repeatedOrRedraw =
+            (info.flags & (MPV_RENDER_FRAME_INFO_REDRAW | MPV_RENDER_FRAME_INFO_REPEAT)) != 0;
+        haveTarget = isRealNewFrame(info);
+        if (haveTarget) targetTime = info.target_time;
+    }
+    const qint64 nowUs = render_->timeUs();
+    const uint64_t apiVersion = mpvApiVersion_;
+    const bool targetTimeInNanoseconds =
+        (apiVersion >> 16) > 2 || ((apiVersion >> 16) == 2 && (apiVersion & 0xffffu) >= 2);
+    const std::optional<int> delay =
+        haveTarget ? clientPacingDelayMilliseconds(targetTime, nowUs, renderLeadMs_, apiVersion)
+                   : std::nullopt;
+    if (!delay.has_value()) {
+        // No frame info, a slot that already passed, or a target so far out it
+        // belongs to a paused core: paint at once, exactly as before.
+        pacingTimer_.stop();
+        pacingTimerArmed_ = false;
+        pacingTargetTime_ = 0;
+        if (!g_frameTimingLogPath.isEmpty()) {
+            const char* reason = repeatedOrRedraw
+                                     ? ((info.flags & MPV_RENDER_FRAME_INFO_REPEAT) != 0
+                                            ? "repeat" : "redraw")
+                                     : (haveTarget ? "elapsed" : "no-info");
+            logFrameTiming(QStringLiteral("pace immediate target_time=%1 unit=%2 now_us=%3 reason=%4")
+                               .arg(QString::number(targetTime),
+                                    QString::fromLatin1(targetTimeInNanoseconds ? "ns" : "us"),
+                                    QString::number(nowUs), QString::fromLatin1(reason)));
+        }
+        update();
+        return;
+    }
+    if (pacingTimerArmed_ && pacingTargetTime_ <= targetTime) {
+        // An earlier slot is already armed and is the paint mpv expects next;
+        // re-arming to a later target would only delay that one.
+        return;
+    }
+    pacingTimerArmed_ = true;
+    pacingTargetTime_ = targetTime;
+    // Round up so the timer never fires before the lead-adjusted slot.
+    const int delayMs = *delay;
+    pacingTimer_.start(delayMs);
+    if (!g_frameTimingLogPath.isEmpty()) {
+        logFrameTiming(QStringLiteral("pace deferred target_time=%1 unit=%2 now_us=%3 delay_ms=%4 lead_ms=%5")
+                           .arg(QString::number(targetTime),
+                                QString::fromLatin1(targetTimeInNanoseconds ? "ns" : "us"),
+                                QString::number(nowUs))
+                           .arg(delayMs)
+                           .arg(QString::number(renderLeadMs_, 'f', 2)));
+    }
+}
+
+void VideoSurface::onPacingTick() {
+    pacingTimerArmed_ = false;
+    pacingTargetTime_ = 0;
+    if (!contextReady_ || render_ == nullptr) return;
+    // The frame may already have been consumed by a direct paint (a resize
+    // repaint, a readback grab); then this is a no-op, which is what disarms
+    // the timer without scheduling a stray repaint.
+    if (framePending_ || forceRender_) {
+        pacingFiredAtNs_ = steadyClockNowNs();
+        pacingMeasurePending_ = true;
+        update();
+    }
+}
+
+void VideoSurface::probeFboColorDepth() {
+    renderFormatProbed_ = true;
+    if (context_ == nullptr) return;
+    QOpenGLExtraFunctions* gl = context_->extraFunctions();
+    if (gl == nullptr) return;
+    // Discover the attached object's actual sized format. Component bit counts
+    // are not enough to distinguish e.g. packed normalized and float formats.
+    constexpr GLenum kAttachmentObjectType = 0x8CD0;
+    constexpr GLenum kAttachmentObjectName = 0x8CD1;
+    constexpr GLenum kTextureObject = 0x1702;
+    constexpr GLenum kRenderbufferObject = 0x8D41;
+    constexpr GLenum kTextureInternalFormat = 0x1003;
+    constexpr GLenum kRenderbufferInternalFormat = 0x8D44;
+    GLint objectType = 0;
+    GLint objectName = 0;
+    GLint internalFormat = 0;
+    gl->glGetFramebufferAttachmentParameteriv(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, kAttachmentObjectType, &objectType);
+    gl->glGetFramebufferAttachmentParameteriv(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, kAttachmentObjectName, &objectName);
+    gl->glGetFramebufferAttachmentParameteriv(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 0x8212, &renderTargetColorBits_.red);
+    gl->glGetFramebufferAttachmentParameteriv(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 0x8213, &renderTargetColorBits_.green);
+    gl->glGetFramebufferAttachmentParameteriv(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 0x8214, &renderTargetColorBits_.blue);
+    if (objectType == static_cast<GLint>(kTextureObject)) {
+        GLint previousTexture = 0;
+        gl->glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
+        gl->glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(objectName));
+        gl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, kTextureInternalFormat, &internalFormat);
+        gl->glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture));
+    } else if (objectType == static_cast<GLint>(kRenderbufferObject)) {
+        GLint previousRenderbuffer = 0;
+        gl->glGetIntegerv(0x8CA7, &previousRenderbuffer);
+        gl->glBindRenderbuffer(GL_RENDERBUFFER, static_cast<GLuint>(objectName));
+        gl->glGetRenderbufferParameteriv(GL_RENDERBUFFER, kRenderbufferInternalFormat,
+                                         &internalFormat);
+        gl->glBindRenderbuffer(GL_RENDERBUFFER, static_cast<GLuint>(previousRenderbuffer));
+    }
+    if (renderTargetColorBits_.red > 0 &&
+        renderTargetColorBits_.red == renderTargetColorBits_.green &&
+        renderTargetColorBits_.red == renderTargetColorBits_.blue) {
+        renderDepthBitsPerChannel_ = renderTargetColorBits_.red;
+    } else {
+        renderDepthBitsPerChannel_ = 0;
+    }
+    switch (internalFormat) {
+        case kGlInternalFormatRgba8:
+        case kGlInternalFormatRgb10A2:
+        case kGlInternalFormatRgba16:
+        case kGlInternalFormatRgba16F:
+            renderInternalFormat_ = internalFormat;
+            break;
+        default:
+            renderInternalFormat_ = 0;
+            break;
+    }
+    if (!g_frameTimingLogPath.isEmpty())
+        logFrameTiming(QStringLiteral("fbo red_bits=%1 green_bits=%2 blue_bits=%3 depth_bits=%4 "
+                                      "internal_format=%5")
+                           .arg(renderTargetColorBits_.red)
+                           .arg(renderTargetColorBits_.green)
+                           .arg(renderTargetColorBits_.blue)
+                           .arg(renderDepthBitsPerChannel_)
+                           .arg(internalFormat, 0, 16));
+}
+
+void VideoSurface::logFrameTiming(const QString& line) {
+    if (timingLogBroken_) return;
+    const QString path = frameTimingLogPath();
+    if (path.isEmpty()) return;
+    if (frameTimingLog_.isOpen() && frameTimingLog_.fileName() != path) {
+        if (!timingLogBuffer_.isEmpty() &&
+            frameTimingLog_.write(timingLogBuffer_) != timingLogBuffer_.size()) {
+            timingLogBroken_ = true;
+            qWarning("VideoSurface timing log: path-change flush failed for '%s'",
+                     qUtf8Printable(frameTimingLog_.fileName()));
+            timingLogBuffer_.resize(0);
+            frameTimingLog_.close();
+            return;
+        }
+        timingLogBuffer_.resize(0);
+        frameTimingLog_.close();
+    }
+    if (!frameTimingLog_.isOpen()) {
+        frameTimingLog_.setFileName(path);
+        if (!frameTimingLog_.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+            timingLogBroken_ = true;
+            qWarning("VideoSurface timing log: cannot open '%s': %s",
+                     qUtf8Printable(path), qUtf8Printable(frameTimingLog_.errorString()));
+            frameTimingLog_.setFileName(QString());
+            return;
+        }
+        timingLogFlushClock_.start();
+    }
+    timingLogBuffer_.append((line + QLatin1Char('\n')).toUtf8());
+    if (timingLogBuffer_.size() < 32768 && timingLogFlushClock_.elapsed() < 1000) return;
+    const qint64 written = frameTimingLog_.write(timingLogBuffer_);
+    if (written != timingLogBuffer_.size()) {
+        timingLogBroken_ = true;
+        qWarning("VideoSurface timing log: write failed for '%s'",
+                 qUtf8Printable(frameTimingLog_.fileName()));
+        timingLogBuffer_.resize(0);
+        frameTimingLog_.close();
+        frameTimingLog_.setFileName(QString());
+        return;
+    }
+    timingLogBuffer_.resize(0);
+    timingLogFlushClock_.restart();
+}
+
+QString VideoSurface::resolvedChainForCurrentSource(const QString& candidateId) const {
+    const QString shaders = anime4k::shaderStringForCandidate(candidateId);
+    if (shaders.isEmpty()) return shaders;  // Off or unknown: not the gate's business
+    if (hdrFixesEnabled() && sourceColorProfile_.requiresSdrGate()) return QString();
+    return shaders;
+}
+
+void VideoSurface::handleSourceColorProfileChanged() {
+    if (observedColorProfile_.pixelformat == sourceColorProfile_.pixelformat &&
+        observedColorProfile_.primaries == sourceColorProfile_.primaries &&
+        observedColorProfile_.gamma == sourceColorProfile_.gamma) {
+        return;
+    }
+    const bool wasGateRequired = sourceColorProfile_.requiresSdrGate();
+    const bool wasHdr = sourceColorProfile_.isHdr();
+    sourceColorProfile_ = observedColorProfile_;
+    const bool requiresSdrGate = sourceColorProfile_.requiresSdrGate();
+    const bool hdr = sourceColorProfile_.isHdr();
+    if (requiresSdrGate != wasGateRequired || hdr != wasHdr) {
+        const QString chainId =
+            anime4kChainId_.isEmpty() ? anime4k::modeId(anime4kMode_) : anime4kChainId_;
+        const QString requested = anime4k::shaderStringForCandidate(chainId);
+        if (requiresSdrGate != wasGateRequired && !requested.isEmpty() && mpv_ != nullptr) {
+            const QString allowed = resolvedChainForCurrentSource(chainId);
+            if (allowed.isEmpty()) {
+                emit anime4kGated(tr("Anime4K skipped: source transfer metadata is unknown or HDR"));
+            }
+            applyShaderChainRequest(allowed);
+            // A paused core produces no frame to rebuild the chain on, so the
+            // render state is refreshed the same way a user request would be.
+            refreshRenderState();
+        }
+        if (requiresSdrGate && !(hdr && animeJanaiHdrOverride())) {
+            enforceAnimeJanaiHdrGate();
+        } else if (animeJanaiSourceGated_) {
+            animeJanaiSourceGated_ = false;
+            setAnimeJanaiStatus(QStringLiteral("Configured; waiting for a loaded source"));
+            if (mpv_ != nullptr && !url_.isEmpty() && !pendingOpen_) processAnimeJanaiPlan();
+        }
+    }
+    emit sourceColorProfileChanged(sourceColorProfile_);
+}
+
+void VideoSurface::enforceAnimeJanaiHdrGate() {
+    if (!hdrFixesEnabled() || mpv_ == nullptr ||
+        !sourceColorProfile_.requiresSdrGate() ||
+        (sourceColorProfile_.isHdr() && animeJanaiHdrOverride()) || !animeJanaiPlan_.enabled) {
+        return;
+    }
+    animeJanaiSourceGated_ = true;
+    const QString notice = sourceColorProfile_.isHdr()
+                               ? tr("Skipped on HDR: native stages force 8-bit NV12")
+                               : tr("Skipped: source transfer metadata is unknown");
+    if (!animeJanaiFilterBound_ && !animeJanaiEngineBuildActive_ && !animeJanaiBusy_) {
+        setAnimeJanaiStatus(notice);
+        return;
+    }
+    const uint64_t epoch = mpv_->sourceEpoch();
+    cancelAnimeJanaiOperation();
+    const quint64 generation = animeJanaiGeneration_;
+    animeJanaiBusy_ = true;
+    removeAnimeJanaiFilters(epoch, generation, [this, epoch, generation, notice] {
+        animeJanaiBusy_ = false;
+        if (animeJanaiStageBuildLease_) animeJanaiStageBuildLease_->release();
+        animeJanaiStageBuildLease_.reset();
+        finishAnimeJanaiEngineBuild(false, tr("TensorRT engine build stopped for this source."));
+        setEngineFrameHold(false);
+        restoreAnimeJanaiHwdec(epoch, generation);
+        setAnimeJanaiStatus(notice);
+    });
+}
+
+void VideoSurface::setAnimeJanaiHdrOverride(bool allowed) {
+    if (g_animeJanaiHdrOverride == allowed) return;
+    g_animeJanaiHdrOverride = allowed;
+    ++g_animeJanaiHdrOverrideRevision;
+}
+
+bool VideoSurface::animeJanaiHdrOverride() {
+    return g_animeJanaiHdrOverride;
+}
+
+void VideoSurface::applyHdrPolicyToEngine() {
+    appliedHdrPolicyRevision_ = hdrToneMappingPolicyRevision();
+    if (mpv_ == nullptr) return;
+    if (!hdrFixesEnabled()) return;
+    for (const auto& option : hdrPolicyOptionList(hdrToneMappingPolicy())) {
+        // Tolerated: a runtime older than an option refuses that one entry, is
+        // named in the warning log, and playback continues unaffected.
+        issueCoreCommand({"set", option.first, option.second}, option.first,
+                         /*reportRefusal=*/false);
+    }
+}
+
+void VideoSurface::setPumpSuspended(bool suspended) {
+    // T-207: see the header. The timer's interval is set once in the
+    // constructor and start()/stop() preserve it; a resume does not need to
+    // know it.
+    if (suspended) {
+        statePump_.stop();
+    } else {
+        statePump_.start();
+    }
+}
+
+void VideoSurface::setDiagnosticsPolling(bool enabled) {
+    // T-205: the raw-counter poll costs an mpv property read twice a second
+    // (the vf entry as a full node tree, the heaviest recurring read in normal
+    // playback) while no in-app consumer of these numbers exists at all.
+    if (diagnosticsPolling_ == enabled) return;
+    diagnosticsPolling_ = enabled;
+    if (!enabled) {
+        // A disabled poll owns no in-flight reads and answers no stale values;
+        // the next source re-arms the clock either way.
+        resetDiagnostics();
+    }
+}
+
+void VideoSurface::setHdrToneMappingPolicy(HdrToneMappingPolicy policy) {
+    if (policy == g_hdrToneMappingPolicy) return;
+    g_hdrToneMappingPolicy = policy;
+    ++g_hdrToneMappingPolicyRevision;
+    // The pump of every live surface adopts the new revision on its own tick,
+    // so this setter never has to know how many surfaces exist.
+}
+
+VideoSurface::HdrToneMappingPolicy VideoSurface::hdrToneMappingPolicy() {
+    return g_hdrToneMappingPolicy;
+}
+
+void VideoSurface::setFrameTimingLogPath(const QString& path) {
+    g_frameTimingLogPath = path;
+}
+
+QString VideoSurface::frameTimingLogPath() {
+    return g_frameTimingLogPath;
 }
 
 bool VideoSurface::makeRenderContextCurrent(QOpenGLContext** previous) {
@@ -1506,6 +2032,10 @@ void VideoSurface::releaseRenderContextCurrent(QOpenGLContext* previous) {
 }
 
 void VideoSurface::releaseRenderContext() {
+    pacingTimer_.stop();
+    pacingTimerArmed_ = false;
+    pacingTargetTime_ = 0;
+    pacingMeasurePending_ = false;
     if (render_ == nullptr) {
         if (contextDestroyedConnection_) {
             disconnect(contextDestroyedConnection_);
@@ -1616,6 +2146,28 @@ void VideoSurface::observePlaybackState() {
           [this](const Property& p) { observedContainerFps_ = p.isNumber() ? p.number : 0.0; });
     watch("glsl-shaders", MPV_FORMAT_STRING,
           [this](const Property& p) { shaderChain_ = QString::fromStdString(p.text); });
+    // T-102: the source's own color facts, staged (observedColorProfile_) and
+    // published through one diffing handler. They arrive as ordinary property
+    // events in the same drain as everything else, so no poll and no core lock
+    // is ever involved in knowing the verdict that gates the chains.
+    watch("video-params/gamma", MPV_FORMAT_STRING, [this](const Property& p) {
+        const QString gamma = QString::fromStdString(p.text).toLower();
+        if (gamma == observedColorProfile_.gamma) return;
+        observedColorProfile_.gamma = gamma;
+        handleSourceColorProfileChanged();
+    });
+    watch("video-params/primaries", MPV_FORMAT_STRING, [this](const Property& p) {
+        const QString primaries = QString::fromStdString(p.text).toLower();
+        if (primaries == observedColorProfile_.primaries) return;
+        observedColorProfile_.primaries = primaries;
+        handleSourceColorProfileChanged();
+    });
+    watch("video-params/pixelformat", MPV_FORMAT_STRING, [this](const Property& p) {
+        const QString pixelformat = QString::fromStdString(p.text).toLower();
+        if (pixelformat == observedColorProfile_.pixelformat) return;
+        observedColorProfile_.pixelformat = pixelformat;
+        handleSourceColorProfileChanged();
+    });
     for (const char* property : {"track-list", "aid", "sid"}) {
         watch(property, MPV_FORMAT_NONE, [this](const Property&) { mediaTracksDirty_ = true; });
     }
@@ -1746,6 +2298,21 @@ void VideoSurface::publishObservedState() {
 
 void VideoSurface::pumpEvents() {
     if (!mpv_) return;
+    if (appliedHdrPolicyRevision_ != hdrToneMappingPolicyRevision()) {
+        applyHdrPolicyToEngine();
+    }
+    if (appliedAnimeJanaiOverrideRevision_ != animeJanaiHdrOverrideRevision()) {
+        appliedAnimeJanaiOverrideRevision_ = animeJanaiHdrOverrideRevision();
+        const bool overrideAllowsSource =
+            sourceColorProfile_.isHdr() && animeJanaiHdrOverride();
+        if (sourceColorProfile_.requiresSdrGate() && !overrideAllowsSource) {
+            enforceAnimeJanaiHdrGate();
+        } else if (animeJanaiSourceGated_) {
+            animeJanaiSourceGated_ = false;
+            setAnimeJanaiStatus(QStringLiteral("Configured; waiting for a loaded source"));
+            if (!url_.isEmpty() && !pendingOpen_) processAnimeJanaiPlan();
+        }
+    }
     // Before the drain, so an observation dispatched from it is read under the
     // epoch the controller is currently bound to.
     syncNativeSource();
@@ -1842,7 +2409,11 @@ void VideoSurface::resetDiagnostics() {
 }
 
 void VideoSurface::pollDiagnostics() {
-    if (!mpv_ || !diagnosticsActive_) return;
+    // T-205: the app - which has no consumer of the raw counters - switches the
+    // poll off on every surface it owns, so normal playback performs no mpv
+    // reads at all here. Probes keep the constructor default (on) because their
+    // verdicts assert on these counters, and they alone read them.
+    if (!mpv_ || !diagnosticsActive_ || !diagnosticsPolling_) return;
     const qint64 nowMs = diagnosticsClock_.elapsed();
     if (nowMs - diagnosticsLastPollMs_ < kDiagnosticsPollIntervalMs) return;
     diagnosticsLastPollMs_ = nowMs;

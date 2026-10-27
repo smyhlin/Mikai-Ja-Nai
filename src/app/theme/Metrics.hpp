@@ -11,8 +11,6 @@ inline constexpr int kSpacingMedium = 12;
 inline constexpr int kSpacingLarge = 20;
 
 inline constexpr int kRadiusSmall = 8;
-inline constexpr int kRadius = 12;
-inline constexpr int kRadiusLarge = 16;
 
 inline constexpr int kPrimaryControlSize = 44;
 inline constexpr int kSecondaryControlSize = 36;

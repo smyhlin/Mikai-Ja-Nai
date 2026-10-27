@@ -48,6 +48,12 @@ namespace shell {
 /// carried mpv's frame. A widget over a QOpenGLWidget that keeps its own
 /// backing store is a second raster pass over the picture and a stacking the
 /// float cannot control.
+// T-404: the float's default geometry, in one place. PipFloat.cpp,
+// PlayerDialog.cpp and PlayerDialogProcessing.cpp all used to carry their own
+// file-local pair - three copies that could (and had to be kept from drifting).
+inline constexpr int kPipDefaultWidth = 480;
+inline constexpr int kPipDefaultHeight = 270;
+
 class VolumeTrack;
 
 class PipFloat : public QWidget, public ChromeHost {
@@ -90,6 +96,7 @@ signals:
 
 protected:
     void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void changeEvent(QEvent* event) override;

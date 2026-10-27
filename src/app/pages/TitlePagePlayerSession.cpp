@@ -57,8 +57,6 @@
 namespace mikai::app {
 namespace {
 
-constexpr int kFlashMs = 1200;
-
 QList<mplayer::shell::QualityEntry> toQualities(const QMap<int, QString>& map) {
     QList<mplayer::shell::QualityEntry> list;
     list.reserve(map.size());

@@ -40,8 +40,7 @@ constexpr int kSpacingXS = 4;
 constexpr int kSpacingSmall = 8;
 constexpr int kSpacingMedium = 12;
 constexpr int kIconSize = 18;
-constexpr int kPipDefaultWidth = 480;
-constexpr int kPipDefaultHeight = 270;
+// T-404: kPipDefaultWidth/Height live in PipFloat.hpp now.
 
 constexpr int kPipSeekStepSeconds = 10;
 constexpr int kPipCornerRadiusPx = 16;
@@ -109,6 +108,9 @@ PipFloat::PipFloat(QWidget* parent)
     surface_->setObjectName(QStringLiteral("pipVideo"));
     surface_->setFocusPolicy(Qt::NoFocus);
     surface_->setMouseTracking(true);
+    // T-205: no in-app consumer reads the raw counters; the pooled float must
+    // not poll either. The probes keep their own surfaces with polling on.
+    surface_->setDiagnosticsPolling(false);
 
     buildChrome();
 
@@ -166,6 +168,21 @@ PipFloat::PipFloat(QWidget* parent)
     });
     connect(surface_, &VideoSurface::playingChanged, this,
             [this](bool playing) { setPlaying(playing); });
+    const auto suspendPumpWhenParked = [this] {
+        if (!isVisible() && surface_ != nullptr &&
+            surface_->nativePlaybackStatus().pendingRequestId.isEmpty() &&
+            !surface_->animeJanaiEngineBuildActive()) {
+            surface_->setPumpSuspended(true);
+        }
+    };
+    connect(surface_, &VideoSurface::nativePlaybackStatusChanged, this,
+            [suspendPumpWhenParked](const native::NativePlaybackController::Status&) {
+                suspendPumpWhenParked();
+            });
+    connect(surface_, &VideoSurface::animeJanaiEngineBuildChanged, this,
+            [suspendPumpWhenParked](bool, bool, const QString&) {
+                suspendPumpWhenParked();
+            });
 }
 
 void PipFloat::buildChrome() {
@@ -872,12 +889,33 @@ void PipFloat::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
     fitSurfaces();
     revealControls();
+    // T-207: the pooled float's pump runs again from the moment it is visible;
+    // see hideEvent for why it was parked.
+    if (surface_ != nullptr) surface_->setPumpSuspended(false);
     // A pooled float re-enters where the viewer last left it. The one position
     // that is not honoured is one that is no longer reachable - a monitor that
     // went away since the last session - and only that is corrected, once, on
     // entry. A viewer who left it somewhere odd gets it back exactly there.
     if (!overlapsAnyWorkArea()) {
         pullIntoWorkArea();
+    }
+}
+
+void PipFloat::hideEvent(QHideEvent* event) {
+    QWidget::hideEvent(event);
+    // T-207: a hidden float is a pooled, paused second core that nothing
+    // watches, yet its 50 ms pump kept draining that core's events for the rest
+    // of the session - background GUI-thread work whose only effect was jitter
+    // in the main player's frame schedule. The float is deliberately kept alive
+    // (destroying a second QOpenGLWidget beside the player's faulted the driver),
+    // but the pump is pure Qt work and stopping it is safe at any pool boundary:
+    // the next drain picks up whatever the paused core queued, in the same
+    // bounded batch as always. A native transition or an engine build in flight
+    // still needs its observer, so those keep the pump running.
+    if (surface_ != nullptr &&
+        surface_->nativePlaybackStatus().pendingRequestId.isEmpty() &&
+        !surface_->animeJanaiEngineBuildActive()) {
+        surface_->setPumpSuspended(true);
     }
 }
 

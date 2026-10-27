@@ -62,6 +62,7 @@ struct MpvApiInstance {
     decltype(&::mpv_unobserve_property) unobserveProperty = nullptr;
     decltype(&::mpv_wait_event) waitEvent = nullptr;
     decltype(&::mpv_client_api_version) clientApiVersion = nullptr;
+    decltype(&::mpv_get_time_us) getTimeUs = nullptr;
     decltype(&::mpv_error_string) errorString = nullptr;
     decltype(&::mpv_render_context_create) renderContextCreate = nullptr;
     decltype(&::mpv_render_context_set_update_callback) renderContextSetUpdateCallback = nullptr;

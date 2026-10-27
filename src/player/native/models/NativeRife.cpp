@@ -110,9 +110,16 @@ QVector<RifeCapability> identityRows() {
 }
 
 const QVector<RifeCapability>& identityTable() {
-    // One table for the process: the rows are immutable, so a lookup can return
-    // a pointer into it without the caller having to own a copy.
-    static const QVector<RifeCapability> rows = identityRows();
+    // T-307: the table is rebuilt on every call, so the translated placeholder
+    // availability text follows a live language switch instead of freezing at
+    // first use. The reference - and pointers into it - stay valid only until
+    // the next call: a language change arrives between event-loop turns, and
+    // every caller holds its row only within one synchronous lookup, so the
+    // rebuild cannot pull a row out from under a live reader. Ten rows, none of
+    // them on a hot path; the identity table is a language-keyed cache now, not
+    // a process-wide constant.
+    static QVector<RifeCapability> rows;
+    rows = identityRows();
     return rows;
 }
 

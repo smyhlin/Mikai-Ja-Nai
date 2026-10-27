@@ -38,17 +38,14 @@ namespace shell {
 
 namespace {
 
-constexpr int kPipDefaultWidth = 480;
-constexpr int kPipDefaultHeight = 270;
-constexpr int kStatusMs = 1900;
+// T-404: kPipDefaultWidth/Height live in PipFloat.hpp now.
+// T-404: kStatusMs lives on the class (PlayerDialog.hpp) now.
 
 constexpr auto kAnimeJanaiPresetSettingKey = "player/animejanai/preset";
 constexpr auto kAnimeJanaiBackendSettingKey = "player/animejanai/backend";
 
-QString animeJanaiBackendName(native::Backend backend) {
-    return backend == native::Backend::DirectML ? QStringLiteral("directml")
-                                                 : QStringLiteral("tensorrt");
-}
+// T-404: one animeJanaiBackendName, defined in PlayerDialog.cpp and
+// declared on the class (PlayerDialog.hpp); this TU uses the member.
 /// The catalogue's name for a preset identity in the language installed now, or
 /// `fallback` when the catalogue no longer offers that identity. Only the
 /// catalogue knows which names are app-owned words and which are user or model
@@ -264,6 +261,13 @@ void PlayerDialog::applyAnimeJanaiRequest(const QString& id) {
     const quint64 sequence = animeJanaiSequence_;
     const auto cancelled = std::make_shared<std::atomic_bool>(false);
     animeJanaiCancellation_ = cancelled;
+    // T-306: arm the dialog slot on the GUI thread (QPointer creation and
+    // assignment are GUI-thread-only operations); the worker captures only
+    // this shared slot, never a raw dialog address.
+    if (!animeJanaiDialogSlot_ || animeJanaiDialogSlot_->dialog != this) {
+        if (!animeJanaiDialogSlot_) animeJanaiDialogSlot_ = std::make_shared<AnimeJanaiDialogSlot>();
+        animeJanaiDialogSlot_->dialog = this;
+    }
     shell_->setAnimeJanaiSelection(animeJanaiPresetId_,
                                    id.isEmpty() ? tr("Turning off…") : tr("Preparing…"));
     const QString requestedPreset = presetId;
@@ -276,16 +280,16 @@ void PlayerDialog::applyAnimeJanaiRequest(const QString& id) {
     const uint64_t sourceEpoch = preparationSurface != nullptr
                                      ? preparationSurface->sourceEpoch() : 0;
     animeJanaiPendingPreparationSourceEpoch_ = sourceEpoch;
-    // Raw owner: copying a QPointer on the worker would race dialog
-    // destruction (QPointer is GUI-thread only). A plain address copies safely;
-    // the queued body runs on the dialog's own thread, where it checks the
-    // shared cancellation BEFORE touching the address. The destructor always
-    // sets this generation's flag, so a dead owner always reads cancelled and
-    // is never dereferenced; same-thread serialisation keeps a live owner
-    // alive for the rest of the body.
-    PlayerDialog* ownerDialog = this;
+    // T-306: the worker task carries the shared slot; on the GUI thread - and
+    // only there - resolving it yields the live dialog or a null pointer the
+    // same instant the dialog dies, so the old "every destruction path must
+    // remember the cancellation flag" contract becomes unreachable state
+    // rather than load-bearing.
+    const std::shared_ptr<AnimeJanaiDialogSlot> dialogSlot = animeJanaiDialogSlot_;
+    PlayerDialog* ownerDialog = dialogSlot != nullptr ? dialogSlot->dialog.data() : nullptr;
+    if (ownerDialog == nullptr) return;
     QThreadPool::globalInstance()->start(QRunnable::create(
-        [ownerDialog, cancelled, sequence, requestedPreset, backend, source, sourceEpoch] {
+        [dialogSlot, cancelled, sequence, requestedPreset, backend, source, sourceEpoch] {
             native::AnimeJanaiPlan plan = native::prepareAnimeJanaiPlan(
                 requestedPreset, backend, [cancelled] { return cancelled->load(); }, source,
                 [](const QString& id, QString* reason) {
@@ -295,14 +299,13 @@ void PlayerDialog::applyAnimeJanaiRequest(const QString& id) {
             QObject* appRoot = QCoreApplication::instance();
             if (appRoot == nullptr) return;
             QMetaObject::invokeMethod(appRoot,
-                [ownerDialog, cancelled, sequence, sourceEpoch, source,
+                [dialogSlot, cancelled, sequence, sourceEpoch, source,
                  plan = std::move(plan)]() mutable {
                     if (cancelled->load()) return;
-                    // Local guard on the GUI thread: safe here (never copied
-                    // off-thread). Every call below can reenter via nested
-                    // event loops or direct signals that close/delete the
-                    // dialog, so the guard is re-checked after each one.
-                    QPointer<PlayerDialog> guard(ownerDialog);
+                    // Resolve the dialog on the GUI thread through the slot: a
+                    // destroyed dialog is a null pointer here by construction.
+                    if (dialogSlot == nullptr) return;
+                    QPointer<PlayerDialog> guard(dialogSlot->dialog);
                     if (guard.isNull() || cancelled->load() ||
                         guard->closed_ || guard->animeJanaiSequence_ != sequence) return;
                     VideoSurface* currentOwner = guard->playbackSurface();
@@ -1373,6 +1376,10 @@ bool PlayerDialog::settleParkedNative() {
     if (parked == nullptr || parked->videoSurface() == nullptr) {
         return true;
     }
+    // A hidden pooled float may have parked its timer. Teardown settlement
+    // depends on observing the native stop acknowledgement, so resume its pump
+    // before issuing or waiting for that transition.
+    parked->videoSurface()->setPumpSuspended(false);
     return parked->videoSurface()->settleNativeForTeardown();
 }
 
