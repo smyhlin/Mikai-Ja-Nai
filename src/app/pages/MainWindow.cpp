@@ -466,8 +466,7 @@ void MainWindow::runMediaRuntimeResolution() {
     // Validate the bundle off-thread; load the process-pinned module on the GUI thread.
     runner_->run(
         [] {
-            return QVariant::fromValue(
-                mplayer::native::resolveRuntime(mplayer::native::storedRuntimeChoice()));
+            return QVariant::fromValue(mplayer::native::resolveStoredRuntime());
         },
         [self, target, seq, lease](const QVariant& result) {
             if (self.isNull() || seq != self->runtimeSeq_) {

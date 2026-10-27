@@ -36,9 +36,10 @@ QString runtimeChoiceSettingsKey();
 QString runtimeChoiceToString(RuntimeChoice choice);
 RuntimeChoice runtimeChoiceFromString(const QString& stored);
 
-/// The stored choice. Reads QSettings on every call, so a test that rewrites the
-/// key is seen immediately.
-RuntimeChoice storedRuntimeChoice();
+/// The stored choice, read on every call. On Linux a stored Windows-only
+/// Native choice reads as Standard without rewriting the setting; `reason`,
+/// when supplied, names that normalization.
+RuntimeChoice storedRuntimeChoice(QString* reason = nullptr);
 
 /// Writes the choice. Returns false with a reason when the value cannot be
 /// stored; the process keeps running on what it already selected either way.
@@ -53,7 +54,8 @@ bool storeRuntimeChoice(RuntimeChoice choice, QString* reason = nullptr);
 /// to say "restart required" while the dialog is still open, rather than
 /// discovering it from a swap that never happens.
 ///
-/// False when nothing is pinned yet: the next selection reads whatever was stored.
+/// False when nothing is pinned yet, or when the choice is unsupported on this
+/// platform and a restart cannot make it available.
 bool restartRequiredFor(RuntimeChoice choice);
 
 /// What selection produced. Every field here is observed: the kind and version
@@ -64,7 +66,9 @@ struct RuntimeSelection {
     bool loaded = false;
     /// The kind of the module that is loaded.
     BundleKind kind = BundleKind::Standard;
-    /// The kind the user asked for, kept when the fallback changed it.
+    /// The selected choice; a Windows Native fallback retains Native here.
+    /// A platform-normalized stored choice is Standard, with the original
+    /// Native refusal carried in nativeNotApplied and reason.
     RuntimeChoice requested = RuntimeChoice::Standard;
     QString root;
     QString modulePath;
@@ -99,9 +103,9 @@ struct RuntimeSelection {
 /// second call reports the recorded selection instead of loading again.
 RuntimeSelection selectRuntime();
 
-/// As above, for an explicit choice. Native that cannot be resolved falls back
-/// to Standard as this process's first and only module, with the native reason
-/// recorded alongside it.
+/// As above, for an explicit choice. On Windows a Native choice that cannot be
+/// resolved falls back to Standard with the native reason recorded. On Linux
+/// an explicit Native request is refused without selecting a fallback.
 ///
 /// Discovery is offline; `hint` precedes the executable-adjacent runtime.
 RuntimeSelection selectRuntime(RuntimeChoice choice, const QString& hint = {});
@@ -115,6 +119,9 @@ RuntimeSelection selectStartupRuntime(const QString& hint = {});
 
 /// Resolution validates installed bytes but neither loads nor downloads a module.
 RuntimeSelection resolveRuntime(RuntimeChoice choice, const QString& hint = {});
+/// Resolves the stored choice, retaining any platform normalization reason on
+/// the Standard selection so startup can report why Native was not applied.
+RuntimeSelection resolveStoredRuntime(const QString& hint = {});
 /// Resolves only the manifest at this absolute, local, non-reparse bundle root.
 /// It never searches another runtime, reads or writes user preferences, or loads the module.
 RuntimeSelection resolveNamedBundle(const QString& root);

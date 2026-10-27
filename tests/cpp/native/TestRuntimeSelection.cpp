@@ -272,9 +272,11 @@ void TestRuntimeSelection::anAbsentOrCorruptStoredChoiceReadsAsStandard() {
 
 void TestRuntimeSelection::theStoredChoiceRoundTripsThroughTheIsolatedSettings() {
     QString reason;
+#ifndef Q_OS_LINUX
     QVERIFY2(mplayer::native::storeRuntimeChoice(RuntimeChoice::Native, &reason),
              qPrintable(reason));
     QCOMPARE(mplayer::native::storedRuntimeChoice(), RuntimeChoice::Native);
+#endif
     QVERIFY2(mplayer::native::storeRuntimeChoice(RuntimeChoice::Standard, &reason),
              qPrintable(reason));
     QCOMPARE(mplayer::native::storedRuntimeChoice(), RuntimeChoice::Standard);
@@ -284,6 +286,72 @@ void TestRuntimeSelection::theStoredChoiceRoundTripsThroughTheIsolatedSettings()
     QSettings settings;
     QCOMPARE(settings.value(QStringLiteral("player/native/runtimeChoice")).toString(),
              QStringLiteral("standard"));
+}
+
+void TestRuntimeSelection::linuxRejectsPrivateNativeWithoutBreakingStandard() {
+#ifdef Q_OS_LINUX
+    QSettings settings;
+    settings.beginGroup(mplayer::native::runtimeChoiceSettingsGroup());
+    settings.setValue(mplayer::native::runtimeChoiceSettingsKey(), QStringLiteral("native"));
+    settings.endGroup();
+    settings.sync();
+
+    QString reason;
+    QCOMPARE(mplayer::native::storedRuntimeChoice(&reason), RuntimeChoice::Standard);
+    QVERIFY2(reason.contains(QStringLiteral("Linux")), qPrintable(reason));
+    QCOMPARE(settings.value(QStringLiteral("player/native/runtimeChoice")).toString(),
+             QStringLiteral("native"));
+    QVERIFY(!mplayer::native::storeRuntimeChoice(RuntimeChoice::Native, &reason));
+    QVERIFY(reason.contains(QStringLiteral("Linux")));
+    QCOMPARE(settings.value(QStringLiteral("player/native/runtimeChoice")).toString(),
+             QStringLiteral("native"));
+
+    const RuntimeSelection directStandard = mplayer::native::resolveRuntime(RuntimeChoice::Standard);
+    const RuntimeSelection standard = mplayer::native::resolveStoredRuntime();
+    QCOMPARE(standard.requested, RuntimeChoice::Standard);
+    QCOMPARE(standard.kind, directStandard.kind);
+    QCOMPARE(standard.modulePath, directStandard.modulePath);
+    QVERIFY(standard.nativeNotApplied);
+    QVERIFY(standard.runtimeUnavailable);
+    QVERIFY(standard.reason.contains(reason));
+    if (!directStandard.reason.isEmpty()) {
+        QVERIFY(standard.reason.contains(directStandard.reason));
+    }
+
+    const RuntimeSelection explicitNative =
+        mplayer::native::resolveRuntime(RuntimeChoice::Native);
+    QVERIFY(!explicitNative.loaded);
+    QVERIFY(!explicitNative.resolvedBundle.has_value());
+    QVERIFY(explicitNative.runtimeUnavailable);
+    QVERIFY(explicitNative.nativeNotApplied);
+    QVERIFY(explicitNative.reason.contains(QStringLiteral("Linux")));
+
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    QVERIFY(writeSyntheticNativeBundle(temp.path()));
+    const RuntimeSelection named = mplayer::native::resolveNamedBundle(temp.path());
+    QVERIFY(!named.resolvedBundle.has_value());
+    QVERIFY(named.nativeNotApplied);
+    QVERIFY(named.reason.contains(QStringLiteral("Linux")));
+
+    QString bundleReason;
+    const auto bundle = mplayer::native::readBundle(temp.path(), &bundleReason);
+    QVERIFY2(bundle.has_value(), qPrintable(bundleReason));
+    const RuntimeSelection committed = mplayer::native::commitRuntime(handoffFor(*bundle));
+    QVERIFY(!committed.loaded);
+    QVERIFY(committed.nativeNotApplied);
+    QVERIFY(committed.reason.contains(QStringLiteral("Linux")));
+    const RuntimeSelection selected = mplayer::native::selectRuntime(RuntimeChoice::Native);
+    QVERIFY(!selected.loaded);
+    QVERIFY(selected.nativeNotApplied);
+    QVERIFY(selected.reason.contains(QStringLiteral("Linux")));
+    QVERIFY(!mplayer::native::runtimeSelected());
+
+    QVERIFY(mplayer::native::storeRuntimeChoice(RuntimeChoice::Standard, &reason));
+    QVERIFY(reason.isEmpty());
+#else
+    QSKIP("Linux platform policy");
+#endif
 }
 
 void TestRuntimeSelection::recoveryIsOneAttemptAndNeverReloads() {
@@ -335,6 +403,9 @@ void TestRuntimeSelection::aNativeDescriptorIsNeverLoadedFromItsLabelAlone() {
 }
 
 void TestRuntimeSelection::aRefusedNativeRequestFallsBackToStandardAndNamesWhy() {
+#ifdef Q_OS_LINUX
+    QSKIP("Linux rejects explicit Native without a Standard fallback");
+#endif
     QVERIFY2(stockCacheIsExcluded(),
              "a DLL in the per-user cache must not be a runtime candidate");
     if (mplayer::native::runtimeSelected()) {
@@ -688,7 +759,14 @@ void TestRuntimeSelection::aDifferentChoiceNeverHotSwapsThePinnedModule() {
 
     // A different one is, and it says so instead of pretending to swap.
     const RuntimeSelection native = mplayer::native::selectRuntime(RuntimeChoice::Native);
+#ifdef Q_OS_LINUX
+    QVERIFY(!native.restartRequired);
+    QVERIFY(native.runtimeUnavailable);
+    QVERIFY(native.nativeNotApplied);
+    QVERIFY(native.reason.contains(QStringLiteral("Linux")));
+#else
     QVERIFY(native.restartRequired);
+#endif
     QVERIFY(!native.reason.isEmpty());
     QCOMPARE(native.requested, RuntimeChoice::Native);
     QVERIFY(native.loaded);
@@ -705,10 +783,19 @@ void TestRuntimeSelection::aDifferentChoiceNeverHotSwapsThePinnedModule() {
     const RuntimeSelection refused = mplayer::native::commitRuntime(alien);
     QCOMPARE(refused.kind, BundleKind::Standard);
     QCOMPARE(refused.modulePath, pinned.modulePath);
+#ifdef Q_OS_LINUX
+    QVERIFY(!refused.restartRequired);
+    QVERIFY(refused.runtimeUnavailable);
+    QVERIFY(refused.nativeNotApplied);
+    QVERIFY(refused.reason.contains(QStringLiteral("Linux")));
+#else
     QVERIFY(refused.restartRequired);
+#endif
     QCOMPARE(mplayer::native::currentSelection().kind, BundleKind::Standard);
     QCOMPARE(mplayer::native::currentSelection().modulePath, pinned.modulePath);
+#ifndef Q_OS_LINUX
     QVERIFY(mplayer::native::currentSelection().restartRequired);
+#endif
     const QString refusedStatus = mplayer::native::runtimeStatusText();
     QVERIFY2(refusedStatus.contains(refused.reason), qPrintable(refusedStatus));
 

@@ -109,6 +109,13 @@ RuntimeSelection unavailable(RuntimeChoice choice, const QString& reason) {
     return selection;
 }
 
+#ifdef Q_OS_LINUX
+QString nativePlatformRefusal() {
+    return translated(QT_TRANSLATE_NOOP(
+        "RuntimeSelection", "The private Native runtime is not supported on Linux."));
+}
+#endif
+
 /// Fills the observed fields from a validated descriptor. Capability and native
 /// state deliberately stay unset: a bundle that calls itself native has proven
 /// nothing until a loaded core registers its filter.
@@ -243,6 +250,9 @@ RuntimeSelection resolveWith(RuntimeChoice choice, StandardResolver standard, co
     if (choice != RuntimeChoice::Native) {
         return standard(hint);
     }
+#ifdef Q_OS_LINUX
+    return unavailable(RuntimeChoice::Native, nativePlatformRefusal());
+#endif
     // Native first, then Standard as the one module this process will ever
     // load. The refusal rides along on the fallback so the surface can say why
     // the request was not honoured; the loaded kind never claims to be native.
@@ -323,15 +333,35 @@ RuntimeChoice runtimeChoiceFromString(const QString& stored) {
                : RuntimeChoice::Standard;
 }
 
-RuntimeChoice storedRuntimeChoice() {
+RuntimeChoice storedRuntimeChoice(QString* reason) {
     QSettings settings;
     settings.beginGroup(runtimeChoiceSettingsGroup());
     const QString stored = settings.value(runtimeChoiceSettingsKey()).toString();
     settings.endGroup();
-    return runtimeChoiceFromString(stored);
+    if (reason != nullptr) {
+        reason->clear();
+    }
+    const RuntimeChoice choice = runtimeChoiceFromString(stored);
+#ifdef Q_OS_LINUX
+    if (choice == RuntimeChoice::Native) {
+        if (reason != nullptr) {
+            *reason = nativePlatformRefusal();
+        }
+        return RuntimeChoice::Standard;
+    }
+#endif
+    return choice;
 }
 
 bool storeRuntimeChoice(RuntimeChoice choice, QString* reason) {
+#ifdef Q_OS_LINUX
+    if (choice == RuntimeChoice::Native) {
+        if (reason != nullptr) {
+            *reason = nativePlatformRefusal();
+        }
+        return false;
+    }
+#endif
     QSettings settings;
     settings.beginGroup(runtimeChoiceSettingsGroup());
     settings.setValue(runtimeChoiceSettingsKey(), runtimeChoiceToString(choice));
@@ -351,6 +381,12 @@ bool storeRuntimeChoice(RuntimeChoice choice, QString* reason) {
 }
 
 bool restartRequiredFor(RuntimeChoice choice) {
+#ifdef Q_OS_LINUX
+    // Restarting cannot make the Windows-only runtime available.
+    if (choice == RuntimeChoice::Native) {
+        return false;
+    }
+#endif
     const RuntimeSelection& selection = recorded();
     if (!selection.loaded) {
         // Nothing is pinned, so the next selection reads whatever was stored.
@@ -363,6 +399,21 @@ bool restartRequiredFor(RuntimeChoice choice) {
 
 RuntimeSelection resolveRuntime(RuntimeChoice choice, const QString& hint) {
     return resolveWith(choice, &resolveStandardLocal, hint);
+}
+RuntimeSelection resolveStoredRuntime(const QString& hint) {
+    QString normalizationReason;
+    const RuntimeChoice choice = storedRuntimeChoice(&normalizationReason);
+    RuntimeSelection selection = resolveRuntime(choice, hint);
+    if (!normalizationReason.isEmpty()) {
+        selection.nativeNotApplied = true;
+        selection.runtimeUnavailable = true;
+        if (!selection.resolvedBundle.has_value() && !selection.reason.isEmpty()) {
+            selection.reason = QStringLiteral("%1; %2").arg(normalizationReason, selection.reason);
+        } else {
+            selection.reason = normalizationReason;
+        }
+    }
+    return selection;
 }
 RuntimeSelection resolveNamedBundle(const QString& root) {
     const QFileInfo rootInfo(root);
@@ -388,6 +439,11 @@ RuntimeSelection resolveNamedBundle(const QString& root) {
                                                "The named mpv bundle has no readable manifest."))
                 : reason);
     }
+#ifdef Q_OS_LINUX
+    if (bundle->kind == BundleKind::Native) {
+        return unavailable(RuntimeChoice::Native, nativePlatformRefusal());
+    }
+#endif
     if (!validateBundleCached(*bundle, &reason)) {
         return unavailable(
             bundle->kind == BundleKind::Native ? RuntimeChoice::Native
@@ -404,6 +460,25 @@ RuntimeSelection resolveNamedBundle(const QString& root) {
 }
 
 RuntimeSelection commitRuntime(const RuntimeSelection& resolved) {
+#ifdef Q_OS_LINUX
+    if (resolved.requested == RuntimeChoice::Native || resolved.kind == BundleKind::Native ||
+        (resolved.resolvedBundle.has_value() &&
+         resolved.resolvedBundle->kind == BundleKind::Native)) {
+        RuntimeSelection refused = unavailable(RuntimeChoice::Native, nativePlatformRefusal());
+        if (recorded().loaded) {
+            refused = recorded();
+            refused.requested = RuntimeChoice::Native;
+            refused.runtimeUnavailable = true;
+            refused.nativeNotApplied = true;
+            refused.restartRequired = false;
+            refused.reason = nativePlatformRefusal();
+        } else {
+            refused.kind = resolved.kind;
+        }
+        recorded() = refused;
+        return refused;
+    }
+#endif
     if (recorded().loaded) {
         // One module per process. The pinned module is never replaced, so a
         // commit that arrives for the other kind is reported as the restart it
@@ -532,6 +607,11 @@ RuntimeSelection commitRuntime(const RuntimeSelection& resolved) {
 }
 
 RuntimeSelection selectRuntime(RuntimeChoice choice, const QString& hint) {
+#ifdef Q_OS_LINUX
+    if (choice == RuntimeChoice::Native) {
+        return commitRuntime(unavailable(choice, nativePlatformRefusal()));
+    }
+#endif
     if (recorded().loaded) {
         // One module per process. A different choice is a restart, never a swap.
         const BundleKind wanted =
@@ -554,14 +634,29 @@ RuntimeSelection selectRuntime(RuntimeChoice choice, const QString& hint) {
     return commitRuntime(resolveWith(choice, &resolveStandardLocal, hint));
 }
 
-RuntimeSelection selectRuntime() { return selectRuntime(storedRuntimeChoice()); }
+RuntimeSelection selectRuntime() {
+    return selectStartupRuntime();
+}
 
 RuntimeSelection selectStandardRuntime(const QString& hint) {
     return selectRuntime(RuntimeChoice::Standard, hint);
 }
 
 RuntimeSelection selectStartupRuntime(const QString& hint) {
-    return selectRuntime(storedRuntimeChoice(), hint);
+    if (recorded().loaded) {
+        QString normalizationReason;
+        const RuntimeChoice choice = storedRuntimeChoice(&normalizationReason);
+        if (normalizationReason.isEmpty()) {
+            return selectRuntime(choice, hint);
+        }
+        RuntimeSelection normalized;
+        normalized.requested = choice;
+        normalized.nativeNotApplied = true;
+        normalized.runtimeUnavailable = true;
+        normalized.reason = normalizationReason;
+        return commitRuntime(normalized);
+    }
+    return commitRuntime(resolveStoredRuntime(hint));
 }
 
 bool isAnimeJanaiForkRuntime(const RuntimeSelection& selection) {

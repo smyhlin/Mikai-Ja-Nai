@@ -15,6 +15,7 @@ class TestRuntimeSelection : public QObject {
  private slots:
     void anAbsentOrCorruptStoredChoiceReadsAsStandard();
     void theStoredChoiceRoundTripsThroughTheIsolatedSettings();
+    void linuxRejectsPrivateNativeWithoutBreakingStandard();
     void recoveryIsOneAttemptAndNeverReloads();
     void aNativeDescriptorIsNeverLoadedFromItsLabelAlone();
     void aRefusedNativeRequestFallsBackToStandardAndNamesWhy();

@@ -159,8 +159,7 @@ void startRuntimeResolution(mikai::app::Runner& runner, mikai::app::MainWindow* 
         [lease] {
             // Resolution validates installed bytes; it neither loads nor
             // downloads, and it is the only half that hashes.
-            return QVariant::fromValue(
-                mplayer::native::resolveRuntime(mplayer::native::storedRuntimeChoice()));
+            return QVariant::fromValue(mplayer::native::resolveStoredRuntime());
         },
         [lease, target](const QVariant& result) {
             // The terminal state is published first, and the resolution is
@@ -200,7 +199,6 @@ int main(int argc, char** argv) {
     // Before anything else, so a failure during startup still leaves a trace.
     // The log and any crash report land in the folder this exe runs from.
     mikai::app::installCrashLog();
-
     const QStringList arguments = launchArguments(argc, argv);
     QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
     // Application file arguments belong to our parser, not QApplication. In
