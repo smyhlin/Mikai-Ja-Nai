@@ -1,0 +1,57 @@
+# Completes the Qt plugin tree inside the install tree.
+#
+# Qt's own deployment selects plugins by module, and for the QPA platform
+# plugins it relies on a description file that a distribution Qt often omits.
+# The result is an install tree that can only start on the one platform whose
+# plugin happened to be gathered - on Arch, libqxcb.so alone, which cannot start
+# on a Wayland session. This copies the whole plugin tree the build links
+# against and gives every plugin an $ORIGIN-relative RUNPATH, because the Qt
+# libraries live in the same install tree rather than in the host's search path.
+
+set(_plugins_source "@MIKAI_LINUX_QT_PLUGIN_DIR@")
+set(_plugins_destination "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@QT6_INSTALL_PLUGINS@")
+set(_patchelf "@MIKAI_DEPLOY_PATCHELF_EXECUTABLE@")
+
+if(_plugins_source STREQUAL "" OR NOT IS_DIRECTORY "${_plugins_source}")
+  message(FATAL_ERROR
+    "Qt deployment has no plugin source directory (${_plugins_source}); configure "
+    "against the Qt that will be shipped.")
+endif()
+
+file(GLOB_RECURSE _plugins RELATIVE "${_plugins_source}"
+  "${_plugins_source}/*.so" "${_plugins_source}/*.so.*")
+if(NOT _plugins)
+  message(FATAL_ERROR "No Qt shared-object plugins found under ${_plugins_source}")
+endif()
+
+file(MAKE_DIRECTORY "${_plugins_destination}")
+foreach(_relative IN LISTS _plugins)
+  set(_source "${_plugins_source}/${_relative}")
+  if(IS_SYMLINK "${_source}")
+    continue()
+  endif()
+  set(_target "${_plugins_destination}/${_relative}")
+  get_filename_component(_target_dir "${_target}" DIRECTORY)
+  file(MAKE_DIRECTORY "${_target_dir}")
+  file(COPY_FILE "${_source}" "${_target}" ONLY_IF_DIFFERENT)
+
+  # Depth-relative, so a nested plugin type resolves the same prefix lib dir.
+  get_filename_component(_relative_dir "${_relative}" DIRECTORY)
+  set(_rpath "$ORIGIN")
+  set(_steps 2)
+  if(NOT _relative_dir STREQUAL "")
+    string(REPLACE "/" ";" _parts "${_relative_dir}")
+    list(LENGTH _parts _depth)
+    math(EXPR _steps "${_depth} + 2")
+  endif()
+  foreach(_ignored RANGE 1 ${_steps})
+    string(APPEND _rpath "/..")
+  endforeach()
+  execute_process(COMMAND "${_patchelf}" --set-rpath "${_rpath}" "${_target}"
+    RESULT_VARIABLE _patch_result ERROR_VARIABLE _patch_error OUTPUT_QUIET)
+  if(NOT _patch_result EQUAL 0)
+    message(FATAL_ERROR "Could not set the RUNPATH of ${_target}: ${_patch_error}")
+  endif()
+endforeach()
+
+message(STATUS "Qt plugin tree completed at ${_plugins_destination}")

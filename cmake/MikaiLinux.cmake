@@ -91,6 +91,18 @@ configure_file("${CMAKE_SOURCE_DIR}/packaging/linux/runtime-requirements.txt.in"
   "${CMAKE_BINARY_DIR}/mikai-runtime-requirements.txt" @ONLY)
 install(FILES "${CMAKE_BINARY_DIR}/mikai-runtime-requirements.txt"
   DESTINATION "${CMAKE_INSTALL_DATADIR}/mikai" RENAME "runtime-requirements.txt")
+# The Qt plugin tree this build links against: Qt's own deploy step gathers
+# plugins by module and leaves the QPA platform plugins out when the
+# distribution Qt ships no qpa description, so both the completed install tree
+# and the AppImage need the real directory.
+set(MIKAI_LINUX_QT_PLUGIN_DIR "")
+if(MIKAI_LINUX_DEPLOY_QT AND DEFINED QT6_INSTALL_PREFIX AND DEFINED QT6_INSTALL_PLUGINS)
+  set(_mikai_qt_plugin_dir "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}")
+  if(IS_DIRECTORY "${_mikai_qt_plugin_dir}")
+    set(MIKAI_LINUX_QT_PLUGIN_DIR "${_mikai_qt_plugin_dir}")
+  endif()
+endif()
+
 if(MIKAI_LINUX_DEPLOY_QT)
   # Do not suppress platform/deployment errors or omit plugins. The official Qt
   # deploy script writes qt.conf and gathers plugins + linked non-system deps.
@@ -136,16 +148,14 @@ if(MIKAI_LINUX_DEPLOY_QT)
       "libgbm\\.so[^/]*"
   )
   install(SCRIPT "${mikai_linux_qt_deploy}")
-endif()
-
-# The Qt plugin tree this build links against, published for the AppImage script:
-# Qt's own deploy step leaves the QPA platform plugins out when the distribution
-# Qt ships no qpa description, and the image cannot start without them.
-set(MIKAI_LINUX_QT_PLUGIN_DIR "")
-if(MIKAI_LINUX_DEPLOY_QT AND DEFINED QT6_INSTALL_PREFIX AND DEFINED QT6_INSTALL_PLUGINS)
-  set(_mikai_qt_plugin_dir "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}")
-  if(IS_DIRECTORY "${_mikai_qt_plugin_dir}")
-    set(MIKAI_LINUX_QT_PLUGIN_DIR "${_mikai_qt_plugin_dir}")
+  # The gathered set alone is not runnable: complete the tree and give every
+  # plugin a relative RUNPATH. Without this the install tree starts only where
+  # the one gathered platform plugin happens to apply (xcb on Arch, so a
+  # Wayland session cannot start it at all).
+  if(NOT MIKAI_LINUX_QT_PLUGIN_DIR STREQUAL "")
+    configure_file("${CMAKE_SOURCE_DIR}/packaging/linux/CompleteQtPlugins.cmake.in"
+      "${CMAKE_BINARY_DIR}/mikai-linux-qt-plugins.cmake" @ONLY)
+    install(SCRIPT "${CMAKE_BINARY_DIR}/mikai-linux-qt-plugins.cmake")
   endif()
 endif()
 

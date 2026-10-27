@@ -101,54 +101,19 @@ endforeach()
 
 # Qt's deployment gathers plugins by module, but a distribution Qt without a
 # qpa description makes it skip the platform plugins, which leaves the image
-# unable to start. Copy the plugin tree the build links against and give every
-# copied plugin a RUNPATH back to usr/lib.
-set(_qt_plugin_source "${MIKAI_LINUX_QT_PLUGIN_DIR}")
-if(_qt_plugin_source STREQUAL "" OR NOT IS_DIRECTORY "${_qt_plugin_source}")
+# unable to start. cmake/MikaiLinux.cmake completes the tree during install with
+# packaging/linux/CompleteQtPlugins.cmake; this only proves it happened.
+set(_qt_platform_plugins "${appdir}/usr/lib/qt6/plugins/platforms")
+if(NOT IS_DIRECTORY "${_qt_platform_plugins}")
   message(FATAL_ERROR
-    "This build published no Qt plugin directory (${_qt_plugin_source}); reconfigure "
-    "with -DMIKAI_LINUX_DEPLOY_QT=ON against the Qt that will be bundled.")
+    "The install tree carries no Qt platform plugins (${_qt_platform_plugins}); the "
+    "image could not start on any display.")
 endif()
-
-set(_qt_plugin_destination "${appdir}/usr/lib/qt6/plugins")
-# Shared objects only: a plugin directory also carries QML and metadata files,
-# and CMAKE_SHARED_LIBRARY_SUFFIX is not defined in script mode.
-file(GLOB_RECURSE _qt_plugins RELATIVE "${_qt_plugin_source}"
-  "${_qt_plugin_source}/*.so" "${_qt_plugin_source}/*.so.*")
-set(_copied 0)
-foreach(_relative IN LISTS _qt_plugins)
-  set(_source "${_qt_plugin_source}/${_relative}")
-  set(_target "${_qt_plugin_destination}/${_relative}")
-  if(NOT EXISTS "${_target}")
-    get_filename_component(_target_dir "${_target}" DIRECTORY)
-    file(MAKE_DIRECTORY "${_target_dir}")
-    file(COPY_FILE "${_source}" "${_target}")
-  endif()
-  file(READ "${_target}" _elf_magic LIMIT 4 HEX)
-  string(TOLOWER "${_elf_magic}" _elf_magic)
-  if(NOT _elf_magic STREQUAL "7f454c46")
-    message(FATAL_ERROR "Refusing to patch a non-ELF plugin file: ${_target}")
-  endif()
-  # Depth-relative, so nested plugin types resolve the same usr/lib.
-  get_filename_component(_relative_dir "${_relative}" DIRECTORY)
-  set(_rpath "$ORIGIN")
-  set(_steps 2)
-  if(NOT _relative_dir STREQUAL "")
-    string(REPLACE "/" ";" _parts "${_relative_dir}")
-    list(LENGTH _parts _depth)
-    math(EXPR _steps "${_depth} + 2")
-  endif()
-  foreach(_ignored RANGE 1 ${_steps})
-    string(APPEND _rpath "/..")
-  endforeach()
-  execute_process(COMMAND "${MIKAI_PATCHELF_EXECUTABLE}" --set-rpath "${_rpath}" "${_target}"
-    RESULT_VARIABLE patch_result ERROR_VARIABLE patch_error OUTPUT_QUIET)
-  if(NOT patch_result EQUAL 0)
-    message(FATAL_ERROR "Could not set the RUNPATH of ${_target}: ${patch_error}")
-  endif()
-  math(EXPR _copied "${_copied} + 1")
-endforeach()
-message(STATUS "Qt plugins prepared: ${_copied} under ${_qt_plugin_destination}")
+file(GLOB _qt_platform_files "${_qt_platform_plugins}/*.so")
+if(NOT _qt_platform_files)
+  message(FATAL_ERROR "No Qt platform plugin was installed under ${_qt_platform_plugins}")
+endif()
+message(STATUS "Qt platform plugins present: ${_qt_platform_files}")
 
 # AppImage's own layout: AppRun, the desktop entry, the icon and the AppStream
 # file at the AppDir root.
