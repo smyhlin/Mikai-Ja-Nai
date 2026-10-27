@@ -24,6 +24,7 @@
 #include <QSettings>
 #include <QStringList>
 #include <QTimer>
+#include <QUrl>
 
 #ifdef Q_OS_WIN
 #include <QtCore/qt_windows.h>
@@ -116,8 +117,16 @@ LaunchRequest parseLaunchRequest(const QStringList& arguments) {
                 "CommandLine", "The video file path cannot be empty.");
             return request;
         }
-        // mpv checks readability asynchronously; a UNC stat could block startup.
-        request.video = QFileInfo(path).absoluteFilePath();
+        // Only a local path is made absolute. A stream URL is not a file, and
+        // absolutising it turned "http://host/x.m3u8" into a local path that
+        // mpv then failed to open.
+        const QUrl url = QUrl::fromUserInput(path, {}, QUrl::AssumeLocalFile);
+        if (url.isLocalFile()) {
+            // mpv checks readability asynchronously; a UNC stat could block startup.
+            request.video = QFileInfo(url.toLocalFile()).absoluteFilePath();
+        } else {
+            request.video = url.toString(QUrl::FullyEncoded);
+        }
     }
     return request;
 }
