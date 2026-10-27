@@ -94,8 +94,59 @@ install(FILES "${CMAKE_BINARY_DIR}/mikai-runtime-requirements.txt"
 if(MIKAI_LINUX_DEPLOY_QT)
   # Do not suppress platform/deployment errors or omit plugins. The official Qt
   # deploy script writes qt.conf and gathers plugins + linked non-system deps.
-  qt6_generate_deploy_app_script(TARGET mikai OUTPUT_SCRIPT mikai_linux_qt_deploy)
+  #
+  # CMake >= 3.21 makes Qt adjust plugin RPATHs with file(RPATH_CHANGE), which
+  # refuses a file that carries no RPATH at all. A distribution Qt (Arch, for
+  # one) strips those entries because its libraries live in the default search
+  # path, so every plugin would abort the install. Qt's own patchelf path adds
+  # the entry instead of rewriting one.
+  find_program(MIKAI_DEPLOY_PATCHELF_EXECUTABLE NAMES patchelf)
+  if(NOT MIKAI_DEPLOY_PATCHELF_EXECUTABLE)
+    message(FATAL_ERROR
+      "MIKAI_LINUX_DEPLOY_QT needs patchelf to give the gathered Qt plugins their "
+      "relative RUNPATH; install patchelf and reconfigure.")
+  endif()
+  set(QT_DEPLOY_USE_PATCHELF ON)
+  # The C library, the loader and the graphics-driver libraries must come from
+  # the host. A private libc beside the host ld.so is not a portable bundle: it
+  # raises the baseline to the build host and breaks as soon as the loader and
+  # libc disagree. GL/EGL dispatch belongs to the installed driver for the same
+  # reason, and Qt's deployment gathers them because the build links them.
+  qt6_generate_deploy_app_script(TARGET mikai OUTPUT_SCRIPT mikai_linux_qt_deploy
+    PRE_EXCLUDE_REGEXES
+      "ld-linux[^/]*\\.so[^/]*"
+      "libc\\.so[^/]*"
+      "libm\\.so[^/]*"
+      "libmvec\\.so[^/]*"
+      "libpthread\\.so[^/]*"
+      "libdl\\.so[^/]*"
+      "librt\\.so[^/]*"
+      "libresolv\\.so[^/]*"
+      "libutil\\.so[^/]*"
+      "libanl\\.so[^/]*"
+      "libnss_[^/]*\\.so[^/]*"
+      "libgcc_s\\.so[^/]*"
+      "libGL\\.so[^/]*"
+      "libGLX\\.so[^/]*"
+      "libGLESv2\\.so[^/]*"
+      "libOpenGL\\.so[^/]*"
+      "libGLdispatch\\.so[^/]*"
+      "libEGL\\.so[^/]*"
+      "libdrm\\.so[^/]*"
+      "libgbm\\.so[^/]*"
+  )
   install(SCRIPT "${mikai_linux_qt_deploy}")
+endif()
+
+# The Qt plugin tree this build links against, published for the AppImage script:
+# Qt's own deploy step leaves the QPA platform plugins out when the distribution
+# Qt ships no qpa description, and the image cannot start without them.
+set(MIKAI_LINUX_QT_PLUGIN_DIR "")
+if(MIKAI_LINUX_DEPLOY_QT AND DEFINED QT6_INSTALL_PREFIX AND DEFINED QT6_INSTALL_PLUGINS)
+  set(_mikai_qt_plugin_dir "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}")
+  if(IS_DIRECTORY "${_mikai_qt_plugin_dir}")
+    set(MIKAI_LINUX_QT_PLUGIN_DIR "${_mikai_qt_plugin_dir}")
+  endif()
 endif()
 
 # Preserve the configured feature switches for package-time refusal checks.
@@ -112,4 +163,17 @@ add_custom_target(dist
     -P "${CMAKE_SOURCE_DIR}/packaging/linux/Stage.cmake"
   DEPENDS mikai
   COMMENT "Installing Linux release into a fresh dependency-based staging tree"
+  VERBATIM)
+
+# One-file AppImage for local use. It refuses a build that would rely on the
+# host's Qt or libmpv, and it refuses to overwrite an existing artifact.
+set(MIKAI_APPIMAGE_TOOL "" CACHE FILEPATH "appimagetool used by the appimage target")
+add_custom_target(appimage
+  COMMAND "${CMAKE_COMMAND}"
+    "-DBUILD_DIR=${CMAKE_BINARY_DIR}"
+    "-DOUTPUT_DIR=${CMAKE_BINARY_DIR}/_appimage"
+    "-DAPPIMAGE_TOOL=${MIKAI_APPIMAGE_TOOL}"
+    -P "${CMAKE_SOURCE_DIR}/packaging/linux/AppImage.cmake"
+  DEPENDS mikai
+  COMMENT "Building the AppImage under ${CMAKE_BINARY_DIR}/_appimage"
   VERBATIM)

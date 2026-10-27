@@ -1,0 +1,11 @@
+#!/bin/sh
+# AppImage entry point.
+#
+# The installed tree is relocatable and already resolves its own pieces
+# relative to the executable (shaders symlink, bin/mpv, qt.conf), so this
+# script only has to fix what a mounted AppImage changes: the Qt libraries and
+# plugins are inside the image rather than in the host's loader paths.
+HERE="$(dirname "$(readlink -f "$0")")"
+export LD_LIBRARY_PATH="$HERE/usr/lib:$HERE/usr/bin/mpv${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export QT_PLUGIN_PATH="$HERE/usr/lib/qt6/plugins"
+exec "$HERE/usr/bin/mikai" "$@"

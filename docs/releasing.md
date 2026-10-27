@@ -89,6 +89,27 @@ The current Linux archive is `mpv-linux-x64-2026-10-24-c493f1c.tar.zst`, from re
 
 The default system profile remains valid: `MIKAI_LINUX_BUNDLE_MPV=OFF` uses distribution `libmpv-dev` headers and `libmpv.so.2`. Requested bundle failures are fatal configure errors; there is no silent fallback.
 
+### AppImage (single file, local)
+
+An AppImage is a packaging format, not a portability guarantee: it carries Qt and the private libmpv closure, while glibc, the dynamic loader, graphics drivers, Vulkan/EGL and the audio subsystem stay host dependencies. The image inherits the build host's glibc baseline through the bundled Qt, so a build produced on a rolling distribution does not run on an older LTS.
+
+```bash
+cmake -S . -B build/appimage -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/usr \
+  -DMIKAI_LINUX_DEPLOY_QT=ON \
+  -DMIKAI_LINUX_BUNDLE_MPV=ON
+cmake --build build/appimage --target appimage
+```
+
+For a tree that is already built, `bash packaging/linux/appimage.sh --build-dir build/appimage --output-dir /fresh/output` runs the same packaging step.
+
+Requirements: `patchelf` and `appimagetool` on `PATH`, or `-DMIKAI_APPIMAGE_TOOL=/path/to/appimagetool`. Packaging refuses a build configured without Qt deployment or without the pinned mpv bundle, because either would make the image depend on the distribution's package versions, and refuses an output directory that already exists. The artifact and its `SHA256SUMS` are written under `build/appimage/_appimage/`.
+
+Qt's deployment omits the QPA platform plugins when the distribution Qt carries no qpa description (as on Arch), so the packaging copies the Qt plugin tree and gives every plugin an `$ORIGIN`-relative RUNPATH. The image deliberately excludes the C library, the loader and the GL/EGL driver libraries: a private libc beside the host loader is not portable, and GL dispatch belongs to the installed driver.
+
+To lower the glibc baseline, run the same commands in an older base image with the provisioned Qt instead of on the current host; no lower-baseline artifact is claimed here.
+
 ## Local source preview
 
 To prepare a source archive from the current worktree without staging or committing it, use a fresh output directory:

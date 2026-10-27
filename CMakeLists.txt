@@ -24,6 +24,14 @@ endif()
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/MinGWRuntime.cmake)
 
+# Qt bakes this choice into its generated deploy support while find_package runs,
+# which happens before any packaging file is included. CMake >= 3.21 would
+# otherwise rewrite plugin RPATHs with file(RPATH_CHANGE), which refuses a plugin
+# that carries no RPATH at all - the normal state of a distribution Qt - and
+# abort the install. Qt's patchelf path adds the missing entry instead;
+# cmake/MikaiLinux.cmake requires patchelf when Qt deployment is requested.
+set(QT_DEPLOY_USE_PATCHELF ON)
+
 find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Network LinguistTools)
 get_filename_component(MIKAI_TEST_QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
 
