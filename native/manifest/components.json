@@ -2893,7 +2893,7 @@
     "inferenceSourceSha": {
       "source": "animejanai-inference",
       "commit": "738ce3b3020b3950c48ce3122a08f32af531d4fa",
-      "nineFileDigests": "Historical provenance of the existing private Native build record; retained as-is. Current official v0.9.0 source identity and local-vs-tag reconciliation are recorded in sources.json#sources[id=animejanai-inference].",
+      "nineFileDigests": "Historical provenance of the existing private Native build record; retained as-is. Official v0.17.1 and historical v0.9.0 source identities and local-vs-tag reconciliation are recorded in sources.json#sources[id=animejanai-inference].",
       "licenceStatus": "no upstream licence text located; upstream terms not verified; the draft permission request remains unsent (ESC-1)"
     },
     "fileHashes": "The digests in sources.json#observations - including the four observedBinaries entries - are descriptive measurements of files this repository did not build and are NOT release pins. The digests in installedBundleInventory.files are the installed bundle manifest's own measurements of the installed files; they record which bytes ship, and they are not a claim that those bytes were reproduced from the recorded sources. Where a reproduction claim is warranted it is stated per cohort in verificationMethod.",

@@ -256,7 +256,7 @@ the upstream author's reading, not a grant this project has verified.
 
 The architecture distinction is path-specific. The private prepared-helper
 path builds engines in-process through the TensorRT builder API and does not
-need `trtexec.exe`. However, the official v0.9.0 configuration path invokes
+need `trtexec.exe`. However, the official upstream configuration path invokes
 `trtexec.exe` for the TensorRT first-build. The private helper's design does not
 resolve the official-config path: no NVIDIA developer-tool redistribution
 clearance has been established. `trtexec.exe` remains outside any public

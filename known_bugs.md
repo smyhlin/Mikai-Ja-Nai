@@ -321,7 +321,7 @@ Evidence: `src/player/VideoSurface.cpp:294-300`; `src/app/CrashLog.cpp:207-230,1
 | Manifest source/component references | No dangling inspected `sourceId` or bundle component ID |
 | Individually recorded patch hashes | All six recorded shim/mpv patch-file digests match their present files; inventory incompleteness is KB-16 |
 | Packaged API DLL identity | Present `dist-mikai/mpv/libmpv-2.dll` is 122,146,816 bytes and matches the recorded author-module SHA-256 `90de8f89fa1421eaec510e5cfe11de75846b445489864220ec811fd0f08b4649` |
-| Public/private contract | Current top-level native guidance correctly separates official ABI-8 filtering, explicit local custom import and private prepared-Native admission |
+| Public/private contract | Current top-level native guidance correctly separates official ABI-9 filtering (v0.17.1), explicit local custom import and private prepared-Native admission (historical ABI-8 cohort) |
 
 These checks do not establish that every external URL is live, every third-party dependency is redistributable, every source path was audited exhaustively, or the current application passes a new runtime check.
 
