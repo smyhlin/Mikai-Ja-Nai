@@ -595,9 +595,18 @@ void TestAnimeJanaiRuntime::badPeAndUnsafeRecordPathAreRejected() {
     QJsonObject object = QJsonDocument::fromJson(record.readAll()).object();
     record.close();
     QJsonArray files = object.value(QStringLiteral("files")).toArray();
-    QJsonObject first = files.first().toObject();
+    // The dispatcher entry is aji.dll on Windows but libaji.so on Linux, and
+    // libaji.so is what marks the record as a Linux closure. Rewriting it would
+    // change the platform verdict before the unsafe path is ever inspected, so
+    // Linux mutates a dependency entry instead.
+#ifdef Q_OS_WIN
+    const int unsafeIndex = 0;
+#else
+    const int unsafeIndex = int(files.size()) - 1;
+#endif
+    QJsonObject first = files.at(unsafeIndex).toObject();
     first.insert(QStringLiteral("path"), QStringLiteral("../aji.dll"));
-    files.replace(0, first);
+    files.replace(unsafeIndex, first);
     object.insert(QStringLiteral("files"), files);
     QVERIFY(writeFile(record.fileName(), QJsonDocument(object).toJson(QJsonDocument::Compact)));
     const auto unsafe = describeAnimeJanaiInstallation(fixtureBackend());

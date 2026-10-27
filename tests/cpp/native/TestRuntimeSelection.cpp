@@ -25,6 +25,7 @@
 #include <optional>
 
 using mplayer::native::BundleKind;
+using mplayer::native::BundleLayout;
 using mplayer::native::RuntimeChoice;
 using mplayer::native::RuntimeSelection;
 
@@ -662,6 +663,13 @@ void TestRuntimeSelection::namedBundleResolutionIsExactAndHasNoFallback() {
     const RuntimeChoice storedBefore = mplayer::native::storedRuntimeChoice();
     const RuntimeSelection packaged = mplayer::native::resolveRuntime(RuntimeChoice::Standard);
     QVERIFY2(packaged.resolvedBundle.has_value(), qPrintable(packaged.reason));
+    // A distribution libmpv is a host module, not a self-contained closure:
+    // publishing it would claim a private copy the bundle does not carry. Only
+    // a packaged directory layout is what this case is about.
+    if (packaged.resolvedBundle->layout == BundleLayout::SystemModule) {
+        QSKIP("the selected runtime is a host system module, which is not installable as a "
+              "bundle");
+    }
 
     QTemporaryDir temp;
     QVERIFY(temp.isValid());

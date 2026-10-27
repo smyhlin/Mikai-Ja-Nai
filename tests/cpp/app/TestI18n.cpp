@@ -827,20 +827,31 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   QCOMPARE(mixedChain.steps.at(1).scaleFactor, 4);
   const QString activateEnglish = activate->text();
 
+  // The Processing tab offers the private Native workflow on Windows only, so
+  // the private panel is driven only where that runtime choice exists.
+  QLineEdit* threshold = nullptr;
+  QSpinBox* factorNum = nullptr;
+  QSpinBox* factorDen = nullptr;
+  QComboBox* backend = nullptr;
+  QComboBox* recipe = nullptr;
+  QPushButton* storeButton = nullptr;
+  QLabel* status = nullptr;
+  QScrollArea* scroll = nullptr;
+#ifndef Q_OS_LINUX
   runtime->setCurrentIndex(
       runtime->findData(static_cast<int>(mplayer::native::RuntimeChoice::Native)));
   QCoreApplication::processEvents();
   QVERIFY(privateAssets->isVisibleTo(&dialog));
   QVERIFY(!manager->isVisibleTo(&dialog));
-  auto* threshold = dialog.findChild<QLineEdit*>(QStringLiteral("nativeRifeSceneThresholdEdit"));
-  auto* factorNum = dialog.findChild<QSpinBox*>(QStringLiteral("nativeRifeFactorNumSpin"));
-  auto* factorDen = dialog.findChild<QSpinBox*>(QStringLiteral("nativeRifeFactorDenSpin"));
-  auto* backend = dialog.findChild<QComboBox*>(QStringLiteral("nativeBackendCombo"));
-  auto* recipe = dialog.findChild<QComboBox*>(QStringLiteral("nativeRecipeCombo"));
-  auto* storeButton = dialog.findChild<QPushButton*>(QStringLiteral("nativeRifeStoreButton"));
-  auto* status = dialog.findChild<QLabel*>(QStringLiteral("nativeRifeStatus"));
+  threshold = dialog.findChild<QLineEdit*>(QStringLiteral("nativeRifeSceneThresholdEdit"));
+  factorNum = dialog.findChild<QSpinBox*>(QStringLiteral("nativeRifeFactorNumSpin"));
+  factorDen = dialog.findChild<QSpinBox*>(QStringLiteral("nativeRifeFactorDenSpin"));
+  backend = dialog.findChild<QComboBox*>(QStringLiteral("nativeBackendCombo"));
+  recipe = dialog.findChild<QComboBox*>(QStringLiteral("nativeRecipeCombo"));
+  storeButton = dialog.findChild<QPushButton*>(QStringLiteral("nativeRifeStoreButton"));
+  status = dialog.findChild<QLabel*>(QStringLiteral("nativeRifeStatus"));
   auto* assetsPanel = dialog.findChild<QWidget*>(QStringLiteral("nativeAssetsPanel"));
-  auto* scroll = dialog.findChild<QScrollArea*>(QStringLiteral("nativeProcessingScroll"));
+  scroll = dialog.findChild<QScrollArea*>(QStringLiteral("nativeProcessingScroll"));
   QVERIFY2(threshold != nullptr && factorNum != nullptr && factorDen != nullptr &&
                backend != nullptr && recipe != nullptr && runtime != nullptr &&
                storeButton != nullptr && status != nullptr && assetsPanel != nullptr &&
@@ -860,14 +871,17 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   if (runtimeIndex >= 0) {
     runtime->setCurrentIndex(runtimeIndex);
   }
+#endif
   QVERIFY(dialog.showPage(QStringLiteral("processing")));
-  scroll->verticalScrollBar()->setValue(40);
-  const QString englishStatus = status->text();
-  const QString englishSaveText = storeButton->text();
+  if (scroll != nullptr) scroll->verticalScrollBar()->setValue(40);
+  const QString englishStatus = status != nullptr ? status->text() : QString();
+  const QString englishSaveText = storeButton != nullptr ? storeButton->text() : QString();
   const QString englishTitle = dialog.windowTitle();
-  const int englishScroll = scroll->verticalScrollBar()->value();
-  QCOMPARE(dialog.nativePreparationDesiredBackend(),
-           static_cast<mplayer::native::Backend>(backend->currentData().toInt()));
+  const int englishScroll = scroll != nullptr ? scroll->verticalScrollBar()->value() : 0;
+  if (backend != nullptr) {
+    QCOMPARE(dialog.nativePreparationDesiredBackend(),
+             static_cast<mplayer::native::Backend>(backend->currentData().toInt()));
+  }
 
   const auto storedValues = [] {
     QSettings settings;
@@ -894,17 +908,22 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
     return qQNaN();
   };
   const auto capture = [&]() {
-    return QStringList{QString::number(thresholdValue(), 'g', 17),
-                       QString::number(factorNum->value()),
-                       QString::number(factorDen->value()),
-                       backend->currentData().toString(),
-                       recipe->currentData().toString(),
-                       runtime->currentData().toString(),
-                       dialog.currentPageId()};
+    QStringList values;
+    if (threshold != nullptr) {
+      values << QString::number(thresholdValue(), 'g', 17)
+             << QString::number(factorNum->value())
+             << QString::number(factorDen->value())
+             << backend->currentData().toString()
+             << recipe->currentData().toString();
+    }
+    values << runtime->currentData().toString() << dialog.currentPageId();
+    return values;
   };
   const QStringList before = capture();
-  QVERIFY2(qAbs(thresholdValue() - 0.375) < 1e-12,
-           "the unsaved threshold was not the number the test typed");
+  if (threshold != nullptr) {
+    QVERIFY2(qAbs(thresholdValue() - 0.375) < 1e-12,
+             "the unsaved threshold was not the number the test typed");
+  }
 
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), catalog));
   QCoreApplication::processEvents();
@@ -913,15 +932,19 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
            "the existing player control was not retranslated");
   QVERIFY2(capture() == before,
            "an unsaved native value, stable id or tab did not survive the retranslation");
-  QCOMPARE(scroll->verticalScrollBar()->value(), englishScroll);
+  if (scroll != nullptr) QCOMPARE(scroll->verticalScrollBar()->value(), englishScroll);
   QVERIFY(manager->currentConfig() == managerBefore);
   QVERIFY(manager->isDirty());
   QCOMPARE(slotSelector->currentData().toInt(), 4);
   QVERIFY(activate->text() != activateEnglish);
 
-  QVERIFY2(storeButton->text() != englishSaveText,
-           "the RIFE store button still shows the language the dialog opened in");
-  QVERIFY2(status->text() != englishStatus, "the RIFE status was not retranslated");
+  if (storeButton != nullptr) {
+    QVERIFY2(storeButton->text() != englishSaveText,
+             "the RIFE store button still shows the language the dialog opened in");
+  }
+  if (status != nullptr) {
+    QVERIFY2(status->text() != englishStatus, "the RIFE status was not retranslated");
+  }
   QVERIFY2(dialog.windowTitle() != englishTitle, "the dialog title was not retranslated");
   QCOMPARE(storedValues(), storedBefore);
 
@@ -952,6 +975,10 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
 }
 
 void TestI18n::nativeUnavailableReasonFollowsTheOpenSettingsLanguage() {
+#ifdef Q_OS_LINUX
+  QSKIP("the Processing tab offers no private Native runtime on Linux, so it has no "
+        "unavailable reason to localize");
+#endif
   const QString catalog = builtCatalogPath();
   QVERIFY2(QFileInfo::exists(catalog),
            qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") + catalog));
