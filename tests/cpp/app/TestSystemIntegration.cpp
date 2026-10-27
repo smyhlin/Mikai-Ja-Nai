@@ -4,6 +4,12 @@
 #include "app/support/SystemStartup.hpp"
 #include "gui/SystemDefaultPlayer.hpp"
 #include "gui/SystemDefaultPlayerLaunch.hpp"
+#include "gui/XdgDesktopIntegration.hpp"
+
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QTemporaryDir>
 
 #include <QUuid>
 #include <QString>
@@ -165,6 +171,231 @@ bool launchDefaultAppsSettings(const wchar_t*, unsigned long* errorCode) {
 }
 }  // namespace mikai::gui::detail
 #endif
+
+#ifdef Q_OS_LINUX
+namespace {
+class XdgSandbox {
+public:
+  XdgSandbox() : config(qgetenv("XDG_CONFIG_HOME")), data(qgetenv("XDG_DATA_HOME")),
+                 desktop(qgetenv("XDG_CURRENT_DESKTOP")), path(qgetenv("PATH")),
+                 hadConfig(qEnvironmentVariableIsSet("XDG_CONFIG_HOME")),
+                 hadData(qEnvironmentVariableIsSet("XDG_DATA_HOME")),
+                 hadDesktop(qEnvironmentVariableIsSet("XDG_CURRENT_DESKTOP")),
+                 hadPath(qEnvironmentVariableIsSet("PATH")) {
+    qputenv("XDG_CONFIG_HOME", (dir.path() + QStringLiteral("/config space")).toUtf8());
+    qputenv("XDG_DATA_HOME", (dir.path() + QStringLiteral("/data space")).toUtf8());
+    qputenv("XDG_CURRENT_DESKTOP", "MikaiTestUnknownDesktop");
+    qputenv("PATH", dir.path().toUtf8());
+  }
+  ~XdgSandbox() {
+    restore("XDG_CONFIG_HOME", config, hadConfig);
+    restore("XDG_DATA_HOME", data, hadData);
+    restore("XDG_CURRENT_DESKTOP", desktop, hadDesktop);
+    restore("PATH", path, hadPath);
+  }
+  QTemporaryDir dir;
+private:
+  static void restore(const char* name, const QByteArray& value, bool existed) {
+    if (existed) qputenv(name, value); else qunsetenv(name);
+  }
+  QByteArray config, data, desktop, path;
+  bool hadConfig, hadData, hadDesktop, hadPath;
+};
+}
+#endif
+
+void TestSystemIntegration::xdgRegistrationsRoundTrip() {
+#ifndef Q_OS_LINUX
+  QSKIP("XDG integration is available on Linux.");
+#else
+  XdgSandbox sandbox;
+  QVERIFY(sandbox.dir.isValid());
+  QString error;
+  QVERIFY(mikai::app::systemStartupSupported());
+  QVERIFY(mikai::app::systemContextMenuSupported());
+  QVERIFY2(mikai::app::setSystemStartupEnabled(true, &error), qPrintable(error));
+  QVERIFY(mikai::app::systemStartupEnabled());
+  QVERIFY2(mikai::app::setSystemContextMenuEnabled(true, &error), qPrintable(error));
+  QVERIFY(mikai::app::systemContextMenuEnabled());
+  QVERIFY2(mikai::app::setSystemStartupEnabled(false, &error), qPrintable(error));
+  QVERIFY2(mikai::app::setSystemContextMenuEnabled(false, &error), qPrintable(error));
+  QVERIFY(!mikai::app::systemStartupEnabled());
+  QVERIFY(!mikai::app::systemContextMenuEnabled());
+#endif
+}
+
+void TestSystemIntegration::xdgForeignEntriesArePreserved() {
+#ifndef Q_OS_LINUX
+  QSKIP("XDG integration is available on Linux.");
+#else
+  XdgSandbox sandbox;
+  QVERIFY(sandbox.dir.isValid());
+  using namespace mikai::gui::xdg;
+  for (const Entry entry : {Entry::Startup, Entry::VideoPlayer}) {
+    const QString path = entryPath(entry);
+    QVERIFY(QDir().mkpath(QFileInfo(path).absolutePath()));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    QCOMPARE(file.write("foreign"), qint64(7));
+    file.close();
+    QString error;
+    QVERIFY(!setEnabled(entry, true, &error));
+    QVERIFY(!error.isEmpty());
+    QVERIFY(!setEnabled(entry, false, &error));
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QCOMPARE(file.readAll(), QByteArray("foreign"));
+    file.close();
+    QVERIFY(file.remove());
+    const QString target = sandbox.dir.path() + QStringLiteral("/target");
+    QFile targetFile(target);
+    if (!targetFile.exists()) {
+      QVERIFY(targetFile.open(QIODevice::WriteOnly));
+      targetFile.close();
+    }
+    QVERIFY(QFile::link(target, path));
+    QVERIFY(!setEnabled(entry, true, &error));
+    QVERIFY(!setEnabled(entry, false, &error));
+    QVERIFY(QFile::remove(path));
+  }
+#endif
+}
+
+void TestSystemIntegration::xdgExecEscapingAndDefaultChoice() {
+#ifndef Q_OS_LINUX
+  QSKIP("XDG integration is available on Linux.");
+#else
+  XdgSandbox sandbox;
+  QVERIFY(sandbox.dir.isValid());
+  using namespace mikai::gui::xdg;
+  const QString text = desktopContents(Entry::VideoPlayer, QString::fromUtf8("/tmp/a b/日本%$`\\\"\\\\mikai"));
+  QVERIFY(text.contains(QString::fromUtf8("日本%%")));
+  QVERIFY(text.contains(QStringLiteral("\\\\$")));
+  QVERIFY(text.contains(QStringLiteral("\\\\`")));
+  QVERIFY(text.contains(QStringLiteral("\\\\\"")));
+  QVERIFY(text.contains(QStringLiteral("\\\\\\\\mikai")));
+  QVERIFY(text.contains(QStringLiteral(" --open-video %f\n")));
+  QVERIFY(!text.contains(QStringLiteral("Exec=/tmp")));
+  QVERIFY(desktopContents(Entry::Startup, QStringLiteral("relative/path")).isEmpty());
+  QVERIFY(desktopContents(Entry::Startup, QStringLiteral("/tmp/invalid=name")).isEmpty());
+  QString error;
+  QVERIFY(!mikai::gui::requestSystemDefaultPlayer(&error));
+  QVERIFY(!error.isEmpty());
+  QVERIFY(mikai::app::systemContextMenuEnabled());
+  const QString candidate = entryPath(Entry::VideoPlayer);
+  QVERIFY(QFile::exists(candidate));
+  const QString defaults = qEnvironmentVariable("XDG_CONFIG_HOME") + QStringLiteral("/mimeapps.list");
+  QVERIFY(QDir().mkpath(QFileInfo(defaults).absolutePath()));
+  QFile mimeapps(defaults);
+  QVERIFY(mimeapps.open(QIODevice::WriteOnly));
+  const QByteArray choice("[Default Applications]\nvideo/mp4=mikai.desktop;\n");
+  QCOMPARE(mimeapps.write(choice), qint64(choice.size()));
+  mimeapps.close();
+  QVERIFY2(mikai::app::setSystemContextMenuEnabled(false, &error), qPrintable(error));
+  QVERIFY(!mikai::app::systemContextMenuEnabled());
+  QFile retained(candidate);
+  QVERIFY(retained.open(QIODevice::ReadOnly));
+  const QByteArray contents = retained.readAll();
+  QVERIFY(contents.contains("Exec="));
+  QVERIFY(contents.contains("NoDisplay=true\n"));
+  QVERIFY(!contents.contains("MimeType="));
+  QVERIFY(mimeapps.open(QIODevice::ReadOnly));
+  QCOMPARE(mimeapps.readAll(), choice);
+  QVERIFY2(mikai::app::setSystemContextMenuEnabled(true, &error), qPrintable(error));
+  QVERIFY(mikai::app::systemContextMenuEnabled());
+#endif
+}
+
+void TestSystemIntegration::xdgReusesVerifiedPackageEntry() {
+#ifndef Q_OS_LINUX
+  QSKIP("XDG integration is available on Linux.");
+#else
+  XdgSandbox sandbox;
+  QVERIFY(sandbox.dir.isValid());
+  const QString executableLink = sandbox.dir.path() + QStringLiteral("/mikai");
+  QVERIFY(QFile::link(QCoreApplication::applicationFilePath(), executableLink));
+  const QString path = mikai::gui::xdg::entryPath(mikai::gui::xdg::Entry::VideoPlayer);
+  QVERIFY(QDir().mkpath(QFileInfo(path).absolutePath()));
+  QFile source(QStringLiteral(MIKAI_SOURCE_DIR "/packaging/linux/mikai.desktop"));
+  QVERIFY(source.open(QIODevice::ReadOnly));
+  const QByteArray original = source.readAll();
+  QFile packaged(path);
+  QVERIFY(packaged.open(QIODevice::WriteOnly));
+  QCOMPARE(packaged.write(original), qint64(original.size()));
+  packaged.close();
+  QString error;
+  QVERIFY(mikai::app::systemContextMenuEnabled());
+  QVERIFY2(mikai::gui::xdg::registerDefaultCandidate(&error), qPrintable(error));
+  QVERIFY(!mikai::app::setSystemContextMenuEnabled(false, &error));
+  QVERIFY(packaged.open(QIODevice::ReadOnly));
+  QCOMPARE(packaged.readAll(), original);
+  packaged.close();
+  QVERIFY(QFile::remove(executableLink));
+  QVERIFY(!mikai::gui::xdg::registerDefaultCandidate(&error));
+  QVERIFY(packaged.open(QIODevice::ReadOnly));
+  QCOMPARE(packaged.readAll(), original);
+#endif
+}
+
+void TestSystemIntegration::xdgRefreshesOnlyMissingOwnedInstallations() {
+#ifndef Q_OS_LINUX
+  QSKIP("XDG integration is available on Linux.");
+#else
+  XdgSandbox sandbox;
+  QVERIFY(sandbox.dir.isValid());
+  using namespace mikai::gui::xdg;
+  const QString oldExecutable = sandbox.dir.path() + QString::fromUtf8("/old path/日本%old");
+  QVERIFY(QDir().mkpath(QFileInfo(oldExecutable).absolutePath()));
+  QFile oldFile(oldExecutable);
+  QVERIFY(oldFile.open(QIODevice::WriteOnly));
+  oldFile.close();
+
+  for (const Entry entry : {Entry::Startup, Entry::VideoPlayer}) {
+    const QString path = entryPath(entry);
+    QVERIFY(QDir().mkpath(QFileInfo(path).absolutePath()));
+    QByteArray old = desktopContents(entry, oldExecutable).toUtf8();
+    if (entry == Entry::VideoPlayer) old += "X-Mikai-DefaultRegistration=true\n";
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    QCOMPARE(file.write(old), qint64(old.size()));
+    file.close();
+    QString error;
+    QVERIFY(!setEnabled(entry, true, &error));
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QCOMPARE(file.readAll(), old);
+    file.close();
+  }
+  QVERIFY(oldFile.remove());
+
+  for (const Entry entry : {Entry::Startup, Entry::VideoPlayer}) {
+    const QString path = entryPath(entry);
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const QByteArray old = file.readAll();
+    file.close();
+    QVERIFY(file.open(QIODevice::Append));
+    QCOMPARE(file.write("# foreign addition\n"), qint64(19));
+    file.close();
+    QString error;
+    QVERIFY(!setEnabled(entry, true, &error));
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    QCOMPARE(file.write(old), qint64(old.size()));
+    file.close();
+    QVERIFY(!setEnabled(entry, false, &error));
+    QVERIFY2(setEnabled(entry, true, &error), qPrintable(error));
+    QVERIFY(enabled(entry));
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const QByteArray refreshed = file.readAll();
+    file.close();
+    QVERIFY(refreshed != old);
+    if (entry == Entry::VideoPlayer) {
+      QVERIFY(refreshed.contains("X-Mikai-DefaultRegistration=true\n"));
+      QVERIFY2(setEnabled(entry, false, &error), qPrintable(error));
+      QVERIFY(QFile::exists(path));
+      QVERIFY(!enabled(entry));
+    }
+  }
+#endif
+}
 
 void TestSystemIntegration::startupRegistrationRoundTripsInIsolatedRegistry() {
 #ifndef Q_OS_WIN

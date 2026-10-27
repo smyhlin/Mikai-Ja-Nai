@@ -682,7 +682,11 @@ void PlayerShell::buildDock() {
             message->open();
             return;
         }
+#ifdef Q_OS_LINUX
+        toast_->flash(tr("In desktop settings, choose Mikai under Default Applications. Your defaults have not been changed."));
+#else
         toast_->flash(tr("Choose Mikai in Windows Default Apps. Your defaults have not been changed."));
+#endif
     });
 
     // The enhancement tree is one panel per level, standing side by side:

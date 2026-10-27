@@ -1,4 +1,5 @@
 #include "SystemStartup.hpp"
+#include "gui/XdgDesktopIntegration.hpp"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -74,7 +75,7 @@ LSTATUS readCommand(HKEY key, QString* command, bool* exists) {
 }  // namespace
 
 bool systemStartupSupported() {
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) || defined(Q_OS_LINUX)
     return true;
 #else
     return false;
@@ -93,6 +94,8 @@ bool systemStartupEnabled() {
     bool exists = false;
     return readCommand(key.handle, &command, &exists) == ERROR_SUCCESS && exists &&
            command.compare(expected, Qt::CaseInsensitive) == 0;
+#elif defined(Q_OS_LINUX)
+    return mikai::gui::xdg::enabled(mikai::gui::xdg::Entry::Startup);
 #else
     return false;
 #endif
@@ -156,6 +159,8 @@ bool setSystemStartupEnabled(bool enabled, QString* error) {
         return fail(error, QCoreApplication::translate("SystemStartup", "Could not change the Mikai startup entry"), result);
     }
     return true;
+#elif defined(Q_OS_LINUX)
+    return mikai::gui::xdg::setEnabled(mikai::gui::xdg::Entry::Startup, enabled, error);
 #else
     Q_UNUSED(enabled);
     if (error != nullptr) *error = QCoreApplication::translate("SystemStartup", "Automatic startup is only available on Windows.");

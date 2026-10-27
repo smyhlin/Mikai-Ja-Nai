@@ -211,6 +211,7 @@ set(PLAYER_SOURCES
   src/gui/VideoDropTarget.cpp
   src/gui/SystemDefaultPlayer.cpp
   src/gui/SystemDefaultPlayerLaunch.cpp
+  src/gui/XdgDesktopIntegration.cpp
   src/gui/Win32Support.cpp
   # OpenGL render bridge & video surface
   src/player/core/MpvRenderContext.cpp
@@ -248,6 +249,7 @@ set(PLAYER_HEADERS
   src/gui/VideoDropTarget.hpp
   src/gui/SystemDefaultPlayer.hpp
   src/gui/SystemDefaultPlayerLaunch.hpp
+  src/gui/XdgDesktopIntegration.hpp
   src/gui/Win32Support.hpp
   src/player/core/MpvRenderContext.hpp
   src/player/core/VideoSurface.hpp

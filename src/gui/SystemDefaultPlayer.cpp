@@ -1,5 +1,6 @@
 #include "SystemDefaultPlayer.hpp"
 #include "SystemDefaultPlayerLaunch.hpp"
+#include "XdgDesktopIntegration.hpp"
 #include "Win32Support.hpp"
 
 #include <QCoreApplication>
@@ -310,7 +311,7 @@ bool registerApplication(QString* error) {
 namespace mikai::gui {
 
 bool systemDefaultPlayerSupported() {
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) || defined(Q_OS_LINUX)
     return true;
 #else
     return false;
@@ -338,6 +339,15 @@ bool requestSystemDefaultPlayer(QString* error) {
             "could not be opened: %1\n\nOpen Windows Settings > Apps > Default apps and "
             "search for Mikai. Your current defaults have not been changed.")
             .arg(windowsError(status));
+    }
+    return false;
+#elif defined(Q_OS_LINUX)
+    if (!xdg::registerDefaultCandidate(error)) return false;
+    if (detail::launchDefaultAppsSettings()) return true;
+    if (error != nullptr) {
+        *error = QCoreApplication::translate(
+            "SystemDefaultPlayer",
+            "Mikai is registered as an available video player, but the desktop's Default Applications settings could not be opened. Open your desktop settings and choose Mikai for the video file types you want. Your defaults have not been changed.");
     }
     return false;
 #else

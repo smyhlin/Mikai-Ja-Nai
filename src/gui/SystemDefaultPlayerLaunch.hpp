@@ -10,4 +10,8 @@ namespace mikai::gui::detail {
 bool launchDefaultAppsSettings(const wchar_t* uri, unsigned long* errorCode);
 
 }  // namespace mikai::gui::detail
+#elif defined(Q_OS_LINUX)
+namespace mikai::gui::detail {
+bool launchDefaultAppsSettings();
+}
 #endif

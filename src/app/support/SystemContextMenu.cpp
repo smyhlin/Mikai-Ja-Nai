@@ -1,4 +1,5 @@
 #include "SystemContextMenu.hpp"
+#include "gui/XdgDesktopIntegration.hpp"
 
 #include <QCoreApplication>
 #include <QString>
@@ -225,7 +226,7 @@ QStringList restoreValues(const QList<OwnedValue>& values) {
 namespace mikai::app {
 
 bool systemContextMenuSupported() {
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) || defined(Q_OS_LINUX)
     return true;
 #else
     return false;
@@ -246,6 +247,8 @@ bool systemContextMenuEnabled() {
         }
     }
     return true;
+#elif defined(Q_OS_LINUX)
+    return mikai::gui::xdg::enabled(mikai::gui::xdg::Entry::VideoPlayer);
 #else
     return false;
 #endif
@@ -308,6 +311,8 @@ bool setSystemContextMenuEnabled(bool enabled, QString* error) {
     }
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST | SHCNF_FLUSHNOWAIT, nullptr, nullptr);
     return true;
+#elif defined(Q_OS_LINUX)
+    return mikai::gui::xdg::setEnabled(mikai::gui::xdg::Entry::VideoPlayer, enabled, error);
 #else
     Q_UNUSED(enabled);
     if (error != nullptr) {

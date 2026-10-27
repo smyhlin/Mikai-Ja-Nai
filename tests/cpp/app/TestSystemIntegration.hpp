@@ -14,4 +14,9 @@ private slots:
   void defaultPlayerRefusesForeignOwnerWithoutOpeningSettings();
   void defaultPlayerPartialFailureRollsBackOwnedValues();
   void defaultPlayerSettingsLaunchFailureRetainsRegistration();
+  void xdgRegistrationsRoundTrip();
+  void xdgForeignEntriesArePreserved();
+  void xdgExecEscapingAndDefaultChoice();
+  void xdgReusesVerifiedPackageEntry();
+  void xdgRefreshesOnlyMissingOwnedInstallations();
 };
