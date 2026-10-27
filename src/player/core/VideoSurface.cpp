@@ -20,10 +20,10 @@
 #include <QWindow>
 
 #include <algorithm>
-#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <vector>
 
 #include "MpvApi.hpp"
 #include "MpvHandle.hpp"
@@ -79,14 +79,19 @@ auto hdrPolicyOptionList(VideoSurface::HdrToneMappingPolicy policy) {
     const bool stable = policy == VideoSurface::HdrToneMappingPolicy::Stable;
     const bool vivid = policy == VideoSurface::HdrToneMappingPolicy::Vivid;
     using Option = std::pair<const char*, const char*>;
-    return std::array{
+    std::vector<Option> options{
         Option{"dither-depth", "auto"},
         Option{"tone-mapping", vivid ? "mobius" : "bt.2390"},
-        Option{"tone-mapping-param", vivid ? "0.3" : "default"},
-        Option{"hdr-compute-peak", stable ? "no" : "yes"},
-        Option{"hdr-peak-percentile", "99.995"},
-        Option{"gamut-mapping-mode", stable ? "clip" : "auto"},
     };
+    // tone-mapping-param is a float option whose reset token exists only as an
+    // internal default: setting the literal "default" is refused at runtime,
+    // and bt.2390 ignores the parameter anyway. Only the policy that defines a
+    // value sets it.
+    if (vivid) options.emplace_back("tone-mapping-param", "0.3");
+    options.emplace_back("hdr-compute-peak", stable ? "no" : "yes");
+    options.emplace_back("hdr-peak-percentile", "99.995");
+    options.emplace_back("gamut-mapping-mode", stable ? "clip" : "auto");
+    return options;
 }
 
 /// Numeric argument for an mpv command. mpv parses these itself, so a
