@@ -42,8 +42,12 @@ QWidget* SettingsDialog::buildProcessingTab() {
     // ── Editorial Page Header Card ───────────────────────────────────────────
     QFrame* pageHeader = makeSettingsPageHeader(
         page, &nativeHeading_, &nativeDescription_, tr("Processing runtime"),
+#ifdef Q_OS_LINUX
+        tr("Standard AnimeJaNai requires an NVIDIA GPU and TensorRT. DirectML and the private Native runtime are Windows-only."));
+#else
         tr("Standard manages official AnimeJaNai models and profiles. "
            "Select Native to configure the separate private Native workflow."));
+#endif
     root->addWidget(pageHeader);
 
     nativeError_ = new QLabel(page);
@@ -90,8 +94,10 @@ QWidget* SettingsDialog::buildProcessingTab() {
     polishInteractiveControl(runtimeChoice_, theme::kSettingsControlSize);
     runtimeChoice_->addItem(tr("Standard"),
                             static_cast<int>(mplayer::native::RuntimeChoice::Standard));
+#ifndef Q_OS_LINUX
     runtimeChoice_->addItem(tr("Native"),
                             static_cast<int>(mplayer::native::RuntimeChoice::Native));
+#endif
     const int runtimeIndex =
         runtimeChoice_->findData(static_cast<int>(mplayer::native::storedRuntimeChoice()));
     if (runtimeIndex >= 0) {
@@ -261,10 +267,14 @@ QWidget* SettingsDialog::buildProcessingTab() {
     rifeCardLayout->addWidget(nativeRife_);
     root->addWidget(nativeRifeCard_);
 
+#ifdef Q_OS_LINUX
+    const bool showPrivateWorkflow = false;
+#else
     const bool showPrivateWorkflow =
         runtimeChoice_->currentData().toInt() ==
             static_cast<int>(mplayer::native::RuntimeChoice::Native) ||
         mplayer::native::restartRequiredFor(mplayer::native::RuntimeChoice::Standard);
+#endif
     animeJanaiManagerCard_->setVisible(!showPrivateWorkflow);
     for (QWidget* widget : std::initializer_list<QWidget*>{
              nativeConfigCard_, nativeAssetsCard_, nativeRifeCard_,
@@ -272,15 +282,19 @@ QWidget* SettingsDialog::buildProcessingTab() {
              nativeStatus_, nativeError_, assetsPanel, rifeHeading_, nativeRife_}) {
         if (widget != nullptr) widget->setVisible(showPrivateWorkflow);
     }
-    if (!nativeLoadError.isEmpty()) {
+    if (showPrivateWorkflow && !nativeLoadError.isEmpty()) {
         nativeError_->show();
     }
     connect(runtimeChoice_, &QComboBox::currentIndexChanged, this, [this](int) {
         refreshRuntimeHint();
+#ifdef Q_OS_LINUX
+        const bool showPrivateWorkflow = false;
+#else
         const bool showPrivateWorkflow =
             runtimeChoice_->currentData().toInt() ==
                 static_cast<int>(mplayer::native::RuntimeChoice::Native) ||
             mplayer::native::restartRequiredFor(mplayer::native::RuntimeChoice::Standard);
+#endif
         const bool assetsWereRefreshed =
             assetsPanel_ != nullptr && assetsPanel_->hasRefreshed();
         animeJanaiManagerCard_->setVisible(!showPrivateWorkflow);
@@ -435,9 +449,13 @@ void SettingsDialog::applyRequestedRecipe(const QString& recipeId) {
 
 void SettingsDialog::retranslateProcessingTab() {
     nativeHeading_->setText(tr("Processing runtime"));
+#ifdef Q_OS_LINUX
+    nativeDescription_->setText(tr("Standard AnimeJaNai requires an NVIDIA GPU and TensorRT. DirectML and the private Native runtime are Windows-only."));
+#else
     nativeDescription_->setText(
         tr("Standard manages official AnimeJaNai models and profiles. "
            "Select Native to configure the separate private Native workflow."));
+#endif
     backendRowLabel_->setText(tr("Backend"));
     recipeRowLabel_->setText(tr("Recipe"));
     runtimeModuleRowLabel_->setText(tr("Runtime module"));

@@ -572,12 +572,14 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
     QSet<QString> presentIds;
     const auto addModel = [this, &checkedIds, &presentIds, hasPreviousCatalogue](
                               QTreeWidgetItem* group, const QString& key, const QString& label,
-                              const QString& tooltip, bool defaultChecked) {
+                              const QString& tooltip, bool defaultChecked, bool supported) {
         auto* item = new QTreeWidgetItem(group);
         item->setText(0, label);
-        item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
+        item->setFlags(supported ? Qt::ItemIsEnabled | Qt::ItemIsUserCheckable
+                                 : Qt::ItemIsEnabled);
+        item->setData(0, kUnavailableRole, !supported);
         const bool checked =
-            hasPreviousCatalogue ? checkedIds.contains(key) : defaultChecked;
+            hasPreviousCatalogue ? checkedIds.contains(key) : (defaultChecked && supported);
         item->setCheckState(0, checked ? Qt::Checked : Qt::Unchecked);
         item->setData(0, kModelRole, key);
         item->setData(0, kModelLabelRole, label);
@@ -589,7 +591,7 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
     for (const mplayer::anime4k::ModeInfo& mode : mplayer::anime4k::availableModes()) {
         if (mode.mode == mplayer::anime4k::Mode::Off) continue;
         addModel(anime4kGroup, QStringLiteral("anime4k:") + mode.id,
-                 mplayer::anime4k::displayLabel(mode.mode), mode.hint, false);
+                 mplayer::anime4k::displayLabel(mode.mode), mode.hint, false, true);
     }
 
     const QVector<mplayer::native::AnimeJanaiPreset> presets =
@@ -603,7 +605,7 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
                       .arg(preset.slot)
                       .arg(preset.modelFile.isEmpty() ? tr("built-in chain") : preset.modelFile)
                 : preset.reason;
-        addModel(animeJanaiGroup, preset.id, preset.label, tooltip, true);
+        addModel(animeJanaiGroup, preset.id, preset.label, tooltip, true, preset.supported);
     }
 
     QTreeWidgetItem* spatialGroup = addGroup(QStringLiteral("spatial"), tr("Spatial"));
@@ -612,7 +614,7 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
         const QString tooltip =
             preset.supported ? tr("slot %1 · %2").arg(preset.slot).arg(preset.modelFile)
                              : preset.reason;
-        addModel(spatialGroup, preset.id, preset.label, tooltip, false);
+        addModel(spatialGroup, preset.id, preset.label, tooltip, false, preset.supported);
     }
 
     QTreeWidgetItem* rifeGroup = addGroup(QStringLiteral("rife"), tr("RIFE"));
@@ -621,7 +623,7 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
         const QString tooltip =
             preset.supported ? tr("slot %1 · %2").arg(preset.slot).arg(preset.modelFile)
                              : preset.reason;
-        addModel(rifeGroup, preset.id, preset.label, tooltip, false);
+        addModel(rifeGroup, preset.id, preset.label, tooltip, false, preset.supported);
     }
 
     // A checked model that the live catalogue no longer offers stays visible
@@ -898,10 +900,14 @@ void SettingsDialog::runBenchmark() {
     const auto cancellation = std::make_shared<std::atomic<bool>>(false);
     benchmarkCancellation_ = cancellation;
     const Runner::GuiDispatch post = runner_.post();
-    const QString reportDirectory = QCoreApplication::applicationDirPath();
+    const QString reportDirectory = mikai::app::benchmarkReportBaseDirectory();
     const QString applicationVersion = QCoreApplication::applicationVersion();
+#ifdef Q_OS_LINUX
+    const mplayer::native::Backend backend = mplayer::native::Backend::TensorRT;
+#else
     const mplayer::native::Backend backend =
         mplayer::native::loadNativePreferences().backend;
+#endif
     QHash<QString, QString> clipPaths;
     for (const QString& clip : clips) clipPaths.insert(clip, locateBenchmarkClip(clip));
     runner_.run(

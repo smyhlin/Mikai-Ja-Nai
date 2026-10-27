@@ -36,6 +36,9 @@ struct BenchmarkReportWriteResult {
     QString error;
 };
 
+/// Base directory for automatically saved reports.
+QString benchmarkReportBaseDirectory();
+
 /// Atomically writes one uniquely named JSON report beneath applicationDir/bench.
 BenchmarkReportWriteResult writeBenchmarkReport(const QString& applicationDir,
                                                const BenchmarkReport& report);

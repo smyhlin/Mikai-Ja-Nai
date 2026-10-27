@@ -2,6 +2,7 @@
 #include <QCheckBox>
 #include <QCommandLineOption>
 #include <QCommandLineParser>
+#include <QComboBox>
 #include <QCoreApplication>
 #include <QDialogButtonBox>
 #include <QElapsedTimer>
@@ -41,6 +42,9 @@
 #include "backend/MikaiClient.hpp"
 #include "dialogs/SettingsDialog.hpp"
 #include "dialogs/settings/BenchmarkPlayback.hpp"
+#include "dialogs/settings/BenchmarkReport.hpp"
+#include "native/bundle/NativeRuntimeSelection.hpp"
+#include "native/status/NativeStatus.hpp"
 #include "workers/Runner.hpp"
 
 using mikai::app::Runner;
@@ -311,7 +315,7 @@ int verifyBenchmarkSourceErrors(MikaiClient& client, Runner& runner) {
         if (firstClip) clip->setProperty("benchmarkClipName", clips.relativeFilePath(corruptPath));
         firstClip = false;
     }
-    const QDir reports(QCoreApplication::applicationDirPath() + QStringLiteral("/bench"));
+    const QDir reports(QDir(mikai::app::benchmarkReportBaseDirectory()).filePath(QStringLiteral("bench")));
     const auto before = reports.entryList({QStringLiteral("benchmark-*.json")}, QDir::Files);
     run->click();
     check(waitForUi([&] { return run->isEnabled(); }, 10000),
@@ -360,7 +364,7 @@ int verifyBenchmarkLifecycle(MikaiClient& client, Runner& runner) {
     for (auto* clip : dialog.findChildren<QCheckBox*>(QStringLiteral("benchmarkClipCheck")))
         clip->setChecked(clipCount++ < 2);
 
-    const QDir reports(QCoreApplication::applicationDirPath() + QStringLiteral("/bench"));
+    const QDir reports(QDir(mikai::app::benchmarkReportBaseDirectory()).filePath(QStringLiteral("bench")));
     const auto reportNames = [&] {
         return reports.entryList({QStringLiteral("benchmark-*.json")}, QDir::Files);
     };
@@ -567,6 +571,21 @@ int main(int argc, char** argv) {
     dialog.show();
     QApplication::processEvents();
 
+#ifdef Q_OS_LINUX
+    auto* runtimeChoice = dialog.findChild<QComboBox*>(QStringLiteral("runtimeChoiceCombo"));
+    check(runtimeChoice != nullptr &&
+              runtimeChoice->findData(static_cast<int>(mplayer::native::RuntimeChoice::Native)) < 0 &&
+              runtimeChoice->currentData().toInt() ==
+                  static_cast<int>(mplayer::native::RuntimeChoice::Standard),
+          "Linux settings offer only the Standard runtime");
+    auto* backendChoice = dialog.findChild<QComboBox*>(QStringLiteral("animeJanaiRuntimeBackend"));
+    check(backendChoice != nullptr &&
+              backendChoice->findData(static_cast<int>(mplayer::native::Backend::DirectML)) < 0 &&
+              backendChoice->currentData().toInt() ==
+                  static_cast<int>(mplayer::native::Backend::TensorRT),
+          "Linux component acquisition offers TensorRT rather than DirectML");
+#endif
+
     check(dialog.size() == useSize || !requestedSize.isValid(), "dialog sized as requested or minimum");
     check(mikai::probes::dialogActionsFit(dialog, useSize), "footer actions visible at size");
 
@@ -733,7 +752,7 @@ int main(int argc, char** argv) {
     QApplication::processEvents();
 
     const QDir reportDirectory(
-        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("bench")));
+        QDir(mikai::app::benchmarkReportBaseDirectory()).filePath(QStringLiteral("bench")));
     const QStringList reportsBefore = reportDirectory.entryList(
         {QStringLiteral("benchmark-*.json")}, QDir::Files);
     if (runButton) runButton->click();

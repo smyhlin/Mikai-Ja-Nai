@@ -1,11 +1,13 @@
 #include "BenchmarkReport.hpp"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSaveFile>
+#include <QStandardPaths>
 #include <QUuid>
 
 namespace mikai::app {
@@ -28,6 +30,14 @@ QString uniquePath(const QString& directory) {
 }
 
 }  // namespace
+
+QString benchmarkReportBaseDirectory() {
+#ifdef Q_OS_LINUX
+    return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+#else
+    return QCoreApplication::applicationDirPath();
+#endif
+}
 
 BenchmarkReportWriteResult writeBenchmarkReport(const QString& applicationDir,
                                                 const BenchmarkReport& report) {
