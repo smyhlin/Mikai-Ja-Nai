@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <clocale>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
@@ -198,6 +200,13 @@ struct OutgoingNode {
 
 }  // namespace
 
+bool ensureMpvNumericLocale() {
+    const char* current = std::setlocale(LC_NUMERIC, nullptr);
+    if (current == nullptr) return false;
+    if (std::strcmp(current, "C") == 0) return true;
+    return std::setlocale(LC_NUMERIC, "C") != nullptr;
+}
+
 // ── construction ──────────────────────────────────────────────────────────
 
 MpvHandle::MpvHandle(const std::vector<std::pair<std::string, std::string>>& extraOptions) {
@@ -207,6 +216,12 @@ MpvHandle::MpvHandle(const std::vector<std::pair<std::string, std::string>>& ext
                        "created (" +
                        api.error().toStdString() + ")");
     }
+    // Direct MpvHandle users have the same process-wide locale requirement as
+    // application-started playback.
+    if (!ensureMpvNumericLocale()) {
+        throw MpvError("cannot set LC_NUMERIC to C before creating an mpv core");
+    }
+
     // Cached once: the table is immutable for the life of the process, so this
     // pointer stays good.
     api_ = &api.functions();

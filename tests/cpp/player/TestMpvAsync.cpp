@@ -1,14 +1,22 @@
 #include "TestMpvAsync.hpp"
 
+#include <QByteArray>
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QFile>
 #include <QFileInfo>
+#include <QLibraryInfo>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QTimer>
+#include <QXmlStreamReader>
 
+#include <clocale>
+#include <exception>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -36,6 +44,23 @@ using mikai::app::BenchmarkFrameSample;
 using mplayer::isRealNewFrame;
 
 namespace {
+class NumericLocaleRestore {
+public:
+    NumericLocaleRestore() {
+        const char* current = std::setlocale(LC_NUMERIC, nullptr);
+        if (current != nullptr) saved_ = current;
+    }
+    ~NumericLocaleRestore() {
+        if (!saved_.isEmpty()) std::setlocale(LC_NUMERIC, saved_.constData());
+    }
+
+    bool valid() const { return !saved_.isEmpty(); }
+    QByteArray saved() const { return saved_; }
+
+private:
+    QByteArray saved_;
+};
+
 
 // A descriptor over a real directory, so the refusal under test is the one the
 // test names rather than "no such folder".
@@ -236,6 +261,133 @@ void TestMpvAsync::aHandleWithoutASelectedRuntimeIsRefused() {
         QVERIFY(QString::fromStdString(error.what()).contains(QStringLiteral("MpvApi::load")));
     }
     QVERIFY(refused);
+}
+
+void TestMpvAsync::aCoreUsesTheCLocaleForNumericFormatting() {
+    constexpr auto childMarker = "MIKAI_TEST_MPV_NUMERIC_LOCALE_CHILD";
+    if (qEnvironmentVariableIntValue(childMarker) != 1) {
+        // The runner protects executable-local native fixtures. A fresh copy is
+        // essential even when the parent started in an isolated directory: other
+        // suites may already have created its native tree.
+        QTemporaryDir directory;
+        QVERIFY2(directory.isValid(), "cannot create locale test executable directory");
+        const QString executable = directory.filePath(
+            QFileInfo(QCoreApplication::applicationFilePath()).fileName());
+        QVERIFY2(QFile::copy(QCoreApplication::applicationFilePath(), executable),
+                 "cannot copy locale test executable");
+
+        QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+        environment.insert(QString::fromLatin1(childMarker), QStringLiteral("1"));
+#ifdef Q_OS_WIN
+        environment.insert(QStringLiteral("PATH"),
+            QLibraryInfo::path(QLibraryInfo::BinariesPath) + QDir::listSeparator() +
+            environment.value(QStringLiteral("PATH")));
+#endif
+        environment.insert(QStringLiteral("QT_PLUGIN_PATH"),
+                           QLibraryInfo::path(QLibraryInfo::PluginsPath));
+        environment.insert(QStringLiteral("QT_QPA_PLATFORM_PLUGIN_PATH"),
+            QDir(QLibraryInfo::path(QLibraryInfo::PluginsPath)).filePath(QStringLiteral("platforms")));
+        if (environment.value(QStringLiteral("QT_QPA_PLATFORM")).isEmpty())
+            environment.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
+
+        QProcess child;
+        child.setProcessEnvironment(environment);
+        child.setWorkingDirectory(directory.path());
+        child.start(executable, {QStringLiteral("TestMpvAsync"),
+                                 QStringLiteral("aCoreUsesTheCLocaleForNumericFormatting"),
+                                 QStringLiteral("-o"), QStringLiteral("-,xml")});
+        QVERIFY2(child.waitForStarted(10000), qPrintable(child.errorString()));
+        if (!child.waitForFinished(30000)) {
+            child.kill();
+            child.waitForFinished(5000);
+            const QString details = QStringLiteral("locale test child timed out\nstdout:\n%1\nstderr:\n%2")
+                .arg(QString::fromUtf8(child.readAllStandardOutput()),
+                     QString::fromUtf8(child.readAllStandardError()));
+            QFAIL(qPrintable(details));
+        }
+        const QByteArray output = child.readAllStandardOutput();
+        const QByteArray errors = child.readAllStandardError();
+        const QString details = QStringLiteral("locale test child output:\n%1\nstderr:\n%2")
+            .arg(QString::fromUtf8(output), QString::fromUtf8(errors));
+        QVERIFY2(child.exitStatus() == QProcess::NormalExit && child.exitCode() == 0,
+                 qPrintable(details));
+
+        QXmlStreamReader xml(output);
+        bool target = false;
+        bool found = false;
+        bool passed = false;
+        bool skipped = false;
+        QString skipReason;
+        while (!xml.atEnd()) {
+            xml.readNext();
+            if (xml.isStartElement() && xml.name() == QLatin1String("TestFunction")) {
+                target = xml.attributes().value(QLatin1String("name")) ==
+                         QLatin1String("aCoreUsesTheCLocaleForNumericFormatting");
+                found |= target;
+            } else if (xml.isEndElement() && xml.name() == QLatin1String("TestFunction")) {
+                target = false;
+            } else if (target && xml.isStartElement() && xml.name() == QLatin1String("Incident")) {
+                const auto type = xml.attributes().value(QLatin1String("type"));
+                if (type == QLatin1String("pass")) passed = true;
+                if (type == QLatin1String("skip")) {
+                    skipped = true;
+                    while (xml.readNextStartElement()) {
+                        if (xml.name() == QLatin1String("Description"))
+                            skipReason = xml.readElementText();
+                        else
+                            xml.skipCurrentElement();
+                    }
+                }
+            }
+        }
+        QVERIFY2(!xml.hasError() && found && (passed || skipped), qPrintable(details));
+        if (skipped) {
+            QVERIFY2(!skipReason.isEmpty(), qPrintable(details));
+            QSKIP(qPrintable(skipReason));
+        }
+        return;
+    }
+
+    if (!requireRuntime()) return;
+    NumericLocaleRestore restore;
+    QVERIFY(restore.valid());
+    const QByteArray savedLocale = restore.saved();
+    const char* nonCLocale = nullptr;
+#ifdef _WIN32
+    const char* candidates[] = {"de-DE", "German_Germany.1252", "German_Germany"};
+#else
+    const char* candidates[] = {"uk_UA.UTF-8", "uk_UA.utf8", "de_DE.UTF-8",
+                                "de_DE.utf8", "fr_FR.UTF-8", "fr_FR.utf8"};
+#endif
+    for (const char* candidate : candidates) {
+        const char* selected = std::setlocale(LC_NUMERIC, candidate);
+        if (selected != nullptr && std::localeconv()->decimal_point != nullptr &&
+            std::string(std::localeconv()->decimal_point) == ",") {
+            nonCLocale = selected;
+            break;
+        }
+    }
+    if (nonCLocale == nullptr) QSKIP("no installed decimal-comma numeric locale");
+    const QByteArray localizedLocale(nonCLocale);
+    QVERIFY(std::setlocale(LC_NUMERIC, localizedLocale.constData()) != nullptr);
+
+    bool coreCreated = false;
+    QString coreError;
+    double speed = 0.0;
+    try {
+        MpvHandle handle({{"vo", "libmpv"}, {"idle", "yes"},
+                          {"input-default-bindings", "no"}});
+        coreCreated = true;
+        handle.setString("speed", "1.25");
+        speed = handle.getNumber("speed");
+    } catch (const std::exception& error) {
+        coreError = QString::fromUtf8(error.what());
+    }
+
+    QVERIFY2(coreCreated && coreError.isEmpty(), qPrintable(coreError));
+    QCOMPARE(std::string(std::localeconv()->decimal_point), std::string("."));
+    QVERIFY(qAbs(speed - 1.25) < 0.000001);
+    QVERIFY(std::setlocale(LC_NUMERIC, savedLocale.constData()) != nullptr);
 }
 
 // ── public FPS provenance policy; no mpv runtime required ──────────────────

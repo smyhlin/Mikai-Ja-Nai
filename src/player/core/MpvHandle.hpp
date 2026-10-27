@@ -16,6 +16,9 @@
 #include "MpvApi.hpp"
 
 namespace mplayer {
+// Qt can select the system C locale during startup. Set this after application
+// construction and before starting workers; keep LC_NUMERIC unchanged thereafter.
+bool ensureMpvNumericLocale();
 
 // Flattened out of mpv's tagged union so a view can read it directly.
 struct Property {

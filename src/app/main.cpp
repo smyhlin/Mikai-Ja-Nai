@@ -9,6 +9,7 @@
 
 #include <ShellTheme.hpp>
 #include <VideoSurface.hpp>
+#include <MpvHandle.hpp>
 
 #include <backend/MikaiClient.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
@@ -207,6 +208,10 @@ int main(int argc, char** argv) {
     int qtArgc = 1;
     char* qtArgv[] = {argv[0], nullptr};
     QApplication app(qtArgc, qtArgv);
+    if (!mplayer::ensureMpvNumericLocale()) {
+        qCritical("mikai: cannot set LC_NUMERIC to C; libmpv playback is unavailable");
+        return 1;
+    }
     app.setApplicationName(QStringLiteral("Mikai Wrapper"));
     app.setApplicationDisplayName(QStringLiteral("Mikai"));
     app.setApplicationVersion(QStringLiteral("0.1.0"));

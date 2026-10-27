@@ -35,6 +35,7 @@ private slots:
     void aDifferentModuleIsRefusedWhileOneIsPinned();
     void theHeaderApiVersionIsAlwaysReported();
     void aHandleWithoutASelectedRuntimeIsRefused();
+    void aCoreUsesTheCLocaleForNumericFormatting();
 
     // ── public FPS provenance policy; these cases need no mpv runtime ───────
     void fpsSelectorPrefersValidMpvOutput();
