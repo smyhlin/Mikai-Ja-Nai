@@ -29,27 +29,9 @@
 
 ## Gallery
 
-These are actual widget captures from a successful isolated desktop run (1280×800 logical; 2240×1400 pixels at the captured 1.75 device-pixel ratio). The catalogue was loaded anonymously from the live public API. The local video is a project-generated FFmpeg `lavfi` test pattern—not sourced footage—and is credited in the [run evidence](docs/images/gallery-release-0.1.0/gallery-evidence.json) and [fixture provenance](tests/fixtures/README.md). The probe used Original playback and non-AI comparison; it did not acquire models or run AI inference. Live catalogue artwork belongs to its respective rights holders and may change upstream. See the [capture procedure and provenance requirements](docs/images/README.md).
+Gallery capture is **pending/blocked** under the current release policy; no fresh widget captures have been produced for this status. Historical captures from a 2026-10-24 isolated desktop run are retained under `docs/images/gallery-release-0.1.0/` (including `gallery-evidence.json`) as prior-run evidence only. They are not current verification, are not embedded here as current product screenshots, and do not imply that live catalogue content or appearance is unchanged. Live catalogue artwork belongs to its respective rights holders and may change upstream.
 
-<p align="center">
-  <img src="docs/images/gallery-release-0.1.0/catalogue.png" width="49%" alt="Mikai live anonymous catalogue showing current-airing and popular cards with loaded poster artwork">
-  <img src="docs/images/gallery-release-0.1.0/player.png" width="49%" alt="Mikai player paused on the project-generated color test pattern with the clip timestamp overlay">
-</p>
-
-<p align="center"><strong>Live catalogue.</strong> Anonymous current-airing and popular titles with real service artwork. &nbsp; <strong>Original player.</strong> The generated 12-second, 320×180 video-only fixture is shown unprocessed; it contains no third-party footage or audio.</p>
-
-<p align="center">
-  <img src="docs/images/gallery-release-0.1.0/compare.png" width="49%" alt="Mikai side-by-side quality comparison of the paused original frame and the fast_a shader candidate">
-  <img src="docs/images/gallery-release-0.1.0/media-info.png" width="49%" alt="Mikai media-information Overview for the local H.265 demo, including its duration, dimensions, frame rate, and absent audio and subtitle tracks">
-</p>
-
-<p align="center"><strong>Compare.</strong> One paused frame compared as Original (`off`) and the available `fast_a` shader candidate; this is not a quality or speed benchmark. &nbsp; <strong>Media information.</strong> Actual metadata identifies H.265, 320×180, 24 fps and 12 seconds, with no audio or subtitle tracks.</p>
-
-<p align="center">
-  <img src="docs/images/gallery-release-0.1.0/settings.png" width="70%" alt="Mikai Settings appearance page showing the selected accent, corner radius, background-gradient switch, sliders, and gradient colors">
-</p>
-
-<p align="center"><strong>Appearance settings.</strong> Real controls were exercised in three rounds; the saved preferences were not changed. Supporting before/preview/reset captures and interaction evidence are in <a href="docs/images/gallery-release-0.1.0/gallery-evidence.json">the successful evidence record</a>.</p>
+The intended gallery deliverable remains: five real widget captures (`catalogue.png`, `player.png`, `compare.png`, `media-info.png`, `settings.png`) plus three supporting appearance captures, produced by the opt-in `release_gallery_probe` on an interactive desktop with working desktop OpenGL, an original local video of at least eight seconds, the installed Standard mpv runtime module, and network access to the anonymous catalogue API. The probe uses Original playback and non-AI comparison only; it does not acquire models or run AI inference. The local video is a project-generated FFmpeg `lavfi` test pattern—not sourced footage—and is credited in the [run evidence](docs/images/gallery-release-0.1.0/gallery-evidence.json) and [fixture provenance](tests/fixtures/README.md). See the [capture procedure and provenance requirements](docs/images/README.md).
 
 See [release status](docs/release-status.md) for the exercised platform checks, exact local artifact identities and remaining distribution limits.
 
@@ -76,7 +58,7 @@ publication hold.
 
 ## Platform support
 
-The project has Windows x64 MinGW and Linux x86_64 build/package paths using Qt 6.12+, C++20 and desktop OpenGL. Linux can optionally deploy Qt and/or bundle a pinned private `libmpv`; otherwise the configured runtime uses host Qt and system `libmpv`. These options do not establish broad distribution portability: host glibc/loader, graphics drivers and audio remain relevant, and graphics support varies by machine. Windows development uses a pinned mpv DEV archive containing headers/import library/DLL; the separate mpv CLI/updater archive is not used. See [platform-specific build and runtime requirements](docs/building.md#platforms-and-prerequisites).
+The project has Windows x64 MinGW and Linux x86_64 build/package paths using Qt 6.12+, C++20 and desktop OpenGL. Linux can optionally deploy Qt and/or bundle a pinned private `libmpv`; otherwise the configured runtime uses host Qt and system `libmpv`. These options do not establish broad distribution portability: host glibc/loader, graphics drivers and audio remain relevant, and graphics support varies by machine. Windows development uses the pinned mpv DEV archive containing headers/import library/`libmpv-2.dll`; the separate CLI/updater archive is not used or bundled. The pinned DEV and Linux runtime archives are the 2026-10-24 builds; see [platform-specific build and runtime requirements](docs/building.md#platforms-and-prerequisites) for identities and the DEV-vs-CLI distinction.
 
 ## Credits and licensing
 
