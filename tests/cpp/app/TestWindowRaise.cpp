@@ -1,8 +1,11 @@
 #include "TestWindowRaise.hpp"
 
 #include "WindowRaisePolicy.hpp"
+#include "PipFloat.hpp"
 
 #include <QApplication>
+#include <QCloseEvent>
+#include <QSignalSpy>
 #include <QDialog>
 #include <QWidget>
 
@@ -54,6 +57,19 @@ void TestWindowRaise::cleanupTestCase() {
     delete g_shell;
     g_shell = nullptr;
     pump();
+}
+
+void TestWindowRaise::pipWindowManagerCloseRequestsPlayerTeardown() {
+    mplayer::shell::PipFloat pip;
+    QSignalSpy closeRequests(&pip, &mplayer::shell::PipFloat::closeRequested);
+    QObject::connect(&pip, &mplayer::shell::PipFloat::closeRequested, &pip, [&pip] {
+        QCloseEvent reentrant;
+        QCoreApplication::sendEvent(&pip, &reentrant);
+    });
+    QCloseEvent event;
+    QCoreApplication::sendEvent(&pip, &event);
+    QCOMPARE(closeRequests.count(), 1);
+    QVERIFY(!event.isAccepted());
 }
 
 void TestWindowRaise::aNewWindowRaisesOverAnExistingOneAndTakesActivation() {

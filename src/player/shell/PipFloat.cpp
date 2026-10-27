@@ -8,6 +8,7 @@
 #include "ShellWidgets.hpp"
 #include "VideoSurface.hpp"
 
+#include <QCloseEvent>
 #include <QCursor>
 #include <QEasingCurve>
 #include <QGuiApplication>
@@ -19,6 +20,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
+#include <QPointer>
 #include <QRegion>
 #include <QResizeEvent>
 #include <QScreen>
@@ -27,6 +29,7 @@
 #include <QSlider>
 #include <QTimer>
 #include <QVariantAnimation>
+#include <QWindow>
 
 #include <algorithm>
 #include <cmath>
@@ -63,6 +66,11 @@ constexpr int kPipVolumeWidth = 96;
 constexpr int kPipChipWidth = kPipFieldHeight + 8 + kPipVolumeWidth + 10;
 constexpr int kPipTimelineHeight = 4;
 constexpr int kPipTimelineHandle = 12;
+
+bool isWayland() {
+    return QGuiApplication::platformName().startsWith(QLatin1String("wayland"),
+                                                       Qt::CaseInsensitive);
+}
 
 
 /// Seconds as m:ss, gaining an hours field only when it is needed.
@@ -714,10 +722,15 @@ void PipFloat::retranslateUi() {
 }
 
 void PipFloat::closeEvent(QCloseEvent* event) {
-    // A close from the window manager must not leave a live VideoSurface behind
-    // a deleted float: the stream is stopped before the host tears it down.
-    closeStream();
-    QWidget::closeEvent(event);
+    // The float is pooled and the player owns its teardown. A compositor close
+    // must take the same path as the chrome close button, not silently stop the
+    // float while the player still believes PiP owns playback.
+    event->ignore();
+    if (closeRequestInProgress_) return;
+    closeRequestInProgress_ = true;
+    QPointer<PipFloat> self(this);
+    emit closeRequested();
+    if (self) self->closeRequestInProgress_ = false;
 }
 
 // ── the gesture on the picture ───────────────────────────────────────────
@@ -729,11 +742,22 @@ void PipFloat::pointerPress(QMouseEvent* event) {
     pressGlobal_ = event->globalPosition();
     pressWindow_ = pos();
     pressSize_ = size();
-    const QPoint local = mapFromGlobal(event->globalPosition().toPoint());
+    // The watched overlay fills the float; local coordinates remain valid even
+    // when a Wayland compositor does not expose global top-level positions.
+    const QPoint local = event->position().toPoint();
     resizingRight_ = local.x() >= width() - 8;
     resizingBottom_ = local.y() >= height() - 8;
     pressed_ = true;
     dragging_ = false;
+    if (isWayland() && (resizingRight_ || resizingBottom_)) {
+        // A resize edge is unambiguous at press time. Start the compositor
+        // operation while the pointer-button serial is current.
+        Qt::Edges edges;
+        if (resizingRight_) edges |= Qt::RightEdge;
+        if (resizingBottom_) edges |= Qt::BottomEdge;
+        if (QWindow* window = windowHandle()) window->startSystemResize(edges);
+        dragging_ = true;
+    }
 }
 
 void PipFloat::pointerMove(QMouseEvent* event) {
@@ -742,7 +766,7 @@ void PipFloat::pointerMove(QMouseEvent* event) {
         return;
     }
     if (!pressed_ || !(event->buttons() & Qt::LeftButton)) {
-        const QPoint local = mapFromGlobal(event->globalPosition().toPoint());
+        const QPoint local = event->position().toPoint();
         const bool right = local.x() >= width() - 8;
         const bool bottom = local.y() >= height() - 8;
         overlay_->setCursor(right && bottom ? Qt::SizeFDiagCursor
@@ -756,7 +780,15 @@ void PipFloat::pointerMove(QMouseEvent* event) {
             return;
         }
         dragging_ = true;
+        if (isWayland()) {
+            // Preserve click-to-pause by waiting for a drag threshold. The
+            // operation still belongs to this active pointer-button gesture.
+            // Do not fall back to client positioning if it is refused.
+            if (QWindow* window = windowHandle()) window->startSystemMove();
+            return;
+        }
     }
+    if (isWayland()) return;
     if (resizingRight_ || resizingBottom_) {
         QScreen* target = QGuiApplication::screenAt(pressWindow_);
         if (target == nullptr) target = screen();
@@ -834,7 +866,8 @@ void PipFloat::pointerRelease(QMouseEvent* event) {
 // ── placement ────────────────────────────────────────────────────────────
 
 void PipFloat::moveToCorner(QScreen* target) {
-    if (target == nullptr) {
+    // Top-level placement is compositor-controlled on Wayland.
+    if (target == nullptr || isWayland()) {
         return;
     }
     // Only ever the FIRST placement of a brand-new float: a sensible default
@@ -865,6 +898,7 @@ bool PipFloat::overlapsAnyWorkArea() const {
 }
 
 void PipFloat::pullIntoWorkArea() {
+    if (isWayland()) return;
     // Pull the float back to the work area nearest where it already is, keeping
     // as much of its position as reachability allows: a monitor change can leave
     // the pooled position naming a screen that is gone, and a window there
@@ -902,6 +936,12 @@ void PipFloat::showEvent(QShowEvent* event) {
 }
 
 void PipFloat::hideEvent(QHideEvent* event) {
+    pressed_ = false;
+    dragging_ = false;
+    resizingRight_ = false;
+    resizingBottom_ = false;
+    draggingTimeline_ = false;
+    scrubbing_ = false;
     QWidget::hideEvent(event);
     // T-207: a hidden float is a pooled, paused second core that nothing
     // watches, yet its 50 ms pump kept draining that core's events for the rest

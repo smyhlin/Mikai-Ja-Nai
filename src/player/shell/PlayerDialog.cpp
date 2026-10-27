@@ -259,6 +259,13 @@ PlayerDialog::PlayerDialog(const QString& caption,
         // AnimeJaNai backend changes are explicit and persisted independently.
         animeJanaiBackend_ = native::loadNativePreferences().backend;
     }
+#ifdef Q_OS_LINUX
+    // Settings can be shared with Windows or retain an old Native preference.
+    // DirectML is not a Linux Standard AnimeJaNai backend.
+    if (animeJanaiBackend_ == native::Backend::DirectML) {
+        animeJanaiBackend_ = native::Backend::TensorRT;
+    }
+#endif
     surface_->setAnime4KMode(anime4kMode_);
     shell_->setAnime4KMode(anime4kMode_);
 
@@ -2052,6 +2059,18 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
         event->ignore();
         return;
     }
+    // Keep the current owner and its pause intent until teardown is actually
+    // acknowledged. A refused stop must not turn an active PiP into an
+    // invisible, detached player or reopen either stream.
+    QPointer<PipFloat> pipAtClose = pip_;
+    const bool mainPauseAtClose = surface_ != nullptr && surface_->playbackPauseIntent();
+    const bool pipPauseAtClose = pipAtClose != nullptr &&
+                                 pipAtClose->videoSurface()->playbackPauseIntent();
+    QPointer<VideoSurface> ownerAtClose = pipAtClose != nullptr
+                                             ? pipAtClose->videoSurface()
+                                             : surface_;
+    const bool ownerNativeWasConfirmed =
+        ownerAtClose != nullptr && ownerAtClose->nativePlaybackStatus().confirmed;
     shuttingDown_ = true;
     closed_ = true;
     closeMediaInformation();
@@ -2085,10 +2104,6 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
         enginePreparationSurface_->setEnginePreparationPaused(false, false);
         enginePreparationSurface_.clear();
     }
-    ++animeJanaiSequence_;
-    if (animeJanaiCancellation_) animeJanaiCancellation_->store(true);
-    // T-306: see the destructor - the slot is the other half of the retire.
-    if (animeJanaiDialogSlot_) animeJanaiDialogSlot_->dialog = nullptr;
     const bool statusTimerWasActive = statusTimer_->isActive();
     statusTimer_->stop();
     audioPopup_->close();
@@ -2109,9 +2124,10 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
             parked->videoSurface()->setPaused(true);
         }
     }
-    // Hides the float, retires the hand-off and cancels a capture in flight; the
-    // pooled widget itself outlives this handler and is released by the destructor.
-    leavePip(/*closing=*/true);
+    const quint64 mainClosePauseGeneration =
+        surface_ != nullptr ? surface_->pauseRequestGeneration() : 0;
+    const quint64 pipClosePauseGeneration =
+        pipAtClose != nullptr ? pipAtClose->videoSurface()->pauseRequestGeneration() : 0;
     // M30 order: both cores are stopped with a real acknowledgement while their
     // GL contexts are still alive, and only then are the streams closed. The
     // settle spins the event loop, so the dialog is guarded weakly across it.
@@ -2141,6 +2157,35 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
                 enginePreparationSurface_->setEnginePreparationPaused(true, true);
             }
         }
+        // Settlement can have suspended the owner successfully even when the
+        // other core refused to stop. Resume only that previously confirmed
+        // plan; the controller rechecks its claims and reports a refusal rather
+        // than silently starting another plan.
+        if (ownerNativeWasConfirmed && ownerAtClose != nullptr &&
+            ownerAtClose->nativePlaybackStatus().state ==
+                native::NativePlaybackController::State::Suspended) {
+            ownerAtClose->resumeNativeProcessing();
+        }
+        // Do not overwrite a newer pause request delivered while the native
+        // settlement spun the event loop. Reasserting the old intent through a
+        // restored engine hold changes the intent, not the physical hold.
+        if (surface_ != nullptr &&
+            surface_->pauseRequestGeneration() == mainClosePauseGeneration) {
+            surface_->setPaused(mainPauseAtClose);
+        }
+        if (pipAtClose != nullptr && pip_ == pipAtClose.data() &&
+            pipAtClose->videoSurface()->pauseRequestGeneration() == pipClosePauseGeneration) {
+            pipAtClose->videoSurface()->setPaused(pipPauseAtClose);
+        }
+        // Cancellation of a handoff above can leave either owner hidden.
+        // Keep PiP as the owner if it was active; otherwise return to the
+        // original player. Neither branch loads a stream or changes sources.
+        if (pipAtClose != nullptr && pip_ == pipAtClose.data()) {
+            pipAtClose->show();
+            hide();
+        } else if (!isVisible()) {
+            show();
+        }
         // The close was refused, so the dialog keeps the status it had: a
         // runtime wait that refused to close is still waiting.
         if (runtimePendingWasVisible && !engineReady_ &&
@@ -2152,6 +2197,13 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
         event->ignore();
         return;
     }
+    // A refused native stop keeps the ongoing AnimeJaNai operation alive.
+    ++animeJanaiSequence_;
+    if (animeJanaiCancellation_) animeJanaiCancellation_->store(true);
+    // T-306: see the destructor - the slot is the other half of the retire.
+    if (animeJanaiDialogSlot_) animeJanaiDialogSlot_->dialog = nullptr;
+    // Only a confirmed stop may retire the current PiP owner and hide it.
+    leavePip(/*closing=*/true);
     // The overlay is a Qt::Tool child window: a parent hide does not hide a
     // Tool, so park it on the accepted path only. The refused path above keeps
     // the dialog open and leaves the overlay exactly as the builder left it;

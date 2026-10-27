@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QDebug>
 #include <QEvent>
+#include <QGuiApplication>
 #include <QPointer>
 #include <QTimer>
 #include <QWidget>
@@ -175,6 +176,12 @@ bool WindowRaisePolicy::eventFilter(QObject* watched, QEvent* event) {
     // frame of a list.
     if (!window->isWindow()) return false;
     if (isExempt(window)) return false;
+
+    // Wayland deliberately leaves stacking and activation to the compositor.
+    // Repeated raise/activate requests cannot force foreground there and can
+    // steal focus after the user has moved on.
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"),
+                                                   Qt::CaseInsensitive)) return false;
 
     // Both calls, in this order and before the exposure is delivered: `raise()`
     // alone does not move focus, and `activateWindow()` alone can be refused by

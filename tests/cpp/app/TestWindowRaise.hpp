@@ -33,4 +33,5 @@ private slots:
   void installingThePolicyTwiceRaisesOncePerShow();
   void theExemptionIsVisibleBeforeTheWindowIsShown();
   void thePolicyAppliesToADialogShownOnTopOfAWindow();
+  void pipWindowManagerCloseRequestsPlayerTeardown();
 };

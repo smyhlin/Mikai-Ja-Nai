@@ -1232,7 +1232,12 @@ void PlayerDialog::enterPip() {
                                   tr("The reference capture was asked of the other core."));
     beginWindowHandoff(WindowHandoff::PlayerToFloat, window, leftFullscreen);
     window->show();
-    window->raise();
+    // The float retains its stays-on-top hint, but Wayland leaves stacking to
+    // the compositor and does not implement a client-requested global raise.
+    if (!QGuiApplication::platformName().startsWith(QLatin1String("wayland"),
+                                                    Qt::CaseInsensitive)) {
+        window->raise();
+    }
     syncPipBar();
     // Native hand-off: there is one process-wide inference claim, so the float
     // may only admit once the main core's claim is released by an acknowledged

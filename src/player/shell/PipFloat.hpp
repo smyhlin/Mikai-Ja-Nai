@@ -32,16 +32,18 @@ class VideoSurface;
 namespace mplayer {
 namespace shell {
 
-/// A frameless always-on-top float showing the same stream in its own
+/// A frameless float requesting always-on-top, showing the same stream in its own
 /// VideoSurface: mpv gives one core per surface, so the float decodes a second
 /// time rather than sharing a handle it cannot have.
 ///
-/// It is placed FREELY. A drag drops it exactly where the pointer leaves it -
+/// Where the window system permits client placement, it is placed FREELY. A drag
+/// drops it exactly where the pointer leaves it -
 /// no snap-to-corner on release, no re-pin to a corner on resize, show, or
 /// re-entry. The single placement rule is reachability: some part of the float
 /// must share pixels with a work area, or it cannot be clicked or dragged back.
 /// A pooled float re-enters at the exact position and size the viewer last left
 /// it; only an unreachable position (a monitor that went away) is corrected.
+/// On Wayland, placement, stacking and interactive moves are compositor-controlled.
 ///
 /// Its chrome is painted, not composited: the float is a ChromeHost, so every
 /// control it carries is adopted and drawn from the same paintGL pass that
@@ -201,6 +203,7 @@ private:
     bool resizingBottom_ = false;
     bool pressed_ = false;
     bool dragging_ = false;
+    bool closeRequestInProgress_ = false;
 };
 
 
