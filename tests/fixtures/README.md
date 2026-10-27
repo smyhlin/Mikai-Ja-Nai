@@ -379,11 +379,12 @@ would make the fixture unusable by one of the two real clients.
 memory: a single `Identity` node (`X` → `Y`), FLOAT tensors with fixed shape
 `[1, 3, 4, 4]`, IR version 8 and default-domain opset 19. It is intentionally a
 tiny parser/staging fixture, not a useful upscaler or representative model.
-The Windows-only `aji_dispatcher_fixture.cpp` exports the C ABI symbols
-`aji_api_version()` (8) and `aji_rife_heavy_supported()` (1); it lets the
-runtime tests exercise ABI-export-dependent setup without a production
-dispatcher. On non-Windows the dispatcher target is not built, and the
-custom-model staging test is skipped.
+The `aji_dispatcher_fixture.cpp` test-only dispatcher exports
+`aji_api_version()` (9) and `aji_rife_heavy_supported()` (1), allowing runtime
+tests to exercise ABI-export-dependent setup without a production dispatcher.
+The fixture target and this ABI-9 contract are cross-platform; they do not
+represent or prove operation of official runtime binaries. The custom-model
+staging test remains dependent on its configured test/runtime prerequisites.
 
 `TestAnimeJanaiRuntime` covers metadata/import identity, duplicate rejection,
 content hashing, planner availability and staging of SHA-pinned ONNX bytes,

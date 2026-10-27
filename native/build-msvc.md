@@ -336,7 +336,7 @@ input `1x3x64x64`, output `1x3x128x128`, declared output `N=-1` retained — and
 the export passes (`.probe-out/m16-cpu-reference-export-current.log`). Exporting
 a reference whose output contains a NaN or an infinity is refused with
 `reference.output.nonFinite`: before that check the export wrote infinities, and
-after it the same run refuses (`.probe-out/nonfinite-export-before/after.log`).
+after it the same run refuses (that supporting log was local probe output and is not retained in the tree).
 
 ### Corrected RGB frame reference layout
 

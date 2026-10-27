@@ -8,7 +8,7 @@ This directory contains the provenance manifests, license notices, standalone CL
 
 The application supports two distinct neural enhancement contracts alongside the built-in **Anime4K** GLSL shaders:
 
-1. **Standard AnimeJaNai ABI-8 Runtime:** The Qt app's manager/configuration and runtime planning live in `src/app/dialogs/AnimeJanaiManagerPanel.cpp` and `src/player/native/components/AnimeJanaiConfig.{hpp,cpp}` / `AnimeJanaiRuntime.cpp`. It uses the `vf_animejanai` filter in the `the-database/mpv` core and the pinned `v0.9.0` ABI-8 dispatcher (`aji.dll` + `aji_trt.dll` / `aji_dml.dll` on Windows; `libaji.so` + `libaji_trt.so` on Linux), alongside the `3.7.0` TensorRT runtime/builder-resource packs (`component-trt-*`). User-defined model/profile setup is described in [Standard AnimeJaNai Custom Models & Profiles](#2-standard-animejanai-custom-models--profiles).
+1. **Standard AnimeJaNai current official runtime (v0.17.1, API/ABI 9):** The Qt app's manager/configuration and runtime planning live in `src/app/dialogs/AnimeJanaiManagerPanel.cpp` and `src/player/native/components/AnimeJanaiConfig.{hpp,cpp}` / `AnimeJanaiRuntime.cpp`. It uses `vf_animejanai` in the pinned `the-database/mpv` source/runtime pair alongside CUDA 13/TensorRT 11 dependencies. The updated Windows DEV and Linux runtime builds contain ABI-9 host entrypoint name markers (`aji_ingest`, `aji_infer_seq`, `aji_temporal_radius`, `aji_reset`, `aji_rife_before_upscale`, `aji_pre_resize`, `aji_resize`); these strings are marker evidence only and do not establish executed behavior, hardware operation or inference. The official Linux and Windows runtime archives are distinct release assets; pinned archive identity and source compatibility do not establish hardware operation or inference. The historical official v0.9.0 ABI-8 pair and separately patched private MSVC Native ABI-8 cohort are not substitutes for this runtime. The separate Linux `aji-encode` archive (~80 MB) is an optional offline tool, not a playback dependency; it is not automatically downloaded or adopted, and its FFmpeg dependency and redistribution rights remain unresolved. User-defined model/profile setup is described in [Standard AnimeJaNai Custom Models & Profiles](#2-standard-animejanai-custom-models--profiles).
 2. **Prepared Native Bundle Track (`mikai_native_support`, `NativePlaybackController`, `NativeBuilder`):**
    - Uses a versioned, manifest-verified bundle under `<nativeRoot>/runtime/<bundle-id>/` (`manifest.json` schema `mikai.native.bundle/1`) together with out-of-process preparation tools (`mikai_native_prep`, `mikai_native_verify`, `native_inspect`) that build and numerically verify TensorRT plans against an ONNX Runtime CPU reference before admitting them into playback.
 
@@ -116,23 +116,25 @@ must satisfy the AJI/backend input and operator requirements to run; arbitrary
 ONNX files are not promised to work. External-weight packages are not imported
 as multi-file bundles.
 
-The manager supports custom profile IDs `builtin_slot:<1..10>` and imported
-model catalog IDs `spatial:custom:<id>`. A profile has ordered chains with
-resolution and FPS activation bounds. Chains
+The manager supports custom profile IDs `builtin_slot:<1..10>` and imported model catalog IDs `spatial:custom:<id>`. A profile has ordered chains with resolution and FPS activation bounds. Chains
 contain ordered model steps and optional pre-upscale height/percentage
 resizing, and may include RIFE settings (model, interpolation ratio, scene
-threshold, ensemble, and before/after-upscale position). Sharp selects the
-corresponding HD model variant; it does not replace the SD branch. TensorRT
-configuration supports Static (match the current video resolution), Static
-ONNX (fixed graph input shape), and Dynamic (minimum/optimal/maximum shapes),
-plus builder optimization levels 0–5 and raw `trtexec` arguments. The built-in
-Static/Dynamic shape helpers emit the TensorRT input name `input`; selecting
-Dynamic does not inspect the ONNX graph to discover a tensor name. Models with
-different input names need compatible raw shape arguments, or Static ONNX when
-the graph's fixed input shape is appropriate. These settings affect TensorRT
-engine preparation, not the selected backend: backend choice remains a
-player/runtime choice. Logging and TensorRT flags are not a claim of successful
-inference or a GPU performance result.
+threshold, ensemble, and before/after-upscale position). Settings expose temporal
+frame count (Auto or 1/odd 3–15), scene threshold, upscale enable/disable and
+temporal-fix controls. Sharp selects the corresponding HD model variant; it does
+not replace the SD branch. Official v0.17.1 source maps RIFE code 4262 to
+`rife_v4.26`, not `rife_v4.26_heavy`; this source mapping does not prove model
+availability or inference. TensorRT configuration supports Static (match the
+current video resolution), Static ONNX (fixed graph input shape), and Dynamic
+(minimum/optimal/maximum shapes), plus builder optimization levels 0–5 and raw
+`trtexec` arguments. The built-in Static/Dynamic shape helpers emit the TensorRT
+input name `input`; selecting Dynamic does not inspect the ONNX graph to
+discover a tensor name. Models with different input names need compatible raw
+shape arguments, or Static ONNX when the graph's fixed input shape is
+appropriate. These settings affect TensorRT engine preparation, not the
+selected backend: backend choice remains a player/runtime choice. Logging and
+TensorRT flags are not a claim of successful inference or a GPU performance
+result.
 
 ### Schema-v3 field reference
 
@@ -228,7 +230,7 @@ The upstream runtime dependencies, stock model graphs, and source revisions belo
 | `trt-sm120` | `component-trt-sm120.7z` (`229,417,183` B)<br>`954821ef65824b0c766998db7d2ae49c68041dac7f78328152ec41f674378c15` | `component-trt-sm120-linux-x64.7z` (`~220 MiB`)<br>`f3f52f355cbe9d7768a16ec2e974681ce56847aaed2f988150fd23f9c8074d2e` |
 | `trt-ptx` | `component-trt-ptx.7z` (`208,391,718` B)<br>`7bd93d7f610ec31124b4ed677395e86337a0fbe9279d6315d7005d64f6dd398e` | `component-trt-ptx-linux-x64.7z` (`~199 MiB`)<br>`c1061e7b11cb865c4c1f7d1eea4bce7357f45e073b74bbf10916b3a72faba0f3` |
 | `rife-3.7.0` | `component-rife.7z` (`462,444,035` B)<br>`d41de2b56972cb3c446d9830bd5c5e7257e6e099ef0e7a2d5770ec01a9bf7251` | `component-rife-linux-x64.7z` (`~441 MiB`)<br>`265797d56fb1376434658e6adf70ea5ee85b8ac4c51231fdd9e744d35462e136` |
-| `aji-v0.9.0` | `aji-windows-x64.zip` (`657,798` B)<br>`22828c41439ac2b165a18294ba3e15257e8df617ab1d7ab6fb0f96e3915c5586` | `aji-linux-x64.tar.zst` (`242,674` B)<br>`02dc66fb49a49c757bc3edb6153321150627a26b059fe92da6e063b31ee6bdf9` |
+| `aji-v0.17.1` | `aji-windows-x64.zip` (`743,177` B)<br>`9ddf6bb6da0ec52a2da0d9a13e59be99ff97a5c8c2e7156653dd154f6a4e40ad` | `aji-linux-x64.tar.zst` (`281,391` B)<br>`89ca6cc961889eebfa326745d2c7d9b96ebc71700303335f87adf1995f7c7cdc` |
 
 ---
 
