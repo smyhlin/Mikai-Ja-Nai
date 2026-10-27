@@ -40,6 +40,8 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
 
 QString ensureSevenZip(const QString& toolsDirectory);
 
+// Cancellation stops and reaps the extraction tool and reports failure. The
+// caller owns destination and must discard its potentially partial contents.
 bool extractArchive(const QString& sevenZip, const QString& archive, const QString& destination,
                     QString* reason);
 

@@ -621,13 +621,66 @@ QString ensureSevenZip(const QString& toolsDirectory) {
 
 bool extractArchive(const QString& sevenZip, const QString& archive, const QString& destination,
                     QString* reason) {
+    enum class ProcessResult { Finished, StartFailed, TimedOut, Cancelled };
+    auto cancelled = [&] {
+        if (!WorkCancellationScope::cancellationRequested()) return false;
+        if (reason) *reason = QStringLiteral("archive extraction was cancelled");
+        return true;
+    };
+    // Both archive tools are owned by this call. Never fall back to another
+    // tool after cancellation, and reap the current one before returning.
+    auto waitForExtraction = [&](QProcess& process, int startTimeoutMs) {
+        QElapsedTimer elapsed;
+        elapsed.start();
+        bool started = false;
+        while (process.state() == QProcess::Starting) {
+            if (cancelled()) {
+                stopBootstrapProcess(process);
+                return ProcessResult::Cancelled;
+            }
+            const int remaining = startTimeoutMs - static_cast<int>(elapsed.elapsed());
+            if (remaining <= 0) {
+                stopBootstrapProcess(process);
+                return ProcessResult::StartFailed;
+            }
+            if (process.waitForStarted(qMin(kCancelPollMs, remaining))) {
+                started = true;
+                break;
+            }
+        }
+        if (cancelled()) {
+            stopBootstrapProcess(process);
+            return ProcessResult::Cancelled;
+        }
+        if (!started && process.state() != QProcess::Running) return ProcessResult::StartFailed;
+
+        elapsed.restart();
+        while (process.state() != QProcess::NotRunning) {
+            if (cancelled()) {
+                stopBootstrapProcess(process);
+                return ProcessResult::Cancelled;
+            }
+            const int remaining = 300000 - static_cast<int>(elapsed.elapsed());
+            if (remaining <= 0) {
+                process.kill();
+                process.waitForFinished(2000);
+                return ProcessResult::TimedOut;
+            }
+            process.waitForFinished(qMin(kCancelPollMs, remaining));
+        }
+        return cancelled() ? ProcessResult::Cancelled : ProcessResult::Finished;
+    };
+    if (cancelled()) return false;
 #ifndef Q_OS_WIN
     if (archive.endsWith(QLatin1String(".tar.zst"), Qt::CaseInsensitive)) {
         QProcess tarProcess;
+        if (cancelled()) return false;
         tarProcess.start(QStringLiteral("tar"),
                          {QStringLiteral("--zstd"), QStringLiteral("-xf"), archive,
                           QStringLiteral("-C"), QDir(destination).absolutePath()});
-        if (tarProcess.waitForStarted(3000) && tarProcess.waitForFinished(300000) &&
+        const ProcessResult result = waitForExtraction(tarProcess, 3000);
+        if (result == ProcessResult::Cancelled) return false;
+        if (result == ProcessResult::Finished &&
             tarProcess.exitStatus() == QProcess::NormalExit && tarProcess.exitCode() == 0) {
             return true;
         }
@@ -642,16 +695,17 @@ bool extractArchive(const QString& sevenZip, const QString& archive, const QStri
         args << QStringLiteral("-snl");
 #endif
         args << QStringLiteral("-y") << inputArchive;
+        if (cancelled()) return false;
         process.start(sevenZip, args);
-        if (!process.waitForStarted(5000)) {
+        const ProcessResult result = waitForExtraction(process, 5000);
+        if (result == ProcessResult::Cancelled) return false;
+        if (result == ProcessResult::StartFailed) {
             if (reason) {
                 *reason = QStringLiteral("7-Zip failed to start: %1").arg(process.errorString());
             }
             return false;
         }
-        if (!process.waitForFinished(300000)) {
-            process.kill();
-            process.waitForFinished(2000);
+        if (result == ProcessResult::TimedOut) {
             if (reason) {
                 *reason = QStringLiteral("7-Zip extraction timed out for %1").arg(inputArchive);
             }
@@ -692,7 +746,7 @@ bool extractArchive(const QString& sevenZip, const QString& archive, const QStri
             QFile::remove(innerTar);
         }
     }
-    return true;
+    return !cancelled();
 }
 
 }  // namespace mikai::backend

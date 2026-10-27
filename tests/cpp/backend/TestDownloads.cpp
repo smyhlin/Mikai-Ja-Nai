@@ -578,6 +578,28 @@ void TestDownloads::cancellationTakesPrecedenceWhenSevenZipIsAlreadyInstalled() 
            qPrintable(QStringLiteral("cancelled work returned the installed tool: %1").arg(failure)));
 }
 
+void TestDownloads::cancelledExtractionDoesNotTouchTheDestination() {
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  const QString sentinel = QDir(directory.path()).filePath(QStringLiteral("existing.txt"));
+  QVERIFY(writeFile(sentinel, QByteArrayLiteral("keep")));
+
+  std::atomic_bool cancelled{true};
+  const mikai::backend::WorkCancellationScope scope(&cancelled);
+  // Exercise both the ordinary 7-Zip path and Linux's tar.zst fast path.
+  for (const QString& archive : {QStringLiteral("missing.zip"),
+                                 QStringLiteral("missing.tar.zst")}) {
+    QString reason;
+    QVERIFY(!mikai::backend::extractArchive(QStringLiteral("missing-7zip"), archive,
+                                             directory.path(), &reason));
+    QVERIFY2(reason.contains(QStringLiteral("cancelled"), Qt::CaseInsensitive),
+             qPrintable(reason));
+    QCOMPARE(readFile(sentinel), QByteArrayLiteral("keep"));
+    QCOMPARE(QDir(directory.path()).entryList(QDir::Files | QDir::NoDotAndDotDot),
+             QStringList{QStringLiteral("existing.txt")});
+  }
+}
+
 void TestDownloads::aQuietFetchReportsItsDeadline() {
   QTcpServer server;
   QVERIFY(server.listen(QHostAddress::LocalHost, 0));

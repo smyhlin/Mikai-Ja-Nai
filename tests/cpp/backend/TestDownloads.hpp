@@ -50,6 +50,7 @@ class TestDownloads : public QObject {
   void cancellingAQuietFetchReturnsWithoutWaitingForAnotherSignal();
   void aQuietFetchReportsItsDeadline();
   void cancellationTakesPrecedenceWhenSevenZipIsAlreadyInstalled();
+  void cancelledExtractionDoesNotTouchTheDestination();
 };
 
 /// Standalone entry point for the mikai_tests runner; the class above carries
