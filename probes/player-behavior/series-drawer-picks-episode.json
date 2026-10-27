@@ -1,6 +1,6 @@
 {
   "name": "series-drawer-picks-episode",
-  "description": "The series button opens the episode drawer, and picking a row applies that episode through the host rather than silently reseating the same stream.",
+  "description": "The series button opens the episode drawer, and picking a row applies that episode through the host by reopening it at its start rather than silently reseating the same stream.",
   "category": "player-behavior",
   "surface": "player_dialog",
   "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
@@ -12,6 +12,34 @@
       "kind": "wait_for",
       "name": "hasVideo",
       "timeout_ms": 10000
+    },
+    {
+      "kind": "wait_for",
+      "name": "durationKnown",
+      "timeout_ms": 10000,
+      "note": "The scrub value below is a fraction of the timeline, so the seek cannot land without a known duration."
+    },
+    {
+      "kind": "click",
+      "target": "playerPlayToggle",
+      "note": "Paused first: a running clock would make the position assertion measure elapsed time instead of the episode change."
+    },
+    {
+      "kind": "wait_for",
+      "name": "paused",
+      "timeout_ms": 5000
+    },
+    {
+      "kind": "set_value",
+      "target": "playerScrubBar",
+      "name": "value",
+      "value": 0.6,
+      "note": "Parks the current episode at about 7.2 s of the 12 s fixture, through the control's real 0..1 fraction. Where playback resumes after the pick separates a reopened episode from a reseated stream."
+    },
+    {
+      "kind": "sleep_ms",
+      "timeout_ms": 400,
+      "note": "Bounded settle for the seek to reach the core."
     },
     {
       "kind": "click",
@@ -30,18 +58,44 @@
       "note": "The first non-current row - index 0 is current, so playerSeriesItem is rows 1 and 2 and the click lands on episode 2. The rows carry the label as their accessible name, so this is the row a viewer reads as 'Episode 2'."
     },
     {
+      "kind": "wait_for",
+      "name": "widget_hidden",
+      "target": "playerSeriesDrawer",
+      "timeout_ms": 5000,
+      "note": "Picking a row means \"this one, now\", so the drawer closes itself (PlayerDialog::goToEpisode with closeList). A click the drawer dropped leaves it open and fails here with that reason rather than passing on a stale frame."
+    },
+    {
       "kind": "sleep_ms",
       "timeout_ms": 500,
-      "note": "Bounded settle for the episode to apply; the assertions below carry the scenario."
+      "note": "Bounded settle for the reopened source to report its position; the assertions below carry the scenario."
     }
   ],
   "assertions": [
     {
+      "kind": "widget_property",
+      "target": "playerEpisodeLabel",
+      "property": "text",
+      "comparison": "equals",
+      "expected": "Episode 2",
+      "note": "The footer names the episode the host applied. The seeded playlist labels are Episode 1/2/3 and row index 1 is the one clicked, so a host that reseated episode 1 or ignored the pick leaves the wrong label here."
+    },
+    {
+      "kind": "mpv_property",
+      "property": "time-pos",
+      "mpv_kind": "number",
+      "comparison": "less_than",
+      "expected": 2.0,
+      "note": "A picked episode starts at its beginning (openStream with resume=false), so the 7.2 s park must not survive. A host that reseated the same stream keeps playing from 7.2 s and fails here."
+    },
+    {
       "kind": "signal_emitted",
+      "property": "sourceEpochChanged",
+      "note": "PlayerDialog::applyEpisode reopens the stream with resume=false and VideoSurface::startPendingUrl announces the new source epoch. Without this emission the host kept the old stream open and only repainted the chrome."
+    },
+    {
+      "kind": "signal_not_emitted",
       "property": "fullscreenChanged",
-      "comparison": "not_equals",
-      "expected": 0,
-      "note": "Placeholder guard: picking an episode must not touch window mode. The real episode assertions follow once the time-pos contract is confirmed green."
+      "note": "Picking an episode must not touch window mode; a shell whose pick path re-entered its window state machine fails here."
     }
   ]
 }
