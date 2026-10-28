@@ -28,6 +28,7 @@
 #include <QtCore/QVector>
 #include <native/prepare/NativeFrameFixture.hpp>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QUrl>
@@ -343,7 +344,15 @@ void MainWindow::chooseMediaUrl() {
 }
 
 bool MainWindow::openMedia(const QString& source) {
-    const QUrl url = QUrl::fromUserInput(source, {}, QUrl::AssumeLocalFile);
+    // add-by-URL treats bare input as web input, which is what a typed
+    // "example.com/x.m3u8" needs. A relative path is not web input: the first
+    // segment would become a host ("http://videos/clip.mp4"), so an existing
+    // path wins over that interpretation.
+    const QUrl typed = QUrl::fromUserInput(source, {}, QUrl::AssumeLocalFile);
+    const bool pathExistsOffline = !typed.isLocalFile() && !source.contains(QLatin1String("://")) &&
+                                   QFileInfo::exists(source);
+    const QUrl url = pathExistsOffline ? QUrl::fromLocalFile(QFileInfo(source).absoluteFilePath())
+                                       : typed;
     const QString media = url.isLocalFile() ? url.toLocalFile() : url.toString(QUrl::FullyEncoded);
     QString caption = url.fileName();
     if (caption.isEmpty()) {

@@ -61,8 +61,8 @@ QVector<std::pair<QString, QStringList>> originalChains() {
                                              "AutoDownscalePre_x2", "AutoDownscalePre_x4",
                                              "Upscale_CNN_x2_M"})},
       {QStringLiteral("hq_aa"), shaderFiles({"Clamp_Highlights", "Restore_CNN_VL",
-                                              "Upscale_CNN_x2_VL", "Restore_CNN_M",
-                                              "AutoDownscalePre_x2", "AutoDownscalePre_x4",
+                                              "Upscale_CNN_x2_VL", "AutoDownscalePre_x2",
+                                              "AutoDownscalePre_x4", "Restore_CNN_M",
                                               "Upscale_CNN_x2_M"})},
       {QStringLiteral("hq_bb"), shaderFiles({"Clamp_Highlights", "Restore_CNN_Soft_VL",
                                               "Upscale_CNN_x2_VL", "AutoDownscalePre_x2",
@@ -141,6 +141,35 @@ void TestAnime4K::originalPresetChainsPreserveHistoricalOrder() {
   for (const auto& [id, files] : expected) {
     Q_UNUSED(files);
     QCOMPARE(modeId(modeForId(id)), id);
+  }
+}
+
+void TestAnime4K::autoDownscalePreSitsBetweenTheUpscaleStages() {
+  // Upstream: AutoDownscalePre "should be placed between two Upscale shaders"
+  // (x4) or right after the first upscale (x2). Placed after a Restore stage it
+  // makes that CNN run on the 2x image and then throws the result away by
+  // downscaling it again, which is what made A+A read as soft.
+  const QString shadersDir = findShadersDir();
+  QVERIFY2(!shadersDir.isEmpty(), "the Anime4K shader directory must be available");
+  for (const auto& [id, files] : originalChains()) {
+    int firstUpscale = -1;
+    int lastUpscale = -1;
+    QVector<int> downscalePre;
+    for (int index = 0; index < files.size(); ++index) {
+      if (files.at(index).contains(QLatin1String("AutoDownscalePre"))) {
+        downscalePre.append(index);
+      } else if (files.at(index).contains(QLatin1String("Upscale"))) {
+        if (firstUpscale < 0) firstUpscale = index;
+        lastUpscale = index;
+      }
+    }
+    if (downscalePre.isEmpty()) continue;
+    for (const int index : downscalePre) {
+      QVERIFY2(index > firstUpscale && index < lastUpscale,
+               qPrintable(QStringLiteral("%1 places AutoDownscalePre outside the upscale "
+                                         "stages: %2")
+                              .arg(id, files.join(QLatin1Char(',')))));
+    }
   }
 }
 

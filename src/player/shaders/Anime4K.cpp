@@ -94,12 +94,16 @@ QVector<ModeInfo> catalogue() {
          QCoreApplication::translate("Anime4K", "A+A (Maximum)"),
          QCoreApplication::translate("Anime4K", "Double restoration for blurry video"),
          QStringLiteral("anime4k/maximum"),
+         // AutoDownscalePre benchmarks belong between the two upscaling steps
+         // (upstream: "placed between two Upscale shaders"). Placing them after
+         // the second Restore ran that CNN on the 2x image and then threw the
+         // result away by downscaling, which is what made A+A look soft.
          {QStringLiteral("Anime4K_Clamp_Highlights.glsl"),
           QStringLiteral("Anime4K_Restore_CNN_VL.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_VL.glsl"),
-          QStringLiteral("Anime4K_Restore_CNN_M.glsl"),
           QStringLiteral("Anime4K_AutoDownscalePre_x2.glsl"),
           QStringLiteral("Anime4K_AutoDownscalePre_x4.glsl"),
+          QStringLiteral("Anime4K_Restore_CNN_M.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_M.glsl")}},
         {Mode::HqBB, QStringLiteral("hq_bb"),
          QCoreApplication::translate("Anime4K", "B+B (Maximum)"),

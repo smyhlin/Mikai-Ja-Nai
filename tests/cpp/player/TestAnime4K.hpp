@@ -7,6 +7,7 @@ class TestAnime4K : public QObject {
 
  private slots:
   void originalPresetChainsPreserveHistoricalOrder();
+  void autoDownscalePreSitsBetweenTheUpscaleStages();
   void experimentalPresetsHaveExactCompleteChains();
   void presetIdsRemainUniqueAndRestorableAfterMenuReordering();
   void menuCategoriesExposeTheirPresetMembership();

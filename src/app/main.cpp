@@ -22,6 +22,7 @@
 #include <QMessageBox>
 #include <QPointer>
 #include <QSettings>
+#include <QSurfaceFormat>
 #include <QStringList>
 #include <QTimer>
 #include <QUrl>
@@ -117,15 +118,16 @@ LaunchRequest parseLaunchRequest(const QStringList& arguments) {
                 "CommandLine", "The video file path cannot be empty.");
             return request;
         }
-        // Only a local path is made absolute. A stream URL is not a file, and
-        // absolutising it turned "http://host/x.m3u8" into a local path that
-        // mpv then failed to open.
-        const QUrl url = QUrl::fromUserInput(path, {}, QUrl::AssumeLocalFile);
-        if (url.isLocalFile()) {
-            // mpv checks readability asynchronously; a UNC stat could block startup.
-            request.video = QFileInfo(url.toLocalFile()).absoluteFilePath();
+        // A stream URL is passed through; anything else is a local path and is
+        // made absolute. QUrl::fromUserInput is not usable here: it reads the
+        // first segment of "tests/fixtures/clip.mp4" as a host and turns a
+        // relative path into "http://tests/...". A written scheme is the only
+        // thing that distinguishes the two on a command line.
+        if (path.contains(QLatin1String("://"))) {
+            request.video = QUrl(path).toString(QUrl::FullyEncoded);
         } else {
-            request.video = url.toString(QUrl::FullyEncoded);
+            // mpv checks readability asynchronously; a UNC stat could block startup.
+            request.video = QFileInfo(path).absoluteFilePath();
         }
     }
     return request;
@@ -211,6 +213,19 @@ int main(int argc, char** argv) {
     mikai::app::installCrashLog();
     const QStringList arguments = launchArguments(argc, argv);
     QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
+    // AA_UseDesktopOpenGL alone does not decide the EGL/GLX context the video
+    // widget gets: on a Wayland session Qt still asked EGL for an OpenGL ES
+    // context, and mpv then ran its render API on GLES 3.2. Anime4K's chains are
+    // desktop GLSL and corrupt colour there (an hq_* chain pulled the red
+    // channel from 121 to 51 mean on a test frame) while the same chain is exact
+    // on desktop GL. Ask for the desktop context explicitly.
+    {
+        QSurfaceFormat format = QSurfaceFormat::defaultFormat();
+        format.setRenderableType(QSurfaceFormat::OpenGL);
+        format.setProfile(QSurfaceFormat::CoreProfile);
+        format.setVersion(3, 3);
+        QSurfaceFormat::setDefaultFormat(format);
+    }
     // Application file arguments belong to our parser, not QApplication. In
     // particular, a video named "-platform" must never select a Qt plugin.
     // Normal launch and the autorun command supply no application arguments.
