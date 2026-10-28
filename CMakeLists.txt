@@ -296,6 +296,7 @@ target_include_directories(mikai_player PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src/player/shaders
   ${CMAKE_CURRENT_SOURCE_DIR}/src/player/shell
   ${CMAKE_CURRENT_SOURCE_DIR}/src/player/compare
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${MIKAI_MPV_HEADERS}
 )
 

@@ -100,6 +100,11 @@ void ChromePaint::paintOwnBackingStore(QWidget* widget) {
     }
     QPainter painter(widget);
     painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform);
+    // Enable high-DPI scaling for crisp rendering
+    if (widget->windowHandle()) {
+        painter.setWorldTransform(painter.worldTransform() * widget->windowHandle()->devicePixelRatio());
+    }
     paintChrome(painter);
 }
 
@@ -336,7 +341,8 @@ void IconButton::paintChrome(QPainter& painter) {
     }
     QColor color = hasTint_ ? tint_ : w90();
     if (!isEnabled()) color.setAlpha(color.alpha() / 3);
-    const qreal off = (width() - glyph_) / 2.0;
+    // Integer positioning for crisp rendering - align to pixel grid
+    const int off = (width() - glyph_) / 2;
     if (icon_) {
         icon_(painter, off, off, glyph_, color);
     }

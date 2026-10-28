@@ -1,6 +1,6 @@
 #pragma once
 
-#include "theme/Appearance.hpp"
+#include "../theme/Appearance.hpp"
 
 #include <QObject>
 

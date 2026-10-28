@@ -25,6 +25,7 @@
 #include <QString>
 #include <QVector>
 #include <QWidget>
+#include <QWindow>
 
 #include "ShellTheme.hpp"
 

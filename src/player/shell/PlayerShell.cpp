@@ -28,6 +28,8 @@
 #include "native/components/AnimeJanaiCatalogWatcher.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
 
+using namespace mikai::app;
+
 namespace mplayer {
 namespace shell {
 
@@ -494,7 +496,8 @@ void PlayerShell::buildSurface() {
 }
 
 void PlayerShell::buildWindowControls() {
-    windowControls_ = new Panel(blackSoft(), 8.0, w15(), this);
+    const int radius = currentAppearance().radiusStep;
+    windowControls_ = new Panel(blackSoft(), radius, w15(), this);
     auto* lay = new QHBoxLayout(windowControls_);
     lay->setContentsMargins(4, 4, 4, 4);
     lay->setSpacing(2);
@@ -513,10 +516,11 @@ void PlayerShell::buildWindowControls() {
 }
 
 void PlayerShell::buildTitleBar() {
+    const int radius = currentAppearance().radiusStep;
     // A frameless window has no OS title bar, so a windowed player had no
     // way to be moved: every pixel belonged either to the picture or to a
     // control. This is the grab handle that a decorated window would give.
-    titleBar_ = new Panel(blackSoft(), 0.0, w15(), this);
+    titleBar_ = new Panel(blackSoft(), radius, w15(), this);
     titleBar_->setObjectName(QStringLiteral("playerTitleBar"));
     titleBar_->setCursor(Qt::OpenHandCursor);
     auto* lay = new QHBoxLayout(titleBar_);
@@ -556,7 +560,8 @@ void PlayerShell::buildChevrons() {
 }
 
 void PlayerShell::buildDock() {
-    dock_ = new Panel(dock(), 16.0, w15(), this);
+    const int radius = currentAppearance().radiusStep;
+    dock_ = new Panel(dock(), radius + 4.0, w15(), this);
     auto* dockLayout = new QVBoxLayout(dock_);
     dockLayout->setContentsMargins(16, 8, 16, 8);
     dockLayout->setSpacing(3);
@@ -727,7 +732,8 @@ void PlayerShell::buildDock() {
 }
 
 void PlayerShell::buildFooter() {
-    footerLeft_ = new Panel(pill(), 16.0, w15(), this);
+    const int radius = currentAppearance().radiusStep;
+    footerLeft_ = new Panel(pill(), radius + 4.0, w15(), this);
     footerLeft_->setObjectName(QStringLiteral("playerInfoChip"));
     auto* info = new QHBoxLayout(footerLeft_);
     info->setContentsMargins(12, 5, 12, 5);
