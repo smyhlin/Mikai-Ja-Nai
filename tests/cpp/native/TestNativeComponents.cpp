@@ -628,10 +628,13 @@ void TestNativeComponents::selectionUsesTheExactPack() {
     };
     const Generation generations[] = {{12, 0, "trt-sm120"}, {7, 5, "trt-sm75"}, {8, 6, "trt-sm86"},
                                      {9, 0, "trt-sm90"},  {10, 0, "trt-sm100"}};
+    // The 3.7.0 packs ship a fully versioned builder resource per generation:
+    // animejanai/inference/libnvinfer_builder_resource_sm120.so.11.3.0 (the
+    // Windows DLL keeps the short "_11" name).
 #ifdef Q_OS_WIN
     const QString pattern = QStringLiteral("nvinfer_builder_resource_sm%1%2_11.dll");
 #else
-    const QString pattern = QStringLiteral("libnvinfer_builder_resource_sm%1%2_11.so");
+    const QString pattern = QStringLiteral("libnvinfer_builder_resource_sm%1%2.so.11.3.0");
 #endif
     for (const Generation& generation : generations) {
         const ComponentPack* selected =
@@ -656,7 +659,7 @@ void TestNativeComponents::selectionFallsBackToPtxWhenTheReleasePublishesNoPack(
 #ifdef Q_OS_WIN
     const QString expectedPtx = QStringLiteral("nvinfer_builder_resource_ptx_11.dll");
 #else
-    const QString expectedPtx = QStringLiteral("libnvinfer_builder_resource_ptx_11.so");
+    const QString expectedPtx = QStringLiteral("libnvinfer_builder_resource_ptx.so.11.3.0");
 #endif
     for (const Shape& shape : shapes) {
         const ComponentPack* selected = tensorRtResourcePackFor(shape.smMajor, shape.smMinor);

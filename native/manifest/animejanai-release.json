@@ -190,7 +190,7 @@
     "sdkBinDirectory": "F:/ZKS/mikai-native-sdks/tensorrt-11.3.0.99/TensorRT-11.3.0.99/bin/",
     "builderResourceSizes": "Historical 3.6.3 packs.json installed_bytes were measured against every matching nvinfer_builder_resource_*_11.dll in the project SDK bin directory: sm75 118526064; sm80 190690928; sm86 180006512; sm89 189048432; sm90 461991536; sm100 290767472; sm120 269391472; ptx 242572912. The 3.7.0 packs.json reports the same installed_bytes mapping; 3.7.0 archives were not extracted, so this does not establish their extracted-file bytes.",
     "sm120ByteIdentity": {
-      "path": "trt/nvinfer_builder_resource_sm120_11.dll",
+      "path": "animejanai/inference/libnvinfer_builder_resource_sm120.so.11.3.0",
       "sha256": "7b616872410c519caa7ebfcf2197a748cb5d0b21d9163704e7ca2ae8828ed677",
       "statement": "Historical observation before the 3.7.0 catalogue update: the installed bundle's trt/nvinfer_builder_resource_sm120_11.dll was byte-identical to the project SDK's copy. This does not establish identity with the 3.7.0 archive, which was not extracted."
     },
@@ -292,66 +292,68 @@
         "name": "trt-runtime",
         "resourceFile": null,
         "files": [
+          "CUDA_LICENSE.txt",
           "libcudart.so.13",
           "libnvinfer.so.11",
           "libnvinfer_plugin.so.11",
-          "libnvonnxparser.so.11"
+          "libnvonnxparser.so.11",
+          "trtexec"
         ]
       },
       {
         "name": "trt-sm75",
-        "resourceFile": "libnvinfer_builder_resource_sm75_11.so",
+        "resourceFile": "libnvinfer_builder_resource_sm75.so.11.3.0",
         "files": [
-          "libnvinfer_builder_resource_sm75_11.so"
+          "libnvinfer_builder_resource_sm75.so.11.3.0"
         ]
       },
       {
         "name": "trt-sm80",
-        "resourceFile": "libnvinfer_builder_resource_sm80_11.so",
+        "resourceFile": "libnvinfer_builder_resource_sm80.so.11.3.0",
         "files": [
-          "libnvinfer_builder_resource_sm80_11.so"
+          "libnvinfer_builder_resource_sm80.so.11.3.0"
         ]
       },
       {
         "name": "trt-sm86",
-        "resourceFile": "libnvinfer_builder_resource_sm86_11.so",
+        "resourceFile": "libnvinfer_builder_resource_sm86.so.11.3.0",
         "files": [
-          "libnvinfer_builder_resource_sm86_11.so"
+          "libnvinfer_builder_resource_sm86.so.11.3.0"
         ]
       },
       {
         "name": "trt-sm89",
-        "resourceFile": "libnvinfer_builder_resource_sm89_11.so",
+        "resourceFile": "libnvinfer_builder_resource_sm89.so.11.3.0",
         "files": [
-          "libnvinfer_builder_resource_sm89_11.so"
+          "libnvinfer_builder_resource_sm89.so.11.3.0"
         ]
       },
       {
         "name": "trt-sm90",
-        "resourceFile": "libnvinfer_builder_resource_sm90_11.so",
+        "resourceFile": "libnvinfer_builder_resource_sm90.so.11.3.0",
         "files": [
-          "libnvinfer_builder_resource_sm90_11.so"
+          "libnvinfer_builder_resource_sm90.so.11.3.0"
         ]
       },
       {
         "name": "trt-sm100",
-        "resourceFile": "libnvinfer_builder_resource_sm100_11.so",
+        "resourceFile": "libnvinfer_builder_resource_sm100.so.11.3.0",
         "files": [
-          "libnvinfer_builder_resource_sm100_11.so"
+          "libnvinfer_builder_resource_sm100.so.11.3.0"
         ]
       },
       {
         "name": "trt-sm120",
-        "resourceFile": "libnvinfer_builder_resource_sm120_11.so",
+        "resourceFile": "libnvinfer_builder_resource_sm120.so.11.3.0",
         "files": [
-          "libnvinfer_builder_resource_sm120_11.so"
+          "libnvinfer_builder_resource_sm120.so.11.3.0"
         ]
       },
       {
         "name": "trt-ptx",
-        "resourceFile": "libnvinfer_builder_resource_ptx_11.so",
+        "resourceFile": "libnvinfer_builder_resource_ptx.so.11.3.0",
         "files": [
-          "libnvinfer_builder_resource_ptx_11.so"
+          "libnvinfer_builder_resource_ptx.so.11.3.0"
         ]
       }
     ]

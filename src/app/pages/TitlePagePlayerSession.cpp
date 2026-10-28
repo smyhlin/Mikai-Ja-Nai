@@ -243,6 +243,9 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
     bindNativePlaybackAssembly(runner_, *session->dialog);
     session->dialog->setPlaylist(session->playlist, currentIndex);
     session->dialog->setVariants(episodeVariants(entry->number), entry->embedUrl);
+    // The episode the player opens first is not applied through applyEpisode, so
+    // its resume point is handed over before startPlayer().
+    session->dialog->setEpisodeResumePoint(watchHistory_.offset(ref_, entry->number));
     session->dialog->show();
     session->dialog->startPlayer();
 }

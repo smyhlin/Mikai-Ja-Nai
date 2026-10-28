@@ -867,6 +867,8 @@ void PlayerDialog::onEngineVideoSize(int width, int height) {
 }
 
 bool PlayerDialog::openStream(const QString& url, int height, bool resume) {
+    // A seek armed for the stream being replaced belongs to that stream.
+    episodeSeekPending_ = 0.0;
     if (closed_ || url.isEmpty()) {
         return false;
     }
@@ -1220,8 +1222,10 @@ void PlayerDialog::applyEpisode(const QString& label,
                                 const QList<QualityEntry>& qualities,
                                 const QVector<QVariantMap>& variants) {
     // Consume the stored offset even when this episode is refused below: a
-    // value left behind would resume the NEXT episode at the wrong place.
-    episodeSeekPending_ = episodeResumeSeconds_;
+    // value left behind would resume the NEXT episode at the wrong place. It is
+    // armed only once the new stream actually loaded, so a duration reported by
+    // the outgoing file cannot swallow the seek.
+    const double resumeSeconds = episodeResumeSeconds_;
     episodeResumeSeconds_ = 0.0;
     if (closed_ || directMedia_ || qualities.isEmpty()) {
         return;
@@ -1798,6 +1802,14 @@ void PlayerDialog::startPlayer() {
         // No mpv core: the host has to provision the runtime before this can
         // work, and calling startPlayer() again is what retries it.
         ensureOpenFailureVisible();
+        return;
+    }
+    // The first episode of a session is opened here, not through applyEpisode,
+    // so its stored offset has to be armed here as well. openStream() cleared
+    // any pending seek when it started this load.
+    if (episodeResumeSeconds_ > 0.0) {
+        episodeSeekPending_ = episodeResumeSeconds_;
+        episodeResumeSeconds_ = 0.0;
     }
 }
 
