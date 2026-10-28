@@ -1219,6 +1219,10 @@ void PlayerDialog::applyEpisode(const QString& label,
                                 int index,
                                 const QList<QualityEntry>& qualities,
                                 const QVector<QVariantMap>& variants) {
+    // Consume the stored offset even when this episode is refused below: a
+    // value left behind would resume the NEXT episode at the wrong place.
+    episodeSeekPending_ = episodeResumeSeconds_;
+    episodeResumeSeconds_ = 0.0;
     if (closed_ || directMedia_ || qualities.isEmpty()) {
         return;
     }
@@ -1250,10 +1254,7 @@ void PlayerDialog::applyEpisode(const QString& label,
                 ensureOpenFailureVisible();
                 return;
             }
-            // A half-watched episode continues where it stopped. The seek waits
-            // for the duration, which only the core can report.
-            episodeSeekPending_ = episodeResumeSeconds_;
-            episodeResumeSeconds_ = 0.0;
+
             flashStatus(tr("Episode: %1").arg(label));
             return;
         }
