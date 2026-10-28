@@ -3,6 +3,7 @@
 #include "native/bundle/NativeDiagnostics.hpp"
 
 #include <QtCore/QByteArray>
+#include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QFile>
@@ -392,6 +393,65 @@ QString nativeSubdirectory(const QString& name, QString* reason) {
 QString nativeToolsDirectory() {
     const QString root = nativeRoot();
     return root.isEmpty() ? QString{} : QDir(root).filePath(QStringLiteral("tools/7zip-26.03"));
+}
+
+QStringList pruneNativeStore(const QString& rootOverride) {
+    const QString root = rootOverride.isEmpty() ? nativeRoot() : QDir::cleanPath(rootOverride);
+    if (root.isEmpty() || !QFileInfo(root).isDir()) return {};
+    // A writer holds a stage for the length of one archive extraction and a
+    // partial for one file copy; an hour is far past either, and a backup is
+    // only kept until its replacement finished, which is seconds. Anything
+    // younger than its own window may belong to another window of this app, so
+    // it is left alone rather than raced.
+    constexpr qint64 kScratchSeconds = 24 * 60 * 60;
+    constexpr qint64 kStageSeconds = 60 * 60;
+    constexpr qint64 kBackupSeconds = 24 * 60 * 60;
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    QStringList removed;
+
+    const auto olderThan = [&](const QFileInfo& info, qint64 seconds) {
+        return info.lastModified().isValid() && info.lastModified().toUTC().secsTo(now) > seconds;
+    };
+    const auto drop = [&](const QString& path) {
+        const QFileInfo info(path);
+        const bool ok = info.isDir() ? QDir(path).removeRecursively() : QFile::remove(path);
+        if (ok) removed.append(path);
+    };
+
+    const QString scratch = QDir(root).filePath(QStringLiteral("scratch"));
+    if (QFileInfo(scratch).isDir()) {
+        const QFileInfoList entries = QDir(scratch).entryInfoList(
+            QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
+        for (const QFileInfo& entry : entries) {
+            if (entry.isSymLink()) continue;
+            if (olderThan(entry, kScratchSeconds)) drop(entry.absoluteFilePath());
+        }
+    }
+
+    // Staging trees and interrupted copies live inside the component tree, at a
+    // depth the installer writes them at: components/<kind>/<version>/.
+    const QString components = QDir(root).filePath(QStringLiteral("components"));
+    if (QFileInfo(components).isDir()) {
+        for (const QFileInfo& kind : QDir(components).entryInfoList(
+                 QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden)) {
+            for (const QFileInfo& release : QDir(kind.absoluteFilePath()).entryInfoList(
+                     QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden)) {
+                for (const QFileInfo& entry : QDir(release.absoluteFilePath()).entryInfoList(
+                         QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden)) {
+                    if (entry.isSymLink()) continue;
+                    const QString name = entry.fileName();
+                    if (name.startsWith(QStringLiteral("aji-stage-"))) {
+                        if (olderThan(entry, kStageSeconds)) drop(entry.absoluteFilePath());
+                    } else if (name.endsWith(QStringLiteral(".partial"))) {
+                        if (olderThan(entry, kStageSeconds)) drop(entry.absoluteFilePath());
+                    } else if (name.endsWith(QStringLiteral(".previous"))) {
+                        if (olderThan(entry, kBackupSeconds)) drop(entry.absoluteFilePath());
+                    }
+                }
+            }
+        }
+    }
+    return removed;
 }
 
 qint64 metadataChangeTimeMs(const QString& path, const QFileInfo& info) {

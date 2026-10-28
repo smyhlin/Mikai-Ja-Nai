@@ -460,6 +460,40 @@ endif()
 
 qt_add_executable(mikai src/app/main.cpp)
 target_link_libraries(mikai PRIVATE mikai_app)
+
+# Every build has to be tellable apart from the last one, or "the update did not
+# apply" cannot be answered. The revision is the build's identity: the tag 0.1.0
+# names the release, not the commit inside it.
+# A cross build runs where the checkout may not be readable (a container with a
+# different owner, or no git at all), so the revision is a cache variable the
+# packaging command can state instead of one only the configure host can find.
+set(MIKAI_BUILD_REVISION "" CACHE STRING "Git revision to stamp into the build")
+if(NOT MIKAI_BUILD_REVISION)
+  execute_process(
+    COMMAND git -C "${CMAKE_CURRENT_SOURCE_DIR}" rev-parse --short HEAD
+    OUTPUT_VARIABLE MIKAI_BUILD_REVISION
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+endif()
+if(NOT MIKAI_BUILD_REVISION)
+  set(MIKAI_BUILD_REVISION "unknown")
+endif()
+execute_process(
+  COMMAND git -C "${CMAKE_CURRENT_SOURCE_DIR}" status --porcelain --untracked-files=no
+  OUTPUT_VARIABLE MIKAI_BUILD_DIRTY
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET)
+if(MIKAI_BUILD_DIRTY)
+  string(APPEND MIKAI_BUILD_REVISION "-dirty")
+endif()
+string(TIMESTAMP MIKAI_BUILD_STAMP "%Y-%m-%dT%H:%M:%SZ" UTC)
+target_compile_definitions(mikai PRIVATE
+  MIKAI_PROJECT_VERSION="${PROJECT_VERSION}"
+  MIKAI_BUILD_REVISION="${MIKAI_BUILD_REVISION}"
+  MIKAI_BUILD_STAMP="${MIKAI_BUILD_STAMP}")
+target_compile_definitions(mikai_app PUBLIC
+  MIKAI_PROJECT_VERSION="${PROJECT_VERSION}"
+  MIKAI_BUILD_REVISION="${MIKAI_BUILD_REVISION}")
 qt_add_resources(mikai "mikai_brand"
   PREFIX "/app"
   BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/app"

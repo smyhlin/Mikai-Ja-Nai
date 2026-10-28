@@ -28,6 +28,10 @@ class TestNativeBundle : public QObject {
   void anAbsoluteOrBackslashedPathIsRefused();
   void theManifestMayNotListItself();
   void aModuleOutsideTheInventoryIsRefused();
+  // Abandoned staging is cleared; anything a live install could own, and
+  // anything the viewer installed, is left alone.
+  void pruningRemovesAbandonedStagingAndKeepsInstalledState();
+  void pruningKeepsAStageYoungEnoughToBelongToALiveInstall();
   void aTruncatedModuleIsRefusedBySize();
   void aTamperedModuleIsRefusedByDigest();
   void anUndeclaredFileInTheRootIsRefused();

@@ -670,6 +670,86 @@ void TestNativeBundle::theManifestMayNotListItself() {
     QVERIFY(reason.contains(QStringLiteral("bundle.json")));
 }
 
+namespace {
+
+/// Seeds `path` with one file and stamps it, so the age the prune reads is the
+/// age the test states rather than the moment the fixture was written.
+void stamp(const QString& path, int daysOld) {
+    QFile file(path);
+    if (file.open(QIODevice::ReadWrite)) {
+        file.setFileTime(QDateTime::currentDateTimeUtc().addDays(-daysOld),
+                         QFileDevice::FileModificationTime);
+    }
+}
+
+QString seedEntry(const QString& path, int daysOld) {
+    if (QFileInfo(path).isDir()) {
+        const QString inner = path + QStringLiteral("/inner.bin");
+        QDir().mkpath(path);
+        QFile file(inner);
+        file.open(QIODevice::WriteOnly);
+        file.write("x");
+        file.close();
+        stamp(inner, daysOld);
+        stamp(path, daysOld);
+        return path;
+    }
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QFile file(path);
+    file.open(QIODevice::WriteOnly);
+    file.write("stale");
+    file.close();
+    stamp(path, daysOld);
+    return path;
+}
+
+}  // namespace
+
+void TestNativeBundle::pruningRemovesAbandonedStagingAndKeepsInstalledState() {
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+    const QString base = root.path();
+
+    const QString staleScratch = seedEntry(base + QStringLiteral("/scratch/dl.7z"), 3);
+    const QString staleStage =
+        seedEntry(base + QStringLiteral("/components/aji/v0.17.1/aji-stage-abc123"), 3);
+    const QString stalePartial =
+        seedEntry(base + QStringLiteral("/components/tensorrt/3.7.0/libnvinfer.so.11.partial"), 3);
+    // publishStage() keeps the runtime it replaces as `<target>.previous`, inside
+    // the release directory, which is where a killed publish leaves one.
+    const QString staleBackup =
+        seedEntry(base + QStringLiteral("/components/aji/v0.17.1/trt.previous"), 3);
+    const QString installed = seedEntry(base + QStringLiteral("/components/tensorrt/3.7.0/trtexec"), 3);
+    const QString model =
+        seedEntry(base + QStringLiteral("/animejanai/models/spatial/graph.onnx"), 3);
+
+    const QStringList removed = mplayer::native::pruneNativeStore(base);
+
+    QCOMPARE(removed.size(), 4);
+    QVERIFY(!QFileInfo::exists(staleScratch));
+    QVERIFY(!QFileInfo::exists(staleStage));
+    QVERIFY(!QFileInfo::exists(stalePartial));
+    QVERIFY(!QFileInfo::exists(staleBackup));
+    QVERIFY2(QFileInfo::exists(installed), "an installed component file was removed");
+    QVERIFY2(QFileInfo::exists(model), "a model the viewer installed was removed");
+}
+
+void TestNativeBundle::pruningKeepsAStageYoungEnoughToBelongToALiveInstall() {
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+    const QString base = root.path();
+    const QString freshStage =
+        seedEntry(base + QStringLiteral("/components/aji/v0.17.1/aji-stage-live"), 0);
+    const QString freshPartial =
+        seedEntry(base + QStringLiteral("/components/tensorrt/3.7.0/copied.partial"), 0);
+
+    const QStringList removed = mplayer::native::pruneNativeStore(base);
+
+    QVERIFY(removed.isEmpty());
+    QVERIFY2(QFileInfo::exists(freshStage), "a stage another window may own was removed");
+    QVERIFY2(QFileInfo::exists(freshPartial), "an in-flight copy was removed");
+}
+
 void TestNativeBundle::aModuleOutsideTheInventoryIsRefused() {
     QTemporaryDir temp;
     Fixture fixture = standardFixture();

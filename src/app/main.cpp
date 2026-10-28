@@ -12,6 +12,7 @@
 #include <MpvHandle.hpp>
 
 #include <backend/MikaiClient.hpp>
+#include <native/bundle/NativePaths.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
 
 #include <QApplication>
@@ -26,6 +27,8 @@
 #include <QStringList>
 #include <QTimer>
 #include <QUrl>
+
+#include <cstdio>
 
 #ifdef Q_OS_WIN
 #include <QtCore/qt_windows.h>
@@ -208,6 +211,19 @@ void startRuntimeResolution(mikai::app::Runner& runner, mikai::app::MainWindow* 
 }  // namespace
 
 int main(int argc, char** argv) {
+    // A build that cannot name itself cannot be told apart from the one it
+    // replaced. Printed before a QApplication exists, so it works over ssh and
+    // answers "did my update apply" without a session.
+    for (int index = 1; index < argc; ++index) {
+        const char* argument = argv[index];
+        if (argument == nullptr) continue;
+        const QByteArray flag(argument);
+        if (flag == "--version" || flag == "-V") {
+            std::printf("mikai %s (%s, built %s)\n", MIKAI_PROJECT_VERSION,
+                        MIKAI_BUILD_REVISION, MIKAI_BUILD_STAMP);
+            return 0;
+        }
+    }
     // Before anything else, so a failure during startup still leaves a trace.
     // The log and any crash report land in the folder this exe runs from.
     mikai::app::installCrashLog();
@@ -238,7 +254,17 @@ int main(int argc, char** argv) {
     }
     app.setApplicationName(QStringLiteral("Mikai Wrapper"));
     app.setApplicationDisplayName(QStringLiteral("Mikai"));
-    app.setApplicationVersion(QStringLiteral("0.1.0"));
+    app.setApplicationVersion(QStringLiteral("%1 (%2)").arg(QStringLiteral(MIKAI_PROJECT_VERSION),
+                                                            QStringLiteral(MIKAI_BUILD_REVISION)));
+    qInfo("mikai: build %s (%s, %s)", MIKAI_PROJECT_VERSION, MIKAI_BUILD_REVISION,
+          MIKAI_BUILD_STAMP);
+    // Work a killed install or download left behind is the state a manual
+    // "delete the native folder" used to clear. Clearing it here instead means an
+    // update never asks for that. It touches only app-owned scratch and staging,
+    // never an installed component, a model or a setting.
+    if (const QStringList pruned = mplayer::native::pruneNativeStore(); !pruned.isEmpty()) {
+        qInfo("mikai: removed %lld abandoned native entries", static_cast<long long>(pruned.size()));
+    }
     app.setOrganizationName(QStringLiteral("Mikai"));
     app.setWindowIcon(QIcon(QStringLiteral(":/app/mikai.png")));
     app.setDesktopFileName(QStringLiteral("mikai"));

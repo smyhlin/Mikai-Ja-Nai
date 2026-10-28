@@ -131,6 +131,17 @@ QStringList nativeSubdirectoryNames();
 QString nativeSubdirectory(const QString& name, QString* reason = nullptr);
 QString nativeToolsDirectory();
 
+/// Deletes the app-owned leftovers a killed install or download leaves behind:
+/// abandoned `scratch/` entries, `aji-stage-*` staging trees, `*.partial` copies
+/// and `*.previous` backups, each only once it is old enough that no live writer
+/// can still own it. Installed components, models and configuration are never
+/// touched - only work that was interrupted mid-flight. Returns what it removed.
+///
+/// This is what makes "delete the store and start over" unnecessary: the state
+/// that a manual `rm -rf` used to clear is state this call already considers
+/// garbage.
+QStringList pruneNativeStore(const QString& rootOverride = QString());
+
 /// The outcome of `readSharedMetadataFile`. `Unreadable` means the file could
 /// not be opened or read; `TooLarge` means it held more than the caller's byte
 /// bound; `Ok` means `bytes` holds the file's snapshot.
