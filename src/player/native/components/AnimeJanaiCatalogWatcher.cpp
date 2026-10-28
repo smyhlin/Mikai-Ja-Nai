@@ -51,11 +51,13 @@ bool trustedAppTarget(const QString& path) {
 
 bool trustedAppAncestor(const QString& path) {
     // Before the app-owned root exists the nearest existing ancestor can sit
-    // above it; anchor that walk at the application directory.
+    // above it; anchor that walk at the root's parent, which is the application
+    // directory for a portable tree and the per-user data directory for a
+    // packaged one.
     if (path.isEmpty() || !nativePathTrust(path, true).trusted) return false;
-    const QString appDir = QCoreApplication::applicationDirPath();
-    if (appDir.isEmpty() || !pathWithinRoot(appDir, path)) return false;
-    return pathHasNoReparsePoints(appDir, path);
+    const QString anchor = QFileInfo(nativeRoot()).absolutePath();
+    if (anchor.isEmpty() || !pathWithinRoot(anchor, path)) return false;
+    return pathHasNoReparsePoints(anchor, path);
 }
 
 bool trustedExternalPath(const QString& path) {

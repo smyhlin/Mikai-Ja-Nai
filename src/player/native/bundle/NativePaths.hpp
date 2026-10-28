@@ -10,8 +10,11 @@
 // owned directory can redirect a resolved path outside it.
 //
 // Storage layout lives here too: `<applicationDirPath>/native` with runtime,
-// models, assets, artifacts, recipes, scratch and logs beneath it. A read never
-// creates one.
+// models, assets, artifacts, recipes, scratch and logs beneath it, or
+// `<AppLocalDataLocation>/native` when the executable's directory cannot be
+// written to - an AppImage mount is a read-only squashfs and a packaged install
+// lives under a root-owned prefix, and neither can hold a per-user store. A read
+// never creates one.
 //
 // `nativePathTrust` is the one representability check every other boundary
 // reuses before it hands a path to the platform: it answers what this path is,
@@ -114,7 +117,9 @@ QStringList ancestorChain(const QString& root, const QString& path);
 /// a reparse point.
 bool pathHasNoReparsePoints(const QString& root, const QString& path);
 
-/// `<applicationDirPath>/native`. Never created by this call.
+/// `<applicationDirPath>/native`, or `<AppLocalDataLocation>/native` when the
+/// executable's directory is not writable (AppImage, packaged prefix). Never
+/// created by this call.
 QString nativeRoot();
 
 /// The app-owned subdirectory names, in the order §9.2 lists them, with the

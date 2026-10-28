@@ -10,6 +10,8 @@
 #include <QtCore/QIODevice>
 #include <QtCore/QReadWriteLock>
 #include <QtCore/QSaveFile>
+#include <QtCore/QStandardPaths>
+#include <QtCore/QTemporaryDir>
 
 #include <algorithm>
 #include <limits>
@@ -335,10 +337,39 @@ bool pathHasNoReparsePoints(const QString& root, const QString& path) {
     return true;
 }
 
-QString nativeRoot() {
+namespace {
+
+/// True when a directory accepts new entries. A permission bit is not enough:
+/// an AppImage mount and a read-only bind mount both report a writable mode and
+/// still refuse every create, so the probe has to try.
+bool directoryAcceptsWrites(const QString& dir) {
+    if (dir.isEmpty() || !QFileInfo(dir).isDir() || !QFileInfo(dir).isWritable()) return false;
+    QTemporaryDir probe(QDir(dir).filePath(QStringLiteral("mikai-write-probe-XXXXXX")));
+    return probe.isValid();
+}
+
+/// The store lives beside the executable for a portable tree and for every
+/// developer build. A packaged tree is read-only: an AppImage is a squashfs
+/// mount (/tmp/.mount_*) and a package installs under /usr, so nothing beside
+/// that executable can be created and the per-user data location takes over.
+QString chooseNativeRoot() {
+    const QString override = qEnvironmentVariable("MIKAI_NATIVE_ROOT").trimmed();
+    if (!override.isEmpty()) return QDir::cleanPath(override);
     const QString exeDir = QCoreApplication::applicationDirPath();
-    if (exeDir.isEmpty()) return {};
-    return QDir(exeDir).filePath(QStringLiteral("native"));
+    if (!exeDir.isEmpty() && directoryAcceptsWrites(exeDir)) {
+        return QDir(exeDir).filePath(QStringLiteral("native"));
+    }
+    const QString dataDir =
+        QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    if (!dataDir.isEmpty()) return QDir(dataDir).filePath(QStringLiteral("native"));
+    return exeDir.isEmpty() ? QString() : QDir(exeDir).filePath(QStringLiteral("native"));
+}
+
+}  // namespace
+
+QString nativeRoot() {
+    static const QString root = chooseNativeRoot();
+    return root;
 }
 
 QStringList nativeSubdirectoryNames() {
