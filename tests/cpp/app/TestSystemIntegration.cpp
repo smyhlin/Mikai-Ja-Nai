@@ -4,6 +4,7 @@
 #include "app/support/SystemStartup.hpp"
 #include "gui/SystemDefaultPlayer.hpp"
 #include "gui/SystemDefaultPlayerLaunch.hpp"
+#include "gui/IdleInhibitor.hpp"
 #include "gui/XdgDesktopIntegration.hpp"
 
 #include <QDir>
@@ -578,4 +579,39 @@ void TestSystemIntegration::defaultPlayerSettingsLaunchFailureRetainsRegistratio
                      QStringLiteral("MikaiRegistrationOwner"), &actual));
   QCOMPARE(actual, QStringLiteral("{7D1829D9-6F44-47BA-B79B-871D57145C86}"));
 #endif
+}
+
+void TestSystemIntegration::idleInhibitorIsHeldUntilTheLastPlaybackOwnerReleases() {
+  // The session must stay awake while any surface plays: the main player and a
+  // floating picture-in-picture window hold the lock independently, and the
+  // first one to pause cannot release what the other still needs.
+  auto& inhibitor = mikai::gui::idleInhibitor();
+  int mainPlayer = 0;
+  int floatingWindow = 0;
+  QVERIFY(!inhibitor.active());
+
+  inhibitor.setActiveFor(&mainPlayer, true);
+  QVERIFY(inhibitor.active());
+
+  inhibitor.setActiveFor(&floatingWindow, true);
+  QVERIFY(inhibitor.active());
+
+  // Repeated announcements do not stack.
+  inhibitor.setActiveFor(&mainPlayer, true);
+  QVERIFY(inhibitor.active());
+
+  inhibitor.setActiveFor(&mainPlayer, false);
+  QVERIFY(inhibitor.active());
+
+  inhibitor.release(&floatingWindow);
+  QVERIFY(!inhibitor.active());
+
+  // Releasing an owner that is not held is a no-op, not an underflow.
+  inhibitor.release(&mainPlayer);
+  QVERIFY(!inhibitor.active());
+
+  inhibitor.setActiveFor(&mainPlayer, true);
+  QVERIFY(inhibitor.active());
+  inhibitor.release(&mainPlayer);
+  QVERIFY(!inhibitor.active());
 }

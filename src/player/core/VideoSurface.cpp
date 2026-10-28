@@ -25,6 +25,8 @@
 #include <cstring>
 #include <vector>
 
+#include "gui/IdleInhibitor.hpp"
+
 #include "MpvApi.hpp"
 #include "MpvHandle.hpp"
 #include "MpvRenderContext.hpp"
@@ -712,6 +714,8 @@ bool VideoSurface::drawEngineFrameHold(unsigned int target, int width, int heigh
 }
 
 VideoSurface::~VideoSurface() {
+    // A closed player must not leave the session inhibited.
+    mikai::gui::idleInhibitor().release(this);
     cancelMediaInformation();
     if (frameTimingLog_.isOpen() && !timingLogBuffer_.isEmpty()) {
         const qint64 written = frameTimingLog_.write(timingLogBuffer_);
@@ -1002,7 +1006,7 @@ void VideoSurface::close() {
     // while the surface still reports a loaded file.
     if (playing_) {
         playing_ = false;
-        emit playingChanged(false);
+        publishPlayingState(false);
     }
     hasVideo_ = false;
     position_ = 0.0;
@@ -1265,7 +1269,7 @@ void VideoSurface::setPlaying(bool playing) {
         return;
     }
     playing_ = playing;
-    emit playingChanged(playing_);
+    publishPlayingState(playing_);
 }
 double VideoSurface::position() const { return position_; }
 
@@ -2297,8 +2301,16 @@ void VideoSurface::publishObservedState() {
         !url_.isEmpty() && !observedIdle_ && !requestedPause() && !enginePauseHeld();
     if (playing != playing_) {
         playing_ = playing;
-        emit playingChanged(playing_);
+        publishPlayingState(playing_);
     }
+}
+
+void VideoSurface::publishPlayingState(bool playing) {
+    // The session must not blank the screen or idle-suspend under a playing
+    // video. Each surface owns one reason, so a paused main player does not
+    // release the lock a picture-in-picture window still needs.
+    mikai::gui::idleInhibitor().setActiveFor(this, playing);
+    emit playingChanged(playing);
 }
 
 void VideoSurface::pumpEvents() {

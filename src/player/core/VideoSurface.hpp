@@ -540,6 +540,8 @@ private:
     /// render context has to give mpv its video back.
     bool startPendingUrl(double resumeAt = 0.0);
     void pumpEvents();
+    // Emits playingChanged and holds/releases the session idle lock for it.
+    void publishPlayingState(bool playing);
     void handleState();
     void updateStreamStats();
     void cancelAnimeJanaiOperation();

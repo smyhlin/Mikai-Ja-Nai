@@ -216,6 +216,7 @@ endif()
 # 3. mikai_player — OpenGL VideoSurface, Shaders, Shell Chrome & Compare UI
 # ---------------------------------------------------------------------------
 set(PLAYER_SOURCES
+  src/gui/IdleInhibitor.cpp
   src/gui/VideoDropTarget.cpp
   src/gui/SystemDefaultPlayer.cpp
   src/gui/SystemDefaultPlayerLaunch.cpp
@@ -254,6 +255,7 @@ set(PLAYER_SOURCES
 )
 
 set(PLAYER_HEADERS
+  src/gui/IdleInhibitor.hpp
   src/gui/VideoDropTarget.hpp
   src/gui/SystemDefaultPlayer.hpp
   src/gui/SystemDefaultPlayerLaunch.hpp
@@ -299,9 +301,17 @@ target_include_directories(mikai_player PUBLIC
 
 if(WIN32)
   set(MIKAI_PLATFORM_GL_LIBS opengl32 gdi32 advapi32 shell32)
+  set(MIKAI_PLATFORM_SESSION_LIBS "")
 else()
   find_package(OpenGL REQUIRED)
   set(MIKAI_PLATFORM_GL_LIBS OpenGL::GL ${CMAKE_DL_LIBS})
+  # The session idle lock goes through logind or the screen saver on D-Bus.
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(Qt6 REQUIRED COMPONENTS DBus)
+    set(MIKAI_PLATFORM_SESSION_LIBS Qt6::DBus)
+  else()
+    set(MIKAI_PLATFORM_SESSION_LIBS "")
+  endif()
 endif()
 
 target_link_libraries(mikai_player PUBLIC
@@ -313,6 +323,7 @@ target_link_libraries(mikai_player PUBLIC
   Qt6::OpenGL
   Qt6::OpenGLWidgets
   ${MIKAI_PLATFORM_GL_LIBS}
+  ${MIKAI_PLATFORM_SESSION_LIBS}
 )
 
 # ---------------------------------------------------------------------------
