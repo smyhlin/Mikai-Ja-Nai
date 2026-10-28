@@ -548,14 +548,17 @@ void PlayerShell::buildTitleBar() {
     lay->addWidget(titleClose_);
 }
 void PlayerShell::buildChevrons() {
+    const int radius = currentAppearance().radiusStep;
     btnPrev_ = new IconButton(IconPainter::chevronLeft, tr("Previous episode  (←)"),
                               42, 18, this, QColor(0, 0, 0, 165));
     btnPrev_->setTint(w70());
+    btnPrev_->setProperty("radius", radius);
     connect(btnPrev_, &QPushButton::clicked, this, &PlayerShell::prevRequested);
 
     btnNext_ = new IconButton(IconPainter::chevronRight, tr("Next episode  (→)"),
                               42, 18, this, QColor(0, 0, 0, 165));
     btnNext_->setTint(w70());
+    btnNext_->setProperty("radius", radius);
     connect(btnNext_, &QPushButton::clicked, this, &PlayerShell::nextRequested);
 }
 
@@ -659,8 +662,9 @@ void PlayerShell::buildDock() {
     auto* timeline = new QHBoxLayout();
     timeline->setContentsMargins(0, 0, 0, 0);
     timeline->setSpacing(8);
-    lblElapsed_ = new ChromeLabel(QStringLiteral("00:00"), monoFont(9), white(230), dock_);
-    lblElapsed_->setFixedWidth(38);
+    lblElapsed_ = new ChromeLabel(QStringLiteral("00:00"), monoFont(9), white(255), dock_);
+    lblElapsed_->setFixedWidth(44);
+    lblElapsed_->setContentsMargins(4, 0, 0, 0);
     timeline->addWidget(lblElapsed_);
 
     scrub_ = new ScrubBar(dock_);
@@ -670,8 +674,9 @@ void PlayerShell::buildDock() {
     connect(scrub_, &RangeSlider::valueChanged, this, &PlayerShell::onScrub);
     timeline->addWidget(scrub_, 1);
 
-    lblRemaining_ = new ChromeLabel(QStringLiteral("-00:00"), monoFont(9), white(140), dock_);
-    lblRemaining_->setFixedWidth(42);
+    lblRemaining_ = new ChromeLabel(QStringLiteral("-00:00"), monoFont(9), white(185), dock_);
+    lblRemaining_->setFixedWidth(48);
+    lblRemaining_->setContentsMargins(0, 0, 4, 0);
     timeline->addWidget(lblRemaining_);
     dockLayout->addLayout(timeline);
 

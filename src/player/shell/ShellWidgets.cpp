@@ -331,12 +331,14 @@ void IconButton::paintChrome(QPainter& painter) {
     // its own rect rather than being clipped by it.
     const QRectF box(0.5, 0.5, width() - 1.0, height() - 1.0);
     const bool lit = hover_ || isChecked();
+    // Support per-button radius override (for chevrons etc)
+    const double radius = property("radius").isValid() ? property("radius").toDouble() : chrome_.radius;
     if (chrome_.fill.style() != Qt::NoBrush) {
-        paintRoundedBrush(painter, box, chrome_.radius, chrome_.fill, chrome_.border,
+        paintRoundedBrush(painter, box, radius, chrome_.fill, chrome_.border,
                           chrome_.borderWidth);
     }
     if (lit && chrome_.hoverFill.style() != Qt::NoBrush) {
-        paintRoundedBrush(painter, box, chrome_.radius, chrome_.hoverFill, chrome_.hoverBorder,
+        paintRoundedBrush(painter, box, radius, chrome_.hoverFill, chrome_.hoverBorder,
                           chrome_.borderWidth);
     }
     QColor color = hasTint_ ? tint_ : w90();
