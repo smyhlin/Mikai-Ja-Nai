@@ -550,6 +550,7 @@ void SettingsDialog::save() {
     applyAppearanceStyles();
     saveAppearance(appearanceDraft_);
     mplayer::shell::setAccent(theme::accentColor(appearanceDraft_));
+    mplayer::shell::setCornerRadius(theme::radiusSmall(appearanceDraft_));
     appearanceCommitted_ = true;
     QSettings settings;
     settings.setValue(QString::fromLatin1(kUiLanguageSettingKey), chosenLanguage);

@@ -22,13 +22,12 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include "EpisodeNavButton.hpp"
 #include "ShellSliders.hpp"
 #include "ShellWidgets.hpp"
 #include "VideoSurface.hpp"
 #include "native/components/AnimeJanaiCatalogWatcher.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
-
-using namespace mikai::app;
 
 namespace mplayer {
 namespace shell {
@@ -496,7 +495,7 @@ void PlayerShell::buildSurface() {
 }
 
 void PlayerShell::buildWindowControls() {
-    const int radius = currentAppearance().radiusStep;
+    const int radius = static_cast<int>(cornerRadius());
     windowControls_ = new Panel(blackSoft(), radius, w15(), this);
     auto* lay = new QHBoxLayout(windowControls_);
     lay->setContentsMargins(4, 4, 4, 4);
@@ -516,7 +515,7 @@ void PlayerShell::buildWindowControls() {
 }
 
 void PlayerShell::buildTitleBar() {
-    const int radius = currentAppearance().radiusStep;
+    const int radius = static_cast<int>(cornerRadius());
     // A frameless window has no OS title bar, so a windowed player had no
     // way to be moved: every pixel belonged either to the picture or to a
     // control. This is the grab handle that a decorated window would give.
@@ -548,22 +547,17 @@ void PlayerShell::buildTitleBar() {
     lay->addWidget(titleClose_);
 }
 void PlayerShell::buildChevrons() {
-    const int radius = currentAppearance().radiusStep;
-    btnPrev_ = new IconButton(IconPainter::chevronLeft, tr("Previous episode  (←)"),
-                              42, 18, this, QColor(0, 0, 0, 165));
-    btnPrev_->setTint(w70());
-    btnPrev_->setProperty("radius", radius);
+    btnPrev_ = new EpisodeNavButton(EpisodeNavButton::Direction::Left,
+                                    tr("Previous episode  (←)"), this);
     connect(btnPrev_, &QPushButton::clicked, this, &PlayerShell::prevRequested);
 
-    btnNext_ = new IconButton(IconPainter::chevronRight, tr("Next episode  (→)"),
-                              42, 18, this, QColor(0, 0, 0, 165));
-    btnNext_->setTint(w70());
-    btnNext_->setProperty("radius", radius);
+    btnNext_ = new EpisodeNavButton(EpisodeNavButton::Direction::Right,
+                                    tr("Next episode  (→)"), this);
     connect(btnNext_, &QPushButton::clicked, this, &PlayerShell::nextRequested);
 }
 
 void PlayerShell::buildDock() {
-    const int radius = currentAppearance().radiusStep;
+    const int radius = static_cast<int>(cornerRadius());
     dock_ = new Panel(dock(), radius + 4.0, w15(), this);
     auto* dockLayout = new QVBoxLayout(dock_);
     dockLayout->setContentsMargins(16, 8, 16, 8);
@@ -737,7 +731,7 @@ void PlayerShell::buildDock() {
 }
 
 void PlayerShell::buildFooter() {
-    const int radius = currentAppearance().radiusStep;
+    const int radius = static_cast<int>(cornerRadius());
     footerLeft_ = new Panel(pill(), radius + 4.0, w15(), this);
     footerLeft_->setObjectName(QStringLiteral("playerInfoChip"));
     auto* info = new QHBoxLayout(footerLeft_);
@@ -1147,9 +1141,9 @@ void PlayerShell::layoutChrome() {
     }
 
     // ── flank chevrons ─────────────────────────────────────────────
-    const int cy = static_cast<int>(h * 0.5) - 21;
+    const int cy = static_cast<int>(h * 0.5) - 24;
     btnPrev_->move(static_cast<int>(w * 0.012), cy);
-    btnNext_->move(w - static_cast<int>(w * 0.012) - 42, cy);
+    btnNext_->move(w - static_cast<int>(w * 0.012) - 48, cy);
 
     // ── dock (bottom-centre) ───────────────────────────────────────
     const int dw = std::min(kDockMaxWidth, w - 2 * kDockHorizontalInset);
@@ -2243,7 +2237,7 @@ void PlayerShell::retranslateUi() {
     // so restating the tooltip alone would leave the announced name - what a
     // screen reader reads out - in the language the window opened in. Both come
     // from one string here.
-    const auto relabel = [](IconButton* button, const QString& text) {
+    const auto relabel = [](QWidget* button, const QString& text) {
         button->setToolTip(text);
         button->setAccessibleName(text);
     };
@@ -2341,14 +2335,6 @@ void PlayerShell::paintChrome(QPainter& painter, const QRect& clip) {
         videoDrop_->paintIndicator(painter, rect());
         return;
     }
-    // The discs are the shell's, not the buttons', so they are painted under
-    // every control.
-    for (IconButton* button : {btnPrev_, btnNext_}) {
-        if (button->isVisible() && QRect(button->pos(), button->size()).intersects(clip)) {
-            paintRounded(painter, QRectF(button->geometry()), 21, QColor(0, 0, 0, 110), w15());
-        }
-    }
-
     chrome_.paint(painter, this, clip);
 
     // Empty-state hint: over the whole window rather than in a widget.

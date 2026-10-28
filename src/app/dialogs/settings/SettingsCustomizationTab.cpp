@@ -656,6 +656,9 @@ void SettingsDialog::applyAppearancePreview() {
     if (previous.accent != appearanceDraft_.accent) {
         mplayer::shell::setAccent(theme::accentColor(appearanceDraft_));
     }
+    if (previous.radiusStep != appearanceDraft_.radiusStep) {
+        mplayer::shell::setCornerRadius(theme::radiusSmall(appearanceDraft_));
+    }
     refreshAppearanceControls();
 
     if (styledAppearance_.siteTheme == appearanceDraft_.siteTheme &&

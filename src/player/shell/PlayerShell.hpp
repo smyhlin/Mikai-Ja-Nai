@@ -56,8 +56,6 @@ QT_END_NAMESPACE
 #include "ShellWidgets.hpp"
 #include "native/status/NativeMenu.hpp"
 #include "../core/VideoSurface.hpp"
-#include "../../app/theme/Appearance.hpp"
-#include "../../app/state/AppearanceStore.hpp"
 #include <QWindow>
 
 namespace mikai::gui {
@@ -84,6 +82,7 @@ class Toast;
 class VolumeGroup;
 class ScrubBar;
 class IconButton;
+class EpisodeNavButton;
 
 class PlayerShell : public QWidget, public ChromeHost {
     Q_OBJECT
@@ -341,8 +340,8 @@ private:
     IconButton* btnMin_ = nullptr;
     IconButton* btnClose_ = nullptr;
 
-    IconButton* btnPrev_ = nullptr;
-    IconButton* btnNext_ = nullptr;
+    EpisodeNavButton* btnPrev_ = nullptr;
+    EpisodeNavButton* btnNext_ = nullptr;
 
     Panel* dock_ = nullptr;
     VolumeGroup* vol_ = nullptr;

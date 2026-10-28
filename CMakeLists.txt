@@ -232,6 +232,7 @@ set(PLAYER_SOURCES
   src/player/shaders/Anime4K.cpp
   src/player/shaders/PresetShortcuts.cpp
   # Player shell, popups, PiP float & dialog
+  src/player/shell/EpisodeNavButton.cpp
   src/player/shell/PipFloat.cpp
   src/player/shell/PlayerDialog.cpp
   src/player/shell/PlayerDialogProcessing.cpp
@@ -266,6 +267,7 @@ set(PLAYER_HEADERS
   src/player/core/MediaInformation.hpp
   src/player/shaders/Anime4K.hpp
   src/player/shaders/PresetShortcuts.hpp
+  src/player/shell/EpisodeNavButton.hpp
   src/player/shell/PipFloat.hpp
   src/player/shell/PlayerDialog.hpp
   src/player/shell/MediaInformationDialog.hpp

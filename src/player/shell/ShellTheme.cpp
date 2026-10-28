@@ -18,12 +18,22 @@ QColor& accentStorage() {
     static QColor current(QStringLiteral("#5865F2"));
     return current;
 }
+double& cornerRadiusStorage() {
+    static double current = 8.0;
+    return current;
+}
 }  // namespace
 
 QColor accent() { return accentStorage(); }
 
 void setAccent(const QColor& color) {
     if (color.isValid()) accentStorage() = color;
+}
+
+double cornerRadius() { return cornerRadiusStorage(); }
+
+void setCornerRadius(double radius) {
+    if (radius >= 0.0) cornerRadiusStorage() = radius;
 }
 
 namespace {

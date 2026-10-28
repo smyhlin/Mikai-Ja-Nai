@@ -637,7 +637,7 @@ void TestPublicApiUi::aWatchedFractionalEpisodeKeepsItsClassificationBadge() {
   QCOMPARE(badge->text(), QStringLiteral("F"));
 }
 
-void TestPublicApiUi::licensedTitleShowsLegalInformationAndSelectedPosterCredit() {
+void TestPublicApiUi::licensedTitleShowsLegalInformation() {
   IsolatedSettings settings;
   ApiFixture api;
   api.licensed = true;
@@ -662,9 +662,6 @@ void TestPublicApiUi::licensedTitleShowsLegalInformationAndSelectedPosterCredit(
   QVERIFY2(!licenseText.contains(QStringLiteral("No releases"), Qt::CaseInsensitive),
            qPrintable(QStringLiteral("a licensed title is reported as having no releases: %1")
                           .arg(licenseText)));
-
-  QTRY_VERIFY_WITH_TIMEOUT(labelText(page, "posterCreditLabel").contains(QStringLiteral("Poster Artist")),
-                            20000);
 }
 
 void TestPublicApiUi::anUnlicensedTitleShowsNoLegalInformation() {
@@ -792,9 +789,6 @@ void TestPublicApiUi::invalidSelectedPosterFallsBackToHint() {
   QTRY_VERIFY_WITH_TIMEOUT(!cover->pixmap().isNull(), 5000);
   const QImage shown = cover->pixmap().toImage();
   QCOMPARE(shown.pixelColor(shown.width() / 2, shown.height() / 2), expected);
-  auto* credit = page.findChild<QLabel*>(QStringLiteral("posterCreditLabel"));
-  QVERIFY(credit != nullptr);
-  QVERIFY(!credit->isVisible());
 }
 
 void TestPublicApiUi::decodedPosterScalesAfterExifRotation() {

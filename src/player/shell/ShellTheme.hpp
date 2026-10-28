@@ -59,6 +59,12 @@ inline QColor blackSoft() { return QColor(0, 0, 0, 150); }
 /// appearance store, so the last pushed value is what the overlay paints.
 QColor accent();
 void setAccent(const QColor& color);
+/// The player's corner radius, in logical pixels, in the same push model as
+/// accent(): the application owns the customization step and pushes the
+/// resolved token in before a player window is built. Panels and steppers read
+/// this instead of a constant, so one setting shapes every chrome surface.
+double cornerRadius();
+void setCornerRadius(double radius);
 /// The played part of a timeline. It is not the accent: a progress bar reads as
 /// a quantity, not as a call to action.
 inline QColor timelinePlayed() { return QColor(QStringLiteral("#7289ff")); }

@@ -229,10 +229,6 @@ private:
     /// Real episode count of the active release, restated after a language
     /// switch and after a release change.
     void updateEpisodeSummary();
-    /// The credit line under the cover, restated after a language switch. The
-    /// poster it names is the one the cover shows, so a UA poster that cannot
-    /// be displayed is credited to nobody.
-    void updatePosterCredit();
     QString episodeType(const EpisodeEntry* entry) const;
     QString episodeTypeCaption(const QString& type) const;
     QString episodeTypeBadgeText(const QString& type) const;
@@ -420,8 +416,6 @@ protected:
     QLabel* episodeAvailability_ = nullptr;
     QLabel* nextAiring_ = nullptr;
     QLabel* licenseInfo_ = nullptr;
-    QLabel* posterCredit_ = nullptr;
-    QPushButton* posterTeamButton_ = nullptr;
     backend::PlayerResult player_;
     QWidget* watchPanel_ = nullptr;
     QLabel* watchEpisode_ = nullptr;

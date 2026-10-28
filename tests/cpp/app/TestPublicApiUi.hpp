@@ -8,7 +8,7 @@ class TestPublicApiUi : public QObject {
  private slots:
   void titleMetadataPreservesUnknownCountsBadgesAndFutureAiring();
   void aWatchedFractionalEpisodeKeepsItsClassificationBadge();
-  void licensedTitleShowsLegalInformationAndSelectedPosterCredit();
+  void licensedTitleShowsLegalInformation();
   void anUnlicensedTitleShowsNoLegalInformation();
   void catalogueFiltersRetainCanonicalSelectionsAndReset();
   void catalogueFilterSearchNarrowsChoices();

@@ -253,6 +253,8 @@ int main(int argc, char** argv) {
     app.setStyle(QStringLiteral("Fusion"));
     mikai::app::theme::applyPalette(mikai::app::currentAppearance());
     mplayer::shell::setAccent(mikai::app::theme::accentColor(mikai::app::currentAppearance()));
+    mplayer::shell::setCornerRadius(
+        mikai::app::theme::radiusSmall(mikai::app::currentAppearance()));
     app.setStyleSheet(
         mikai::app::theme::buildStylesheet(mikai::app::currentAppearance()));
 

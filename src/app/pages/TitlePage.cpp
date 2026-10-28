@@ -495,24 +495,6 @@ void TitlePage::buildBody() {
             [this](const QPoint& position) { coverContextMenu(cover_->mapToGlobal(position)); });
     posterLayout->addWidget(cover_, 0, Qt::AlignTop | Qt::AlignHCenter);
 
-    posterCredit_ = new QLabel(heroPosterHost_);
-    posterCredit_->setObjectName(QStringLiteral("posterCreditLabel"));
-    posterCredit_->setTextFormat(Qt::PlainText);
-    posterCredit_->setWordWrap(true);
-    posterCredit_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    posterLayout->addWidget(posterCredit_);
-    posterTeamButton_ = new QPushButton(heroPosterHost_);
-    posterTeamButton_->setObjectName(QStringLiteral("posterTeamButton"));
-    posterTeamButton_->setFlat(true);
-    posterTeamButton_->setCursor(Qt::PointingHandCursor);
-    posterTeamButton_->hide();
-    connect(posterTeamButton_, &QPushButton::clicked, this, [this] {
-        const QString teamRef = posterTeamButton_->property("teamRef").toString();
-        if (!teamRef.isEmpty()) {
-            Q_EMIT teamRequested(teamRef);
-        }
-    });
-    posterLayout->addWidget(posterTeamButton_);
     studio_ = new QLabel(heroPosterHost_);
     studio_->setObjectName(QStringLiteral("titleStudio"));
     studio_->setTextFormat(Qt::PlainText);
@@ -1216,8 +1198,6 @@ void TitlePage::refreshDetailTexts() {
     nextAiring_->setText(airingText);
     nextAiring_->setVisible(!airingText.isEmpty());
 
-    updatePosterCredit();
-
     const QString statusText = labels::status(detail_.status);
     const QString formatText = labels::format(detail_.format);
     const QString seasonText = labels::season(detail_.start_date);
@@ -1915,40 +1895,6 @@ QString TitlePage::episodeType(const EpisodeEntry* entry) const {
     episode.number = entry->sourceNumber;
     episode.kind = entry->kind;
     return backend::episodeKindFor(detail_, episode);
-}
-
-void TitlePage::updatePosterCredit() {
-    if (posterCredit_ == nullptr) {
-        return;
-    }
-    const backend::UaPoster* creditPoster = backend::coverPoster(detail_);
-    const bool showingDifferentCover =
-        !coverUrl_.isEmpty() && coverUrl_ != backend::coverUrl(detail_);
-    if (creditPoster == nullptr || showingDifferentCover || coverState_ == CoverState::Missing) {
-        posterCredit_->clear();
-        posterCredit_->hide();
-        if (posterTeamButton_ != nullptr) posterTeamButton_->hide();
-        return;
-    }
-    posterCredit_->show();
-    const bool selected = creditPoster->is_selected;
-    posterCredit_->setText(
-        creditPoster->author.isEmpty()
-            ? (selected ? tr("Selected poster · credit unavailable")
-                        : tr("Poster credit unavailable"))
-            : (selected ? tr("Selected poster by %1").arg(creditPoster->author)
-                        : tr("Poster by %1").arg(creditPoster->author)));
-    if (posterTeamButton_ == nullptr) {
-        return;
-    }
-    if (creditPoster->team.has_value()) {
-        const QString teamRef = teamReference(*creditPoster->team);
-        posterTeamButton_->setText(teamDisplayName(*creditPoster->team));
-        posterTeamButton_->setProperty("teamRef", teamRef);
-        posterTeamButton_->setVisible(!teamRef.isEmpty());
-    } else {
-        posterTeamButton_->hide();
-    }
 }
 
 QString TitlePage::episodeTypeCaption(const QString& type) const {
@@ -3033,7 +2979,6 @@ void TitlePage::loadCover(const QString& url, bool allowHint) {
             self->coverPixmap_ = QPixmap::fromImage(std::move(decoded.image));
             self->coverAppliedSize_ = {};
             self->coverUrl_ = url;
-            self->updatePosterCredit();
             self->cover_->setZoomable(true);
             self->cover_->setToolTip(
                 QCoreApplication::translate("TitlePage", "Click to open the cover"));
@@ -3057,7 +3002,6 @@ void TitlePage::onCoverFailed(const QString& url, bool allowHint, const QString&
     coverPixmap_ = {};
     coverAppliedSize_ = {};
     coverUrl_.clear();
-    updatePosterCredit();
     cover_->setZoomable(false);
     const QString missing = QCoreApplication::translate("TitlePage", "No cover");
     cover_->setText(missing);
@@ -3291,7 +3235,6 @@ void TitlePage::retranslateUi() {
     refreshReleaseTexts();
     refreshEpisodeTexts();
     updateEpisodeSummary();
-    updatePosterCredit();
     if (hasDetail_) {
         updateLicenseInfo(player_);
     }

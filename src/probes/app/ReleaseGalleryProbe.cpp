@@ -782,6 +782,7 @@ int main(int argc, char** argv) {
     app.setStyle(QStringLiteral("Fusion"));
     mikai::app::theme::applyPalette(appearance);
     mplayer::shell::setAccent(mikai::app::theme::accentColor(appearance));
+    mplayer::shell::setCornerRadius(mikai::app::theme::radiusSmall(appearance));
     app.setStyleSheet(mikai::app::theme::buildStylesheet(appearance));
     QSettings settings;
     settings.setValue(QStringLiteral("player/anime4k"), QStringLiteral("off"));
