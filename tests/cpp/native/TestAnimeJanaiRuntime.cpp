@@ -309,6 +309,16 @@ void TestAnimeJanaiRuntime::archiveListingValidatesTarMembersAndLinks() {
     };
     const QString root = QStringLiteral("Path = ./\nFolder = +\n\n");
     const QString library = QStringLiteral("Path = ./libaji.so\nFolder = -\nSize = 123\n\n");
+    // 7-Zip prints both link fields for EVERY entry, empty when the entry is an
+    // ordinary file. aji-linux-x64.tar.zst lists exactly like this, and a parser
+    // that keyed on the field name rejected the real archive.
+    const QString ordinary = QStringLiteral("Path = ./aji_harness\nFolder = -\nSize = 9\n"
+                                            "Symbolic Link = \nHard Link = \n\n");
+    QVERIFY(valid(root + library + ordinary, false));
+    QVERIFY(valid(root + library + ordinary + QStringLiteral(
+                      "Path = ./libaji.so.1\nFolder = -\nSize = 5\n"
+                      "Symbolic Link = libaji.so\nHard Link = \n\n"),
+                  true));
     QVERIFY(valid(root + library));
     QVERIFY(valid(QStringLiteral("Path = \nFolder = +\n\n") + library));
     QVERIFY(!valid(QStringLiteral("Path = /\nFolder = +\n\n") + library));

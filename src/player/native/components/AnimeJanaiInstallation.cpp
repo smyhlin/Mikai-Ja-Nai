@@ -105,23 +105,30 @@ bool detail::validateAnimeJanaiArchiveListing(const QString& listing, bool allow
             path = line.mid(7); hasPath = true; entry = true;
         } else if (line == QLatin1String("Folder = +")) {
             folder = true; entry = true;
-        } else if (line == QLatin1String("Symbolic Link =") ||
-                   line.startsWith(QLatin1String("Symbolic Link = "))) {
-            if (!allowInternalSymlinks) {
-                *error = QStringLiteral("The pinned package archive contains a link entry.");
-                return false;
+        } else if (line.startsWith(QLatin1String("Symbolic Link =")) ||
+                   line.startsWith(QLatin1String("Hard Link ="))) {
+            // 7-Zip prints both fields for every entry and leaves the value empty
+            // for an ordinary file. Treating the field itself as a link rejected
+            // every real archive: aji-linux-x64.tar.zst has no links at all.
+            const QString target = line.mid(line.indexOf(QLatin1Char('=')) + 1).trimmed();
+            if (!target.isEmpty()) {
+                if (line.startsWith(QLatin1String("Hard Link ="))) {
+                    *error = QStringLiteral("The pinned package archive contains a link entry.");
+                    return false;
+                }
+                if (!allowInternalSymlinks) {
+                    *error = QStringLiteral("The pinned package archive contains a link entry.");
+                    return false;
+                }
+                QString targetReason;
+                if (safeRelativePath(target, &targetReason) != target) {
+                    *error = QStringLiteral("The pinned package archive contains an unsafe symbolic link target: %1")
+                                 .arg(target);
+                    return false;
+                }
+                link = true;
             }
-            const QString target = line.mid(16).trimmed();
-            QString targetReason;
-            if (target.isEmpty() || safeRelativePath(target, &targetReason) != target) {
-                *error = QStringLiteral("The pinned package archive contains an unsafe symbolic link target: %1")
-                             .arg(target);
-                return false;
-            }
-            link = true; entry = true;
-        } else if (line.startsWith(QLatin1String("Hard Link ="))) {
-            *error = QStringLiteral("The pinned package archive contains a link entry.");
-            return false;
+            entry = true;
         } else {
             entry = true;
         }

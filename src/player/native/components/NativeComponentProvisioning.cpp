@@ -115,10 +115,15 @@ bool validateRifeArchiveListing(const QString& sevenZip, const QString& archive,
             currentFolder = false;
         } else {
             hasEntryProperties = true;
-            if (line.startsWith(QStringLiteral("Symbolic Link = ")) ||
-                line.startsWith(QStringLiteral("Hard Link = "))) {
-                *reason = QStringLiteral("the RIFE archive contains a link entry");
-                return false;
+            // 7-Zip prints both fields for every entry and leaves them empty for
+            // ordinary files; only a non-empty target is a link.
+            if (line.startsWith(QStringLiteral("Symbolic Link =")) ||
+                line.startsWith(QStringLiteral("Hard Link ="))) {
+                const QString target = line.mid(line.indexOf(QLatin1Char('=')) + 1).trimmed();
+                if (!target.isEmpty()) {
+                    *reason = QStringLiteral("the RIFE archive contains a link entry");
+                    return false;
+                }
             }
             if (line == QStringLiteral("Folder = +")) currentFolder = true;
         }
