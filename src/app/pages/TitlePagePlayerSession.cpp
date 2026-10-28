@@ -211,6 +211,18 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
                     noteEpisodeStarted(number);
                 }
             });
+    connect(session->dialog, &mplayer::shell::PlayerDialog::episodeProgress, this,
+            [this, session](int playlistIndex, double position, double duration) {
+                if (!sessions_.contains(session) || session->dialog == nullptr) {
+                    return;
+                }
+                const QString number = session->playlist.value(playlistIndex)
+                                           .value(QStringLiteral("number"))
+                                           .toString();
+                if (!number.isEmpty()) {
+                    noteEpisodeProgress(number, position, duration);
+                }
+            });
     connect(session->dialog, &mplayer::shell::PlayerDialog::episodePlaybackFinished, this,
             [this, session](int playlistIndex) {
                 if (!sessions_.contains(session) || session->dialog == nullptr) {
@@ -616,6 +628,8 @@ void TitlePage::playEpisodeFrom(PlayerSession* session, const QVariantMap& item,
                 return;
             }
             session->entry = loaded;
+            // Continue a half-watched episode instead of restarting it.
+            target->setEpisodeResumePoint(self->watchHistory_.offset(self->ref_, loaded->number));
             session->dialog->applyEpisode(loaded->label, loaded->embedUrl, index,
                                           toQualities(qualities), variants);
         });

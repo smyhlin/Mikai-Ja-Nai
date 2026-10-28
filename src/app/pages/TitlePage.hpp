@@ -221,6 +221,9 @@ private:
     void refreshEpisodeStates();
     void noteEpisodeStarted(const QString& number);
     void setEpisodeWatched(const QString& number, bool watched);
+    /// Stores how far an episode has been watched and marks it watched when it
+    /// reaches the end.
+    void noteEpisodeProgress(const QString& number, double position, double duration);
     void updateWatchPanel();
     void updateEpisodeLegend();
     /// Real episode count of the active release, restated after a language

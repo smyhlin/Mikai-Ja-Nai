@@ -111,6 +111,10 @@ public:
     /// Reloads from a re-extracted quality map after a failed stream load.
     void applyRefreshedStreams(const QList<QualityEntry>& qualities, int height = 0);
     void setPlaylist(const QVector<QVariantMap>& playlist, int index = 0);
+    /// Offset, in seconds, the next applied episode should resume from. Set it
+    /// before applyEpisode(); 0 means "start at the beginning". Ignored once the
+    /// stored offset is within a few seconds of the end.
+    void setEpisodeResumePoint(double seconds);
     /// Publishes the dub/sub variants the popover lists and which embed is
     /// current. The track chip only appears once there is something to pick.
     void setVariants(const QVector<QVariantMap>& variants, const QString& currentEmbed);
@@ -250,6 +254,10 @@ signals:
     /// close, an error, a redirect, a replaced source, a quality or track swap
     /// or a PiP hand-off never emits it.
     void episodePlaybackFinished(int playlistIndex);
+    /// Playback reached `position` of `duration` in `playlistIndex`. Emitted on
+    /// the first frame and then whenever the position moves by a few seconds, so
+    /// the host can store a resume point without polling the core.
+    void episodeProgress(int playlistIndex, double position, double duration);
     /// The viewer pressed Cancel on the preparation window. The host owns the
     /// build, so it is the host that decides whether the cancellation reaches it.
     void enginePreparationCancelRequested();
@@ -680,6 +688,15 @@ private:
     // The resume point a stream swap holds until the new file reports a
     // duration: mpv cannot seek a stream it has not loaded yet.
     bool resumePending_ = false;
+    // A stored offset for the episode being applied, seeked once its duration is
+    // known. Kept apart from resumePending_, which carries a position across a
+    // stream swap inside one episode.
+    double episodeResumeSeconds_ = 0.0;
+    double episodeSeekPending_ = 0.0;
+    // Throttles episodeProgress: the core reports position far too often to
+    // persist, and every write costs a settings sync.
+    double lastProgressSeconds_ = -1.0;
+    int lastProgressEpisode_ = -1;
     double resumePosition_ = 0.0;
     bool resumePaused_ = false;
     // A position-reset swap - a new episode - still owes the viewer the pause

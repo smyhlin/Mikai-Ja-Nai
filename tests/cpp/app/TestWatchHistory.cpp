@@ -202,3 +202,41 @@ void TestWatchHistory::aCorruptedBlobReadsAsEmpty() {
   WatchHistory reloaded(QString::fromLatin1(kTestSettingsKey));
   QVERIFY(reloaded.isWatched(QStringLiteral("7428"), QStringLiteral("1")));
 }
+
+void TestWatchHistory::storesAOffsetAndResumesFromIt() {
+  {
+    WatchHistory store(QString::fromLatin1(kTestSettingsKey));
+    store.setOffset(QStringLiteral("500"), QStringLiteral("4"), 312.0, 1440.0);
+    QCOMPARE(store.offset(QStringLiteral("500"), QStringLiteral("4")), 312.0);
+  }
+  // A restart reads the offset back from the persisted document.
+  WatchHistory reloaded(QString::fromLatin1(kTestSettingsKey));
+  QCOMPARE(reloaded.offset(QStringLiteral("500"), QStringLiteral("4")), 312.0);
+  QVERIFY(!reloaded.isWatched(QStringLiteral("500"), QStringLiteral("4")));
+}
+
+void TestWatchHistory::finishingAnEpisodeWatchedClearsItsOffset() {
+  WatchHistory store(QString::fromLatin1(kTestSettingsKey));
+  store.setOffset(QStringLiteral("600"), QStringLiteral("2"), 200.0, 1400.0);
+  QCOMPARE(store.offset(QStringLiteral("600"), QStringLiteral("2")), 200.0);
+
+  // Reaching the end marks the episode watched without any end-of-file event,
+  // which is how a stream that simply stops used to lose the mark.
+  store.setOffset(QStringLiteral("600"), QStringLiteral("2"), 1350.0, 1400.0);
+  QVERIFY(store.isWatched(QStringLiteral("600"), QStringLiteral("2")));
+  QCOMPARE(store.offset(QStringLiteral("600"), QStringLiteral("2")), 0.0);
+
+  // Clearing the mark makes it resumable again from where it was stopped.
+  store.setWatched(QStringLiteral("600"), QStringLiteral("2"), false);
+  store.setOffset(QStringLiteral("600"), QStringLiteral("2"), 420.0, 1400.0);
+  QCOMPARE(store.offset(QStringLiteral("600"), QStringLiteral("2")), 420.0);
+}
+
+void TestWatchHistory::aBarelyStartedEpisodeIsNotResumed() {
+  WatchHistory store(QString::fromLatin1(kTestSettingsKey));
+  store.setOffset(QStringLiteral("700"), QStringLiteral("1"), 12.0, 1440.0);
+  QCOMPARE(store.offset(QStringLiteral("700"), QStringLiteral("1")), 0.0);
+  // A live stream has no known duration; the offset still counts.
+  store.setOffset(QStringLiteral("700"), QStringLiteral("2"), 600.0, 0.0);
+  QCOMPARE(store.offset(QStringLiteral("700"), QStringLiteral("2")), 600.0);
+}

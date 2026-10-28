@@ -20,4 +20,7 @@ class TestWatchHistory : public QObject {
   void anExternalSettingsRemovalIsNotShadowedByAnOldSnapshot();
   void clearingHistoryRemovesThePersistedAndPendingSnapshot();
   void aCorruptedBlobReadsAsEmpty();
+  void storesAOffsetAndResumesFromIt();
+  void finishingAnEpisodeWatchedClearsItsOffset();
+  void aBarelyStartedEpisodeIsNotResumed();
 };

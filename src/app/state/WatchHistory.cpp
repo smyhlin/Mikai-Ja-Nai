@@ -9,6 +9,7 @@
 #include <QSettings>
 #include <QSet>
 
+#include <cmath>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -171,7 +172,14 @@ void WatchHistory::load() {
                 progress.watched.append(episode);
             }
         }
-        if (progress.current.isEmpty() && progress.watched.isEmpty()) {
+        const QJsonObject offsets = record.value(QStringLiteral("offsets")).toObject();
+        for (auto offset = offsets.constBegin(); offset != offsets.constEnd(); ++offset) {
+            const double seconds = offset.value().toDouble(-1.0);
+            if (!offset.key().isEmpty() && seconds > 0.0) {
+                progress.offsets.insert(offset.key(), seconds);
+            }
+        }
+        if (progress.current.isEmpty() && progress.watched.isEmpty() && progress.offsets.isEmpty()) {
             continue;
         }
         titles_.insert(it.key(), progress);
@@ -187,6 +195,14 @@ void WatchHistory::save() {
         }
         if (!it->watched.isEmpty()) {
             record.insert(QStringLiteral("watched"), QJsonArray::fromStringList(it->watched));
+        }
+        if (!it->offsets.isEmpty()) {
+            QJsonObject offsets;
+            for (auto offset = it->offsets.constBegin(); offset != it->offsets.constEnd();
+                 ++offset) {
+                offsets.insert(offset.key(), offset.value());
+            }
+            record.insert(QStringLiteral("offsets"), offsets);
         }
         if (record.isEmpty()) {
             continue;
@@ -248,10 +264,12 @@ void WatchHistory::setWatched(const QString& ref, const QString& episode, bool w
     }
     if (watched) {
         it->watched.append(episode);
+        // A finished episode restarts from the beginning if it is replayed.
+        it->offsets.remove(episode);
     } else {
         it->watched.removeAll(episode);
     }
-    if (it->current.isEmpty() && it->watched.isEmpty()) {
+    if (it->current.isEmpty() && it->watched.isEmpty() && it->offsets.isEmpty()) {
         titles_.erase(it);
     }
     save();
@@ -311,6 +329,59 @@ void WatchHistory::setEpisodesWatched(const QString& ref, const QStringList& epi
 
 void WatchHistory::clear() {
     titles_.clear();
+    save();
+}
+
+
+double WatchHistory::offset(const QString& ref, const QString& episode) const {
+    if (ref.isEmpty() || episode.isEmpty()) {
+        return 0.0;
+    }
+    const auto it = titles_.constFind(ref);
+    if (it == titles_.constEnd()) {
+        return 0.0;
+    }
+    // A watched episode is not resumed, even if an offset survived an older
+    // build that did not clear it.
+    if (it->watched.contains(episode)) {
+        return 0.0;
+    }
+    return it->offsets.value(episode, 0.0);
+}
+
+void WatchHistory::setOffset(const QString& ref, const QString& episode, double position,
+                             double duration) {
+    if (ref.isEmpty() || episode.isEmpty()) {
+        return;
+    }
+    if (!std::isfinite(position) || !std::isfinite(duration) || position < 0.0) {
+        return;
+    }
+    // Under half a minute there is nothing worth resuming; the beginning is
+    // where the episode would start anyway.
+    constexpr double kResumeFloorSeconds = 30.0;
+    if (position < kResumeFloorSeconds) {
+        return;
+    }
+    // Finishing a stream without an end-of-file event (a live HLS edge, a
+    // dropped connection at the credits) has to count as watched too, which is
+    // why the threshold lives here and not only in the ended handler.
+    if (duration > 0.0 && position >= duration * 0.9) {
+        setWatched(ref, episode, true);
+        return;
+    }
+    load();
+    auto it = titles_.find(ref);
+    if (it != titles_.end() && it->watched.contains(episode)) {
+        return;
+    }
+    if (it == titles_.end()) {
+        it = titles_.insert(ref, TitleWatchProgress{});
+    }
+    if (qFuzzyCompare(it->offsets.value(episode, -1.0), position)) {
+        return;
+    }
+    it->offsets.insert(episode, position);
     save();
 }
 

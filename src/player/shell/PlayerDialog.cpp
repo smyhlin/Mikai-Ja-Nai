@@ -796,6 +796,15 @@ void PlayerDialog::onEngineDuration(double seconds) {
     if (resumePending_ && seconds > 0.0) {
         restoreResumePoint();
     }
+    if (episodeSeekPending_ > 0.0 && seconds > 0.0) {
+        const double target = std::min(episodeSeekPending_, seconds - 5.0);
+        episodeSeekPending_ = 0.0;
+        if (target > 0.0) {
+            surface_->seek(target);
+            shell_->setPosition(target);
+            flashStatus(tr("Resumed at %1").arg(formatTime(target)));
+        }
+    }
     // The shell's timeline is a scrub bar over a known length: a position fed
     // before mpv reports one only paints 0:00 / -0:00.
     if (seconds > 0.0) {
@@ -815,6 +824,20 @@ void PlayerDialog::onEnginePosition(double seconds) {
         return;
     }
     shell_->setPosition(seconds);
+    const double duration = surface_->duration();
+    if (duration <= 0.0 || episodeIndex_ < 0) {
+        return;
+    }
+    if (episodeIndex_ != lastProgressEpisode_) {
+        lastProgressEpisode_ = episodeIndex_;
+        lastProgressSeconds_ = -1.0;
+    }
+    // Five seconds of playback is well inside what a settings write costs and
+    // coarse enough that a resume point is still accurate to the second.
+    if (lastProgressSeconds_ < 0.0 || std::abs(seconds - lastProgressSeconds_) >= 5.0) {
+        lastProgressSeconds_ = seconds;
+        emit episodeProgress(episodeIndex_, seconds, duration);
+    }
 }
 
 void PlayerDialog::onEnginePlaying(bool playing) {
@@ -1107,6 +1130,10 @@ void PlayerDialog::onMediaDropped(const QString& path) {
 //  episodes
 // ═══════════════════════════════════════════════════════════════════════════
 
+void PlayerDialog::setEpisodeResumePoint(double seconds) {
+    episodeResumeSeconds_ = (std::isfinite(seconds) && seconds > 0.0) ? seconds : 0.0;
+}
+
 void PlayerDialog::setPlaylist(const QVector<QVariantMap>& playlist, int index) {
     if (directMedia_ && !playlist.isEmpty()) {
         return;
@@ -1223,6 +1250,10 @@ void PlayerDialog::applyEpisode(const QString& label,
                 ensureOpenFailureVisible();
                 return;
             }
+            // A half-watched episode continues where it stopped. The seek waits
+            // for the duration, which only the core can report.
+            episodeSeekPending_ = episodeResumeSeconds_;
+            episodeResumeSeconds_ = 0.0;
             flashStatus(tr("Episode: %1").arg(label));
             return;
         }
@@ -2062,6 +2093,12 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
     // Keep the current owner and its pause intent until teardown is actually
     // acknowledged. A refused stop must not turn an active PiP into an
     // invisible, detached player or reopen either stream.
+    // A manual close has to store where playback stopped, otherwise only the
+    // natural end of an episode would ever be remembered.
+    if (surface_ != nullptr && surface_->hasVideo() && surface_->duration() > 0.0 &&
+        episodeIndex_ >= 0) {
+        emit episodeProgress(episodeIndex_, surface_->position(), surface_->duration());
+    }
     QPointer<PipFloat> pipAtClose = pip_;
     const bool mainPauseAtClose = surface_ != nullptr && surface_->playbackPauseIntent();
     const bool pipPauseAtClose = pipAtClose != nullptr &&

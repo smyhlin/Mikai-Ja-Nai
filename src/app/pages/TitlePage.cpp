@@ -1796,6 +1796,20 @@ void TitlePage::setEpisodeWatched(const QString& number, bool watched) {
     refreshEpisodeStates();
 }
 
+void TitlePage::noteEpisodeProgress(const QString& number, double position, double duration) {
+    if (closed_ || number.isEmpty()) {
+        return;
+    }
+    // setOffset stores the resume point, and marks the episode watched once the
+    // position passes the end threshold - the case a stream that never reports a
+    // clean end-of-file used to miss.
+    const bool wasWatched = watchHistory_.isWatched(ref_, number);
+    watchHistory_.setOffset(ref_, number, position, duration);
+    if (!wasWatched && watchHistory_.isWatched(ref_, number)) {
+        refreshEpisodeStates();
+    }
+}
+
 void TitlePage::updateEpisodeLegend() {
     if (episodeLegend_ == nullptr) {
         return;
