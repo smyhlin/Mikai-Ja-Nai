@@ -29,6 +29,10 @@ void ToggleSwitch::paintEvent(QPaintEvent*) {
     const theme::Palette palette = theme::paletteFor(currentAppearance());
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    if (windowHandle()) {
+        painter.setWorldTransform(painter.worldTransform() * windowHandle()->devicePixelRatio());
+    }
 
     const int height = theme::kSettingsSwitchHeight;
     const int width = theme::kSettingsSwitchWidth;

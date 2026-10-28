@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QAbstractButton>
+#include <QWindow>
 
 namespace mikai::app {
 

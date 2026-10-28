@@ -235,6 +235,7 @@ void VideoDropTarget::paintIndicator(QPainter& painter, const QRect& bounds) con
     painter.save();
     painter.setClipRect(bounds, Qt::IntersectClip);
     painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
     painter.fillRect(bounds, scrim_);
     const int margin = std::min({kMargin, bounds.width() / 8, bounds.height() / 8});
     const QRect available = bounds.adjusted(margin, margin, -margin, -margin);

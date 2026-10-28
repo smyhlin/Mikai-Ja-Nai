@@ -2,6 +2,7 @@
 
 #include <QColor>
 #include <QPushButton>
+#include <QWindow>
 
 namespace mikai::app {
 
