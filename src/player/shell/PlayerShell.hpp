@@ -31,6 +31,7 @@
 
 #include <QCloseEvent>
 #include <QElapsedTimer>
+#include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMouseEvent>
@@ -54,6 +55,7 @@ QT_END_NAMESPACE
 #include "ShellTheme.hpp"
 #include "ShellWidgets.hpp"
 #include "native/status/NativeMenu.hpp"
+#include "../core/VideoSurface.hpp"
 
 namespace mikai::gui {
 class VideoDropTarget;
@@ -233,6 +235,9 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
+public slots:
+    void updateVideoInfoBadges(const mplayer::VideoSurface::VideoMetadata& metadata);
+
 private:
     void buildSurface();
     void buildWindowControls();
@@ -383,6 +388,12 @@ private:
     ChromeLabel* lblEpisode_ = nullptr;
     ChromeLabel* lblNetworkStats_ = nullptr;
     ChromeLabel* lblEnhancement_ = nullptr;
+    /// Video metadata badges (HDR, Dolby Vision, Dolby Atmos, codec).
+    QHBoxLayout* videoInfoLayout_ = nullptr;
+    ChromeLabel* lblHdrBadge_ = nullptr;
+    ChromeLabel* lblDolbyVisionBadge_ = nullptr;
+    ChromeLabel* lblDolbyAtmosBadge_ = nullptr;
+    ChromeLabel* lblCodecBadge_ = nullptr;
     /// The native status chip. Shown only for a loaded Native runtime, when
     /// processing is requested or the filter reports a state of its own.
     ChromeLabel* lblNative_ = nullptr;

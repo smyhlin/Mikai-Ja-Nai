@@ -769,6 +769,34 @@ void PlayerShell::buildFooter() {
     lblAnimeJanai_->setObjectName(QStringLiteral("playerAnimeJanaiStatus"));
     lblAnimeJanai_->hide();
     info->addWidget(lblAnimeJanai_);
+
+    // Video metadata badges container
+    videoInfoLayout_ = new QHBoxLayout();
+    videoInfoLayout_->setContentsMargins(8, 0, 0, 0);
+    videoInfoLayout_->setSpacing(6);
+    videoInfoLayout_->addStretch(1);
+
+    lblHdrBadge_ = new ChromeLabel(QStringLiteral("HDR"), monoFont(7), QColor(255, 200, 0), footerLeft_);
+    lblHdrBadge_->setObjectName(QStringLiteral("playerHdrBadge"));
+    lblHdrBadge_->hide();
+    videoInfoLayout_->addWidget(lblHdrBadge_);
+
+    lblDolbyVisionBadge_ = new ChromeLabel(QStringLiteral("DV"), monoFont(7), QColor(124, 58, 237), footerLeft_);
+    lblDolbyVisionBadge_->setObjectName(QStringLiteral("playerDolbyVisionBadge"));
+    lblDolbyVisionBadge_->hide();
+    videoInfoLayout_->addWidget(lblDolbyVisionBadge_);
+
+    lblDolbyAtmosBadge_ = new ChromeLabel(QStringLiteral("ATMOS"), monoFont(7), QColor(0, 156, 224), footerLeft_);
+    lblDolbyAtmosBadge_->setObjectName(QStringLiteral("playerDolbyAtmosBadge"));
+    lblDolbyAtmosBadge_->hide();
+    videoInfoLayout_->addWidget(lblDolbyAtmosBadge_);
+
+    lblCodecBadge_ = new ChromeLabel(QString(), monoFont(7), white(185), footerLeft_);
+    lblCodecBadge_->setObjectName(QStringLiteral("playerCodecBadge"));
+    lblCodecBadge_->hide();
+    videoInfoLayout_->addWidget(lblCodecBadge_);
+
+    info->addLayout(videoInfoLayout_);
     footerLeft_->setFixedHeight(kInfoChipHeight);
 
     QWidget* overlayHost = parentWidget() != nullptr ? parentWidget() : this;
@@ -1712,6 +1740,57 @@ void PlayerShell::onEnhancementRow(MenuPopup* panel, int spot, bool activated) {
     }
     onAnime4KPreset(payload.mid(7));
     dismissOverlay();
+}
+
+void PlayerShell::updateVideoInfoBadges(const mplayer::VideoSurface::VideoMetadata& metadata) {
+    // Update HDR badge
+    if (lblHdrBadge_) {
+        if (metadata.isHdr && !metadata.isDolbyVision) {
+            lblHdrBadge_->setText(metadata.hdrFormat.isEmpty() ? QStringLiteral("HDR") : metadata.hdrFormat);
+            lblHdrBadge_->show();
+        } else {
+            lblHdrBadge_->hide();
+        }
+    }
+    // Update Dolby Vision badge
+    if (lblDolbyVisionBadge_) {
+        if (metadata.isDolbyVision) {
+            lblDolbyVisionBadge_->show();
+        } else {
+            lblDolbyVisionBadge_->hide();
+        }
+    }
+    // Update Dolby Atmos badge
+    if (lblDolbyAtmosBadge_) {
+        if (metadata.hasDolbyAtmos) {
+            lblDolbyAtmosBadge_->show();
+        } else {
+            lblDolbyAtmosBadge_->hide();
+        }
+    }
+    // Update codec badge
+    if (lblCodecBadge_) {
+        QString codecLabel;
+        if (metadata.videoCodec.contains(QStringLiteral("hevc")) || metadata.videoCodec.contains(QStringLiteral("hvc"))) {
+            codecLabel = QStringLiteral("HEVC");
+        } else if (metadata.videoCodec.contains(QStringLiteral("avc")) || metadata.videoCodec.contains(QStringLiteral("h264"))) {
+            codecLabel = QStringLiteral("H.264");
+        } else if (metadata.videoCodec.contains(QStringLiteral("av01")) || metadata.videoCodec.contains(QStringLiteral("av1"))) {
+            codecLabel = QStringLiteral("AV1");
+        } else if (metadata.videoCodec.contains(QStringLiteral("vp9"))) {
+            codecLabel = QStringLiteral("VP9");
+        } else if (metadata.videoCodec.contains(QStringLiteral("vp8"))) {
+            codecLabel = QStringLiteral("VP8");
+        } else if (!metadata.videoCodec.isEmpty()) {
+            codecLabel = metadata.videoCodec.toUpper();
+        }
+        if (!codecLabel.isEmpty()) {
+            lblCodecBadge_->setText(codecLabel);
+            lblCodecBadge_->show();
+        } else {
+            lblCodecBadge_->hide();
+        }
+    }
 }
 
 void PlayerShell::updateInfoChip() {

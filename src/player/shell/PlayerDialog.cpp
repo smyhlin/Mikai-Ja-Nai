@@ -326,6 +326,7 @@ PlayerDialog::PlayerDialog(const QString& caption,
     syncAnimeJanaiEngineBuildState(surface_);
     connect(surface_, &VideoSurface::videoSizeChanged, this,
             &PlayerDialog::onAnimeJanaiSourceContextChanged);
+    connect(surface_, &VideoSurface::videoMetadataChanged, shell_, &PlayerShell::updateVideoInfoBadges);
     connect(surface_, &VideoSurface::streamStatsChanged, this,
             &PlayerDialog::onAnimeJanaiSourceContextChanged);
     connect(surface_, &VideoSurface::sourceEpochChanged, this,
