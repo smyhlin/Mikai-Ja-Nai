@@ -326,5 +326,113 @@ void IconPainter::keyboard(QPainter& p, qreal x, qreal y, qreal s, const QColor&
     p.restore();
 }
 
+void IconPainter::hdr(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
+    // HDR badge: rounded rect with "HDR" text
+    const QColor color = resolve(c, w90());
+    fill(p, x, y, s);
+    p.setPen(Qt::NoPen);
+    p.setBrush(QBrush(color));
+    p.drawRoundedRect(QRectF(2, 4, 20, 16), 3, 3);
+    p.setPen(glyphPen(resolve(c, QColor(0, 0, 0)), 1.4 * 24 / s));
+    QFont font = p.font();
+    font.setBold(true);
+    font.setPixelSize(static_cast<int>(10 * s / 24));
+    p.setFont(font);
+    p.drawText(QRectF(2, 4, 20, 16), Qt::AlignCenter, QStringLiteral("HDR"));
+    p.restore();
+}
+
+void IconPainter::dolbyVision(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
+    // Dolby Vision badge: "DV" in a rounded rect
+    const QColor color = resolve(c, QColor(124, 58, 237));  // purple
+    fill(p, x, y, s);
+    p.setPen(Qt::NoPen);
+    p.setBrush(QBrush(color));
+    p.drawRoundedRect(QRectF(2, 4, 20, 16), 3, 3);
+    p.setPen(glyphPen(white(255), 1.4 * 24 / s));
+    QFont font = p.font();
+    font.setBold(true);
+    font.setPixelSize(static_cast<int>(11 * s / 24));
+    p.setFont(font);
+    p.drawText(QRectF(2, 4, 20, 16), Qt::AlignCenter, QStringLiteral("DV"));
+    p.restore();
+}
+
+void IconPainter::dolbyAtmos(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
+    // Dolby Atmos badge: "A" in a circle
+    const QColor color = resolve(c, QColor(0, 156, 224));  // cyan-blue
+    fill(p, x, y, s);
+    p.setPen(Qt::NoPen);
+    p.setBrush(QBrush(color));
+    p.drawEllipse(QRectF(2, 4, 20, 20));
+    p.setPen(glyphPen(white(255), 1.6 * 24 / s));
+    QFont font = p.font();
+    font.setBold(true);
+    font.setPixelSize(static_cast<int>(14 * s / 24));
+    p.setFont(font);
+    p.drawText(QRectF(2, 4, 20, 20), Qt::AlignCenter, QStringLiteral("A"));
+    p.restore();
+}
+
+void IconPainter::codecH264(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
+    // H.264 badge: "H.264" text
+    const QColor color = resolve(c, w90());
+    stroke(p, x, y, s);
+    p.setPen(glyphPen(color, 1.4 * 24 / s));
+    p.setBrush(Qt::NoBrush);
+    p.drawRoundedRect(QRectF(2, 5, 20, 14), 2.5, 2.5);
+    QFont font = p.font();
+    font.setPixelSize(static_cast<int>(8 * s / 24));
+    p.setFont(font);
+    p.setPen(QPen(color, 1.2 * 24 / s));
+    p.drawText(QRectF(2, 5, 20, 14), Qt::AlignCenter, QStringLiteral("H.264"));
+    p.restore();
+}
+
+void IconPainter::codecH265(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
+    // H.265/HEVC badge: "HEVC" text
+    const QColor color = resolve(c, w90());
+    stroke(p, x, y, s);
+    p.setPen(glyphPen(color, 1.4 * 24 / s));
+    p.setBrush(Qt::NoBrush);
+    p.drawRoundedRect(QRectF(2, 5, 20, 14), 2.5, 2.5);
+    QFont font = p.font();
+    font.setPixelSize(static_cast<int>(8 * s / 24));
+    p.setFont(font);
+    p.setPen(QPen(color, 1.2 * 24 / s));
+    p.drawText(QRectF(2, 5, 20, 14), Qt::AlignCenter, QStringLiteral("HEVC"));
+    p.restore();
+}
+
+void IconPainter::codecAv1(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
+    // AV1 badge: "AV1" text
+    const QColor color = resolve(c, w90());
+    stroke(p, x, y, s);
+    p.setPen(glyphPen(color, 1.4 * 24 / s));
+    p.setBrush(Qt::NoBrush);
+    p.drawRoundedRect(QRectF(2, 5, 20, 14), 2.5, 2.5);
+    QFont font = p.font();
+    font.setPixelSize(static_cast<int>(9 * s / 24));
+    p.setFont(font);
+    p.setPen(QPen(color, 1.2 * 24 / s));
+    p.drawText(QRectF(2, 5, 20, 14), Qt::AlignCenter, QStringLiteral("AV1"));
+    p.restore();
+}
+
+void IconPainter::codecVp9(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
+    // VP9 badge: "VP9" text
+    const QColor color = resolve(c, w90());
+    stroke(p, x, y, s);
+    p.setPen(glyphPen(color, 1.4 * 24 / s));
+    p.setBrush(Qt::NoBrush);
+    p.drawRoundedRect(QRectF(2, 5, 20, 14), 2.5, 2.5);
+    QFont font = p.font();
+    font.setPixelSize(static_cast<int>(9 * s / 24));
+    p.setFont(font);
+    p.setPen(QPen(color, 1.2 * 24 / s));
+    p.drawText(QRectF(2, 5, 20, 14), Qt::AlignCenter, QStringLiteral("VP9"));
+    p.restore();
+}
+
 }  // namespace shell
 }  // namespace mplayer

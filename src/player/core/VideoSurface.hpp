@@ -251,6 +251,19 @@ public:
         }
         bool requiresSdrGate() const { return !hasKnownSdrTransfer(); }
     };
+
+    /// Video metadata extracted from mpv properties for UI display.
+    struct VideoMetadata {
+        QString videoCodec;      ///< video-codec ("h264", "hevc", "av1", "vp9", ...)
+        QString audioCodec;      ///< audio-codec ("eac3", "truehd", "aac", ...)
+        bool isHdr = false;      ///< HDR content (PQ/HLG transfer)
+        bool isDolbyVision = false;  ///< Dolby Vision (dvhe/dovi codec or primaries)
+        bool hasDolbyAtmos = false;  ///< Dolby Atmos (eac3 JOC or truehd with Atmos flag)
+        QString hdrFormat;     ///< "HDR10", "HDR10+", "HLG", "Dolby Vision"
+
+        bool hasMetadata() const { return !videoCodec.isEmpty(); }
+        void clear() { *this = VideoMetadata(); }
+    };
     const SourceColorProfile& sourceColorProfile() const { return sourceColorProfile_; }
 
     /// Explicitly allows AnimeJanai processing on sources identified as HDR.
@@ -481,6 +494,8 @@ signals:
     /// reports a new `video-params` set for the loaded source; consumers that
     /// gate enhancement chains on SDR re-evaluate here.
     void sourceColorProfileChanged(const mplayer::VideoSurface::SourceColorProfile& profile);
+    /// Video metadata changed (codec, HDR, Dolby). Emitted when mpv reports new properties.
+    void videoMetadataChanged(const mplayer::VideoSurface::VideoMetadata& metadata);
     /// Notice emitted when a shader chain is gated by source transfer metadata.
     void anime4kGated(const QString& notice);
     /// A seek intent can precede, or never change, the observed position.
@@ -890,6 +905,7 @@ private:
     QString resolvedChainForCurrentSource(const QString& candidateId) const;
     /// Re-evaluates shader and AnimeJanai gates after a profile change.
     void handleSourceColorProfileChanged();
+    void updateVideoMetadata();
     /// Refuses an enabled AnimeJanai plan while source metadata is unknown/HDR.
     void enforceAnimeJanaiHdrGate();
     /// Applies the current process-wide HDR options to this core.
@@ -1118,6 +1134,7 @@ private:
     int appliedHdrPolicyRevision_ = 0;
     int appliedAnimeJanaiOverrideRevision_ = 0;
     SourceColorProfile sourceColorProfile_;
+    VideoMetadata videoMetadata_;
     /// Staged by the video-params observers; handleSourceColorProfileChanged()
     /// diffs it against the published profile so three property events in one
     /// drain cause one re-evaluation, not three.

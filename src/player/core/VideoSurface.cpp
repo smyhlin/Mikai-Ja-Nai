@@ -1913,6 +1913,40 @@ void VideoSurface::handleSourceColorProfileChanged() {
         }
     }
     emit sourceColorProfileChanged(sourceColorProfile_);
+    // Update HDR/Dolby metadata from color profile
+    videoMetadata_.isHdr = sourceColorProfile_.isHdr();
+    videoMetadata_.isDolbyVision = sourceColorProfile_.primaries.contains(QStringLiteral("dolby")) ||
+                                   sourceColorProfile_.gamma.contains(QStringLiteral("dolby"));
+    if (videoMetadata_.isHdr) {
+        if (videoMetadata_.isDolbyVision) {
+            videoMetadata_.hdrFormat = QStringLiteral("Dolby Vision");
+        } else if (sourceColorProfile_.gamma == QStringLiteral("smpte2084")) {
+            videoMetadata_.hdrFormat = QStringLiteral("HDR10");
+        } else if (sourceColorProfile_.gamma == QStringLiteral("hlg")) {
+            videoMetadata_.hdrFormat = QStringLiteral("HLG");
+        } else {
+            videoMetadata_.hdrFormat = QStringLiteral("HDR");
+        }
+    } else {
+        videoMetadata_.hdrFormat.clear();
+    }
+    // Check for Dolby Atmos in audio codec
+    videoMetadata_.hasDolbyAtmos = videoMetadata_.audioCodec.contains(QStringLiteral("eac3")) ||
+                                   videoMetadata_.audioCodec.contains(QStringLiteral("truehd"));
+    emit videoMetadataChanged(videoMetadata_);
+}
+
+void VideoSurface::updateVideoMetadata() {
+    // Check for Dolby Vision in video codec
+    if (videoMetadata_.videoCodec.contains(QStringLiteral("dvhe")) ||
+        videoMetadata_.videoCodec.contains(QStringLiteral("dovi"))) {
+        videoMetadata_.isDolbyVision = true;
+        videoMetadata_.hdrFormat = QStringLiteral("Dolby Vision");
+    }
+    // Check for Dolby Atmos in audio codec
+    videoMetadata_.hasDolbyAtmos = videoMetadata_.audioCodec.contains(QStringLiteral("eac3")) ||
+                                   videoMetadata_.audioCodec.contains(QStringLiteral("truehd"));
+    emit videoMetadataChanged(videoMetadata_);
 }
 
 void VideoSurface::enforceAnimeJanaiHdrGate() {
@@ -2176,6 +2210,19 @@ void VideoSurface::observePlaybackState() {
         if (pixelformat == observedColorProfile_.pixelformat) return;
         observedColorProfile_.pixelformat = pixelformat;
         handleSourceColorProfileChanged();
+    });
+    // Video codec and audio codec watchers for metadata display
+    watch("video-codec", MPV_FORMAT_STRING, [this](const Property& p) {
+        const QString codec = QString::fromStdString(p.text).toLower();
+        if (codec == videoMetadata_.videoCodec) return;
+        videoMetadata_.videoCodec = codec;
+        updateVideoMetadata();
+    });
+    watch("audio-codec", MPV_FORMAT_STRING, [this](const Property& p) {
+        const QString codec = QString::fromStdString(p.text).toLower();
+        if (codec == videoMetadata_.audioCodec) return;
+        videoMetadata_.audioCodec = codec;
+        updateVideoMetadata();
     });
     for (const char* property : {"track-list", "aid", "sid"}) {
         watch(property, MPV_FORMAT_NONE, [this](const Property&) { mediaTracksDirty_ = true; });

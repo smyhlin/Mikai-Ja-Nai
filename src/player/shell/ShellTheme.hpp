@@ -157,6 +157,20 @@ public:
     static void microphone(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
     /// Subtitles: a caption frame with two letter C shapes.
     static void captions(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
+    /// HDR badge: "HDR" text in a rounded rectangle.
+    static void hdr(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
+    /// Dolby Vision badge: "DV" text.
+    static void dolbyVision(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
+    /// Dolby Atmos badge: "ATMOS" text in a compact form.
+    static void dolbyAtmos(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
+    /// H.264/AVC codec badge.
+    static void codecH264(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
+    /// H.265/HEVC codec badge.
+    static void codecH265(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
+    /// AV1 codec badge.
+    static void codecAv1(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
+    /// VP9 codec badge.
+    static void codecVp9(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
 };
 
 }  // namespace shell

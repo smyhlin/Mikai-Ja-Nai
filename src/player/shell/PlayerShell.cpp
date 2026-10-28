@@ -499,13 +499,15 @@ void PlayerShell::buildWindowControls() {
     lay->setContentsMargins(4, 4, 4, 4);
     lay->setSpacing(2);
 
+    // Minimize button: subtle white hover to match close button's visual weight
     btnMin_ = new IconButton(IconPainter::minimize, tr("Minimize the window"), 28, 15,
-                             windowControls_);
+                             windowControls_, QColor(255, 255, 255, 60));
     connect(btnMin_, &QPushButton::clicked, this, &QWidget::showMinimized);
     lay->addWidget(btnMin_);
 
+    // Close button: red background with consistent sizing
     btnClose_ = new IconButton(IconPainter::close, tr("Exit the player  (Esc)"), 28, 15,
-                               windowControls_, QColor(237, 66, 69, 190));
+                               windowControls_, QColor(237, 66, 69, 200));
     connect(btnClose_, &QPushButton::clicked, this, &PlayerShell::exitViewer);
     lay->addWidget(btnClose_);
 }
