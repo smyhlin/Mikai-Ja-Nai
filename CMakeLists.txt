@@ -599,8 +599,14 @@ if(TARGET mikai_tests AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
   endif()
 endif()
 
+# LTO is the Release default, but it is not portable across every cross
+# toolchain: a MinGW build of this tree with gcc 13 refuses the duplicated weak
+# destructor thunks of a QObject with two bases, which a non-LTO link merges.
+# Packaging with a cross compiler opts out instead of patching the link.
+option(MIKAI_DISABLE_IPO "Build Release without link-time optimization" OFF)
+
 set(MIKAI_IPO OFF)
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+if(NOT MIKAI_DISABLE_IPO AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   include(CheckIPOSupported)
   check_ipo_supported(RESULT MIKAI_IPO_OUTPUT LANGUAGES CXX)
   if(MIKAI_IPO_OUTPUT)
