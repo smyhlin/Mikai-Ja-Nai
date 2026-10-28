@@ -235,6 +235,42 @@ Release archives and model graphs are pinned by SHA-256 where indicated; source 
 | `rife-3.7.0` | `component-rife.7z` (`462,444,035` B)<br>`d41de2b56972cb3c446d9830bd5c5e7257e6e099ef0e7a2d5770ec01a9bf7251` | `component-rife-linux-x64.7z` (`~441 MiB`)<br>`265797d56fb1376434658e6adf70ea5ee85b8ac4c51231fdd9e744d35462e136` |
 | `aji-v0.17.1` | `aji-windows-x64.zip` (`743,177` B)<br>`9ddf6bb6da0ec52a2da0d9a13e59be99ff97a5c8c2e7156653dd154f6a4e40ad` | `aji-linux-x64.tar.zst` (`281,391` B)<br>`89ca6cc961889eebfa326745d2c7d9b96ebc71700303335f87adf1995f7c7cdc` |
 
+### Component store ownership, pack membership and cleanup
+
+`nativeRoot()` resolves `MIKAI_NATIVE_ROOT`, else an executable-adjacent
+`native/` when that directory accepts a write, else `AppLocalDataLocation/native`
+(typically `~/.local/share/Mikai/Mikai Wrapper/native` on Linux). The write probe
+is a real create-and-remove, because an AppImage mount reports writable modes on
+a read-only squashfs and a packaged prefix is root-owned. Path trust is anchored
+at the resolved store's parent, so a data-directory store passes the same
+ownership and reparse-point checks as an adjacent one.
+
+Installed packs live in `components/tensorrt/<release>/` with a `component.json`
+record naming each pack and the byte count and SHA-256 of every file it owns.
+`storedPack()` answers existence and size; `verifyPack()` re-hashes and is what a
+preset must consult before claiming a component is usable. A pack's declared
+`files` list is therefore the store's contract, not a hint.
+
+On Linux, `trt-runtime` lists the SONAME files the pinned 3.7.0 archive actually
+contains (`libcudart.so.13`, `libnvinfer.so.11`, `libnvinfer_plugin.so.11`,
+`libnvonnxparser.so.11`, `CUDA_LICENSE.txt`). It does **not** list `trtexec`:
+the AnimeJaNai provisioning step copies `trtexec` once from the extracted runtime
+archive (or from the store when the archive was not re-extracted) into the staged
+AJI runtime, and recording it as a pack member made that second copy fail against
+`QIODevice::NewOnly` with "trtexec could not be created". The Windows catalogue
+has never listed `trtexec.exe` for the same reason: the prepared-helper path
+builds its own.
+
+Starting the application prunes abandoned work in this store:
+`pruneNativeStore()` removes `scratch/` entries, `aji-stage-*` trees and
+`*.partial` copies older than one hour, and `*.previous` backups older than one
+day. Those are the only ages involved — a stage younger than an hour may belong
+to another window's live install, so it is left alone. Installed components,
+imported models, manager configuration and benchmarks are never touched. This is
+what makes deleting the folder after an update unnecessary; it is not a repair
+for a component that fails `verifyPack()`, which is re-acquired through Settings →
+Components.
+
 ---
 
 ## 4. Rights & Redistribution Boundaries (`ESC-1..6`)

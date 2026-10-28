@@ -14,7 +14,9 @@ Status: **partial and blocked**. This document records source-first preparation 
 ## Build evidence
 
 - **Windows product build:** recorded as having succeeded for the current source snapshot. This status document does not rerun the build.
-- **Linux product build:** native Ubuntu 24.04 WSL2 ext4 source build with GCC 13.3 and Qt 6.12 completed target `mikai` with exit code 0. No Linux runtime, tests, or package success is claimed.
+- **Linux product build:** native Ubuntu 24.04 WSL2 ext4 source build with GCC 13.3 and Qt 6.12 completed target `mikai` with exit code 0.
+- **Current source snapshot (2026-10-29, revision `9372c03`):** Linux `mikai` builds with GCC on Arch, the hermetic CTest suite passes **55/55** (`ctest --test-dir build/linux-release --output-on-failure`), and the AppImage and dependency-based archive are built locally from that revision. The Windows x64 binary is cross-built with MinGW-w64 GCC 13 (`-DMIKAI_DISABLE_IPO=ON`, `-DMIKAI_BUILD_REVISION=9372c03`) and its payload is assembled from the `dist.cmake` allowlist; `windeployqt.exe` crashes under wine, so it is not used. The installer and portable ZIP are produced by Inno Setup 6.7.3 under wine. Each artifact answers `--version` with `mikai 0.1.0 (9372c03, built …)`.
+- **What that is not:** these are local builds and a local test result. No GPU inference run, no gallery capture, no signing and no publication gate run is claimed here. Windows installer upgrade/uninstall evidence recorded earlier belongs to the preceding revision and is not restated for `9372c03`.
 
 ## Blocked or not verified
 
@@ -22,7 +24,7 @@ Status: **partial and blocked**. This document records source-first preparation 
 - **Release QA:** not passed under the current policy. The hermetic CTest entries, including `LauncherContracts`, `DistContracts`, `NativeStageContracts`, `BundleCliContracts`, `mikai_translation_completeness` and `mikai_provenance_check`, passed on the last recorded Windows run; the publication gate in `packaging/ci/release.py` and the live-network gallery procedure have no green run recorded, so a passing contract suite is not a release approval.
 - **Windows installer smoke:** not claimed as passed here; it is handled separately by the Windows installer smoke gate.
 - **Windows mpv corresponding-source/license closure:** unresolved. Logs retained for the superseded `19c0fcf895` build establish a GPL-enabled, non-LGPL build; the currently pinned `b4f9f5bfed` build has no retained logs, so its license mode is not established and must not be inferred from the earlier one. Either way public redistribution remains blocked.
-- **Linux build/package:** not claimed until the parent evidence is updated.
+- **Linux build/package:** a local build, test run and package for `9372c03` are recorded above; a Linux runtime acceptance pass on target hardware and a distribution review are still not claimed.
 - **Public binary distribution:** blocked. No publication, tagging or upload is authorized.
 
 ## Intended full gallery deliverable

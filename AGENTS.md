@@ -10,21 +10,23 @@ Strict architectural layering is enforced by `TestLayering` (`tests/cpp/app/Test
    - Contains `Models.hpp`, `Errors.hpp`, `Releases.hpp`, `MikaiClient.hpp`, `Streams.hpp`, `Downloads.hpp`, `Runtime.hpp`, `Cancellation.hpp`, and `Diagnostics.hpp`.
    - **Hard Rule:** Must never `#include` any Qt GUI/Widgets headers (`QWidget`, `QImage`, `QPixmap`, `QColor`, etc.) and must never reference `src/app/`, `src/gui/`, or `src/player/`.
 2. **`src/gui/` (`mikai::gui`) — Shared GUI Helpers:**
-   - Lightweight Qt GUI utilities (`Clipboard.hpp`) shared across `src/app/` and `src/player/`.
+   - Lightweight Qt GUI utilities shared across `src/app/` and `src/player/`: `Clipboard.hpp`, `ImageDecode`, `XdgDesktopIntegration`, `VideoDropTarget`, and `IdleInhibitor` (per-playing-surface session idle block through logind's `idle` lock, with the screen-saver interface as the fallback when logind is absent).
 3. **`src/player/` (`mplayer`) — Video Surface, Shader/AI Pipelines & Compare Workstation:**
    - `src/player/core/` — Dynamic `libmpv` loader (`MpvApi`), async transport (`MpvHandle`), diagnostics (`PlaybackDiagnostics`), and OpenGL render bridge (`MpvRenderContext`, `VideoSurface`, `VideoSurfaceAnimeJanai`, `VideoSurfaceNative`). `MpvApi`, `MpvHandle`, and `PlaybackDiagnostics` are GUI-free and compiled in `mikai_native_support` so the static library graph is strictly acyclic (`mikai_backend` → `mikai_native_support` → `mikai_player` → `mikai_app`).
    - `src/player/shaders/` — `Anime4K` shader chain builder (`Anime4K.{hpp,cpp}`) and `PresetShortcuts.{hpp,cpp}`.
-   - `src/player/shell/` — Player UI chrome (`PlayerDialog`, `PlayerDialogProcessing`, `PipFloat`, `PlayerShell`, `PlayerPopups`, `ShellWidgets`, `ShellSliders`, `ShellTheme`).
+   - `src/player/shell/` — Player UI chrome (`PlayerDialog`, `PlayerDialogProcessing`, `PipFloat`, `PlayerShell`, `PlayerPopups`, `ShellWidgets`, `ShellSliders`, `ShellTheme`, `EpisodeNavButton`) and the media-information views (`MediaInformationDialog`, `MediaInformationPresentation`, `MediaInformationTree`, `MediaInformationOverview`). The player library must not include `src/app/` state: accent and corner radius arrive as pushed tokens (`shell::setAccent`, `shell::setCornerRadius` from `ShellTheme.hpp`), which the application seeds at startup and refreshes on an appearance change or save. `ShellTheme.cpp` holds the last pushed value. Custom-painted chrome enables antialiasing, `SmoothPixmapTransform` and device-pixel-ratio scaling; icons are positioned on integer pixels.
    - `src/player/compare/` — Visual Compare Workstation (`CompareWindow`, `CompareCanvas`, `CompareGrid`, `ComparePane`, `CompareLayout`, `CompareRenderer`).
    - `src/player/native/` (`mplayer::native`) — Subdivided into:
      - `bundle/` (`NativeBundle`, `NativeManifest`, `NativePaths`, `NativePeImage`, `NativeRuntimeSelection`, `NativeCapabilities`, `NativePrefs`, `NativeDiagnostics`)
-     - `components/` (`NativeComponentCatalog`, `NativeComponentStore`, `NativeComponentProvisioning`, `NativeComponentToolchain`, `NativeGpuProbe`, `AnimeJanaiConfig`, `AnimeJanaiRuntime`, `AnimeJanaiInstallation`)
+     - `components/` (`NativeComponentCatalog`, `NativeComponentStore`, `NativeComponentProvisioning`, `NativeComponentToolchain`, `NativeGpuProbe`, `AnimeJanaiConfig`, `AnimeJanaiRuntime`, `AnimeJanaiInstallation`). A pack's declared `files` list is the store's contract: `storedPack()` checks existence and size, `verifyPack()` re-hashes. `trtexec` is not a member of the Linux `trt-runtime` pack — provisioning copies it once into the staged AJI runtime — and adding it back makes that second copy fail against `QIODevice::NewOnly`.
+     - Store root resolution and cleanup live in `NativePaths`: `MIKAI_NATIVE_ROOT` → an executable-adjacent `native/` that accepts a real create → `AppLocalDataLocation/native`; trust is anchored at the store's parent. `pruneNativeStore()` runs at startup and removes only abandoned work (`scratch/` and `*.previous` older than a day, `aji-stage-*` and `*.partial` older than an hour), never an installed component, model or configuration.
      - `models/` (`NativeCatalog`, `NativeModelInventory`, `NativeModelInspect`, `NativeModelImport`, `NativeInspectedPlan`, `NativeProfiles`, `NativeRecipe`, `NativeRife`, `NativeSpatialAssets`, `NativeUserRecipes`)
      - `prepare/` (`NativeArtifactStore`, `NativeBuilder`, `NativeBuilderTools`, `NativeFrameFixture`, `NativeFrameReference`, `NativePreparationContext`, `NativePreparationPlan`, `NativePreparationReferences`, `NativePreparedPlan`, `NativeWorkLease`)
      - `status/` (`NativeFilterCommand`, `NativeMenu`, `NativePlaybackController`, `NativeStatus`, `NativeStatusConsumer`, `NativeTypes`)
 4. **`src/app/` (`mikai::app`) — Application Pages, Settings, Support & Worker Dispatch:**
    - `src/app/support/` — `CrashLog`, `I18n`, `Labels`, `WindowRaisePolicy`.
    - `src/app/pages/` — `MainWindow`, `SearchPage`, `TitlePage`, `TitlePagePlayerSession`, `EpisodeGrid`.
+   - `src/app/state/` — `AppearanceStore` (load/save, `currentAppearance()`, change notifier), `WatchHistory` (per-title `current`, `watched`, and `offsets`/`durations` keyed by episode; resume offsets below 30 s are not stored, 90 % of a known length marks the episode watched and drops its offset), `QualityCache`.
    - `src/app/dialogs/` — `SettingsDialog` (`settings/` tabs: General, Presets, Processing, Components, Benchmark), `AnimeJanaiManagerPanel`, `ComponentStoreTab` (`ComponentStoreTabAcquisition`), `NativeAssetsPanel` (`NativeAssetsPanelWorkflow`), `NativeRifeControls`, `CoverViewer`.
    - `src/app/workers/` — `Runner` (`src/app/workers/Runner.hpp`) manages 5 dedicated `QThreadPool` queues (`shared`, `stream`, `transfer`, `cover`, `probe`) and `Runner::GuiDispatch` (`runner.post()`).
 
@@ -91,6 +93,8 @@ cmake --build --preset app-linux --parallel
 cmake --build --preset tests-linux --parallel
 ctest --test-dir build/linux-release --output-on-failure
 ```
+
+A build names itself, which is how a replaced AppImage is told from an older running process: `./build/linux-release/mikai --version` prints `mikai <version> (<short-rev>[-dirty], built <UTC stamp>)` without a display, the same line is logged at startup, and `applicationVersion` carries it. A cross build that cannot read the checkout passes `-DMIKAI_BUILD_REVISION=<short-rev>`. A MinGW cross build with GCC 13 needs `-DMIKAI_DISABLE_IPO=ON`; LTO refuses this tree's duplicated weak destructor thunks, which a non-LTO link merges, and the default stays LTO elsewhere.
 
 ### Out-of-Band CLI Tools & Manifest Verification
 

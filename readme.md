@@ -26,6 +26,9 @@
 - Compare a paused frame across Original, Anime4K, AnimeJaNai and prepared Native candidates; export a two-frame comparison GIF.
 - Optionally acquire GPU-specific components and models for AI processing. Ordinary Original playback does not require AI components; enhancement is opt-in.
 - Inspect local media metadata, manage audio/subtitle tracks, and customize the interface in English or Ukrainian.
+- Resume where you stopped: playback starts at 00:00 and offers a stored position instead, the episode is marked watched at 90 % of its length, and the title page shows the same progress.
+- Read the source at a glance in the player footer: HDR, Dolby Vision, Dolby Atmos and the video codec, based on what the container reports.
+- Identify the exact binary you are running with `--version`, which prints the commit and build time without needing a desktop session.
 
 ## Gallery
 

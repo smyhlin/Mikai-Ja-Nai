@@ -5,8 +5,8 @@ Mikai is a C++20 desktop application organized around Qt 6.12 Widgets and a desk
 ## Main layers
 
 - `src/backend/` contains public API models/client, release/update data, provider stream extraction, downloads, runtime discovery and diagnostic scrubbing. `MikaiClient` speaks to `https://api.mikai.me/public/v1`; it is an unofficial client of the public API, not an owner-controlled service component.
-- `src/app/` owns application navigation, title/search pages, settings, local watch history, UI state, appearance, translations, background jobs and component-store UI. Worker activity is coordinated through `Runner`; widgets publish results back to the UI.
-- `src/player/core/` owns dynamic libmpv loading, handles, render-context access, media tracks and playback diagnostics. `src/player/shell/` provides the player UI, controls, picture-in-picture, media inspector and local-file handling.
+- `src/app/` owns application navigation, title/search pages, settings, local watch history (`state/WatchHistory`: per-episode resume offsets and lengths), UI state, appearance (`state/AppearanceStore`), translations, background jobs and component-store UI. Worker activity is coordinated through `Runner`; widgets publish results back to the UI. Appearance reaches the player as pushed tokens rather than imports: `shell::setAccent` and `shell::setCornerRadius` are seeded at startup and refreshed on a customization change or save, so the player library never includes application state.
+- `src/player/core/` owns dynamic libmpv loading, handles, render-context access, media tracks and playback diagnostics. `src/player/shell/` provides the player UI, controls (including the `EpisodeNavButton` stepper and the footer's HDR/Dolby/codec badges), picture-in-picture, media inspector and local-file handling. In-source chrome paints inside the surface pass with antialiasing, `SmoothPixmapTransform` and device-pixel-ratio scaling, and positions glyphs on integer pixels.
 - `src/player/shaders/` contains Anime4K shader selection. `src/player/compare/` owns frozen-frame candidate rendering, compare modes and GIF export.
 - `src/player/native/` holds prepared Native bundle discovery/selection, component/model metadata, planning and optional-runtime support. The GUI-free support code is separated from widgets. AnimeJaNai Standard processing and the prepared Native bundle workflow are distinct; neither is an alias for the other's configuration or runtime.
 - `native/` contains optional Native source/build tooling, manifests and patches. It is not a requirement for ordinary Original playback.
@@ -20,7 +20,7 @@ The API client sends an application/version identity (`Mikai-Wrapper/0.1.0` for 
 
 Recent updates are paged and merged before publishing a new watermark. Local watch history and recently opened titles are application settings and are not synchronized to the Mikai service. Provider stream extraction is a separate provider-facing transport path. For API details, endpoint schemas and authentication, use the [Public API reference](../docs.md) rather than inferring them from this client description.
 
-Application settings retain the QSettings identity `Mikai` / `Mikai Wrapper`. Native/model data is executable-adjacent under `native/`; logs and crash reports are likewise local application data. Builds, tests and package staging must use owned directories and must not reuse user state as disposable output.
+Application settings retain the QSettings identity `Mikai` / `Mikai Wrapper`. Native/model data resolves to `MIKAI_NATIVE_ROOT`, else an executable-adjacent `native/` that accepts a write, else `AppLocalDataLocation/native`; logs and crash reports are executable-adjacent. On start the app removes only abandoned work from that store (`scratch/`, `aji-stage-*`, `*.partial` older than an hour; `*.previous` older than a day) and never an installed component, model or configuration. Builds, tests and package staging must use owned directories and must not reuse user state as disposable output.
 
 ## Playback and rendering
 
@@ -33,6 +33,7 @@ The rendering contract is intentionally specific:
 - The event-pump drain is bounded (128 events or 4 ms) rather than consuming an unbounded backlog on the UI thread.
 - Hidden/minimized/covered surfaces consume updates without rendering in `paintGL()`. This can reduce unnecessary presentation work but does not guarantee decoding or inference is free of GPU cost.
 - Renderer cleanup runs with the correct context on destruction; a recreated context reloads the current source at its observed position/pause state.
+- The process asks for a desktop OpenGL 3.3 core context before `QApplication` exists. Qt on Wayland otherwise produced a GLES 3.2 context, and mpv's render API inherited it: every Anime4K chain is desktop GLSL and corrupted colour there. Setting it once at the context level keeps every preset on the profile its shaders target.
 
 On-video controls paint in the OpenGL pass while retaining their existing widget input/focus/accessibility behavior. Frame exports and comparison inputs use the video framebuffer to exclude HUD chrome; ordinary widget framebuffer grabs include the HUD.
 

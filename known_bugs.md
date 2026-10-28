@@ -36,6 +36,28 @@ PASS**: `mikai_tests` (all suites PASS, `TestLiveOracle` SKIP without a key),
 | KB-22 | `MpvApi::load` reads the module's own PE imports and refuses by name when a required Windows system driver (the Vulkan loader) is missing from `%SystemRoot%\System32`; nothing is copied and no fallback module is tried | `TestRuntimeSelection::aModuleSystemDriverImportIsReadFromItsOwnImage` PASS; docs record the prerequisite as a supporting-loader fact, not a renderer |
 | KB-23, KB-25 | `native/README.md`, `native/sdk-acquisition.md`, `readme.md`, `plan.md`, `native/build-msvc.md`, `native/manifest/*`, the catalogue comment: ESC-5 scoped to the private prepared-helper path with the official `trtexec` path left unresolved; landed header acquisition, executable-local roots, two-part shim provenance and `nvinfer_11` documented | Documentation inspected against the current sources; no remaining statement claims a resolved official path, a manual `MPV_INCLUDE_DIR`, a stock download, a global ESC-5 clearance or a `v2` CPU baseline |
 
+## Player, watch-state and native-store status (2026-10-29)
+
+Recorded here because the audit's findings are the repository's defect ledger, and
+these were fixed after it. Each row was verified by running the affected path;
+the observations are local, not a release gate.
+
+| Area | Change | Observed verification |
+| --- | --- | --- |
+| Anime4K colour on Wayland | `main.cpp` requests a desktop OpenGL 3.3 core context before `QApplication`; Qt had been producing GLES 3.2 and mpv ran its render API on it, and `hq_aa` now places auto-downscale-pre between the two upscale stages | On a static test frame, `hq_a` mean RGB 48.9/107.3/121.5 on GLES against 120.0/124.2/126.0 on desktop GL (chain off 120.8/124.9/126.9); an invariant test pins the chain order |
+| Resume and watched state | `WatchHistory` stores `offsets`/`durations`; playback starts at 00:00 and offers "Continue from %1?" (`Continue` / `Start over`); 90 % of a known length marks the episode watched and drops its offset; offsets under 30 s are not stored | Driven through the real `PlayerDialog`: 45 s stored → Continue lands at 45.00 s, Start over stays at 0.12 s and raises `episodeResumeDeclined`, and 0 s raises no prompt |
+| Component install failure ("trtexec could not be created") | Linux `trt-runtime` names the SONAME files the pinned 3.7.0 archive contains, and `trtexec` left the pack's `files`: it is copied once by the AnimeJaNai provisioning step, and the second copy had been failing against `QIODevice::NewOnly` | `TestNativeComponents` PASS; the Linux catalogue no longer lists `trtexec` in that pack |
+| 7-Zip link-field parsing | The always-printed, usually-empty `Symbolic Link =` / `Hard Link =` fields are only treated as links when they carry a target | Both listing modes accepted against the real `aji-linux-x64.tar.zst` |
+| Store root and update hygiene | `nativeRoot()` falls back to `AppLocalDataLocation/native` when the executable's directory cannot hold a store, trust is anchored at the store's parent, and `pruneNativeStore()` clears abandoned `scratch/`, `aji-stage-*`, `*.partial` (older than an hour) and `*.previous` (older than a day) at startup | A seeded store dropped the day-old scratch partial, stage and backup while keeping a 5-minute-old stage, the installed `trtexec` and an imported ONNX graph; `TestNativeBundle` pins both directions |
+| "The update ran an old build" | Every build now stamps its revision and build time: `--version`, the startup log and `applicationVersion` | `--version` printed `0.1.0 (9372c03, built 2026-10-28T21:56:19Z)` from the AppImage, the portable tree and the wine-run Windows payload |
+| Session idle block | `IdleInhibitor` holds logind's `idle` lock per playing surface, with the screen-saver interface as fallback, released when the last one pauses or closes | `systemd-inhibit --list` showed the block for the source build and the AppImage while playing, and none after close |
+| Player corner radius | The application pushes `theme::radiusSmall()` through `shell::setCornerRadius`; window controls, title bar, dock, footer chip and the new `EpisodeNavButton` read it rather than constants | `EpisodeNavButton` rendered with radius 0 keeps a filled corner and radius 16 cuts it; hover raised mean alpha 140.9 → 155.9 and disabled returned 70.9 |
+
+Harmonised CTest for this set: **55/55** on Linux (`ctest --test-dir
+build/linux-release --output-on-failure`). The AJI fork requirement is unchanged
+and is not a defect: AnimeJaNai needs the official Standard fork, so a host
+`libmpv` reports `animejanai.core.unsupported` by design.
+
 ## Current AJI custom-model integration status (2026-10-18)
 
 The later custom-model/profile integration and its checks are separate from the

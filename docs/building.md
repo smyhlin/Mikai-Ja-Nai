@@ -106,6 +106,17 @@ ctest --test-dir build/linux-release --output-on-failure
 
 The build includes optional probes and the `mikai_tests` target when configured with probe support. Some probes require real local media, a desktop session, a disposable runtime store or optional installed components. Do not run mutable test/probe executables beside an existing deployment or native store. For the repository's focused-suite launcher rules, consult [AGENTS.md](../AGENTS.md#running-individual-test-suites) when available. A successful build/test is not inference-performance evidence.
 
+Every build stamps its own identity, so two builds of the same `0.1.0` can be told apart:
+
+```bash
+./build/linux-release/mikai --version
+mikai 0.1.0 (9372c03, built 2026-10-28T21:55:18Z)
+```
+
+The revision comes from `git rev-parse --short HEAD` with `-dirty` when tracked files are modified, and the stamp is UTC at configure time. A cross build whose container cannot read the checkout states it instead: `-DMIKAI_BUILD_REVISION=<short-rev>`. The same line is logged at startup and folded into `applicationVersion`, which benchmark reports and crash logs carry.
+
+A MinGW cross build with GCC 13 needs `-DMIKAI_DISABLE_IPO=ON`: LTO refuses the duplicated weak destructor thunks this tree produces for a `QObject` with two bases, which a non-LTO link merges. The default stays LTO for native builds.
+
 On Unix, a desktop locale with a decimal comma can conflict with `mpv_create`'s requirement for the C numeric locale. After `QApplication` initializes and before workers start, the player sets `LC_NUMERIC` to `C`; direct libmpv core creation also enforces it. Compare rendering workers no longer change the process locale themselves. This does not change Qt's UI locale and addresses only the numeric-locale startup conflict, not graphics or other playback failures.
 
 To check this on Linux, build the player and tests as above, then run the focused suite and play a known-good local video in the normal player:
@@ -130,7 +141,9 @@ In Settings → General → System integration, check Save/Cancel for launch at 
 
 ## Local API credentials and state
 
-The app can run without an API key. Never embed one in source or commit `.env`; use the app's General settings or a private local `.env`. Settings keep the compatibility identity `Mikai` / `Mikai Wrapper`. Native/model data is executable-adjacent under `native/`; logs and crash reports are executable-adjacent as well. Do not reuse or overwrite these user-state locations as build/test staging.
+The app can run without an API key. Never embed one in source or commit `.env`; use the app's General settings or a private local `.env`. Settings keep the compatibility identity `Mikai` / `Mikai Wrapper`. Native/model data resolves to `MIKAI_NATIVE_ROOT`, else an executable-adjacent `native/` that accepts a write, else Qt's `AppLocalDataLocation/native` — so an AppImage or a root-owned prefix keeps its store in the user's data directory rather than failing. Logs and crash reports are executable-adjacent. Do not reuse or overwrite these user-state locations as build/test staging.
+
+On start the application removes abandoned work from that store: `scratch/` entries, `aji-stage-*` trees and `*.partial` copies older than an hour, and `*.previous` backups older than a day. Installed components, imported models and configuration are untouched; the cleanup exists so an update does not need the folder deleted by hand.
 
 ## Further references
 
