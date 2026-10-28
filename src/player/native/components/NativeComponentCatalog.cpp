@@ -80,10 +80,13 @@ constexpr PackRow kLinuxRows[] = {
     // The archive also ships the fully versioned files (libnvinfer.so.11.3.0 and
     // friends); installing the SONAME links covers the closure without storing
     // a second copy of ~400 MB of libraries.
+    // trtexec is handled separately by AnimeJanaiInstallation.cpp (explicit copy after
+    // archive extraction or store fallback), so it is not listed here to avoid a
+    // duplicate copy that would fail with QIODevice::NewOnly.
     {"trt-runtime", "component-trt-runtime-linux-x64.7z", 263192576,
      "2d3a5a20008d752d3cd287fedd5f774baa6853068921bbd9b2add96742a7406b",
      {"CUDA_LICENSE.txt", "libcudart.so.13", "libnvinfer.so.11", "libnvinfer_plugin.so.11",
-      "libnvonnxparser.so.11", "trtexec"},
+      "libnvonnxparser.so.11"},
      "", false},
     {"trt-sm75", "component-trt-sm75-linux-x64.7z", 91121152,
      "ccaf69de0d99940d56553b8f31de4e1aeda6b9ce3f55d5509b56d4a2e07f4cdd",
