@@ -18,6 +18,7 @@
 #include <QSettings>
 
 #include <QApplication>
+#include <QMessageBox>
 #include <QAccessible>
 #include <QMetaObject>
 #include <QThreadPool>
@@ -799,11 +800,7 @@ void PlayerDialog::onEngineDuration(double seconds) {
     if (episodeSeekPending_ > 0.0 && seconds > 0.0) {
         const double target = std::min(episodeSeekPending_, seconds - 5.0);
         episodeSeekPending_ = 0.0;
-        if (target > 0.0) {
-            surface_->seek(target);
-            shell_->setPosition(target);
-            flashStatus(tr("Resumed at %1").arg(formatTime(target)));
-        }
+        if (target > 0.0) offerResume(target);
     }
     // The shell's timeline is a scrub bar over a known length: a position fed
     // before mpv reports one only paints 0:00 / -0:00.
@@ -867,8 +864,6 @@ void PlayerDialog::onEngineVideoSize(int width, int height) {
 }
 
 bool PlayerDialog::openStream(const QString& url, int height, bool resume) {
-    // A seek armed for the stream being replaced belongs to that stream.
-    episodeSeekPending_ = 0.0;
     if (closed_ || url.isEmpty()) {
         return false;
     }
@@ -1798,19 +1793,49 @@ void PlayerDialog::startPlayer() {
     }
     shell_->setMedia(url_, caption_,
                      currentHeight_ > 0 ? QStringLiteral("%1p").arg(currentHeight_) : QString());
+    // The first episode of a session is opened here, not through applyEpisode,
+    // so its stored offset is armed here too. It has to be armed BEFORE the
+    // load: mpv reports the duration while open() is still running, and an
+    // offset armed afterwards would never see that report.
+    episodeSeekPending_ = episodeResumeSeconds_;
+    episodeResumeSeconds_ = 0.0;
     if (!openStream(url_, 0, /*resume=*/false)) {
+        episodeSeekPending_ = 0.0;
         // No mpv core: the host has to provision the runtime before this can
         // work, and calling startPlayer() again is what retries it.
         ensureOpenFailureVisible();
         return;
     }
-    // The first episode of a session is opened here, not through applyEpisode,
-    // so its stored offset has to be armed here as well. openStream() cleared
-    // any pending seek when it started this load.
-    if (episodeResumeSeconds_ > 0.0) {
-        episodeSeekPending_ = episodeResumeSeconds_;
-        episodeResumeSeconds_ = 0.0;
+}
+
+void PlayerDialog::offerResume(double seconds) {
+    // Playback has already started at the beginning; the prompt only asks
+    // whether to jump. Pausing first keeps the audio from running under the box,
+    // and both answers resume playback because the load always starts playing.
+    if (closed_) return;
+    const QString label = formatTime(seconds);
+    QMessageBox box(QMessageBox::Question, tr("Continue playing"),
+                    tr("Continue from %1?").arg(label), QMessageBox::NoButton, this);
+    box.setInformativeText(tr("You stopped this episode at %1.").arg(label));
+    box.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+    box.setDefaultButton(QMessageBox::Yes);
+    box.button(QMessageBox::Yes)->setText(tr("Continue"));
+    box.button(QMessageBox::No)->setText(tr("Start over"));
+    const bool wasPlaying = !surface_->playbackPauseIntent();
+    if (wasPlaying) surface_->setPaused(true);
+    const int answer = box.exec();
+    if (closed_) return;
+    if (answer == QMessageBox::Yes) {
+        surface_->seek(seconds);
+        shell_->setPosition(seconds);
+        flashStatus(tr("Continued from %1").arg(label));
+    } else if (answer == QMessageBox::No) {
+        emit episodeResumeDeclined(episodeIndex_);
+        flashStatus(tr("Starting from the beginning"));
     }
+    // A dismissed box (Escape, close button) is neither answer: playback keeps
+    // running from the beginning and the stored position stays for next time.
+    if (wasPlaying) surface_->setPaused(false);
 }
 
 void PlayerDialog::layoutPanels() {

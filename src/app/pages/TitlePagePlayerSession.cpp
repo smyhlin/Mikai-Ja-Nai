@@ -223,6 +223,21 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
                     noteEpisodeProgress(number, position, duration);
                 }
             });
+    connect(session->dialog, &mplayer::shell::PlayerDialog::episodeResumeDeclined, this,
+            [this, session](int playlistIndex) {
+                if (!sessions_.contains(session) || session->dialog == nullptr) {
+                    return;
+                }
+                const QString number = session->playlist.value(playlistIndex)
+                                           .value(QStringLiteral("number"))
+                                           .toString();
+                if (!number.isEmpty()) {
+                    // "Start over" means the stored position is not a resume
+                    // point any more, and the indicator must stop claiming it.
+                    watchHistory_.clearOffset(ref_, number);
+                    updateWatchPanel();
+                }
+            });
     connect(session->dialog, &mplayer::shell::PlayerDialog::episodePlaybackFinished, this,
             [this, session](int playlistIndex) {
                 if (!sessions_.contains(session) || session->dialog == nullptr) {

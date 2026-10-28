@@ -426,6 +426,7 @@ protected:
     QWidget* watchPanel_ = nullptr;
     QLabel* watchEpisode_ = nullptr;
     QLabel* watchMeta_ = nullptr;
+    QWidget* watchProgress_ = nullptr;
     QPushButton* watchButton_ = nullptr;
     /// The manual mark: checked while the selected episode is watched.
     QPushButton* watchWatchedButton_ = nullptr;

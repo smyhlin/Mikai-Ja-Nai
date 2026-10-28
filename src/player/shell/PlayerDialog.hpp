@@ -111,9 +111,10 @@ public:
     /// Reloads from a re-extracted quality map after a failed stream load.
     void applyRefreshedStreams(const QList<QualityEntry>& qualities, int height = 0);
     void setPlaylist(const QVector<QVariantMap>& playlist, int index = 0);
-    /// Offset, in seconds, the next applied episode should resume from. Set it
-    /// before applyEpisode(); 0 means "start at the beginning". Ignored once the
-    /// stored offset is within a few seconds of the end.
+    /// Offset, in seconds, that was stored for the episode about to be opened.
+    /// Playback always starts at 00:00; the offset only raises a "continue from"
+    /// prompt once the length is known. Set it before applyEpisode() or
+    /// startPlayer(); 0 means there is nothing to offer.
     void setEpisodeResumePoint(double seconds);
     /// Publishes the dub/sub variants the popover lists and which embed is
     /// current. The track chip only appears once there is something to pick.
@@ -258,6 +259,9 @@ signals:
     /// the first frame and then whenever the position moves by a few seconds, so
     /// the host can store a resume point without polling the core.
     void episodeProgress(int playlistIndex, double position, double duration);
+    /// The viewer chose to start the episode over, so the stored offset for
+    /// `playlistIndex` no longer means anything.
+    void episodeResumeDeclined(int playlistIndex);
     /// The viewer pressed Cancel on the preparation window. The host owns the
     /// build, so it is the host that decides whether the cancellation reaches it.
     void enginePreparationCancelRequested();
@@ -459,6 +463,8 @@ private:
     void onMediaEnded(VideoSurface* source, quint64 mediaToken);
     void onEngineError(const QString& message);
     void onEngineDuration(double seconds);
+    /// Asks whether to jump to a stored offset; playback already runs from 0.
+    void offerResume(double seconds);
     void onEnginePosition(double seconds);
     void onEnginePlaying(bool playing);
     void onEngineVideoSize(int width, int height);

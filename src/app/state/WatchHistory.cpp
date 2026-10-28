@@ -172,6 +172,13 @@ void WatchHistory::load() {
                 progress.watched.append(episode);
             }
         }
+        const QJsonObject durations = record.value(QStringLiteral("durations")).toObject();
+        for (auto length = durations.constBegin(); length != durations.constEnd(); ++length) {
+            const double seconds = length.value().toDouble(-1.0);
+            if (!length.key().isEmpty() && seconds > 0.0) {
+                progress.durations.insert(length.key(), seconds);
+            }
+        }
         const QJsonObject offsets = record.value(QStringLiteral("offsets")).toObject();
         for (auto offset = offsets.constBegin(); offset != offsets.constEnd(); ++offset) {
             const double seconds = offset.value().toDouble(-1.0);
@@ -195,6 +202,14 @@ void WatchHistory::save() {
         }
         if (!it->watched.isEmpty()) {
             record.insert(QStringLiteral("watched"), QJsonArray::fromStringList(it->watched));
+        }
+        if (!it->durations.isEmpty()) {
+            QJsonObject durations;
+            for (auto length = it->durations.constBegin(); length != it->durations.constEnd();
+                 ++length) {
+                durations.insert(length.key(), length.value());
+            }
+            record.insert(QStringLiteral("durations"), durations);
         }
         if (!it->offsets.isEmpty()) {
             QJsonObject offsets;
@@ -266,10 +281,12 @@ void WatchHistory::setWatched(const QString& ref, const QString& episode, bool w
         it->watched.append(episode);
         // A finished episode restarts from the beginning if it is replayed.
         it->offsets.remove(episode);
+        it->durations.remove(episode);
     } else {
         it->watched.removeAll(episode);
     }
-    if (it->current.isEmpty() && it->watched.isEmpty() && it->offsets.isEmpty()) {
+    if (it->current.isEmpty() && it->watched.isEmpty() && it->offsets.isEmpty() &&
+        it->durations.isEmpty()) {
         titles_.erase(it);
     }
     save();
@@ -349,6 +366,33 @@ double WatchHistory::offset(const QString& ref, const QString& episode) const {
     return it->offsets.value(episode, 0.0);
 }
 
+double WatchHistory::duration(const QString& ref, const QString& episode) const {
+    if (ref.isEmpty() || episode.isEmpty()) {
+        return 0.0;
+    }
+    const auto it = titles_.constFind(ref);
+    if (it == titles_.constEnd() || it->watched.contains(episode)) {
+        return 0.0;
+    }
+    return it->durations.value(episode, 0.0);
+}
+
+void WatchHistory::clearOffset(const QString& ref, const QString& episode) {
+    if (ref.isEmpty() || episode.isEmpty()) {
+        return;
+    }
+    load();
+    auto it = titles_.find(ref);
+    if (it == titles_.end()) {
+        return;
+    }
+    const bool hadOffset = it->offsets.remove(episode) > 0;
+    it->durations.remove(episode);
+    if (hadOffset) {
+        save();
+    }
+}
+
 void WatchHistory::setOffset(const QString& ref, const QString& episode, double position,
                              double duration) {
     if (ref.isEmpty() || episode.isEmpty()) {
@@ -382,6 +426,9 @@ void WatchHistory::setOffset(const QString& ref, const QString& episode, double 
         return;
     }
     it->offsets.insert(episode, position);
+    if (duration > 0.0) {
+        it->durations.insert(episode, duration);
+    }
     save();
 }
 

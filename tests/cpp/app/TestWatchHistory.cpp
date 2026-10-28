@@ -208,11 +208,20 @@ void TestWatchHistory::storesAOffsetAndResumesFromIt() {
     WatchHistory store(QString::fromLatin1(kTestSettingsKey));
     store.setOffset(QStringLiteral("500"), QStringLiteral("4"), 312.0, 1440.0);
     QCOMPARE(store.offset(QStringLiteral("500"), QStringLiteral("4")), 312.0);
+    QCOMPARE(store.duration(QStringLiteral("500"), QStringLiteral("4")), 1440.0);
   }
   // A restart reads the offset back from the persisted document.
   WatchHistory reloaded(QString::fromLatin1(kTestSettingsKey));
   QCOMPARE(reloaded.offset(QStringLiteral("500"), QStringLiteral("4")), 312.0);
+  QCOMPARE(reloaded.duration(QStringLiteral("500"), QStringLiteral("4")), 1440.0);
   QVERIFY(!reloaded.isWatched(QStringLiteral("500"), QStringLiteral("4")));
+
+  // "Start over" drops the resume point but keeps the record of the episode.
+  reloaded.clearOffset(QStringLiteral("500"), QStringLiteral("4"));
+  QCOMPARE(reloaded.offset(QStringLiteral("500"), QStringLiteral("4")), 0.0);
+  QCOMPARE(reloaded.duration(QStringLiteral("500"), QStringLiteral("4")), 0.0);
+  WatchHistory afterClear(QString::fromLatin1(kTestSettingsKey));
+  QCOMPARE(afterClear.offset(QStringLiteral("500"), QStringLiteral("4")), 0.0);
 }
 
 void TestWatchHistory::finishingAnEpisodeWatchedClearsItsOffset() {

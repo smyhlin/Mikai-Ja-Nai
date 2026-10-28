@@ -15,6 +15,9 @@ struct TitleWatchProgress {
     /// resumed instead of restarted. Only meaningful for episodes that are not
     /// watched yet: finishing one clears its offset.
     QMap<QString, double> offsets;
+    /// Length of each episode that has an offset, so a surface can show how much
+    /// of it is left without opening it.
+    QMap<QString, double> durations;
 };
 
 class WatchHistory {
@@ -32,6 +35,11 @@ public:
     /// at the beginning (never started, already watched, or abandoned at the
     /// very start).
     double offset(const QString& ref, const QString& episode) const;
+    /// Length of an episode, in seconds, as observed when its offset was stored.
+    double duration(const QString& ref, const QString& episode) const;
+    /// Forget where an episode was stopped, because the viewer chose to start
+    /// over.
+    void clearOffset(const QString& ref, const QString& episode);
     /// Records how far an episode has been watched. `duration` may be 0 while a
     /// live stream has no known length; then only the offset is stored.
     void setOffset(const QString& ref, const QString& episode, double position,

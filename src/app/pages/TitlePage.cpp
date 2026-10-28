@@ -51,6 +51,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QProgressBar>
 #include <QLabel>
 #include <QLocale>
 #include <QLayout>
@@ -713,6 +714,16 @@ void TitlePage::buildBody() {
     wrapLabel(watchMeta_);
     watchText->addWidget(watchEpisode_);
     watchText->addWidget(watchMeta_);
+    // A hairline of how far the half-watched episode got: it belongs with the
+    // episode line, not in a separate badge, and it costs one widget.
+    watchProgress_ = new QProgressBar(watchPanel_);
+    watchProgress_->setObjectName(QStringLiteral("titleWatchProgress"));
+    static_cast<QProgressBar*>(watchProgress_)->setRange(0, 1000);
+    static_cast<QProgressBar*>(watchProgress_)->setTextVisible(false);
+    watchProgress_->setFixedHeight(4);
+    watchProgress_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    watchProgress_->hide();
+    watchText->addWidget(watchProgress_);
     watchText->addStretch(1);
     watchLayout->addLayout(watchText, 1);
     watchWatchedButton_ = new QPushButton(tr("Watched"), watchPanel_);
@@ -1860,7 +1871,23 @@ void TitlePage::updateWatchPanel() {
     } else if (!playable) {
         meta << tr("No video available");
     }
+    const QString number = watchEntry_->number;
+    const double offset = playable ? watchHistory_.offset(ref_, number) : 0.0;
+    const double length = playable ? watchHistory_.duration(ref_, number) : 0.0;
+    if (offset > 0.0) {
+        meta << (length > offset ? QStringLiteral("%1 / %2").arg(mplayer::shell::formatTime(offset),
+                                                                 mplayer::shell::formatTime(length))
+                                 : mplayer::shell::formatTime(offset));
+    }
     watchMeta_->setText(meta.join(QStringLiteral(" · ")));
+    if (watchProgress_ != nullptr) {
+        watchProgress_->setVisible(offset > 0.0 && length > offset);
+        if (length > 0.0) {
+            static_cast<QProgressBar*>(watchProgress_)
+                ->setValue(int(std::clamp(offset / length, 0.0, 1.0) * 1000.0));
+        }
+    }
+    watchButton_->setText(offset > 0.0 ? tr("Continue") : tr("Watch"));
     watchButton_->setEnabled(playable);
     watchButton_->setToolTip(playable ? tr("%1 — watch").arg(watchEpisode_->text())
                                       : tr("This player has no video for this episode"));
