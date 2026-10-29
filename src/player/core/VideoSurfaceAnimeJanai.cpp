@@ -343,8 +343,8 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
     const native::RuntimeSelection& selection = native::currentSelection();
     if (plan.requiresAji && !native::isAnimeJanaiForkRuntime(selection)) {
         animeJanaiFail(QStringLiteral("animejanai.core.unsupported"),
-                       QStringLiteral("AnimeJaNai requires the official Standard fork d6d93599d5; "
-                                      "the loaded libmpv core is not that supported fork"));
+                       QStringLiteral("AnimeJaNai requires its own mpv fork; the loaded "
+                                      "libmpv core is not that fork"));
         return;
     }
     if (slotOnlyChange) {

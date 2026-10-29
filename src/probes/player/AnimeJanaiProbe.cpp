@@ -2487,7 +2487,7 @@ int main(int argc, char** argv) {
                          qPrintable(plan.reasonKey), qPrintable(plan.reason));
         } else if (!native::isAnimeJanaiForkRuntime(selection)) {
             ajiInconclusive = true;
-            std::fprintf(stderr, "SKIP incompatible core: official fork d6d93599d5 ABI8 is required; loaded %s %s\n",
+            std::fprintf(stderr, "SKIP incompatible core: the AnimeJaNai mpv fork is required; loaded %s %s\n",
                          qPrintable(native::bundleKindName(selection.kind)), qPrintable(selection.version));
         } else {
             std::fprintf(stderr, "[AnimeJanaiProbe] backend=%s preset=%s slot=%d\n",

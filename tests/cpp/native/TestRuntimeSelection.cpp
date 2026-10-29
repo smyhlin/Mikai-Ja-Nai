@@ -569,6 +569,40 @@ void TestRuntimeSelection::forkIdentityRequiresTheValidatedModuleAndActualApi() 
     QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
 }
 
+void TestRuntimeSelection::forkIdentityAcceptsTheBundledLinuxForkByItsFilter() {
+#if !defined(Q_OS_UNIX)
+    QSKIP("The Linux fork is identified by its filter name, not a Windows digest");
+#else
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const QString modulePath = QDir(temp.path()).filePath(QStringLiteral("libmpv.so.2"));
+    // A packaged Linux module is rewritten by patchelf, so its digest differs
+    // between build hosts; the fork's own filter name is what identifies it.
+    QVERIFY(writeFileBytes(modulePath, QByteArrayLiteral("ELF\0animejanai filter table\0")));
+
+    mplayer::native::Bundle bundle;
+    bundle.kind = BundleKind::Standard;
+    bundle.root = QDir(temp.path()).canonicalPath();
+    bundle.modulePath = QFileInfo(modulePath).canonicalFilePath();
+    bundle.files.append(mplayer::native::BundleFile{
+        QStringLiteral("libmpv.so.2"), 33, QString(64, QLatin1Char('a'))});
+
+    RuntimeSelection selection;
+    selection.loaded = true;
+    selection.kind = BundleKind::Standard;
+    selection.modulePath = bundle.modulePath;
+    selection.apiVersion = 131077;
+    selection.resolvedBundle = bundle;
+    QVERIFY(mplayer::native::isAnimeJanaiForkRuntime(selection));
+
+    QVERIFY(writeFileBytes(modulePath, QByteArrayLiteral("ELF\0stock mpv without the filter\0")));
+    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
+
+    selection.apiVersion = 131076;
+    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
+#endif
+}
+
 void TestRuntimeSelection::publishingAStockRuntimeNeverTouchesTheSourceOrTheReferenceInstall() {
     QTemporaryDir temp;
     QVERIFY(temp.isValid());

@@ -659,6 +659,31 @@ RuntimeSelection selectStartupRuntime(const QString& hint) {
     return commitRuntime(resolveStoredRuntime(hint));
 }
 
+namespace {
+
+/// Whether the module carries the fork's `animejanai` filter name. A stock mpv
+/// has no such string, so it separates the fork from any host runtime without
+/// depending on a byte digest. Linux modules cannot be compared by digest: the
+/// install step rewrites their RUNPATH with patchelf, so the same archive yields
+/// a different file on every build host.
+bool moduleCarriesAnimeJanaiFilter(const QString& modulePath) {
+    QFile module(modulePath);
+    if (!module.open(QIODevice::ReadOnly)) return false;
+    static const QByteArray marker = QByteArrayLiteral("animejanai");
+    QByteArray carry;
+    while (!module.atEnd()) {
+        const QByteArray chunk = module.read(1 << 20);
+        if (chunk.isEmpty()) break;
+        carry += chunk;
+        if (carry.contains(marker)) return true;
+        // Keep a marker-length tail so a match split across chunks is not lost.
+        if (carry.size() > marker.size()) carry = carry.right(marker.size());
+    }
+    return carry.contains(marker);
+}
+
+}  // namespace
+
 bool isAnimeJanaiForkRuntime(const RuntimeSelection& selection) {
     constexpr qint64 kForkModuleBytes = 122146816;
     constexpr quint64 kForkApiVersion = 131077;
@@ -678,8 +703,15 @@ bool isAnimeJanaiForkRuntime(const RuntimeSelection& selection) {
         if (QDir::cleanPath(QDir(bundle.root).filePath(file.path)) != bundle.modulePath) {
             continue;
         }
-        return file.bytes == kForkModuleBytes &&
-               file.sha256 == QLatin1String(kForkModuleSha256);
+        if (file.bytes == kForkModuleBytes &&
+            file.sha256 == QLatin1String(kForkModuleSha256)) {
+            return true;
+        }
+#if defined(Q_OS_UNIX)
+        return moduleCarriesAnimeJanaiFilter(bundle.modulePath);
+#else
+        return false;
+#endif
     }
     return false;
 }

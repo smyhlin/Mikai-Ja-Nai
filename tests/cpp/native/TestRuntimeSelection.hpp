@@ -24,6 +24,7 @@ class TestRuntimeSelection : public QObject {
     void publishingAStockRuntimeNeverTouchesTheSourceOrTheReferenceInstall();
     void namedBundleResolutionIsExactAndHasNoFallback();
     void forkIdentityRequiresTheValidatedModuleAndActualApi();
+    void forkIdentityAcceptsTheBundledLinuxForkByItsFilter();
 
     // The M07 loader handoff and the M08 failure surfaces. These stay ahead of
     // the live cases because none of them loads a module: once one is pinned the
