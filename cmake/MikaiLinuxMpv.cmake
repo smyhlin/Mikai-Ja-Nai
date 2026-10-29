@@ -13,12 +13,22 @@ option(MIKAI_LINUX_BUNDLE_MPV
   "Bundle the pinned Linux libmpv runtime and its private dependencies into the install tree"
   OFF)
 
-set(MIKAI_LINUX_MPV_ARCHIVE_NAME "mpv-linux-x64-2026-10-24-c493f1c.tar.zst")
-set(MIKAI_LINUX_MPV_ARCHIVE_URL
-  "https://github.com/the-database/mpv/releases/download/2026-10-24-c493f1c/${MIKAI_LINUX_MPV_ARCHIVE_NAME}")
+# Where the private runtime lives inside the prefix. A distribution package may
+# not put a directory named `mpv` in /usr/bin: the distribution's mpv package
+# owns /usr/bin/mpv as a file, and pacman refuses the collision.
+set(MIKAI_LINUX_MPV_INSTALL_SUBDIR "${CMAKE_INSTALL_BINDIR}/mpv" CACHE STRING
+  "Prefix-relative directory holding the bundled libmpv runtime")
+file(RELATIVE_PATH mikai_linux_mpv_from_bin
+  "/${CMAKE_INSTALL_BINDIR}" "/${MIKAI_LINUX_MPV_INSTALL_SUBDIR}")
+
+# The published archive at this commit was configured without an FFmpeg TLS
+# backend, so it cannot open any https URL. This pin is the same runtime with a
+# same-tag FFmpeg rebuilt with --enable-openssl; packaging/mpv/build-tls-archive.sh
+# produces it and release-artifacts/ carries the result.
+set(MIKAI_LINUX_MPV_ARCHIVE_NAME "mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst")
 set(MIKAI_LINUX_MPV_ARCHIVE_SHA256
-  "b6281a2c924157a01f4a66f49dda3029b11378ffd982a974cdcbdb474c0befc7")
-set(MIKAI_LINUX_MPV_ARCHIVE_SIZE "41650081")
+  "6796d922cfd3ffb9bcd8948f77c609a4055ac343a9898f2433d2aa4b0eb6a17d")
+set(MIKAI_LINUX_MPV_ARCHIVE_SIZE "41533948")
 
 set(MIKAI_LINUX_MPV_ARCHIVE "" CACHE FILEPATH
   "Optional local copy of the pinned Linux mpv archive (its published SHA-256 is always checked)")
@@ -57,19 +67,19 @@ if(MIKAI_LINUX_MPV_ARCHIVE)
     message(FATAL_ERROR "The local Linux mpv archive override was not found: ${MIKAI_PINNED_LINUX_MPV_ARCHIVE}")
   endif()
 else()
-  set(MIKAI_PINNED_LINUX_MPV_ARCHIVE "${MIKAI_LINUX_MPV_CACHE_DIR}/${MIKAI_LINUX_MPV_ARCHIVE_NAME}")
+  set(_mpv_archive_candidate "${CMAKE_CURRENT_SOURCE_DIR}/release-artifacts/${MIKAI_LINUX_MPV_ARCHIVE_NAME}")
+  if(EXISTS "${_mpv_archive_candidate}" AND NOT IS_DIRECTORY "${_mpv_archive_candidate}")
+    set(MIKAI_PINNED_LINUX_MPV_ARCHIVE "${_mpv_archive_candidate}")
+  else()
+    set(MIKAI_PINNED_LINUX_MPV_ARCHIVE "${MIKAI_LINUX_MPV_CACHE_DIR}/${MIKAI_LINUX_MPV_ARCHIVE_NAME}")
+  endif()
   if(NOT EXISTS "${MIKAI_PINNED_LINUX_MPV_ARCHIVE}")
-    message(STATUS "Downloading pinned Linux mpv runtime archive")
-    file(DOWNLOAD "${MIKAI_LINUX_MPV_ARCHIVE_URL}" "${MIKAI_PINNED_LINUX_MPV_ARCHIVE}"
-      EXPECTED_HASH "SHA256=${MIKAI_LINUX_MPV_ARCHIVE_SHA256}"
-      STATUS mpv_linux_download_status
-      SHOW_PROGRESS)
-    list(GET mpv_linux_download_status 0 mpv_linux_download_code)
-    list(GET mpv_linux_download_status 1 mpv_linux_download_message)
-    if(NOT mpv_linux_download_code EQUAL 0)
-      file(REMOVE "${MIKAI_PINNED_LINUX_MPV_ARCHIVE}")
-      message(FATAL_ERROR "Linux mpv archive download failed: ${mpv_linux_download_message}")
-    endif()
+    message(FATAL_ERROR
+      "The TLS-enabled Linux mpv runtime is not available: ${MIKAI_LINUX_MPV_ARCHIVE_NAME} "
+      "was not found in release-artifacts/ or the build cache. Build it with "
+      "'bash packaging/mpv/build-tls-archive.sh' or pass -DMIKAI_LINUX_MPV_ARCHIVE=<path>. "
+      "The archive published at the pinned commit has no FFmpeg TLS backend, so "
+      "bundling it would ship a player that cannot open https streams.")
   endif()
 endif()
 
@@ -202,22 +212,34 @@ endif()
 set(MIKAI_LINUX_MPV_BUNDLE ON)
 set(MIKAI_LINUX_MPV_BUNDLE_ROOT "${MIKAI_LINUX_MPV_EXTRACTED_DIR}")
 set(MIKAI_LINUX_MPV_BUNDLE_MODE "bundled")
-set(MIKAI_LINUX_MPV_RUNTIME_IDENTITY "mpv-linux-x64-2026-10-24-c493f1c7e10a6b2301653596e7deeb91295d3148")
+set(MIKAI_LINUX_MPV_RUNTIME_IDENTITY "mpv-linux-x64-2026-10-24-c493f1c7e10a6b2301653596e7deeb91295d3148+tls")
 set(MIKAI_LINUX_MPV_PATCHED_RUNPATH "$ORIGIN")
 
 # HTTPS needs a TLS backend inside the bundled FFmpeg; without one every
 # provider stream fails with "No protocol handler found", and no host library
-# can supply it after the fact. Detect it from the build itself rather than
-# assuming the archive was configured usefully.
-set(MIKAI_LINUX_MPV_TLS ON)
+# can supply it after the fact. Read the backend from libavformat's own dynamic
+# requirements: FFmpeg embeds the "recompile FFmpeg with openssl" advice text in
+# every build, so its presence proves nothing.
+set(MIKAI_LINUX_MPV_TLS OFF)
 file(GLOB _mikai_mpv_avformat "${MIKAI_LINUX_MPV_BUNDLE_ROOT}/libavformat.so.*")
 if(_mikai_mpv_avformat)
   list(GET _mikai_mpv_avformat 0 _mikai_mpv_avformat_first)
-  execute_process(
-    COMMAND grep -q -c "recompile FFmpeg with openssl" "${_mikai_mpv_avformat_first}"
-    RESULT_VARIABLE _mikai_mpv_tls_probe OUTPUT_QUIET ERROR_QUIET)
-  if(_mikai_mpv_tls_probe EQUAL 0)
-    set(MIKAI_LINUX_MPV_TLS OFF)
+  if(CMAKE_READELF)
+    execute_process(
+      COMMAND "${CMAKE_READELF}" -d "${_mikai_mpv_avformat_first}"
+      OUTPUT_VARIABLE _mikai_mpv_avformat_deps ERROR_QUIET RESULT_VARIABLE _mikai_mpv_readelf)
+    if(_mikai_mpv_readelf EQUAL 0
+        AND _mikai_mpv_avformat_deps MATCHES "lib(ssl|crypto|gnutls|mbedtls)\\.so")
+      set(MIKAI_LINUX_MPV_TLS ON)
+    endif()
+  else()
+    file(GLOB _mikai_mpv_tls_libs
+      "${MIKAI_LINUX_MPV_BUNDLE_ROOT}/libssl.so.*"
+      "${MIKAI_LINUX_MPV_BUNDLE_ROOT}/libgnutls.so.*"
+      "${MIKAI_LINUX_MPV_BUNDLE_ROOT}/libmbedtls.so.*")
+    if(_mikai_mpv_tls_libs)
+      set(MIKAI_LINUX_MPV_TLS ON)
+    endif()
   endif()
 endif()
 if(NOT MIKAI_LINUX_MPV_TLS)
@@ -233,4 +255,4 @@ message(STATUS "Linux libmpv bundle enabled: ${MIKAI_LINUX_MPV_BUNDLE_ROOT} (htt
 file(GLOB MIKAI_LINUX_MPV_INSTALL_LIBRARIES LIST_DIRECTORIES FALSE
   "${MIKAI_LINUX_MPV_BUNDLE_ROOT}/*.so*")
 install(FILES ${MIKAI_LINUX_MPV_INSTALL_LIBRARIES}
-  DESTINATION "${CMAKE_INSTALL_BINDIR}/mpv")
+  DESTINATION "${MIKAI_LINUX_MPV_INSTALL_SUBDIR}")

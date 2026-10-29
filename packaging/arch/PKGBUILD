@@ -8,20 +8,26 @@ pkgdesc='Unofficial desktop client for the Mikai anime catalogue, with a libmpv 
 arch=('x86_64')
 url=''
 license=('Unlicense')
-depends=('qt6-base' 'mpv' 'libglvnd')
-makedepends=('cmake' 'ninja')
+depends=('qt6-base' 'libglvnd')
+makedepends=('cmake' 'ninja' 'patchelf')
 optdepends=('nvidia-utils: NVML GPU probe for optional AnimeJaNai components')
 # A stripped single package: this is a release build, not a rebuild service.
 options=('strip' '!debug')
-source=("mikai-$pkgver.tar.gz")
-sha256sums=('@SHA256@')
+# The bundled runtime is our TLS-enabled libmpv, not the distribution's: the
+# player is built against that fork, and a system libmpv cannot provide it.
+_mpvver='2026-10-24-c493f1c-tls'
+source=("mikai-$pkgver.tar.gz" "mpv-linux-x64-$_mpvver.tar.zst")
+sha256sums=('@SHA256@' '@MPV_SHA256@')
 _revision='@REVISION@'
 
 build() {
   cmake -S "$srcdir/mikai-$pkgver" -B build -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr \
-    -DMIKAI_BUILD_REVISION="$_revision"
+    -DMIKAI_BUILD_REVISION="$_revision" \
+    -DMIKAI_LINUX_BUNDLE_MPV=ON \
+    -DMIKAI_LINUX_MPV_ARCHIVE="$srcdir/mpv-linux-x64-$_mpvver.tar.zst" \
+    -DMIKAI_LINUX_MPV_INSTALL_SUBDIR=lib/mikai/mpv
   cmake --build build
 }
 

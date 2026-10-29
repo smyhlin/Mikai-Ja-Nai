@@ -6,18 +6,20 @@
 # worktree is refused because the tarball must name the revision it came from.
 set -euo pipefail
 usage() {
-  printf '%s\n' 'Usage: bash packaging/linux/arch-package.sh --output-dir FRESH_DIR [--work-dir DIR] [--skip-check]'
+  printf '%s\n' 'Usage: bash packaging/linux/arch-package.sh --output-dir FRESH_DIR [--work-dir DIR] [--mpv-archive FILE] [--skip-check]'
 }
 output_dir=''
 work_dir=''
+mpv_archive=''
 skip_check=0
 while (($#)); do
   case "$1" in
-    --output-dir|--work-dir)
+    --output-dir|--work-dir|--mpv-archive)
       if (($# < 2)) || [[ -z "$2" ]]; then usage >&2; exit 2; fi
       case "$1" in
         --output-dir) output_dir="$2" ;;
         --work-dir) work_dir="$2" ;;
+        --mpv-archive) mpv_archive="$2" ;;
       esac
       shift 2 ;;
     --skip-check) skip_check=1; shift ;;
@@ -75,11 +77,20 @@ tarball="$work_dir/mikai-$version.tar.gz"
 git archive --format=tar.gz --prefix="mikai-$version/" -o "$tarball" HEAD
 digest="$(sha256sum "$tarball" | cut -d' ' -f1)"
 
+mpv_archive="${mpv_archive:-$repo_root/release-artifacts/mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst}"
+if [[ ! -f "$mpv_archive" ]]; then
+  printf 'The bundled runtime archive is missing: %s\n' "$mpv_archive" >&2
+  printf 'Build it with: bash packaging/mpv/build-tls-archive.sh\n' >&2
+  exit 1
+fi
+mpv_digest="$(sha256sum "$mpv_archive" | cut -d' ' -f1)"
+
 build_dir="$work_dir/pkgbuild"
 mkdir -p "$build_dir/out"
-sed -e "s/@SHA256@/$digest/" -e "s/@REVISION@/$revision/" \
+sed -e "s/@SHA256@/$digest/" -e "s/@MPV_SHA256@/$mpv_digest/" -e "s/@REVISION@/$revision/" \
   packaging/arch/PKGBUILD > "$build_dir/PKGBUILD"
 cp "$tarball" "$build_dir/mikai-$version.tar.gz"
+cp "$mpv_archive" "$build_dir/mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst"
 
 makepkg_args=(--noconfirm --force --cleanbuild)
 if ((skip_check)); then makepkg_args+=(--nocheck); fi

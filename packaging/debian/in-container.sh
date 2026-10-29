@@ -40,7 +40,8 @@ cmake -S "$SRC" -B "$BUILD" -G Ninja \
   -DCMAKE_PREFIX_PATH="$QT_DIR" \
   -DCMAKE_INSTALL_PREFIX=/opt/mikai \
   -DMIKAI_LINUX_DEPLOY_QT=ON \
-  -DMIKAI_LINUX_BUNDLE_MPV=OFF \
+  -DMIKAI_LINUX_BUNDLE_MPV=ON \
+  -DMIKAI_LINUX_MPV_ARCHIVE=/mpv/runtime.tar.zst \
   -DMIKAI_BUILD_PROBES=OFF \
   -DMIKAI_BUILD_REVISION="$REVISION"
 cmake --build "$BUILD"
@@ -106,9 +107,9 @@ done < <(for elf in "${elfs[@]}"; do objdump -p "$elf" | awk '/NEEDED/{print $2}
 glibc_floor="$(for elf in "${elfs[@]}"; do objdump -T "$elf" 2>/dev/null | grep -o 'GLIBC_[0-9.]*' || true; done \
   | sort -uV | tail -1 | sed 's/^GLIBC_//')"
 [[ -z "$glibc_floor" ]] && glibc_floor="2.36"
-# libmpv is opened with dlopen, so no ELF object asks for it by name. It stays a
-# distribution dependency: the player cannot decode without it.
-mapfile -t dependencies < <(printf '%s\n' libc6 libstdc++6 libgcc-s1 libmpv2 "${declared[@]}" | sort -u)
+# The runtime is bundled, so libmpv is not a distribution dependency; the
+# libraries it excludes (the loader, libc, and the GL driver) are.
+mapfile -t dependencies < <(printf '%s\n' libc6 libstdc++6 libgcc-s1 "${declared[@]}" | sort -u)
 dependency_line="$(printf '%s\n' "${dependencies[@]}" | grep -vx 'libc6\|libstdc++6\|libgcc-s1' | paste -sd, - | sed 's/,/, /g')"
 dependency_line="libc6 (>= $glibc_floor), libstdc++6, libgcc-s1${dependency_line:+, $dependency_line}"
 

@@ -1,5 +1,8 @@
 #include "MpvHandle.hpp"
 
+#include <QFileInfo>
+#include <QString>
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -15,6 +18,26 @@ namespace {
 // Process-wide source of core identity tokens: monotonic and never reused, so
 // the same request number from two cores can be told apart.
 std::atomic<uint64_t> nextCoreIdentity{0};
+
+// A bundled runtime carries the OpenSSL it was built against, whose compiled-in
+// CA paths belong to the build distribution (typically /usr/lib/ssl). The host's
+// bundle is the one that actually validates streams, so it is named explicitly
+// when the caller did not name one. MIKAI_TLS_CA_FILE overrides the search.
+QString hostTlsCaFile() {
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
+    const QString override = qEnvironmentVariable("MIKAI_TLS_CA_FILE");
+    if (!override.isEmpty()) return override;
+    for (const char* candidate : {"/etc/ssl/certs/ca-certificates.crt",
+                                  "/etc/pki/tls/certs/ca-bundle.crt",
+                                  "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+                                  "/etc/ssl/cert.pem"}) {
+        if (QFileInfo::exists(QString::fromLatin1(candidate))) {
+            return QString::fromLatin1(candidate);
+        }
+    }
+#endif
+    return {};
+}
 
 // mpv delivers the format that was requested and nothing is coerced, so every
 // reader has to be written against its caller's format.
@@ -231,6 +254,20 @@ MpvHandle::MpvHandle(const std::vector<std::pair<std::string, std::string>>& ext
     // A fresh core gets a fresh, never-reused identity before anything can be
     // requested against it.
     identity_ = ++nextCoreIdentity;
+    const bool callerSetTlsCa =
+        std::any_of(extraOptions.begin(), extraOptions.end(),
+                    [](const std::pair<std::string, std::string>& option) {
+                        return option.first == "tls-ca-file";
+                    });
+    if (!callerSetTlsCa) {
+        const QString ca = hostTlsCaFile();
+        // Best effort: a runtime old enough to lack the option still plays, and
+        // the rejection is named instead of thrown because it is not fatal.
+        if (!ca.isEmpty() &&
+            api_->setOptionString(handle_, "tls-ca-file", ca.toStdString().c_str()) < 0) {
+            qWarning("mpv runtime rejected tls-ca-file %s", qPrintable(ca));
+        }
+    }
     for (const auto& [name, value] : extraOptions) {
         const int rc = api_->setOptionString(handle_, name.c_str(), value.c_str());
         if (rc < 0) {
