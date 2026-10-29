@@ -91,7 +91,7 @@ The default system profile remains valid: `MIKAI_LINUX_BUNDLE_MPV=OFF` uses dist
 
 ### AppImage (single file, local)
 
-An AppImage is a packaging format, not a portability guarantee: it carries Qt, while glibc, the dynamic loader, graphics drivers, Vulkan/EGL and the audio subsystem stay host dependencies. The image inherits the build host's glibc baseline through the bundled Qt, so a build produced on a rolling distribution does not run on an older LTS.
+An AppImage is a packaging format, not a portability guarantee: it carries Qt and the libmpv runtime, while glibc, the dynamic loader, graphics drivers, EGL and the audio subsystem stay host dependencies. The image inherits the build host's glibc baseline through the bundled Qt, so a build produced on a rolling distribution does not run on an older LTS. The Vulkan loader is bundled with the runtime (1.4.363, the SDK the bundle was built against), so an older host loader cannot downgrade mpv's Vulkan path; the ICD still comes from the installed driver.
 
 The image bundles our own runtime: the pinned libmpv fork plus its private library closure, rebuilt with an FFmpeg that has a TLS backend (`packaging/mpv/build-tls-archive.sh`, documented in the build guide). The archive published at the pinned commit was configured without one, so it could not open any `https` URL; configure detects the backend from libavformat's own dynamic requirements (`MIKAI_LINUX_MPV_TLS`) and AppImage packaging still refuses a runtime without it rather than ship a player that fails on real catalogue playback.
 
