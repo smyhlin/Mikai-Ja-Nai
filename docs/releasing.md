@@ -50,16 +50,19 @@ These outputs are local build products, not approval to upload them. Do not publ
 
 ## Linux x86_64
 
-The Linux path creates a dependency-based tarball and named install tree, not an AppImage, Debian package or universally self-contained bundle. By default it relies on compatible system Qt 6.12+ runtime/plugins, desktop OpenGL and `libmpv.so.2` (mpv 0.35+ / API 2), plus system WebP, TLS, codec and graphics dependencies. A specific local build/package observation is recorded in [release status](release-status.md); it does not establish distro-wide compatibility or a libc baseline. CI's Ubuntu 24.04 + separately supplied Qt 6.12 target is likewise not a claim about all distributions.
+The Linux path produces four formats: a dependency-based `tar.gz` with a named install tree, an `AppImage`, an Arch `pkg.tar.zst` and a Debian `.deb`. None is a universally self-contained bundle. Every one of them ships the project's own libmpv runtime; what varies is Qt — the tarball expects a compatible system Qt 6.12+, the Arch package uses the distribution's, and the AppImage and `.deb` deploy it. `libmpv.so.2` (mpv 0.35+ / API 2) is needed at build time for the developer headers but is never taken from the host at runtime in a packaged artifact. Host glibc/loader, desktop OpenGL, graphics drivers, EGL, audio and the codec content statically inside the shipped FFmpeg remain requirements. A specific local build/package observation is recorded in [release status](release-status.md); it does not establish distro-wide compatibility or a libc baseline. CI's Ubuntu 24.04 + separately supplied Qt 6.12 target is likewise not a claim about all distributions.
 
 Optional Qt deployment (`MIKAI_LINUX_DEPLOY_QT=ON`) deploys Qt libraries/plugins and relative RPATH. `MIKAI_LINUX_BUNDLE_MPV=ON` bundles our pinned libmpv fork — the runtime the player and AnimeJaNai are built against — with its private shared-library closure under `MIKAI_LINUX_MPV_INSTALL_SUBDIR` (`bin/mpv`, or `lib/mikai/mpv` in a distribution package), with owned `$ORIGIN` RUNPATH patching via build-time `patchelf`; it does not bundle the mpv CLI, docs or updaters, and a Linux artifact that sets it never depends on the host's mpv. Host glibc/loader, graphics drivers and GL/EGL integration, and audio subsystems remain dependencies. CI and release preparation configure both options on, so the package and renderer smoke use the selected bundled runtime rather than host mpv. This is not a standalone or universal Linux bundle; Qt/mpv redistribution still requires separate rights review. `MIKAI_DIST_MPV_ARCHIVE` is Windows-only and is rejected on Linux.
 
 ```bash
-cmake --preset linux-release
+cmake --preset linux-release -DMIKAI_LINUX_BUNDLE_MPV=ON
+cmake --build --preset app-linux --parallel
 bash packaging/linux/package.sh \
   --build-dir build/linux-release \
   --output-dir release-artifacts/linux
 ```
+
+`-DMIKAI_LINUX_BUNDLE_MPV=ON` is what makes the archive carry the runtime; the preset alone is a developer configuration that selects the host's `libmpv.so.2`. Configure fails when the TLS runtime archive is absent, so a release build cannot quietly produce a network-less player.
 
 The build must be configured and built as Release. The shown Unix Makefiles preset is single-configuration; for a multi-configuration build, pass `--config Release` to the package script. The output directory must not already exist; the package script creates it. CI creates only the output parent and leaves final output creation to the package script; supplying a populated output directory, user data or an existing deployment is refused. The script writes `mikai-0.1.0-linux-x86_64.tar.gz`, `SHA256SUMS`, and a named install tree. The archive extracts to a directory containing `mikai-0.1.0-linux-x86_64/bin/mikai`; run that executable with compatible Qt plugins and desktop OpenGL available. Its libmpv runtime and private closure sit in `bin/mpv`, so no system mpv is required. When using a custom Qt installation, configure `LD_LIBRARY_PATH` for the Qt libraries only during development; packaged runtime discovery uses relative RPATH and does not require a global `LD_LIBRARY_PATH` for the bundled mpv closure.
 
@@ -77,7 +80,7 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_CXX_COMPILER=/path/to/Qt/6.12+/gcc_64/bin/g++ \
   -DMIKAI_LINUX_BUNDLE_MPV=ON \
   -DMIKAI_LINUX_DEPLOY_QT=ON \
-  -DMIKAI_LINUX_MPV_ARCHIVE=/path/to/mpv-linux-x64-2026-10-24-c493f1c.tar.zst
+  -DMIKAI_LINUX_MPV_ARCHIVE=/path/to/mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst
 python -m json.tool build/mikai-runtime-Release.json
 cmake --build build --parallel 2 --target mikai
 bash packaging/linux/package.sh --build-dir build --output-dir /fresh/output --config Release
@@ -85,7 +88,7 @@ bash packaging/linux/package.sh --build-dir build --output-dir /fresh/output --c
 
 The configure step writes `build/mikai-runtime-Release.json` (`mikai.runtime.bundle/1`) with the selected absolute `module`, private `dependencyRoot`, `bundled` flag and target `platform`. Inspect that generated receipt before building; CI uses the same receipt to stage the configured module and its private `.so` closure for renderer smoke, and package installation deploys that selected runtime. The receipt's absolute paths are build-local and are not portable between machines.
 
-The current Linux archive is `mpv-linux-x64-2026-10-24-c493f1c.tar.zst`, from release tag `2026-10-24-c493f1c` and mpv commit `c493f1c7e10a6b2301653596e7deeb91295d3148`. SHA-256 `b6281a2c924157a01f4a66f49dda3029b11378ffd982a974cdcbdb474c0befc7`; size 41,650,081 bytes. It has 78 members; `libmpv.so`, `libmpv.so.2` and `libmpv.so.2.6.0` total 3,708,024 bytes and have SHA-256 `f50c5195aececc060202c2128113d88a9fc0a463c2e5fc9694f8e40349e96768`. It contains no headers or notices. Current workflow logs, dependency versions, patch bytes, FFmpeg source and mpv source snapshot are not retained here; the archive is not corresponding source, and source/license closure and corresponding-source delivery remain outstanding. The 19c0fcf895 Linux archive and its run/recipe evidence are superseded-build material, not the current pin. The bundle requires `patchelf` (build-only dependency), uses extraction stamp `.mikai-linux-mpv.sha256` keyed by the archive SHA, creates an owned regular `libmpv.so.2` because symlink module paths are refused by the runtime trust policy, removes duplicate aliases, runs `patchelf --set-rpath "$ORIGIN"` on every owned `*.so*`, and installs the closure under `bin/mpv`. Generated configuration variables are `MIKAI_LINUX_MPV_MODE`, `MIKAI_LINUX_MPV_BUNDLE`, `MIKAI_LINUX_MPV_ARCHIVE_SHA256` and `MIKAI_LINUX_MPV_PATCHED_RUNPATH`; `MIKAI_LINUX_MPV_VERSION` is set to the bundled marker when bundle mode is enabled. The runtime resolver uses the existing candidate path `<executable>/mpv`, finds `libmpv.so.2`, and does not search system directories when that hint is present. `describeStandardRuntime` refuses symlink module paths and bundle roots containing `bundle.json`; `NativePathTrust` refuses symlink/reparse module paths.
+The current Linux runtime is `mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst`, from release tag `2026-10-24-c493f1c` and mpv commit `c493f1c7e10a6b2301653596e7deeb91295d3148`, rebuilt by `packaging/mpv/build-tls-archive.sh`. SHA-256 `6796d922cfd3ffb9bcd8948f77c609a4055ac343a9898f2433d2aa4b0eb6a17d`; size 41,533,948 bytes; 79 files (the published 78, minus the `mpv` CLI, plus `libssl.so.3` and `libcrypto.so.3`). Only the FFmpeg family (same tag `n9.0.2`, same flags plus `--enable-openssl`) and OpenSSL 3.0 differ from the published archive `mpv-linux-x64-2026-10-24-c493f1c.tar.zst` (41,650,081 bytes, SHA-256 `b6281a2c924157a01f4a66f49dda3029b11378ffd982a974cdcbdb474c0befc7`, 78 members), whose `libmpv.so`, `libmpv.so.2` and `libmpv.so.2.6.0` (3,708,024 bytes, SHA-256 `f50c5195aececc060202c2128113d88a9fc0a463c2e5fc9694f8e40349e96768`) are carried unchanged. Neither contains headers or notices. Current workflow logs, dependency versions, patch bytes, FFmpeg source and mpv source snapshot are not retained here; the archive is not corresponding source, and source/license closure and corresponding-source delivery remain outstanding. The 19c0fcf895 Linux archive and its run/recipe evidence are superseded-build material, not the current pin. The bundle requires `patchelf` (build-only dependency), uses extraction stamp `.mikai-linux-mpv.sha256` keyed by the archive SHA, creates an owned regular `libmpv.so.2` because symlink module paths are refused by the runtime trust policy, removes duplicate aliases, runs `patchelf --set-rpath "$ORIGIN"` on every owned `*.so*`, and installs the closure under `bin/mpv`. Generated configuration variables are `MIKAI_LINUX_MPV_MODE`, `MIKAI_LINUX_MPV_BUNDLE`, `MIKAI_LINUX_MPV_ARCHIVE_SHA256` and `MIKAI_LINUX_MPV_PATCHED_RUNPATH`; `MIKAI_LINUX_MPV_VERSION` is set to the bundled marker when bundle mode is enabled. The runtime resolver uses the existing candidate path `<executable>/mpv`, finds `libmpv.so.2`, and does not search system directories when that hint is present. `describeStandardRuntime` refuses symlink module paths and bundle roots containing `bundle.json`; `NativePathTrust` refuses symlink/reparse module paths.
 
 The default system profile remains valid: `MIKAI_LINUX_BUNDLE_MPV=OFF` uses distribution `libmpv-dev` headers and `libmpv.so.2`. Requested bundle failures are fatal configure errors; there is no silent fallback.
 
@@ -100,7 +103,7 @@ cmake -S . -B build/appimage -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=/usr \
   -DMIKAI_LINUX_DEPLOY_QT=ON \
-  -DMIKAI_LINUX_BUNDLE_MPV=OFF
+  -DMIKAI_LINUX_BUNDLE_MPV=ON
 cmake --build build/appimage --target appimage
 ```
 
