@@ -20,7 +20,7 @@ The API client sends an application/version identity (`Mikai-Wrapper/0.1.0` for 
 
 Recent updates are paged and merged before publishing a new watermark. Local watch history and recently opened titles are application settings and are not synchronized to the Mikai service. Provider stream extraction is a separate provider-facing transport path. For API details, endpoint schemas and authentication, use the [Public API reference](../docs.md) rather than inferring them from this client description.
 
-Application settings retain the QSettings identity `Mikai` / `Mikai Wrapper`. Native/model data resolves to `MIKAI_NATIVE_ROOT`, else an executable-adjacent `native/` that accepts a write, else `AppLocalDataLocation/native`; logs and crash reports are executable-adjacent. On start the app removes only abandoned work from that store (`scratch/`, `aji-stage-*`, `*.partial` older than an hour; `*.previous` older than a day) and never an installed component, model or configuration. Builds, tests and package staging must use owned directories and must not reuse user state as disposable output.
+Application settings retain the QSettings identity `Mikai` / `Mikai Wrapper`. Native/model data resolves to `MIKAI_NATIVE_ROOT`, else an executable-adjacent `native/` that accepts a write, else `AppLocalDataLocation/native`; logs and crash reports are executable-adjacent. On start the app removes only abandoned work from that store (`scratch/` and `*.previous` older than a day; `aji-stage-*` and `*.partial` older than an hour) and never an installed component, model or configuration. Builds, tests and package staging must use owned directories and must not reuse user state as disposable output.
 
 ## Playback and rendering
 

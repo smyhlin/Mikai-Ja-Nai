@@ -143,7 +143,7 @@ In Settings → General → System integration, check Save/Cancel for launch at 
 
 The app can run without an API key. Never embed one in source or commit `.env`; use the app's General settings or a private local `.env`. Settings keep the compatibility identity `Mikai` / `Mikai Wrapper`. Native/model data resolves to `MIKAI_NATIVE_ROOT`, else an executable-adjacent `native/` that accepts a write, else Qt's `AppLocalDataLocation/native` — so an AppImage or a root-owned prefix keeps its store in the user's data directory rather than failing. Logs and crash reports are executable-adjacent. Do not reuse or overwrite these user-state locations as build/test staging.
 
-On start the application removes abandoned work from that store: `scratch/` entries, `aji-stage-*` trees and `*.partial` copies older than an hour, and `*.previous` backups older than a day. Installed components, imported models and configuration are untouched; the cleanup exists so an update does not need the folder deleted by hand.
+On start the application removes abandoned work from that store: `scratch/` entries and `*.previous` backups older than a day, and `aji-stage-*` trees and `*.partial` copies older than an hour. Installed components, imported models and configuration are untouched; the cleanup exists so an update does not need the folder deleted by hand.
 
 ## Further references
 

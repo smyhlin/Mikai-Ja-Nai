@@ -262,9 +262,8 @@ has never listed `trtexec.exe` for the same reason: the prepared-helper path
 builds its own.
 
 Starting the application prunes abandoned work in this store:
-`pruneNativeStore()` removes `scratch/` entries, `aji-stage-*` trees and
-`*.partial` copies older than one hour, and `*.previous` backups older than one
-day. Those are the only ages involved — a stage younger than an hour may belong
+`pruneNativeStore()` removes `scratch/` entries and `*.previous` backups older
+than a day, plus `aji-stage-*` trees and `*.partial` copies older than one hour. Those are the only ages involved — a stage younger than an hour may belong
 to another window's live install, so it is left alone. Installed components,
 imported models, manager configuration and benchmarks are never touched. This is
 what makes deleting the folder after an update unnecessary; it is not a repair
