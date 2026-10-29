@@ -104,6 +104,8 @@ The runtime must be the TLS rebuild (`packaging/mpv/build-tls-archive.sh` → `m
 
 `MpvHandle` names the host CA bundle as `tls-ca-file` unless the caller set one; the bundled OpenSSL was compiled against the build distribution's paths, so Arch and Fedora would fail certificate verification without it. `MIKAI_TLS_CA_FILE` overrides the search.
 
+Windows packaging cannot use `windeployqt.exe` (it needs Windows and crashes under wine), so the payload is assembled by name: `packaging/windows/assemble-payload.py` copies the executable, the Qt modules its import table asks for, a fixed plugin list, the MinGW runtime and the pinned `libmpv-2.dll`, then generates the Inno Setup `Source:` list from what it copied. Never replace it with a recursive glob or a deployed tree.
+
 Distribution packages: `packaging/linux/arch-package.sh` exports `HEAD` and builds with `makepkg` (runtime archive as a `source`, `qt6-base`/`libglvnd` instead of `mpv`, runtime at `/usr/lib/mikai/mpv`). `packaging/linux/deb-package.sh` builds inside Debian 13 with the Qt 6.12 SDK mounted at `/qt` and the runtime at `/mpv/runtime.tar.zst`; the package installs under `/usr`, ships ICU 73 beside Qt because the SDK links it, and derives `Depends` from what each shipped object can resolve through its own `$ORIGIN`/RUNPATH — a union of every shipped directory would drop a real dependency such as `libdbus-1-3`, whose copy exists only inside the mpv closure. The Windows dev archive `mpv-dev-x86_64-*.7z` supplies `libmpv-2.dll`; the `mpv-x86_64-*.7z` CLI archive does not contain it.
 
 ### Out-of-Band CLI Tools & Manifest Verification
