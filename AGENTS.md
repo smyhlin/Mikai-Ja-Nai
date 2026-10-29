@@ -96,6 +96,16 @@ ctest --test-dir build/linux-release --output-on-failure
 
 A build names itself, which is how a replaced AppImage is told from an older running process: `./build/linux-release/mikai --version` prints `mikai <version> (<short-rev>[-dirty], built <UTC stamp>)` without a display, the same line is logged at startup, and `applicationVersion` carries it. A cross build that cannot read the checkout passes `-DMIKAI_BUILD_REVISION=<short-rev>`. A MinGW cross build with GCC 13 needs `-DMIKAI_DISABLE_IPO=ON`; LTO refuses this tree's duplicated weak destructor thunks, which a non-LTO link merges, and the default stays LTO elsewhere.
 
+### Linux runtime and distribution packages
+
+A Linux artifact never borrows the host's mpv. `MIKAI_LINUX_BUNDLE_MPV=ON` installs the pinned runtime and its private closure into `MIKAI_LINUX_MPV_INSTALL_SUBDIR` — `bin/mpv` by default, `lib/mikai/mpv` where `/usr/bin/mpv` is the distribution's file — and the compile-time module path is derived from that same directory, so the install rule and the lookup cannot drift.
+
+The runtime must be the TLS rebuild (`packaging/mpv/build-tls-archive.sh` → `mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst`): the published archive was configured without an FFmpeg TLS backend, so it cannot open any https URL. Configure checks `MIKAI_LINUX_MPV_TLS` from libavformat's dynamic requirements, not from the "recompile FFmpeg with openssl" text that every build contains. `libvulkan.so.1` stays in the bundle — the runtime links it, and the loader is the 1.4.363 SDK the bundle was built against.
+
+`MpvHandle` names the host CA bundle as `tls-ca-file` unless the caller set one; the bundled OpenSSL was compiled against the build distribution's paths, so Arch and Fedora would fail certificate verification without it. `MIKAI_TLS_CA_FILE` overrides the search.
+
+Distribution packages: `packaging/linux/arch-package.sh` exports `HEAD` and builds with `makepkg` (runtime archive as a `source`, `qt6-base`/`libglvnd` instead of `mpv`, runtime at `/usr/lib/mikai/mpv`). `packaging/linux/deb-package.sh` builds inside Debian 13 with the Qt 6.12 SDK mounted at `/qt` and the runtime at `/mpv/runtime.tar.zst`; the package installs under `/usr`, ships ICU 73 beside Qt because the SDK links it, and derives `Depends` from what each shipped object can resolve through its own `$ORIGIN`/RUNPATH — a union of every shipped directory would drop a real dependency such as `libdbus-1-3`, whose copy exists only inside the mpv closure. The Windows dev archive `mpv-dev-x86_64-*.7z` supplies `libmpv-2.dll`; the `mpv-x86_64-*.7z` CLI archive does not contain it.
+
 ### Out-of-Band CLI Tools & Manifest Verification
 
 ```bash

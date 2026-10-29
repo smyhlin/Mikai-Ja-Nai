@@ -11,6 +11,27 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[2]
+LINUX_MPV_ARCHIVE_NAME = 'mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst'
+
+
+def ensure_linux_runtime():
+    """Return the path of the bundled Linux runtime, building it when absent.
+
+    The shipped runtime is the TLS rebuild, not the archive published upstream;
+    configure refuses to bundle anything else, so CI cannot simply download it.
+    """
+    archive = ROOT / 'release-artifacts' / LINUX_MPV_ARCHIVE_NAME
+    if archive.is_file():
+        return archive
+    if shutil.which('docker') is None:
+        raise RuntimeError(
+            f'{archive} is missing and docker is unavailable to build it; '
+            'run packaging/mpv/build-tls-archive.sh first')
+    subprocess.run(['bash', str(ROOT / 'packaging/mpv/build-tls-archive.sh'),
+                    '--output', str(archive.parent)], check=True)
+    if not archive.is_file():
+        raise RuntimeError(f'The runtime build did not produce {archive}')
+    return archive
 
 
 def digest(path):
@@ -99,8 +120,10 @@ def main():
                      '-DMIKAI_BUILD_PROBES=ON', '-DMIKAI_WITH_NATIVE=OFF',
                      '-DMIKAI_WITH_MODEL_INSPECTION=OFF']
         if not windows:
+            runtime = ensure_linux_runtime()
             configure.extend(['-DMIKAI_LINUX_BUNDLE_MPV=ON',
-                              '-DMIKAI_LINUX_DEPLOY_QT=ON'])
+                              '-DMIKAI_LINUX_DEPLOY_QT=ON',
+                              f'-DMIKAI_LINUX_MPV_ARCHIVE={runtime}'])
         if windows:
             compiler = Path(shutil.which(os.getenv('MIKAI_CXX', 'g++')) or os.getenv('MIKAI_CXX', 'g++'))
             pe = compiler.parent / 'libwinpthread-1.dll'
