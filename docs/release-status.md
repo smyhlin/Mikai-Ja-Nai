@@ -18,6 +18,17 @@ Status: **partial and blocked**. This document records source-first preparation 
 - **Current source snapshot (2026-10-29, revision `9372c03`):** Linux `mikai` builds with GCC on Arch, the hermetic CTest suite passes **55/55** (`ctest --test-dir build/linux-release --output-on-failure`), and the AppImage and dependency-based archive are built locally from that revision. The Windows x64 binary is cross-built with MinGW-w64 GCC 13 (`-DMIKAI_DISABLE_IPO=ON`, `-DMIKAI_BUILD_REVISION=9372c03`) and its payload is assembled from the `dist.cmake` allowlist; `windeployqt.exe` crashes under wine, so it is not used. The installer and portable ZIP are produced by Inno Setup 6.7.3 under wine. Each artifact answers `--version` with `mikai 0.1.0 (9372c03, built …)`.
 - **What that is not:** these are local builds and a local test result. No GPU inference run, no gallery capture, no signing and no publication gate run is claimed here. Windows installer upgrade/uninstall evidence recorded earlier belongs to the preceding revision and is not restated for `9372c03`.
 
+## Playback observation tracking
+
+Two owner-reported playback observations from the 2026-10-11 audit (KB-29 and KB-30) are under continued measurement. They are **not static defects** and are not release blockers for the current scope (Original playback, UI, component acquisition).
+
+| Observation | Status | What remains |
+|---|---|---|
+| KB-29 — HDR dark-scene instability | Under measurement | Controlled hardware A/B comparison pending; FBO attachment and tone-mapping behavior documented; Stable (`bt.2390` + `clip`) and Vivid (`mobius`) policies implemented; Anime4K/AJE/AJI processing gates in place |
+| KB-30 — Periodic frame substitution | Under measurement | Client-side pacing implemented with module-bound clock and version-aware deadline conversion; causal proof pending; controlled uninterrupted aging run needed |
+
+Both observations require physical hardware runs to close. Neither invalidates the current hermetic test suite (**55/55** PASS) or the documented UI/component-acquisition behavior.
+
 ## Blocked or not verified
 
 - **Gallery capture:** blocked/pending. No fresh captures are claimed. Historical 2026-10-24 captures under `docs/images/gallery-release-0.1.0/` are prior-run evidence only; see [docs/images/README.md](images/README.md).
