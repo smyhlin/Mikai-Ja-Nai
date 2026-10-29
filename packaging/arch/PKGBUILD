@@ -1,0 +1,38 @@
+# Maintainer: Mikai local QA build <noreply@localhost>
+# Built from an exported source tarball by packaging/linux/arch-package.sh, which
+# substitutes _revision and sha256sums. A manual `makepkg` needs both replaced.
+pkgname=mikai
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Unofficial desktop client for the Mikai anime catalogue, with a libmpv player'
+arch=('x86_64')
+url=''
+license=('Unlicense')
+depends=('qt6-base' 'mpv' 'libglvnd')
+makedepends=('cmake' 'ninja')
+optdepends=('nvidia-utils: NVML GPU probe for optional AnimeJaNai components')
+# A stripped single package: this is a release build, not a rebuild service.
+options=('strip' '!debug')
+source=("mikai-$pkgver.tar.gz")
+sha256sums=('@SHA256@')
+_revision='@REVISION@'
+
+build() {
+  cmake -S "$srcdir/mikai-$pkgver" -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DMIKAI_BUILD_REVISION="$_revision"
+  cmake --build build
+}
+
+# The repository's own gate: the launcher isolates each suite, and the shaders
+# plus a system libmpv are the only external inputs it needs.
+check() {
+  ctest --test-dir build --output-on-failure --timeout 900 --no-tests=error
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build
+  install -Dm644 "$srcdir/mikai-$pkgver/LICENSE" \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

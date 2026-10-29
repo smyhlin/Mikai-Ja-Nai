@@ -112,6 +112,34 @@ Qt's deployment omits the QPA platform plugins when the distribution Qt carries 
 
 To lower the glibc baseline, run the same commands in an older base image with the provisioned Qt instead of on the current host; no lower-baseline artifact is claimed here.
 
+### Distribution packages (Arch, Debian)
+
+Two distribution formats are produced from the same source tree. Neither is a publication approval, and neither replaces the tarball: the tarball stays the dependency-based reference layout.
+
+**Arch** builds from a git-exported tarball, not from a built tree, so the package and its revision cannot drift apart:
+
+```bash
+bash packaging/linux/arch-package.sh --output-dir /fresh/output
+```
+
+The driver refuses a modified worktree and a non-empty output directory, exports `HEAD` with `git archive`, substitutes the tarball digest and revision into `packaging/arch/PKGBUILD`, and runs `makepkg`. The build host needs `qt6-base`, `mpv` and `libglvnd` installed; `check()` runs this repository's CTest suite, so a package is only produced after the tests pass. The result is `mikai-0.1.0-1-x86_64.pkg.tar.zst` plus the generated `.SRCINFO`. The package depends on `qt6-base`, `mpv` and `libglvnd`, installs the executable as `/usr/bin/mikai` (with `/usr/bin/mikai-0.1.0` as its real name and `/usr/bin/shaders` linking to the shader directory), and relies on the distribution's Qt 6.12 — which is why this format only applies to Arch, where Qt 6.12 is current.
+
+**Debian** is built inside Debian 13 (trixie) because the binary's glibc floor is the build base's, and no Debian-family distribution ships Qt 6.12:
+
+```bash
+bash packaging/linux/deb-package.sh \
+  --output-dir /fresh/output \
+  --qt-dir /path/to/Qt/6.12.0/gcc_64
+```
+
+The driver builds `packaging/debian/docker/Dockerfile` into `mikai-deb-builder:trixie` (Ubuntu-style builds are not interchangeable: trixie is the oldest base the package is meant for), mounts the checkout read-only and the Qt SDK at `/qt`, and runs `packaging/debian/in-container.sh`. That script configures with `MIKAI_LINUX_DEPLOY_QT=ON`, installs into `/opt/mikai`, moves the desktop file, icons and AppStream metadata to `/usr/share`, creates `/usr/bin/mikai` as a symlink, derives `Depends` from the sonames the shipped objects actually ask for (plus `libmpv2`, which is opened with `dlopen` and therefore invisible to that scan), and builds `mikai_0.1.0_amd64.deb` with `dpkg-deb`.
+
+The Qt 6.12 SDK links ICU 73, which Debian 13 does not provide (it ships ICU 76). ICU 73 is compiled once into the builder image and shipped beside the Qt runtime under `/opt/mikai/lib`; every library in that directory resolves its siblings through `$ORIGIN`. The build-time `LD_LIBRARY_PATH` is cleared before packaging and testing so a missing private dependency cannot be masked. The package carries `libc6 (>= 2.38)` from the shipped objects, which excludes Debian 12.
+
+Both scripts verify the package by installing it: the Debian script installs, prints `--version`, starts the application as an unprivileged user with `QT_QPA_PLATFORM=offscreen`, and removes it, failing if the Qt platform plugin cannot load or the removal leaves the executable behind. A clean `debian:trixie-slim` container with only `apt-get install ./mikai_0.1.0_amd64.deb` was used for the recorded artifact, without the builder image's ICU directory.
+
+What neither format establishes: signing, publication, a physical GPU or audio acceptance run, or playback of provider streams. The Arch package inherits Arch's Qt and libmpv, the Debian package inherits trixie's libmpv and carries its own Qt — the two are not interchangeable builds of the same binary.
+
 ## Local source preview
 
 To prepare a source archive from the current worktree without staging or committing it, use a fresh output directory:

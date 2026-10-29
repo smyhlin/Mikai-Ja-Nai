@@ -1,6 +1,10 @@
 # Changelog
 
 ## 0.1.0 — Unreleased
+### Distribution packages (2026-10-29)
+
+- Arch and Debian packages are now part of the release output. `packaging/linux/arch-package.sh` exports `HEAD`, builds with `makepkg` against Arch's Qt 6.12 and system `libmpv`, and runs the repository's CTest gate before a package exists; the result installs to `/usr`. `packaging/linux/deb-package.sh` builds inside Debian 13 through Docker, because the package's glibc floor is the build base's and no Debian-family release ships Qt 6.12: it deploys Qt 6.12 plus the ICU 73 that SDK links into `/opt/mikai`, keeps `libmpv2` a distribution dependency, and places the desktop entry, icons and AppStream metadata in `/usr/share`. Both scripts install what they built — the Debian one as an unprivileged user — and refuse a dirty worktree or a populated output directory. Recorded artifacts: `mikai-0.1.0-1-x86_64.pkg.tar.zst` (installed and removed in an `archlinux` container) and `mikai_0.1.0_amd64.deb` (installed in a clean `debian:trixie-slim`, `--version` and an offscreen start, then removed).
+
 ### Player chrome, watch state and update hygiene (2026-10-29)
 
 - Playback now always starts at 00:00 and offers the stored position instead of jumping: once libmpv reports a length, the player asks "Continue from 12:34?" with **Continue** and **Start over**. Continue seeks, Start over clears the stored offset, and dismissing the box keeps it for the next open. Offsets shorter than 30 s are not stored; reaching 90 % of the length marks the episode watched and drops the offset. The title page shows the same state as a hairline progress bar, a `12:34 / 24:00` meta line and a **Continue** action in place of **Watch**. Verified by driving the real dialog: 45 s stored → Continue lands at 45.00 s, Start over stays at 0.12 s and raises `episodeResumeDeclined`, and no offset raises no prompt.
