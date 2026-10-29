@@ -91,18 +91,41 @@ elfs=()
 while IFS= read -r candidate; do
   if file --brief "$candidate" | grep -q ELF; then elfs+=("$candidate"); fi
 done < <(find "$STAGE" -type f \( -name '*.so' -o -name '*.so.*' -o -name mikai \) -print)
-own_libraries="$(find "$STAGE/opt/mikai" -name '*.so*' -not -type d -printf '%f\n' | sort -u)"
+# A library counts as ours only where the object that asks for it can actually
+# reach it: the private mpv closure lives in its own directory, and a Qt library
+# in another directory cannot use it. Resolving the union of every shipped
+# directory instead would drop a real dependency (libdbus-1, for one) from
+# Depends because the mpv bundle happens to carry a copy the app never loads.
+unresolved_sonames() {
+  local elf dir runpath soname candidate part
+  for elf in "${elfs[@]}"; do
+    dir="$(dirname "$elf")"
+    runpath="$(readelf -d "$elf" 2>/dev/null       | sed -n 's/.*(RUNPATH).*\[\(.*\)\]/\1/p;s/.*(RPATH).*\[\(.*\)\]/\1/p' | head -1)"
+    while read -r soname; do
+      [[ -z "$soname" ]] && continue
+      if [[ -e "$dir/$soname" ]]; then continue; fi
+      local found=0
+      IFS=':' read -r -a parts <<<"$runpath"
+      for part in "${parts[@]}"; do
+        [[ -z "$part" ]] && continue
+        candidate="${part//\$ORIGIN/$dir}"
+        if [[ -e "$candidate/$soname" ]]; then found=1; break; fi
+      done
+      (( found )) || printf '%s\n' "$soname"
+    done < <(objdump -p "$elf" | awk '/NEEDED/{print $2}')
+  done | sort -u
+}
+
 declared=()
 while read -r soname; do
   [[ -z "$soname" ]] && continue
-  if grep -qxF "$soname" <<<"$own_libraries"; then continue; fi
   provider="$(dpkg -S "*/$soname" 2>/dev/null | head -1 | cut -d: -f1 || true)"
   if [[ -z "$provider" ]]; then
     printf 'No package owns %s\n' "$soname" >&2
     continue
   fi
   declared+=("$provider")
-done < <(for elf in "${elfs[@]}"; do objdump -p "$elf" | awk '/NEEDED/{print $2}'; done | sort -u)
+done < <(unresolved_sonames)
 
 glibc_floor="$(for elf in "${elfs[@]}"; do objdump -T "$elf" 2>/dev/null | grep -o 'GLIBC_[0-9.]*' || true; done \
   | sort -uV | tail -1 | sed 's/^GLIBC_//')"
