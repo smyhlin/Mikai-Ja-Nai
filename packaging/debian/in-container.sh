@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Runs inside the trixie build image. Configures this checkout against the Qt
-# 6.12 SDK mounted at $QT_DIR, installs into /opt/mikai, relocates the desktop
-# integration files, derives Depends from the shipped ELF objects, builds the
-# package, then installs and starts it once before removing it again.
+# 6.12 SDK mounted at $QT_DIR, installs into /usr with the runtime under
+# /usr/lib/mikai/mpv, derives Depends from what each shipped object can actually
+# resolve, builds the package, then installs and starts it once before removing
+# it again.
 set -euo pipefail
 
 SRC="${SRC:-/src}"
@@ -38,31 +39,24 @@ export LD_LIBRARY_PATH="/opt/icu73/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 cmake -S "$SRC" -B "$BUILD" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH="$QT_DIR" \
-  -DCMAKE_INSTALL_PREFIX=/opt/mikai \
+  -DCMAKE_INSTALL_PREFIX=/usr \
   -DMIKAI_LINUX_DEPLOY_QT=ON \
   -DMIKAI_LINUX_BUNDLE_MPV=ON \
   -DMIKAI_LINUX_MPV_ARCHIVE=/mpv/runtime.tar.zst \
+  -DMIKAI_LINUX_MPV_INSTALL_SUBDIR=lib/mikai/mpv \
   -DMIKAI_BUILD_PROBES=OFF \
   -DMIKAI_BUILD_REVISION="$REVISION"
 cmake --build "$BUILD"
-DESTDIR="$STAGE" cmake --install "$BUILD" --prefix /opt/mikai
+DESTDIR="$STAGE" cmake --install "$BUILD" --prefix /usr
 
-# Desktop integration belongs in the shared hierarchy; the application keeps its
-# private Qt runtime, shaders and licence files together under /opt/mikai.
-mkdir -p "$STAGE/usr/bin" "$STAGE/usr/share/doc"
-for entry in applications icons metainfo; do
-  if [[ -d "$STAGE/opt/mikai/share/$entry" ]]; then
-    mv "$STAGE/opt/mikai/share/$entry" "$STAGE/usr/share/"
-  fi
-done
-if [[ -d "$STAGE/opt/mikai/share/licenses/mikai" ]]; then
-  mv "$STAGE/opt/mikai/share/licenses/mikai" "$STAGE/usr/share/doc/mikai"
-  install -m644 "$STAGE/usr/share/doc/mikai/LICENSE" "$STAGE/usr/share/doc/mikai/copyright"
-fi
-ln -s /opt/mikai/bin/mikai "$STAGE/usr/bin/mikai"
+# Policy requires a copyright file; the licence texts themselves already install
+# under /usr/share/licenses/mikai.
+mkdir -p "$STAGE/usr/share/doc/mikai"
+install -m644 "$STAGE/usr/share/licenses/mikai/LICENSE" "$STAGE/usr/share/doc/mikai/copyright"
 
-if [[ ! -f "$STAGE/opt/mikai/bin/mikai" || ! -f "$STAGE/opt/mikai/bin/qt.conf" ]]; then
-  printf 'The install did not produce the expected /opt/mikai tree.\n' >&2
+if [[ ! -f "$STAGE/usr/bin/mikai" || ! -f "$STAGE/usr/bin/qt.conf" \
+      || ! -f "$STAGE/usr/lib/mikai/mpv/libmpv.so.2" ]]; then
+  printf 'The install did not produce the expected /usr tree.\n' >&2
   exit 3
 fi
 
@@ -72,16 +66,16 @@ fi
 for icu in libicuuc libicui18n libicudata; do
   for lib in /opt/icu73/lib/$icu.so.73*; do
     [[ -e "$lib" ]] || continue
-    cp -P "$lib" "$STAGE/opt/mikai/lib/"
+    cp -P "$lib" "$STAGE/usr/lib/"
   done
 done
-if ! ls "$STAGE/opt/mikai/lib"/libicui18n.so.73 >/dev/null 2>&1; then
+if ! ls "$STAGE/usr/lib"/libicui18n.so.73 >/dev/null 2>&1; then
   printf 'ICU 73 was not found in /opt/icu73/lib; the private runtime would be incomplete.\n' >&2
   exit 3
 fi
 while IFS= read -r library; do
   patchelf --set-rpath '$ORIGIN' "$library"
-done < <(find "$STAGE/opt/mikai/lib" -maxdepth 1 -name '*.so*' -not -type d -print)
+done < <(find "$STAGE/usr/lib" -maxdepth 1 -name '*.so*' -not -type d -print)
 
 unset LD_LIBRARY_PATH
 

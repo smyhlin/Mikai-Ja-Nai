@@ -11,6 +11,6 @@ Description: Unofficial desktop client for the Mikai anime catalogue
  files through libmpv. Anime4K shader presets and a frame-comparison workspace
  are optional; ordinary playback does not need AI components.
  .
- This package carries its own Qt 6.12 runtime under /opt/mikai because no
- current distribution ships that Qt version, and uses the distribution's
- libmpv for playback. Optional native inference components are not included.
+ This package carries its own Qt 6.12 runtime and the Mikai libmpv fork
+ (under /usr/lib/mikai/mpv) because no current distribution ships either.
+ Optional native inference components are not included.
