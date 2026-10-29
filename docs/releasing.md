@@ -52,7 +52,7 @@ These outputs are local build products, not approval to upload them. Do not publ
 
 The Linux path creates a dependency-based tarball and named install tree, not an AppImage, Debian package or universally self-contained bundle. By default it relies on compatible system Qt 6.12+ runtime/plugins, desktop OpenGL and `libmpv.so.2` (mpv 0.35+ / API 2), plus system WebP, TLS, codec and graphics dependencies. A specific local build/package observation is recorded in [release status](release-status.md); it does not establish distro-wide compatibility or a libc baseline. CI's Ubuntu 24.04 + separately supplied Qt 6.12 target is likewise not a claim about all distributions.
 
-Optional Qt deployment (`MIKAI_LINUX_DEPLOY_QT=ON`) deploys Qt libraries/plugins and relative RPATH; system mpv is required only when the separate mpv bundle option is off. `MIKAI_LINUX_BUNDLE_MPV=ON` bundles the pinned Linux `libmpv.so.2` and its private shared-library closure under `bin/mpv`, with owned `$ORIGIN` RUNPATH patching via build-time `patchelf`; it does not bundle the mpv CLI, docs or updaters. Host glibc/loader, graphics drivers and GL/EGL integration, and audio subsystems remain dependencies. CI and release preparation configure both options on, so the package and renderer smoke use the selected bundled runtime rather than host mpv. This is not a standalone or universal Linux bundle; Qt/mpv redistribution still requires separate rights review. `MIKAI_DIST_MPV_ARCHIVE` is Windows-only and is rejected on Linux.
+Optional Qt deployment (`MIKAI_LINUX_DEPLOY_QT=ON`) deploys Qt libraries/plugins and relative RPATH. `MIKAI_LINUX_BUNDLE_MPV=ON` bundles our pinned libmpv fork — the runtime the player and AnimeJaNai are built against — so a Linux artifact never depends on the host's mpv. `MIKAI_LINUX_BUNDLE_MPV=ON` bundles the pinned Linux `libmpv.so.2` and its private shared-library closure under `bin/mpv`, with owned `$ORIGIN` RUNPATH patching via build-time `patchelf`; it does not bundle the mpv CLI, docs or updaters. Host glibc/loader, graphics drivers and GL/EGL integration, and audio subsystems remain dependencies. CI and release preparation configure both options on, so the package and renderer smoke use the selected bundled runtime rather than host mpv. This is not a standalone or universal Linux bundle; Qt/mpv redistribution still requires separate rights review. `MIKAI_DIST_MPV_ARCHIVE` is Windows-only and is rejected on Linux.
 
 ```bash
 cmake --preset linux-release
@@ -93,7 +93,7 @@ The default system profile remains valid: `MIKAI_LINUX_BUNDLE_MPV=OFF` uses dist
 
 An AppImage is a packaging format, not a portability guarantee: it carries Qt, while glibc, the dynamic loader, graphics drivers, Vulkan/EGL and the audio subsystem stay host dependencies. The image inherits the build host's glibc baseline through the bundled Qt, so a build produced on a rolling distribution does not run on an older LTS.
 
-The pinned Linux libmpv archive is built without an FFmpeg TLS backend, so it cannot open any `https` URL: every provider stream and every HLS URL over https fails with "No protocol handler found", while local files still play. Configure detects that in the archive (`MIKAI_LINUX_MPV_TLS`) and AppImage packaging refuses to bundle it, instead of shipping a player that fails on real catalogue playback. The image then uses the host's `libmpv.so.2` (client API 2, built with a TLS backend); that is a dependency of the image, not a bundled copy. Bundling works again once a runtime archive is published with TLS enabled.
+The image bundles our own runtime: the pinned libmpv fork plus its private library closure, rebuilt with an FFmpeg that has a TLS backend (`packaging/mpv/build-tls-archive.sh`, documented in the build guide). The archive published at the pinned commit was configured without one, so it could not open any `https` URL; configure detects the backend from libavformat's own dynamic requirements (`MIKAI_LINUX_MPV_TLS`) and AppImage packaging still refuses a runtime without it rather than ship a player that fails on real catalogue playback.
 
 ```bash
 cmake -S . -B build/appimage -G Ninja \
@@ -116,7 +116,7 @@ To lower the glibc baseline, run the same commands in an older base image with t
 
 Two distribution formats are produced from the same source tree. Neither is a publication approval, and neither replaces the tarball: the tarball stays the dependency-based reference layout.
 
-**Arch** builds from a git-exported tarball, not from a built tree, so the package and its revision cannot drift apart:
+**Arch** builds from a git-exported tarball, not from a built tree, so the package and its revision cannot drift apart. It bundles the pinned runtime under `/usr/lib/mikai/mpv` — a directory named `mpv` in `/usr/bin` would collide with the distribution's `mpv` package — and depends on `qt6-base` and `libglvnd` rather than `mpv`:
 
 ```bash
 bash packaging/linux/arch-package.sh --output-dir /fresh/output
@@ -132,7 +132,7 @@ bash packaging/linux/deb-package.sh \
   --qt-dir /path/to/Qt/6.12.0/gcc_64
 ```
 
-The driver builds `packaging/debian/docker/Dockerfile` into `mikai-deb-builder:trixie` (Ubuntu-style builds are not interchangeable: trixie is the oldest base the package is meant for), mounts the checkout read-only and the Qt SDK at `/qt`, and runs `packaging/debian/in-container.sh`. That script configures with `MIKAI_LINUX_DEPLOY_QT=ON`, installs into `/opt/mikai`, moves the desktop file, icons and AppStream metadata to `/usr/share`, creates `/usr/bin/mikai` as a symlink, derives `Depends` from the sonames the shipped objects actually ask for (plus `libmpv2`, which is opened with `dlopen` and therefore invisible to that scan), and builds `mikai_0.1.0_amd64.deb` with `dpkg-deb`.
+The driver builds `packaging/debian/docker/Dockerfile` into `mikai-deb-builder:trixie` (Ubuntu-style builds are not interchangeable: trixie is the oldest base the package is meant for), mounts the checkout read-only and the Qt SDK at `/qt`, and runs `packaging/debian/in-container.sh`. That script configures with `MIKAI_LINUX_DEPLOY_QT=ON`, installs into `/opt/mikai`, moves the desktop file, icons and AppStream metadata to `/usr/share`, creates `/usr/bin/mikai` as a symlink, derives `Depends` from the sonames the shipped objects actually ask for — the runtime is bundled, so no distribution mpv is required, and builds `mikai_0.1.0_amd64.deb` with `dpkg-deb`.
 
 The Qt 6.12 SDK links ICU 73, which Debian 13 does not provide (it ships ICU 76). ICU 73 is compiled once into the builder image and shipped beside the Qt runtime under `/opt/mikai/lib`; every library in that directory resolves its siblings through `$ORIGIN`. The build-time `LD_LIBRARY_PATH` is cleared before packaging and testing so a missing private dependency cannot be masked. The package carries `libc6 (>= 2.38)` from the shipped objects, which excludes Debian 12.
 

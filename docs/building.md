@@ -72,11 +72,11 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH=/path/to/Qt/6.12+/gcc_64 \
   -DCMAKE_CXX_COMPILER=/path/to/Qt/6.12+/gcc_64/bin/g++ \
   -DMIKAI_LINUX_BUNDLE_MPV=ON \
-  -DMIKAI_LINUX_MPV_ARCHIVE=/path/to/mpv-linux-x64-2026-10-24-c493f1c.tar.zst
+  -DMIKAI_LINUX_MPV_ARCHIVE=/path/to/mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst
 cmake --build build --parallel 2 --target mikai
 ```
 
-The pinned Linux archive is `mpv-linux-x64-2026-10-24-c493f1c.tar.zst`, SHA-256 `b6281a2c924157a01f4a66f49dda3029b11378ffd982a974cdcbdb474c0befc7`, 41,650,081 bytes, source commit `c493f1c7e10a6b2301653596e7deeb91295d3148`. It contains `libmpv.so`, `libmpv.so.2` and `libmpv.so.2.6.0` (each 3,708,024 bytes, SHA-256 `f50c5195aececc060202c2128113d88a9fc0a463c2e5fc9694f8e40349e96768`), an mpv CLI that is not bundled, and 78 files total. It contains no headers or notices. The bundle mode requires `patchelf` at configure/build time; requested bundle failures are fatal and do not silently fall back to system libmpv. Its developer build still uses system development headers; the archive is a runtime bundle, not a Linux development SDK.
+The pinned Linux runtime is `mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst`, SHA-256 `6796d922cfd3ffb9bcd8948f77c609a4055ac343a9898f2433d2aa4b0eb6a17d`, 41,533,948 bytes, from mpv source commit `c493f1c7e10a6b2301653596e7deeb91295d3148`. It is produced by `packaging/mpv/build-tls-archive.sh` from the archive published at that commit: the published archive was configured without an FFmpeg TLS backend, so every https URL failed with "No protocol handler found". The script rebuilds FFmpeg at the same tag with the same flags plus `--enable-openssl`, replaces that family inside the archive and adds OpenSSL 3.0 from the Ubuntu 22.04 baseline. Everything else — the mpv fork with `vf_animejanai`, libplacebo, shaderc, libass, the Vulkan loader — is the published archive's bytes. `release-artifacts/` is the default search location; `-DMIKAI_LINUX_MPV_ARCHIVE=` overrides it. The bundle installs to `MIKAI_LINUX_MPV_INSTALL_SUBDIR` (`bin/mpv` by default, `lib/mikai/mpv` where a distribution package owns `/usr/bin/mpv`). The mode requires `patchelf`; requested bundle failures are fatal and never fall back to system libmpv. Its developer build still uses system development headers; the archive is a runtime bundle, not a Linux development SDK.
 
 `MIKAI_DIST_MPV_ARCHIVE` is Windows-only. On Linux it is rejected by CMake; Linux developer builds use system headers/library selection or the separate `MIKAI_LINUX_MPV_ARCHIVE` override. The two archive variables and their SHA checks are intentionally separate.
 

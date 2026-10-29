@@ -95,7 +95,7 @@ if(IS_SYMLINK "${MIKAI_LINUX_MPV_EXTRACTED_DIR}")
   message(FATAL_ERROR "Refusing a symlink Linux mpv extraction directory: ${MIKAI_LINUX_MPV_EXTRACTED_DIR}")
 endif()
 set(MIKAI_LINUX_MPV_STAMP "${MIKAI_LINUX_MPV_EXTRACTED_DIR}/.mikai-linux-mpv.sha256")
-set(_mikai_linux_mpv_stamp_identity "mikai-linux-mpv-v2 ${MIKAI_LINUX_MPV_ARCHIVE_SHA256}")
+set(_mikai_linux_mpv_stamp_identity "mikai-linux-mpv-v3 ${MIKAI_LINUX_MPV_ARCHIVE_SHA256}")
 
 function(mikai_linux_mpv_cache_valid result)
   set(${result} FALSE PARENT_SCOPE)
@@ -174,7 +174,10 @@ if(NOT _mikai_linux_mpv_cache_valid)
   set(_mikai_linux_mpv_library_count 0)
   foreach(_so IN LISTS _mikai_linux_mpv_so_files)
     get_filename_component(_so_name "${_so}" NAME)
-    if(_so_name MATCHES "^(ld-linux[^/]*|lib(c|m|mvec|pthread|dl|rt|resolv|util|anl|BrokenLocale|thread_db|nss_[^.]+|SegFault|memusage|pcprofile|EGL|GL|GLX|GLdispatch|OpenGL|GLESv[0-9]+|vulkan|cuda|nvidia[^.]*|Qt[0-9][^.]*))\\.so")
+    # Driver- and display-coupled libraries come from the host. The Vulkan
+    # loader does not: the runtime links it, and an unmodified host without
+    # vulkan-icd-loader would otherwise fail to load the module at all.
+    if(_so_name MATCHES "^(ld-linux[^/]*|lib(c|m|mvec|pthread|dl|rt|resolv|util|anl|BrokenLocale|thread_db|nss_[^.]+|SegFault|memusage|pcprofile|EGL|GL|GLX|GLdispatch|OpenGL|GLESv[0-9]+|cuda|nvidia[^.]*|Qt[0-9][^.]*))\\.so")
       file(REMOVE "${_so}")
       continue()
     endif()
