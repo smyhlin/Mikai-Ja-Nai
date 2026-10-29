@@ -47,4 +47,9 @@ class TestDiagnostics : public QObject {
   // and was written raw here would still be a disclosure.
   void aSignedUrlWrittenToTheLogFileIsRedactedOnDisk();
   void qtMessageHandlerPreservesTheOriginalMessage();
+
+  // An AppImage mounts its payload read-only, so the session log cannot land
+  // beside the exe; it must fall back to a writable per-user folder instead of
+  // silently dropping every line.
+  void aReadOnlyExeFolderFallsBackToAWritableLogFolder();
 };

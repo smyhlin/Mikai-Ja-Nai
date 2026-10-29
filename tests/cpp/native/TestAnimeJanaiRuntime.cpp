@@ -10,6 +10,7 @@
 #include "native/components/AnimeJanaiRuntime.hpp"
 #include "native/components/NativeComponentCatalog.hpp"
 #include "native/components/NativeGpuProbe.hpp"
+#include "native/models/NativeSpatialAssets.hpp"
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QCryptographicHash>
@@ -426,6 +427,49 @@ void TestAnimeJanaiRuntime::linuxImportsAbiExportingElfClosure() {
     const auto notExecutable = describeAnimeJanaiInstallation(Backend::TensorRT, true);
     QVERIFY(!notExecutable.installed);
     QCOMPARE(notExecutable.reasonKey, QStringLiteral("animejanai.installation.fileInvalid"));
+#else
+    QSKIP("Linux ELF ABI fixture is unavailable on this platform.");
+#endif
+}
+
+void TestAnimeJanaiRuntime::tensorRtPlanCarriesTheBackendLoaderDir() {
+#if !defined(Q_OS_WIN) && defined(MIKAI_TEST_AJI_DISPATCHER)
+    QTemporaryDir source;
+    QVERIFY(source.isValid());
+    QFile dispatcher(QString::fromUtf8(MIKAI_TEST_AJI_DISPATCHER));
+    QVERIFY(dispatcher.open(QIODevice::ReadOnly));
+    const QByteArray dispatcherBytes = dispatcher.readAll();
+    QVERIFY(!dispatcherBytes.isEmpty());
+    for (const QString& name : required(Backend::TensorRT)) {
+        const QByteArray bytes = (name == QLatin1String("libaji.so") ||
+                                  name == QLatin1String("libaji_trt.so")) ? dispatcherBytes : fixtureImage();
+        QVERIFY(writeFile(QDir(source.path()).filePath(name), bytes));
+    }
+    const auto imported = importAnimeJanaiRuntime(source.path(), Backend::TensorRT, {}, {});
+    QVERIFY2(imported.ok, qPrintable(imported.reason));
+    const auto installed = describeAnimeJanaiInstallation(Backend::TensorRT, true);
+    QVERIFY2(installed.installed, qPrintable(installed.reason));
+    // The builtin presets gate on pinned catalogue digests that fixture bytes
+    // cannot reproduce, so drive the plan through an imported custom model,
+    // which stages its own digest-consistent graph.
+    QTemporaryDir modelDir;
+    QVERIFY(modelDir.isValid());
+    const QString modelPath = QDir(modelDir.path()).filePath(QStringLiteral("2x_Custom_LoaderDir.onnx"));
+    QVERIFY(writeFile(modelPath, mikai::tests::fixtures::makeTestIdentityOnnxGraph()));
+    CustomAnimeJanaiModel customModel;
+    QString importError;
+    QVERIFY2(importCustomAnimeJanaiModel(modelPath, &customModel, &importError),
+             qPrintable(importError));
+    QVERIFY(customModel.valid);
+    // The fork dlopens libnvinfer by bare soname when the filter creates its
+    // inference context, so the plan must name the closure folder for the
+    // surface to preload before attaching; a bare dlopen failure is the
+    // opaque "Failed to create inference context".
+    const auto plan = prepareAnimeJanaiPlan(QStringLiteral("spatial:custom:") + customModel.id,
+                                            Backend::TensorRT);
+    QVERIFY2(plan.available, qPrintable(plan.reason));
+    QCOMPARE(plan.backendLibDirs, QStringList{installed.root});
+    if (plan.cacheLease) plan.cacheLease->release();
 #else
     QSKIP("Linux ELF ABI fixture is unavailable on this platform.");
 #endif

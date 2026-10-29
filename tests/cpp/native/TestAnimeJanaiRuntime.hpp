@@ -15,6 +15,7 @@ class TestAnimeJanaiRuntime : public QObject {
   void linuxRejectsDirectMlBeforeAcquisition();
   void linuxRejectsWindowsRuntimeAndPeDisguisedAsElf();
   void linuxImportsAbiExportingElfClosure();
+  void tensorRtPlanCarriesTheBackendLoaderDir();
   void linuxOfficialPairRequiresBothPinnedDigests();
   void missingInstallIsNotReady();
   void missingRequiredBackendDependencyIsNotReady();

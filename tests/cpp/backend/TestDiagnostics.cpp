@@ -5,11 +5,17 @@
 
 #include <cstdio>
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QDebug>
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
+#include <QtCore/QDirIterator>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QLibraryInfo>
+#include <QtCore/QProcess>
+#include <QtCore/QProcessEnvironment>
+#include <QtCore/QStandardPaths>
 #include <QtCore/QStringList>
 #include <QtCore/QTemporaryFile>
 #include <QtCore/QtGlobal>
@@ -296,6 +302,60 @@ void TestDiagnostics::aSignedUrlWrittenToTheLogFileIsRedactedOnDisk() {
                stored.contains(QStringLiteral("%1 Authorization: ").arg(marker)),
            qPrintable(QStringLiteral("the log lost the request it was reporting: %1")
                           .arg(stored)));
+}
+
+void TestDiagnostics::aReadOnlyExeFolderFallsBackToAWritableLogFolder() {
+  // The fallback decision keys off the executable's own folder, so it is
+  // exercised in a child process whose exe sits in a read-only directory -
+  // the AppImage situation, where the squashfs mount refuses writes.
+  QTemporaryDir sandbox;
+  QVERIFY(sandbox.isValid());
+  const QString exeDir = QDir(sandbox.path()).filePath(QStringLiteral("bin"));
+  QVERIFY(QDir().mkpath(exeDir));
+  const QString childExe = QDir(exeDir).filePath(
+      QFileInfo(QCoreApplication::applicationFilePath()).fileName());
+  QVERIFY(QFile::copy(QCoreApplication::applicationFilePath(), childExe));
+  QFile::setPermissions(childExe, QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                    QFileDevice::ExeOwner);
+  QFile::setPermissions(exeDir, QFileDevice::ReadOwner | QFileDevice::ExeOwner);
+
+  QProcess child;
+  QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+  environment.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
+  environment.insert(QStringLiteral("QT_QPA_PLATFORM_PLUGIN_PATH"),
+                     QDir(QLibraryInfo::path(QLibraryInfo::PluginsPath))
+                         .filePath(QStringLiteral("platforms")));
+  environment.insert(QStringLiteral("PATH"),
+                     QLibraryInfo::path(QLibraryInfo::BinariesPath) + QDir::listSeparator() +
+                         environment.value(QStringLiteral("PATH")));
+  child.setProcessEnvironment(environment);
+  child.setWorkingDirectory(sandbox.path());
+  child.start(childExe, {QStringLiteral("TestDiagnostics"),
+                         QStringLiteral("qtMessageHandlerPreservesTheOriginalMessage")});
+  QVERIFY2(child.waitForStarted(), qPrintable(child.errorString()));
+  QVERIFY2(child.waitForFinished(30000), "child log-fallback run did not finish");
+  QCOMPARE(child.exitStatus(), QProcess::NormalExit);
+  QCOMPARE(child.exitCode(), 0);
+
+  // The child's log must not be in the read-only exe folder, and must exist
+  // somewhere writable instead.
+  QVERIFY(!QFileInfo::exists(QDir(exeDir).filePath(QStringLiteral("mikai.log"))));
+  bool found = false;
+  const QStringList roots{
+      QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation),
+      QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)};
+  for (const QString& root : roots) {
+    QDirIterator it(root, {QStringLiteral("mikai.log")}, QDir::Files,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+      if (QFileInfo(it.next()).lastModified() >= QDateTime::currentDateTime().addSecs(-60)) {
+        found = true;
+        break;
+      }
+    }
+    if (found) break;
+  }
+  QVERIFY2(found, "no fresh mikai.log appeared in any writable data location");
 }
 
 int runTestDiagnostics(int argc, char** argv) {

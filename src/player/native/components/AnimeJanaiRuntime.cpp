@@ -650,6 +650,10 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
         plan.libraryPath = QDir(installation.root).filePath(QStringLiteral("libaji.so"));
 #endif
         plan.trtexecLibDir = installation.root;
+#ifndef Q_OS_WIN
+        if (backend == Backend::TensorRT)
+            plan.backendLibDirs.append(installation.root);
+#endif
     }
 
     struct SpatialItem { AnimeJanaiChainStep step; QString graph; QString digest; qint64 bytes; const SpatialAsset* pinned; std::optional<CustomAnimeJanaiModel> custom; };
@@ -1197,6 +1201,10 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
     plan.statsPath = QDir(ownedRoot).filePath(QStringLiteral("stats/") + safeConfigName(presetId) + QStringLiteral(".txt"));
     plan.slot = preset->slot;
     plan.trtexecLibDir = installation.root;
+#ifndef Q_OS_WIN
+    if (backend == Backend::TensorRT)
+        plan.backendLibDirs.append(installation.root);
+#endif
     plan.cacheKeys = {
         QDir::cleanPath(QFileInfo(plan.modelDir).absoluteFilePath()),
         QDir::cleanPath(QFileInfo(plan.rifeModelDir).absoluteFilePath())};

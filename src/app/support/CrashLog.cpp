@@ -9,6 +9,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QMutex>
+#include <QStandardPaths>
 #include <QStringList>
 
 #include <cstdio>
@@ -887,12 +888,32 @@ QString runtimeDir() {
     return QDir::currentPath();
 }
 
+namespace {
+
+/// The log lands beside the exe when that folder accepts writes. An AppImage
+/// mounts its payload read-only, so there the session log falls back to the
+/// app's local data folder, where it survives the unmount; `logPath()` is the
+/// single answer callers should use either way.
+QString writableLogDir() {
+    const QString exeDir = runtimeDir();
+    QFile probe(QDir(exeDir).filePath(QStringLiteral(".mikai-log-probe")));
+    if (probe.open(QIODevice::WriteOnly)) {
+        probe.remove();
+        return exeDir;
+    }
+    const QString fallback = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    if (!fallback.isEmpty()) QDir().mkpath(fallback);
+    return fallback.isEmpty() ? exeDir : fallback;
+}
+
+}  // namespace
+
 QString logPath() { return g_logPath; }
 
 void writeLogLine(const QString& line) { appendToLog(line); }
 
 void installCrashLog() {
-    const QString dir = runtimeDir();
+    const QString dir = writableLogDir();
     g_logPath = QDir(dir).filePath(QString::fromLatin1(kLogName));
     g_crashPrefixPath = QDir(dir).filePath(QString::fromLatin1(kCrashPrefix));
     g_sessionStart = QDateTime::currentDateTime();

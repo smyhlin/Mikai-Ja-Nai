@@ -7,6 +7,7 @@
 #include "native/components/AnimeJanaiBuildLog.hpp"
 #include "native/bundle/NativeRuntimeSelection.hpp"
 
+#include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QRegularExpression>
@@ -14,6 +15,39 @@
 
 #include <string>
 #include <utility>
+
+#ifndef Q_OS_WIN
+#include <dlfcn.h>
+#endif
+
+namespace {
+
+/// The fork's TensorRT backend resolves libnvinfer by bare soname, so the
+/// closure folder must already be on the process loader path when the filter
+/// initialises; a plain dlopen failure surfaces as the opaque "Failed to
+/// create inference context". Preloading the closure RTLD_GLOBAL makes those
+/// sonames resolvable. Idempotent: already-loaded sonames are skipped.
+void preloadAnimeJanaiBackendLibs(const QStringList& dirs) {
+#ifndef Q_OS_WIN
+    for (const QString& dirPath : dirs) {
+        if (dirPath.isEmpty()) continue;
+        const QDir dir(dirPath);
+        const QFileInfoList entries = dir.entryInfoList(
+            {QStringLiteral("*.so"), QStringLiteral("*.so.*")}, QDir::Files, QDir::Name);
+        for (const QFileInfo& entry : entries) {
+            const QByteArray path = entry.absoluteFilePath().toUtf8();
+            if (::dlopen(path.constData(), RTLD_NOW | RTLD_GLOBAL) != nullptr)
+                continue;
+            qWarning().noquote() << "[animejanai] backend preload failed for"
+                                 << entry.fileName() << ":" << ::dlerror();
+        }
+    }
+#else
+    Q_UNUSED(dirs);
+#endif
+}
+
+}  // namespace
 
 namespace mplayer {
 
@@ -109,6 +143,7 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
         animeJanaiPlan_.trtexecPath == plan.trtexecPath &&
         animeJanaiPlan_.trtexecLibDir == plan.trtexecLibDir &&
         animeJanaiPlan_.statsPath == plan.statsPath &&
+        animeJanaiPlan_.backendLibDirs == plan.backendLibDirs &&
         animeJanaiPlan_.filterSpec == plan.filterSpec &&
         animeJanaiPlan_.selectedChainNumber == plan.selectedChainNumber &&
         animeJanaiPlan_.requiresAji == plan.requiresAji &&
@@ -145,7 +180,8 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
         animeJanaiPlan_.modelDir == plan.modelDir &&
         animeJanaiPlan_.rifeModelDir == plan.rifeModelDir &&
         animeJanaiPlan_.trtexecPath == plan.trtexecPath &&
-        animeJanaiPlan_.trtexecLibDir == plan.trtexecLibDir;
+        animeJanaiPlan_.trtexecLibDir == plan.trtexecLibDir &&
+        animeJanaiPlan_.backendLibDirs == plan.backendLibDirs;
     const bool slotOnlyChange = animeJanaiFilterBound_ && plan.enabled && plan.requiresAji &&
                                 plan.stages.size() <= 1 && sameConfiguration &&
                                 animeJanaiPlan_.stages.size() <= 1 &&
@@ -709,6 +745,7 @@ void VideoSurface::animeJanaiFail(const QString& reasonKey, const QString& reaso
         }
     }
     const QString detail = reasonKey + QStringLiteral(": ") + reason;
+    qWarning().noquote() << "[animejanai]" << detail;
     finishAnimeJanaiEngineBuild(false, detail);
     setEngineFrameHold(false);
     setAnimeJanaiStatus(QStringLiteral("Processing failed — ") + detail);
@@ -852,6 +889,7 @@ void VideoSurface::processAnimeJanaiPlan() {
                                     return;
                                 }
                             }
+                            preloadAnimeJanaiBackendLibs(animeJanaiPlan_.backendLibDirs);
                             const std::string spec(animeJanaiPlan_.filterSpec.constData(),
                                                    static_cast<size_t>(animeJanaiPlan_.filterSpec.size()));
                             animeJanaiReportPending_ = true;

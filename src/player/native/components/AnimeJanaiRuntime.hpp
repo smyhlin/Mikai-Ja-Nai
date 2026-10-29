@@ -129,6 +129,10 @@ struct AnimeJanaiPlan {
     QString trtexecPath;
     QString trtexecLibDir;
     QString statsPath;
+    /// Folders whose shared libraries must already be resolvable when the
+    /// fork dlopens its backend (TensorRT by bare soname). Unix-only: the
+    /// surface preloads them RTLD_GLOBAL before attaching the filter.
+    QStringList backendLibDirs;
     QByteArray filterSpec;
     QVector<AnimeJanaiPlanStage> stages;
     int selectedChainNumber = 0;
