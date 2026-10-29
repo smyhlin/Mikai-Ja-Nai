@@ -38,7 +38,13 @@ for tool in makepkg git cmake ninja sha256sum; do
     exit 1
   fi
 done
-for dependency in qt6-base mpv libglvnd; do
+for tool in cmake ninja patchelf; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    printf 'Missing build tool: %s (needed by the bundled-runtime build)\n' "$tool" >&2
+    exit 1
+  fi
+done
+for dependency in qt6-base libglvnd; do
   if ! pacman -Q "$dependency" >/dev/null 2>&1; then
     printf 'Missing build dependency: %s (pacman -S --needed %s)\n' "$dependency" "$dependency" >&2
     exit 1
@@ -92,7 +98,10 @@ sed -e "s/@SHA256@/$digest/" -e "s/@MPV_SHA256@/$mpv_digest/" -e "s/@REVISION@/$
 cp "$tarball" "$build_dir/mikai-$version.tar.gz"
 cp "$mpv_archive" "$build_dir/mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst"
 
-makepkg_args=(--noconfirm --force --cleanbuild)
+# Dependency resolution is done above: the host may carry a build tool outside
+# pacman (patchelf is commonly installed from source), and makepkg would refuse
+# the whole build for it.
+makepkg_args=(--noconfirm --force --cleanbuild --nodeps)
 if ((skip_check)); then makepkg_args+=(--nocheck); fi
 (
   cd "$build_dir"
