@@ -595,6 +595,10 @@ void TestRuntimeSelection::forkIdentityAcceptsTheBundledLinuxForkByItsFilter() {
     selection.resolvedBundle = bundle;
     QVERIFY(mplayer::native::isAnimeJanaiForkRuntime(selection));
 
+    // The Unix fork builds report client API 2.6; only the 2.x major matters.
+    selection.apiVersion = 131078;
+    QVERIFY(mplayer::native::isAnimeJanaiForkRuntime(selection));
+
     QVERIFY(writeFileBytes(modulePath, QByteArrayLiteral("ELF\0stock mpv without the filter\0")));
     QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
 

@@ -690,9 +690,20 @@ bool isAnimeJanaiForkRuntime(const RuntimeSelection& selection) {
     constexpr auto kForkModuleSha256 = "90de8f89fa1421eaec510e5cfe11de75846b445489864220ec811fd0f08b4649";
 
     if (!selection.loaded || selection.kind != BundleKind::Standard ||
-        selection.apiVersion != kForkApiVersion || !selection.resolvedBundle.has_value()) {
+        !selection.resolvedBundle.has_value()) {
         return false;
     }
+#if defined(Q_OS_UNIX)
+    // The Unix fork builds report 2.6; the app only needs the 2.x major it was
+    // compiled against, which MpvApi::load already enforces.
+    if (selection.apiVersion < kForkApiVersion) {
+        return false;
+    }
+#else
+    if (selection.apiVersion != kForkApiVersion) {
+        return false;
+    }
+#endif
 
     const Bundle& bundle = *selection.resolvedBundle;
     if (bundle.kind != BundleKind::Standard || selection.modulePath != bundle.modulePath) {
