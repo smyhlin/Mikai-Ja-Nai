@@ -49,6 +49,14 @@ WINDOWS_SDK = (
         'into': 'qt',
     },
     {
+        'url': WINDOWS_QT_ROOT + '/qt6_6120/qt6_6120_mingw/qt.qt6.6120.win64_mingw/'
+               '6.12.0-0-202609280346qttools-Windows-Windows_11_24H2-Mingw-'
+               'Windows-Windows_11_24H2-X86_64.7z',
+        'bytes': 27425507,
+        'sha256': 'e3de8f2cf8746be88fbeec08993575744dbe3d6ccc532f3b59777938fc03bd94',
+        'into': 'qt',
+    },
+    {
         'url': WINDOWS_QT_ROOT + '/qt6_6120/qt6_6120_mingw/qt.qt6.6120.addons.'
                'qtimageformats.win64_mingw/6.12.0-0-202609280346qtimageformats-Windows-'
                'Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z',
