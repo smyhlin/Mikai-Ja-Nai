@@ -35,6 +35,8 @@
 
 ## Screenshots
 
+The README hero above uses the new full-color application icon; the current gallery below captures the matching application header, which uses a themed transparent monochrome icon.
+
 <table>
   <tr>
     <td width="50%"><img src="docs/images/screenshots/catalogue.png" alt="Catalogue page with recommendations and currently airing titles"></td>
@@ -57,7 +59,8 @@
 These are unmodified full-resolution widget captures from the successful 2026-10-30 Windows run of the
 opt-in `release_gallery_probe`, stored with the run's unmodified raw evidence in
 [`docs/images/screenshots/`](docs/images/screenshots/). The probe recorded the live anonymous catalogue,
-application/widget state and SHA-256 for each image. Its source video was the 12-second project-generated
+application/widget state and SHA-256 for each image. Its successful run finished at `2026-10-30T16:44:19Z`,
+with no errors and workers drained cleanly. Its source video was the 12-second project-generated
 FFmpeg `testsrc2` fixture (`tests/fixtures/generate_media.sh`); the operator-declared credit is recorded in
 the evidence and is not independently verified. The separate 2026-10-24 historical run remains in
 [`docs/images/gallery-release-0.1.0/`](docs/images/gallery-release-0.1.0/). These captures are real and not

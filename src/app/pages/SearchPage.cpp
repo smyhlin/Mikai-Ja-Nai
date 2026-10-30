@@ -44,6 +44,8 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QPixmap>
+#include <QPainter>
+#include <QPalette>
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QScrollArea>
@@ -129,6 +131,17 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     auto* heading = new QLabel(tr("Mikai Ja Nai"), this);
     heading->setObjectName(QStringLiteral("heading"));
     topRow->addWidget(heading);
+    headerLogo_ = new QLabel(this);
+    headerLogo_->setObjectName(QStringLiteral("headerLogo"));
+    headerLogo_->setAccessibleName(QString());
+    headerLogo_->setAccessibleDescription(QString());
+    headerLogo_->setFocusPolicy(Qt::NoFocus);
+    headerLogo_->installEventFilter(this);
+    headerLogo_->setMinimumSize(24, 24);
+    headerLogo_->setFixedSize(36, 36);
+    headerLogoSource_.load(QStringLiteral(":/icons/app/mikai-mono.png"));
+    topRow->insertWidget(topRow->indexOf(heading), headerLogo_);
+    refreshHeaderLogo();
     homeButton_ = new QPushButton(tr("Home"), this);
     homeButton_->setObjectName(QStringLiteral("homeButton"));
     connect(homeButton_, &QPushButton::clicked, this, &SearchPage::returnHome);
@@ -306,6 +319,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
                     previous.coverGradient != appearance.coverGradient) {
                     refreshCardFrames();
                 }
+                refreshHeaderLogo();
             });
 
     QTimer::singleShot(0, this, &SearchPage::loadOngoing);
@@ -363,7 +377,35 @@ void SearchPage::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
+    } else if (event->type() == QEvent::PaletteChange ||
+               event->type() == QEvent::ApplicationPaletteChange ||
+               event->type() == QEvent::ScreenChangeInternal ||
+               event->type() == QEvent::DevicePixelRatioChange) {
+        refreshHeaderLogo();
     }
+}
+
+void SearchPage::refreshHeaderLogo() {
+    if (headerLogo_ == nullptr || headerLogoSource_.isNull()) return;
+    const QColor tint = headerLogo_->palette().color(QPalette::WindowText);
+    const qreal dpr = headerLogo_->devicePixelRatioF();
+    if (!headerLogo_->pixmap().isNull() && tint == headerLogoTint_ &&
+        qFuzzyCompare(dpr, headerLogoDpr_)) {
+        return;
+    }
+    const QSize pixelSize = headerLogo_->size() * dpr;
+    QImage tinted = headerLogoSource_.scaled(pixelSize, Qt::KeepAspectRatio,
+                                              Qt::SmoothTransformation)
+                        .convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    QPainter painter(&tinted);
+    painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    painter.fillRect(tinted.rect(), tint);
+    painter.end();
+    QPixmap pixmap = QPixmap::fromImage(tinted);
+    pixmap.setDevicePixelRatio(dpr);
+    headerLogo_->setPixmap(pixmap);
+    headerLogoTint_ = tint;
+    headerLogoDpr_ = dpr;
 }
 
 void SearchPage::retranslateUi() {
@@ -724,6 +766,13 @@ void SearchPage::smoothScrollCarousel(QScrollBar* bar, int delta) {
 }
 
 bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == headerLogo_ &&
+        (event->type() == QEvent::PaletteChange ||
+         event->type() == QEvent::ApplicationPaletteChange ||
+         event->type() == QEvent::ScreenChangeInternal ||
+         event->type() == QEvent::DevicePixelRatioChange)) {
+        refreshHeaderLogo();
+    }
     if (event->type() == QEvent::KeyPress) {
         auto* ke = static_cast<QKeyEvent*>(event);
         if (ke->key() == Qt::Key_Escape && escapeSearch()) {

@@ -4,7 +4,7 @@ Status: **published, with open rights and QA work**. The owner published [v0.1.0
 
 ## Implemented in this source tree
 
-- Original Mikai Ja Nai application icon and its packaging/integration wiring.
+- Original Mikai Ja Nai full-color application icon and its packaging/integration wiring, plus a themed transparent monochrome header icon.
 - Windows x64 portable ZIP and per-user installer generation scripts, payload inventories, checksums and provenance records.
 - Linux x86_64 packaging with system-mpv and private bundled-mpv profiles, optional Qt deployment and relative runtime search paths.
 - Source-snapshot packaging that hashes archived bytes, excludes private/runtime data and records dirty worktree state.

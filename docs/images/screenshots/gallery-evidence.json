@@ -7,10 +7,10 @@
         "source": "https://api.mikai.me/public/v1"
     },
     "compareCloseReleasedHold": true,
-    "elapsedMs": 19020,
+    "elapsedMs": 19144,
     "errors": [
     ],
-    "finishedUtc": "2026-10-30T15:47:04Z",
+    "finishedUtc": "2026-10-30T16:44:19Z",
     "interfaceLanguage": "en",
     "isolation": "verified executable copy; fresh INI settings, home, cache, working directory and native store",
     "logicalSize": [
@@ -22,15 +22,27 @@
         "clockAdvanced": true,
         "fromSeconds": 1.0833333333333333,
         "pictureLitFraction": 0.9999971655328799,
-        "toSeconds": 1.5
+        "toSeconds": 1.5416666666666665
     },
     "processing": "Original playback; compare may use bundled Anime4K shaders only. No model/engine acquisition or AI inference requested.",
     "qtVersion": "6.12.0",
     "schema": 1,
     "screenshots": [
         {
-            "capturedUtc": "2026-10-30T15:46:51Z",
+            "capturedUtc": "2026-10-30T16:44:06Z",
             "cards": [
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/20449417-c187-11f1-8f08-2256fdb9c436.webp",
+                    "ref": "7635",
+                    "title": "Змилуйтеся наді мною, могутній Лорде! - 3 сезон"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/510d82de-be7e-11f1-802e-1a9e631b924d.webp",
+                    "ref": "7601",
+                    "title": "The Apothecary Diaries Season 3"
+                },
                 {
                     "posterLoaded": true,
                     "posterSource": "https://images.mikai.me/poster/big/a18b923d-c36c-11f1-961b-d2ef24229bee.webp",
@@ -66,12 +78,6 @@
                     "posterSource": "https://images.mikai.me/poster/big/85951ef9-bdaf-11f1-802e-1a9e631b924d.webp",
                     "ref": "7598",
                     "title": "FX Fighter Kurumi-chan"
-                },
-                {
-                    "posterLoaded": true,
-                    "posterSource": "https://images.mikai.me/poster/big/510d82de-be7e-11f1-802e-1a9e631b924d.webp",
-                    "ref": "7601",
-                    "title": "The Apothecary Diaries Season 3"
                 },
                 {
                     "posterLoaded": true,
@@ -132,12 +138,6 @@
                     "posterSource": "https://images.mikai.me/poster/big/71867844-c25b-11f1-8f08-2256fdb9c436.webp",
                     "ref": "7643",
                     "title": "The World's Strongest Witch"
-                },
-                {
-                    "posterLoaded": true,
-                    "posterSource": "https://images.mikai.me/poster/big/37a5d624-c26c-11f1-99c1-a6994bb0bde3.webp",
-                    "ref": "7645",
-                    "title": "Magic Knight Rayearth (2026)"
                 },
                 {
                     "posterLoaded": true,
@@ -231,15 +231,15 @@
                 },
                 {
                     "posterLoaded": true,
-                    "posterSource": "https://images.mikai.me/poster/big/15ffafe8-d81e-11f0-8b6d-22622ebbf0bb.webp",
-                    "ref": "6978",
-                    "title": "Chainsaw Man – The Movie: Reze Arc"
-                },
-                {
-                    "posterLoaded": true,
                     "posterSource": "https://images.mikai.me/poster/big/ddf9059a-2096-11f0-b8b6-0242ac120005.webp",
                     "ref": "38",
                     "title": "Naruto: Shippuden"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/15ffafe8-d81e-11f0-8b6d-22622ebbf0bb.webp",
+                    "ref": "6978",
+                    "title": "Chainsaw Man – The Movie: Reze Arc"
                 },
                 {
                     "posterLoaded": true,
@@ -258,14 +258,14 @@
                 2240,
                 1400
             ],
-            "sha256": "01ddcd8f7facff3186f49257f6ddd9cc3d1881db298d3b3094dbaa6116861f0e",
+            "sha256": "676151825497f93f19aa20008376aee3f4ddfc50cc9e4e2707306e8199cd3ac0",
             "surface": "live anonymous home catalogue",
             "widgetClass": "mikai::app::MainWindow",
             "widgetObjectName": "mainWindow",
             "windowTitle": "Mikai Ja Nai"
         },
         {
-            "capturedUtc": "2026-10-30T15:46:55Z",
+            "capturedUtc": "2026-10-30T16:44:10Z",
             "contextReady": true,
             "devicePixelRatio": 1.75,
             "durationSeconds": 12,
@@ -280,13 +280,13 @@
                 1400
             ],
             "playing": false,
-            "positionSeconds": 1.5416666666666665,
+            "positionSeconds": 1.5833333333333333,
             "runtimeDescriptor": "c44766737e79ab274e7bedd487fb798d0d58ce6f289be67a8c056ca335d445a7",
             "runtimeKind": "standard",
             "runtimeLoaded": true,
             "runtimeModule": "libmpv-2.dll",
             "runtimeVersion": "stock-c44766737e79",
-            "sha256": "a497bf4aa708f5c201e46fe6434efee289b86b1325fb9eb955402ed8b3a0362f",
+            "sha256": "44c4949d40cc7d3324263ef983cc1b2cfac1a7c569b1f439647eaf41310cb3ab",
             "shaderChain": "off",
             "source": "Mikai original demo.mp4",
             "sourceEpoch": 2,
@@ -302,7 +302,7 @@
         {
             "candidateA": "off",
             "candidateB": "fast_a",
-            "capturedUtc": "2026-10-30T15:46:59Z",
+            "capturedUtc": "2026-10-30T16:44:14Z",
             "contextReady": true,
             "devicePixelRatio": 1.75,
             "durationSeconds": 12,
@@ -322,13 +322,13 @@
             ],
             "playbackHeld": true,
             "playing": false,
-            "positionSeconds": 1.5416666666666665,
+            "positionSeconds": 1.5833333333333333,
             "runtimeDescriptor": "c44766737e79ab274e7bedd487fb798d0d58ce6f289be67a8c056ca335d445a7",
             "runtimeKind": "standard",
             "runtimeLoaded": true,
             "runtimeModule": "libmpv-2.dll",
             "runtimeVersion": "stock-c44766737e79",
-            "sha256": "3f6b97574ab6d6283242dbee807560a449e420baee8e4fcefccf48220da75272",
+            "sha256": "1b54bfc0c63965f2b766cd1853d6e5dce3d0c83336b97f0bd153d54474e8bcb8",
             "shaderChain": "off",
             "source": "Mikai original demo.mp4",
             "sourceEpoch": 2,
@@ -342,7 +342,7 @@
             "windowTitle": "Quality Comparison"
         },
         {
-            "capturedUtc": "2026-10-30T15:47:01Z",
+            "capturedUtc": "2026-10-30T16:44:16Z",
             "contextReady": true,
             "devicePixelRatio": 1.75,
             "durationSeconds": 12,
@@ -358,13 +358,13 @@
                 1400
             ],
             "playing": false,
-            "positionSeconds": 1.5416666666666665,
+            "positionSeconds": 1.5833333333333333,
             "runtimeDescriptor": "c44766737e79ab274e7bedd487fb798d0d58ce6f289be67a8c056ca335d445a7",
             "runtimeKind": "standard",
             "runtimeLoaded": true,
             "runtimeModule": "libmpv-2.dll",
             "runtimeVersion": "stock-c44766737e79",
-            "sha256": "4047bb152344bc5d86c975a1e06471d560f345028892226b60791457eae126d7",
+            "sha256": "9ee53f39c1408217707b2e9e6b70a040cf8a7826e5cf1bfe64aa9234b760974b",
             "shaderChain": "off",
             "source": "Mikai original demo.mp4",
             "sourceEpoch": 2,
@@ -380,7 +380,7 @@
         },
         {
             "appearancePreview": "before control changes",
-            "capturedUtc": "2026-10-30T15:47:03Z",
+            "capturedUtc": "2026-10-30T16:44:18Z",
             "devicePixelRatio": 1.75,
             "file": "appearance-before.png",
             "logicalSize": [
@@ -392,14 +392,14 @@
                 1400
             ],
             "saved": false,
-            "sha256": "957ad86860716ca6dd4aa239f6a8fd57bc9a65d7dc6956aed5aa9d2838641390",
+            "sha256": "c4da62985a258811932862c503cf64b16cdf872b1c9a88f3738291bf5701e9e0",
             "widgetClass": "mikai::app::MainWindow",
             "widgetObjectName": "mainWindow",
             "windowTitle": "Mikai Ja Nai"
         },
         {
             "appearancePreview": "after control changes",
-            "capturedUtc": "2026-10-30T15:47:03Z",
+            "capturedUtc": "2026-10-30T16:44:18Z",
             "devicePixelRatio": 1.75,
             "file": "appearance-preview.png",
             "logicalSize": [
@@ -411,14 +411,14 @@
                 1400
             ],
             "saved": false,
-            "sha256": "824f2d7ffe0a19d89cfd43ccf12ff36a248203bfd7b79133f2b99a505185bea0",
+            "sha256": "991b231b2b38a428230af2068b030ec09552e25f2869afad976b93ad4934e9b1",
             "widgetClass": "mikai::app::MainWindow",
             "widgetObjectName": "mainWindow",
             "windowTitle": "Mikai Ja Nai"
         },
         {
             "appearancePreview": "after Reset and repaint",
-            "capturedUtc": "2026-10-30T15:47:04Z",
+            "capturedUtc": "2026-10-30T16:44:19Z",
             "devicePixelRatio": 1.75,
             "file": "appearance-reset.png",
             "logicalSize": [
@@ -430,7 +430,7 @@
                 1400
             ],
             "saved": false,
-            "sha256": "957ad86860716ca6dd4aa239f6a8fd57bc9a65d7dc6956aed5aa9d2838641390",
+            "sha256": "c4da62985a258811932862c503cf64b16cdf872b1c9a88f3738291bf5701e9e0",
             "widgetClass": "mikai::app::MainWindow",
             "widgetObjectName": "mainWindow",
             "windowTitle": "Mikai Ja Nai"
@@ -443,7 +443,7 @@
                 "changedSliderValues": 6,
                 "gradientLabelUpdated": true,
                 "interactionRounds": 3,
-                "maximumControlDispatchAndEventsMs": 11,
+                "maximumControlDispatchAndEventsMs": 10,
                 "resetToDefaults": true,
                 "sliderLabelUpdated": true
             },
@@ -456,7 +456,7 @@
                 "components",
                 "benchmark"
             ],
-            "capturedUtc": "2026-10-30T15:47:04Z",
+            "capturedUtc": "2026-10-30T16:44:19Z",
             "devicePixelRatio": 1.75,
             "file": "settings.png",
             "logicalSize": [
@@ -475,7 +475,7 @@
             "windowTitle": "Settings"
         }
     ],
-    "startedUtc": "2026-10-30T15:46:45Z",
+    "startedUtc": "2026-10-30T16:44:00Z",
     "success": true,
     "video": {
         "bytes": 412765,

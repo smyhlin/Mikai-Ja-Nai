@@ -4,6 +4,10 @@
 
 - Successful bundle CLI contract checks remove their temporary copied runtimes instead of accumulating them in the build directory.
 
+### Application icon and gallery captures (2026-10-30)
+
+- Added the full-color application icon across the app, executable, installer and desktop integration, with a transparent monochrome header icon themed to the interface. Updated the README gallery and its raw capture provenance from a successful isolated Windows run; no publication or rights-clearance claim is made. That run refreshed all five product-surface captures and two supporting appearance captures.
+
 ### Windows startup runtime and appearance defaults (2026-10-30)
 
 - The default blue gradient is `#6797e4`; saved user appearance selections remain in effect rather than being replaced by the default.

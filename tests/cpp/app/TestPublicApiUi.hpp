@@ -19,6 +19,7 @@ class TestPublicApiUi : public QObject {
   void titleHomeSkipsHistoryAndEscapeUnwindsDetailsAndHistory();
   void explicitTitleAsksBeforePlaybackUnlessAllowed();
   void liveCoverShadingChangesWithoutResizing();
+  void headerLogoTracksLightAndDarkAppearance();
   void invalidSelectedPosterFallsBackToHint();
   void decodedPosterScalesAfterExifRotation();
   void titleSectionHeadersLetTheGradientThrough();

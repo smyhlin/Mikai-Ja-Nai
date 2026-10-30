@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none" role="img" aria-labelledby="mjnm-title mjnm-desc">
+  <title id="mjnm-title">Mikai Ja Nai — monochrome</title>
+  <desc id="mjnm-desc">Single-color compare-slider mark for dark surfaces, masks and compact UI.</desc>
+
+  <defs>
+    <!-- Slider track -->
+    <linearGradient id="mjnm-track" x1="0" y1="104" x2="0" y2="408" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset=".35" stop-color="#FFFFFF" stop-opacity=".85"/>
+      <stop offset=".65" stop-color="#FFFFFF" stop-opacity=".85"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Low-res source: 16px cells, 1px grout -->
+    <pattern id="mjnm-px" width="64" height="64" patternUnits="userSpaceOnUse">
+      <rect width="64" height="64" fill="#FFFFFF" fill-opacity=".1"/>
+      <rect width="15" height="15" fill="#FFFFFF" fill-opacity=".38"/>
+      <rect x="16" width="15" height="15" fill="#FFFFFF" fill-opacity=".32"/>
+      <rect x="32" width="15" height="15" fill="#FFFFFF" fill-opacity=".27"/>
+      <rect x="48" width="15" height="15" fill="#FFFFFF" fill-opacity=".42"/>
+      <rect y="16" width="15" height="15" fill="#FFFFFF" fill-opacity=".27"/>
+      <rect x="16" y="16" width="15" height="15" fill="#FFFFFF" fill-opacity=".42"/>
+      <rect x="32" y="16" width="15" height="15" fill="#FFFFFF" fill-opacity=".38"/>
+      <rect x="48" y="16" width="15" height="15" fill="#FFFFFF" fill-opacity=".32"/>
+      <rect y="32" width="15" height="15" fill="#FFFFFF" fill-opacity=".32"/>
+      <rect x="16" y="32" width="15" height="15" fill="#FFFFFF" fill-opacity=".27"/>
+      <rect x="32" y="32" width="15" height="15" fill="#FFFFFF" fill-opacity=".42"/>
+      <rect x="48" y="32" width="15" height="15" fill="#FFFFFF" fill-opacity=".38"/>
+      <rect y="48" width="15" height="15" fill="#FFFFFF" fill-opacity=".42"/>
+      <rect x="16" y="48" width="15" height="15" fill="#FFFFFF" fill-opacity=".38"/>
+      <rect x="32" y="48" width="15" height="15" fill="#FFFFFF" fill-opacity=".32"/>
+      <rect x="48" y="48" width="15" height="15" fill="#FFFFFF" fill-opacity=".27"/>
+    </pattern>
+
+    <!-- Luminance ramp: source brightens toward the slider -->
+    <linearGradient id="mjnm-pxramp" x1="136" y1="0" x2="256" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity=".08"/>
+    </linearGradient>
+
+    <!-- Upscaled half: brighter toward the top -->
+    <linearGradient id="mjnm-accent" x1="256" y1="140" x2="256" y2="372" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity=".3"/>
+    </linearGradient>
+
+    <!-- Glyph geometry, centered on the slider -->
+    <path id="mjnm-tri" d="M136 168Q136 136 166 154L364 246Q388 256 364 266L166 358Q136 376 136 344Z"/>
+    <clipPath id="mjnm-glyph">
+      <path d="M136 168Q136 136 166 154L364 246Q388 256 364 266L166 358Q136 376 136 344Z"/>
+    </clipPath>
+    <clipPath id="mjnm-half-l"><rect width="256" height="512"/></clipPath>
+    <clipPath id="mjnm-half-r"><rect x="256" width="256" height="512"/></clipPath>
+  </defs>
+
+  <!-- Glyph (transparent background) -->
+  <g clip-path="url(#mjnm-glyph)">
+    <!-- Source: low resolution -->
+    <g clip-path="url(#mjnm-half-l)">
+      <rect x="128" y="128" width="128" height="256" fill="url(#mjnm-px)" shape-rendering="crispEdges"/>
+      <rect x="128" y="128" width="128" height="256" fill="url(#mjnm-pxramp)"/>
+    </g>
+    <!-- Result: upscaled -->
+    <g clip-path="url(#mjnm-half-r)">
+      <rect x="256" y="128" width="150" height="256" fill="url(#mjnm-accent)"/>
+    </g>
+  </g>
+  <!-- Keyline so the glyph holds up on any surface -->
+  <use href="#mjnm-tri" stroke="#FFFFFF" stroke-opacity=".9" stroke-width="6" stroke-linejoin="round"/>
+
+  <!-- Compare slider (track split around the handle) -->
+  <rect x="252" y="104" width="8" height="132" rx="4" fill="url(#mjnm-track)"/>
+  <rect x="252" y="276" width="8" height="132" rx="4" fill="url(#mjnm-track)"/>
+  <circle cx="256" cy="256" r="17" stroke="#FFFFFF" stroke-width="5"/>
+  <path d="M249 248l-8 8 8 8M263 248l8 8-8 8" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Upscale sparkles -->
+  <path d="M390 98q2 18 20 20q-18 2-20 20q-2-18-20-20q18-2 20-20Z" fill="#FFFFFF" opacity=".95"/>
+  <path d="M424 158q1 7 8 8q-7 1-8 8q-1-7-8-8q7-1 8-8Z" fill="#FFFFFF" opacity=".7"/>
+</svg>

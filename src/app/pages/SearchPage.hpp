@@ -6,6 +6,7 @@
 #include <backend/UpdateFeed.hpp>
 
 #include <QHash>
+#include <QColor>
 #include <QImage>
 #include <QList>
 #include <QPointer>
@@ -192,6 +193,7 @@ private:
     /// each block's own line and the meta line of every feed row. Nothing is
     /// re-read and nothing is requested - the query, the result page, the
     /// format filter, the cards and the loaded feeds stay exactly as they are.
+    void refreshHeaderLogo();
     void retranslateUi();
     /// The heading of the block `key` names, in the active language. Both the
     /// constructor and a retranslate pass take it from here, so the two can
@@ -388,6 +390,10 @@ private:
     QLineEdit* query_ = nullptr;
     QPushButton* filtersButton_ = nullptr;
     QPushButton* teamsButton_ = nullptr;
+    QLabel* headerLogo_ = nullptr;
+    QImage headerLogoSource_;
+    QColor headerLogoTint_;
+    qreal headerLogoDpr_ = 0.0;
     QPushButton* teamBackButton_ = nullptr;
     QLabel* teamDetailLabel_ = nullptr;
     QLabel* resultsHeading_ = nullptr;

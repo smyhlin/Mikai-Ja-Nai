@@ -1,7 +1,99 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <title>Mikai Ja Nai</title>
-  <desc>A crisp mint ribbon forming a distinctive angular M on a deep slate field.</desc>
-  <rect x="16" y="16" width="480" height="480" rx="112" fill="#17232d"/>
-  <path d="M112 354 186 190l70 128 70-128 74 164" fill="none" stroke="#73d9c4" stroke-width="43" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M256 318v52" fill="none" stroke="#d9fff4" stroke-width="26" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none" role="img" aria-labelledby="mjn-title mjn-desc">
+  <title id="mjn-title">Mikai Ja Nai</title>
+  <desc id="mjn-desc">Compare-slider mark: a low-resolution pixel grid becomes a smooth, high-resolution render.</desc>
+
+  <defs>
+    <!-- Base -->
+    <linearGradient id="mjn-bg" x1="60" y1="0" x2="460" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1C2235"/>
+      <stop offset="1" stop-color="#0A0D17"/>
+    </linearGradient>
+
+    <!-- Glow behind the enhanced half (gradient-based, replaces the blur filter) -->
+    <radialGradient id="mjn-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(332 322) scale(350)">
+      <stop offset="0" stop-color="#5B6EF0" stop-opacity=".2"/>
+      <stop offset=".55" stop-color="#5B6EF0" stop-opacity=".06"/>
+      <stop offset="1" stop-color="#5B6EF0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="mjn-halo" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(310 258) scale(132)">
+      <stop offset="0" stop-color="#6D8CFF" stop-opacity=".28"/>
+      <stop offset=".6" stop-color="#6D8CFF" stop-opacity=".1"/>
+      <stop offset="1" stop-color="#6D8CFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Upscaled half -->
+    <linearGradient id="mjn-accent" x1="256" y1="140" x2="256" y2="372" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8FB4FF"/>
+      <stop offset=".55" stop-color="#6D8CFF"/>
+      <stop offset="1" stop-color="#4853D6"/>
+    </linearGradient>
+    <linearGradient id="mjn-sheen" x1="0" y1="150" x2="0" y2="330" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Slider track (long soft fades, no hard cut-offs) -->
+    <linearGradient id="mjn-track" x1="0" y1="104" x2="0" y2="408" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset=".35" stop-color="#FFFFFF" stop-opacity=".8"/>
+      <stop offset=".65" stop-color="#FFFFFF" stop-opacity=".8"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Hairline rim, lit from the top -->
+    <linearGradient id="mjn-rim" x1="0" y1="0" x2="0" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity=".04"/>
+    </linearGradient>
+
+    <!-- Low-res source: 16px cells, 1px grout -->
+    <pattern id="mjn-px" width="64" height="64" patternUnits="userSpaceOnUse">
+      <rect width="64" height="64" fill="#12182A"/>
+      <rect width="15" height="15" fill="#3E465E"/>
+      <rect x="16" width="15" height="15" fill="#384058"/>
+      <rect x="32" width="15" height="15" fill="#333B52"/>
+      <rect x="48" width="15" height="15" fill="#454E6A"/>
+      <rect y="16" width="15" height="15" fill="#333B52"/>
+      <rect x="16" y="16" width="15" height="15" fill="#454E6A"/>
+      <rect x="32" y="16" width="15" height="15" fill="#3E465E"/>
+      <rect x="48" y="16" width="15" height="15" fill="#384058"/>
+      <rect y="32" width="15" height="15" fill="#384058"/>
+      <rect x="16" y="32" width="15" height="15" fill="#333B52"/>
+      <rect x="32" y="32" width="15" height="15" fill="#454E6A"/>
+      <rect x="48" y="32" width="15" height="15" fill="#3E465E"/>
+      <rect y="48" width="15" height="15" fill="#454E6A"/>
+      <rect x="16" y="48" width="15" height="15" fill="#3E465E"/>
+      <rect x="32" y="48" width="15" height="15" fill="#384058"/>
+      <rect x="48" y="48" width="15" height="15" fill="#333B52"/>
+    </pattern>
+    <!-- Luminance ramp: source brightens toward the slider -->
+    <linearGradient id="mjn-pxramp" x1="136" y1="0" x2="256" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity=".09"/>
+    </linearGradient>
+
+  </defs>
+
+  <!-- Canvas -->
+  <rect width="512" height="512" rx="116" fill="url(#mjn-bg)"/>
+  <rect width="512" height="512" rx="116" fill="url(#mjn-glow)"/>
+  <rect width="512" height="512" rx="116" fill="url(#mjn-halo)"/>
+
+  <!-- Glyph -->
+  <path d="M136 168Q136 136 166 154L256 195.8181818181818L256 316.1818181818182L166 358Q136 376 136 344Z" fill="url(#mjn-px)" shape-rendering="crispEdges"/>
+  <path d="M136 168Q136 136 166 154L256 195.8181818181818L256 316.1818181818182L166 358Q136 376 136 344Z" fill="url(#mjn-pxramp)"/>
+  <path d="M256 195.8181818181818L364 246Q388 256 364 266L256 316.1818181818182Z" fill="url(#mjn-accent)"/>
+  <path d="M256 195.8181818181818L364 246Q388 256 364 266L256 316.1818181818182Z" fill="url(#mjn-sheen)"/>
+
+  <!-- Compare slider -->
+  <rect x="252" y="104" width="8" height="304" rx="4" fill="url(#mjn-track)"/>
+  <circle cx="256" cy="256" r="17" fill="#0F1424" stroke="#FFFFFF" stroke-width="5"/>
+  <path d="M249 248l-8 8 8 8M263 248l8 8-8 8" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Upscale sparkles -->
+  <path d="M390 98q2 18 20 20q-18 2-20 20q-2-18-20-20q18-2 20-20Z" fill="#FFFFFF" opacity=".95"/>
+  <path d="M424 158q1 7 8 8q-7 1-8 8q-1-7-8-8q7-1 8-8Z" fill="#A8C6FF" opacity=".8"/>
+
+  <!-- Rim -->
+  <rect x="3" y="3" width="506" height="506" rx="113" fill="none" stroke="url(#mjn-rim)" stroke-width="2"/>
 </svg>

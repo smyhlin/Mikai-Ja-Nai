@@ -726,6 +726,68 @@ void TestPublicApiUi::explicitTitleAsksBeforePlaybackUnlessAllowed() {
   driver.stop();
 }
 
+void TestPublicApiUi::headerLogoTracksLightAndDarkAppearance() {
+  IsolatedSettings settings;
+  const auto saved = mikai::app::currentAppearance();
+  const auto restore = qScopeGuard([saved] {
+    mikai::app::setCurrentAppearance(saved);
+    mikai::app::theme::applyPalette(saved);
+    qApp->setStyleSheet(mikai::app::theme::buildStylesheet(saved));
+  });
+  ApiFixture api;
+  QVERIFY(api.start());
+  mikai::backend::MikaiClient client(kFixtureKey, api.base());
+  mikai::app::Runner runner;
+  mikai::app::SearchPage page(runner, client);
+  page.resize(900, 640);
+  page.show();
+
+  auto* heading = page.findChild<QLabel*>(QStringLiteral("heading"));
+  auto* logo = page.findChild<QLabel*>(QStringLiteral("headerLogo"));
+  QVERIFY(heading != nullptr);
+  QVERIFY(logo != nullptr);
+  QTRY_VERIFY(heading->isVisible());
+  QTRY_VERIFY(logo->isVisible());
+  QVERIFY(logo->accessibleName().isEmpty());
+  QVERIFY(logo->accessibleDescription().isEmpty());
+  QVERIFY(logo->minimumSize().width() >= 24);
+  QVERIFY(logo->minimumSize().height() >= 24);
+
+  auto hasTintedAlpha = [logo](const QColor& tint) {
+    QImage image(logo->size(), QImage::Format_ARGB32);
+    image.fill(Qt::transparent);
+    logo->render(&image);
+    bool transparent = false;
+    bool tinted = false;
+    for (int y = 0; y < image.height(); ++y) {
+      for (int x = 0; x < image.width(); ++x) {
+        const QColor pixel = image.pixelColor(x, y);
+        transparent |= pixel.alpha() == 0;
+        tinted |= pixel.alpha() > 0 && pixel.red() == tint.red() &&
+                  pixel.green() == tint.green() && pixel.blue() == tint.blue();
+      }
+    }
+    return transparent && tinted;
+  };
+
+  auto appearance = mikai::app::currentAppearance();
+  appearance.siteTheme = mikai::app::theme::SiteTheme::Dark;
+  mikai::app::setCurrentAppearance(appearance);
+  mikai::app::theme::applyPalette(appearance);
+  qApp->setStyleSheet(mikai::app::theme::buildStylesheet(appearance));
+  QTRY_VERIFY(hasTintedAlpha(logo->palette().color(QPalette::WindowText)));
+  const QColor darkTint = logo->palette().color(QPalette::WindowText);
+
+  appearance.siteTheme = mikai::app::theme::SiteTheme::Light;
+  mikai::app::setCurrentAppearance(appearance);
+  mikai::app::theme::applyPalette(appearance);
+  qApp->setStyleSheet(mikai::app::theme::buildStylesheet(appearance));
+  QTRY_VERIFY(hasTintedAlpha(logo->palette().color(QPalette::WindowText)));
+  QVERIFY(logo->palette().color(QPalette::WindowText) != darkTint);
+  QVERIFY(heading->isVisible());
+  QVERIFY(logo->isVisible());
+}
+
 void TestPublicApiUi::liveCoverShadingChangesWithoutResizing() {
   IsolatedSettings settings;
   const auto saved = mikai::app::currentAppearance();
