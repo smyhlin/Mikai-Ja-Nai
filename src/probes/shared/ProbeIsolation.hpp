@@ -49,6 +49,11 @@
 
 #include <vector>
 
+#ifndef Q_OS_WIN
+#include <dlfcn.h>
+#include <unistd.h>
+#endif
+
 #ifdef Q_OS_WIN
 #  include <windows.h>
 #endif
@@ -123,8 +128,18 @@ inline QString ownModulePath() {
         }
         buffer.resize(buffer.size() * 2);
     }
-#endif
     return {};
+#else
+    // The guard compares the running executable's own directory against the
+    // isolation marker, so it needs the real path before any Qt object exists.
+    // /proc/self/exe is the authoritative answer on Linux; a scratch copy of the
+    // probe resolves to the scratch directory, which is what the marker names.
+    char linkBuffer[4096] = {};
+    const ssize_t length = ::readlink("/proc/self/exe", linkBuffer, sizeof(linkBuffer) - 1);
+    if (length <= 0) return {};
+    linkBuffer[length] = '\0';
+    return QString::fromUtf8(linkBuffer);
+#endif
 }
 
 inline QString ownModuleDirectory() {
@@ -145,6 +160,11 @@ inline QString volumeRootOf(const QString& path) {
             return QStringLiteral("//") + parts.at(0) + QLatin1Char('/') + parts.at(1);
         }
     }
+#ifndef Q_OS_WIN
+    // One volume per POSIX tree; the chain check then looks for symlinks, which
+    // is the only redirection a component can be on this platform.
+    if (cleaned.startsWith(QLatin1Char('/'))) return QStringLiteral("/");
+#endif
     return {};
 }
 
@@ -181,9 +201,17 @@ inline bool copyDirectoryTree(const QString& source, const QString& destination)
 /// The Qt binary directory this process is already resolving its own Qt from.
 /// Resolving it from the loaded module rather than from a build-time path is
 /// what makes the isolated copy run on exactly this run's Qt.
+inline QString qtCoreFileName() {
+#ifdef Q_OS_WIN
+    return QStringLiteral("Qt6Core.dll");
+#else
+    return QStringLiteral("libQt6Core.so.6");
+#endif
+}
+
 inline QString resolveQtBin() {
     const QString named = qEnvironmentVariable("MIKAI_PROBE_QT_BIN");
-    if (!named.isEmpty() && QFile::exists(QDir(named).filePath(QStringLiteral("Qt6Core.dll")))) {
+    if (!named.isEmpty() && QFile::exists(QDir(named).filePath(qtCoreFileName()))) {
         return QDir::cleanPath(named);
     }
 #ifdef Q_OS_WIN
@@ -196,10 +224,19 @@ inline QString resolveQtBin() {
             const QString directory =
                 QFileInfo(QString::fromWCharArray(buffer.data(), static_cast<int>(length)))
                     .absolutePath();
-            if (QFile::exists(QDir(directory).filePath(QStringLiteral("Qt6Core.dll")))) {
+            if (QFile::exists(QDir(directory).filePath(qtCoreFileName()))) {
                 return directory;
             }
         }
+    }
+#else
+    // Ask the loader which Qt6Core this process is actually using. The isolated
+    // copy then runs on the same Qt, and LD_LIBRARY_PATH carries it.
+    Dl_info info{};
+    if (::dladdr(reinterpret_cast<void*>(&qVersion), &info) != 0 &&
+        info.dli_fname != nullptr) {
+        const QString directory = QFileInfo(QString::fromUtf8(info.dli_fname)).absolutePath();
+        if (QFile::exists(QDir(directory).filePath(qtCoreFileName()))) return directory;
     }
 #endif
     return {};
@@ -410,6 +447,23 @@ inline Gate enter(int argc, char** argv, const Options& options) {
         }
     }
 
+#ifndef Q_OS_WIN
+    // A Linux probe resolves its runtime as the executable-adjacent `mpv/`
+    // directory, so the isolated copy needs that directory beside it. Staging it
+    // keeps the copy self-contained and leaves the installed runtime untouched.
+    const QString runtimeModule = qEnvironmentVariable("MIKAI_MPV_MODULE");
+    if (QFileInfo(runtimeModule).isAbsolute() && QFileInfo(runtimeModule).isFile()) {
+        const QString runtimeDirectory = QFileInfo(runtimeModule).absolutePath();
+        if (!detail::copyDirectoryTree(runtimeDirectory,
+                                       QDir(scratch.path()).filePath(QStringLiteral("mpv")))) {
+            std::fprintf(stderr, "[%s] cannot isolate: the mpv runtime cannot be staged\n",
+                         options.probe);
+            detail::exitCodeStorage() = 2;
+            return Gate::Refused;  // QTemporaryDir removes what it created
+        }
+    }
+#endif
+
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
     environment.insert(QLatin1String(kMarkerRootEnv), scratch.path());
     environment.insert(QLatin1String(kMarkerTokenEnv), token);
@@ -419,6 +473,23 @@ inline Gate enter(int argc, char** argv, const Options& options) {
                        QDir(scratch.path()).filePath(QStringLiteral("appdata")));
     environment.insert(QStringLiteral("PATH"),
                        qtBin + QDir::listSeparator() + environment.value(QStringLiteral("PATH")));
+#ifndef Q_OS_WIN
+    // PATH does not locate shared libraries; the isolated copy needs the same Qt
+    // libraries, and the same plugin tree, as the process that spawned it. The
+    // staged runtime comes first: LD_LIBRARY_PATH outranks a library's own
+    // $ORIGIN RUNPATH, so listing the host's Qt directory ahead of it would hand
+    // libmpv the host's libass and it would fail on the fork's own symbols.
+    // A Qt installed in the loader's own default directories needs no help, and
+    // naming it here would outrank the staged runtime's $ORIGIN RUNPATH; only an
+    // out-of-tree Qt has to be added.
+    const QStringList defaultLibraryDirs = {QStringLiteral("/usr/lib"), QStringLiteral("/lib"),
+                                            QStringLiteral("/usr/lib64"), QStringLiteral("/lib64")};
+    if (!defaultLibraryDirs.contains(qtBin)) {
+        const QString ldPath = environment.value(QStringLiteral("LD_LIBRARY_PATH"));
+        environment.insert(QStringLiteral("LD_LIBRARY_PATH"),
+                           ldPath.isEmpty() ? qtBin : qtBin + QLatin1Char(':') + ldPath);
+    }
+#endif
     environment.insert(QStringLiteral("QT_PLUGIN_PATH"), qtPlugins);
     environment.insert(QStringLiteral("QT_QPA_PLATFORM_PLUGIN_PATH"),
                        QDir(qtPlugins).filePath(QStringLiteral("platforms")));
