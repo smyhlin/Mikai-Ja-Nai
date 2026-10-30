@@ -8,6 +8,8 @@ Mikai is a C++20 / Qt Widgets desktop client. Before making a change, read the r
   in clone URLs and remotes. Do not reintroduce the underscore spelling or a bare `Mikai`.
 - **Display name:** *Mikai Ja Nai* in prose where a human reads it; `mikai-janai` in identifiers.
   *janai* (じゃない) means "is not", which is the point: an unofficial client that is not the service.
+- **GitHub description** (one line, shown under the repo name):
+  `Unofficial mikai.me desktop client — Qt 6 + libmpv player with Anime4K and AnimeJaNai upscaling, HDR, and a Compare workstation for Linux and Windows.`
 - **Application identity stays `Mikai Wrapper`.** `QCoreApplication::applicationName()` is that
   string, so `QStandardPaths` resolves to `~/.local/share/Mikai Wrapper/…` — the native store path.
   Renaming it relocates every installed component, model and setting, and that path's space is what
