@@ -194,3 +194,40 @@ The CI workflow handles pushes to `main`, pull requests and manual runs. Its `mi
 Manual publication defaults to disabled. Tagging or enabling publication enters the protected `release` environment and must also pass the `profiles.publicReleaseReady` gate. That gate is currently false, so public release is blocked. Before enabling publication, configure required reviewers and version-tag restrictions on the environment and resolve the documented rights blockers. Workflows and scripts are preparation only until an actual run produces evidence; no publication is authorized here.
 
 Before any public release, confirm the version and source revision, inspect package contents for secrets and user state, complete dependency/license/source obligations, retain checksum and provenance files, and record real build/test/package results. No publishing, tagging or upload is authorized by this document.
+### Pushing the source repository
+
+Only the source repository is pushed; artifacts, build trees, stores and local scratch are ignored by
+`.gitignore` and must not be forced in. Preflight on a clean worktree:
+
+```bash
+git status --short                                 # must be empty
+git ls-files | xargs du -h 2>/dev/null | sort -rh | head -5   # no binary the history should not carry
+git grep -lI "/home/" -- . | grep -v "^docs/"       # absolute user paths belong to no one else
+git log --oneline --decorate -5
+```
+
+- `main` is the branch CI builds on (`ci.yml` triggers on pushes to `main` and on pull requests); it
+  is the branch to push.
+- No remote exists in a fresh checkout. Add one and push:
+
+```bash
+git remote add origin git@github.com:<owner>/<repo>.git
+git push -u origin main
+git push origin --tags          # only if those tags are meant to be public
+```
+
+- The other local branches (`benchmark`, `migrate-to-qt-6.12`, `refactor/modular-structure`, …) are
+  work in progress. Pushing `main` does not publish them; push a branch deliberately or leave it.
+- Keep the repository history free of third-party binaries. A `squashfs-root/` tree from
+  `--appimage-extract` reached one commit and was removed in `5869f5c`; if a clone must also drop it
+  from history, rewrite once with Git's own filter before the first push:
+
+```bash
+git filter-repo --path squashfs-root --invert-paths
+```
+
+  That rewrites commit identities, so do it before anyone has cloned the repository; the `--version`
+  strings stamped into local artifacts will then name commits that no longer exist.
+- Never commit `.env*`, `.mcp.json`, API keys, Telegram tokens, wine prefixes, `release-artifacts/`,
+  `build*/` or a populated `native/` store. `git status --ignored` is the check that none of them is
+  being added by a broad `git add -A`.

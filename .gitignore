@@ -87,3 +87,7 @@ __pycache__/
 *.pyd
 # Keep intentional public image assets trackable.
 # (No blanket image or assets-directory exclusion.)
+
+# AppImage extraction leftovers must never be committed
+/squashfs-root/
+/AppDir/
