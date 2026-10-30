@@ -30,17 +30,44 @@
 - Read the source at a glance in the player footer: HDR, Dolby Vision, Dolby Atmos and the video codec, based on what the container reports.
 - Identify the exact binary you are running with `--version`, which prints the commit and build time without needing a desktop session.
 
-## Gallery
+## Screenshots
 
-Gallery capture is **pending/blocked** under the current release policy; no fresh widget captures have been produced for this status. Historical captures from a 2026-10-24 isolated desktop run are retained under `docs/images/gallery-release-0.1.0/` (including `gallery-evidence.json`) as prior-run evidence only. They are not current verification, are not embedded here as current product screenshots, and do not imply that live catalogue content or appearance is unchanged. Live catalogue artwork belongs to its respective rights holders and may change upstream.
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/screenshots/catalogue.webp" alt="Catalogue page with recommendations and currently airing titles"></td>
+    <td width="50%"><img src="docs/images/screenshots/compare.webp" alt="Compare workstation showing the original frame beside a processed candidate"></td>
+  </tr>
+  <tr>
+    <td align="center"><em><strong>Catalogue.</strong> Search, filters, recommendations, currently airing, latest updates.</em></td>
+    <td align="center"><em><strong>Compare.</strong> One pinned frame, original against a candidate chain, side by side or free.</em></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/screenshots/settings.webp" alt="Appearance settings with accent colour, corner radius and background gradient"></td>
+    <td width="50%"><img src="docs/images/screenshots/media-info.webp" alt="Media information view listing container, codec, dimensions and track inventory"></td>
+  </tr>
+  <tr>
+    <td align="center"><em><strong>Appearance.</strong> Accent, corner radius and gradient, applied to every surface at once.</em></td>
+    <td align="center"><em><strong>Media information.</strong> What the container actually reports, track by track.</em></td>
+  </tr>
+</table>
 
-The intended gallery deliverable remains: five real widget captures (`catalogue.png`, `player.png`, `compare.png`, `media-info.png`, `settings.png`) plus three supporting appearance captures, produced by the opt-in `release_gallery_probe` on an interactive desktop with working desktop OpenGL, an original local video of at least eight seconds, the installed Standard mpv runtime module, and network access to the anonymous catalogue API. The probe uses Original playback and non-AI comparison only; it does not acquire models or run AI inference. The local video is a project-generated FFmpeg `lavfi` test pattern—not sourced footage—and is credited in the [run evidence](docs/images/gallery-release-0.1.0/gallery-evidence.json) and [fixture provenance](tests/fixtures/README.md). See the [capture procedure and provenance requirements](docs/images/README.md).
+These are real widget captures from the 0.1.0 line, produced by the opt-in `release_gallery_probe` on an
+isolated desktop during release preparation. The full-resolution PNGs and the run's `gallery-evidence.json`
+(hashes, widget identities, the 12-second project-generated `lavfi` demo used as the source) are kept under
+[`docs/images/gallery-release-0.1.0/`](docs/images/gallery-release-0.1.0/); the images above are
+downscaled WebP copies in [`docs/images/screenshots/`](docs/images/screenshots/) so the page stays light.
+Live catalogue artwork, titles and availability belong to their rights holders and change upstream — the
+layout is what is being shown, not a snapshot of the catalogue's contents.
 
-See [release status](docs/release-status.md) for the recorded build evidence, unresolved checks and remaining distribution limits.
+The probe uses Original playback and non-AI comparison only: it never downloads models and never runs
+inference. Regenerating the set needs an interactive desktop with working desktop OpenGL, an original
+local video of at least eight seconds, the installed Standard mpv runtime module and network access to the
+anonymous catalogue API. A headless software-GL display captures widgets but not the video surface, which
+is why the player's picture is not in this table.
 
 ## Download and install
 
-There is no public download URL configured in this source checkout. Do not download binaries from an unofficial mirror. Private QA builds exist only as local evidence: a Windows portable ZIP and per-user setup, and four Linux formats — a dependency-based `tar.gz`, an `AppImage`, an Arch `pkg.tar.zst` and a Debian `.deb`. [Release status](docs/release-status.md) records what remains unverified, not their paths or hashes. They are not public downloads, and no package is approved for publication.
+Builds are published at [github.com/smyhlin/Mikai-Ja-Nai/releases](https://github.com/smyhlin/Mikai-Ja-Nai/releases): a Windows portable ZIP and per-user setup, and four Linux formats — a dependency-based `tar.gz`, an `AppImage`, an Arch `pkg.tar.zst` and a Debian `.deb`. Every release ships `SHA256SUMS`; verify an artifact with `sha256sum -c SHA256SUMS` before running it, and never take these binaries from an unofficial mirror. The artifacts are unsigned, and [release status](docs/release-status.md) records what remains unverified — including the third-party source and redistribution obligations in [redistribution](docs/redistribution.md).
 
 Every Linux artifact ships the project's own libmpv runtime — the fork the player and AnimeJaNai are built against, rebuilt with an FFmpeg TLS backend so https provider streams work. The tarball and AppImage keep it in `bin/mpv`, the Arch package in `/usr/lib/mikai/mpv`, the `.deb` in `/usr/lib/mikai/mpv`; none of them needs or uses a distribution mpv, and a developer build can still opt into `-DMIKAI_LINUX_BUNDLE_MPV=ON` to do the same. Bundling does not remove the host glibc/loader, graphics-driver, EGL and audio requirements, and no format is a universal Linux package. The separate October 24 packages recorded in prior local evidence are historical baseline artifacts, not builds of the current changes. Linux final-payload process smokes completed, including local video plus AAC; visual review of both playing captures confirmed a clear moving test pattern with no black or striped output. The final-source hour matrix completed with three PASS results and one unresolved Linux-stock black/frozen-output FAIL; the Windows setup is unsigned. Public binary distribution remains on hold while the upstream source/license closure is incomplete.
 

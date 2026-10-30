@@ -13,6 +13,13 @@ The gallery PNGs must be captured from the running Mikai application by the opt-
 
 A run writes `gallery-evidence.json` with application/Qt/platform details, screenshot paths and SHA-256 digests, observed widget/playback state, the operator-declared video credit/source, repeated Appearance-control response and references to the real catalogue-window before/preview/reset captures, errors, and close/worker-drain evidence. The run succeeds only if all five real surfaces, all three supporting appearance captures, and a clean application shutdown are observed. Unavailable catalogue data or artwork is an error; there is no fixture or fabricated substitute. The probe records but cannot independently verify the supplied video attribution.
 
+## README images
+
+`screenshots/` holds WebP downscales (1400 px wide) of the recorded captures, used by the top-level
+readme so the page stays light. They are derived from `gallery-release-0.1.0/*.png` and carry no new
+evidence: the PNGs and `gallery-evidence.json` remain the record, and a claim about a capture run must
+cite those, not these copies.
+
 ## Capture procedure
 
 Build the opt-in probe with `MIKAI_BUILD_PROBES=ON` and run it on an interactive desktop whose available work area is at least 1280×840, with working desktop OpenGL. Use the real desktop platform plugin (Windows or X11); offscreen/minimal platforms are refused. The run requires a bright original local video of at least eight seconds with ready video-track metadata (audio is optional), an installed Standard mpv runtime module, and network access to the anonymous catalogue API and artwork. The probe uses only Original playback and non-AI comparison; it does not acquire models, runtimes or invoke AI inference. A successful run requires all five surfaces; a catalogue/API/artwork failure leaves the gallery incomplete.
