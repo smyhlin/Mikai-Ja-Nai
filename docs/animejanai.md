@@ -7,6 +7,22 @@ to debug, because the fork reports a single line and the player only relays it.
 Provenance, manifests and the component store are documented in [`native/README.md`](../native/README.md);
 this page covers the runtime contract and what a broken one looks like.
 
+## 0. Runtime admission is marker-based on both platforms
+
+Windows previously rejected an updated pinned fork before filter attachment because it required
+the old exact DLL digest and client API 2.5. The current Windows DLL contains the fork's
+`animejanai` filter marker and reports client API 2.6, so neither an exact historical digest nor
+an exact API minor version is a valid fork-identification rule.
+
+Admission requires the loaded **Standard** core, the exact resolved module path to be a member of
+the validated runtime inventory, the NUL-terminated filter and required `trtexec-libdir` and
+`rife-model-dir` option markers, and client API 2.5 or newer.
+This matches the Unix marker-based check; the compatible major version is enforced by the mpv API
+loader. Stock mpv remains unsupported without those markers. Reaching this admission
+check only permits attachment; it is not evidence that TensorRT engine building or GPU inference
+works, nor that a package is verified or approved for public release.
+
+***
 ## 1. The inference context needs the closure on the loader path
 
 `aji_trt` resolves `libnvinfer.so.11`, `libnvinfer_plugin.so.11`, `libnvonnxparser.so.11` and
@@ -36,7 +52,7 @@ whenever the real path contains a space, quote or tab; both plan builders pass t
 
 | Symptom (toast / log) | Cause |
 | --- | --- |
-| `animejanai.core.unsupported` | The loaded module is not the fork: no `animejanai` filter marker, or client API below 2.5 |
+| `animejanai.core.unsupported` | The loaded Standard core did not resolve the inventoried fork module, required filter/option markers are absent, or client API is below 2.5 |
 | `animejanai.backend.failed: Failed to create inference context` | The TensorRT closure was not preloaded; the fork's own line just before it reads `libnvinfer.so.11: cannot open shared object file` |
 | `animejanai.build.failed: … (see .build.log)` with `sh: line 1: Wrapper/…: No such file or directory` and `exit code: 127` | `trtexec-libdir` contained a space; `trtexec` never started |
 

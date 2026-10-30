@@ -9,7 +9,10 @@
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QHash>
 #include <QtCore/QMetaObject>
+#include <QtCore/QMutex>
+#include <QtCore/QMutexLocker>
 #include <QtCore/QPointer>
 #include <QtCore/QProcessEnvironment>
 #include <QtCore/QSettings>
@@ -28,6 +31,8 @@ RuntimeSelection& recorded() {
     static RuntimeSelection selection;
     return selection;
 }
+
+void cacheForkMarkerForResolvedStandard(const RuntimeSelection& selection);
 
 std::atomic_bool g_recoveryInFlight{false};
 /// The one resolution the recovery path currently owns. Zero while no recovery
@@ -398,7 +403,9 @@ bool restartRequiredFor(RuntimeChoice choice) {
 }
 
 RuntimeSelection resolveRuntime(RuntimeChoice choice, const QString& hint) {
-    return resolveWith(choice, &resolveStandardLocal, hint);
+    RuntimeSelection selection = resolveWith(choice, &resolveStandardLocal, hint);
+    cacheForkMarkerForResolvedStandard(selection);
+    return selection;
 }
 RuntimeSelection resolveStoredRuntime(const QString& hint) {
     QString normalizationReason;
@@ -661,49 +668,82 @@ RuntimeSelection selectStartupRuntime(const QString& hint) {
 
 namespace {
 
-/// Whether the module carries the fork's `animejanai` filter name. A stock mpv
-/// has no such string, so it separates the fork from any host runtime without
-/// depending on a byte digest. Linux modules cannot be compared by digest: the
-/// install step rewrites their RUNPATH with patchelf, so the same archive yields
-/// a different file on every build host.
-bool moduleCarriesAnimeJanaiFilter(const QString& modulePath) {
+bool scanForAnimeJanaiFilter(const QString& modulePath) {
     QFile module(modulePath);
     if (!module.open(QIODevice::ReadOnly)) return false;
-    static const QByteArray marker = QByteArrayLiteral("animejanai");
+    // Require filter-owned NUL-terminated strings as well as the filter name:
+    // build paths can contain "animejanai" in unrelated stock modules.
+    static const QByteArray animeJanaiMarker = QByteArrayLiteral("animejanai\0");
+    static const QByteArray trtExecLibdirMarker = QByteArrayLiteral("trtexec-libdir\0");
+    static const QByteArray rifeModelDirMarker = QByteArrayLiteral("rife-model-dir\0");
+    constexpr qsizetype kMarkerTailBytes = 14;
+    bool hasAnimeJanaiMarker = false;
+    bool hasTrtExecLibdirMarker = false;
+    bool hasRifeModelDirMarker = false;
     QByteArray carry;
     while (!module.atEnd()) {
         const QByteArray chunk = module.read(1 << 20);
         if (chunk.isEmpty()) break;
         carry += chunk;
-        if (carry.contains(marker)) return true;
-        // Keep a marker-length tail so a match split across chunks is not lost.
-        if (carry.size() > marker.size()) carry = carry.right(marker.size());
+        hasAnimeJanaiMarker |= carry.contains(animeJanaiMarker);
+        hasTrtExecLibdirMarker |= carry.contains(trtExecLibdirMarker);
+        hasRifeModelDirMarker |= carry.contains(rifeModelDirMarker);
+        if (hasAnimeJanaiMarker && hasTrtExecLibdirMarker && hasRifeModelDirMarker) {
+            return true;
+        }
+        // Retain enough bytes to recognize any marker split across read chunks.
+        if (carry.size() > kMarkerTailBytes) carry = carry.right(kMarkerTailBytes);
     }
-    return carry.contains(marker);
+    return hasAnimeJanaiMarker && hasTrtExecLibdirMarker && hasRifeModelDirMarker;
+}
+
+bool moduleCarriesAnimeJanaiFilter(const QString& modulePath, const QString& identity) {
+    static QMutex mutex;
+    static QHash<QString, bool> cache;
+    const QString key = modulePath + QLatin1Char('\n') + identity;
+    {
+        QMutexLocker lock(&mutex);
+        const auto found = cache.constFind(key);
+        if (found != cache.cend()) return found.value();
+    }
+
+    const bool carriesMarker = scanForAnimeJanaiFilter(modulePath);
+    {
+        QMutexLocker lock(&mutex);
+        cache.insert(key, carriesMarker);
+    }
+    return carriesMarker;
+}
+
+void cacheForkMarkerForResolvedStandard(const RuntimeSelection& selection) {
+    if (selection.kind != BundleKind::Standard || !selection.resolvedBundle.has_value()) {
+        return;
+    }
+    const Bundle& bundle = *selection.resolvedBundle;
+    if (bundle.kind != BundleKind::Standard || selection.modulePath != bundle.modulePath) {
+        return;
+    }
+    for (const BundleFile& file : bundle.files) {
+        if (QDir::cleanPath(QDir(bundle.root).filePath(file.path)) == bundle.modulePath) {
+            moduleCarriesAnimeJanaiFilter(bundle.modulePath, file.sha256);
+            return;
+        }
+    }
 }
 
 }  // namespace
 
 bool isAnimeJanaiForkRuntime(const RuntimeSelection& selection) {
-    constexpr qint64 kForkModuleBytes = 122146816;
-    constexpr quint64 kForkApiVersion = 131077;
-    constexpr auto kForkModuleSha256 = "90de8f89fa1421eaec510e5cfe11de75846b445489864220ec811fd0f08b4649";
+    constexpr quint64 kMinimumForkApiVersion = 131077;
 
     if (!selection.loaded || selection.kind != BundleKind::Standard ||
         !selection.resolvedBundle.has_value()) {
         return false;
     }
-#if defined(Q_OS_UNIX)
-    // The Unix fork builds report 2.6; the app only needs the 2.x major it was
-    // compiled against, which MpvApi::load already enforces.
-    if (selection.apiVersion < kForkApiVersion) {
+    // MpvApi::load enforces a compatible major; the fork's minimum is mpv 2.5.
+    if (selection.apiVersion < kMinimumForkApiVersion) {
         return false;
     }
-#else
-    if (selection.apiVersion != kForkApiVersion) {
-        return false;
-    }
-#endif
 
     const Bundle& bundle = *selection.resolvedBundle;
     if (bundle.kind != BundleKind::Standard || selection.modulePath != bundle.modulePath) {
@@ -714,15 +754,7 @@ bool isAnimeJanaiForkRuntime(const RuntimeSelection& selection) {
         if (QDir::cleanPath(QDir(bundle.root).filePath(file.path)) != bundle.modulePath) {
             continue;
         }
-        if (file.bytes == kForkModuleBytes &&
-            file.sha256 == QLatin1String(kForkModuleSha256)) {
-            return true;
-        }
-#if defined(Q_OS_UNIX)
-        return moduleCarriesAnimeJanaiFilter(bundle.modulePath);
-#else
-        return false;
-#endif
+        return moduleCarriesAnimeJanaiFilter(bundle.modulePath, file.sha256);
     }
     return false;
 }

@@ -515,96 +515,95 @@ void TestRuntimeSelection::aStaleOrForgedBundleIsRefusedBeforeTheLoader() {
     QVERIFY(!mplayer::native::runtimeSelected());
 }
 
-void TestRuntimeSelection::forkIdentityRequiresTheValidatedModuleAndActualApi() {
+void TestRuntimeSelection::forkIdentityRequiresLoadedBundleAndFilterMarker() {
     QTemporaryDir temp;
     QVERIFY(temp.isValid());
-    const QString modulePath = QDir(temp.path()).filePath(QStringLiteral("mpv-2.dll"));
-    QVERIFY(writeFileBytes(modulePath, QByteArrayLiteral("module")));
+
+    // Force the NUL-terminated identity marker across the scanner's 1 MiB boundary.
+    const QString forkPath = QDir(temp.path()).filePath(QStringLiteral("fork.dll"));
+    QByteArray forkBytes((1 << 20) - 4, 'x');
+    forkBytes += QByteArrayLiteral("animejanai\0");
+    forkBytes += QByteArrayLiteral("trtexec-libdir\0");
+    forkBytes += QByteArrayLiteral("rife-model-dir\0");
+    QVERIFY(writeFileBytes(forkPath, forkBytes));
 
     mplayer::native::Bundle bundle;
     bundle.kind = BundleKind::Standard;
     bundle.root = QDir(temp.path()).canonicalPath();
-    bundle.modulePath = QFileInfo(modulePath).canonicalFilePath();
+    bundle.modulePath = QFileInfo(forkPath).canonicalFilePath();
     bundle.files.append(mplayer::native::BundleFile{
-        QStringLiteral("mpv-2.dll"), 122146816,
-        QStringLiteral("90de8f89fa1421eaec510e5cfe11de75846b445489864220ec811fd0f08b4649")});
+        QStringLiteral("fork.dll"), forkBytes.size(), QString(64, QLatin1Char('a'))});
 
     RuntimeSelection selection;
     selection.loaded = true;
     selection.kind = BundleKind::Standard;
     selection.modulePath = bundle.modulePath;
     selection.apiVersion = 131077;
-    selection.version = QStringLiteral("stock-this-display-label-is-arbitrary");
     selection.resolvedBundle = bundle;
     QVERIFY(mplayer::native::isAnimeJanaiForkRuntime(selection));
 
-    selection.version = QStringLiteral("d6d93599d5-not-the-fork");
+    selection.apiVersion = 131078;
     QVERIFY(mplayer::native::isAnimeJanaiForkRuntime(selection));
-
-    selection.resolvedBundle->files[0].sha256 = QString(64, QLatin1Char('0'));
-    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
-    selection.resolvedBundle = bundle;
-    selection.resolvedBundle->files[0].bytes -= 1;
-    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
-    selection.resolvedBundle = bundle;
     selection.apiVersion = 131076;
     QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
     selection.apiVersion = 131077;
+
+    selection.loaded = false;
+    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
+    selection.loaded = true;
+
     selection.kind = BundleKind::Native;
     QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
     selection.kind = BundleKind::Standard;
     selection.resolvedBundle->kind = BundleKind::Native;
     QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
     selection.resolvedBundle = bundle;
-    selection.modulePath = QStringLiteral("different-module.dll");
+
+    selection.modulePath = QDir(temp.path()).filePath(QStringLiteral("other.dll"));
     QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
     selection.modulePath = bundle.modulePath;
+    selection.resolvedBundle->modulePath =
+        QDir(temp.path()).filePath(QStringLiteral("other.dll"));
+    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
+    selection.resolvedBundle = bundle;
     selection.resolvedBundle->files.clear();
     QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
-    selection.resolvedBundle = bundle;
-    selection.loaded = false;
-    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
-    selection.loaded = true;
-    selection.resolvedBundle.reset();
-    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
-}
 
-void TestRuntimeSelection::forkIdentityAcceptsTheBundledLinuxForkByItsFilter() {
-#if !defined(Q_OS_UNIX)
-    QSKIP("The Linux fork is identified by its filter name, not a Windows digest");
-#else
-    QTemporaryDir temp;
-    QVERIFY(temp.isValid());
-    const QString modulePath = QDir(temp.path()).filePath(QStringLiteral("libmpv.so.2"));
-    // A packaged Linux module is rewritten by patchelf, so its digest differs
-    // between build hosts; the fork's own filter name is what identifies it.
-    QVERIFY(writeFileBytes(modulePath, QByteArrayLiteral("ELF\0animejanai filter table\0")));
-
-    mplayer::native::Bundle bundle;
-    bundle.kind = BundleKind::Standard;
-    bundle.root = QDir(temp.path()).canonicalPath();
-    bundle.modulePath = QFileInfo(modulePath).canonicalFilePath();
-    bundle.files.append(mplayer::native::BundleFile{
-        QStringLiteral("libmpv.so.2"), 33, QString(64, QLatin1Char('a'))});
-
-    RuntimeSelection selection;
-    selection.loaded = true;
-    selection.kind = BundleKind::Standard;
-    selection.modulePath = bundle.modulePath;
-    selection.apiVersion = 131077;
-    selection.resolvedBundle = bundle;
-    QVERIFY(mplayer::native::isAnimeJanaiForkRuntime(selection));
-
-    // The Unix fork builds report client API 2.6; only the 2.x major matters.
-    selection.apiVersion = 131078;
-    QVERIFY(mplayer::native::isAnimeJanaiForkRuntime(selection));
-
-    QVERIFY(writeFileBytes(modulePath, QByteArrayLiteral("ELF\0stock mpv without the filter\0")));
+    const QString stockPath = QDir(temp.path()).filePath(QStringLiteral("stock.dll"));
+    const QByteArray stockBytes = QByteArrayLiteral("stock mpv module without the filter");
+    QVERIFY(writeFileBytes(stockPath, stockBytes));
+    mplayer::native::Bundle stockBundle;
+    stockBundle.kind = BundleKind::Standard;
+    stockBundle.root = QDir(temp.path()).canonicalPath();
+    stockBundle.modulePath = QFileInfo(stockPath).canonicalFilePath();
+    stockBundle.files.append(mplayer::native::BundleFile{
+        QStringLiteral("stock.dll"), stockBytes.size(), QString(64, QLatin1Char('b'))});
+    const QString prefixPath = QDir(temp.path()).filePath(QStringLiteral("prefix.dll"));
+    const QByteArray prefixBytes = QByteArrayLiteral("prefix=/opt/animejanai");
+    QVERIFY(writeFileBytes(prefixPath, prefixBytes));
+    mplayer::native::Bundle prefixBundle = stockBundle;
+    prefixBundle.modulePath = QFileInfo(prefixPath).canonicalFilePath();
+    prefixBundle.files[0].path = QStringLiteral("prefix.dll");
+    prefixBundle.files[0].bytes = prefixBytes.size();
+    prefixBundle.files[0].sha256 = QString(64, QLatin1Char('c'));
+    selection.modulePath = prefixBundle.modulePath;
+    selection.resolvedBundle = prefixBundle;
     QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
 
-    selection.apiVersion = 131076;
+    const QString bareNamePath = QDir(temp.path()).filePath(QStringLiteral("bare-name.dll"));
+    const QByteArray bareNameBytes = QByteArrayLiteral("animejanai\0");
+    QVERIFY(writeFileBytes(bareNamePath, bareNameBytes));
+    mplayer::native::Bundle bareNameBundle = stockBundle;
+    bareNameBundle.modulePath = QFileInfo(bareNamePath).canonicalFilePath();
+    bareNameBundle.files[0].path = QStringLiteral("bare-name.dll");
+    bareNameBundle.files[0].bytes = bareNameBytes.size();
+    bareNameBundle.files[0].sha256 = QString(64, QLatin1Char('d'));
+    selection.modulePath = bareNameBundle.modulePath;
+    selection.resolvedBundle = bareNameBundle;
     QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
-#endif
+    selection.modulePath = stockBundle.modulePath;
+    selection.resolvedBundle = stockBundle;
+    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
 }
 
 void TestRuntimeSelection::publishingAStockRuntimeNeverTouchesTheSourceOrTheReferenceInstall() {
