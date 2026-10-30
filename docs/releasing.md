@@ -208,10 +208,12 @@ git log --oneline --decorate -5
 
 - `main` is the branch CI builds on (`ci.yml` triggers on pushes to `main` and on pull requests); it
   is the branch to push.
-- No remote exists in a fresh checkout. Add one and push:
+- The published repository is <https://github.com/smyhlin/Mikai-Ja-Nai> (default branch `main`). A
+  fresh checkout adds it explicitly; `ssh` needs a key registered on the account, so the configured
+  remote uses HTTPS with `gh` as the credential helper (`gh auth setup-git`):
 
 ```bash
-git remote add origin git@github.com:<owner>/mikai-janai.git
+git remote add origin https://github.com/smyhlin/Mikai-Ja-Nai.git
 git push -u origin main
 git push origin --tags          # only if those tags are meant to be public
 ```

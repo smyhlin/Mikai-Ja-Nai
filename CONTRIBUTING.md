@@ -4,8 +4,9 @@ Mikai is a C++20 / Qt Widgets desktop client. Before making a change, read the r
 
 ## Naming
 
-- **Repository slug:** `mikai-janai` — lowercase, hyphenated, the form GitHub shows and the one to use
-  in clone URLs and remotes. Do not reintroduce the underscore spelling or a bare `Mikai`.
+- **Repository:** <https://github.com/smyhlin/Mikai-Ja-Nai> — the GitHub name is `Mikai-Ja-Nai`
+  (hyphenated, case-insensitive in URLs); the checkout directory name is local and carries no weight.
+  Do not reintroduce the underscore spelling or a bare `Mikai`.
 - **Display name:** *Mikai Ja Nai* in prose where a human reads it; `mikai-janai` in identifiers.
   *janai* (じゃない) means "is not", which is the point: an unofficial client that is not the service.
 - **GitHub description** (one line, shown under the repo name):
