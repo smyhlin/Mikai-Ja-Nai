@@ -90,7 +90,7 @@ Linux final-payload process smokes completed, including local video plus AAC; vi
 
 The v0.1.0 release is already published. Further public binary distribution remains on hold while the upstream source/license closure and release QA remain incomplete; the existing publication does not imply rights clearance or QA approval.
 
-The published Windows v0.1.0 packages can fail at startup with a missing `__cxa_call_terminate` entry point. See [release status](docs/release-status.md) for the source fix and local package verification; a corrected public release is not claimed.
+The published Windows v0.1.0 packages can fail at startup with a missing `__cxa_call_terminate` entry point. Corrected setup and portable builds in a developer's local `release-artifacts/` are private-review files, not replacements on the public release. See [release status](docs/release-status.md) for the source fix and verification limits.
 
 ## Quick start
 

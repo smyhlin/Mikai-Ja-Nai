@@ -12,7 +12,7 @@
 
 - The default blue gradient is `#6797e4`; saved user appearance selections remain in effect rather than being replaced by the default.
 - Windows startup failed because the released `Qt6Core.dll` imports `__cxa_call_terminate` from `libstdc++-6.dll`, but that bundled runtime does not export the symbol. Distribution assembly now prefers SDK runtime files, and both Windows assembly paths check that this specific Qt import is exported by the selected runtime.
-- A fresh local Windows private-review ZIP and setup payload passed `--version` after extraction with `PATH` limited to Windows system directories. The installer was not installed or uninstalled; this is not a clean-machine or Linux test, rights clearance, or public-release approval. The local outputs are under `release-artifacts/windows-fixed-20261030` when present; this ignored directory is not a tracked/public artifact.
+- The local Windows private-review ZIP and setup in `release-artifacts/` were rebuilt from the current application; both extracted executables passed `--version` with `PATH` limited to Windows system directories, and both 133-file payloads matched the release inventory. The installer was not installed or uninstalled because an existing installation is registered; this is not a clean-machine or Linux test, rights clearance, or public-release approval.
 
 ### AnimeJaNai fork identification, loader and engine build (2026-10-30)
 
