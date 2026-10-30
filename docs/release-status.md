@@ -1,6 +1,6 @@
 # Release preparation status
 
-Status: **partial and blocked**. This document records source-first preparation and local packaging tooling only. It does not claim a public release, publication approval, current QA pass, or current gallery capture. `profiles.publicReleaseReady` remains false for `windows-x64` and `linux-x86_64`.
+Status: **published, with open rights and QA work**. The owner published [v0.1.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0) with the six artifacts recorded below; `profiles.publicReleaseReady` remains false for `windows-x64` and `linux-x86_64`, and the third-party source/redistribution obligations in [`redistribution.md`](redistribution.md) are still unresolved. What exists and what does not is stated per item — no QA pass, gallery capture or clean-rights approval is implied.
 
 ## Implemented in this source tree
 
@@ -12,6 +12,8 @@ Status: **partial and blocked**. This document records source-first preparation 
 - Documentation for build, packaging, redistribution, gallery capture and source provenance.
 
 ## Build evidence
+
+- **Published release (2026-10-30, revision `488b928`):** [v0.1.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0) carries six artifacts and `SHA256SUMS` — AppImage, Linux `tar.gz`, Arch `pkg.tar.zst`, Debian `.deb`, Windows portable ZIP and Windows setup. Each was rebuilt from that revision and answers `mikai 0.1.0 (488b928, built …)`; the downloaded `tar.gz` re-hashes to its published digest. The release page states the same limitations as this document: no signing, no universal Linux package, and unresolved third-party source/redistribution obligations.
 
 - **Windows product build (2026-10-29, revision `fe4db7e`):** cross-built with MinGW-w64 GCC 13 (`-DMIKAI_DISABLE_IPO=ON`, `-DMIKAI_BUILD_REVISION=fe4db7e`); `windeployqt.exe` crashes under wine, so the payload (132 files) is assembled from the `dist.cmake` allowlist with Qt 6.12, the MinGW runtime and the pinned `mpv/libmpv-2.dll` (`d22a8a76…`, the dev archive's DLL). `mikai-0.1.0-windows-x64-portable.zip` (`b31c3877…`, 77,767,851 B) answers `mikai 0.1.0 (fe4db7e, …)` under wine from its own folder; `mikai-0.1.0-windows-x64-setup.exe` (`dd52285b…`, 58,819,163 B) silently installed to a wine prefix, ran with the same version, carried the same DLL and uninstalled cleanly.
 - **Windows product build (older record):** an earlier snapshot's build is recorded as having succeeded; this document does not rerun builds.
