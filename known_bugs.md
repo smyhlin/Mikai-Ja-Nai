@@ -64,7 +64,7 @@ Both are tracked in [`docs/release-status.md`](docs/release-status.md) under **P
 
 ## Current status
 
-- **CTest suite:** **57/57** PASS (`ctest --test-dir build/linux-release --output-on-failure --timeout 900`)
+- **CTest suite:** **57/57** PASS (revision `8a3b2cd`) (`ctest --test-dir build/linux-release --output-on-failure --timeout 900`)
 - **Open P1/P2 defects:** **None**
 - **Documentation:** All contracts updated; no "static defect" or "runtime risk" claims remain in this file
 
