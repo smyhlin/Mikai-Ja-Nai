@@ -81,13 +81,13 @@ its publisher tag commit is not separately verified here. Its source mpv commit 
 [`b4f9f5bfed18d5ce610af28024986410dd9bdaae`](https://github.com/the-database/mpv/tree/b4f9f5bfed18d5ce610af28024986410dd9bdaae).
 The API-only archive
 [`mpv-dev-x86_64-20261024-git-b4f9f5bfed.7z`](https://github.com/the-database/mpv-winbuild/releases/download/2026-10-24-b4f9f5bfed/mpv-dev-x86_64-20261024-git-b4f9f5bfed.7z)
-is 32,965,168 bytes with publisher SHA-256
-`2efe77b9e3028c32cd74c9d871c5d2cd8315758d0da3f59bf64c867c8e7e6d0c`. It
-contains `include/mpv/*`, `libmpv.dll.a` and `libmpv-2.dll`; it contains no
+is 32,965,168 bytes with publisher SHA-256 `2efe77b9e302` (full digest:
+[`sources.json`, mpv DEV archive `sha256`](sources.json)). It contains
+`include/mpv/*`, `libmpv.dll.a` and `libmpv-2.dll`; it contains no
 `mpv.exe`. The locally extracted DLL was observed as x64, mpv API 2.6,
-122,579,968 bytes, SHA-256
-`d22a8a765abe26ac94614b0f09d1d78b3ceafb4f2d70fd904909232e0784c4a3`
-(local measurement, not a publisher digest); its version is
+122,579,968 bytes, SHA-256 `d22a8a765abe` (local measurement, not a publisher
+digest; full digest: [`sources.json`, extracted DLL `sha256`](sources.json));
+its version is
 `mpv v0.41.0-dev-gb4f9f5bfe` (FFmpeg `N-128018-ga881f0a9a`). The superseded
 2026-10-07 archive (`d6d93599d5`, 32,830,217 bytes) is retained here only as
 history.
@@ -153,7 +153,7 @@ substituting a different one would change the product rather than its
 provenance.
 
 The historical v0.9.0 official Windows release asset is `aji-windows-x64.zip` (657,798 bytes,
-SHA-256 `22828c41439ac2b165a18294ba3e15257e8df617ab1d7ab6fb0f96e3915c5586`).
+SHA-256 `22828c41439a`; full digest: [`sources.json`: `historicalOfficialRelease.assets[name=aji-windows-x64.zip].sha256`](sources.json)).
 The historical baseline comparison against the v0.9.0 tag, performed before
 authorized local edits, found the header, configuration parser and dispatcher
 byte-identical; the TRT source and CMake were already locally modified. The
@@ -169,15 +169,15 @@ behavior is not established.
 
 The current [v0.17.1 release](https://github.com/the-database/animejanai-inference/releases/tag/v0.17.1)
 has an ABI-9 Windows runtime archive `aji-windows-x64.zip` (743,177 bytes,
-SHA-256 `9ddf6bb6da0ec52a2da0d9a13e59be99ff97a5c8c2e7156653dd154f6a4e40ad`)
+SHA-256 `9ddf6bb6da0e`; full digest: [`sources.json`: `currentOfficialRelease.assets[name=aji-windows-x64.zip].sha256`](sources.json))
 and Linux runtime archive `aji-linux-x64.tar.zst` (281,391 bytes,
-SHA-256 `89ca6cc961889eebfa326745d2c7d9b96ebc71700303335f87adf1995f7c7cdc`).
+SHA-256 `89ca6cc96188`; full digest: [`sources.json`: `currentOfficialRelease.assets[name=aji-linux-x64.tar.zst].sha256`](sources.json)).
 These are separate from the private ABI-8 source and build above; an ABI-8
 mpv filter must not be paired with the ABI-9 runtime. Release identity is not
 runtime compatibility or operation evidence.
 
 The separate Linux `aji-encode-linux-x64.tar.zst` (80,255,083 bytes,
-SHA-256 `d979be62b8b7735b4b579ba7a6b68e3db7f50707b9aeb42c20da8f6ca31093fe`)
+SHA-256 `d979be62b8b7`; full digest: [`sources.json`: `currentOfficialRelease.assets[name=aji-encode-linux-x64.tar.zst].sha256`](sources.json))
 is an optional offline CLI, not used for app playback, automatically acquired,
 or shipped. Its FFmpeg dependency and redistribution rights require separate
 assessment. Neither its publication nor the runtime release clears public

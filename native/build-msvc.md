@@ -474,11 +474,20 @@ A later pair, with `0001-content-addressed-cache-and-prepared-only.patch`
 applied under `AJI_PATCH_POLICY=strict`, was byte-identical across two clean
 builds of the same directory:
 
-- `aji.dll` `8e3b793dafa3805c83ed55f961c4084c84607cd23594a66cbfd7ce7517356d6a` (807936 bytes)
-- `aji_trt.dll` `dee280de372a74b2b0000dc2d467eb0198ffb421d4c8824cafb5120eb8b29414` (2414080 bytes)
+- `aji.dll` `8e3b793dafa3` (807936 bytes; full digest in the [observed DLL digest table](#observed-dll-digests))
+- `aji_trt.dll` `dee280de372a` (2414080 bytes; full digest in the [observed DLL digest table](#observed-dll-digests))
 
 A different build directory embeds that absolute path, so those DLLs differ.
 The mpv-fork `GET_META` patch is not part of these DLLs.
+The full digests are preserved here because no JSON or `SHA256SUMS` record is
+available in the tracked evidence:
+
+#### Observed DLL digests
+
+| DLL | Full SHA-256 |
+| --- | --- |
+| `aji.dll` | `8e3b793dafa3805c83ed55f961c4084c84607cd23594a66cbfd7ce7517356d6a` |
+| `aji_trt.dll` | `dee280de372a74b2b0000dc2d467eb0198ffb421d4c8824cafb5120eb8b29414` |
 
 ## Wiring it through the root project
 

@@ -2,7 +2,7 @@
 
 ## 1. Architecture & Layering Invariants
 
-`mikai` is a single-process C++20 / Qt 6.12 desktop client and `libmpv` OpenGL video player supporting **Windows x64 (MinGW-w64)** and **Linux x64 (GCC / Clang)**.
+**Mikai Ja Nai** (internally `mikai`) is a single-process C++20 / Qt 6.12 desktop client and `libmpv` OpenGL video player supporting **Windows x64 (MinGW-w64)** and **Linux x64 (GCC / Clang)**. **Mikai** refers to the upstream service and public API, not the application.
 
 Strict architectural layering is enforced by `TestLayering` (`tests/cpp/app/TestLayering.cpp`):
 
@@ -14,7 +14,9 @@ Strict architectural layering is enforced by `TestLayering` (`tests/cpp/app/Test
 3. **`src/player/` (`mplayer`) — Video Surface, Shader/AI Pipelines & Compare Workstation:**
    - `src/player/core/` — Dynamic `libmpv` loader (`MpvApi`), async transport (`MpvHandle`), diagnostics (`PlaybackDiagnostics`), and OpenGL render bridge (`MpvRenderContext`, `VideoSurface`, `VideoSurfaceAnimeJanai`, `VideoSurfaceNative`). `MpvApi`, `MpvHandle`, and `PlaybackDiagnostics` are GUI-free and compiled in `mikai_native_support` so the static library graph is strictly acyclic (`mikai_backend` → `mikai_native_support` → `mikai_player` → `mikai_app`).
    - `src/player/shaders/` — `Anime4K` shader chain builder (`Anime4K.{hpp,cpp}`) and `PresetShortcuts.{hpp,cpp}`.
-   - `src/player/shell/` — Player UI chrome (`PlayerDialog`, `PlayerDialogProcessing`, `PipFloat`, `PlayerShell`, `PlayerPopups`, `ShellWidgets`, `ShellSliders`, `ShellTheme`, `EpisodeNavButton`) and the media-information views (`MediaInformationDialog`, `MediaInformationPresentation`, `MediaInformationTree`, `MediaInformationOverview`). The player library must not include `src/app/` state: accent and corner radius arrive as pushed tokens (`shell::setAccent`, `shell::setCornerRadius` from `ShellTheme.hpp`), which the application seeds at startup and refreshes on an appearance change or save. `ShellTheme.cpp` holds the last pushed value. Custom-painted chrome enables antialiasing, `SmoothPixmapTransform` and device-pixel-ratio scaling; icons are positioned on integer pixels.
+   - `src/player/shell/` — Player UI chrome (`PlayerDialog`, `PlayerDialogProcessing`, `PipFloat`, `PlayerShell`, `PlayerPopups`, `ShellWidgets`, `ShellSliders`, `ShellTheme`, `EpisodeNavButton`) and media-information views (`MediaInformationDialog`, `MediaInformationPresentation`, `MediaInformationTree`, `MediaInformationOverview`).
+     - The player library must not include `src/app/` state. Accent and corner radius arrive as pushed tokens (`shell::setAccent`, `shell::setCornerRadius` from `ShellTheme.hpp`), seeded at startup and refreshed on appearance changes or save. `ShellTheme.cpp` holds the last pushed value.
+     - Custom-painted chrome enables antialiasing, `SmoothPixmapTransform` and device-pixel-ratio scaling; icons are positioned on integer pixels.
    - `src/player/compare/` — Visual Compare Workstation (`CompareWindow`, `CompareCanvas`, `CompareGrid`, `ComparePane`, `CompareLayout`, `CompareRenderer`).
    - `src/player/native/` (`mplayer::native`) — Subdivided into:
      - `bundle/` (`NativeBundle`, `NativeManifest`, `NativePaths`, `NativePeImage`, `NativeRuntimeSelection`, `NativeCapabilities`, `NativePrefs`, `NativeDiagnostics`)
@@ -108,7 +110,11 @@ The runtime must be the TLS rebuild (`packaging/mpv/build-tls-archive.sh` → `m
 
 Windows packaging cannot use `windeployqt.exe` (it needs Windows and crashes under wine), so the payload is assembled by name: `packaging/windows/assemble-payload.py` copies the executable, the Qt modules its import table asks for, a fixed plugin list, the MinGW runtime and the pinned `libmpv-2.dll`, then generates the Inno Setup `Source:` list from what it copied. Never replace it with a recursive glob or a deployed tree.
 
-Distribution packages: `packaging/linux/arch-package.sh` exports `HEAD` and builds with `makepkg` (runtime archive as a `source`, `qt6-base`/`libglvnd` instead of `mpv`, runtime at `/usr/lib/mikai/mpv`). `packaging/linux/deb-package.sh` builds inside Debian 13 with the Qt 6.12 SDK mounted at `/qt` and the runtime at `/mpv/runtime.tar.zst`; the package installs under `/usr`, ships ICU 73 beside Qt because the SDK links it, and derives `Depends` from what each shipped object can resolve through its own `$ORIGIN`/RUNPATH — a union of every shipped directory would drop a real dependency such as `libdbus-1-3`, whose copy exists only inside the mpv closure. The Windows dev archive `mpv-dev-x86_64-*.7z` supplies `libmpv-2.dll`; the `mpv-x86_64-*.7z` CLI archive does not contain it.
+Distribution packages: `packaging/linux/arch-package.sh` exports `HEAD` and builds with `makepkg` (runtime archive as a `source`, `qt6-base`/`libglvnd` instead of `mpv`, runtime at `/usr/lib/mikai/mpv`).
+
+`packaging/linux/deb-package.sh` builds inside Debian 13 with the Qt 6.12 SDK mounted at `/qt` and the runtime at `/mpv/runtime.tar.zst`; the package installs under `/usr`, ships ICU 73 beside Qt because the SDK links it, and derives `Depends` from what each shipped object can resolve through its own `$ORIGIN`/RUNPATH — a union of every shipped directory would drop a real dependency such as `libdbus-1-3`, whose copy exists only inside the mpv closure.
+
+The Windows dev archive `mpv-dev-x86_64-*.7z` supplies `libmpv-2.dll`; the `mpv-x86_64-*.7z` CLI archive does not contain it.
 
 ### Out-of-Band CLI Tools & Manifest Verification
 

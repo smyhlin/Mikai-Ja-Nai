@@ -1,8 +1,8 @@
 # AnimeJaNai on Linux: fork integration and failure modes
 
-The AnimeJaNai filter ships inside the pinned mpv fork, and two of the fork's own habits decide
-whether the application's plan can work at all. Both are cheap to honour and expensive to debug,
-because the fork reports a single line and the player only relays it.
+The AnimeJaNai filter ships inside the pinned mpv fork used by Mikai Ja Nai. Two of the fork's own
+habits decide whether the application's plan can work at all. Both are cheap to honour and expensive
+to debug, because the fork reports a single line and the player only relays it.
 
 Provenance, manifests and the component store are documented in [`native/README.md`](../native/README.md);
 this page covers the runtime contract and what a broken one looks like.

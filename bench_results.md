@@ -494,8 +494,8 @@ pixel-identity proof, a temporal-artifact survey or ground-truth quality.
 Four focused experimental regression tests exercised multiple timesteps,
 multiple padded sizes, wrong geometry/layout refusal and source preservation;
 those tests were removed with the prototype, not retained as current coverage.
-The installed 4.25 source digest remains
-`de0fb71ae50fe082eb3903fd5cf752063dea5e9fd61e8bbf3c4577e11b877c9c`.
+The installed 4.25 source digest remains `de0fb71ae50f` (full digest retained
+in the [digest table below](#retired-rife-425-source-digest)).
 
 Recorded experiment verification: the comparison completed at both
 geometries, and the non-425 request was refused before interpolation or engine
@@ -511,3 +511,12 @@ Numerical exports, builder logs, quality metrics and private media remain as
 historical evidence; paths inside old exports are not current installation
 paths. This section does not alter earlier tables or establish an RTX 3080 or
 RTX 2070 result.
+
+The retired RIFE 4.25 source digest is preserved in full here because no JSON
+or `SHA256SUMS` record is available in the tracked evidence:
+
+### Retired RIFE 4.25 source digest
+
+| Item | Full SHA-256 |
+| --- | --- |
+| Installed RIFE 4.25 source | `de0fb71ae50fe082eb3903fd5cf752063dea5e9fd61e8bbf3c4577e11b877c9c` |

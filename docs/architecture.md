@@ -1,26 +1,38 @@
 # Architecture
 
-Mikai is a C++20 desktop application organized around Qt 6.12 Widgets and a desktop OpenGL playback surface. The catalogue client, application UI, player/render path and optional Native processing support are separate subsystems. This document is an orientation, not a claim that optional components are installed or supported on every machine.
+Mikai Ja Nai is a C++20 desktop application organized around Qt 6.12 Widgets and a desktop OpenGL playback surface. Mikai is the upstream catalogue service; its client, the application UI, player/render path and optional Native processing support are separate subsystems.
+
+This document is an orientation, not a claim that optional components are installed or supported on every machine.
 
 ## Main layers
 
 - `src/backend/` contains public API models/client, release/update data, provider stream extraction, downloads, runtime discovery and diagnostic scrubbing. `MikaiClient` speaks to `https://api.mikai.me/public/v1`; it is an unofficial client of the public API, not an owner-controlled service component.
-- `src/app/` owns application navigation, title/search pages, settings, local watch history (`state/WatchHistory`: per-episode resume offsets and lengths), UI state, appearance (`state/AppearanceStore`), translations, background jobs and component-store UI. Worker activity is coordinated through `Runner`; widgets publish results back to the UI. Appearance reaches the player as pushed tokens rather than imports: `shell::setAccent` and `shell::setCornerRadius` are seeded at startup and refreshed on a customization change or save, so the player library never includes application state.
-- `src/player/core/` owns dynamic libmpv loading, handles, render-context access, media tracks and playback diagnostics. On Linux, a packaged build always selects the bundled runtime (the fork the player and AnimeJaNai are built against) from a prefix-relative directory — `bin/mpv` in the portable trees, `/usr/lib/mikai/mpv` in the packages — rather than the host's `libmpv.so.2`. `MpvHandle` names the host's CA bundle as `tls-ca-file` unless the caller chose one, because the bundled OpenSSL's compiled-in paths belong to the build distribution. `src/player/shell/` provides the player UI, controls (including the `EpisodeNavButton` stepper and the footer's HDR/Dolby/codec badges), picture-in-picture, media inspector and local-file handling. In-source chrome paints inside the surface pass with antialiasing, `SmoothPixmapTransform` and device-pixel-ratio scaling, and positions glyphs on integer pixels.
+- `src/app/` owns application navigation, title/search pages, settings, local watch history (`state/WatchHistory`: per-episode resume offsets and lengths), UI state, appearance (`state/AppearanceStore`), translations, background jobs and component-store UI. Worker activity is coordinated through `Runner`; widgets publish results back to the UI.
+  - Appearance reaches the player as pushed tokens rather than imports: `shell::setAccent` and `shell::setCornerRadius` are seeded at startup and refreshed on a customization change or save, so the player library never includes application state.
+- `src/player/core/` owns dynamic libmpv loading, handles, render-context access, media tracks and playback diagnostics. On Linux, packaged builds select the bundled runtime instead of the host's `libmpv.so.2`.
+  - The fork the player and AnimeJaNai are built against is loaded from a prefix-relative directory: `bin/mpv` in portable trees and `/usr/lib/mikai/mpv` in packages.
+  - `MpvHandle` names the host's CA bundle as `tls-ca-file` unless the caller chose one, because bundled OpenSSL's compiled-in paths belong to the build distribution.
+- `src/player/shell/` provides the player UI, controls (including the `EpisodeNavButton` stepper and footer HDR/Dolby/codec badges), picture-in-picture, media inspector and local-file handling. In-source chrome paints inside the surface pass with antialiasing, `SmoothPixmapTransform` and device-pixel-ratio scaling, and positions glyphs on integer pixels.
 - `src/player/shaders/` contains Anime4K shader selection. `src/player/compare/` owns frozen-frame candidate rendering, compare modes and GIF export.
 - `src/player/native/` holds prepared Native bundle discovery/selection, component/model metadata, planning and optional-runtime support. The GUI-free support code is separated from widgets. AnimeJaNai Standard processing and the prepared Native bundle workflow are distinct; neither is an alias for the other's configuration or runtime.
 - `native/` contains optional Native source/build tooling, manifests and patches. It is not a requirement for ordinary Original playback.
 - `tests/` and `src/probes/` contain automated tests and purpose-specific probes; see [building](building.md#tests-and-probes) for safe use.
 
-The executable entry point is `src/app/main.cpp`; CMake composes backend, native support, player and app targets in the root `CMakeLists.txt`. The public API contract is documented in [docs.md](../docs.md); build, deployment and legal details are in the [build](building.md) and [release](releasing.md) guides.
+The executable entry point is `src/app/main.cpp`; CMake composes backend, native support, player and app targets in the root `CMakeLists.txt`.
+
+The public API contract is documented in [docs.md](../docs.md); build, deployment and legal details are in the [build](building.md) and [release](releasing.md) guides.
 
 ## API and state boundaries
 
-The API client sends an application/version identity (`Mikai-Wrapper/0.1.0` for this release) rather than impersonating a browser. API keys are optional, remain local configuration and are not compiled into source. The client keeps a bounded in-memory JSON cache keyed by request URL and credential generation. Fresh cache directives can satisfy a request; stale entries can be revalidated with ETag, and `304` reuses the cached body. `no-store`, errors and designated endpoints are not retained. The API's rate-limit and retry headers remain authoritative; cached requests do not change server-side semantics.
+The API client sends an application/version identity (`Mikai-Wrapper/0.1.0` for this release) rather than impersonating a browser. API keys are optional, remain local configuration and are not compiled into source.
+
+The client keeps a bounded in-memory JSON cache keyed by request URL and credential generation. Fresh cache directives can satisfy a request; stale entries can be revalidated with ETag, and `304` reuses the cached body. `no-store`, errors and designated endpoints are not retained. The API's rate-limit and retry headers remain authoritative; cached requests do not change server-side semantics.
 
 Recent updates are paged and merged before publishing a new watermark. Local watch history and recently opened titles are application settings and are not synchronized to the Mikai service. Provider stream extraction is a separate provider-facing transport path. For API details, endpoint schemas and authentication, use the [Public API reference](../docs.md) rather than inferring them from this client description.
 
-Application settings retain the QSettings identity `Mikai` / `Mikai Wrapper`. Native/model data resolves to `MIKAI_NATIVE_ROOT`, else an executable-adjacent `native/` that accepts a write, else `AppLocalDataLocation/native`; logs and crash reports are executable-adjacent. On start the app removes only abandoned work from that store (`scratch/` and `*.previous` older than a day; `aji-stage-*` and `*.partial` older than an hour) and never an installed component, model or configuration. Builds, tests and package staging must use owned directories and must not reuse user state as disposable output.
+Application settings retain the QSettings identity `Mikai` / `Mikai Wrapper`. Native/model data resolves to `MIKAI_NATIVE_ROOT`, else an executable-adjacent `native/` that accepts a write, else `AppLocalDataLocation/native`; logs and crash reports are written beside the executable when writable, otherwise they use Qt's `AppLocalDataLocation`.
+
+On start the app removes only abandoned work from that store (`scratch/` and `*.previous` older than a day; `aji-stage-*` and `*.partial` older than an hour). It never removes an installed component, model or configuration. Builds, tests and package staging must use owned directories and must not reuse user state as disposable output.
 
 ## Playback and rendering
 
@@ -53,7 +65,10 @@ Settings → Benchmark measures selected workloads through the real player/rende
 
 ## Repository references
 
-- [User guide](user-guide.md)
+- [Quick start & catalogue](user-guide.md)
+- [Player & Compare](player-guide.md)
+- [Processing & benchmarks](processing-guide.md)
+- [Settings & privacy](settings-guide.md)
 - [Build guide](building.md)
 - [Release and redistribution guide](releasing.md)
 - [API reference](../docs.md)
