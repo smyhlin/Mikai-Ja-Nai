@@ -32,6 +32,14 @@ set(MIKAI_LINUX_MPV_ARCHIVE_SIZE "41533948")
 
 set(MIKAI_LINUX_MPV_ARCHIVE "" CACHE FILEPATH
   "Optional local copy of the pinned Linux mpv archive (its published SHA-256 is always checked)")
+# The pinned digest identifies the archive this project ships. Rebuilding that
+# archive is not byte-reproducible - packaging/mpv/build-tls-archive.sh compiles
+# FFmpeg inside a distribution image whose package set drifts - so CI builds its
+# own and passes *that* digest here, and records it in its evidence. The default
+# is the shipped pin, so an unqualified configure still refuses every other
+# archive.
+set(MIKAI_LINUX_MPV_EXPECTED_SHA256 "${MIKAI_LINUX_MPV_ARCHIVE_SHA256}" CACHE STRING
+  "SHA-256 the archive at MIKAI_LINUX_MPV_ARCHIVE must have (CI passes its own rebuild)")
 set(MIKAI_LINUX_MPV_CACHE_DIR "${CMAKE_BINARY_DIR}/_dist-cache/mpv-linux")
 
 set(MIKAI_LINUX_MPV_BUNDLE OFF)
@@ -84,11 +92,21 @@ else()
 endif()
 
 file(SHA256 "${MIKAI_PINNED_LINUX_MPV_ARCHIVE}" actual_linux_mpv_archive_sha256)
-if(NOT actual_linux_mpv_archive_sha256 STREQUAL MIKAI_LINUX_MPV_ARCHIVE_SHA256)
+if(NOT actual_linux_mpv_archive_sha256 STREQUAL MIKAI_LINUX_MPV_EXPECTED_SHA256)
   message(FATAL_ERROR
-    "The Linux mpv archive SHA-256 does not match the pinned release: "
-    "expected ${MIKAI_LINUX_MPV_ARCHIVE_SHA256}, got ${actual_linux_mpv_archive_sha256}")
+    "The Linux mpv archive SHA-256 does not match the configured expectation: "
+    "expected ${MIKAI_LINUX_MPV_EXPECTED_SHA256}, got ${actual_linux_mpv_archive_sha256}")
 endif()
+if(NOT actual_linux_mpv_archive_sha256 STREQUAL MIKAI_LINUX_MPV_ARCHIVE_SHA256)
+  message(WARNING
+    "Bundling a Linux mpv archive that is not the shipped pin: "
+    "${actual_linux_mpv_archive_sha256} (pin ${MIKAI_LINUX_MPV_ARCHIVE_SHA256}). "
+    "This is a locally rebuilt runtime; its digest is recorded in the runtime receipt.")
+  set(MIKAI_LINUX_MPV_ARCHIVE_PINNED_RELEASE FALSE)
+else()
+  set(MIKAI_LINUX_MPV_ARCHIVE_PINNED_RELEASE TRUE)
+endif()
+set(MIKAI_LINUX_MPV_BUNDLE_ARCHIVE_SHA256 "${actual_linux_mpv_archive_sha256}")
 
 set(MIKAI_LINUX_MPV_EXTRACTED_DIR "${MIKAI_LINUX_MPV_CACHE_DIR}/extracted")
 if(IS_SYMLINK "${MIKAI_LINUX_MPV_EXTRACTED_DIR}")

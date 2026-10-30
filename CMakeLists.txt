@@ -603,10 +603,15 @@ if(DEFINED MIKAI_SELECTED_MPV_MODULE AND NOT MIKAI_SELECTED_MPV_MODULE STREQUAL 
   endif()
   file(TO_CMAKE_PATH "${MIKAI_SELECTED_MPV_MODULE}" _mikai_runtime_module_json)
   file(TO_CMAKE_PATH "${MIKAI_SELECTED_MPV_DEPENDENCY_ROOT}" _mikai_runtime_root_json)
+  if(DEFINED MIKAI_LINUX_MPV_ARCHIVE_PINNED_RELEASE AND NOT MIKAI_LINUX_MPV_ARCHIVE_PINNED_RELEASE)
+    set(_mikai_runtime_archive_pinned_json false)
+  else()
+    set(_mikai_runtime_archive_pinned_json true)
+  endif()
   file(GENERATE
     OUTPUT "${CMAKE_BINARY_DIR}/mikai-runtime-$<CONFIG>.json"
     CONTENT
-      "{\n  \"schema\": \"mikai.runtime.bundle/1\",\n  \"module\": \"${_mikai_runtime_module_json}\",\n  \"dependencyRoot\": \"${_mikai_runtime_root_json}\",\n  \"bundled\": ${_mikai_runtime_bundled_json},\n  \"platform\": \"${MIKAI_SELECTED_MPV_PLATFORM}\"\n}\n")
+      "{\n  \"schema\": \"mikai.runtime.bundle/1\",\n  \"module\": \"${_mikai_runtime_module_json}\",\n  \"dependencyRoot\": \"${_mikai_runtime_root_json}\",\n  \"bundled\": ${_mikai_runtime_bundled_json},\n  \"platform\": \"${MIKAI_SELECTED_MPV_PLATFORM}\",\n  \"archiveSha256\": \"${MIKAI_LINUX_MPV_BUNDLE_ARCHIVE_SHA256}\",\n  \"archivePinnedRelease\": ${_mikai_runtime_archive_pinned_json}\n}\n")
 endif()
 
 add_subdirectory(tests/fixtures)

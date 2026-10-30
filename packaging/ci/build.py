@@ -12,6 +12,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 LINUX_MPV_ARCHIVE_NAME = 'mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst'
+LINUX_MPV_PINNED_SHA256 = '6796d922cfd3ffb9bcd8948f77c609a4055ac343a9898f2433d2aa4b0eb6a17d'
 
 
 def ensure_linux_runtime():
@@ -121,9 +122,21 @@ def main():
                      '-DMIKAI_WITH_MODEL_INSPECTION=OFF']
         if not windows:
             runtime = ensure_linux_runtime()
+            # The TLS rebuild is not byte-reproducible, so CI accepts the archive it
+            # just built and records its digest instead of pretending it is the pin.
+            runtime_sha256 = digest(runtime)
+            (evidence / 'linux-mpv-runtime.json').write_text(json.dumps({
+                'file': runtime.name,
+                'bytes': runtime.stat().st_size,
+                'sha256': runtime_sha256,
+                'matchesPinnedRelease': runtime_sha256 == LINUX_MPV_PINNED_SHA256,
+                'source': 'built by packaging/mpv/build-tls-archive.sh in this run'
+                          if runtime_sha256 != LINUX_MPV_PINNED_SHA256 else 'shipped archive',
+            }, indent=2) + '\n', encoding='utf-8')
             configure.extend(['-DMIKAI_LINUX_BUNDLE_MPV=ON',
                               '-DMIKAI_LINUX_DEPLOY_QT=ON',
-                              f'-DMIKAI_LINUX_MPV_ARCHIVE={runtime}'])
+                              f'-DMIKAI_LINUX_MPV_ARCHIVE={runtime}',
+                              f'-DMIKAI_LINUX_MPV_EXPECTED_SHA256={runtime_sha256}'])
         if windows:
             compiler = Path(shutil.which(os.getenv('MIKAI_CXX', 'g++')) or os.getenv('MIKAI_CXX', 'g++'))
             pe = compiler.parent / 'libwinpthread-1.dll'
