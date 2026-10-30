@@ -58,6 +58,10 @@ bool matchesPinnedLinuxAjiPair(const QString& dispatcherSha256, const QString& b
 enum class MixedRifeOrder { Before, After, Unknown };
 /// Resolve upstream's chain-wide RIFE order from all ONNX temporal windows.
 MixedRifeOrder mixedRifeOrder(bool requestedBefore, const QVector<std::optional<int>>& windows);
+/// A folder the fork can name in its unquoted `LD_LIBRARY_PATH=` prefix: the
+/// requested folder when a shell cannot split it, otherwise a symlink mirror
+/// under a space-free temp root. Windows returns the argument unchanged.
+QString shellSafeLibDir(const QString& libDir);
 }
 
 AnimeJanaiInstallation describeAnimeJanaiInstallation(Backend backend, bool rehash = false);

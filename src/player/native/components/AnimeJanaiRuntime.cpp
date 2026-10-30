@@ -36,6 +36,49 @@ MixedRifeOrder mixedRifeOrder(bool requestedBefore, const QVector<std::optional<
     }
     return unknown ? MixedRifeOrder::Unknown : MixedRifeOrder::Before;
 }
+
+/// The fork prefixes its trtexec invocation with `LD_LIBRARY_PATH=<trtexec-libdir>`
+/// and hands the line to `/bin/sh` unquoted, so a space in the store path (the
+/// app folder is "Mikai Wrapper") splits that word: the shell then tries to run
+/// the tail of the path and the build dies with `sh: line 1: Wrapper/...: No
+/// such file or directory` before TensorRT starts. A mirror of symlinks in a
+/// space-free temp folder gives the fork a path the shell cannot split while
+/// the verified closure stays where it is.
+QString shellSafeLibDir(const QString& libDir) {
+#ifdef Q_OS_WIN
+    // No shell is involved on Windows: CreateProcess gets the path as one argument.
+    return libDir;
+#else
+    const auto splittable = [](const QString& path) {
+        return path.contains(QLatin1Char(' ')) || path.contains(QLatin1Char('\t')) ||
+               path.contains(QLatin1Char('\'')) || path.contains(QLatin1Char('"'));
+    };
+    if (!splittable(libDir)) return libDir;
+    const QString stem = QStringLiteral("mikai-aji-libs-") +
+        QString::fromLatin1(QCryptographicHash::hash(libDir.toUtf8(),
+                                                     QCryptographicHash::Sha1).toHex().left(12));
+    const QStringList roots{QDir::tempPath(), QStringLiteral("/var/tmp"), QStringLiteral("/tmp")};
+    for (const QString& root : roots) {
+        if (root.isEmpty() || splittable(root)) continue;
+        const QString mirror = QDir(root).filePath(stem);
+        if (!QDir().mkpath(mirror)) continue;
+        const QFileInfoList libs = QDir(libDir).entryInfoList(
+            {QStringLiteral("*.so"), QStringLiteral("*.so.*")}, QDir::Files, QDir::Name);
+        bool complete = true;
+        for (const QFileInfo& lib : libs) {
+            const QString link = QDir(mirror).filePath(lib.fileName());
+            if (QFileInfo(link).isSymLink()) continue;
+            if (!QFile::link(lib.absoluteFilePath(), link)) {
+                complete = false;
+                break;
+            }
+        }
+        if (complete && !libs.isEmpty()) return mirror;
+    }
+    return libDir;
+#endif
+}
+
 }  // namespace detail
 namespace {
 
@@ -649,7 +692,7 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
 #else
         plan.libraryPath = QDir(installation.root).filePath(QStringLiteral("libaji.so"));
 #endif
-        plan.trtexecLibDir = installation.root;
+        plan.trtexecLibDir = detail::shellSafeLibDir(installation.root);
 #ifndef Q_OS_WIN
         if (backend == Backend::TensorRT)
             plan.backendLibDirs.append(installation.root);
@@ -1200,7 +1243,7 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
     plan.rifeModelDir = QDir(ownedRoot).filePath(QStringLiteral("models/rife"));
     plan.statsPath = QDir(ownedRoot).filePath(QStringLiteral("stats/") + safeConfigName(presetId) + QStringLiteral(".txt"));
     plan.slot = preset->slot;
-    plan.trtexecLibDir = installation.root;
+    plan.trtexecLibDir = detail::shellSafeLibDir(installation.root);
 #ifndef Q_OS_WIN
     if (backend == Backend::TensorRT)
         plan.backendLibDirs.append(installation.root);

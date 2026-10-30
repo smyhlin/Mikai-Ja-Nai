@@ -475,6 +475,29 @@ void TestAnimeJanaiRuntime::tensorRtPlanCarriesTheBackendLoaderDir() {
 #endif
 }
 
+void TestAnimeJanaiRuntime::shellSafeLibDirAvoidsASplitLibraryPath() {
+#if !defined(Q_OS_WIN)
+    // The fork hands `/bin/sh` a line beginning `LD_LIBRARY_PATH=<libdir>`, so a
+    // space in the store folder ("Mikai Wrapper") splits that word and the build
+    // dies before TensorRT starts; the mirror is what keeps it one word.
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+    const QString realDir = QDir(root.path()).filePath(QStringLiteral("Mikai Wrapper/closure"));
+    QVERIFY(QDir().mkpath(realDir));
+    const QString library = QDir(realDir).filePath(QStringLiteral("libnvinfer.so.11"));
+    QVERIFY(writeFile(library, QByteArrayLiteral("not a real library")));
+    const QString mirror = detail::shellSafeLibDir(realDir);
+    QVERIFY(!mirror.contains(QLatin1Char(' ')));
+    const QFileInfo link(QDir(mirror).filePath(QStringLiteral("libnvinfer.so.11")));
+    QVERIFY(link.isSymLink());
+    QCOMPARE(link.symLinkTarget(), library);
+    // A path a shell cannot split is passed through untouched.
+    QCOMPARE(detail::shellSafeLibDir(root.path()), root.path());
+#else
+    QSKIP("The split library path is a /bin/sh concern on Unix only.");
+#endif
+}
+
 void TestAnimeJanaiRuntime::linuxOfficialPairRequiresBothPinnedDigests() {
     const QString dispatcher = QStringLiteral("0d3d15db020c0732cfa2ee448c619db61072c7dab9e54efa74f9bed4d84fe03b");
     const QString backend = QStringLiteral("19c6f6dde3b1a6307ec60adf34bee13aab7aa31af5db1e9a129d911a4da109d0");
