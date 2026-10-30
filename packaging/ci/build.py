@@ -138,6 +138,11 @@ def main():
                               f'-DMIKAI_LINUX_MPV_ARCHIVE={runtime}',
                               f'-DMIKAI_LINUX_MPV_EXPECTED_SHA256={runtime_sha256}'])
         if windows:
+            # GCC 13.1 MinGW's LTO refuses this tree's duplicated weak destructor
+            # thunks (PipFloat : QWidget, ChromeHost) and the link dies on
+            # "multiple definition"; a non-LTO link merges them. Cross builds
+            # already pass the same flag.
+            configure.append('-DMIKAI_DISABLE_IPO=ON')
             compiler = Path(shutil.which(os.getenv('MIKAI_CXX', 'g++')) or os.getenv('MIKAI_CXX', 'g++'))
             pe = compiler.parent / 'libwinpthread-1.dll'
             if not pe.is_file():
