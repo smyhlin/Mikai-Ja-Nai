@@ -1419,6 +1419,7 @@ void TestPublicApiUi::titleHomeSkipsHistoryAndEscapeUnwindsDetailsAndHistory() {
   QVERIFY(api.start());
   mikai::backend::MikaiClient client(kFixtureKey, api.base());
   mikai::app::MainWindow window(client);
+  QCOMPARE(window.windowTitle(), QStringLiteral("Mikai Ja Nai"));
   QTimer dismissSetupPrompt;
   dismissSetupPrompt.setInterval(10);
   connect(&dismissSetupPrompt, &QTimer::timeout, &window, [] {

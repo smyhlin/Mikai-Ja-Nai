@@ -526,7 +526,7 @@ void PlayerShell::buildTitleBar() {
     lay->setContentsMargins(12, 0, 6, 0);
     lay->setSpacing(8);
 
-    auto* caption = new ChromeLabel(QStringLiteral("MIKAI"), QFont(), w70(), titleBar_);
+    auto* caption = new ChromeLabel(QStringLiteral("MIKAI JA NAI"), QFont(), w70(), titleBar_);
     caption->setObjectName(QStringLiteral("playerTitleCaption"));
     lay->addWidget(caption);
     lay->addStretch(1);
@@ -689,9 +689,9 @@ void PlayerShell::buildDock() {
             return;
         }
 #ifdef Q_OS_LINUX
-        toast_->flash(tr("In desktop settings, choose Mikai under Default Applications. Your defaults have not been changed."));
+        toast_->flash(tr("In desktop settings, choose Mikai Ja Nai under Default Applications. Your defaults have not been changed."));
 #else
-        toast_->flash(tr("Choose Mikai in Windows Default Apps. Your defaults have not been changed."));
+        toast_->flash(tr("Choose Mikai Ja Nai in Windows Default Apps. Your defaults have not been changed."));
 #endif
     });
 
@@ -739,7 +739,7 @@ void PlayerShell::buildFooter() {
     info->setSpacing(8);
 
     lblEpisode_ = new ChromeLabel(
-        episodeLabel_.isEmpty() ? QStringLiteral("MIKAI") : episodeLabel_, monoFont(9, true),
+        episodeLabel_.isEmpty() ? QStringLiteral("MIKAI JA NAI") : episodeLabel_, monoFont(9, true),
         white(255), footerLeft_);
     lblEpisode_->setObjectName(QStringLiteral("playerEpisodeLabel"));
     info->addWidget(lblEpisode_);
@@ -1238,7 +1238,7 @@ void PlayerShell::setEpisodeStepping(bool hasPrevious, bool hasNext) {
 void PlayerShell::setEpisodeLabel(const QString& label) {
     episodeLabel_ = label;
     if (lblEpisode_ != nullptr) {
-        lblEpisode_->setText(label.isEmpty() ? QStringLiteral("MIKAI") : label);
+        lblEpisode_->setText(label.isEmpty() ? QStringLiteral("MIKAI JA NAI") : label);
         footerLeft_->adjustSize();
     }
 }

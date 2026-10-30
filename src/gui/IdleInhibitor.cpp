@@ -54,7 +54,7 @@ bool IdleInhibitor::inhibitThroughLogind() {
                            QDBusConnection::systemBus());
     if (!manager.isValid()) return false;
     const QDBusMessage reply =
-        manager.call(QStringLiteral("Inhibit"), QStringLiteral("idle"), QStringLiteral("Mikai"),
+        manager.call(QStringLiteral("Inhibit"), QStringLiteral("idle"), QStringLiteral("Mikai Ja Nai"),
                      QString::fromLatin1(kInhibitReason), QStringLiteral("block"));
     if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) return false;
     const QDBusUnixFileDescriptor fd = reply.arguments().first().value<QDBusUnixFileDescriptor>();

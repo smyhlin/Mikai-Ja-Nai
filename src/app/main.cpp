@@ -253,7 +253,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     app.setApplicationName(QStringLiteral("Mikai Wrapper"));
-    app.setApplicationDisplayName(QStringLiteral("Mikai"));
+    app.setApplicationDisplayName(QStringLiteral("Mikai Ja Nai"));
     app.setApplicationVersion(QStringLiteral("%1 (%2)").arg(QStringLiteral(MIKAI_PROJECT_VERSION),
                                                             QStringLiteral(MIKAI_BUILD_REVISION)));
     qInfo("mikai: build %s (%s, %s)", MIKAI_PROJECT_VERSION, MIKAI_BUILD_REVISION,

@@ -346,13 +346,13 @@ void SettingsDialog::retranslateSystemIntegration() {
     systemIntegrationHint_->setText(
         tr("Applies to your Windows account only. Changes take effect when you save."));
 #endif
-    systemStartup_->setText(tr("Start Mikai when I &sign in"));
-    systemStartup_->setAccessibleName(tr("Start Mikai when I sign in"));
+    systemStartup_->setText(tr("Start Mikai Ja Nai when I &sign in"));
+    systemStartup_->setAccessibleName(tr("Start Mikai Ja Nai when I sign in"));
 #ifdef Q_OS_LINUX
-    const QString startupHint = tr("Open Mikai automatically after signing in. Disable this before moving a portable folder, then enable it again from the new location.");
+    const QString startupHint = tr("Open Mikai Ja Nai automatically after signing in. Disable this before moving a portable folder, then enable it again from the new location.");
 #else
     const QString startupHint = systemStartupSupported()
-                                    ? tr("Open Mikai automatically after signing in to Windows. "
+                                    ? tr("Open Mikai Ja Nai automatically after signing in to Windows. "
                                          "Disable this before moving a portable folder, then enable "
                                          "it again from the new location.")
                                     : tr("Automatic startup is only available on Windows.");
@@ -361,15 +361,15 @@ void SettingsDialog::retranslateSystemIntegration() {
     systemStartup_->setToolTip(startupHint);
     systemStartup_->setAccessibleDescription(startupHint);
 #ifdef Q_OS_LINUX
-    systemContextMenu_->setText(tr("Add Mikai to video files' &Open With list"));
-    systemContextMenu_->setAccessibleName(tr("Add Mikai to video files' Open With list"));
-    const QString contextHint = tr("Registers Mikai as an Open With and default-player candidate without changing your defaults. Desktop file managers decide where to show it. If default-player registration was requested, disabling Open With retains the desktop identity so existing defaults continue to work. A package-managed entry cannot be disabled here.");
+    systemContextMenu_->setText(tr("Add Mikai Ja Nai to video files' &Open With list"));
+    systemContextMenu_->setAccessibleName(tr("Add Mikai Ja Nai to video files' Open With list"));
+    const QString contextHint = tr("Registers Mikai Ja Nai as an Open With and default-player candidate without changing your defaults. Desktop file managers decide where to show it. If default-player registration was requested, disabling Open With retains the desktop identity so existing defaults continue to work. A package-managed entry cannot be disabled here.");
 #else
-    systemContextMenu_->setText(tr("Add Mikai to the video file &context menu"));
-    systemContextMenu_->setAccessibleName(tr("Add Mikai to the video file context menu"));
+    systemContextMenu_->setText(tr("Add Mikai Ja Nai to the video file &context menu"));
+    systemContextMenu_->setAccessibleName(tr("Add Mikai Ja Nai to the video file context menu"));
     const QString contextHint =
         systemContextMenuSupported()
-            ? tr("Add an Open in Mikai command for video files without changing their default app. "
+            ? tr("Add an Open in Mikai Ja Nai command for video files without changing their default app. "
                  "After moving a portable folder, enable this again to update its path.")
             : tr("The video file context menu integration is only available on Windows.");
 #endif

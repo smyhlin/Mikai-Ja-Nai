@@ -6,8 +6,8 @@ Installed-Size: @INSTALLED_SIZE@
 Depends: @DEPENDS@
 Section: video
 Priority: optional
-Description: Unofficial desktop client for the Mikai anime catalogue
- Mikai browses the public Mikai catalogue and plays provider streams or local
+Description: Mikai Ja Nai desktop client for the Mikai anime catalogue
+ Mikai Ja Nai browses the public Mikai catalogue and plays provider streams or local
  files through libmpv. Anime4K shader presets and a frame-comparison workspace
  are optional; ordinary playback does not need AI components.
  .

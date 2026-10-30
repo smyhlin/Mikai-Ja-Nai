@@ -397,7 +397,7 @@ void SettingsDialog::refreshRuntimeHint() {
     runtimeHint_->setVisible(restartRequired);
     if (restartRequired) {
         runtimeHint_->setText(
-            tr("Runtime will change to %1 after restarting Mikai.")
+            tr("Runtime will change to %1 after restarting Mikai Ja Nai.")
                 .arg(runtimeChoice_->currentText()));
         return;
     }

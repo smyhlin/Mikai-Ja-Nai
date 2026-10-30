@@ -548,10 +548,10 @@ void SettingsFlyout::retranslate() {
     defaultPlayerLabel_->setText(defaultText);
     defaultPlayerButton_->setAccessibleName(defaultText);
 #ifdef Q_OS_LINUX
-    const QString defaultDescription = tr("Registers Mikai and opens desktop settings so you can choose it under Default Applications. Your defaults are not changed automatically.");
+    const QString defaultDescription = tr("Registers Mikai Ja Nai and opens desktop settings so you can choose it under Default Applications. Your defaults are not changed automatically.");
 #else
     const QString defaultDescription = mikai::gui::systemDefaultPlayerSupported()
-        ? tr("Opens Windows Default Apps so you can choose Mikai. Your defaults are not changed automatically.")
+        ? tr("Opens Windows Default Apps so you can choose Mikai Ja Nai. Your defaults are not changed automatically.")
         : tr("Setting the default video player is only supported on Windows.");
 #endif
     defaultPlayerButton_->setToolTip(defaultDescription);

@@ -15,13 +15,13 @@
 
 [Setup]
 AppId={{0D3BBE76-AC5C-48E3-9EBF-8563798364AA}
-AppName=Mikai
+AppName=Mikai Ja Nai
 AppVersion={#AppVersion}
-AppVerName=Mikai {#AppVersion}
+AppVerName=Mikai Ja Nai {#AppVersion}
 VersionInfoVersion={#AppVersion}.0
-VersionInfoDescription=Mikai Setup
+VersionInfoDescription=Mikai Ja Nai Setup
 DefaultDirName={localappdata}\Programs\Mikai
-DefaultGroupName=Mikai
+DefaultGroupName=Mikai Ja Nai
 DisableProgramGroupPage=no
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -55,11 +55,11 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 #include PayloadFiles
 
 [Icons]
-Name: "{group}\Mikai"; Filename: "{app}\mikai.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\Mikai"; Filename: "{app}\mikai.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\Mikai Ja Nai"; Filename: "{app}\mikai.exe"; WorkingDir: "{app}"
+Name: "{autodesktop}\Mikai Ja Nai"; Filename: "{app}\mikai.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\mikai.exe"; Description: "Launch Mikai"; Flags: nowait postinstall skipifsilent unchecked
+Filename: "{app}\mikai.exe"; Description: "Launch Mikai Ja Nai"; Flags: nowait postinstall skipifsilent unchecked
 
 ; No [Registry], [InstallDelete] or [UninstallDelete]. Inno removes only files
 ; installed by its log; acquired native/models, logs and settings survive.
@@ -98,10 +98,12 @@ begin
 end;
 
 function SameOwnedDisplayValue(const Key, Name, EnglishValue,
-  UkrainianValue: String): Boolean;
+  UkrainianValue, LegacyEnglishValue, LegacyUkrainianValue: String): Boolean;
 begin
   Result := SameRegistryString(Key, Name, EnglishValue) or
-    SameRegistryString(Key, Name, UkrainianValue);
+    SameRegistryString(Key, Name, UkrainianValue) or
+    SameRegistryString(Key, Name, LegacyEnglishValue) or
+    SameRegistryString(Key, Name, LegacyUkrainianValue);
 end;
 
 procedure RemoveContextVerb(const Extension, Command, Icon: String);
@@ -114,7 +116,8 @@ begin
     exit;
   DeleteValue(Key + '\command', '');
   // Remove only known localized values written by Mikai; preserve user edits.
-  if SameOwnedDisplayValue(Key, '', 'Open with Mikai',
+  if SameOwnedDisplayValue(Key, '', 'Open with Mikai Ja Nai',
+    'Відкрити за допомогою Mikai Ja Nai', 'Open with Mikai',
     'Відкрити за допомогою Mikai') then DeleteValue(Key, '');
   if SameRegistryString(Key, 'Icon', Icon) then DeleteValue(Key, 'Icon');
   DeleteValue(Key, OwnerValue);
@@ -142,9 +145,12 @@ begin
   for I := 0 to GetArrayLength(Extensions) - 1 do
     if SameRegistryString(Associations, Extensions[I], 'Mikai.Video') then
       DeleteValue(Associations, Extensions[I]);
-  if SameRegistryString(CapabilitiesKey, 'ApplicationName', 'Mikai') then
+  if SameRegistryString(CapabilitiesKey, 'ApplicationName', 'Mikai Ja Nai') or
+     SameRegistryString(CapabilitiesKey, 'ApplicationName', 'Mikai') then
     DeleteValue(CapabilitiesKey, 'ApplicationName');
   if SameOwnedDisplayValue(CapabilitiesKey, 'ApplicationDescription',
+    'Play local video files with Mikai Ja Nai.',
+    'Відтворюйте локальні відеофайли за допомогою Mikai Ja Nai.',
     'Play local video files with Mikai.',
     'Відтворюйте локальні відеофайли за допомогою Mikai.') then
     DeleteValue(CapabilitiesKey, 'ApplicationDescription');
@@ -154,7 +160,8 @@ begin
   DeleteValue(ProgIdKey + '\shell\open\command', '');
   if SameRegistryString(ProgIdKey + '\DefaultIcon', '', Icon) then
     DeleteValue(ProgIdKey + '\DefaultIcon', '');
-  if SameOwnedDisplayValue(ProgIdKey, '', 'Mikai video file',
+  if SameOwnedDisplayValue(ProgIdKey, '', 'Mikai Ja Nai video file',
+    'Відеофайл Mikai Ja Nai', 'Mikai video file',
     'Відеофайл Mikai') then DeleteValue(ProgIdKey, '');
   DeleteValue(ProgIdKey, OwnerValue);
   PruneKey(Associations);

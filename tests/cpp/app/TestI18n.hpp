@@ -14,6 +14,7 @@ class TestI18n : public QObject {
   void liveStringsFollowTheSwitchedLanguageAndRestore();
   void contentNamesFollowTheirOwnLanguage();
   void appearanceRoundTripsThroughSettings();
+  void defaultGradientUsesBlueAccentWhileCustomGradientRemainsDistinct();
   void unsetRadiusAndResetUseXsWithoutOverwritingSavedChoices();
   void appearanceSaveAndCancelKeepTheLatestBatchedStyle();
   void unparsableAppearanceFallsBackToDefaults();

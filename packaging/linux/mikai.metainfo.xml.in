@@ -3,10 +3,10 @@
   <id>mikai.desktop</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>Unlicense</project_license>
-  <name>Mikai</name>
+  <name>Mikai Ja Nai</name>
   <summary>Video playback with optional Anime4K processing</summary>
   <description>
-    <p>Mikai is a Qt desktop video player and catalogue browser. Ordinary playback
+    <p>Mikai Ja Nai is a Qt desktop video player and Mikai catalogue browser. Ordinary playback
     uses libmpv. Anime4K shader presets and a visual comparison workspace are
     optional; original video playback does not require AI components.</p>
     <p>The Linux package requires a compatible desktop OpenGL environment and

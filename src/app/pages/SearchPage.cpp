@@ -126,7 +126,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     root->setSpacing(theme::kSpacingMedium);
 
     auto* topRow = new QHBoxLayout();
-    auto* heading = new QLabel(tr("Mikai"), this);
+    auto* heading = new QLabel(tr("Mikai Ja Nai"), this);
     heading->setObjectName(QStringLiteral("heading"));
     topRow->addWidget(heading);
     homeButton_ = new QPushButton(tr("Home"), this);

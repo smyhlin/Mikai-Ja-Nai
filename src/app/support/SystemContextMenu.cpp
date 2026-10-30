@@ -75,7 +75,7 @@ QList<OwnedValue> ownedValues() {
             "Software\\Classes\\SystemFileAssociations\\%1\\shell\\Mikai.OpenVideo")
                                  .arg(QString::fromLatin1(extension));
         values.append({path, QString::fromLatin1(ownerName), QString::fromLatin1(ownerId)});
-        values.append({path, {}, QCoreApplication::translate("SystemContextMenu", "Open with Mikai")});
+        values.append({path, {}, QCoreApplication::translate("SystemContextMenu", "Open with Mikai Ja Nai")});
         values.append({path, QStringLiteral("Icon"), icon});
         values.append({path + QStringLiteral("\\command"), {}, command});
     }
@@ -147,7 +147,7 @@ bool checkOwnership(const QList<OwnedValue>& values, bool enabling, QString* err
             *error = QCoreApplication::translate(
                 "SystemContextMenu",
                 "HKCU\\%1 contains a context menu registration not owned by this installation. "
-                "It was left unchanged. If Mikai was moved, enable the integration from the "
+                "It was left unchanged. If Mikai Ja Nai was moved, enable the integration from the "
                 "new location to register it there first.").arg(owner.path);
         }
         return false;

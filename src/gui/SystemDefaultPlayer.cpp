@@ -27,6 +27,7 @@ using mikai::gui::win32::wide;
 // These are application identities, not translated display labels. In
 // particular, registeredAppUser must match the RegisteredApplications value.
 constexpr auto applicationName = L"Mikai";
+constexpr auto applicationDisplayName = L"Mikai Ja Nai";
 constexpr auto applicationKey = L"Software\\Mikai\\DefaultVideoPlayer";
 constexpr auto capabilitiesKey = L"Software\\Mikai\\DefaultVideoPlayer\\Capabilities";
 constexpr auto progIdKey = L"Software\\Classes\\Mikai.Video";
@@ -52,7 +53,7 @@ QString windowsError(DWORD status) {
 bool registryFailure(const QString& path, LSTATUS status, QString* error) {
     if (error != nullptr) {
         *error = QCoreApplication::translate(
-            "SystemDefaultPlayer", "Could not register Mikai at HKCU\\%1: %2")
+            "SystemDefaultPlayer", "Could not register Mikai Ja Nai at HKCU\\%1: %2")
             .arg(path, windowsError(status));
     }
     return false;
@@ -62,7 +63,7 @@ bool collision(const QString& path, QString* error) {
     if (error != nullptr) {
         *error = QCoreApplication::translate(
             "SystemDefaultPlayer",
-            "Mikai could not be registered because HKCU\\%1 contains a registration "
+            "Mikai Ja Nai could not be registered because HKCU\\%1 contains a registration "
             "not owned by this application. Nothing there was replaced.").arg(path);
     }
     return false;
@@ -286,12 +287,12 @@ bool registerApplication(QString* error) {
     values.append({app, QString::fromWCharArray(ownerValue), owner});
     values.append({progId, QString::fromWCharArray(ownerValue), owner});
     values.append({progId, {}, QCoreApplication::translate(
-        "SystemDefaultPlayer", "Mikai video file")});
+        "SystemDefaultPlayer", "Mikai Ja Nai video file")});
     values.append({progId + QStringLiteral("\\DefaultIcon"), {}, icon});
     values.append({progId + QStringLiteral("\\shell\\open\\command"), {}, command});
-    values.append({capabilities, QStringLiteral("ApplicationName"), QString::fromWCharArray(applicationName)});
+    values.append({capabilities, QStringLiteral("ApplicationName"), QString::fromWCharArray(applicationDisplayName)});
     values.append({capabilities, QStringLiteral("ApplicationDescription"), QCoreApplication::translate(
-        "SystemDefaultPlayer", "Play local video files with Mikai.")});
+        "SystemDefaultPlayer", "Play local video files with Mikai Ja Nai.")});
     values.append({capabilities, QStringLiteral("ApplicationIcon"), icon});
     const QString associations = capabilities + QStringLiteral("\\FileAssociations");
     for (const char* extension : videoExtensions) {
@@ -335,9 +336,9 @@ bool requestSystemDefaultPlayer(QString* error) {
     if (error != nullptr) {
         *error = QCoreApplication::translate(
             "SystemDefaultPlayer",
-            "Mikai is registered as an available video player, but Windows Default Apps "
+            "Mikai Ja Nai is registered as an available video player, but Windows Default Apps "
             "could not be opened: %1\n\nOpen Windows Settings > Apps > Default apps and "
-            "search for Mikai. Your current defaults have not been changed.")
+            "search for Mikai Ja Nai. Your current defaults have not been changed.")
             .arg(windowsError(status));
     }
     return false;
@@ -347,7 +348,7 @@ bool requestSystemDefaultPlayer(QString* error) {
     if (error != nullptr) {
         *error = QCoreApplication::translate(
             "SystemDefaultPlayer",
-            "Mikai is registered as an available video player, but the desktop's Default Applications settings could not be opened. Open your desktop settings and choose Mikai for the video file types you want. Your defaults have not been changed.");
+            "Mikai Ja Nai is registered as an available video player, but the desktop's Default Applications settings could not be opened. Open your desktop settings and choose Mikai Ja Nai for the video file types you want. Your defaults have not been changed.");
     }
     return false;
 #else

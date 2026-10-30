@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Mikai
+Name=Mikai Ja Nai
 GenericName=Video Player
 Comment=Watch video with optional Anime4K processing
 Exec=mikai --open-video %f

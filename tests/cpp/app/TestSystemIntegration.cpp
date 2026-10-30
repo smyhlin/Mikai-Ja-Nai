@@ -330,12 +330,94 @@ void TestSystemIntegration::xdgReusesVerifiedPackageEntry() {
   QVERIFY(packaged.open(QIODevice::ReadOnly));
   QCOMPARE(packaged.readAll(), original);
   packaged.close();
+  QByteArray legacy = original;
+  legacy.replace("Name=Mikai Ja Nai\n", "Name=Mikai\n");
+  QVERIFY(packaged.open(QIODevice::WriteOnly | QIODevice::Truncate));
+  QCOMPARE(packaged.write(legacy), qint64(legacy.size()));
+  packaged.close();
+  QVERIFY(mikai::app::systemContextMenuEnabled());
+  QVERIFY2(mikai::gui::xdg::registerDefaultCandidate(&error), qPrintable(error));
+  QVERIFY(!mikai::app::setSystemContextMenuEnabled(false, &error));
+  QVERIFY(packaged.open(QIODevice::ReadOnly));
+  QCOMPARE(packaged.readAll(), legacy);
+  packaged.close();
+
+  QByteArray edited = original;
+  edited.append("# user edit\n");
+  QVERIFY(packaged.open(QIODevice::WriteOnly | QIODevice::Truncate));
+  QCOMPARE(packaged.write(edited), qint64(edited.size()));
+  packaged.close();
+  QVERIFY(!mikai::app::systemContextMenuEnabled());
+  QVERIFY(!mikai::gui::xdg::registerDefaultCandidate(&error));
+  QVERIFY(!mikai::app::setSystemContextMenuEnabled(false, &error));
+  QVERIFY(packaged.open(QIODevice::ReadOnly));
+  QCOMPARE(packaged.readAll(), edited);
+  packaged.close();
+
+  QVERIFY(packaged.open(QIODevice::WriteOnly | QIODevice::Truncate));
+  QCOMPARE(packaged.write(original), qint64(original.size()));
+  packaged.close();
   QVERIFY(QFile::remove(executableLink));
   QVERIFY(!mikai::gui::xdg::registerDefaultCandidate(&error));
   QVERIFY(packaged.open(QIODevice::ReadOnly));
   QCOMPARE(packaged.readAll(), original);
 #endif
 }
+void TestSystemIntegration::xdgRecognizesAndRemovesLegacyGeneratedEntries() {
+#ifndef Q_OS_LINUX
+  QSKIP("XDG integration is available on Linux.");
+#else
+  XdgSandbox sandbox;
+  QVERIFY(sandbox.dir.isValid());
+  using namespace mikai::gui::xdg;
+  const QString executable = QCoreApplication::applicationFilePath();
+  QString error;
+  for (const Entry entry : {Entry::Startup, Entry::VideoPlayer}) {
+    const QString path = entryPath(entry);
+    QVERIFY(QDir().mkpath(QFileInfo(path).absolutePath()));
+    QString legacy = desktopContents(entry, executable);
+    legacy.replace(QStringLiteral("Name=Mikai Ja Nai\n"),
+                   QStringLiteral("Name=Mikai\n"));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    const QByteArray legacyBytes = legacy.toUtf8();
+    QCOMPARE(file.write(legacyBytes), qint64(legacyBytes.size()));
+    file.close();
+
+    QVERIFY(enabled(entry));
+    QVERIFY2(setEnabled(entry, true, &error), qPrintable(error));
+    QVERIFY(enabled(entry));
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QVERIFY(file.readAll().contains("Name=Mikai Ja Nai\n"));
+    file.close();
+
+    QVERIFY2(setEnabled(entry, false, &error), qPrintable(error));
+    QVERIFY(!QFileInfo::exists(path));
+  }
+
+  const QString playerPath = entryPath(Entry::VideoPlayer);
+  QVERIFY(QDir().mkpath(QFileInfo(playerPath).absolutePath()));
+  QString legacyRetained = desktopContents(Entry::VideoPlayer, executable);
+  legacyRetained.replace(QStringLiteral("Name=Mikai Ja Nai\n"),
+                         QStringLiteral("Name=Mikai\n"));
+  legacyRetained.remove(QStringLiteral(
+      "MimeType=video/mp4;video/x-matroska;video/webm;video/quicktime;video/x-msvideo;video/mpeg;video/ogg;\n"));
+  legacyRetained += QStringLiteral("X-Mikai-DefaultRegistration=true\n");
+  QFile retainedFile(playerPath);
+  QVERIFY(retainedFile.open(QIODevice::WriteOnly | QIODevice::Truncate));
+  const QByteArray retainedBytes = legacyRetained.toUtf8();
+  QCOMPARE(retainedFile.write(retainedBytes), qint64(retainedBytes.size()));
+  retainedFile.close();
+  QVERIFY2(setEnabled(Entry::VideoPlayer, false, &error), qPrintable(error));
+  QVERIFY(retainedFile.open(QIODevice::ReadOnly));
+  const QByteArray hidden = retainedFile.readAll();
+  QVERIFY(hidden.contains("Name=Mikai Ja Nai\n"));
+  QVERIFY(hidden.contains("NoDisplay=true\n"));
+  QVERIFY(!hidden.contains("MimeType="));
+  QVERIFY(hidden.contains("X-Mikai-DefaultRegistration=true\n"));
+#endif
+}
+
 
 void TestSystemIntegration::xdgRefreshesOnlyMissingOwnedInstallations() {
 #ifndef Q_OS_LINUX
@@ -575,6 +657,14 @@ void TestSystemIntegration::defaultPlayerSettingsLaunchFailureRetainsRegistratio
   QVERIFY(readString(QStringLiteral("Software\\RegisteredApplications"),
                      QStringLiteral("Mikai"), &actual));
   QCOMPARE(actual, QStringLiteral("Software\\Mikai\\DefaultVideoPlayer\\Capabilities"));
+  QVERIFY(readString(QStringLiteral(
+                         "Software\\Mikai\\DefaultVideoPlayer\\Capabilities"),
+                     QStringLiteral("ApplicationName"), &actual));
+  QCOMPARE(actual, QStringLiteral("Mikai Ja Nai"));
+  QVERIFY(readString(QStringLiteral(
+                         "Software\\Mikai\\DefaultVideoPlayer\\Capabilities"),
+                     QStringLiteral("ApplicationDescription"), &actual));
+  QCOMPARE(actual, QStringLiteral("Play local video files with Mikai Ja Nai."));
   QVERIFY(readString(QStringLiteral("Software\\Mikai\\DefaultVideoPlayer"),
                      QStringLiteral("MikaiRegistrationOwner"), &actual));
   QCOMPARE(actual, QStringLiteral("{7D1829D9-6F44-47BA-B79B-871D57145C86}"));

@@ -36,7 +36,7 @@ struct Appearance {
     bool backgroundGradient = true;
     int gradientIntensity = 30;
     int gradientHeight = 100;
-    QString gradientColor = QStringLiteral("#67e4e4");
+    QString gradientColor = QStringLiteral("#6797e4");
 
     bool operator==(const Appearance&) const = default;
 };

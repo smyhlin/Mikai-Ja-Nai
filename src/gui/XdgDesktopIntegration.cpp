@@ -64,7 +64,7 @@ QString entryPath(Entry entry) {
 QString desktopContents(Entry entry, const QString& executable) {
     const QString exec = execArgument(executable);
     if (exec.isEmpty()) return {};
-    QString text = QStringLiteral("[Desktop Entry]\nType=Application\nVersion=1.0\nName=Mikai\nX-Mikai-Managed=true\nX-Mikai-Executable=")
+    QString text = QStringLiteral("[Desktop Entry]\nType=Application\nVersion=1.0\nName=Mikai Ja Nai\nX-Mikai-Managed=true\nX-Mikai-Executable=")
         + QString::fromLatin1(executable.toUtf8().toBase64()) + QStringLiteral("\nExec=") + exec;
     if (entry == Entry::Startup) return text + QStringLiteral("\nTerminal=false\n");
     return text + QStringLiteral(" --open-video %f\nIcon=mikai\nTerminal=false\nCategories=AudioVideo;Video;Player;\nMimeType=video/mp4;video/x-matroska;video/webm;video/quicktime;video/x-msvideo;video/mpeg;video/ogg;\nStartupNotify=true\nStartupWMClass=mikai\n");
@@ -80,9 +80,9 @@ QString retainedContents(const QString& base, bool advertised) {
     return result + QStringLiteral("X-Mikai-DefaultRegistration=true\n");
 }
 
-// A moved installation may adopt only a byte-for-byte canonical entry whose
-// recorded executable no longer exists. A marker alone is not ownership.
-bool staleManagedEntry(Entry entry, const QByteArray& bytes, bool* retained) {
+// Current and legacy generated entries are owned only when their complete
+// contents are canonical and their executable is current or no longer exists.
+bool canonicalManagedEntry(Entry entry, const QByteArray& bytes, bool* retained) {
     const QByteArray key("\nX-Mikai-Executable=");
     const qsizetype start = bytes.indexOf(key);
     if (start < 0) return false;
@@ -94,25 +94,39 @@ bool staleManagedEntry(Entry entry, const QByteArray& bytes, bool* retained) {
     if (decoded.isEmpty() || decoded.toBase64() != encoded) return false;
     const QString executable = QString::fromUtf8(decoded);
     if (executable.toUtf8() != decoded) return false;
-    const QString oldBase = desktopContents(entry, executable);
-    if (oldBase.isEmpty()) return false;
+    const QString currentBase = desktopContents(entry, executable);
+    if (currentBase.isEmpty()) return false;
+    QString legacyBase = currentBase;
+    legacyBase.replace(QStringLiteral("Name=Mikai Ja Nai\n"),
+                       QStringLiteral("Name=Mikai\n"));
 #ifdef Q_OS_LINUX
     struct stat status{};
     const QByteArray oldPath = QFile::encodeName(executable);
-    if (::lstat(oldPath.constData(), &status) == 0 || errno != ENOENT) return false;
+    if (::lstat(oldPath.constData(), &status) != 0) {
+        if (errno != ENOENT) return false;
+    } else if (QFileInfo(executable).canonicalFilePath() !=
+               QFileInfo(QCoreApplication::applicationFilePath()).canonicalFilePath()) {
+        return false;
+    }
 #else
     const QFileInfo oldExecutable(executable);
-    if (oldExecutable.exists() || oldExecutable.isSymLink()) return false;
-#endif
-    if (bytes == oldBase.toUtf8()) {
-        *retained = false;
-        return true;
+    if (oldExecutable.exists() || oldExecutable.isSymLink()) {
+        if (oldExecutable.canonicalFilePath() !=
+            QFileInfo(QCoreApplication::applicationFilePath()).canonicalFilePath())
+            return false;
     }
-    if (entry == Entry::VideoPlayer &&
-        (bytes == retainedContents(oldBase, true).toUtf8() ||
-         bytes == retainedContents(oldBase, false).toUtf8())) {
-        *retained = true;
-        return true;
+#endif
+    for (const QString& base : {currentBase, legacyBase}) {
+        if (bytes == base.toUtf8()) {
+            *retained = false;
+            return true;
+        }
+        if (entry == Entry::VideoPlayer &&
+            (bytes == retainedContents(base, true).toUtf8() ||
+             bytes == retainedContents(base, false).toUtf8())) {
+            *retained = true;
+            return true;
+        }
     }
     return false;
 }
@@ -121,13 +135,15 @@ bool packagedEntry(const QByteArray& bytes) {
     // Only recognize the exact desktop entry shipped by this project, and
     // only when its PATH-resolved executable is this running installation.
     const QByteArray packaged =
-        "[Desktop Entry]\nType=Application\nVersion=1.0\nName=Mikai\n"
+        "[Desktop Entry]\nType=Application\nVersion=1.0\nName=Mikai Ja Nai\n"
         "GenericName=Video Player\nComment=Watch video with optional Anime4K processing\n"
         "Exec=mikai --open-video %f\nTryExec=mikai\nIcon=mikai\nTerminal=false\n"
         "Categories=AudioVideo;Video;Player;\n"
         "MimeType=video/mp4;video/x-matroska;video/webm;video/quicktime;video/x-msvideo;video/mpeg;video/ogg;\n"
         "StartupNotify=true\nStartupWMClass=mikai\nKeywords=video;player;anime;Anime4K;\n";
-    if (bytes != packaged) return false;
+    QByteArray legacyPackaged = packaged;
+    legacyPackaged.replace("Name=Mikai Ja Nai\n", "Name=Mikai\n");
+    if (bytes != packaged && bytes != legacyPackaged) return false;
     const QString executable = QStandardPaths::findExecutable(QStringLiteral("mikai"));
     const QString actual = QFileInfo(executable).canonicalFilePath();
     return !actual.isEmpty() && actual == QFileInfo(QCoreApplication::applicationFilePath()).canonicalFilePath();
@@ -156,9 +172,9 @@ bool change(Entry entry, Action action, QString* error) {
             return fail(error, QCoreApplication::translate("XdgDesktopIntegration", "This entry belongs to the installed package and cannot be disabled here"), path);
         }
         bool hasRetention = entry == Entry::VideoPlayer && (existing == retained || existing == hidden);
-        const bool stale = action != Action::Disable &&
-            existing != ordinary && !hasRetention && staleManagedEntry(entry, existing, &hasRetention);
-        if (existing != ordinary && !hasRetention && !stale)
+        const bool managed = existing != ordinary && !hasRetention &&
+            canonicalManagedEntry(entry, existing, &hasRetention);
+        if (existing != ordinary && !hasRetention && !managed)
             return fail(error, QCoreApplication::translate("XdgDesktopIntegration", "An entry not managed by this installation was left unchanged"), path);
         if (action == Action::Disable && !hasRetention) {
             if (!QFile::remove(path)) return fail(error, QCoreApplication::translate("XdgDesktopIntegration", "Could not remove the managed entry"), path);
@@ -205,9 +221,11 @@ bool enabled(Entry entry) {
     const QString expected = desktopContents(entry, QCoreApplication::applicationFilePath());
     if (expected.isEmpty() || !file.open(QIODevice::ReadOnly)) return false;
     const QByteArray bytes = file.readAll();
+    bool retained = false;
     return bytes == expected.toUtf8() ||
         (entry == Entry::VideoPlayer &&
-         (bytes == retainedContents(expected, true).toUtf8() || packagedEntry(bytes)));
+         (bytes == retainedContents(expected, true).toUtf8() || packagedEntry(bytes))) ||
+        canonicalManagedEntry(entry, bytes, &retained);
 }
 
 bool setEnabled(Entry entry, bool enable, QString* error) {

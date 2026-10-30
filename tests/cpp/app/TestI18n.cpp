@@ -345,6 +345,19 @@ void TestI18n::contentNamesFollowTheirOwnLanguage() {
            QStringLiteral("brand-new"));
 }
 
+void TestI18n::defaultGradientUsesBlueAccentWhileCustomGradientRemainsDistinct() {
+  const mikai::app::theme::Appearance defaults;
+  QCOMPARE(defaults.gradientColor, QStringLiteral("#6797e4"));
+  QCOMPARE(mikai::app::theme::gradientColor(defaults), QColor(QStringLiteral("#6797e4")));
+
+  auto customized = defaults;
+  QCOMPARE(mikai::app::theme::presetName(QStringLiteral("#67e4e4")),
+           QCoreApplication::translate("mikai::app::theme", "Turquoise"));
+  customized.gradientColor = QStringLiteral("#abcdef");
+  QCOMPARE(mikai::app::theme::gradientColor(customized), QColor(QStringLiteral("#abcdef")));
+  QCOMPARE(customized.gradientColor, QStringLiteral("#abcdef"));
+}
+
 void TestI18n::appearanceRoundTripsThroughSettings() {
   QTemporaryDir settingsDir;
   QVERIFY(settingsDir.isValid());

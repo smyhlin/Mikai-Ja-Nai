@@ -111,6 +111,21 @@ def main():
         run('python-dependencies', [sys.executable, '-m', 'pip', 'freeze'])
         run('release-contracts', [sys.executable, '-m', 'unittest', 'discover',
                                   '-s', ROOT / 'packaging/ci', '-p', 'test_release.py'])
+        if windows:
+            windows_compiler = shutil.which(os.getenv('MIKAI_CXX', 'g++'), path=env['PATH'])
+            if not windows_compiler:
+                raise RuntimeError(
+                    'Windows runtime ABI contracts require the configured MinGW C++ compiler on PATH.')
+            compiler_bin = str(Path(windows_compiler).parent)
+            runtime_test_env = {
+                'MIKAI_TEST_QT_BIN': str(qt / 'bin'),
+                'MIKAI_TEST_COMPILER_BIN': compiler_bin,
+                'MIKAI_TEST_CXX': windows_compiler,
+                'PATH': compiler_bin + os.pathsep + env['PATH'],
+            }
+            run('windows-runtime-contracts', [sys.executable, '-m', 'unittest', 'discover',
+                                              '-s', ROOT / 'packaging/ci', '-p', 'test_windows_runtime.py'],
+                extra=runtime_test_env)
         run('translation-contracts', [sys.executable, '-m', 'unittest', 'discover',
                                       '-s', ROOT / 'packaging/ci', '-p', 'test_translations.py'])
         if not windows:

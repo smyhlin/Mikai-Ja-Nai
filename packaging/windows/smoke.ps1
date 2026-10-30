@@ -262,7 +262,9 @@ try {
     if (Test-Path $uninstall) {
         $existing = @(Get-ChildItem $uninstall -ErrorAction Stop | Where-Object {
             $p = Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction Stop
-            ($null -ne $p -and $null -ne $p.PSObject.Properties['DisplayName'] -and $p.DisplayName -eq 'Mikai') -or
+            ($null -ne $p -and $null -ne $p.PSObject.Properties['DisplayName'] -and
+                ($p.DisplayName -eq 'Mikai' -or $p.DisplayName -eq 'Mikai Ja Nai' -or
+                    $p.DisplayName -like 'Mikai Ja Nai *')) -or
                 $_.PSChildName -like '{0D3BBE76-AC5C-48E3-9EBF-8563798364AA}*'
         })
     }
@@ -282,7 +284,7 @@ try {
     if (Test-Path -LiteralPath $groupPath) {
         throw "The expected Start Menu group is already present; refusing to alter it: $groupPath"
     }
-    $shortcut = Join-Path $groupPath 'Mikai.lnk'
+    $shortcut = Join-Path $groupPath 'Mikai Ja Nai.lnk'
     $script:Evidence.installPath = $installPath
     $script:Evidence.startMenuGroup = $group
     $args = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-','/CURRENTUSER',

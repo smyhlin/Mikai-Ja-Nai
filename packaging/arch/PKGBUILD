@@ -4,7 +4,7 @@
 pkgname=mikai
 pkgver=0.1.0
 pkgrel=1
-pkgdesc='Unofficial desktop client for the Mikai anime catalogue, with a libmpv player'
+pkgdesc='Mikai Ja Nai desktop client for the Mikai anime catalogue, with a libmpv player'
 arch=('x86_64')
 url=''
 license=('Unlicense')

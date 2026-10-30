@@ -135,7 +135,7 @@ MainWindow::MainWindow(backend::MikaiClient& client, StartupMode startupMode, QW
     : QWidget(parent), client_(client),
       automaticSetupAllowed_(startupMode == StartupMode::Application) {
     setObjectName(QStringLiteral("mainWindow"));
-    setWindowTitle(tr("Mikai Wrapper"));
+    setWindowTitle(tr("Mikai Ja Nai"));
     setMinimumSize(860, 620);
     resize(1080, 760);
     videoDrop_ = new gui::VideoDropTarget(this, gui::VideoDropTarget::OverlayMode::Widget);
@@ -241,7 +241,7 @@ void MainWindow::changeEvent(QEvent* event) {
 }
 
 void MainWindow::retranslateUi() {
-    setWindowTitle(tr("Mikai Wrapper"));
+    setWindowTitle(tr("Mikai Ja Nai"));
     // The bar's actions are this window's own words; its status line is the
     // component catalogue's and keeps being issued by the catalogue.
     if (acquisitionDetails_ != nullptr) acquisitionDetails_->setText(tr("Components"));

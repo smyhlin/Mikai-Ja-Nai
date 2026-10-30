@@ -766,7 +766,7 @@ int main(int argc, char** argv) {
     app.setQuitOnLastWindowClosed(false);
     app.setOrganizationName(QStringLiteral("MikaiReleaseGallery"));
     app.setApplicationName(QStringLiteral("ReleaseGalleryProbe"));
-    app.setApplicationDisplayName(QStringLiteral("Mikai"));
+    app.setApplicationDisplayName(QStringLiteral("Mikai Ja Nai"));
     app.setApplicationVersion(QStringLiteral("0.1.0"));
     const QString root = mikai::probes::isolation::isolatedRoot();
     QSettings::setDefaultFormat(QSettings::IniFormat);

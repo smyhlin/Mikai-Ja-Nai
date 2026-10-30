@@ -8,7 +8,7 @@ namespace mikai::app::theme {
 namespace {
 
 constexpr char kDefaultAccent[] = "#bdacff";
-constexpr char kDefaultGradient[] = "#67e4e4";
+constexpr char kDefaultGradient[] = "#6797e4";
 
 }  // namespace
 
@@ -112,7 +112,7 @@ QString presetName(const QString& color) {
         return QCoreApplication::translate("mikai::app::theme", "Purple");
     if (value == QColor(QStringLiteral("#ef6b78")))
         return QCoreApplication::translate("mikai::app::theme", "Red");
-    if (value == QColor(QString::fromLatin1(kDefaultGradient)))
+    if (value == QColor(QStringLiteral("#67e4e4")))
         return QCoreApplication::translate("mikai::app::theme", "Turquoise");
     return QString();
 }

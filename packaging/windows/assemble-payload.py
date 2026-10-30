@@ -15,6 +15,7 @@ Usage:
 import argparse
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -68,6 +69,77 @@ def find(name, directories):
         except OSError:
             pass
     return None
+
+
+def import_table_symbols(output):
+    imports = {}
+    in_import_table = False
+    found_import_table = False
+    current_dll = None
+    for line in output.splitlines():
+        if line.startswith("The Import Tables"):
+            in_import_table = True
+            found_import_table = True
+            continue
+        if in_import_table and line.startswith("The "):
+            in_import_table = False
+        if not in_import_table:
+            continue
+        match = re.search(r"DLL Name: (.+)$", line)
+        if match:
+            current_dll = match.group(1).casefold()
+            imports.setdefault(current_dll, set())
+            continue
+        if current_dll:
+            match = re.search(r"\s([^\s]+)$", line)
+            if match:
+                imports[current_dll].add(match.group(1))
+    if not found_import_table:
+        raise ValueError("objdump output has no PE import table")
+    return imports
+
+
+def export_table_symbols(output):
+    exports = set()
+    in_export_table = False
+    found_export_table = False
+    for line in output.splitlines():
+        if line.startswith("The Export Tables"):
+            in_export_table = True
+            found_export_table = True
+            continue
+        if in_export_table and line.startswith("The "):
+            in_export_table = False
+        if in_export_table:
+            match = re.search(r"\s([^\s]+)$", line)
+            if match:
+                exports.add(match.group(1))
+    if not found_export_table:
+        raise ValueError("objdump output has no PE export table")
+    return exports
+
+
+def validate_qt_mingw_runtime(payload):
+    for name in ("libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll"):
+        if not (pathlib.Path(payload) / name).is_file():
+            sys.exit(f"deployed Qt compiler runtime is missing: {pathlib.Path(payload) / name}")
+
+    qt_core = pathlib.Path(payload) / "Qt6Core.dll"
+    if not qt_core.is_file():
+        sys.exit(f"deployed Qt core library is missing: {qt_core}")
+    core_output = subprocess.run(
+        ["objdump", "-p", str(qt_core)], capture_output=True, text=True, check=True).stdout
+    if "__cxa_call_terminate" not in import_table_symbols(core_output).get(
+            "libstdc++-6.dll".casefold(), set()):
+        return
+
+    runtime = pathlib.Path(payload) / "libstdc++-6.dll"
+    runtime_output = subprocess.run(
+        ["objdump", "-p", str(runtime)], capture_output=True, text=True, check=True).stdout
+    if "__cxa_call_terminate" not in export_table_symbols(runtime_output):
+        sys.exit(
+            "Qt6Core.dll imports __cxa_call_terminate from libstdc++-6.dll, "
+            "but the deployed runtime does not export it")
 
 
 def main():
@@ -125,6 +197,7 @@ def main():
             take(dependency)
     if missing:
         sys.exit(f"Qt plugins missing from the SDK: {missing}")
+    validate_qt_mingw_runtime(args.out)
 
     shutil.copytree(args.source / "shaders", args.out / "shaders")
     (args.out / "translations").mkdir(exist_ok=True)

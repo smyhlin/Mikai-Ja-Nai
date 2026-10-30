@@ -829,300 +829,300 @@
 <context>
     <name>AnimeJanaiRuntime</name>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="102"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="116"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="122"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="141"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="156"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="172"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="662"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="685"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="902"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="919"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1144"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1489"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="145"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="159"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="165"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="184"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="199"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="215"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="709"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="732"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="949"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="966"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1191"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1540"/>
         <source>AnimeJaNai preparation was cancelled.</source>
         <translation>Підготовку AnimeJaNai було скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="110"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="816"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="823"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="912"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="153"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="863"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="870"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="959"/>
         <source>The app-owned AnimeJaNai model directory is unavailable or redirected.</source>
         <translation>Папка моделей AnimeJaNai недоступна або перенаправлена.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="117"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="162"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="903"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="160"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="205"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="950"/>
         <source>The selected model graph does not match its pinned content digest.</source>
         <translation>Граф вибраної моделі не відповідає зафіксованій контрольній сумі вмісту.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="123"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="920"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="166"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="967"/>
         <source>An existing staged AnimeJaNai graph is corrupt and will not be replaced.</source>
         <translation>Наявний підготовлений граф AnimeJaNai пошкоджено і не може бути замінено.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="167"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="178"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="210"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="221"/>
         <source>Staged AnimeJaNai graph verification or atomic publication failed.</source>
         <translation>Помилка перевірки або атомарної публікації підготовленого графа AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="286"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="329"/>
         <source>The app-owned AnimeJaNai configuration directory is unavailable or redirected.</source>
         <translation>Папка конфігурації AnimeJaNai недоступна або перенаправлена.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="330"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="373"/>
         <source>An AnimeJaNai filter option cannot be represented safely.</source>
         <translation>Параметр фільтра AnimeJaNai не може бути безпечно представлений.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="440"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="483"/>
         <source>Quality</source>
         <translation>Якість</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="441"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="484"/>
         <source>Balanced</source>
         <translation>Збалансований</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="442"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="485"/>
         <source>Performance</source>
         <translation>Продуктивність</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="448"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="491"/>
         <source>Slot %1</source>
         <translation>Слот %1</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="529"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="572"/>
         <source>AnimeJaNai mixed chains require the original source dimensions and frame rate.</source>
         <translation>Змішаним ланцюжкам AnimeJaNai потрібні початкові розміри та частота кадрів джерела.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="556"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="599"/>
         <source>A mixed AnimeJaNai chain has invalid source bounds.</source>
         <translation>Змішаний ланцюжок AnimeJaNai містить некоректні межі джерела.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="568"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="611"/>
         <source>No AnimeJaNai chain matches the original source dimensions and frame rate.</source>
         <translation>Жоден ланцюжок AnimeJaNai не відповідає початковим розмірам і частоті кадрів джерела.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="605"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1210"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="648"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1261"/>
         <source>The AnimeJaNai engine cache is currently in use by %1.</source>
         <translation>Кеш рушія AnimeJaNai зараз використовує %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="606"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1211"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="649"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1262"/>
         <source>another operation</source>
         <translation>інша операція</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="625"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="668"/>
         <source>The selected RIFE ensemble has no compiled content pin.</source>
         <translation>Вибраний ансамбль RIFE не має закріпленої контрольної суми.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="667"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="714"/>
         <source>A mixed AnimeJaNai chain contains an unsupported step type.</source>
         <translation>Змішаний ланцюжок AnimeJaNai містить непідтримуваний тип кроку.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="673"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="720"/>
         <source>Anime4K output scale must be 1, 2, or 4.</source>
         <translation>Вихідний масштаб Anime4K має дорівнювати 1, 2 або 4.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="678"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="725"/>
         <source>No Anime4K shader resolver is available.</source>
         <translation>Засіб завантаження шейдерів Anime4K недоступний.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="690"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="737"/>
         <source>The selected Anime4K shader program is missing or invalid.</source>
         <translation>Вибрана програма шейдерів Anime4K відсутня або некоректна.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="698"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="745"/>
         <source>The app-owned AnimeJaNai shader directory is unavailable or redirected.</source>
         <translation>Власна папка шейдерів AnimeJaNai недоступна або переспрямована.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="705"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="752"/>
         <source>An existing staged Anime4K shader is not the expected immutable app-owned program.</source>
         <translation>Наявний підготовлений шейдер Anime4K не відповідає очікуваній незмінній програмі застосунку.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="758"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="805"/>
         <source>A mixed AnimeJaNai ONNX step has no model reference.</source>
         <translation>Крок ONNX змішаного ланцюжка AnimeJaNai не містить посилання на модель.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="768"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="815"/>
         <source>A pinned spatial model referenced by the mixed chain is not installed.</source>
         <translation>Закріплену просторову модель зі змішаного ланцюжка не встановлено.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="776"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="823"/>
         <source>The mixed chain references ONNX model &apos;%1&apos;, which is missing or invalid.</source>
         <translation>Модель ONNX «%1» зі змішаного ланцюжка відсутня або некоректна.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="846"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="893"/>
         <source>RIFE runs after the mixed chain because it contains a temporal model.</source>
         <translation>RIFE запускається після змішаного ланцюжка, оскільки той містить часову модель.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="850"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="897"/>
         <source>Cannot read a supported temporal input shape from model &apos;%1&apos; for RIFE ordering. Set an explicit frame count or choose RIFE after upscaling.</source>
         <translation>Не вдалося визначити підтримувану форму часового входу моделі «%1» для впорядкування RIFE. Вкажіть кількість кадрів явно або виберіть запуск RIFE після масштабування.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="887"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="934"/>
         <source>The app-owned per-stage AnimeJaNai model directory is unavailable or redirected.</source>
         <translation>Власна папка моделей етапу AnimeJaNai недоступна або переспрямована.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="926"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="973"/>
         <source>The verified AnimeJaNai model could not be moved into its stage.</source>
         <translation>Не вдалося перемістити перевірену модель AnimeJaNai до відповідного етапу.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="971"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1018"/>
         <source>The app-owned per-stage RIFE model directory is unavailable or redirected.</source>
         <translation>Власна папка моделей етапу RIFE недоступна або переспрямована.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1048"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1107"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1095"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1154"/>
         <source>The selected AnimeJaNai chain has no processing steps.</source>
         <translation>Вибраний ланцюжок AnimeJaNai не містить кроків обробки.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1079"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1126"/>
         <source>A mixed chain ONNX step could not be staged.</source>
         <translation>Не вдалося підготувати крок ONNX змішаного ланцюжка.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1092"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1139"/>
         <source>The selected Anime4K shader program was not staged.</source>
         <translation>Вибрану програму шейдерів Anime4K не підготовлено.</translation>
     </message>
     <message>
         <location filename="../src/player/compare/CompareWindow.cpp" line="106"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1173"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1220"/>
         <source>The selected AnimeJaNai preset is not recognised.</source>
         <translation>Вибраний пресет AnimeJaNai не розпізнано.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1179"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1226"/>
         <source>The selected RIFE graph has no compiled content pin.</source>
         <translation>Вибраний граф RIFE не має закріпленої контрольної суми.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="630"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1184"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1338"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="673"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1231"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1389"/>
         <source>This installed AnimeJaNai runtime does not report support for the selected heavy RIFE model.</source>
         <translation>Це встановлене середовище AnimeJaNai не підтримує вибрану важку (Heavy) модель RIFE.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="642"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1222"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="685"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1273"/>
         <source>The installed TensorRT closure does not include its verified upstream trtexec executable.</source>
         <translation>Встановлене середовище TensorRT не містить перевіреного виконуваного файлу trtexec.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1243"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1294"/>
         <source>The selected custom AnimeJaNai profile slot is empty or invalid.</source>
         <translation>Вибраний слот користувацького профілю AnimeJaNai порожній або некоректний.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1257"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1308"/>
         <source>Chain %1 in custom profile &apos;%2&apos; has no model or RIFE step.</source>
         <translation>Ланцюжок %1 у користувацькому профілі «%2» не містить моделі або кроку RIFE.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1264"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1315"/>
         <source>A model-only AnimeJaNai profile contains an unsupported step type.</source>
         <translation>Профіль AnimeJaNai лише з моделями містить непідтримуваний тип кроку.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1270"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1321"/>
         <source>Model step %1 in chain %2 of custom profile &apos;%3&apos; has no model.</source>
         <translation>Крок моделі %1 у ланцюжку %2 користувацького профілю «%3» не містить моделі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1282"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1333"/>
         <source>A pinned spatial model required by custom profile &apos;%1&apos; is not installed.</source>
         <translation>Закріплена просторова модель, потрібна користувацькому профілю «%1», не встановлена.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1307"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1358"/>
         <source>Custom profile &apos;%1&apos; references ONNX model &apos;%2&apos;, which is missing or invalid.</source>
         <translation>Користувацький профіль «%1» посилається на модель ONNX «%2», яка відсутня або некоректна.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1332"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1383"/>
         <source>The RIFE model &apos;%1&apos; in custom profile &apos;%2&apos; has no compiled content pin.</source>
         <translation>Модель RIFE «%1» у користувацькому профілі «%2» не має вбудованої контрольної суми вмісту.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1393"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1444"/>
         <source>A required built-in model is absent from the pinned catalogue.</source>
         <translation>Необхідна вбудована модель відсутня в закріпленому каталозі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1396"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1447"/>
         <source>A model required by the built-in AnimeJaNai profiles is not installed.</source>
         <translation>Модель, потрібна для вбудованих профілів AnimeJaNai, не встановлена.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="964"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1345"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1414"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1011"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1396"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1465"/>
         <source>The selected pinned RIFE graph is missing or corrupt.</source>
         <translation>Вибраний закріплений граф RIFE відсутній або пошкоджений.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="105"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="148"/>
         <source>The selected model graph is missing or has an unexpected size.</source>
         <translation>Граф вибраної моделі відсутній або має неочікуваний розмір.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1445"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1496"/>
         <source>The selected custom ONNX model is not registered.</source>
         <translation>Вибрана користувацька модель ONNX не зареєстрована.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1451"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1502"/>
         <source>The selected custom ONNX model is missing or failed integrity verification.</source>
         <translation>Вибрана користувацька модель ONNX відсутня або не пройшла перевірку цілісності.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1470"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1521"/>
         <source>The selected spatial model is not in the pinned catalogue.</source>
         <translation>Вибрана просторова модель відсутня в закріпленому каталозі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1474"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1525"/>
         <source>The selected spatial model is not installed.</source>
         <translation>Вибрану просторову модель не встановлено.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1010"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1498"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1057"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1549"/>
         <source>The app-owned AnimeJaNai stats directory is unavailable or redirected.</source>
         <translation>Папка статистики AnimeJaNai недоступна або перенаправлена.</translation>
     </message>
@@ -1188,47 +1188,47 @@
 <context>
     <name>CommandLine</name>
     <message>
-        <location filename="../src/app/main.cpp" line="91"/>
+        <location filename="../src/app/main.cpp" line="94"/>
         <source>The --frame-timing-log option requires a file path.</source>
         <translation>Параметр --frame-timing-log потребує шляху до файлу.</translation>
     </message>
     <message>
-        <location filename="../src/app/main.cpp" line="77"/>
+        <location filename="../src/app/main.cpp" line="80"/>
         <source>The --open-video option requires a local file path.</source>
         <translation>Параметр --open-video потребує шляху до локального файлу.</translation>
     </message>
     <message>
-        <location filename="../src/app/main.cpp" line="86"/>
+        <location filename="../src/app/main.cpp" line="89"/>
         <source>Specify --frame-timing-log only once.</source>
         <translation>Укажіть --frame-timing-log лише один раз.</translation>
     </message>
     <message>
-        <location filename="../src/app/main.cpp" line="96"/>
+        <location filename="../src/app/main.cpp" line="99"/>
         <source>The frame timing log path cannot be empty.</source>
         <translation>Шлях до журналу часових параметрів кадрів не може бути порожнім.</translation>
     </message>
     <message>
-        <location filename="../src/app/main.cpp" line="104"/>
+        <location filename="../src/app/main.cpp" line="107"/>
         <source>Unknown command-line option: %1</source>
         <translation>Невідомий параметр командного рядка: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/main.cpp" line="111"/>
+        <location filename="../src/app/main.cpp" line="114"/>
         <source>Specify only one video file per launch.</source>
         <translation>Укажіть лише один відеофайл за один запуск.</translation>
     </message>
     <message>
-        <location filename="../src/app/main.cpp" line="117"/>
+        <location filename="../src/app/main.cpp" line="120"/>
         <source>The video file path cannot be empty.</source>
         <translation>Шлях до відеофайлу не може бути порожнім.</translation>
     </message>
     <message>
-        <location filename="../src/app/main.cpp" line="139"/>
+        <location filename="../src/app/main.cpp" line="142"/>
         <source>Cannot open video</source>
         <translation>Не вдалося відкрити відео</translation>
     </message>
     <message>
-        <location filename="../src/app/main.cpp" line="346"/>
+        <location filename="../src/app/main.cpp" line="372"/>
         <source>The video player could not be opened.</source>
         <translation>Не вдалося відкрити відеопрогравач.</translation>
     </message>
@@ -2534,7 +2534,7 @@
         <translation>Завантажено %1; %2 набуде чинності після перезапуску.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/bundle/NativeRuntimeSelection.cpp" line="743"/>
+        <location filename="../src/player/native/bundle/NativeRuntimeSelection.cpp" line="786"/>
         <source>No mpv runtime is loaded.</source>
         <translation>Середовище mpv не завантажено.</translation>
     </message>
@@ -2610,12 +2610,12 @@
         <translation>Перевірене середовище mpv не знайдено.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/bundle/NativeRuntimeSelection.cpp" line="766"/>
+        <location filename="../src/player/native/bundle/NativeRuntimeSelection.cpp" line="809"/>
         <source>Playback runtime pending — %1</source>
         <translation>Очікування середовища відтворення — %1</translation>
     </message>
     <message>
-        <location filename="../src/player/native/bundle/NativeRuntimeSelection.cpp" line="770"/>
+        <location filename="../src/player/native/bundle/NativeRuntimeSelection.cpp" line="813"/>
         <source>Playback runtime unavailable — %1</source>
         <translation>Середовище відтворення недоступне — %1</translation>
     </message>
@@ -2635,12 +2635,12 @@
         <translation>Не вдалося зберегти вибір середовища виконання.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/bundle/NativeRuntimeSelection.cpp" line="814"/>
+        <location filename="../src/player/native/bundle/NativeRuntimeSelection.cpp" line="857"/>
         <source>mpv runtime unavailable: %1 requires the Windows Vulkan loader (%2), which is not installed on this PC; install your graphics driver so the module can be loaded</source>
         <translation>Середовище mpv недоступне: %1 потребує завантажувача Windows Vulkan (%2), який не встановлено на цьому ПК; встановіть драйвер відеокарти</translation>
     </message>
     <message>
-        <location filename="../src/player/native/bundle/NativeRuntimeSelection.cpp" line="803"/>
+        <location filename="../src/player/native/bundle/NativeRuntimeSelection.cpp" line="846"/>
         <source>mpv runtime unavailable: the Windows system directory could not be determined, so %1 cannot be checked for the %2 it imports</source>
         <translation>Середовище mpv недоступне: не вдалося визначити системну папку Windows для перевірки імпорту %2 у %1</translation>
     </message>
@@ -2650,7 +2650,7 @@
         <translation>нативний</translation>
     </message>
     <message>
-        <location filename="../src/player/native/bundle/NativeRuntimeSelection.cpp" line="754"/>
+        <location filename="../src/player/native/bundle/NativeRuntimeSelection.cpp" line="797"/>
         <source>native not applied</source>
         <translation>нативний не застосовано</translation>
     </message>
@@ -2660,7 +2660,7 @@
         <translation>стандартний</translation>
     </message>
     <message>
-        <location filename="../src/player/native/bundle/NativeRuntimeSelection.cpp" line="694"/>
+        <location filename="../src/player/native/bundle/NativeRuntimeSelection.cpp" line="737"/>
         <source>Checking the installed mpv runtime…</source>
         <translation>Перевірка встановленого середовища mpv…</translation>
     </message>
@@ -2718,13 +2718,13 @@
     </message>
     <message>
         <location filename="../src/app/support/SystemContextMenu.cpp" line="78"/>
-        <source>Open with Mikai</source>
-        <translation>Відкрити за допомогою Mikai</translation>
+        <source>Open with Mikai Ja Nai</source>
+        <translation>Відкрити за допомогою Mikai Ja Nai</translation>
     </message>
     <message>
         <location filename="../src/app/support/SystemContextMenu.cpp" line="147"/>
-        <source>HKCU\%1 contains a context menu registration not owned by this installation. It was left unchanged. If Mikai was moved, enable the integration from the new location to register it there first.</source>
-        <translation>HKCU\%1 містить реєстрацію пункту контекстного меню, яка не належить цій інсталяції. Її не змінено. Якщо Mikai було переміщено, увімкніть інтеграцію з нового розташування, щоб спершу зареєструвати її там.</translation>
+        <source>HKCU\%1 contains a context menu registration not owned by this installation. It was left unchanged. If Mikai Ja Nai was moved, enable the integration from the new location to register it there first.</source>
+        <translation>HKCU\%1 містить реєстрацію в контекстному меню, що не належить цій інсталяції. Її залишено без змін. Якщо Mikai Ja Nai було переміщено, спершу ввімкніть інтеграцію з нового розташування, щоб зареєструвати її там.</translation>
     </message>
     <message>
         <location filename="../src/app/support/SystemContextMenu.cpp" line="274"/>
@@ -2745,61 +2745,61 @@
 <context>
     <name>SystemDefaultPlayer</name>
     <message>
-        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="47"/>
+        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="48"/>
         <source>Unknown Windows error</source>
         <translation>Невідома помилка Windows</translation>
     </message>
     <message>
-        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="45"/>
+        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="46"/>
         <source>%1 (Windows error %2).</source>
         <translation>%1 (помилка Windows %2).</translation>
     </message>
     <message>
-        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="54"/>
-        <source>Could not register Mikai at HKCU\%1: %2</source>
-        <translation>Не вдалося зареєструвати Mikai у HKCU\%1: %2</translation>
+        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="55"/>
+        <source>Could not register Mikai Ja Nai at HKCU\%1: %2</source>
+        <translation>Не вдалося зареєструвати Mikai Ja Nai у HKCU\%1: %2</translation>
     </message>
     <message>
-        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="63"/>
-        <source>Mikai could not be registered because HKCU\%1 contains a registration not owned by this application. Nothing there was replaced.</source>
-        <translation>Не вдалося зареєструвати Mikai, оскільки HKCU\%1 містить реєстрацію, яка не належить цьому застосунку. Там нічого не було замінено.</translation>
+        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="64"/>
+        <source>Mikai Ja Nai could not be registered because HKCU\%1 contains a registration not owned by this application. Nothing there was replaced.</source>
+        <translation>Не вдалося зареєструвати Mikai Ja Nai, оскільки HKCU\%1 містить реєстрацію, що не належить цьому застосунку. Наявний запис не змінено.</translation>
     </message>
     <message>
-        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="251"/>
+        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="252"/>
         <source>The previous registration could not be fully restored; some changes may remain:</source>
         <translation>Не вдалося повністю відновити попередню реєстрацію; деякі зміни могли залишитися:</translation>
     </message>
     <message>
-        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="275"/>
+        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="276"/>
         <source>The application executable path is unavailable or invalid.</source>
         <translation>Шлях до виконуваного файлу застосунку недоступний або некоректний.</translation>
     </message>
     <message>
-        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="288"/>
-        <source>Mikai video file</source>
-        <translation>Відеофайл Mikai</translation>
+        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="289"/>
+        <source>Mikai Ja Nai video file</source>
+        <translation>Відеофайл Mikai Ja Nai</translation>
     </message>
     <message>
-        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="293"/>
-        <source>Play local video files with Mikai.</source>
-        <translation>Відтворюйте локальні відеофайли за допомогою Mikai.</translation>
+        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="294"/>
+        <source>Play local video files with Mikai Ja Nai.</source>
+        <translation>Відтворюйте локальні відеофайли за допомогою Mikai Ja Nai.</translation>
     </message>
     <message>
-        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="336"/>
-        <source>Mikai is registered as an available video player, but Windows Default Apps could not be opened: %1
+        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="337"/>
+        <source>Mikai Ja Nai is registered as an available video player, but Windows Default Apps could not be opened: %1
 
-Open Windows Settings &gt; Apps &gt; Default apps and search for Mikai. Your current defaults have not been changed.</source>
-        <translation>Mikai зареєстровано як доступний відеопрогравач, але не вдалося відкрити розділ «Програми за замовчуванням» у Windows: %1
+Open Windows Settings &gt; Apps &gt; Default apps and search for Mikai Ja Nai. Your current defaults have not been changed.</source>
+        <translation>Mikai Ja Nai зареєстровано як доступний відеопрогравач, але не вдалося відкрити налаштування типових програм Windows: %1
 
-Відкрийте «Настройки Windows» &gt; «Програми» &gt; «Програми за замовчуванням» і знайдіть Mikai. Ваші поточні типові програми не було змінено.</translation>
+Відкрийте «Параметри Windows» &gt; «Програми» &gt; «Програми за замовчуванням» і знайдіть Mikai Ja Nai. Ваші поточні типові програми не змінено.</translation>
     </message>
     <message>
-        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="348"/>
-        <source>Mikai is registered as an available video player, but the desktop&apos;s Default Applications settings could not be opened. Open your desktop settings and choose Mikai for the video file types you want. Your defaults have not been changed.</source>
-        <translation>Mikai зареєстровано як доступний відеопрогравач, але не вдалося відкрити розділ «Типові програми» в налаштуваннях робочого середовища. Відкрийте налаштування робочого середовища та виберіть Mikai для потрібних типів відеофайлів. Ваші типові програми не змінено.</translation>
+        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="349"/>
+        <source>Mikai Ja Nai is registered as an available video player, but the desktop&apos;s Default Applications settings could not be opened. Open your desktop settings and choose Mikai Ja Nai for the video file types you want. Your defaults have not been changed.</source>
+        <translation>Mikai Ja Nai зареєстровано як доступний відеопрогравач, але не вдалося відкрити налаштування типових програм робочого середовища. Відкрийте налаштування робочого середовища та виберіть Mikai Ja Nai для потрібних типів відеофайлів. Ваші типові програми не змінено.</translation>
     </message>
     <message>
-        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="355"/>
+        <location filename="../src/gui/SystemDefaultPlayer.cpp" line="356"/>
         <source>Setting the default video player is only supported on Windows.</source>
         <translation>Призначення типового відеопрогравача підтримується лише у Windows.</translation>
     </message>
@@ -2925,49 +2925,49 @@ If a portable folder was moved, disable startup from the old location before mov
         <translation>%1: %2</translation>
     </message>
     <message>
-        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="141"/>
+        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="155"/>
         <source>The application executable path is unavailable or invalid</source>
         <translation>Шлях до виконуваного файлу застосунку недоступний або некоректний</translation>
     </message>
     <message>
-        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="146"/>
+        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="160"/>
         <source>A symbolic link was left unchanged</source>
         <translation>Символічне посилання залишено без змін</translation>
     </message>
     <message>
-        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="151"/>
-        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="162"/>
+        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="165"/>
+        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="176"/>
         <source>An entry not managed by this installation was left unchanged</source>
         <translation>Запис, яким не керує цей екземпляр застосунку, залишено без змін</translation>
     </message>
     <message>
-        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="156"/>
+        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="170"/>
         <source>This entry belongs to the installed package and cannot be disabled here</source>
         <translation>Цей запис належить установленому пакету, і його не можна вимкнути тут</translation>
     </message>
     <message>
-        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="164"/>
+        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="178"/>
         <source>Could not remove the managed entry</source>
         <translation>Не вдалося видалити керований запис</translation>
     </message>
     <message>
-        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="173"/>
+        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="187"/>
         <source>Could not update the managed entry</source>
         <translation>Не вдалося оновити керований запис</translation>
     </message>
     <message>
-        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="178"/>
+        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="192"/>
         <source>Could not create the integration directory</source>
         <translation>Не вдалося створити каталог інтеграції</translation>
     </message>
     <message>
-        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="184"/>
-        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="194"/>
+        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="198"/>
+        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="208"/>
         <source>Could not write the managed entry</source>
         <translation>Не вдалося записати керований запис</translation>
     </message>
     <message>
-        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="189"/>
+        <location filename="../src/gui/XdgDesktopIntegration.cpp" line="203"/>
         <source>Could not publish the managed entry; an existing entry was left unchanged</source>
         <translation>Не вдалося опублікувати керований запис; наявний запис залишено без змін</translation>
     </message>
@@ -4463,12 +4463,6 @@ Continue?</source>
         <translation>Відсутні компоненти GPU</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="138"/>
-        <location filename="../src/app/pages/MainWindow.cpp" line="244"/>
-        <source>Mikai Wrapper</source>
-        <translation>Mikai</translation>
-    </message>
-    <message>
         <location filename="../src/app/pages/MainWindow.cpp" line="253"/>
         <source>Preparing TensorRT engine</source>
         <translation>Підготовка рушія TensorRT</translation>
@@ -4524,6 +4518,12 @@ Continue?</source>
         <location filename="../src/app/pages/MainWindow.cpp" line="618"/>
         <source>Skip for now</source>
         <translation>Пропустити зараз</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/MainWindow.cpp" line="138"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="244"/>
+        <source>Mikai Ja Nai</source>
+        <translation>Mikai Ja Nai</translation>
     </message>
     <message>
         <location filename="../src/app/pages/MainWindow.cpp" line="611"/>
@@ -5633,11 +5633,6 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
         <translation>Завантаження…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="129"/>
-        <source>Mikai</source>
-        <translation>Mikai</translation>
-    </message>
-    <message>
         <location filename="../src/app/pages/SearchPage.cpp" line="352"/>
         <source>Mon</source>
         <translation>Пн</translation>
@@ -5667,6 +5662,11 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
         <location filename="../src/app/pages/SearchPage.cpp" line="336"/>
         <source>No updates yet.</source>
         <translation>Оновлень ще немає.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/SearchPage.cpp" line="129"/>
+        <source>Mikai Ja Nai</source>
+        <translation>Mikai Ja Nai</translation>
     </message>
     <message>
         <location filename="../src/app/pages/SearchPage.cpp" line="132"/>
@@ -6497,49 +6497,9 @@ Active: %1 · queued: %2</source>
         <translation>Лише для вашого облікового запису Windows. Зміни набудуть чинності після збереження.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="349"/>
-        <source>Start Mikai when I &amp;sign in</source>
-        <translation>Запускати Mikai при &amp;вході</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="350"/>
-        <source>Start Mikai when I sign in</source>
-        <translation>Запускати Mikai при вході</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="352"/>
-        <source>Open Mikai automatically after signing in. Disable this before moving a portable folder, then enable it again from the new location.</source>
-        <translation>Автоматично відкривати Mikai після входу в систему. Вимкніть цю опцію перед переміщенням портативної папки, а потім увімкніть її знову з нового розташування.</translation>
-    </message>
-    <message>
         <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="358"/>
         <source>Automatic startup is only available on Windows.</source>
         <translation>Автозапуск доступний лише у Windows.</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="364"/>
-        <source>Add Mikai to video files&apos; &amp;Open With list</source>
-        <translation>Додати Mikai до списку «&amp;Відкрити за допомогою» для відеофайлів</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="365"/>
-        <source>Add Mikai to video files&apos; Open With list</source>
-        <translation>Додати Mikai до списку «Відкрити за допомогою» для відеофайлів</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="366"/>
-        <source>Registers Mikai as an Open With and default-player candidate without changing your defaults. Desktop file managers decide where to show it. If default-player registration was requested, disabling Open With retains the desktop identity so existing defaults continue to work. A package-managed entry cannot be disabled here.</source>
-        <translation>Реєструє Mikai як доступний варіант у списку «Відкрити за допомогою» та як кандидата на типовий програвач, не змінюючи ваших типових програм. Файлові менеджери робочого середовища визначають, де його показувати. Якщо було запитано реєстрацію типового програвача, вимкнення опції «Відкрити за допомогою» збереже ідентифікатор застосунку в робочому середовищі, щоб наявні типові програми продовжували працювати. Запис, керований пакетом, не можна вимкнути тут.</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="368"/>
-        <source>Add Mikai to the video file &amp;context menu</source>
-        <translation>Mikai у &amp;контекстному меню відео</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="369"/>
-        <source>Add Mikai to the video file context menu</source>
-        <translation>Mikai у контекстному меню відео</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="374"/>
@@ -6589,16 +6549,6 @@ Automatic startup could not be restored: %1. Its current state is %2.</source>
         <translation>Ключ дійсний (ліміт: %1/хв)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="355"/>
-        <source>Open Mikai automatically after signing in to Windows. Disable this before moving a portable folder, then enable it again from the new location.</source>
-        <translation>Автоматично запускати Mikai після входу у Windows. Вимкніть цю функцію перед переміщенням переносної папки, а потім увімкніть її знову з нового розташування.</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="372"/>
-        <source>Add an Open in Mikai command for video files without changing their default app. After moving a portable folder, enable this again to update its path.</source>
-        <translation>Додати команду «Відкрити в Mikai» для відеофайлів, не змінюючи типовий застосунок. Після переміщення переносної папки увімкніть цю функцію знову, щоб оновити шлях.</translation>
-    </message>
-    <message>
         <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="476"/>
         <source>Key is valid (user: %1, limit: %2/min)</source>
         <translation>Ключ дійсний (користувач: %1, ліміт: %2/хв)</translation>
@@ -6639,6 +6589,11 @@ Automatic startup could not be restored: %1. Its current state is %2.</source>
         <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="493"/>
         <source>Native model assets</source>
         <translation>Нативні моделі та артефакти</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="400"/>
+        <source>Runtime will change to %1 after restarting Mikai Ja Nai.</source>
+        <translation>Середовище виконання зміниться на %1 після перезапуску Mikai Ja Nai.</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="478"/>
@@ -6722,11 +6677,6 @@ Automatic startup could not be restored: %1. Its current state is %2.</source>
         <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="461"/>
         <source>Runtime module</source>
         <translation>Модуль середовища</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="400"/>
-        <source>Runtime will change to %1 after restarting Mikai.</source>
-        <translation>Модуль середовища зміниться на %1 після перезапуску Mikai.</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/SettingsDialog.cpp" line="117"/>
@@ -6815,6 +6765,56 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="557"/>
         <source>Use system language</source>
         <translation>Системна мова</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="349"/>
+        <source>Start Mikai Ja Nai when I &amp;sign in</source>
+        <translation>Запускати Mikai Ja Nai під час &amp;входу</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="350"/>
+        <source>Start Mikai Ja Nai when I sign in</source>
+        <translation>Запускати Mikai Ja Nai під час входу</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="352"/>
+        <source>Open Mikai Ja Nai automatically after signing in. Disable this before moving a portable folder, then enable it again from the new location.</source>
+        <translation>Автоматично запускати Mikai Ja Nai після входу. Вимкніть цей параметр перед переміщенням портативної папки, а потім знову ввімкніть його з нового розташування.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="355"/>
+        <source>Open Mikai Ja Nai automatically after signing in to Windows. Disable this before moving a portable folder, then enable it again from the new location.</source>
+        <translation>Автоматично запускати Mikai Ja Nai після входу у Windows. Вимкніть цей параметр перед переміщенням портативної папки, а потім знову ввімкніть його з нового розташування.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="364"/>
+        <source>Add Mikai Ja Nai to video files&apos; &amp;Open With list</source>
+        <translation>Додати Mikai Ja Nai до списку «&amp;Відкрити за допомогою» для відеофайлів</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="365"/>
+        <source>Add Mikai Ja Nai to video files&apos; Open With list</source>
+        <translation>Додати Mikai Ja Nai до списку «Відкрити за допомогою» для відеофайлів</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="366"/>
+        <source>Registers Mikai Ja Nai as an Open With and default-player candidate without changing your defaults. Desktop file managers decide where to show it. If default-player registration was requested, disabling Open With retains the desktop identity so existing defaults continue to work. A package-managed entry cannot be disabled here.</source>
+        <translation>Реєструє Mikai Ja Nai як варіант для відкриття файлів і стандартний програвач, не змінюючи ваші типові програми. Де його показувати, визначають файлові менеджери робочого середовища. Якщо було запитано реєстрацію як стандартного програвача, вимкнення пункту «Відкрити за допомогою» збереже ідентифікатор програми, щоб наявні призначення продовжили працювати. Тут не можна вимкнути запис, яким керує пакетний менеджер.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="368"/>
+        <source>Add Mikai Ja Nai to the video file &amp;context menu</source>
+        <translation>Додати Mikai Ja Nai до &amp;контекстного меню відеофайлів</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="369"/>
+        <source>Add Mikai Ja Nai to the video file context menu</source>
+        <translation>Додати Mikai Ja Nai до контекстного меню відеофайлів</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="372"/>
+        <source>Add an Open in Mikai Ja Nai command for video files without changing their default app. After moving a portable folder, enable this again to update its path.</source>
+        <translation>Додати для відеофайлів команду «Відкрити в Mikai Ja Nai», не змінюючи програму за замовчуванням. Після переміщення портативної папки знову ввімкніть цей параметр, щоб оновити шлях.</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="511"/>
@@ -7891,8 +7891,8 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     <name>mplayer::VideoSurface</name>
     <message>
         <location filename="../src/player/core/VideoSurface.cpp" line="1960"/>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="250"/>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="743"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="286"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="780"/>
         <source>Skipped on HDR: native stages force 8-bit NV12</source>
         <translation>Пропущено на HDR: нативні етапи примусово перетворюють у 8-бітний NV12</translation>
     </message>
@@ -7912,32 +7912,32 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Захоплення еталонного кадру вже виконується.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="454"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="490"/>
         <source>Building TensorRT engine…</source>
         <translation>Збирання рушія TensorRT…</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="463"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="499"/>
         <source>Configured AnimeJaNai stage %1 of %2; waiting for remaining stages.</source>
         <translation>Налаштовано етап AnimeJaNai %1 із %2; очікування решти етапів.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="469"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="505"/>
         <source>Waiting for all AnimeJaNai engine builds to finish.</source>
         <translation>Очікування завершення всіх збірок рушіїв AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="566"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="602"/>
         <source>TensorRT engine ready; backend configuration observed.</source>
         <translation>Рушій TensorRT готовий; бекенд підтвердив налаштування.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="849"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="886"/>
         <source>The engine cache is in use by %1 (%2).</source>
         <translation>Кеш рушія використовує %1 (%2).</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="452"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="488"/>
         <source>Compiling the selected model for this video resolution.</source>
         <translation>Компіляція вибраної моделі для цієї роздільної здатності відео.</translation>
     </message>
@@ -7962,12 +7962,12 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Відтворення закрито під час підготовки рушія.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="280"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="316"/>
         <source>Previous TensorRT engine build stopped.</source>
         <translation>Попереднє збирання рушія TensorRT зупинено.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="223"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="259"/>
         <source>TensorRT engine build cancelled.</source>
         <translation>Збирання рушія TensorRT скасовано.</translation>
     </message>
@@ -8006,8 +8006,8 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/core/VideoSurface.cpp" line="1961"/>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="251"/>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="744"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="287"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="781"/>
         <source>Skipped: source transfer metadata is unknown</source>
         <translation>Пропущено: метадані передавальної функції джерела невідомі</translation>
     </message>
@@ -9536,6 +9536,16 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Порівняти якість</translation>
     </message>
     <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="692"/>
+        <source>In desktop settings, choose Mikai Ja Nai under Default Applications. Your defaults have not been changed.</source>
+        <translation>У налаштуваннях робочого середовища виберіть Mikai Ja Nai у розділі «Типові програми». Ваші типові програми не змінено.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="694"/>
+        <source>Choose Mikai Ja Nai in Windows Default Apps. Your defaults have not been changed.</source>
+        <translation>Виберіть Mikai Ja Nai у налаштуваннях типових програм Windows. Ваші типові програми не змінено.</translation>
+    </message>
+    <message>
         <location filename="../src/player/shell/PlayerShell.cpp" line="855"/>
         <source>Copy frame</source>
         <translation>Копіювати кадр</translation>
@@ -9620,16 +9630,6 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <location filename="../src/player/shell/PlayerShell.cpp" line="685"/>
         <source>Default video player</source>
         <translation>Типовий відеопрогравач</translation>
-    </message>
-    <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="692"/>
-        <source>In desktop settings, choose Mikai under Default Applications. Your defaults have not been changed.</source>
-        <translation>У налаштуваннях робочого середовища виберіть Mikai в розділі «Типові програми». Ваші типові програми не змінено.</translation>
-    </message>
-    <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="694"/>
-        <source>Choose Mikai in Windows Default Apps. Your defaults have not been changed.</source>
-        <translation>Виберіть Mikai у розділі «Програми за замовчуванням» у Windows. Ваші типові програми не було змінено.</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerShell.cpp" line="864"/>
@@ -9902,13 +9902,13 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/shell/ShellWidgets.cpp" line="551"/>
-        <source>Registers Mikai and opens desktop settings so you can choose it under Default Applications. Your defaults are not changed automatically.</source>
-        <translation>Реєструє Mikai та відкриває налаштування робочого середовища, щоб ви могли вибрати його в розділі «Типові програми». Ваші типові програми не змінюються автоматично.</translation>
+        <source>Registers Mikai Ja Nai and opens desktop settings so you can choose it under Default Applications. Your defaults are not changed automatically.</source>
+        <translation>Реєструє Mikai Ja Nai та відкриває налаштування робочого середовища, де можна вибрати його в розділі «Типові програми». Типові програми не змінюються автоматично.</translation>
     </message>
     <message>
         <location filename="../src/player/shell/ShellWidgets.cpp" line="554"/>
-        <source>Opens Windows Default Apps so you can choose Mikai. Your defaults are not changed automatically.</source>
-        <translation>Відкриває розділ «Програми за замовчуванням» у Windows, де можна вибрати Mikai. Ваші типові програми не змінюються автоматично.</translation>
+        <source>Opens Windows Default Apps so you can choose Mikai Ja Nai. Your defaults are not changed automatically.</source>
+        <translation>Відкриває налаштування типових програм Windows, де можна вибрати Mikai Ja Nai. Типові програми не змінюються автоматично.</translation>
     </message>
     <message>
         <location filename="../src/player/shell/ShellWidgets.cpp" line="555"/>

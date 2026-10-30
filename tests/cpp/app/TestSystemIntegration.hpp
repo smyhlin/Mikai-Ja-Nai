@@ -18,6 +18,7 @@ private slots:
   void xdgForeignEntriesArePreserved();
   void xdgExecEscapingAndDefaultChoice();
   void xdgReusesVerifiedPackageEntry();
+  void xdgRecognizesAndRemovesLegacyGeneratedEntries();
   void xdgRefreshesOnlyMissingOwnedInstallations();
   void idleInhibitorIsHeldUntilTheLastPlaybackOwnerReleases();
 };
