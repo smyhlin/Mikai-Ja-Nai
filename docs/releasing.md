@@ -211,13 +211,21 @@ git log --oneline --decorate -5
 - No remote exists in a fresh checkout. Add one and push:
 
 ```bash
-git remote add origin git@github.com:<owner>/<repo>.git
+git remote add origin git@github.com:<owner>/mikai-janai.git
 git push -u origin main
 git push origin --tags          # only if those tags are meant to be public
 ```
 
 - The other local branches (`benchmark`, `migrate-to-qt-6.12`, `refactor/modular-structure`, …) are
   work in progress. Pushing `main` does not publish them; push a branch deliberately or leave it.
+- The repository slug is `mikai-janai` and the display name is *Mikai Ja Nai* (`janai` is じゃない,
+  "is not" — the client is unofficial, not the service). Set that in the repository description; the
+  application's own identity stays `Mikai Wrapper`, because it is the Qt application name and
+  therefore the native store path (see [Contributing](../CONTRIBUTING.md#naming)). Renaming the
+  local checkout directory is optional and costs nothing in git, but every configured build tree
+  records absolute source paths: reconfigure, or rebuild, before trusting a cached `build/` after
+  such a move.
+
 - Keep the repository history free of third-party binaries. A `squashfs-root/` tree from
   `--appimage-extract` reached one commit and was removed in `5869f5c`; if a clone must also drop it
   from history, rewrite once with Git's own filter before the first push:

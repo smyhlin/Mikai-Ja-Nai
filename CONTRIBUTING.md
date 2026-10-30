@@ -2,6 +2,18 @@
 
 Mikai is a C++20 / Qt Widgets desktop client. Before making a change, read the relevant user/build documentation and existing code conventions. Keep changes focused, preserve platform-specific behavior, and do not commit generated builds, release packages, local runtime stores, credentials, or personal media.
 
+## Naming
+
+- **Repository slug:** `mikai-janai` — lowercase, hyphenated, the form GitHub shows and the one to use
+  in clone URLs and remotes. Do not reintroduce the underscore spelling or a bare `Mikai`.
+- **Display name:** *Mikai Ja Nai* in prose where a human reads it; `mikai-janai` in identifiers.
+  *janai* (じゃない) means "is not", which is the point: an unofficial client that is not the service.
+- **Application identity stays `Mikai Wrapper`.** `QCoreApplication::applicationName()` is that
+  string, so `QStandardPaths` resolves to `~/.local/share/Mikai Wrapper/…` — the native store path.
+  Renaming it relocates every installed component, model and setting, and that path's space is what
+  the AnimeJaNai fork's unquoted `LD_LIBRARY_PATH` cannot survive (see
+  [`docs/animejanai.md`](docs/animejanai.md)). A repository rename must not touch it.
+
 ## Changes and review
 
 - Base changes on the current project branch and keep each change narrowly scoped.
