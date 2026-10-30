@@ -1,6 +1,9 @@
 # Changelog
 
 ## 0.1.0 — Unreleased
+
+- Successful bundle CLI contract checks remove their temporary copied runtimes instead of accumulating them in the build directory.
+
 ### Windows startup runtime and appearance defaults (2026-10-30)
 
 - The default blue gradient is `#6797e4`; saved user appearance selections remain in effect rather than being replaced by the default.

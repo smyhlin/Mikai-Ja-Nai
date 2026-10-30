@@ -80,3 +80,8 @@ endif()
 if(native_out MATCHES "core accepts @mikai_native")
   message(FATAL_ERROR "unsupported Native bundle reached native-capability success reporting\n${native_out}")
 endif()
+
+file(REMOVE_RECURSE "${work}")
+if(EXISTS "${work}")
+  message(FATAL_ERROR "cannot remove bundle contract work directory: ${work}")
+endif()
