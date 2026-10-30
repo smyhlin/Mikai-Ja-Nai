@@ -1,6 +1,14 @@
 # Changelog
 
 ## 0.1.0 — Unreleased
+### AnimeJaNai on Linux: fork identification, loader and engine build (2026-10-30)
+
+- AnimeJaNai no longer reports `animejanai.core.unsupported` on a Linux artifact that ships the fork. The check compared the module against the Windows DLL's size and digest, which patchelf-mediated installs can never match; Unix modules are identified by the `animejanai` filter marker, which no stock mpv contains, plus client API 2.5 or newer (the Linux fork reports 2.6, the Windows fork 2.5).
+- `animejanai.backend.failed: Failed to create inference context` is fixed. The fork resolves `libnvinfer.so.11` and its siblings by bare soname when it creates its inference context, and the store is not on the process loader path; `prepareAnimeJanaiPlan` records the closure folder in `AnimeJanaiPlan::backendLibDirs` and the surface preloads it `RTLD_GLOBAL` before attaching the filter.
+- `animejanai.build.failed … (see .build.log)` with `sh: line 1: Wrapper/…: No such file or directory` is fixed. The fork hands `/bin/sh` the line `LD_LIBRARY_PATH=<trtexec-libdir> "<trtexec>" …` with that prefix unquoted, so the store path `…/Mikai Wrapper/…` split it and `trtexec` never started (exit 127). Both plan builders now pass `detail::shellSafeLibDir(...)`: a symlink mirror of the closure under a space-free temp root whenever the real path is splittable. With it, `trtexec` reports `&&&& PASSED TensorRT.trtexec`, writes the `.engine`, and playback upscales 1920x1080 to 3840x2160 on an RTX 5090 (TensorRT 11.3, sm_120).
+- A packaged run now always leaves a log. An AppImage mounts its payload read-only, so `mikai.log` falls back to `AppLocalDataLocation` instead of being dropped, and AnimeJaNai failures are written under `[animejanai]` with their reason key.
+- Contracts and the pre-release gate are documented in [`AGENTS.md`](AGENTS.md), [`native/README.md`](native/README.md) and [`docs/releasing.md`](docs/releasing.md); `TestAnimeJanaiRuntime` pins both the plan's loader folder and the shell-safe mirror, and `TestDiagnostics` pins the log fallback.
+
 ### Bundled libmpv runtime (2026-10-29)
 
 - Every Linux artifact now ships our own libmpv instead of borrowing the host's. The runtime we pin was built without an FFmpeg TLS backend, so https provider streams failed with "No protocol handler found" — which is why the AppImage used to fall back to the host's libmpv. `packaging/mpv/build-tls-archive.sh` rebuilds FFmpeg at the same tag with the same flags plus `--enable-openssl`, replaces that family inside the archive and adds OpenSSL 3.0 from the Ubuntu 22.04 baseline; the mpv fork, libplacebo, shaderc, libass and Vulkan loader stay the published bytes. The rebuilt runtime decodes an https HLS stream through `MpvHandle` (duration 634.58 s, h264); the published archive returns nothing on the same URL.

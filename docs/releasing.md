@@ -117,6 +117,32 @@ Qt's deployment omits the QPA platform plugins when the distribution Qt carries 
 
 To lower the glibc baseline, run the same commands in an older base image with the provisioned Qt instead of on the current host; no lower-baseline artifact is claimed here.
 
+#### AnimeJaNai gate for a Linux artifact
+
+An artifact that ships the fork is only shippable if the filter can actually start inference. Run this
+against what was packaged, with the user store present and the preset selectable:
+
+1. Open a local file, choose **AnimeJaNai → Balanced**, and let it build. The toast must not raise
+   `animejanai.core.unsupported`, `animejanai.backend.failed` or `animejanai.build.failed`.
+2. Confirm the engine appeared and no build log carries a shell error:
+
+```bash
+S="$HOME/.local/share/Mikai Wrapper/native/animejanai/models/spatial"
+ls -l "$S"/*.engine
+grep -l "No such file or directory" "$S"/*.build.log      # must print nothing
+```
+
+3. Use a store path that contains a space — the default `…/Mikai Wrapper/…` — because that is the
+   case an unquoted `LD_LIBRARY_PATH` breaks. A space-free store passes even when the shell-safety
+   contract is broken, so it is not a substitute.
+4. Check the session log exists for the packaged form. An AppImage mounts its payload read-only, so
+   the log has to land in `AppLocalDataLocation` (`~/.local/share/mikai.log` here), not beside the
+   executable inside the mount.
+
+The two contracts this exercises — closure preload and shell-safe `trtexec-libdir` — are stated in
+[`animejanai.md`](animejanai.md); they are silent until a GPU build runs, which is why this is a
+release step rather than a developer note.
+
 ### Distribution packages (Arch, Debian)
 
 Two distribution formats are produced from the same source tree. Neither is a publication approval, and neither replaces the tarball: the tarball stays the dependency-based reference layout.

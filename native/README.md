@@ -12,6 +12,9 @@ The application supports two distinct neural enhancement contracts alongside the
 2. **Prepared Native Bundle Track (`mikai_native_support`, `NativePlaybackController`, `NativeBuilder`):**
    - Uses a versioned, manifest-verified bundle under `<nativeRoot>/runtime/<bundle-id>/` (`manifest.json` schema `mikai.native.bundle/1`) together with out-of-process preparation tools (`mikai_native_prep`, `mikai_native_verify`, `native_inspect`) that build and numerically verify TensorRT plans against an ONNX Runtime CPU reference before admitting them into playback.
 
+The fork's Linux loader and engine-build contracts, their failure modes and the reproduction
+commands live in [docs/animejanai.md](../docs/animejanai.md).
+
 ---
 
 ## 2. Standard AnimeJaNai Custom Models & Profiles
