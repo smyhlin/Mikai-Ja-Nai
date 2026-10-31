@@ -2,6 +2,8 @@
 
 ## 0.1.0 — Unreleased
 
+- Keyboard seeks and the +85 control now resolve relative steps against mpv's current playhead rather than delayed UI progress, including PiP's own core. Absolute timeline and resume seeks are unchanged, and Compare invalidates pending captures for either kind. Timeline/speed and volume sliders honor the final release position and ignore unrelated button releases during a left-button drag. A lost left-button release ends the drag without committing the next hover position.
+
 - Player rendering now retries temporarily suppressed paints without waiting for another mpv callback, isolates raw OpenGL rendering and processing-transition captures from Qt painter state, and invalidates framebuffer depth/format caches when their target changes. Windowed canvas sizing uses display aspect and rotation without changing the coded dimensions supplied to processing or source-resolution labels. These source fixes do not establish that all intermittent black frames are resolved.
 
 - Settings Appearance now initializes accent, radius, gradient and general controls from the current saved appearance when the tab is built and when the dialog is reopened, including saved custom colors, with checked swatch indicators kept in sync. Preview, save, cancel, reset and live language/appearance refresh behavior are preserved.

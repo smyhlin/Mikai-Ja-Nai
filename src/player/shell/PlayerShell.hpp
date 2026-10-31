@@ -193,7 +193,10 @@ public:
 signals:
     // ── shell → host ────────────────────────────────────────────────
     void playPauseRequested();
+    /// Absolute: the timeline, where the target is the whole point.
     void seekRequested(double seconds);
+    /// A transport step of `delta` seconds, resolved by the core's own clock.
+    void relativeSeekRequested(double delta);
     void rateChanged(double rate);
     void anime4KModeChanged(anime4k::Mode mode);
     void animeJanaiPresetRequested(const QString& id);

@@ -1037,10 +1037,12 @@ void PipFloat::resizeEvent(QResizeEvent* event) {
 bool PipFloat::handleKey(QKeyEvent* event) {
     switch (event->key()) {
         case Qt::Key_Left:
-            surface_->seek(surface_->position() - kPipSeekStepSeconds);
+            // A step is a distance from where the float's own core is, not
+            // from a position this side sampled up to a pump tick ago.
+            surface_->seekRelative(-kPipSeekStepSeconds);
             break;
         case Qt::Key_Right:
-            surface_->seek(surface_->position() + kPipSeekStepSeconds);
+            surface_->seekRelative(kPipSeekStepSeconds);
             break;
         case Qt::Key_Space:
             surface_->togglePause();

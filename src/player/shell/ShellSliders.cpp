@@ -51,17 +51,34 @@ void RangeSlider::mousePressEvent(QMouseEvent* event) {
 
 void RangeSlider::mouseMoveEvent(QMouseEvent* event) {
     hover_ = at(event->position().x());
+    // A move with the left button up is not scrubbing: the release happened
+    // where this widget could not see it. Ending the drag here, without taking
+    // the pointer's position as a value, is what keeps an ordinary hover from
+    // seeking a bar the user already let go of.
     if (drag_) {
-        setValue(hover_);
+        if ((event->buttons() & Qt::LeftButton) != 0) {
+            setValue(hover_);
+        } else {
+            drag_ = false;
+            emit released();
+        }
     }
     chromeUpdate(this);
 }
 
 void RangeSlider::mouseReleaseEvent(QMouseEvent* event) {
-    if (drag_) {
-        drag_ = false;
-        emit released();
+    // Another button's release is not the end of a left drag, and the pointer
+    // can be released somewhere its last move never reported - so the value is
+    // taken from the release itself rather than from the stale hover fraction.
+    if (event->button() != Qt::LeftButton || !drag_) {
+        return;
     }
+    hover_ = at(event->position().x());
+    // Sampled while the drag still reads true, so a consumer listening to
+    // valueChanged sees the same drag released() is about to end.
+    setValue(hover_);
+    drag_ = false;
+    emit released();
 }
 
 void RangeSlider::leaveEvent(QEvent* event) {
@@ -170,18 +187,29 @@ void VolumeTrack::mousePressEvent(QMouseEvent* event) {
 }
 
 void VolumeTrack::mouseMoveEvent(QMouseEvent* event) {
-    if (drag_ && (event->buttons() & Qt::LeftButton)) {
-        setValue(at(event->position().x()), true);
+    // The same lost-release rule: a move without the left button ends a drag
+    // whose release never arrived here, and the level stays where the last
+    // genuine move put it. A held left button still tracks the pointer.
+    if (drag_) {
+        if ((event->buttons() & Qt::LeftButton) != 0) {
+            setValue(at(event->position().x()), true);
+        } else {
+            drag_ = false;
+            emit released();
+        }
     }
     chromeUpdate(this);
 }
 
 void VolumeTrack::mouseReleaseEvent(QMouseEvent* event) {
-    if (drag_) {
-        drag_ = false;
-        setValue(at(event->position().x()), true);
-        emit released();
+    // Same ownership rule as the timeline: only the button that started the
+    // drag can end it, and the level settles on the release position.
+    if (event->button() != Qt::LeftButton || !drag_) {
+        return;
     }
+    setValue(at(event->position().x()), true);
+    drag_ = false;
+    emit released();
     chromeUpdate(this);
 }
 

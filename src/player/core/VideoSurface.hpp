@@ -178,7 +178,12 @@ public:
     bool playbackPauseIntent() const;
     /// Advances for every explicit pause/play request, including togglePause.
     quint64 pauseRequestGeneration() const { return pauseRequestGeneration_; }
+    /// Absolute seek to a timeline position (scrub, resume, chapter jump).
     void seek(double seconds);
+    /// Seeks by `delta` seconds from wherever the core actually is. A transport
+    /// step is a distance, not a position: the last observed position can be up
+    /// to one state pump old, which is what makes absolute steps land short.
+    void seekRelative(double delta);
     void setVolume(double volume);   // 0..100
     void setMuted(bool muted);
     void setSpeed(double speed);
@@ -499,7 +504,9 @@ signals:
     /// Notice emitted when a shader chain is gated by source transfer metadata.
     void anime4kGated(const QString& notice);
     /// A seek intent can precede, or never change, the observed position.
-    void seekRequested(double seconds);
+    /// Carries no target: the request may have been absolute or relative, and a
+    /// consumer's only safe reading is that a captured frame is now stale.
+    void seekRequested();
     void positionChanged(double seconds);
     void durationChanged(double seconds);
     void videoSizeChanged(int width, int height);

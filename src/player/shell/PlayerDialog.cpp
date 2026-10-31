@@ -494,6 +494,8 @@ void PlayerDialog::connectShell() {
     watchMediaTracks(surface_);
     connect(shell_, &PlayerShell::playPauseRequested, surface_, &VideoSurface::togglePause);
     connect(shell_, &PlayerShell::seekRequested, surface_, &VideoSurface::seek);
+    connect(shell_, &PlayerShell::relativeSeekRequested, surface_,
+            &VideoSurface::seekRelative);
     connect(shell_, &PlayerShell::rateChanged, this, [this](double rate) {
         speed_ = rate;
         surface_->setSpeed(speed_);

@@ -23,9 +23,9 @@ Catalogue variant selection and local track selection are different operations: 
 ## Transport and timeline
 
 - **Space** toggles play/pause. The player dock also has a play/pause control.
-- The timeline shows playback position and remaining time when duration is known. Drag/scrub it to seek; hovering shows the time at that point, not a thumbnail preview.
+- The timeline shows playback position and remaining time when duration is known. Drag/scrub it to seek; the final pointer position on left-button release selects the target, even if the last movement event was elsewhere. Hovering shows the time at that point, not a thumbnail preview.
 - The separate **+85** control advances by 85 seconds, bounded by a known duration.
-- **← / →** seeks backward/forward by 5 seconds when duration is known. If duration is unknown, those keys request the previous/next episode instead.
+- **← / →** seeks backward/forward by 5 seconds when duration is known. Steps use the playback core's current position, so rapid presses are not shortened by a delayed progress update. If duration is unknown, those keys request the previous/next episode instead.
 - **↑ / ↓** changes volume by 10 percentage points; **M** toggles mute.
 - **T / C / Q** open Audio, Subtitles, and Quality and speed, respectively. Menus can be navigated with **↑ / ↓** (or **← / →**), confirmed with **Enter**, and closed with **Esc**.
 
@@ -57,6 +57,8 @@ Progress updates below 30 seconds do not create or replace a resume point. At 90
 ## Picture-in-picture
 
 Choose the player’s PiP control to open a frameless, always-on-top floating player; choose **Restore** to return to the main player window. The float uses its own playback surface for the same stream, while the original surface is paused. PiP exposes its own transport and volume controls.
+
+In PiP, **← / →** seeks backward/forward by 10 seconds. These steps also use the float's own playback clock and preserve its paused state.
 
 PiP behavior is window-manager dependent. On Wayland, the compositor controls interactive movement/resizing and may not honor always-on-top. Closing the float closes the player rather than silently leaving hidden playback behind.
 

@@ -1160,7 +1160,17 @@ void VideoSurface::seek(double seconds) {
     // tolerated here - the same tolerance the synchronous call had.
     issueCoreCommand({"seek", mpvNumber(seconds), "absolute"}, "seek",
                      /*reportRefusal=*/false);
-    emit seekRequested(seconds);
+    emit seekRequested();
+}
+
+void VideoSurface::seekRelative(double delta) {
+    if (!mpv_) return;
+    // `relative` lets the core resolve the step against the position it is at
+    // right now instead of one the caller sampled a pump interval ago, and
+    // `exact` keeps the landed frame deterministic rather than keyframe-snapped.
+    issueCoreCommand({"seek", mpvNumber(delta), "relative+exact"}, "seek",
+                     /*reportRefusal=*/false);
+    emit seekRequested();
 }
 
 void VideoSurface::setVolume(double volume) {

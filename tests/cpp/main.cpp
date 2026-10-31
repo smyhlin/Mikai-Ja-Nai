@@ -49,6 +49,7 @@
 #include "TestNativeRife.hpp"
 #include "TestNativeStatus.hpp"
 #include "TestPlaybackDiagnostics.hpp"
+#include "TestPlaybackControls.hpp"
 #include "TestMediaInformation.hpp"
 #include "TestHdrRenderContracts.hpp"
 #include "TestNativeTypes.hpp"
@@ -92,7 +93,7 @@ constexpr const char* kSuites[] = {
     "TestRuntimeSelection", "TestNativeTypes", "TestNativeRecipe", "TestNativeProfiles", "TestNativeRife",
     "TestNativeBundle", "TestNativePrepPlan", "TestNativeManifest", "TestNativeBuilder",
     "TestNativePreparationReferences", "TestNativeComponents", "TestNativeStoredModels", "TestNativePreparedPlan", "TestNativePlaybackController", "TestNativeStatus",
-    "TestPlaybackDiagnostics", "TestMediaInformation", "TestHdrRenderContracts",
+    "TestPlaybackDiagnostics", "TestPlaybackControls", "TestMediaInformation", "TestHdrRenderContracts",
     "TestNativePrefs",
     "TestNativeMenu", "TestNativeUserRecipes", "TestNativeAssets", "TestMpvAsync", "TestCompareGif",
     "TestCompareClip", "TestCompareLoading",
@@ -231,6 +232,7 @@ int main(int argc, char** argv) {
   TestNativePlaybackController nativePlaybackController;
   TestNativeStatus nativeStatus;
   TestPlaybackDiagnostics playbackDiagnostics;
+  TestPlaybackControls playbackControls;
   TestMediaInformation mediaInformation;
   TestHdrRenderContracts hdrRenderContracts;
   TestNativePrefs nativePrefs;
@@ -339,6 +341,7 @@ int main(int argc, char** argv) {
   run("TestNativePlaybackController", &nativePlaybackController, true);
   run("TestNativeStatus", &nativeStatus, true);
   run("TestPlaybackDiagnostics", &playbackDiagnostics, true);
+  run("TestPlaybackControls", &playbackControls, true);
   run("TestMediaInformation", &mediaInformation, true);
   run("TestHdrRenderContracts", &hdrRenderContracts, true);
   run("TestNativePrefs", &nativePrefs, true);

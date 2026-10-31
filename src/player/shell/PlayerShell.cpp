@@ -1322,13 +1322,10 @@ void PlayerShell::onSkipForward() {
     if (!hasMedia_ || duration_ <= 0.0) {
         return;
     }
-    const double target = std::min(duration_, position_ + 85.0);
-    if (target <= position_) {
-        return;
-    }
-    position_ = target;
+    position_ = std::min(duration_, position_ + 85.0);
     updateTimeLabels();
-    emit seekRequested(target);
+    // Only the core can clamp a relative step against the current playhead.
+    emit relativeSeekRequested(85.0);
 }
 
 void PlayerShell::onPlayClicked() {
@@ -1971,9 +1968,8 @@ void PlayerShell::keyPressEvent(QKeyEvent* event) {
             break;
         case Qt::Key_Right:
             if (duration_ > 0) {
-                const double t = std::min(duration_, position_ + 5);
-                position_ = t;
-                emit seekRequested(t);
+                position_ = std::min(duration_, position_ + 5.0);
+                emit relativeSeekRequested(5.0);
                 updateTimeLabels();
             } else {
                 emit nextRequested();
@@ -1981,9 +1977,8 @@ void PlayerShell::keyPressEvent(QKeyEvent* event) {
             break;
         case Qt::Key_Left:
             if (duration_ > 0) {
-                const double t = std::max(0.0, position_ - 5);
-                position_ = t;
-                emit seekRequested(t);
+                position_ = std::max(0.0, position_ - 5.0);
+                emit relativeSeekRequested(-5.0);
                 updateTimeLabels();
             } else {
                 emit prevRequested();

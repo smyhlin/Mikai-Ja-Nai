@@ -289,7 +289,7 @@ CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandid
         connect(surface_, &VideoSurface::positionChanged, this,
                 [this](double) { ++positionEpoch_; });
         connect(surface_, &VideoSurface::seekRequested, this,
-                [this](double) { ++seekEpoch_; });
+                [this]() { ++seekEpoch_; });
         // Carries the queue depth and the end of a settling transition, so the
         // armed retry never freezes a stale epoch.
         connect(surface_, &VideoSurface::nativePlaybackStatusChanged, this,

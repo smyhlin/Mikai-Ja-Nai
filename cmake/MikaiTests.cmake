@@ -163,6 +163,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/player/TestCompareLoading.cpp
     tests/cpp/player/TestPlaybackDiagnostics.hpp
     tests/cpp/player/TestPlaybackDiagnostics.cpp
+    tests/cpp/player/TestPlaybackControls.hpp
+    tests/cpp/player/TestPlaybackControls.cpp
     tests/cpp/player/TestMediaInformation.hpp
     tests/cpp/player/TestMediaInformation.cpp
     tests/cpp/player/TestHdrRenderContracts.hpp
@@ -322,6 +324,7 @@ if(MIKAI_BUILD_PROBES)
     TestNativePlaybackController
     TestNativeStatus
     TestPlaybackDiagnostics
+    TestPlaybackControls
     TestMediaInformation
     TestHdrRenderContracts
     TestNativePrefs

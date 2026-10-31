@@ -54,6 +54,8 @@ On-video controls paint in the OpenGL pass while retaining their existing widget
 
 `hwdec=auto-safe` requests a safe hardware decode path; it is not a universal zero-copy guarantee. GPU transfers, drivers, codecs, decode format and optional filters determine actual resource use. See Qt's [QOpenGLWidget](https://doc.qt.io/qt-6/qopenglwidget.html) and mpv's [render API](https://github.com/mpv-player/mpv/blob/master/include/mpv/render.h) documentation.
 
+Keyboard and skip-button navigation sends asynchronous `relative+exact` seeks to mpv; the timeline and resume workflow retain absolute targets. Explicit precision preserves the old absolute seek accuracy: mpv's default relative seek is keyframe-oriented, unlike its default absolute seek. The UI may show an optimistic position, but it cannot clamp or derive a backend-relative step from a delayed progress observation. Both seek kinds emit the same argument-free intent edge so Compare invalidates a pending capture before the resulting position update arrives.
+
 ## Optional enhancement paths
 
 Original playback is the default and does not require model components. Anime4K runs as OpenGL shader processing. AnimeJaNai uses the external AJI stack and separately acquired runtime/model content; its presets and custom profiles are selected explicitly. Prepared Native processing is a separately verified bundle track, with preparation/inspection tools documented in [`native/README.md`](../native/README.md) and [`native/build-msvc.md`](../native/build-msvc.md).
