@@ -397,6 +397,12 @@ void TitlePage::buildUi() {
                 }
                 if (previous.radiusStep != appearance.radiusStep ||
                     previous.coverGradient != appearance.coverGradient) {
+                    for (const auto& entry : relatedPosterImages_) {
+                        if (!entry.first.isNull()) {
+                            entry.first->setPixmap(
+                                TitleCard::rounded(entry.second, entry.first->size()));
+                        }
+                    }
                     coverAppliedSize_ = {};
                     applyCoverPixmap();
                 }
@@ -1317,6 +1323,7 @@ void TitlePage::populateRelated(const backend::AnimeDetail& detail) {
     relatedPagerButtons_.clear();
     relatedKindLabels_.clear();
     relatedPosterLabels_.clear();
+    relatedPosterImages_.clear();
     while (relatedLayout_->count() > 0) {
         QLayoutItem* item = relatedLayout_->takeAt(0);
         if (item->widget() != nullptr) {
@@ -1521,6 +1528,7 @@ QWidget* TitlePage::buildRelatedCarousel(
                     }
                     const QPixmap pixmap = QPixmap::fromImage(std::move(decoded.image));
                     poster->setText(QString());
+                    self->relatedPosterImages_.append({poster, pixmap});
                     poster->setPixmap(TitleCard::rounded(pixmap, poster->size()));
                 },
                 [](const backend::Failure& failure) {

@@ -21,7 +21,7 @@ In **Customization → General**:
 - **Site theme** switches between dark and light.
 - **Content titles language** selects Ukrainian, English or original titles.
 - **Names language** selects **As the interface**, Ukrainian, English or original names.
-- **Gradient overlay** controls the gradient drawn over cover images.
+- **Gradient overlay** controls the gradient drawn over cover images, including home cards, title-page covers and related-title artwork.
 - **18+ content** shows explicit content without a warning. Turn it off if you do not want that display behavior.
 
 In **Customization → Appearance**:

@@ -11,6 +11,7 @@
 #include <QPair>
 #include <QPoint>
 #include <QPointer>
+#include <QPixmap>
 #include <QSet>
 #include <QSize>
 #include <QString>
@@ -523,11 +524,13 @@ protected:
     /// switch re-words the captions in place. Rebuilding the carousels instead
     /// would drop every poster already fetched and restart their downloads, so
     /// the headings, pager tooltips, relation captions and still-empty poster
-    /// fallbacks are all that is kept here.
+    /// fallbacks are kept here. Loaded source pixmaps are retained so appearance
+    /// changes can repaint the related artwork without another download.
     QVector<QPair<QString, QPointer<QLabel>>> relatedHeadings_;
     QVector<QPair<QPointer<QPushButton>, QPointer<QPushButton>>> relatedPagerButtons_;
     QVector<QPair<QString, QPointer<QLabel>>> relatedKindLabels_;
     QVector<QPointer<QLabel>> relatedPosterLabels_;
+    QVector<QPair<QPointer<QLabel>, QPixmap>> relatedPosterImages_;
 };
 
 }  // namespace mikai::app
