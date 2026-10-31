@@ -27,7 +27,7 @@ In **Customization → General**:
 In **Customization → Appearance**:
 
 - Choose an accent-color swatch or use the custom color picker.
-- Choose a corner radius. This affects the app's rounded controls and player chrome as well as the rest of the interface.
+- Choose a corner radius. This affects the app's rounded controls, including title-page buttons, and player chrome as well as the rest of the interface.
 - Toggle **Background gradient** to show or hide the accent glow at the top of the page. When it is off, its intensity, height and color controls are disabled. When on, adjust intensity and height with the sliders and choose a preset or custom gradient color.
 - **Reset** resets the appearance-page choices (accent, radius and background-gradient settings). It does not reset the separate General-page choices.
 

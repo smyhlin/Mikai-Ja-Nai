@@ -35,9 +35,13 @@ Open **Teams…**, enter a name in **Search teams**, and select a row. Choose **
 
 ## Choose a title, release and episode
 
+Click either displayed title name to copy that name to the clipboard. The alternate title line appears only when a distinct alternate name is available. You can also focus either name with **Tab** and press **Enter** or **Space** to copy it.
+
+The hero groups **Watch**/**Continue**, **Episodes** and **More details**. **Watch**/**Continue** uses the currently selected episode in the workspace. **Episodes** scrolls to the first playable episode of the current release and provider without changing the release, provider, page or selection; if none is available, it scrolls to the episode status. **More details** opens a dismissible information sheet, which can be closed with its close button, by clicking outside it, or with **Escape**. Secondary actions stay outlined before hover, and title-page buttons use the global corner-radius setting.
+
 Open a catalogue result to view its title page. A title can have multiple releases (for example, from different translation teams); a release can expose separate provider tabs for its episodes. Select the release and provider, then choose an episode. **Unavailable** means the API marks that episode unavailable; **No video available** means the app has no playable video for that entry/provider. The app may discover the latter when it requests quality options, so a listed episode is not a guarantee of a working stream. If the API marks the title or player data as licensed, the title page reports playback unavailable due to licensing and does not show releases. Catalogue presence does not guarantee that every release or episode has a working stream.
 
-For a playable episode, choose **Watch** (or **Continue** if a saved offset is available). Mikai Ja Nai requests stream information from the selected provider; availability and extraction depend on that provider. If no video is available or a stream request fails, try another episode, provider or release where available. If catalogue requests fail, check the connection and, if you use a key, test it under **Settings → Access**. Provider and playback details are in the [playback guide](player-guide.md).
+For a playable episode, choose **Watch** (or **Continue** if a saved offset is available) in the title hero or the selected episode panel. Mikai Ja Nai requests stream information from the selected provider; availability and extraction depend on that provider. If no video is available or a stream request fails, try another episode, provider or release where available. If catalogue requests fail, check the connection and, if you use a key, test it under **Settings → Access**. Provider and playback details are in the [playback guide](player-guide.md).
 
 ## Keep track of episodes
 
