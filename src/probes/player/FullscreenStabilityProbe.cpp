@@ -1,3 +1,4 @@
+#include "Anime4K.hpp"
 #include "PlayerDialog.hpp"
 #include "PlayerShell.hpp"
 #include "ProbeIsolation.hpp"
@@ -10,20 +11,26 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QImage>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMutex>
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
+#include <QRunnable>
 #include <QScreen>
 #include <QSet>
 #include <QSettings>
 #include <QStringList>
 #include <QTemporaryDir>
+#include <QThreadPool>
 #include <QTimer>
 #include <QtTest/QTest>
 
 #include <algorithm>
 #include <cstdio>
+#include <optional>
+#include <utility>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -71,6 +78,93 @@ QString pointerId(const void* pointer) {
                : QStringLiteral("0x%1").arg(
                      static_cast<qulonglong>(reinterpret_cast<quintptr>(pointer)), 0, 16);
 }
+
+// PNG encoding must not stall GUI sampling; the write state outlives the worker pool.
+struct EvidenceWriteSnapshot {
+    qint64 attempted = 0;
+    qint64 completed = 0;
+    qint64 failed = 0;
+    qint64 skipped = 0;
+    qint64 maxWriteMs = 0;
+    QStringList failedArtifacts;
+
+    qint64 pending() const { return attempted - completed - failed - skipped; }
+};
+
+class EvidenceWrites {
+public:
+    void noteAttempt() {
+        QMutexLocker lock(&mutex_);
+        ++attempted_;
+    }
+
+    void noteSkip() {
+        QMutexLocker lock(&mutex_);
+        ++skipped_;
+    }
+
+    void noteFinish(bool saved, qint64 elapsedMs, const QString& artifact) {
+        QMutexLocker lock(&mutex_);
+        maxWriteMs_ = std::max(maxWriteMs_, elapsedMs);
+        if (saved) {
+            ++completed_;
+            return;
+        }
+        ++failed_;
+        if (failedArtifacts_.size() < 8) failedArtifacts_.append(artifact);
+    }
+
+    qint64 maxWriteMs() {
+        QMutexLocker lock(&mutex_);
+        return maxWriteMs_;
+    }
+
+    qint64 failureCount() {
+        QMutexLocker lock(&mutex_);
+        return failed_;
+    }
+
+    EvidenceWriteSnapshot snapshot() {
+        QMutexLocker lock(&mutex_);
+        EvidenceWriteSnapshot copy;
+        copy.attempted = attempted_;
+        copy.completed = completed_;
+        copy.failed = failed_;
+        copy.skipped = skipped_;
+        copy.maxWriteMs = maxWriteMs_;
+        copy.failedArtifacts = failedArtifacts_;
+        return copy;
+    }
+
+private:
+    QMutex mutex_;
+    qint64 attempted_ = 0;
+    qint64 completed_ = 0;
+    qint64 failed_ = 0;
+    qint64 skipped_ = 0;
+    qint64 maxWriteMs_ = 0;
+    QStringList failedArtifacts_;
+};
+
+class ArtifactWriteTask final : public QRunnable {
+public:
+    ArtifactWriteTask(QImage image, QString path, QString artifact, EvidenceWrites* writes)
+        : image_(std::move(image)), path_(std::move(path)), artifact_(std::move(artifact)),
+          writes_(writes) {}
+
+    void run() override {
+        QElapsedTimer work;
+        work.start();
+        const bool saved = !image_.isNull() && image_.save(path_);
+        writes_->noteFinish(saved, work.elapsed(), artifact_);
+    }
+
+private:
+    QImage image_;
+    QString path_;
+    QString artifact_;
+    EvidenceWrites* writes_;
+};
 
 } // namespace
 
@@ -121,7 +215,6 @@ int main(int argc, char** argv) {
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settings.path());
     const QString preset = positionalArguments.size() == 4 ? positionalArguments.at(3)
                                                             : QStringLiteral("off");
-    QSettings().setValue(QStringLiteral("player/anime4k"), preset);
     const QString module = qEnvironmentVariable("MIKAI_MPV_MODULE");
     if (module.isEmpty()) {
         if (!mplayer::probes::selectRuntime()) return 2;
@@ -142,6 +235,7 @@ int main(int argc, char** argv) {
     auto* surface = dialog->findChild<mplayer::VideoSurface*>();
     auto* shell = dialog->findChild<mplayer::shell::PlayerShell*>();
     if (surface == nullptr || shell == nullptr) return 2;
+    shell->applyAnime4KPreset(preset);
     const auto activeSurface = [&]() -> mplayer::VideoSurface* {
         if (!dialog->isPipActive()) return surface;
         for (QWidget* window : QApplication::topLevelWidgets()) {
@@ -166,7 +260,6 @@ int main(int argc, char** argv) {
     qint64 maxSampleWorkMs = 0;
     qint64 maxReadbackMs = 0;
     qint64 maxDesktopGrabMs = 0;
-    qint64 maxImageSaveMs = 0;
     qint64 lastSummary = 0;
     qint64 lastInteraction = 0;
     qint64 lastScreenshot = -60000;
@@ -200,19 +293,38 @@ int main(int argc, char** argv) {
     quint64 completedPipPhases = 0;
     quint64 inactiveSamples = 0;
     qint64 contextAgeStartMs = -1;
+    // Cleared when the run finalizes: a composition hook firing in the quit window
+    // must not queue artifacts after the final counts are recorded.
+    bool collectingArtifacts = true;
     const auto record = [&](QJsonObject row) {
         evidence.write(QJsonDocument(row).toJson(QJsonDocument::Compact));
         evidence.write("\n");
         evidence.flush();
     };
+    EvidenceWrites artifactWrites;
+    QThreadPool artifactPool;
+    artifactPool.setMaxThreadCount(1);
+    const auto artifactFailure = [&] {
+        if (artifactWrites.failureCount() == 0) return QString();
+        const EvidenceWriteSnapshot snapshot = artifactWrites.snapshot();
+        return QStringLiteral("Could not save evidence: %1")
+            .arg(snapshot.failedArtifacts.join(QStringLiteral(", ")));
+    };
     const auto saveImage = [&](const QImage& image, const QString& name) {
-        QElapsedTimer work;
-        work.start();
+        if (!collectingArtifacts) return;
         const QString path = QDir(outputPath).filePath(name);
-        if (!image.save(path)) {
-            mediaError = QStringLiteral("Could not save evidence: %1").arg(path);
+        artifactWrites.noteAttempt();
+        if (image.isNull()) {
+            artifactWrites.noteFinish(false, 0, name);
+            return;
         }
-        maxImageSaveMs = std::max(maxImageSaveMs, work.elapsed());
+        auto* task = new ArtifactWriteTask(image, path, name, &artifactWrites);
+        if (artifactPool.tryStart(task)) return;
+        // Refuse queued full-screen images; sampled failures still fail independently.
+        delete task;
+        artifactWrites.noteSkip();
+        record({{"event", "artifactSkipped"}, {"elapsedMs", clock.elapsed()},
+                {"artifact", name}, {"reason", "evidence writer busy"}});
     };
     const auto desktopImage = [&](QScreen* screen, const QRect& region = QRect()) {
         QElapsedTimer work;
@@ -244,7 +356,7 @@ int main(int argc, char** argv) {
     QSet<mplayer::VideoSurface*> watchedSurfaces;
     bool compositionCaptureActive = false;
     const auto captureComposition = [&](mplayer::VideoSurface* composedSurface) {
-        if (compositionCaptureActive || clock.elapsed() < 5000 ||
+        if (!collectingArtifacts || compositionCaptureActive || clock.elapsed() < 5000 ||
             composedSurface != activeSurface() || !composedSurface->hasVideo()) return;
         compositionCaptureActive = true;
         QElapsedTimer work;
@@ -396,7 +508,7 @@ int main(int argc, char** argv) {
                 record({{"event", "guiGap"}, {"elapsedMs", now}, {"gapMs", gap},
                         {"previousSampleWorkMs", previousSampleWorkMs},
                         {"maxReadbackMs", maxReadbackMs}, {"maxDesktopGrabMs", maxDesktopGrabMs},
-                        {"maxImageSaveMs", maxImageSaveMs}});
+                        {"maxImageSaveMs", artifactWrites.maxWriteMs()}});
             }
         }
         if (now > 5000) {
@@ -532,9 +644,43 @@ int main(int argc, char** argv) {
         }
         previousSampleWorkMs = work.elapsed();
         maxSampleWorkMs = std::max(maxSampleWorkMs, previousSampleWorkMs);
+        if (mediaError.isEmpty()) mediaError = artifactFailure();
         if (now < seconds * 1000LL && mediaError.isEmpty() && !host.failed) return;
+        // Freeze collection before the join below: frames still compose while the
+        // dialog closes, and their artifacts would land after the reported counts.
+        collectingArtifacts = false;
         sample.stop();
+        // Join evidence writes after sampling so PNG work cannot distort GUI-gap measurements.
+        QElapsedTimer settle;
+        settle.start();
+        const bool artifactWritesSettled = artifactPool.waitForDone(15000);
+        const qint64 artifactSettleMs = settle.elapsed();
+        const EvidenceWriteSnapshot artifactSnapshot = artifactWrites.snapshot();
+        if (!artifactWritesSettled && mediaError.isEmpty())
+            mediaError = QStringLiteral("Evidence artifacts were still being written after 15s");
+        if (artifactSnapshot.failed > 0 && mediaError.isEmpty())
+            mediaError = QStringLiteral("Could not save evidence: %1")
+                             .arg(artifactSnapshot.failedArtifacts.join(QStringLiteral(", ")));
         auto* finalOwner = activeSurface();
+        const auto coreShaders =
+            finalOwner != nullptr
+                ? finalOwner->probeMpvProperty(QStringLiteral("glsl-shaders"),
+                                              mplayer::ProbePropertyKind::Text)
+                : std::optional<mplayer::ProbePropertyValue>{};
+        const auto coreTransfer =
+            finalOwner != nullptr
+                ? finalOwner->probeMpvProperty(QStringLiteral("video-params/gamma"),
+                                              mplayer::ProbePropertyKind::Text)
+                : std::optional<mplayer::ProbePropertyValue>{};
+        const QString expectedShaders = mplayer::anime4k::shaderStringForCandidate(preset);
+        const bool shaderFilesComplete =
+            preset == QLatin1String("off") ||
+            mplayer::anime4k::chainIsComplete(mplayer::anime4k::candidateForId(preset));
+        const bool shaderStateVerified =
+            coreShaders && coreShaders->kind == mplayer::ProbePropertyValue::Kind::Text &&
+            coreShaders->text == expectedShaders && shaderFilesComplete;
+        if (!shaderStateVerified && mediaError.isEmpty())
+            mediaError = QStringLiteral("The core shader list does not match preset '%1'").arg(preset);
         const QString finalSurfaceId = pointerId(finalOwner);
         const QString finalContextId =
             pointerId(finalOwner != nullptr ? finalOwner->context() : nullptr);
@@ -561,6 +707,13 @@ int main(int argc, char** argv) {
                 {"requestedPreset", preset},
                 {"appliedPreset", finalOwner != nullptr ? finalOwner->anime4KChainId()
                                                         : QStringLiteral("unavailable")},
+                {"coreGlslShadersAvailable", coreShaders.has_value()},
+                {"coreGlslShaders", coreShaders ? coreShaders->text : QString()},
+                {"expectedGlslShaders", expectedShaders},
+                {"shaderFilesComplete", shaderFilesComplete},
+                {"shaderStateVerified", shaderStateVerified},
+                {"coreSourceTransferAvailable", coreTransfer.has_value()},
+                {"coreSourceTransfer", coreTransfer ? coreTransfer->text : QString()},
                 {"activeOwnerFoundAtFinish", finalOwner != nullptr},
                 {"activeOwnerIsPipAtFinish", finalOwner != nullptr && finalOwner != surface},
                 {"activePositionAtFinish",
@@ -598,7 +751,17 @@ int main(int argc, char** argv) {
                 {"stalledSeconds", static_cast<qint64>(stalledSeconds)},
                 {"slowTicks", static_cast<qint64>(slowTicks)}, {"maxGuiGapMs", maxGap},
                 {"maxSampleWorkMs", maxSampleWorkMs}, {"maxReadbackMs", maxReadbackMs},
-                {"maxDesktopGrabMs", maxDesktopGrabMs}, {"maxImageSaveMs", maxImageSaveMs}});
+                {"maxDesktopGrabMs", maxDesktopGrabMs},
+                {"maxImageSaveMs", artifactSnapshot.maxWriteMs},
+                {"artifactWritesAttempted", artifactSnapshot.attempted},
+                {"artifactWritesCompleted", artifactSnapshot.completed},
+                {"artifactWritesFailed", artifactSnapshot.failed},
+                {"artifactWritesPending", artifactSnapshot.pending()},
+                {"artifactWritesSettled", artifactWritesSettled},
+                {"artifactSettleMs", artifactSettleMs},
+                {"skippedArtifacts", artifactSnapshot.skipped},
+                {"failedArtifacts", QJsonArray::fromStringList(artifactSnapshot.failedArtifacts)},
+                {"error", mediaError}});
         std::fprintf(stderr, "fullscreen stability: %s, elapsed=%lldms compositions=%llu black=%llu stalled=%llu maxGuiGap=%lldms\n",
                      passed ? "PASS" : "FAIL", static_cast<long long>(now),
                      static_cast<unsigned long long>(composedSamples), static_cast<unsigned long long>(blackCompositions),

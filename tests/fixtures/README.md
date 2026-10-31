@@ -97,6 +97,53 @@ It writes `native-animejanai-smoke-evidence.json` and screenshots; that JSON is
 functional evidence of the manager surfaces, not native inference or
 throughput proof.
 
+### Fullscreen/PiP redraw stress (Windows)
+
+`fullscreen_stability_probe` exercises the real desktop player and PiP with a
+known-bright moving source. Use a fresh output directory for each run so a
+failure's JSON and images are not replaced by a later pass.
+
+```powershell
+$qt = 'C:/temp/qt6/6.12.0/mingw_64'
+$env:PATH = "$qt/bin;C:/temp/w64dev/w64devkit/bin;$env:PATH"
+$env:QT_QPA_PLATFORM = 'windows'
+$env:QT_OPENGL = 'desktop'
+cmake --build build/release --target fullscreen_stability_probe --parallel 4
+$launcher = (Resolve-Path build/release/mikai_test_launcher.exe).Path
+$probe = (Resolve-Path build/release/fullscreen_stability_probe.exe).Path
+$stage = @(
+    (Resolve-Path shaders).Path,
+    (Resolve-Path build/release/mpv/libmpv-2.dll).Path,
+    "$qt/bin", "$qt/plugins", "$PWD/build/release/_test-runs"
+)
+$media = 'av://lavfi:testsrc2=size=640x360:rate=25,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709'
+$out = "$PWD/.probe-out/fullscreen-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+& $launcher $probe @stage $media 70 "$out/original" off --known-bright
+if ($LASTEXITCODE -ne 0) { throw 'Original fullscreen stress failed' }
+& $launcher $probe @stage $media 70 "$out/anime4k" fast_a --known-bright
+if ($LASTEXITCODE -ne 0) { throw 'Anime4K fullscreen stress failed' }
+```
+
+The final `samples.jsonl` row reports sampled black compositions, content/clock
+stalls, GUI gaps, main/PiP coverage and the pass/failure reason. The workload
+is selected through the normal player preset action, not merely a saved
+preference; `appliedPreset` must match `requestedPreset`. The final row also
+compares mpv's observed `glsl-shaders` list with the requested catalogue chain,
+checks its files, and records the observed source transfer function.
+`shaderStateVerified` confirms that configuration, not execution of every
+individual shader or support for every preset/source. PNG encoding
+and writes use one worker with no queued full-screen images; a busy writer
+records a skipped artifact without discarding the sampled black-frame failure.
+The probe stops collecting before joining writes and publishing final counts.
+Check `artifactWritesSettled`, failed/pending writes and `skippedArtifacts`
+before claiming complete screenshot evidence. Worker time does not relax the
+GUI-gap threshold, and an artifact write failure still fails the run.
+
+This is a bounded synthetic-source check, not proof for every stream, optional
+inference backend or driver. It needs a real desktop; an offscreen QPA or a
+compositor that restricts desktop capture cannot establish visible-output
+coverage. Linux build and desktop results must be recorded separately.
+
 ### Native HDR Settings UI capture (Windows)
 
 Use the real Windows Qt platform and the built Ukrainian catalog so font
