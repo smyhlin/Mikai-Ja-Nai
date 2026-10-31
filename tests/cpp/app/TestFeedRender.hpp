@@ -40,6 +40,8 @@ class TestFeedRender : public QObject {
   // button, the heading must be the title's, and the episodes section must be
   // inside the same scroll as the hero instead of a detached inner viewport.
   void theTitlePageRendersItsEpisodes();
+  void titlePagePrioritizesPlaybackAndAnchorsWithoutChangingSelection();
+  void titlePageKeepsLongControlsReachableAtDesktopMinimum();
 
   /// The one body scroll, at both the compact and the wide width: every section
   /// fits the content column without horizontal clipping, and the related

@@ -32,6 +32,7 @@
 #include <QtCore/QSet>
 #include <QtCore/QSettings>
 #include <QtCore/QStringList>
+#include <QtCore/QPointer>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QTemporaryFile>
 #include <QtCore/QTimer>
@@ -177,7 +178,8 @@ QString cannedDescription() {
              "зміни мови, а вже відкритий текст не згортається назад у попередній стан.");
 }
 
-QJsonObject detail(int id, const QString& name, const QString& poster) {
+QJsonObject detail(int id, const QString& name, const QString& poster, bool longTitle = false,
+                   bool discovery = false) {
   QJsonObject out = summary(id, name, poster, QStringLiteral("tv"));
   out.insert(QStringLiteral("description"), cannedDescription());
   out.insert(QStringLiteral("startDate"), QStringLiteral("2026-01-04"));
@@ -185,6 +187,25 @@ QJsonObject detail(int id, const QString& name, const QString& poster) {
   out.insert(QStringLiteral("studio"), QStringLiteral("Test Studio"));
   out.insert(QStringLiteral("country"), QStringLiteral("JP"));
   out.insert(QStringLiteral("ageRating"), QStringLiteral("PG-13"));
+  if (longTitle) {
+    out.insert(QStringLiteral("titles"),
+               titles(QStringLiteral("Надзвичайно довга українська назва серіалу для перевірки "
+                                    "перенесення заголовка на вузькому екрані"),
+                      QStringLiteral("A deliberately long English title for responsive layout"),
+                      QStringLiteral("Original long title")));
+  }
+  if (discovery) {
+    QJsonArray relations;
+    QJsonObject relation;
+    relation.insert(QStringLiteral("kind"), QStringLiteral("prequel"));
+    relation.insert(QStringLiteral("anime"),
+                    summary(9001, QStringLiteral("Related fixture"), poster, QStringLiteral("tv")));
+    relations.append(relation);
+    out.insert(QStringLiteral("relations"), relations);
+    QJsonArray similar;
+    similar.append(summary(9002, QStringLiteral("Similar fixture"), poster, QStringLiteral("tv")));
+    out.insert(QStringLiteral("similar"), similar);
+  }
 
   QJsonObject episodes;
   episodes.insert(QStringLiteral("total"), kEpisodes);
@@ -283,6 +304,10 @@ class CannedApi : public QObject {
   /// Numbers the canned episodes with special identifiers instead of counting
   /// them, the way a release carrying OVAs or a half-numbered episode does.
   void setSpecialEpisodes(bool enabled) { specialEpisodes_ = enabled; }
+  void setPopularDelayMs(int delayMs) { popularDelayMs_ = qMax(0, delayMs); }
+  void setLongTitleFixture(bool enabled) { longTitleFixture_ = enabled; }
+  void setLongTeamFixture(bool enabled) { longTeamFixture_ = enabled; }
+  void setDiscoveryFixture(bool enabled) { discoveryFixture_ = enabled; }
 
   int requestCount() const {
     QMutexLocker locker(&mutex_);
@@ -333,6 +358,18 @@ class CannedApi : public QObject {
   }
 
   void answer(QTcpSocket* socket, const QString& target) {
+    if (popularDelayMs_ > 0 && target.startsWith(QStringLiteral("/public/v1/anime?"))
+        && target.contains(QStringLiteral("sort=views")) &&
+        !delayedPopularRequests_.contains(target)) {
+      delayedPopularRequests_.insert(target);
+      const QPointer<QTcpSocket> guardedSocket(socket);
+      QTimer::singleShot(popularDelayMs_, this, [this, guardedSocket, target] {
+        if (guardedSocket) {
+          answer(guardedSocket, target);
+        }
+      });
+      return;
+    }
     if (mode_ == Mode::Fails) {
       send(socket, 522, QStringLiteral("text/plain"), QByteArrayLiteral("error code: 522"));
       return;
@@ -437,13 +474,21 @@ class CannedApi : public QObject {
       return QJsonDocument(payload).toJson(QJsonDocument::Compact);
     }
     if (rest.endsWith(QStringLiteral("/player"))) {
+      const QString dub = longTeamFixture_
+                              ? QStringLiteral("Надзвичайно довга українська назва команди "
+                                               "озвучення з додатковим контекстом")
+                              : QStringLiteral("Test Dub");
+      const QString sub = longTeamFixture_
+                              ? QStringLiteral("Надзвичайно довга українська назва команди "
+                                               "субтитрування з додатковим контекстом")
+                              : QStringLiteral("Test Sub");
       QJsonArray releases;
       // Distinct path prefixes per release: the request path is the only
       // provider identity visible without opening a player.
-      releases.append(release(QStringLiteral("voice"), QStringLiteral("Test Dub"),
+      releases.append(release(QStringLiteral("voice"), dub,
                               releaseEmbedBase() + QStringLiteral("/voice"),
                               releaseEpisodeCount_, specialEpisodes_));
-      releases.append(release(QStringLiteral("sub"), QStringLiteral("Test Sub"),
+      releases.append(release(QStringLiteral("sub"), sub,
                               releaseEmbedBase() + QStringLiteral("/sub"),
                               releaseEpisodeCount_, specialEpisodes_));
 
@@ -461,7 +506,8 @@ class CannedApi : public QObject {
       QJsonObject payload;
       payload.insert(QStringLiteral("ok"), true);
       payload.insert(QStringLiteral("result"),
-                     detail(ref.toInt(), QStringLiteral("Canned 1"), imageUrl()));
+                     detail(ref.toInt(), QStringLiteral("Canned 1"), imageUrl(),
+                            longTitleFixture_, discoveryFixture_));
       return QJsonDocument(payload).toJson(QJsonDocument::Compact);
     }
     return {};
@@ -501,6 +547,11 @@ class CannedApi : public QObject {
   int releaseEpisodeCount_ = kEpisodes;
   bool embedMarkers_ = false;
   bool specialEpisodes_ = false;
+  int popularDelayMs_ = 0;
+  bool longTitleFixture_ = false;
+  bool longTeamFixture_ = false;
+  bool discoveryFixture_ = false;
+  QSet<QString> delayedPopularRequests_;
   mutable QMutex mutex_;
   int requests_ = 0;
   QStringList paths_;
@@ -754,18 +805,9 @@ ContextMenuActionResult activateEpisodeContextAction(QPushButton* pill, const QS
 
 /// The disclosure actions by role: the non-checkable text action and the
 /// checkable details action, whatever their current caption.
-QPushButton* disclosureAction(const QWidget& root, bool checkable) {
-  auto* actions = root.findChild<QWidget*>(QStringLiteral("titleDisclosureActions"));
-  if (actions == nullptr) {
-    return nullptr;
-  }
-  for (QPushButton* button : actions->findChildren<QPushButton*>(QStringLiteral("textAction"))) {
-    if (button->isVisible() && button->isCheckable() == checkable &&
-        (!checkable || !button->isChecked())) {
-      return button;
-    }
-  }
-  return nullptr;
+QPushButton* disclosureAction(const QWidget& root, bool details) {
+  return root.findChild<QPushButton*>(
+      details ? QStringLiteral("titleDetailsToggle") : QStringLiteral("titleSynopsisToggle"));
 }
 
 QPushButton* pagerArrow(const QWidget& pager, const QString& glyph) {
@@ -1404,6 +1446,205 @@ void TestFeedRender::theTitlePageRendersItsEpisodes() {
     QVERIFY2(push->width() >= 44, "an episode pill is narrower than a touch target");
   }
   QCOMPARE(labels.size(), kEpisodes);
+}
+
+void TestFeedRender::titlePagePrioritizesPlaybackAndAnchorsWithoutChangingSelection() {
+  clearEpisodeHistory();
+  const auto clearHistory = qScopeGuard([] { clearEpisodeHistory(); });
+  Q_UNUSED(clearHistory);
+
+  CannedApi api;
+  api.setReleaseEpisodeCount(300);
+  api.setPopularDelayMs(2500);
+  api.setDiscoveryFixture(true);
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  QualityCache cache;
+  TitlePage page(runner, client, cache, QString::number(kRef));
+  page.resize(1080, 760);
+  page.show();
+
+  auto* overview = page.findChild<QScrollArea*>(QStringLiteral("titleOverview"));
+  auto* body = page.findChild<QWidget*>(QStringLiteral("titleBody"));
+  auto* episodes = page.findChild<QWidget*>(QStringLiteral("titleEpisodes"));
+  auto* discovery = page.findChild<QWidget*>(QStringLiteral("titleDiscoverySection"));
+  auto* anchor = page.findChild<QPushButton*>(QStringLiteral("titleEpisodesAnchor"));
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY(overview != nullptr && body != nullptr && episodes != nullptr &&
+          discovery != nullptr && anchor != nullptr && tabs != nullptr);
+
+  QTRY_VERIFY_WITH_TIMEOUT(
+      page.findChildren<QWidget*>(QStringLiteral("episodeButton")).size() > 0, 30000);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      page.findChildren<QPushButton*>(QStringLiteral("titleDiscoveryToggle")).size() == 1, 10000);
+  const QRect episodesRect(episodes->mapTo(body, QPoint(0, 0)), episodes->size());
+  const QRect discoveryRect(discovery->mapTo(body, QPoint(0, 0)), discovery->size());
+  QVERIFY2(episodesRect.top() < discoveryRect.top(),
+           "playback workspace must precede discovery in the one page scroll");
+
+  auto* discoveryToggle =
+      page.findChild<QPushButton*>(QStringLiteral("titleDiscoveryToggle"));
+  QVERIFY(discoveryToggle != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(api.requestedPaths().filter(QStringLiteral("sort=views")).size() > 0,
+                           5000);
+  QTRY_VERIFY_WITH_TIMEOUT(page.findChildren<QPushButton*>(
+                               QStringLiteral("animeCard")).size() >= 2,
+                           10000);
+  QVERIFY(discoveryToggle->isVisible());
+  QTest::mouseClick(discoveryToggle, Qt::LeftButton);
+  QTRY_VERIFY_WITH_TIMEOUT(!page.findChild<QWidget*>(QStringLiteral("titleRelated"))->isVisible(),
+                           5000);
+  QScrollBar* scroll = overview->verticalScrollBar();
+  scroll->setValue(qMin(96, scroll->maximum()));
+  const int scrollBeforeArrival = scroll->value();
+  QVERIFY(scrollBeforeArrival > 0);
+  QTRY_VERIFY_WITH_TIMEOUT(page.findChildren<QPushButton*>(
+                               QStringLiteral("animeCard")).size() >= 3,
+                           10000);
+  QCOMPARE(scroll->value(), scrollBeforeArrival);
+  QVERIFY(discoveryToggle->isVisible());
+  QVERIFY(!page.findChild<QWidget*>(QStringLiteral("titleRelated"))->isVisible());
+
+  const QList<QPushButton*> releases =
+      page.findChildren<QPushButton*>(QStringLiteral("releaseChip"));
+  QCOMPARE(releases.size(), 2);
+  QTest::mouseClick(releases.at(1), Qt::LeftButton);
+  QTRY_VERIFY_WITH_TIMEOUT(releases.at(1)->isChecked(), 5000);
+  QTRY_VERIFY_WITH_TIMEOUT(tabs->currentWidget() != nullptr, 5000);
+  auto* pager = tabs->currentWidget()->findChild<RangePager*>();
+  QVERIFY(pager != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(pager->pages() > 1, 5000);
+  const int releaseIndex = 1;
+  QString historyCurrent;
+  const int selectedProviderIndex = tabs->currentIndex();
+  QWidget* selectedProvider = tabs->currentWidget();
+  {
+    WatchHistory history;
+    historyCurrent = history.current(QString::number(kRef));
+  }
+  QPushButton* nextPage = pagerArrow(*pager, QStringLiteral("→"));
+  QVERIFY(nextPage != nullptr);
+  QTest::mouseClick(nextPage, Qt::LeftButton);
+  QTRY_COMPARE_WITH_TIMEOUT(pager->page(), 2, 5000);
+  QTest::mouseClick(anchor, Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QTRY_VERIFY_WITH_TIMEOUT(
+      qobject_cast<QPushButton*>(QApplication::focusWidget()) != nullptr &&
+          QApplication::focusWidget()->objectName() == QLatin1String("episodeButton"),
+      5000);
+  auto* focusedPill = qobject_cast<QPushButton*>(QApplication::focusWidget());
+  QVERIFY(tabs->isAncestorOf(focusedPill));
+  QVERIFY(overview->viewport()->rect().intersects(
+      QRect(focusedPill->mapTo(overview->viewport(), QPoint(0, 0)), focusedPill->size())));
+  QCOMPARE(releases.at(releaseIndex)->isChecked(), true);
+  QCOMPARE(tabs->currentIndex(), selectedProviderIndex);
+  QCOMPARE(tabs->currentWidget(), selectedProvider);
+  QCOMPARE(pager->page(), 2);
+  WatchHistory history;
+  QCOMPARE(history.current(QString::number(kRef)), historyCurrent);
+}
+
+void TestFeedRender::titlePageKeepsLongControlsReachableAtDesktopMinimum() {
+  CannedApi api;
+  api.setLongTitleFixture(true);
+  api.setLongTeamFixture(true);
+  api.setReleaseEpisodeCount(300);
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  QualityCache cache;
+  TitlePage page(runner, client, cache, QString::number(kRef));
+  page.setAttribute(Qt::WA_DontShowOnScreen, true);
+  page.resize(860, 620);
+  page.show();
+
+  auto* overview = page.findChild<QScrollArea*>(QStringLiteral("titleOverview"));
+  auto* heading = page.findChild<QLabel*>(QStringLiteral("titleHeading"));
+  auto* heroWatch = page.findChild<QPushButton*>(QStringLiteral("titleHeroWatchButton"));
+  auto* watch = page.findChild<QPushButton*>(QStringLiteral("titleWatchButton"));
+  auto* watched = page.findChild<QPushButton*>(QStringLiteral("titleWatchWatchedToggle"));
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY(overview != nullptr && heading != nullptr && heroWatch != nullptr && watch != nullptr &&
+          watched != nullptr && tabs != nullptr);
+
+  QTRY_VERIFY_WITH_TIMEOUT(heroWatch->isEnabled(), 30000);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      page.findChildren<QWidget*>(QStringLiteral("episodeButton")).size() > 0, 30000);
+  QVERIFY(heading->text().size() > 24);
+  const QList<QPushButton*> releases =
+      page.findChildren<QPushButton*>(QStringLiteral("releaseChip"));
+  QCOMPARE(releases.size(), 2);
+  for (int width : {860, 1080}) {
+    page.resize(width, width == 860 ? 620 : 760);
+    QCoreApplication::processEvents();
+    QCOMPARE(page.width(), width);
+    QVERIFY(heroWatch->isEnabled());
+    if (width == 860) {
+      const QRect initialHeroWatch(heroWatch->mapTo(overview->viewport(), QPoint(0, 0)),
+                                   heroWatch->size());
+      QVERIFY(overview->viewport()->rect().contains(initialHeroWatch));
+    }
+    overview->ensureWidgetVisible(heroWatch, 0, 0);
+    QCoreApplication::processEvents();
+    QVERIFY(overview->viewport()->rect().intersects(
+        QRect(heroWatch->mapTo(overview->viewport(), QPoint(0, 0)), heroWatch->size())));
+    QVERIFY(releases.at(0)->isVisible());
+    QVERIFY(releases.at(0)->accessibleName().size() > 0);
+    QTest::mouseClick(releases.at(1), Qt::LeftButton);
+    QTRY_VERIFY_WITH_TIMEOUT(releases.at(1)->isChecked(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(tabs->currentWidget() != nullptr, 5000);
+    const QList<QPushButton*> pills =
+        tabs->currentWidget()->findChildren<QPushButton*>(QStringLiteral("episodeButton"));
+    QVERIFY(!pills.isEmpty());
+    QVERIFY(pills.first()->isEnabled());
+    overview->ensureWidgetVisible(pills.first(), 0, 0);
+    QCoreApplication::processEvents();
+    QVERIFY(overview->viewport()->rect().intersects(
+        QRect(pills.first()->mapTo(overview->viewport(), QPoint(0, 0)),
+              pills.first()->size())));
+    QVERIFY(watch->isEnabled());
+    QVERIFY(watched->isEnabled());
+    const QString fullTeamName =
+        QStringLiteral("Надзвичайно довга українська назва команди озвучення з додатковим контекстом");
+    QVERIFY(releases.at(0)->text().contains(fullTeamName) ||
+            releases.at(0)->toolTip().contains(fullTeamName) ||
+            releases.at(0)->accessibleName().contains(fullTeamName));
+    QTest::mouseClick(watched, Qt::LeftButton);
+    QVERIFY(watched->isChecked());
+    QTest::keyClick(pills.first(), Qt::Key_Tab);
+    QVERIFY(QApplication::focusWidget() != nullptr);
+    if (tabs->count() > 1) {
+      tabs->setCurrentIndex((tabs->currentIndex() + 1) % tabs->count());
+      QTRY_VERIFY_WITH_TIMEOUT(tabs->currentWidget() != nullptr, 5000);
+      QVERIFY(!tabs->currentWidget()
+                   ->findChildren<QPushButton*>(QStringLiteral("episodeButton")).isEmpty());
+    }
+    const QRect bodyRect(page.findChild<QWidget*>(QStringLiteral("titleBody"))
+                             ->mapTo(&page, QPoint(0, 0)),
+                         page.findChild<QWidget*>(QStringLiteral("titleBody"))->size());
+    QVERIFY(page.rect().contains(bodyRect));
+  }
+
+  auto* description = page.findChild<QLabel*>(QStringLiteral("titleDescription"));
+  auto* synopsisToggle =
+      page.findChild<QPushButton*>(QStringLiteral("titleSynopsisToggle"));
+  auto* detailsToggle =
+      page.findChild<QPushButton*>(QStringLiteral("titleDetailsToggle"));
+  auto* overlay = page.findChild<QWidget*>(QStringLiteral("titleDetailsOverlay"));
+  QVERIFY(description != nullptr && synopsisToggle != nullptr && detailsToggle != nullptr &&
+          overlay != nullptr);
+  overview->ensureWidgetVisible(synopsisToggle, 0, 0);
+  QTest::mouseClick(synopsisToggle, Qt::LeftButton);
+  QCOMPARE(description->text(), cannedDescription());
+  QTest::mouseClick(detailsToggle, Qt::LeftButton);
+  QTRY_VERIFY_WITH_TIMEOUT(overlay->isVisible(), 5000);
+  QTest::keyClick(&page, Qt::Key_Escape);
+  QTRY_VERIFY_WITH_TIMEOUT(!overlay->isVisible(), 5000);
 }
 
 void TestFeedRender::loadedResultsRetranslateWithoutRefetchingOrLosingViewState() {
@@ -2348,6 +2589,19 @@ void TestFeedRender::theTitlePageWatchActionFollowsTheSelectedRelease() {
            "the title page exposes no Watch panel or action");
   QTRY_VERIFY_WITH_TIMEOUT(watchPanel->isVisible(), 5000);
   QTRY_VERIFY_WITH_TIMEOUT(watch->isVisible() && watch->isEnabled(), 5000);
+
+  auto* heroContext =
+      page.findChild<QLabel*>(QStringLiteral("titleHeroWatchContext"));
+  auto* selectedEpisode =
+      page.findChild<QLabel*>(QStringLiteral("titleWatchEpisode"));
+  auto* availability =
+      page.findChild<QLabel*>(QStringLiteral("episodeAvailabilityLabel"));
+  QVERIFY(heroContext != nullptr && selectedEpisode != nullptr && availability != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(heroContext->isVisible() && !heroContext->text().isEmpty(), 5000);
+  QVERIFY(heroContext->text().contains(selectedEpisode->text()));
+  QVERIFY(heroContext->text().contains(tabs->tabText(tabs->currentIndex())));
+  QVERIFY(availability->isVisible());
+  QVERIFY(!availability->text().isEmpty());
 
   // Drain each release's one-off quality probes, so the requests observed below
   // belong to Watch alone.

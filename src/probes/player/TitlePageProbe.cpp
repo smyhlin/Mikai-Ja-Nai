@@ -14,6 +14,12 @@
 #include <QTest>
 #include <QMouseEvent>
 #include <QDir>
+#include <QFileInfo>
+#include <QElapsedTimer>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QMessageBox>
 #include <QProcess>
@@ -46,7 +52,9 @@
 #include "player/shell/PlayerShell.hpp"
 #include "ProbeRuntime.hpp"
 #include "VideoSurface.hpp"
+#include "state/AppearanceStore.hpp"
 #include "state/QualityCache.hpp"
+#include "support/I18n.hpp"
 #include "theme/Metrics.hpp"
 #include "theme/Theme.hpp"
 #include "workers/Runner.hpp"
@@ -594,6 +602,247 @@ bool titleBrowserRefusal(TitlePage* page) {
     return triggered && feedback && alert.observed() && captured;
 }
 
+int runScreenshotReview(QApplication& app, TitlePage* page, const QString& ref,
+                        const QString& outputDirectory) {
+    struct ReviewCase {
+        const char* name;
+        QSize size;
+        const char* language;
+        mikai::app::theme::SiteTheme theme;
+    };
+    const ReviewCase cases[] = {
+        {"minimum-uk-dark", QSize(860, 620), "uk", mikai::app::theme::SiteTheme::Dark},
+        {"wide-en-dark", QSize(1080, 760), "en", mikai::app::theme::SiteTheme::Dark},
+        {"large-uk-dark", QSize(1400, 900), "uk", mikai::app::theme::SiteTheme::Dark},
+        {"large-en-light", QSize(1400, 900), "en", mikai::app::theme::SiteTheme::Light},
+    };
+    const QString platform = QGuiApplication::platformName();
+    const QString scale = qEnvironmentVariable("QT_SCALE_FACTOR", QStringLiteral("1"));
+    const QString prefix = QStringLiteral("%1-scale-%2").arg(platform, scale);
+    QJsonObject result;
+    result.insert(QStringLiteral("platform"), platform);
+    result.insert(QStringLiteral("scale"), scale);
+    result.insert(QStringLiteral("devicePixelRatio"), page->devicePixelRatioF());
+    result.insert(QStringLiteral("ref"), ref);
+    QJsonArray screenshots;
+    QJsonObject interactions;
+    auto saveView = [&](const ReviewCase& reviewCase, const QString& view,
+                        QWidget* focusTarget = nullptr) {
+        if (focusTarget != nullptr) focusTarget->setFocus(Qt::OtherFocusReason);
+        QCoreApplication::processEvents();
+        QTest::qWait(120);
+        const QString fileName = QStringLiteral("%1-%2-%3.png")
+                                     .arg(prefix, QString::fromLatin1(reviewCase.name), view);
+        const QString path = QDir(outputDirectory).filePath(fileName);
+        if (!page->grab().save(path)) {
+            std::fprintf(stderr, "TITLE-REVIEW: failed to save %s\n", qPrintable(path));
+            return false;
+        }
+        screenshots.append(path);
+        return true;
+    };
+    auto settle = [] {
+        QTest::qWait(300);
+        QCoreApplication::processEvents();
+    };
+    bool synopsisExpanded = false;
+
+    auto* heading = page->findChild<QLabel*>(QStringLiteral("titleHeading"));
+    auto* tabs = page->findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+    auto* overview = page->findChild<QScrollArea*>(QStringLiteral("titleOverview"));
+    auto* discovery = page->findChild<QWidget*>(QStringLiteral("titleDiscoverySection"));
+    auto* related = page->findChild<QWidget*>(QStringLiteral("titleRelated"));
+    auto* discoveryToggle =
+        page->findChild<QPushButton*>(QStringLiteral("titleDiscoveryToggle"));
+    if (heading == nullptr || tabs == nullptr || overview == nullptr || discovery == nullptr) {
+        std::fprintf(stderr, "TITLE-REVIEW: page is missing heading, tabs, scroll or discovery\n");
+        return 1;
+    }
+
+    for (const ReviewCase& reviewCase : cases) {
+        if (!mikai::app::applyInterfaceLanguage(QString::fromLatin1(reviewCase.language))) {
+            std::fprintf(stderr, "TITLE-REVIEW: unable to install %s interface language\n",
+                         reviewCase.language);
+            return 1;
+        }
+        auto appearance = mikai::app::currentAppearance();
+        appearance.siteTheme = reviewCase.theme;
+        appearance.accent = QStringLiteral("#6797e4");
+        appearance.radiusStep = 1;
+        appearance.backgroundGradient = true;
+        appearance.gradientIntensity = 30;
+        mikai::app::setCurrentAppearance(appearance);
+        mikai::app::theme::applyPalette(appearance);
+        app.setStyleSheet(mikai::app::theme::buildStylesheet(appearance));
+        page->resize(reviewCase.size);
+        page->show();
+        settle();
+
+        QElapsedTimer loadTimer;
+        loadTimer.start();
+        while (loadTimer.elapsed() < 30000) {
+            QCoreApplication::processEvents();
+            const bool hasPills =
+                !page->findChildren<QPushButton*>(QStringLiteral("episodeButton")).isEmpty();
+            const bool hasTabs = tabs->count() > 0 && tabs->currentWidget() != nullptr;
+            if (!heading->text().isEmpty() && hasTabs && hasPills) break;
+            QTest::qWait(50);
+        }
+        const bool loaded = !heading->text().isEmpty() && tabs->count() > 0 &&
+                            tabs->currentWidget() != nullptr &&
+                            !page->findChildren<QPushButton*>(
+                                 QStringLiteral("episodeButton")).isEmpty();
+        if (!loaded) {
+            auto* status = page->findChild<QLabel*>(QStringLiteral("titleEpisodeStatus"));
+            std::fprintf(stderr,
+                         "TITLE-REVIEW: live load failed for %s; heading=%s status=%s tabs=%d\n",
+                         qPrintable(ref), qPrintable(heading->text()),
+                         status == nullptr ? "<missing>" : qPrintable(status->text()), tabs->count());
+            result.insert(QStringLiteral("diagnostic"),
+                          status == nullptr ? QStringLiteral("No episode status available")
+                                            : status->text());
+            return 1;
+        }
+        settle();
+        if (!synopsisExpanded) {
+            auto* synopsisToggle =
+                page->findChild<QPushButton*>(QStringLiteral("titleSynopsisToggle"));
+            if (synopsisToggle != nullptr && synopsisToggle->isVisible()) {
+                synopsisToggle->click();
+                settle();
+                synopsisExpanded = true;
+            }
+        }
+        result.insert(QStringLiteral("viewport_%1").arg(QString::fromLatin1(reviewCase.name)),
+                      QStringLiteral("%1x%2").arg(reviewCase.size.width()).arg(reviewCase.size.height()));
+        result.insert(QStringLiteral("language_%1").arg(QString::fromLatin1(reviewCase.name)),
+                      QString::fromLatin1(reviewCase.language));
+        result.insert(QStringLiteral("theme_%1").arg(QString::fromLatin1(reviewCase.name)),
+                      reviewCase.theme == mikai::app::theme::SiteTheme::Dark
+                          ? QStringLiteral("dark") : QStringLiteral("light"));
+
+        QWidget* hero = page->findChild<QWidget*>(QStringLiteral("titleHero"));
+        if (hero != nullptr) overview->ensureWidgetVisible(hero, 0, 0);
+        if (!saveView(reviewCase, QStringLiteral("hero"))) return 1;
+
+        // Exercise live accent, gradient and corner updates without rebuilding
+        // the page or refetching its title data; restore the case appearance.
+        const auto baseAppearance = mikai::app::currentAppearance();
+        QJsonArray appearanceChanges;
+        for (const QString& accent : {QStringLiteral("#a78bfa"), QStringLiteral("#f5c542")}) {
+            auto changed = baseAppearance;
+            changed.accent = accent;
+            mikai::app::setCurrentAppearance(changed);
+            mikai::app::theme::applyPalette(changed);
+            app.setStyleSheet(mikai::app::theme::buildStylesheet(changed));
+            settle();
+            appearanceChanges.append(accent);
+        }
+        auto changed = baseAppearance;
+        changed.backgroundGradient = false;
+        mikai::app::setCurrentAppearance(changed);
+        mikai::app::theme::applyPalette(changed);
+        app.setStyleSheet(mikai::app::theme::buildStylesheet(changed));
+        settle();
+        appearanceChanges.append(QStringLiteral("gradient-off"));
+        changed.backgroundGradient = true;
+        changed.gradientIntensity = 0;
+        mikai::app::setCurrentAppearance(changed);
+        mikai::app::theme::applyPalette(changed);
+        app.setStyleSheet(mikai::app::theme::buildStylesheet(changed));
+        settle();
+        appearanceChanges.append(QStringLiteral("gradient-zero"));
+        changed = baseAppearance;
+        changed.radiusStep = 0;
+        changed.coverGradient = false;
+        mikai::app::setCurrentAppearance(changed);
+        mikai::app::theme::applyPalette(changed);
+        app.setStyleSheet(mikai::app::theme::buildStylesheet(changed));
+        settle();
+        changed.radiusStep = mikai::app::theme::radiusStepCount() - 1;
+        changed.coverGradient = true;
+        mikai::app::setCurrentAppearance(changed);
+        mikai::app::theme::applyPalette(changed);
+        app.setStyleSheet(mikai::app::theme::buildStylesheet(changed));
+        settle();
+        mikai::app::setCurrentAppearance(baseAppearance);
+        mikai::app::theme::applyPalette(baseAppearance);
+        app.setStyleSheet(mikai::app::theme::buildStylesheet(baseAppearance));
+        interactions.insert(QString::fromLatin1(reviewCase.name) + QStringLiteral("-appearance"),
+                            appearanceChanges);
+
+        auto* episodeHeading = page->findChild<QLabel*>(
+            QStringLiteral("episodeSectionHeading"));
+        auto* detailsToggle =
+            page->findChild<QPushButton*>(QStringLiteral("titleDetailsToggle"));
+        if (episodeHeading != nullptr) overview->ensureWidgetVisible(episodeHeading, 0, 0);
+        if (!saveView(reviewCase, QStringLiteral("episodes"))) return 1;
+        overview->ensureWidgetVisible(discovery, 0, 0);
+        if (!saveView(reviewCase, QStringLiteral("discovery"))) return 1;
+
+        bool disclosurePassed = discoveryToggle == nullptr || related == nullptr;
+        if (discoveryToggle != nullptr && related != nullptr) {
+            discoveryToggle->click();
+            settle();
+            const bool collapsed = !related->isVisible() && discoveryToggle->isVisible();
+            discoveryToggle->click();
+            settle();
+            disclosurePassed = collapsed && related->isVisible();
+        }
+        bool detailsPassed = detailsToggle != nullptr;
+        if (detailsToggle != nullptr) {
+            detailsToggle->click();
+            settle();
+            auto* overlay = page->findChild<QWidget*>(QStringLiteral("titleDetailsOverlay"));
+            detailsPassed = overlay != nullptr && overlay->isVisible();
+            if (detailsPassed && !saveView(reviewCase, QStringLiteral("details-open"))) return 1;
+            auto* close = page->findChild<QPushButton*>(QStringLiteral("titleDetailsClose"));
+            if (close != nullptr) close->click();
+            settle();
+            detailsPassed = detailsPassed && overlay != nullptr && !overlay->isVisible();
+            detailsToggle->click();
+            settle();
+            QTest::keyClick(page, Qt::Key_Escape);
+            settle();
+            detailsPassed = detailsPassed && !overlay->isVisible();
+            detailsToggle->click();
+            settle();
+            auto* scrim = page->findChild<QPushButton*>(QStringLiteral("titleDetailsScrim"));
+            if (scrim != nullptr) scrim->click();
+            settle();
+            detailsPassed = detailsPassed && !overlay->isVisible();
+        }
+        auto* anchor = page->findChild<QPushButton*>(QStringLiteral("titleEpisodesAnchor"));
+        if (anchor != nullptr) anchor->click();
+        settle();
+        auto* focused = QApplication::focusWidget();
+        const bool focusPassed = focused != nullptr &&
+                                 focused->objectName() == QLatin1String("episodeButton");
+        if (!saveView(reviewCase, QStringLiteral("keyboard-focus"), focused)) return 1;
+        interactions.insert(QString::fromLatin1(reviewCase.name) + QStringLiteral("-discovery-toggle"),
+                            disclosurePassed);
+        interactions.insert(QString::fromLatin1(reviewCase.name) + QStringLiteral("-details"),
+                            detailsPassed);
+        interactions.insert(QString::fromLatin1(reviewCase.name) + QStringLiteral("-keyboard-focus"),
+                            focusPassed);
+    }
+
+    result.insert(QStringLiteral("screenshots"), screenshots);
+    result.insert(QStringLiteral("interactions"), interactions);
+    const QString resultPath = QDir(outputDirectory).filePath(
+        QStringLiteral("%1-%2-result.json").arg(prefix, ref));
+    QFile file(resultPath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        std::fprintf(stderr, "TITLE-REVIEW: cannot write result JSON %s\n", qPrintable(resultPath));
+        return 1;
+    }
+    file.write(QJsonDocument(result).toJson(QJsonDocument::Indented));
+    file.close();
+    std::fprintf(stderr, "TITLE-REVIEW: saved %d screenshots and %s\n",
+                 static_cast<int>(screenshots.size()), qPrintable(resultPath));
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -610,21 +859,39 @@ int main(int argc, char** argv) {
         app.arguments().contains(QStringLiteral("--browser-refusal-only"));
     const bool hostCopyFailureOnly =
         app.arguments().contains(QStringLiteral("--host-copy-refusal-only"));
+    QString reviewOutput;
+    QString reviewRef;
+    bool reviewMode = false;
+    for (int i = 1; i < app.arguments().size(); ++i) {
+        if (app.arguments().at(i) == QLatin1String("--review-screenshots")) {
+            if (reviewMode || i + 1 >= app.arguments().size()) {
+                std::fprintf(stderr,
+                             "TITLE-REVIEW: --review-screenshots requires an absolute output directory\n");
+                return 2;
+            }
+            reviewMode = true;
+            reviewOutput = app.arguments().at(++i);
+        } else if (reviewMode && !app.arguments().at(i).startsWith(QLatin1Char('-')) &&
+                   reviewRef.isEmpty()) {
+            reviewRef = app.arguments().at(i);
+        }
+    }
     for (const QString& argument : app.arguments().mid(1)) {
         if (argument.startsWith(QLatin1Char('-')) &&
             argument != QLatin1String("--layout-only") &&
             argument != QLatin1String("--dispose-early") &&
             argument != QLatin1String("--browser-refusal-only") &&
-            argument != QLatin1String("--host-copy-refusal-only")) {
+            argument != QLatin1String("--host-copy-refusal-only") &&
+            argument != QLatin1String("--review-screenshots")) {
             std::fprintf(stderr, "TITLE-PROBE: unknown option %s\n", qPrintable(argument));
             return 2;
         }
     }
     if (int(layoutOnly) + int(disposeEarly) + int(browserFailureOnly) +
-        int(hostCopyFailureOnly) > 1) {
+        int(hostCopyFailureOnly) + int(reviewMode) > 1) {
         std::fprintf(stderr,
-                     "TITLE-PROBE: choose one of --layout-only, --dispose-early, "
-                     "--browser-refusal-only (offscreen), or --host-copy-refusal-only (windows)\n");
+                     "TITLE-PROBE: choose one probe mode; --review-screenshots takes an "
+                     "absolute output directory and optional title ref\n");
         return 2;
     }
     if (browserFailureOnly &&
@@ -643,6 +910,18 @@ int main(int argc, char** argv) {
         }
 #endif
     }
+    if (reviewMode) {
+        if (!QFileInfo(reviewOutput).isAbsolute()) {
+            std::fprintf(stderr, "TITLE-REVIEW: output directory must be absolute: %s\n",
+                         qPrintable(reviewOutput));
+            return 2;
+        }
+        if (!QDir().mkpath(reviewOutput)) {
+            std::fprintf(stderr, "TITLE-REVIEW: cannot create output directory: %s\n",
+                         qPrintable(reviewOutput));
+            return 2;
+        }
+    }
     QTemporaryDir settingsDir;
     if (!settingsDir.isValid()) return 2;
     QCoreApplication::setOrganizationName(QStringLiteral("MikaiProbe"));
@@ -651,15 +930,18 @@ int main(int argc, char** argv) {
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
     QSettings().setValue(QStringLiteral("player/anime4k"), QStringLiteral("off"));
-    if (!layoutOnly && !disposeEarly && !browserFailureOnly &&
+    if (!layoutOnly && !disposeEarly && !browserFailureOnly && !reviewMode &&
         !mplayer::probes::selectRuntime()) {
         return 2;
     }
-    QString ref = QStringLiteral("7428");
-    for (const QString& argument : app.arguments().mid(1)) {
-        if (!argument.startsWith(QLatin1Char('-'))) {
-            ref = argument;
-            break;
+
+    QString ref = reviewRef.isEmpty() ? QStringLiteral("7428") : reviewRef;
+    if (!reviewMode) {
+        for (const QString& argument : app.arguments().mid(1)) {
+            if (!argument.startsWith(QLatin1Char('-'))) {
+                ref = argument;
+                break;
+            }
         }
     }
 
@@ -698,6 +980,11 @@ int main(int argc, char** argv) {
         const bool passed = hostCopyRefusalProbe(page);
         delete page;
         return passed ? 0 : 1;
+    }
+    if (reviewMode) {
+        const int result = runScreenshotReview(app, page, ref, reviewOutput);
+        delete page;
+        return result;
     }
 
     // Stage 1: what did the tabs actually receive?
