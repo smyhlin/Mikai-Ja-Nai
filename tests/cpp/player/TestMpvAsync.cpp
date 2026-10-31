@@ -536,22 +536,30 @@ void TestMpvAsync::anAsyncPropertyReplyCarriesItsOwnValue() {
 
 void TestMpvAsync::eventBacklogYieldsToTheGui() {
     if (!requireRuntime()) return;
-    auto handle = makeHandle();
     int completed = 0;
     int submitted = 0;
+    int completedAtGuiTurn = -1;
+    bool timerRan = false;
+    auto handle = makeHandle();
     for (int index = 0; index < 512; ++index) {
         const auto request = handle.getPropertyAsync("mpv-version", MPV_FORMAT_STRING,
-                    [&completed](const AsyncReply&) {
+                    [&completed, &timerRan](const AsyncReply&) {
                         ++completed;
-                        QThread::msleep(5);
+                        // Only the first GUI yield needs artificial work, not every OS-rounded wait.
+                        if (!timerRan) QThread::msleep(5);
                     });
         if (!request.valid()) break;
         ++submitted;
     }
     QVERIFY(submitted >= 64);
     QTest::qWait(100);
-    bool timerRan = false;
-    QTimer::singleShot(0, this, [&] { timerRan = true; });
+    QTimer guiTurn;
+    guiTurn.setSingleShot(true);
+    connect(&guiTurn, &QTimer::timeout, &guiTurn, [&] {
+        completedAtGuiTurn = completed;
+        timerRan = true;
+    });
+    guiTurn.start(0);
     QElapsedTimer clock;
     clock.start();
     handle.drainEvents();
@@ -559,7 +567,11 @@ void TestMpvAsync::eventBacklogYieldsToTheGui() {
     QVERIFY(timerRan);
     QVERIFY2(clock.elapsed() < 250,
              qPrintable(QStringLiteral("one event drain blocked the GUI for %1 ms").arg(clock.elapsed())));
-    QVERIFY(pumpUntil(handle, [&] { return completed == submitted; }, 10000));
+    QVERIFY2(completedAtGuiTurn > 0 && completedAtGuiTurn < submitted,
+             "The GUI must run after replies start but before the backlog is exhausted");
+    QVERIFY2(pumpUntil(handle, [&] { return completed == submitted; }, 10000),
+             qPrintable(QStringLiteral("Only %1 of %2 accepted requests completed")
+                            .arg(completed).arg(submitted)));
 }
 
 void TestMpvAsync::nestedEventDrainsPreserveTheCurrentReply() {
