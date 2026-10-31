@@ -74,7 +74,8 @@ Expected outputs are:
 - `mikai-0.1.0-windows-x64-release.json`
 
 - The installer is unsigned and per-user. It does not force associations or enable startup automatically.
-- Upgrades preserve settings, logs, acquired models and user data; uninstall removes only integrations owned by the installation and does not erase acquired models by default.
+- Setup reads the registered version before installing: a matching version is offered as **Repair**, an older one as **Upgrade**, and a newer one is refused rather than silently replaced.
+- Upgrades and repairs preserve settings, logs, acquired models and user data; uninstall removes only integrations owned by the installation and does not erase acquired models by default.
 - The portable application requires its deployed Qt/image-format/TLS/MinGW/mpv runtime files and a system Vulkan loader supplied with graphics drivers.
 - Optional AI components are not part of the base portable package.
 

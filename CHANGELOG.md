@@ -2,6 +2,10 @@
 
 ## 0.1.0 — Unreleased
 
+- The player's centered play/pause indicator becomes a loading indicator while the Compare window opens. Compare is constructed only after that frame is composed, so a repeated request or a close during startup cannot reopen it.
+- Windows Setup now detects the registered version: the same version is offered as **Repair**, an older one as **Upgrade**, and a newer one is refused instead of replacing it. Settings, logs and acquired models still survive both paths.
+- TensorRT engine-build progress stays above competing windows on Windows and X11 without taking keyboard focus. The overlay stops reasserting its position when hidden; Wayland stacking remains under compositor control.
+
 - Successful bundle CLI contract checks remove their temporary copied runtimes instead of accumulating them in the build directory.
 
 ### Application icon and gallery captures (2026-10-30)

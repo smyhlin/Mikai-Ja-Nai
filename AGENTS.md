@@ -50,6 +50,8 @@ Strict architectural layering is enforced by `TestLayering` (`tests/cpp/app/Test
 
 ## 2. Cross-Platform Portability Rules (Windows MinGW64 + Linux GCC/Clang)
 
+All user-facing features and fixes must provide equivalent behavior on **Windows and Linux**. Implement and verify both platform paths; do not silently ship a feature on only one platform. If an operating-system protocol, hardware, or unavailable dependency prevents exact parity, state the specific limitation and verification gap rather than claiming equivalence.
+
 All application, player, native-support, and test targets must compile cleanly on both **Windows (MinGW-w64)** and **Linux (GCC/Clang)** with `-Wall -Wextra` and `QT_DISABLE_DEPRECATED_UP_TO=0x060C00`:
 
 - **Header Case Sensitivity:** Always use lowercase `#include <windows.h>` (never `#include <Windows.h>`), guarded by `#ifdef _WIN32` or `#ifdef Q_OS_WIN`.
@@ -70,6 +72,7 @@ All application, player, native-support, and test targets must compile cleanly o
 - **Honor `WorkCancellationScope`:** Blocking network helpers (`MikaiClient`, `Streams::runBlocking`, `Downloads::fetchUrlBytes`, `Downloads::downloadToFile`) poll `WorkCancellationScope::cancellationRequested()` every 200 ms so `Runner::cancel()` and `Runner::shutdownAll()` unwind immediately.
 - **Video Surface Painting (`src/player/core/VideoSurface.cpp`):** Must use `setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);`. `paintGL()` unconditionally invokes `render_->render(...)` to populate the backing FBO on every pass, eliminating black-frame strobing during UI repaints or focus changes. The auto-hide timer is armed on pause as well as playback.
 - **Window Raise Policy & Menu Tracking (`src/app/support/WindowRaisePolicy.cpp`):** `WindowRaisePolicy::isExempt()` must exempt `Qt::Popup` and `Qt::ToolTip`. Win32 foreground activation must never be requested on popup menus, which would drop Windows mouse capture (`ReleaseCapture()`) and freeze menu interaction.
+- **Engine Build Overlay (`src/player/shell/PlayerPopups.cpp`):** Keep the visible processing window above competing windows on Windows and X11 without activating it; stop stacking enforcement while hidden. Wayland compositors control stacking and cannot guarantee the same ordering.
 - **Submenu Action Forwarding & Dismissal (`src/player/shell/PlayerPopups.cpp`, `src/player/compare/CompareWindow.cpp`):** `forwardChoiceLeaf` forwards nested `QAction::triggered` directly to the root menu, while receivers guard re-entrancy with `if (id.isEmpty() || id == current_) return;`. `dismissCandidateMenus()` closes all `QMenu` instances across the window tree and active popups.
 
 ---

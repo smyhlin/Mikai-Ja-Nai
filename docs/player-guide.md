@@ -74,7 +74,7 @@ For a local file, open the picture context menu and choose **Media information**
 
 ## Compare two processing results
 
-With a video active, choose **Compare quality** from the player’s picture context menu. Compare captures the current playback frame and lets you render/select two candidates against that same frame. It holds playback paused while the comparison is open, then resumes it on close only if it was playing beforehand. Use each side’s selector to choose candidates; comparison is for inspecting outputs at a captured position, not a live second playback.
+With a video active, choose **Compare quality** from the player’s picture context menu. A loading indicator appears at the center of the player while Compare opens. Compare captures the current playback frame and lets you render/select two candidates against that same frame. It holds playback paused while the comparison is open, then resumes it on close only if it was playing beforehand. Use each side’s selector to choose candidates; comparison is for inspecting outputs at a captured position, not a live second playback.
 
 Choose a view in the mode menu:
 
