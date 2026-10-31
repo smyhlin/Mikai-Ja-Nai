@@ -20,5 +20,8 @@ struct ComponentBinDirs {
 ComponentBinDirs componentBinDirs(const QString& bundleRoot, const QString& trtDirName,
                                   const QString& cudaDirName, const QStringList& declaredTrtFiles,
                                   const GpuComputeCapability& gpu, const ComponentStore& store);
+bool componentBinDirsAvailable(const ComponentBinDirs& dirs);
+bool gpuResourceInstalledForThisDevice(const ComponentPack* pack, const StoredPack& stored,
+                                       bool componentDirsAvailable);
 
 }  // namespace mplayer::native

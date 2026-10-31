@@ -952,6 +952,50 @@ void TestNativeComponents::rifeGraphRecordRequiresTheExactInventory() {
     QVERIFY(!stored.installed);
 }
 
+void TestNativeComponents::gpuResourceStatusRequiresACompatiblePack() {
+    const StoredPack missing;
+    const ComponentPack* pack = packNamed(QStringLiteral("trt-sm120"));
+    QVERIFY(pack != nullptr);
+    QVERIFY(!gpuResourceInstalledForThisDevice(nullptr, missing, true));
+    QVERIFY(!gpuResourceInstalledForThisDevice(pack, missing, false));
+
+    StoredPack installed;
+    installed.installed = true;
+    QVERIFY(gpuResourceInstalledForThisDevice(pack, installed, false));
+    QVERIFY(gpuResourceInstalledForThisDevice(pack, missing, true));
+}
+
+void TestNativeComponents::componentDirectoryAvailabilityTracksMissingAndInstalledResources() {
+    const ComponentBinDirs noBundle;
+    QVERIFY(!componentBinDirsAvailable(noBundle));
+
+    QTemporaryDir bundle;
+    QVERIFY(bundle.isValid());
+    QTemporaryDir store;
+    QVERIFY(store.isValid());
+    GpuComputeCapability gpu;
+    gpu.nvidia = true;
+    gpu.smMajor = 12;
+    gpu.smMinor = 0;
+    const ComponentPack* resource = packNamed(QStringLiteral("trt-sm120"));
+    QVERIFY(resource != nullptr);
+
+    const ComponentBinDirs missing =
+        componentBinDirs(bundle.path(), QStringLiteral("trt"), QStringLiteral("cuda"),
+                         {QStringLiteral("trt/nvinfer_11.dll")}, gpu,
+                         ComponentStore{store.path()});
+    QVERIFY(!componentBinDirsAvailable(missing));
+
+    const ComponentPack* runtime = tensorRtRuntimePack();
+    QVERIFY(runtime != nullptr);
+    const ComponentStore target{store.path()};
+    QVERIFY(populateStore(target, {*runtime, *resource}));
+    const ComponentBinDirs installed =
+        componentBinDirs(bundle.path(), QStringLiteral("trt"), QStringLiteral("cuda"),
+                         {QStringLiteral("trt/nvinfer_11.dll")}, gpu, target);
+    QVERIFY(componentBinDirsAvailable(installed));
+}
+
 void TestNativeComponents::toolchainKeepsTheBundleDirsWithoutAnNvidiaDevice() {
     QTemporaryDir bundle;
     QVERIFY(bundle.isValid());

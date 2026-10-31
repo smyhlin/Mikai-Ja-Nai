@@ -66,4 +66,6 @@ class TestNativeComponents : public QObject {
   void toolchainUsesTheStoreWhenTheBundleCarriesNoResourceForThisGpu();
   void toolchainRefusesWhenNeitherSourceHasTheResource();
   void toolchainKeepsTheBundleDirsWithoutAnNvidiaDevice();
+  void componentDirectoryAvailabilityTracksMissingAndInstalledResources();
+  void gpuResourceStatusRequiresACompatiblePack();
 };

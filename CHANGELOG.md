@@ -1,6 +1,8 @@
 # Changelog
 
 ## 0.1.0 — Unreleased
+- The Components page no longer labels the TensorRT runtime or GPU kernels installed when no Native runtime bundle is discoverable, or GPU kernels installed when no compatible resource pack is selected; empty directory-resolution results and unsupported GPU generations are not treated as installed. The same bundle/store availability decision feeds recommendations and acquisition checks on Windows and Linux.
+
 
 - Cover-gradient and corner-radius previews now refresh already-loaded related-title artwork on title pages, instead of leaving its cached rounded image in the old appearance.
 

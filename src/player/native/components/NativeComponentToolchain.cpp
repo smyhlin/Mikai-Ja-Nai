@@ -13,6 +13,14 @@ QString translated(const char* message) {
 
 }  // namespace
 
+bool componentBinDirsAvailable(const ComponentBinDirs& dirs) {
+    return dirs.reasonKey.isEmpty() && !dirs.trtBinDir.isEmpty() && !dirs.cudaBinDir.isEmpty();
+}
+bool gpuResourceInstalledForThisDevice(const ComponentPack* pack, const StoredPack& stored,
+                                       bool componentDirsAvailable) {
+    return pack != nullptr && (stored.installed || componentDirsAvailable);
+}
+
 ComponentBinDirs componentBinDirs(const QString& bundleRoot, const QString& trtDirName,
                                   const QString& cudaDirName, const QStringList& declaredTrtFiles,
                                   const GpuComputeCapability& gpu, const ComponentStore& store) {

@@ -132,11 +132,11 @@ QVariantMap inventorySnapshot(const GpuComputeCapability& gpu, bool verifyRife,
     const AnimeJanaiInstallation directMl =
         describeAnimeJanaiInstallation(Backend::DirectML, rehashBackend);
     const ComponentBinDirs dirs = installedComponentBinDirs(gpu, store);
-    const bool componentDirsAvailable = dirs.reasonKey.isEmpty();
+    const bool componentDirsAvailable = componentBinDirsAvailable(dirs);
     const bool runtimeInstalled = trt.installed &&
                                   (runtimeStored.installed || componentDirsAvailable);
-    const bool kernelsInstalled = kernelsPack == nullptr || kernelsStored.installed ||
-                                  componentDirsAvailable;
+    const bool kernelsInstalled =
+        gpuResourceInstalledForThisDevice(kernelsPack, kernelsStored, componentDirsAvailable);
     result.insert(QStringLiteral("trtInstalled"), trt.installed);
     result.insert(QStringLiteral("trtReasonKey"), trt.reasonKey);
     result.insert(QStringLiteral("trtReason"), trt.reason);
@@ -884,8 +884,8 @@ void ComponentStoreTab::updateCardStates() {
     const StoredPack kernelsStored = kernelsPack != nullptr
                                          ? storedPack(componentStore(), *kernelsPack)
                                          : StoredPack{};
-    const bool kernelsInstalled = kernelsPack == nullptr || kernelsStored.installed ||
-                                  componentDirsAvailable_;
+    const bool kernelsInstalled =
+        gpuResourceInstalledForThisDevice(kernelsPack, kernelsStored, componentDirsAvailable_);
     const bool kernelsRecommended = gpu.nvidia && kernelsPack != nullptr &&
                                     kernelsRecommended_;
 
