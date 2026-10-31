@@ -1,9 +1,11 @@
 #include "TestPublicApiUi.hpp"
 
 #include <backend/MikaiClient.hpp>
+#include <dialogs/ComponentStoreTab.hpp>
 #include <dialogs/SettingsDialog.hpp>
 #include <widgets/PageGlow.hpp>
 #include <state/AppearanceStore.hpp>
+#include <state/NativeComponentProvisioner.hpp>
 #include <pages/MainWindow.hpp>
 #include <pages/SearchPage.hpp>
 #include <pages/TitlePage.hpp>
@@ -988,6 +990,49 @@ void TestPublicApiUi::gradientPreviewKeepsItsLatestColorAndCancelRestoresIt() {
   dialog.reject();
   QCOMPARE(glow->geometry(), originalGeometry);
   QCOMPARE(host.grab().toImage().pixelColor(sample), original);
+}
+
+void TestPublicApiUi::aComponentsTabOutlivesTheProvisionerItsWindowOwns() {
+  IsolatedSettings settings;
+  mikai::app::Runner runner;
+  auto* provisioner = new mikai::app::NativeComponentProvisioner(runner);
+  mikai::app::ComponentStoreTab tab;
+  tab.setRunner(&runner);
+  tab.setComponentProvisioner(provisioner);
+  auto* verify = tab.findChild<QPushButton*>(QStringLiteral("nativeComponentVerifyButton"));
+  auto* cancel = tab.findChild<QPushButton*>(QStringLiteral("nativeComponentTabCancelButton"));
+  QVERIFY(verify != nullptr && cancel != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(!tab.acquisitionRunning(), 20000);
+  QVERIFY(!tab.downloadActive());
+  QVERIFY(verify->isEnabled());
+  QVERIFY(!cancel->isEnabled());
+
+  // The window owns the provisioner for the process and the tab only borrows it,
+  // so the owner can be torn down first: MainWindow's children are deleted in
+  // creation order - Runner, then the provisioner, then this tab.
+  delete provisioner;
+  provisioner = nullptr;
+
+  // Each of these recomputes the running state from the borrowed service, so a
+  // surface that reached freed state would show it here.
+  tab.refresh();
+  tab.cancelAcquisition();
+  QVERIFY(!tab.downloadActive());
+  QVERIFY(!tab.acquisitionRunning());
+  QVERIFY2(verify->isEnabled(),
+           "the tab stayed busy after its provisioner owner went away");
+  QVERIFY2(!cancel->isEnabled(), "Cancel stayed armed with no provisioner behind it");
+
+  // A live replacement must rebind the borrowed reference, not inherit the old one.
+  mikai::app::NativeComponentProvisioner replacement(runner);
+  tab.setComponentProvisioner(&replacement);
+  tab.refresh();
+  tab.cancelAcquisition();
+  QVERIFY(!tab.downloadActive());
+  QVERIFY(!tab.acquisitionRunning());
+  QVERIFY(verify->isEnabled());
+  QVERIFY(!cancel->isEnabled());
+  tab.setComponentProvisioner(nullptr);
 }
 
 void TestPublicApiUi::catalogueFiltersRetainCanonicalSelectionsAndReset() {

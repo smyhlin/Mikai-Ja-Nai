@@ -24,6 +24,7 @@ class TestPublicApiUi : public QObject {
   void decodedPosterScalesAfterExifRotation();
   void titleSectionHeadersLetTheGradientThrough();
   void gradientPreviewKeepsItsLatestColorAndCancelRestoresIt();
+  void aComponentsTabOutlivesTheProvisionerItsWindowOwns();
 };
 
 int runTestPublicApiUi(int argc, char** argv);

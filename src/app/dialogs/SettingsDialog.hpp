@@ -5,6 +5,7 @@
 #include <dialogs/NativeAssetsPanel.hpp>
 #include <dialogs/NativeRifeControls.hpp>
 #include <native/bundle/NativePrefs.hpp>
+#include <state/NativeComponentProvisioner.hpp>
 #include <player/shaders/Anime4K.hpp>
 #include <player/shaders/PresetShortcuts.hpp>
 #include <player/shell/ProcessingSettingsIntent.hpp>
@@ -52,7 +53,6 @@ class SwatchButton;
 
 class Runner;
 class AnimeJanaiManagerPanel;
-class NativeComponentProvisioner;
 class ComponentStoreTab;
 
 /// API key, live quota readout, the home-page feed switches, Anime4K preset
@@ -554,7 +554,9 @@ private:
     /// The assets panel this dialog owns. The preparation providers are
     /// forwarded to it live, so one installed after construction still takes.
     NativeAssetsPanel* assetsPanel_ = nullptr;
-    NativeComponentProvisioner* componentProvisioner_ = nullptr;
+    /// Borrowed from the window, which owns it for the process and may tear it
+    /// down before this dialog's own teardown completes.
+    QPointer<NativeComponentProvisioner> componentProvisioner_;
     ComponentStoreTab* componentStoreTab_ = nullptr;
     /// The Components tab handed in at construction, when this dialog is showing
     /// the app-owned one instead of a tab it created.

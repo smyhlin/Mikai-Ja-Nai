@@ -227,7 +227,9 @@ ComponentStoreTab::~ComponentStoreTab() {
     // still finds a run that can no longer be rendered. Closing Settings does
     // not destroy the app-owned tab; this runs when the process exits and when
     // a dialog that created its own tab (a probe) is destroyed. The Cancel
-    // button is the viewer's stop.
+    // button is the viewer's stop. The provisioner is borrowed: a window that
+    // tears its service down first leaves a null weak pointer here, so this
+    // stop reaches a live provisioner or nothing at all.
     if (alive_) alive_->store(false);
     ++runGeneration_;
     verifying_ = false;

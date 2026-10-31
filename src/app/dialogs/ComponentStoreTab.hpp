@@ -6,6 +6,7 @@
 #include <state/NativeComponentProvisioner.hpp>
 
 #include <QMap>
+#include <QPointer>
 #include <QSet>
 #include <QString>
 #include <QStringList>
@@ -28,7 +29,6 @@ class QCheckBox;
 namespace mikai::app {
 
 class Runner;
-class NativeComponentProvisioner;
 
 }  // namespace mikai::app
 
@@ -259,7 +259,11 @@ private:
 
     Runner* runner_ = nullptr;
     backend::MikaiClient* client_ = nullptr;
-    NativeComponentProvisioner* provisioner_ = nullptr;
+    /// Borrowed, never owned. The provisioner is a QObject the window owns for
+    /// the process, so its teardown can reach this tab before this tab reaches
+    /// its destructor: a weak pointer turns that order into a null service
+    /// instead of a cancel on freed state.
+    QPointer<NativeComponentProvisioner> provisioner_;
     /// A standalone provisioner run starts with its first event; each affected
     /// old pack row is retired once while unrelated card rows remain intact.
     bool provisionerProgressSessionActive_ = false;
