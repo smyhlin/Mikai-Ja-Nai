@@ -102,6 +102,7 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     benchmarkTab_ = buildBenchmarkTab();
     customizationGeneralPage_ = buildCustomizationGeneralTab();
     appearancePage_ = buildAppearanceTab();
+    refreshAppearanceControls();
     buildNavigation();
     if (!presetError_->isHidden()) {
         showPage(QStringLiteral("shortcuts"));

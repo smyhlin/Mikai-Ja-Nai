@@ -2,6 +2,8 @@
 
 ## 0.1.0 — Unreleased
 
+- Settings Appearance now initializes accent, radius, gradient and general controls from the current saved appearance when the tab is built and when the dialog is reopened, including saved custom colors, with checked swatch indicators kept in sync. Preview, save, cancel, reset and live language/appearance refresh behavior are preserved.
+
 - Title-page buttons now use the global corner radius, and secondary actions remain visibly outlined before hover. Watch, Episodes and More details share a wrapping hero action row; clicking either displayed title name copies it, with Enter/Space activation also available.
 
 - Refined the title page's poster-led hero and episode workspace, with a prominent Watch/Continue action and clearer release and provider selection.

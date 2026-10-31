@@ -434,8 +434,8 @@ QWidget* SettingsDialog::buildAppearanceTab() {
     backgroundSwitch->setAccessibleName(tr("Background gradient"));
     gradientRow->addWidget(backgroundSwitch, 0, Qt::AlignVCenter);
     gradientLayout->addLayout(gradientRow);
-    QPointer<ToggleSwitch> background = backgroundSwitch;
-    connect(background, &QAbstractButton::toggled, this, [this](bool on) {
+    backgroundGradientSwitch_ = backgroundSwitch;
+    connect(backgroundGradientSwitch_, &QAbstractButton::toggled, this, [this](bool on) {
         appearanceDraft_.backgroundGradient = on;
         applyAppearancePreview();
     });
@@ -549,26 +549,21 @@ QWidget* SettingsDialog::buildAppearanceTab() {
     refreshAppearanceControls();
     return scroll;
 }
-
-void SettingsDialog::refreshAppearanceCaptions() {
+void SettingsDialog::refreshAppearanceControls() {
     const QString accent = theme::hexOf(theme::accentColor(appearanceDraft_));
-    const QString name = theme::presetName(accent);
-    if (accentValueLabel_ != nullptr) {
-        accentValueLabel_->setText(name.isEmpty() ? accent : tr("%1 %2").arg(name, accent));
-    }
     const QString gradient = theme::hexOf(theme::gradientColor(appearanceDraft_));
+
+    const QString accentName = theme::presetName(accent);
+    if (accentValueLabel_ != nullptr) {
+        accentValueLabel_->setText(accentName.isEmpty() ? accent : tr("%1 %2").arg(accentName, accent));
+    }
     const QString gradientName = theme::presetName(gradient);
     if (gradientValueLabel_ != nullptr) {
         gradientValueLabel_->setText(gradientName.isEmpty()
                                          ? gradient
                                          : tr("%1 %2").arg(gradientName, gradient));
     }
-}
 
-void SettingsDialog::refreshAppearanceControls() {
-    if (appearancePage_ == nullptr) return;
-    const QString accent = theme::hexOf(theme::accentColor(appearanceDraft_));
-    const QString gradient = theme::hexOf(theme::gradientColor(appearanceDraft_));
     const auto matches = [](const auto& swatch, const QString& value) {
         return swatch.first.compare(value, Qt::CaseInsensitive) == 0;
     };
@@ -582,6 +577,8 @@ void SettingsDialog::refreshAppearanceControls() {
     if (customAccentButton_ != nullptr) {
         const bool custom = std::none_of(accentSwatches_.cbegin(), accentSwatches_.cend(),
                                          [&](const auto& swatch) { return matches(swatch, accent); });
+        QSignalBlocker blocker(customAccentButton_);
+        customAccentButton_->setChecked(custom);
         customAccentButton_->setSelected(custom);
     }
     for (int step = 0; step < radiusButtons_.size(); ++step) {
@@ -598,6 +595,8 @@ void SettingsDialog::refreshAppearanceControls() {
         const bool custom =
             std::none_of(gradientSwatches_.cbegin(), gradientSwatches_.cend(),
                          [&](const auto& swatch) { return matches(swatch, gradient); });
+        QSignalBlocker blocker(customGradientButton_);
+        customGradientButton_->setChecked(custom);
         customGradientButton_->setSelected(custom);
     }
 
@@ -619,11 +618,7 @@ void SettingsDialog::refreshAppearanceControls() {
     };
     syncSwitch(coverGradientSwitch_, appearanceDraft_.coverGradient);
     syncSwitch(adultContentSwitch_, appearanceDraft_.showAdult);
-    if (appearancePage_ != nullptr) {
-        syncSwitch(appearancePage_->findChild<ToggleSwitch*>(
-                       QStringLiteral("backgroundGradientSwitch")),
-                   appearanceDraft_.backgroundGradient);
-    }
+    syncSwitch(backgroundGradientSwitch_, appearanceDraft_.backgroundGradient);
     if (intensitySlider_ != nullptr) {
         QSignalBlocker blocker(intensitySlider_);
         intensitySlider_->setValue(appearanceDraft_.gradientIntensity);
@@ -645,6 +640,21 @@ void SettingsDialog::refreshAppearanceControls() {
     for (auto& swatch : gradientSwatches_) swatch.second->setEnabled(gradientOn);
     if (customGradientButton_ != nullptr) customGradientButton_->setEnabled(gradientOn);
     refreshAppearanceCaptions();
+}
+
+void SettingsDialog::refreshAppearanceCaptions() {
+    const QString accent = theme::hexOf(theme::accentColor(appearanceDraft_));
+    const QString name = theme::presetName(accent);
+    if (accentValueLabel_ != nullptr) {
+        accentValueLabel_->setText(name.isEmpty() ? accent : tr("%1 %2").arg(name, accent));
+    }
+    const QString gradient = theme::hexOf(theme::gradientColor(appearanceDraft_));
+    const QString gradientName = theme::presetName(gradient);
+    if (gradientValueLabel_ != nullptr) {
+        gradientValueLabel_->setText(gradientName.isEmpty()
+                                         ? gradient
+                                         : tr("%1 %2").arg(gradientName, gradient));
+    }
 }
 
 void SettingsDialog::applyAppearancePreview() {

@@ -412,6 +412,7 @@ private:
     QVector<QPushButton*> radiusButtons_;
     QLabel* backgroundGradientLabel_ = nullptr;
     QLabel* backgroundGradientHint_ = nullptr;
+    QAbstractButton* backgroundGradientSwitch_ = nullptr;
     QLabel* intensityLabel_ = nullptr;
     QSlider* intensitySlider_ = nullptr;
     QLabel* intensityValueLabel_ = nullptr;
