@@ -26,6 +26,8 @@ private slots:
     void aLostReleaseEndsTheDragWithoutCommittingTheHover_data();
     void aLostReleaseEndsTheDragWithoutCommittingTheHover();
 
+    void volumeWheelAdjustsTheTrackAndSpeaker();
+    void volumeWheelFollowsPlaybackIntoPip();
     void aNewPlayerStartsAtTheShownVolume();
     void aPipKeepsItsVolumeAndMuteBeforeOpening();
 

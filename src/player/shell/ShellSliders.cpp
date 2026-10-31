@@ -1,9 +1,11 @@
 #include "ShellSliders.hpp"
 
+#include <QCoreApplication>
 #include <QEvent>
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
+#include <QWheelEvent>
 
 namespace mplayer {
 namespace shell {
@@ -147,6 +149,9 @@ constexpr int kEndPad = kKnobRHot + 2;
 constexpr int kGroove = 4;
 constexpr int kSpeakerW = 28;
 constexpr int kSpeakerGap = 6;
+constexpr double kVolumeWheelStep = 0.05;
+constexpr double kWheelAnglePerStep = 120.0;
+constexpr double kWheelPixelsPerStep = 40.0;
 }  // namespace
 
 VolumeTrack::VolumeTrack(QWidget* parent) : QWidget(parent) {
@@ -175,6 +180,19 @@ double VolumeTrack::span() const {
 
 double VolumeTrack::at(qreal x) const {
     return qBound(0.0, (x - kEndPad) / span(), 1.0);
+}
+
+void VolumeTrack::wheelEvent(QWheelEvent* event) {
+    const int pixels = event->pixelDelta().y();
+    const int angle = event->angleDelta().y();
+    if (pixels == 0 && angle == 0) {
+        event->ignore();
+        return;
+    }
+    const double steps = pixels != 0 ? pixels / kWheelPixelsPerStep
+                                     : angle / kWheelAnglePerStep;
+    setValue(v_ + steps * kVolumeWheelStep, true);
+    event->accept();
 }
 
 void VolumeTrack::mousePressEvent(QMouseEvent* event) {
@@ -255,6 +273,9 @@ VolumeGroup::VolumeGroup(QWidget* parent) : QWidget(parent) {
     track_->setValueSilent(effective());
     connect(track_, &VolumeTrack::valueChanged, this, [this](double v) {
         vol_ = v;
+        if (muted_ && v > 0.0) {
+            emit muteClicked();
+        }
         emit volumeChanged(vol_);
         chromeUpdate(this);
     });
@@ -298,6 +319,14 @@ void VolumeGroup::setMuted(bool m) {
 
 bool VolumeGroup::isDragging() const {
     return track_ != nullptr && track_->isDragging();
+}
+
+void VolumeGroup::wheelEvent(QWheelEvent* event) {
+    if (event->pixelDelta().y() == 0 && event->angleDelta().y() == 0) {
+        event->ignore();
+        return;
+    }
+    QCoreApplication::sendEvent(track_, event);
 }
 
 void VolumeGroup::mousePressEvent(QMouseEvent* event) {

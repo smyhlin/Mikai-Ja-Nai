@@ -28,7 +28,7 @@ Catalogue variant selection and local track selection are different operations: 
 - The timeline shows playback position and remaining time when duration is known. Drag/scrub it to seek; the final pointer position on left-button release selects the target, even if the last movement event was elsewhere. Hovering shows the time at that point, not a thumbnail preview.
 - The separate **+85** control advances by 85 seconds, bounded by a known duration.
 - **← / →** seeks backward/forward by 5 seconds when duration is known. Steps use the playback core's current position, so rapid presses are not shortened by a delayed progress update. If duration is unknown, those keys request the previous/next episode instead.
-- **↑ / ↓** changes volume by 10 percentage points; **M** toggles mute.
+- **↑ / ↓** changes volume by 10 percentage points; **M** toggles mute. Scroll over the volume slider or speaker to change volume by 5 percentage points per wheel notch; this also works in PiP.
 - **T / C / Q** open Audio, Subtitles, and Quality and speed, respectively. Menus can be navigated with **↑ / ↓** (or **← / →**), confirmed with **Enter**, and closed with **Esc**.
 
 ## Keyboard, mouse and window navigation

@@ -1265,7 +1265,7 @@ void PlayerShell::setVolume(double volume, bool fromHost) {
         vol_->setMuted(false);
     }
     if (fromHost) {
-        toast_->flash(tr("Volume %1%").arg(static_cast<int>(volume_ * 100)));
+        toast_->flash(tr("Volume %1%").arg(qRound(volume_ * 100)));
     }
 }
 
@@ -1347,7 +1347,7 @@ void PlayerShell::onScrub(double fraction) {
 void PlayerShell::onVolume(double volume) {
     setVolume(volume);
     emit volumeChanged(volume_);
-    toast_->flash(tr("Volume %1%").arg(static_cast<int>(volume_ * 100)));
+    toast_->flash(tr("Volume %1%").arg(qRound(volume_ * 100)));
 }
 
 void PlayerShell::toggleMute() {
@@ -1355,7 +1355,7 @@ void PlayerShell::toggleMute() {
     vol_->setMuted(muted_);
     emit muteChanged(muted_);
     toast_->flash(muted_ ? tr("Muted")
-                         : tr("Volume %1%").arg(static_cast<int>(volume_ * 100)));
+                         : tr("Volume %1%").arg(qRound(volume_ * 100)));
 }
 
 void PlayerShell::onRate(double rate) {
@@ -1989,7 +1989,7 @@ void PlayerShell::keyPressEvent(QKeyEvent* event) {
             const double v = std::clamp(volume_ + (event->key() == Qt::Key_Up ? 0.1 : -0.1), 0.0, 1.0);
             setVolume(v);
             emit volumeChanged(v);
-            toast_->flash(tr("Volume %1%").arg(static_cast<int>(v * 100)));
+            toast_->flash(tr("Volume %1%").arg(qRound(v * 100)));
             break;
         }
         case Qt::Key_Question:

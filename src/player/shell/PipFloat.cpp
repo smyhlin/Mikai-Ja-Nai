@@ -29,6 +29,7 @@
 #include <QSlider>
 #include <QTimer>
 #include <QVariantAnimation>
+#include <QWheelEvent>
 #include <QWindow>
 
 #include <algorithm>
@@ -246,6 +247,10 @@ void PipFloat::buildChrome() {
     connect(volumeSlider_, &VolumeTrack::released, this, [this] {
         draggingVolume_ = false;
         setVolume(volumeSlider_->value());
+        if (muted_ && volume_ > 0.0) {
+            setMuted(false);
+            emit muteChanged(false);
+        }
         emit volumeChanged(volume_);
         revealControls();
     });
@@ -254,10 +259,17 @@ void PipFloat::buildChrome() {
     // a slow core that queue is what reads as lag. The knob still tracks the
     // pointer, and the sound lands the moment the button is let go.
     connect(volumeSlider_, &VolumeTrack::valueChanged, this, [this](double value) {
-        if (!draggingVolume_) {
+        if (draggingVolume_) {
+            volume_ = std::clamp(value, 0.0, 1.0);
             return;
         }
-        volume_ = std::clamp(value, 0.0, 1.0);
+        setVolume(value);
+        if (muted_ && volume_ > 0.0) {
+            setMuted(false);
+            emit muteChanged(false);
+        }
+        emit volumeChanged(volume_);
+        revealControls();
     });
     chipLayout->addWidget(volumeSlider_);
 
@@ -547,11 +559,6 @@ void PipFloat::updateMuteChrome() {
 void PipFloat::setVolume(double volume) {
     volume_ = std::clamp(volume, 0.0, 1.0);
     surface_->setVolume(volume_ * 100.0);
-    if (volume_ > 0.0 && muted_) {
-        // Dragging the level up on a muted core is how a viewer un-mutes
-        // without hunting for the button, and it has to be audible.
-        setMuted(false);
-    }
     updateVolumeChip();
 }
 
@@ -621,6 +628,14 @@ bool PipFloat::eventFilter(QObject* watched, QEvent* event) {
     // A control that changed through Qt rather than chromeUpdate() still has to
     // reach the picture. The event is never consumed here.
     chromeRepaintEvent(this, watched, event);
+    if (event->type() == QEvent::Wheel && (watched == muteButton_ || watched == volumeChip_)) {
+        auto* wheel = static_cast<QWheelEvent*>(event);
+        if (wheel->pixelDelta().y() != 0 || wheel->angleDelta().y() != 0) {
+            QCoreApplication::sendEvent(volumeSlider_, event);
+            revealControls();
+            return event->isAccepted();
+        }
+    }
     switch (event->type()) {
         case QEvent::MouseMove:
         case QEvent::MouseButtonPress:

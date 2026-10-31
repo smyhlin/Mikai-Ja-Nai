@@ -1123,6 +1123,11 @@ void PlayerDialog::enterPip() {
             surface_->setMuted(muted_);
             shell_->setMuted(muted_);
         });
+        connect(window, &PipFloat::volumeChanged, this, [this](double volume) {
+            volume_ = std::clamp(volume, 0.0, 1.0);
+            surface_->setVolume(volume_ * 100.0);
+            shell_->setVolume(volume_);
+        });
         // Two buttons, two meanings: the expand icon returns to the full
         // player, the X closes it for good. Wiring both to leavePip made the X
         // put the full window back, which is the opposite of what it promises.
@@ -1558,8 +1563,8 @@ void PlayerDialog::syncPipBar() {
     // are deliberately not pushed - the main core is stopped while PiP is up,
     // and feeding its frozen state back is what pinned the counter to the
     // moment PiP opened.
-    pip_->setMuted(muted_);
     pip_->setVolume(volume_);
+    pip_->setMuted(muted_);
 }
 
 }  // namespace shell

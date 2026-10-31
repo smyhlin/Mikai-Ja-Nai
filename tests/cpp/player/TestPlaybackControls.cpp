@@ -1,5 +1,6 @@
 #include "TestPlaybackControls.hpp"
 
+#include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
@@ -10,6 +11,7 @@
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QThread>
+#include <QWheelEvent>
 #include <QWidget>
 
 #include <cmath>
@@ -22,6 +24,7 @@
 #include "PlayerDialog.hpp"
 #include "PlayerShell.hpp"
 #include "ShellSliders.hpp"
+#include "ShellWidgets.hpp"
 #include "VideoSurface.hpp"
 
 using mplayer::MpvApi;
@@ -70,6 +73,15 @@ void sendPointer(QWidget* control, QEvent::Type type, qreal x, Qt::MouseButton b
     QMouseEvent event(type, local, QPointF(control->mapToGlobal(local.toPoint())), button, held,
                       Qt::NoModifier);
     QCoreApplication::sendEvent(control, &event);
+}
+
+bool sendWheel(QWidget* target, const QPoint& angle, const QPoint& pixels = {}) {
+    const QPointF local = target->rect().center();
+    QWheelEvent event(local, target->mapToGlobal(local.toPoint()), pixels, angle,
+                      Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    event.ignore();
+    QCoreApplication::sendEvent(target, &event);
+    return event.isAccepted();
 }
 
 void sendKey(QWidget* target, int key) {
@@ -371,6 +383,146 @@ void TestPlaybackControls::aPiPArrowStepIsResolvedByTheCoreWhenThePumpIsSuspende
                             .arg(expected)
                             .arg(settled)));
     QVERIFY2(coreIsPaused(surface), "seeking must not unpause the float");
+}
+
+void TestPlaybackControls::volumeWheelAdjustsTheTrackAndSpeaker() {
+    mplayer::shell::VolumeGroup volume;
+    volume.setVolume(0.5);
+    auto* track = volume.findChild<mplayer::shell::VolumeTrack*>();
+    QVERIFY(track != nullptr);
+
+    QVERIFY(sendWheel(track, QPoint(0, 120)));
+    QVERIFY(std::abs(volume.effective() - 0.55) < 0.0001);
+    QVERIFY(sendWheel(&volume, QPoint(0, -240)));
+    QVERIFY(std::abs(volume.effective() - 0.45) < 0.0001);
+    QVERIFY(sendWheel(track, QPoint(0, 30)));
+    QVERIFY(std::abs(volume.effective() - 0.4625) < 0.0001);
+    QVERIFY(sendWheel(track, QPoint(), QPoint(0, 20)));
+    QVERIFY(std::abs(volume.effective() - 0.4875) < 0.0001);
+
+    const double beforeHorizontal = volume.effective();
+    sendWheel(track, QPoint(120, 0));
+    QVERIFY(std::abs(volume.effective() - beforeHorizontal) < 0.0001);
+    volume.setVolume(0.99);
+    QVERIFY(sendWheel(track, QPoint(0, 120)));
+    QCOMPARE(volume.effective(), 1.0);
+    volume.setVolume(0.01);
+    QVERIFY(sendWheel(&volume, QPoint(0, -120)));
+    QCOMPARE(volume.effective(), 0.0);
+}
+
+void TestPlaybackControls::volumeWheelFollowsPlaybackIntoPip() {
+    if (!nativePlatformAvailable()) {
+        QSKIP("the player needs a native window and a real GL context");
+    }
+    if (!requireRuntime()) return;
+
+    const QString fixture = fixtureClip();
+    QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
+    const std::unique_ptr<mplayer::shell::PlayerDialog> dialog(
+        new mplayer::shell::PlayerDialog(QStringLiteral("volume wheel"), fixture));
+    auto* shell = dialog->findChild<mplayer::shell::PlayerShell*>();
+    QVERIFY(shell != nullptr);
+    auto* surface = shell->findChild<mplayer::VideoSurface*>();
+    auto* volume = shell->findChild<mplayer::shell::VolumeGroup*>();
+    QVERIFY(surface != nullptr);
+    QVERIFY(volume != nullptr);
+    auto* track = volume->findChild<mplayer::shell::VolumeTrack*>();
+    QVERIFY(track != nullptr);
+
+    dialog->show();
+    if (!QTest::qWaitForWindowExposed(dialog.get(), 15000)) {
+        QSKIP("the player window was never exposed on this platform");
+    }
+    if (!surface->waitForContext(20000)) {
+        QSKIP("no OpenGL context for the player surface");
+    }
+    dialog->startPlayer();
+    QVERIFY2(settleUntil([surface] { return surface->duration() > 10.0; }, 30000),
+             "the player did not load the fixture");
+
+    shell->wake();
+    QTRY_VERIFY(track->isVisible());
+    const double initial = volume->effective();
+    QTest::mouseMove(track, track->rect().center());
+    QVERIFY(sendWheel(track, QPoint(0, -120)));
+    const double lowered = volume->effective();
+    QVERIFY(std::abs(lowered - (initial - 0.05)) < 0.001);
+    auto* toast = shell->findChild<mplayer::shell::Toast*>();
+    QVERIFY(toast != nullptr);
+    auto* label = toast->findChild<QLabel*>();
+    QVERIFY(label != nullptr);
+    QVERIFY(label->text().contains(QString::number(qRound(lowered * 100.0))));
+    QVERIFY2(settleUntil([surface, lowered] {
+                 const auto actual = coreNumber(surface, "volume");
+                 return actual && std::abs(*actual - lowered * 100.0) < 0.1;
+             }, 10000), "the wheel did not change the playing core");
+
+    sendPointer(volume, QEvent::MouseButtonPress, 10.0, Qt::LeftButton, Qt::LeftButton);
+    QVERIFY(volume->isMuted());
+    QVERIFY2(settleUntil([surface] {
+                 const auto muted = surface->probeMpvProperty(QStringLiteral("mute"),
+                                                               mplayer::ProbePropertyKind::Flag);
+                 return muted && muted->flag;
+             }, 10000), "the main core did not mute");
+    QVERIFY(sendWheel(track, QPoint(0, 120)));
+    QVERIFY(!volume->isMuted());
+    QVERIFY2(settleUntil([surface, volume] {
+                 const auto actual = coreNumber(surface, "volume");
+                 const auto muted = surface->probeMpvProperty(QStringLiteral("mute"),
+                                                               mplayer::ProbePropertyKind::Flag);
+                 return actual && muted && !muted->flag &&
+                        std::abs(*actual - volume->effective() * 100.0) < 0.1;
+             }, 10000), "scrolling the muted control did not unmute the main core");
+
+    QVERIFY(QMetaObject::invokeMethod(shell, "pipRequested", Qt::DirectConnection));
+    mplayer::shell::PipFloat* pip = nullptr;
+    QVERIFY2(settleUntil([&pip] {
+                 for (QWidget* window : QApplication::topLevelWidgets()) {
+                     if (auto* candidate = qobject_cast<mplayer::shell::PipFloat*>(window);
+                         candidate != nullptr && candidate->isVisible()) {
+                         pip = candidate;
+                         return true;
+                     }
+                 }
+                 return false;
+             }, 15000), "PiP did not open");
+    auto* pipSurface = pip->videoSurface();
+    auto* pipTrack = pip->findChild<mplayer::shell::VolumeTrack*>(QStringLiteral("pipVolume"));
+    auto* pipMute = pip->findChild<QPushButton*>(QStringLiteral("pipMute"));
+    QVERIFY(pipSurface != nullptr);
+    QVERIFY(pipTrack != nullptr);
+    QVERIFY(pipMute != nullptr);
+    QVERIFY2(settleUntil([pipSurface] { return pipSurface->duration() > 10.0; }, 30000),
+             "PiP did not load the fixture");
+
+    pipMute->click();
+    QVERIFY2(settleUntil([pipSurface] {
+                 const auto muted = pipSurface->probeMpvProperty(QStringLiteral("mute"),
+                                                                  mplayer::ProbePropertyKind::Flag);
+                 return muted && muted->flag;
+             }, 10000), "the PiP core did not mute");
+    QVERIFY(sendWheel(pipMute, QPoint(0, 120)));
+    const double pipLevel = pipTrack->value();
+    QVERIFY2(settleUntil([pipSurface, surface, volume, pipLevel] {
+                 const auto pipVolume = coreNumber(pipSurface, "volume");
+                 const auto mainVolume = coreNumber(surface, "volume");
+                 const auto pipMuted = pipSurface->probeMpvProperty(QStringLiteral("mute"),
+                                                                    mplayer::ProbePropertyKind::Flag);
+                 const auto mainMuted = surface->probeMpvProperty(QStringLiteral("mute"),
+                                                                  mplayer::ProbePropertyKind::Flag);
+                 return pipVolume && mainVolume && pipMuted && mainMuted &&
+                        !pipMuted->flag && !mainMuted->flag &&
+                        std::abs(*pipVolume - pipLevel * 100.0) < 0.1 &&
+                        std::abs(*mainVolume - pipLevel * 100.0) < 0.1 &&
+                        std::abs(volume->effective() - pipLevel) < 0.001;
+             }, 15000), "the PiP wheel did not synchronize volume and mute with the main player");
+    QVERIFY(QMetaObject::invokeMethod(pip, "restoreRequested", Qt::DirectConnection));
+    QVERIFY2(settleUntil([surface, volume, pipLevel] {
+                 const auto actual = coreNumber(surface, "volume");
+                 return actual && std::abs(*actual - pipLevel * 100.0) < 0.1 &&
+                        std::abs(volume->effective() - pipLevel) < 0.001;
+             }, 15000), "restoring the player lost the PiP volume");
 }
 
 void TestPlaybackControls::aNewPlayerStartsAtTheShownVolume() {

@@ -2,6 +2,8 @@
 
 ## 0.1.0 — Unreleased
 
+- Scroll over the player or PiP volume control to adjust audio, including high-resolution wheel and touchpad input.
+
 - Player audio now starts at the displayed volume rather than mpv's 100% default; PiP carries the selected volume and mute state before opening its own playback core.
 
 - Windows and Linux packages now include project-generated synthetic benchmark clips instead of failing with “clip not found” in an installed app. These clips are distinct from the historical third-party benchmark fixtures; results are not directly comparable.
