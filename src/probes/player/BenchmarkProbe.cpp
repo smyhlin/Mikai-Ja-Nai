@@ -20,7 +20,6 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
-#include <QTabWidget>
 #include <QTableWidget>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
@@ -589,26 +588,13 @@ int main(int argc, char** argv) {
     check(dialog.size() == useSize || !requestedSize.isValid(), "dialog sized as requested or minimum");
     check(mikai::probes::dialogActionsFit(dialog, useSize), "footer actions visible at size");
 
-    auto* tabs = dialog.findChild<QTabWidget*>();
-    check(tabs != nullptr, "settings tabs present");
-    if (!tabs) return 1;
+    const bool benchmarkPageOpened = dialog.showPage(QStringLiteral("benchmark"));
+    check(benchmarkPageOpened, "benchmark page selected");
+    if (!benchmarkPageOpened) return 1;
 
     auto* benchmarkScroll = dialog.findChild<QScrollArea*>(QStringLiteral("benchmarkScroll"));
     check(benchmarkScroll != nullptr, "benchmarkScroll found");
     if (!benchmarkScroll) return 1;
-
-    int benchIdx = -1;
-    for (int i = 0; i < tabs->count(); ++i) {
-        QWidget* page = tabs->widget(i);
-        if (page == benchmarkScroll || page->isAncestorOf(benchmarkScroll)) {
-            benchIdx = i;
-            break;
-        }
-    }
-    check(benchIdx >= 0, "benchmark tab selected by ancestor of benchmarkScroll");
-    if (benchIdx >= 0) {
-        tabs->setCurrentIndex(benchIdx);
-    }
     QApplication::processEvents();
 
     if (benchmarkScroll) {

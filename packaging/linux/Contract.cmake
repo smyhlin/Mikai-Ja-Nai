@@ -47,6 +47,28 @@ file(GLOB shader_files LIST_DIRECTORIES FALSE "${package_shader_dir}/*.glsl")
 if(NOT shader_files)
   message(FATAL_ERROR "Linux package contract: no GLSL shaders were installed.")
 endif()
+# The benchmark catalogue reads <executable dir>/../share/mikai/benchmarks, so a
+# package without those clips installs an app that reports "clip not found" for
+# every resolution. Compare bytes rather than names: the installed asset must be
+# the packaged source asset, not a re-encode or a substitute.
+include("${MIKAI_LINUX_SOURCE_DIR}/cmake/MikaiBenchmarks.cmake")
+mikai_benchmark_clips("${MIKAI_LINUX_SOURCE_DIR}/${MIKAI_BENCHMARK_SOURCE_SUBDIR}"
+  contract_benchmark_clips)
+foreach(clip IN LISTS contract_benchmark_clips)
+  get_filename_component(clip_name "${clip}" NAME)
+  set(installed_clip "${STAGE_DIR}/${MIKAI_LINUX_DATADIR}/mikai/benchmarks/${clip_name}")
+  if(NOT EXISTS "${installed_clip}" OR IS_DIRECTORY "${installed_clip}")
+    message(FATAL_ERROR
+      "Linux package contract: benchmark clip was not installed: ${installed_clip}")
+  endif()
+  file(SHA256 "${clip}" clip_digest)
+  file(SHA256 "${installed_clip}" installed_clip_digest)
+  if(NOT clip_digest STREQUAL installed_clip_digest)
+    message(FATAL_ERROR
+      "Linux package contract: installed benchmark clip differs from the packaged "
+      "source asset: ${clip_name}")
+  endif()
+endforeach()
 file(STRINGS "${package_desktop}" desktop_exec REGEX "^Exec=mikai --open-video %f$")
 if(NOT desktop_exec)
   message(FATAL_ERROR "Linux package contract: desktop entry is missing the safe video-open command.")

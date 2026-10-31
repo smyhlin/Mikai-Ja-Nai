@@ -72,6 +72,25 @@ file(RELATIVE_PATH mikai_linux_shaders_from_bin
 configure_file("${CMAKE_SOURCE_DIR}/packaging/linux/InstallShaderLink.cmake.in"
   "${CMAKE_BINARY_DIR}/mikai-linux-shader-link.cmake" @ONLY)
 install(SCRIPT "${CMAKE_BINARY_DIR}/mikai-linux-shader-link.cmake")
+# The benchmark catalogue resolves its clips relative to the executable. Both
+# install directories are configurable and the tree must stay relocatable, so the
+# relative path is derived from them and compiled in instead of assuming bin/
+# plus ../share. Every Linux route (tar, AppImage, deb, Arch) installs the same
+# data-dir subdirectory, and configuration fails before anything is built when a
+# clip is absent rather than packaging an app whose benchmark reports
+# "clip not found".
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MikaiBenchmarks.cmake")
+mikai_benchmark_clips("${CMAKE_SOURCE_DIR}/${MIKAI_BENCHMARK_SOURCE_SUBDIR}"
+  mikai_linux_benchmark_clips)
+file(RELATIVE_PATH mikai_linux_benchmarks_from_bin
+  "/${CMAKE_INSTALL_BINDIR}" "/${CMAKE_INSTALL_DATADIR}/mikai/benchmarks")
+# PUBLIC follows the build-identity definitions on this target: the report test
+# resolves its expected fixture location from the same compiled path, so it must
+# see the value even though only mikai_app implements the lookup.
+target_compile_definitions(mikai_app PUBLIC
+  MIKAI_BENCHMARK_INSTALL_RELATIVE="${mikai_linux_benchmarks_from_bin}")
+install(FILES ${mikai_linux_benchmark_clips}
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/mikai/benchmarks")
 install(FILES "${CMAKE_SOURCE_DIR}/packaging/linux/mikai.desktop"
   DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
 install(FILES "${CMAKE_SOURCE_DIR}/resources/app/mikai.svg"

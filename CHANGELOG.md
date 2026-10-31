@@ -2,6 +2,8 @@
 
 ## 0.1.0 — Unreleased
 
+- Windows and Linux packages now include project-generated synthetic benchmark clips instead of failing with “clip not found” in an installed app. These clips are distinct from the historical third-party benchmark fixtures; results are not directly comparable.
+
 - Keyboard seeks and the +85 control now resolve relative steps against mpv's current playhead rather than delayed UI progress, including PiP's own core. Absolute timeline and resume seeks are unchanged, and Compare invalidates pending captures for either kind. Timeline/speed and volume sliders honor the final release position and ignore unrelated button releases during a left-button drag. A lost left-button release ends the drag without committing the next hover position.
 
 - Fixed a shutdown use-after-free between the Components tab and its shared provisioning service. Components and Settings track the borrowed service's lifetime without changing cancellation of a live download.

@@ -22,7 +22,6 @@
 #include <QColor>
 #include <QCoreApplication>
 #include <QDateTime>
-#include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QFont>
@@ -806,20 +805,10 @@ void SettingsDialog::retranslateBenchmarkTab() {
 }
 
 QString SettingsDialog::locateBenchmarkClip(const QString& name) {
-    // Next to the exe (dist layout), or the source tree relative to the build
-    // directory, or the current working directory.
-    const QStringList candidates = {
-        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("benchmarks/" + name),
-        QDir(QCoreApplication::applicationDirPath())
-            .absoluteFilePath("../tests/fixtures/media/benchmarks/" + name),
-        QDir(QCoreApplication::applicationDirPath())
-            .absoluteFilePath("../../tests/fixtures/media/benchmarks/" + name),
-        QDir::current().absoluteFilePath("tests/fixtures/media/benchmarks/" + name),
-    };
-    for (const QString& candidate : candidates) {
-        if (QFileInfo::exists(candidate)) return candidate;
-    }
-    return {};
+    // Beside the executable for installed and portable Windows payloads, the
+    // installation prefix's share directory for Linux packages, and the source
+    // tree's own resources for a development build.
+    return mikai::app::locateBenchmarkClip(name, QCoreApplication::applicationDirPath());
 }
 
 void SettingsDialog::runBenchmark() {
@@ -1077,8 +1066,12 @@ void SettingsDialog::runBenchmark() {
             QHash<QString, QString> sourceErrors;
             for (const QString& clip : clips) {
                 if (backend::WorkCancellationScope::cancellationRequested()) break;
-                QString error;
+                // A clip the package did not ship has no media to inspect; the
+                // per-run measure step reports it as "clip not found" instead of
+                // handing an empty path to the decoder.
                 const QString path = clipPaths.value(clip);
+                if (path.isEmpty()) continue;
+                QString error;
                 sourceContexts.insert(clip, readBenchmarkSourceContext(path, &error));
                 if (!error.isEmpty()) sourceErrors.insert(clip, error);
             }

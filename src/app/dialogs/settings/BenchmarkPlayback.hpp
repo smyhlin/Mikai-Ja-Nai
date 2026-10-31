@@ -16,6 +16,9 @@ namespace mikai::app {
 
 enum class BenchmarkEngineBuildUpdate { Started, Ready, Failed };
 
+/// Resolves the named clip relative to an executable; returns empty when missing.
+QString locateBenchmarkClip(const QString& name, const QString& applicationDir);
+
 mplayer::native::AnimeJanaiSourceContext readBenchmarkSourceContext(
     const QString& clipPath, QString* error);
 

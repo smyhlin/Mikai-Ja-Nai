@@ -53,14 +53,18 @@ standalone/AppImage package. Review every bundled
 library's redistribution/source obligations before public distribution.
 
 Shaders are under share/mikai/shaders with an executable-relative symlink, so
-lookup does not depend on the current directory. The app translation is embedded.
+lookup does not depend on the current directory. The five project-generated
+synthetic benchmark clips are installed under @CMAKE_INSTALL_DATADIR@/mikai/benchmarks;
+their path is resolved relative to the executable. No benchmark input is
+downloaded or synthesized at run time. The app translation is embedded.
 Desktop/icon/AppStream files are installed under share. Install to a standard
 prefix (or configure your desktop's XDG_DATA_DIRS/PATH for a custom prefix) for
 menu visibility. Desktop registration advertises supported video types but does
 not assign defaults, enable autorun, or alter existing associations.
 
 Optional native inference engines/models, acquired components, user settings,
-API credentials, caches, logs, benchmarks and test/probe binaries are excluded.
+API credentials, caches, logs, benchmark results and test/probe binaries are
+excluded.
 Review share/licenses/mikai/third-party.json and third-party/ before distribution.
 No installer integration, signing, update, publishing or user-data deletion is
 performed by the Linux package script.

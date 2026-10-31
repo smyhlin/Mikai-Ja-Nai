@@ -106,6 +106,16 @@ set(required_paths
     "${appdir}/usr/share/applications/mikai.desktop"
     "${appdir}/usr/share/icons/hicolor/512x512/apps/mikai.png"
     "${appdir}/usr/share/metainfo/mikai.metainfo.xml")
+# The image runs from usr/bin inside the AppDir, so the benchmark catalogue needs
+# the clips under usr/share/mikai/benchmarks in the same image.
+include("${MIKAI_LINUX_SOURCE_DIR}/cmake/MikaiBenchmarks.cmake")
+mikai_benchmark_clips("${MIKAI_LINUX_SOURCE_DIR}/${MIKAI_BENCHMARK_SOURCE_SUBDIR}"
+  appimage_benchmark_clips)
+foreach(clip IN LISTS appimage_benchmark_clips)
+  get_filename_component(clip_name "${clip}" NAME)
+  list(APPEND required_paths
+    "${appdir}/usr/${MIKAI_LINUX_DATADIR}/mikai/benchmarks/${clip_name}")
+endforeach()
 if(MIKAI_LINUX_MPV_BUNDLE)
   list(APPEND required_paths "${appdir}/usr/bin/mpv/libmpv.so.2")
 endif()

@@ -26,6 +26,20 @@ if(NOT DEFINED SHADERS OR NOT IS_DIRECTORY "${SHADERS}")
   message(FATAL_ERROR "dist: the shaders directory was not found at '${SHADERS}'")
 endif()
 
+if(NOT DEFINED SOURCE_DIR OR SOURCE_DIR STREQUAL "")
+  message(FATAL_ERROR "dist: the source directory was not provided")
+endif()
+
+# The installed app resolves its benchmark clips beside the executable, so the
+# generated clips are payload inputs. Validate them before the first write: a
+# folder or installer without one of them reports "clip not found" for that
+# resolution after installation. The inventory module sits next to this script,
+# so the Windows payload and the Linux install rules share one list.
+get_filename_component(dist_script_dir "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
+include("${dist_script_dir}/MikaiBenchmarks.cmake")
+mikai_benchmark_clips("${SOURCE_DIR}/${MIKAI_BENCHMARK_SOURCE_SUBDIR}"
+  dist_benchmark_clips)
+
 if(NOT DEFINED WINDEPLOYQT OR WINDEPLOYQT STREQUAL "" OR NOT EXISTS "${WINDEPLOYQT}")
   message(FATAL_ERROR "dist: windeployqt was not found at '${WINDEPLOYQT}'")
 endif()
@@ -234,6 +248,17 @@ else()
   file(COPY "${SHADERS}" DESTINATION "${DIST_DIR}")
 endif()
 
+# The installed application resolves benchmark clips from <exe dir>/benchmarks.
+# They are copied by name from the generated source assets, never globbed; the
+# input set was validated before the first write.
+file(MAKE_DIRECTORY "${DIST_DIR}/benchmarks")
+set(dist_benchmark_entries "")
+foreach(clip IN LISTS dist_benchmark_clips)
+  get_filename_component(clip_name "${clip}" NAME)
+  file(COPY_FILE "${clip}" "${DIST_DIR}/benchmarks/${clip_name}")
+  list(APPEND dist_benchmark_entries "benchmarks/${clip_name}")
+endforeach()
+
 file(MAKE_DIRECTORY "${DIST_DIR}/translations")
 foreach(catalog qt_uk.qm qtbase_uk.qm)
   set(qt_catalog "${qt_prefix}/translations/${catalog}")
@@ -268,7 +293,33 @@ execute_process(
   OUTPUT_STRIP_TRAILING_WHITESPACE)
 if(NOT git_rc EQUAL 0 OR git_rev STREQUAL "")
   set(git_rev "unknown")
+else()
+  # Untracked payload inputs must not be attributed to a clean commit.
+  execute_process(
+    COMMAND git -C "${SOURCE_DIR}" status --porcelain --untracked-files=no
+    RESULT_VARIABLE dist_tracked_rc
+    OUTPUT_VARIABLE dist_tracked_changes
+    ERROR_QUIET)
+  execute_process(
+    COMMAND git -C "${SOURCE_DIR}" ls-files --others --exclude-standard --
+      cmake packaging resources shaders CMakeLists.txt LICENSE
+    RESULT_VARIABLE dist_untracked_rc
+    OUTPUT_VARIABLE dist_untracked_files
+    ERROR_QUIET)
+  set(dist_source_state "")
+  if(NOT dist_tracked_rc EQUAL 0 OR NOT dist_untracked_rc EQUAL 0)
+    set(dist_source_state "-unverified")
+  else()
+    if(NOT dist_tracked_changes STREQUAL "")
+      string(APPEND dist_source_state "-dirty")
+    endif()
+    if(NOT dist_untracked_files STREQUAL "")
+      string(APPEND dist_source_state "-untracked")
+    endif()
+  endif()
+  string(APPEND git_rev "${dist_source_state}")
 endif()
+message(STATUS "dist: packaged source identity ${git_rev}")
 string(TIMESTAMP built_at "%Y-%m-%dT%H:%M:%SZ" UTC)
 # Keep the private VERSION contract; public artifacts additionally identify the
 # product/toolchain and ship a hash inventory written after all payload copies.
@@ -492,7 +543,8 @@ if(MIKAI_PUBLIC_RELEASE)
   foreach(required Qt6Core.dll Qt6Gui.dll Qt6Widgets.dll Qt6Network.dll
       Qt6OpenGL.dll Qt6OpenGLWidgets.dll platforms/qwindows.dll
       imageformats/qjpeg.dll imageformats/qwebp.dll tls/qschannelbackend.dll
-      libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll mpv/libmpv-2.dll)
+      libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll mpv/libmpv-2.dll
+      ${dist_benchmark_entries})
     if(NOT EXISTS "${DIST_DIR}/${required}")
       message(FATAL_ERROR "dist: required public runtime file is missing: ${required}")
     endif()
@@ -522,6 +574,8 @@ if(MIKAI_PUBLIC_RELEASE)
       set(owner mpv)
     elseif(entry MATCHES "^shaders/[A-Za-z0-9_-]+\\.glsl$")
       set(owner anime4k)
+    elseif(entry IN_LIST dist_benchmark_entries)
+      set(owner mikai)
     elseif(entry STREQUAL "translations/mikai_uk.qm")
       set(owner mikai)
     elseif(entry MATCHES "^licenses/[A-Za-z0-9_./+-]+\\.(txt|json|md|html)$"

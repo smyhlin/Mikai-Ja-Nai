@@ -105,5 +105,58 @@ extern "C" __declspec(dllexport) void qtcore_fixture() {}
         self.assembler.validate_qt_mingw_runtime(payload)
 
 
+class BenchmarkPayloadTests(unittest.TestCase):
+    """The generated benchmark clips are installed payload, not build leftovers."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.assembler = load_assembler()
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = pathlib.Path(self.temp.name)
+        self.source = self.root / 'source'
+        self.benchmarks = self.source / 'resources' / 'benchmarks'
+        self.benchmarks.mkdir(parents=True)
+        self.out = self.root / 'payload'
+        self.out.mkdir()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def write_clips(self, names):
+        for name in names:
+            (self.benchmarks / name).write_bytes(name.encode('utf-8'))
+
+    def test_copies_every_clip_to_the_installed_directory(self):
+        self.write_clips(self.assembler.BENCHMARKS)
+        self.assembler.copy_benchmarks(self.source, self.out)
+        installed = self.out / 'benchmarks'
+        self.assertEqual(sorted(path.name for path in installed.iterdir()),
+                         sorted(self.assembler.BENCHMARKS))
+        for name in self.assembler.BENCHMARKS:
+            self.assertEqual((installed / name).read_bytes(), name.encode('utf-8'))
+
+    def test_refuses_a_missing_clip(self):
+        missing = self.assembler.BENCHMARKS[-1]
+        self.write_clips(self.assembler.BENCHMARKS[:-1])
+        with self.assertRaises(SystemExit) as raised:
+            self.assembler.copy_benchmarks(self.source, self.out)
+        self.assertIn(missing, str(raised.exception))
+
+    def test_refuses_an_empty_clip(self):
+        self.write_clips(self.assembler.BENCHMARKS)
+        (self.benchmarks / self.assembler.BENCHMARKS[0]).write_bytes(b'')
+        with self.assertRaises(SystemExit) as raised:
+            self.assembler.copy_benchmarks(self.source, self.out)
+        self.assertIn(self.assembler.BENCHMARKS[0], str(raised.exception))
+
+    def test_refuses_a_missing_clip_directory(self):
+        shutil.rmtree(self.benchmarks)
+        with self.assertRaises(SystemExit) as raised:
+            self.assembler.copy_benchmarks(self.source, self.out)
+        self.assertIn('benchmark clip directory is missing', str(raised.exception))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -9,6 +9,10 @@ configuration/Sharp behavior can change which chain/model a profile selects.
 Do not treat those dynamic entries or current settings as members of the stock
 historical selection, or merge their results into its comparison tables.
 
+The current packaged benchmark clips are newly generated project-owned files,
+not the historical third-party fixtures used for the captures below. Matching
+resolution and duration alone does not establish comparable results.
+
 The separately dated **retired model-graph experiments** at the end preserve
 historical measurements from tools removed by user decision. They are not an
 update to the historical stock matrix or a currently reproducible feature.
@@ -17,7 +21,7 @@ Measured results from **Settings → Benchmark**, grouped by machine and model. 
 
 **Historical matrix scope:** all 31 non-RIFE models—23 Anime4K presets, 3 AnimeJaNai profiles, and 5 Spatial graphs—at all five bundled input resolutions, plus baseline. **RIFE was excluded from that matrix by request.** The later RIFE 4.25-only default/variant comparison is recorded separately below.
 
-> **Workload limitation:** the bundled clips are synthetic black-frame H.264 fixtures, not anime footage. These measurements describe this reproducible fixture workload; they are **not a guarantee of real-scene playback performance**. Black frames omit motion, scene changes, and real-scene complexity. A runtime refusal is not evidence that a GPU lacks performance or VRAM.
+> **Workload limitation:** the historical clips are synthetic black-frame H.264 fixtures, not anime footage. These measurements describe that fixture workload; they are **not a guarantee of real-scene playback performance**. Black frames omit motion, scene changes, and real-scene complexity. A runtime refusal is not evidence that a GPU lacks performance or VRAM.
 
 ## 2026-10-18 — RTX 5090 integration smoke
 
@@ -78,7 +82,7 @@ The real application benchmark runs decode/filter/render through libmpv into an 
 
 TensorRT engine preparation finishes before eligible measurement starts. A build during measurement resets the sample. Compilation is therefore **excluded** from fps; a fast row can still require a slow first-use build. Engines are GPU-specific, so do not copy an RTX 5090 engine to another GPU as a substitute for compiling there.
 
-The five bundled clips have 2,158 H.264 frames each, a frame rate of `2997/125`, and a duration of about 90 seconds. They loop if needed. Each published cell is one completed sample, not an average of repeated trials; small differences between cells or machines can be run-to-run noise.
+The five historical clips have 2,158 H.264 frames each, a frame rate of `2997/125`, and a duration of about 90 seconds. They loop if needed. Each published cell is one completed sample, not an average of repeated trials; small differences between cells or machines can be run-to-run noise.
 
 The RTX 5090 full matrix below is one fresh, complete capture on 2026-10-17 after the rendering-lifecycle and diagnostic fixes. Its 160 cells are single measurements and remain unchanged; the separate controlled AnimeJaNai follow-up below reports repeated old/new medians and does not replace or merge into that matrix. No full-matrix cells were merged from older runs, remeasured selectively, estimated, or averaged. RIFE is excluded.
 

@@ -244,9 +244,11 @@ private:
     void runBenchmark();
     void resetBenchmarkControls();
     void filterPresetRows(const QString& query);
-    /// Resolves one benchmark clip name against the dist layout, the source tree
-    /// beside the build directory, and the current working directory. Empty when
-    /// the clip is nowhere to be found.
+    /// Resolves one benchmark clip name against the layout of the running
+    /// executable: the `benchmarks` folder beside it, the installation prefix's
+    /// `share/mikai/benchmarks`, and the source tree of a development build.
+    /// Empty when the clip is nowhere to be found; no substitute media and no
+    /// working-directory lookup are involved.
     static QString locateBenchmarkClip(const QString& name);
     /// Repopulates the grouped benchmark model tree from the live Anime4K,
     /// AnimeJaNai, spatial and RIFE catalogues. Called when the tab is built and

@@ -60,6 +60,16 @@ if [[ ! -f "$STAGE/usr/bin/mikai" || ! -f "$STAGE/usr/bin/qt.conf" \
   exit 3
 fi
 
+# The packaged benchmark catalogue resolves /usr/bin/../share/mikai/benchmarks,
+# so every clip has to be in the staged package. Shipping a subset is the bug
+# that makes Settings -> Benchmark report "clip not found" after installation.
+for clip in 480x360 640x480 768x576 1280x720 1920x1080; do
+  if [[ ! -s "$STAGE/usr/share/mikai/benchmarks/$clip.mp4" ]]; then
+    printf 'The install did not produce the benchmark clip %s.mp4.\n' "$clip" >&2
+    exit 3
+  fi
+done
+
 # The Qt 6.12 SDK needs ICU 73, which this distribution does not provide, so it
 # travels with the private runtime. Every library in that directory resolves its
 # siblings through $ORIGIN rather than the host's search path.

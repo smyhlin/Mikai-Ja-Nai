@@ -3,10 +3,10 @@
 
 windeployqt.exe cannot run here (it needs Windows; it crashes under wine), so the
 payload is the explicit set the application actually loads: the executable, Qt's
-modules and the plugins it uses, the MinGW runtime DLLs, the pinned mpv DLL,
-shaders, translations and licence material. Every file is copied by name — no
-recursive source glob — and the installer list is generated from what was copied,
-so the two cannot disagree.
+modules and the plugins it uses, the MinGW runtime DLLs, the pinned mpv DLL, the
+generated benchmark clips, shaders, translations and licence material. Every file
+is copied by name — no recursive source glob — and the installer list is generated
+from what was copied, so the two cannot disagree.
 
 Usage:
   assemble-payload.py --build-dir DIR --qt PREFIX --runtime-dlls DIR \
@@ -35,6 +35,20 @@ SYSTEM = {
     "dbgeng.dll", "winhttp.dll", "wininet.dll", "wlanapi.dll", "credui.dll", "netutils.dll",
     "srvcli.dll", "samcli.dll", "slc.dll", "tbs.dll", "mgmtapi.dll", "snmpapi.dll",
 }
+
+# The benchmark catalogue's five generated clips. They are copied by name into
+# benchmarks/ beside the executable, which is where the application looks; a
+# missing clip stops packaging instead of leaving a resolution that reports
+# "clip not found" after installation. Keep in sync with
+# cmake/MikaiBenchmarks.cmake and src/app/dialogs/settings/SettingsBenchmarkTab.cpp.
+BENCHMARKS = [
+    "480x360.mp4",
+    "640x480.mp4",
+    "768x576.mp4",
+    "1280x720.mp4",
+    "1920x1080.mp4",
+]
+BENCHMARK_SOURCE_DIR = "resources/benchmarks"
 
 PLUGINS = [
     "platforms/qwindows.dll",
@@ -142,6 +156,22 @@ def validate_qt_mingw_runtime(payload):
             "but the deployed runtime does not export it")
 
 
+def copy_benchmarks(source, out):
+    """Copy the benchmark clips by name; an incomplete set is a packaging error."""
+    original = source / BENCHMARK_SOURCE_DIR
+    if not original.is_dir():
+        sys.exit(f'benchmark clip directory is missing: {original}')
+    target = out / "benchmarks"
+    target.mkdir(exist_ok=True)
+    for name in BENCHMARKS:
+        clip = original / name
+        if not clip.is_file():
+            sys.exit(f'benchmark clip is missing from the source tree: {clip}')
+        if clip.stat().st_size == 0:
+            sys.exit(f'benchmark clip is empty: {clip}')
+        shutil.copy2(clip, target / name)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=pathlib.Path, required=True)
@@ -200,6 +230,7 @@ def main():
     validate_qt_mingw_runtime(args.out)
 
     shutil.copytree(args.source / "shaders", args.out / "shaders")
+    copy_benchmarks(args.source, args.out)
     (args.out / "translations").mkdir(exist_ok=True)
     for name in ("qt_uk.qm", "qtbase_uk.qm"):
         source = args.qt / "translations" / name

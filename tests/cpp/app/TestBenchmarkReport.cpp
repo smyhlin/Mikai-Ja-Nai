@@ -1,8 +1,12 @@
 #include "TestBenchmarkReport.hpp"
 
+#include "dialogs/settings/BenchmarkPlayback.hpp"
 #include "dialogs/settings/BenchmarkReport.hpp"
 
+#include <QtCore/QByteArray>
 #include <QtCore/QDir>
+#include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
@@ -11,6 +15,34 @@
 #include <QtCore/QTemporaryDir>
 
 namespace {
+
+// A clip stands in for the packaged recording: a short distinct payload makes a
+// test prove which copy was opened rather than merely that a path matched.
+bool writeClip(const QString& path, const QByteArray& payload) {
+  if (!QDir().mkpath(QFileInfo(path).absolutePath())) return false;
+  QFile file(path);
+  if (!file.open(QIODevice::WriteOnly)) return false;
+  return file.write(payload) == payload.size();
+}
+
+QByteArray readClip(const QString& path) {
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly)) return {};
+  return file.readAll();
+}
+
+// The Linux install tree is configurable, so the packaged location is derived
+// from the same macro the application is compiled with rather than a hardcoded
+// data directory.
+#ifndef MIKAI_BENCHMARK_INSTALL_RELATIVE
+#define MIKAI_BENCHMARK_INSTALL_RELATIVE "../share/mikai/benchmarks"
+#endif
+
+QString installedClipPath(const QString& applicationDir, const QString& name) {
+  return QDir::cleanPath(applicationDir + QLatin1Char('/') +
+                         QString::fromUtf8(MIKAI_BENCHMARK_INSTALL_RELATIVE) +
+                         QLatin1Char('/') + name);
+}
 
 mikai::app::BenchmarkReport sampleReport() {
   mikai::app::BenchmarkReport report;
@@ -118,4 +150,78 @@ void TestBenchmarkReport::unwritableDirectoryNamesTheCauseAndKeepsNothingBehind(
   QVERIFY(!written.success);
   QVERIFY(!written.error.isEmpty());
   QVERIFY(written.path.isEmpty());
+}
+
+void TestBenchmarkReport::clipResolvesFromInstalledSharePrefix() {
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  // One level below the temporary root keeps every probed location inside the
+  // sandbox.
+  const QDir prefix(QDir(directory.path()).absoluteFilePath(QStringLiteral("prefix")));
+  const QString applicationDir = prefix.absoluteFilePath(QStringLiteral("bin"));
+  QVERIFY(QDir().mkpath(applicationDir));
+  // A Linux package installs the binary as <prefix>/bin/mikai.
+  const QString packaged =
+      installedClipPath(applicationDir, QStringLiteral("1920x1080.mp4"));
+  QVERIFY(writeClip(packaged, QByteArrayLiteral("clip")));
+
+  QCOMPARE(mikai::app::locateBenchmarkClip(QStringLiteral("1920x1080.mp4"), applicationDir),
+           packaged);
+  // An unshipped clip stays missing rather than matching a neighbour by name.
+  QVERIFY(mikai::app::locateBenchmarkClip(QStringLiteral("1280x720.mp4"), applicationDir)
+              .isEmpty());
+}
+
+void TestBenchmarkReport::adjacentClipFolderBeatsTheSharePrefix() {
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  const QDir prefix(QDir(directory.path()).absoluteFilePath(QStringLiteral("prefix")));
+  const QString applicationDir = prefix.absoluteFilePath(QStringLiteral("bin"));
+  QVERIFY(QDir().mkpath(applicationDir));
+  // Windows installer and portable payload put clips beside the binary.
+  const QString adjacent =
+      prefix.absoluteFilePath(QStringLiteral("bin/benchmarks/480x360.mp4"));
+  const QString shared = installedClipPath(applicationDir, QStringLiteral("480x360.mp4"));
+  QVERIFY(writeClip(adjacent, QByteArrayLiteral("portable-payload")));
+  QVERIFY(writeClip(shared, QByteArrayLiteral("installed-prefix")));
+
+  const QString located =
+      mikai::app::locateBenchmarkClip(QStringLiteral("480x360.mp4"), applicationDir);
+  QCOMPARE(located, adjacent);
+  // The adjacent copy is the one opened, not the share copy.
+  QCOMPARE(readClip(located), QByteArrayLiteral("portable-payload"));
+}
+
+void TestBenchmarkReport::missingClipResolvesToNothingWithoutASubstitute() {
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  const QDir prefix(QDir(directory.path()).absoluteFilePath(QStringLiteral("prefix")));
+  const QString applicationDir = prefix.absoluteFilePath(QStringLiteral("bin"));
+  QVERIFY(QDir().mkpath(applicationDir));
+  QVERIFY(writeClip(installedClipPath(applicationDir, QStringLiteral("480x360.mp4")),
+                    QByteArrayLiteral("neighbour")));
+  QVERIFY(QDir().mkpath(
+      installedClipPath(applicationDir, QStringLiteral("1920x1080.mp4"))));
+
+  QVERIFY(mikai::app::locateBenchmarkClip(QStringLiteral("1920x1080.mp4"), applicationDir)
+              .isEmpty());
+}
+
+void TestBenchmarkReport::developmentBuildReadsSourceResourcesBenchmarks() {
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  const QDir root(directory.path());
+  const QString sourceClip =
+      root.absoluteFilePath(QStringLiteral("resources/benchmarks/768x576.mp4"));
+  QVERIFY(writeClip(sourceClip, QByteArrayLiteral("development-source")));
+
+  // Nested build directory, the layout of every configured preset.
+  const QString nested = root.absoluteFilePath(QStringLiteral("build/release"));
+  QVERIFY(QDir().mkpath(nested));
+  QCOMPARE(mikai::app::locateBenchmarkClip(QStringLiteral("768x576.mp4"), nested), sourceClip);
+
+  // A single-level build directory resolves the same source tree.
+  const QString flat = root.absoluteFilePath(QStringLiteral("build"));
+  QVERIFY(QDir().mkpath(flat));
+  QCOMPARE(mikai::app::locateBenchmarkClip(QStringLiteral("768x576.mp4"), flat), sourceClip);
 }

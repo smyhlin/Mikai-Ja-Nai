@@ -44,17 +44,23 @@ class SourcePackageTests(unittest.TestCase):
         (self.root / 'ignored.bin').write_bytes(b'ignored')
         (self.root / 'resources').mkdir()
         (self.root / 'resources' / 'new-artwork.svg').write_text('<svg/>\n', encoding='utf-8')
+        # The packaged benchmark clips are build inputs of every release route, so
+        # a source snapshot has to carry them even though they are binary media.
+        (self.root / 'resources' / 'benchmarks').mkdir()
+        (self.root / 'resources' / 'benchmarks' / '480x360.mp4').write_bytes(b'clip')
         result = self.package()
         archive = result / source_package.ARCHIVE_NAME
         with tarfile.open(archive, 'r:gz') as tar:
             names = set(tar.getnames())
         self.assertIn('mikai-0.1.0/resources/new-artwork.svg', names)
+        self.assertIn('mikai-0.1.0/resources/benchmarks/480x360.mp4', names)
         self.assertNotIn('mikai-0.1.0/.env', names)
         self.assertNotIn('mikai-0.1.0/private/account.json', names)
         self.assertNotIn('mikai-0.1.0/ignored.bin', names)
         provenance = json.loads((result / 'source-provenance.json').read_text(encoding='utf-8'))
         included = {entry['path'] for entry in provenance['files']}
-        self.assertEqual(included, {'.gitignore', 'tracked.txt', 'resources/new-artwork.svg'})
+        self.assertEqual(included, {'.gitignore', 'tracked.txt', 'resources/new-artwork.svg',
+                                    'resources/benchmarks/480x360.mp4'})
         self.assertTrue(provenance['dirty'])
         self.assertEqual(provenance['commit_equivalence'], 'not-claimed')
         self.assertEqual(hashlib.sha256(archive.read_bytes()).hexdigest(), (result / 'SHA256SUMS').read_text().split()[0])

@@ -9,4 +9,8 @@ class TestBenchmarkReport : public QObject {
   void completedRunWritesOneParseableJsonWithTypedResults();
   void secondRunDoesNotOverwriteTheFirstReport();
   void unwritableDirectoryNamesTheCauseAndKeepsNothingBehind();
+  void clipResolvesFromInstalledSharePrefix();
+  void adjacentClipFolderBeatsTheSharePrefix();
+  void missingClipResolvesToNothingWithoutASubstitute();
+  void developmentBuildReadsSourceResourcesBenchmarks();
 };

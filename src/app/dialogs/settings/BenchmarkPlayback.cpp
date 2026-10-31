@@ -4,10 +4,13 @@
 #include "MpvRenderContext.hpp"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QElapsedTimer>
+#include <QFileInfo>
 #include <QOpenGLContext>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLFunctions>
+#include <QStringList>
 #include <QThread>
 
 #include <atomic>
@@ -37,6 +40,23 @@ struct CurrentContextGuard {
 };
 
 }  // namespace
+
+#ifndef MIKAI_BENCHMARK_INSTALL_RELATIVE
+#define MIKAI_BENCHMARK_INSTALL_RELATIVE "../share/mikai/benchmarks"
+#endif
+
+QString locateBenchmarkClip(const QString& name, const QString& applicationDir) {
+    // An empty executable directory would resolve against the file system root.
+    if (name.isEmpty() || applicationDir.isEmpty()) return {};
+    const QDir application(applicationDir);
+    for (const char* root : {"benchmarks", MIKAI_BENCHMARK_INSTALL_RELATIVE,
+                             "../resources/benchmarks", "../../resources/benchmarks"}) {
+        const QString candidate =
+            application.absoluteFilePath(QLatin1String(root) + QLatin1Char('/') + name);
+        if (QFileInfo(candidate).isFile()) return QDir::cleanPath(candidate);
+    }
+    return {};
+}
 
 mplayer::native::AnimeJanaiSourceContext readBenchmarkSourceContext(
     const QString& clipPath, QString* error) {

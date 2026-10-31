@@ -20,6 +20,9 @@
 #      licence-restricted payload directories - at the direct child level AND
 #      nested - while ordinary runtime files and directories survive, and the
 #      source tree is untouched.
+#   8. A source tree missing one generated benchmark clip is refused by name
+#      before anything is written, so a package cannot claim a benchmark that
+#      would report "clip not found" after installation.
 #
 # Two findings this contract caught while it was being built, both of which the
 # production script has since been corrected for. They are recorded because each
@@ -57,10 +60,10 @@
 # Ownership: every path this file creates lives under one scratch directory
 # that this file and nothing else owns. It never touches the repository build
 # tree, dist-mikai, build/release/native, any existing native root, the pinned
-# mpv archive or the real shaders directory - the shaders, executable and mpv
-# inputs are synthetic copies written into scratch. Every child run is launched
-# from scratch with its own working directory, so a future test can never
-# inherit a real DIST_DIR or native asset root from the environment.
+# mpv archive or the real shaders directory - the shaders, executable, benchmark
+# clips and mpv inputs are synthetic copies written into scratch. Every child run
+# is launched from scratch with its own working directory, so a future test can
+# never inherit a real DIST_DIR or native asset root from the environment.
 #
 # Variables the parent's add_test must pass:
 #   DIST_CONTRACT_PROJECT=ON                             gate
@@ -346,6 +349,15 @@ set(_source_dir "${_scratch}/input/source")
 file(MAKE_DIRECTORY "${_source_dir}")
 file(WRITE "${_source_dir}/NOTES" "synthetic source root\n")
 
+# The generated benchmark clips the assembly packages by name. Synthetic bytes
+# are enough: the script copies them, never transcodes, and the contract is
+# about which files land on disk, not about encoder output.
+set(_clips "480x360.mp4" "640x480.mp4" "768x576.mp4" "1280x720.mp4" "1920x1080.mp4")
+file(MAKE_DIRECTORY "${_source_dir}/resources/benchmarks")
+foreach(_clip IN LISTS _clips)
+  file(WRITE "${_source_dir}/resources/benchmarks/${_clip}" "synthetic clip ${_clip}\n")
+endforeach()
+
 # One locally built mpv archive, reused by every scenario. The script verifies
 # its SHA-256 against the value passed in, extracts it, and checks that the DLL
 # inside is a genuine x64 PE - all of which the round-trip below satisfies
@@ -458,6 +470,8 @@ _check(NOT EXISTS "${_protected}/translations"
   "no translations directory is created on a refusal")
 _check(NOT EXISTS "${_protected}/native"
   "no native directory is created on a refusal")
+_check(NOT EXISTS "${_protected}/benchmarks"
+  "no benchmarks directory is created on a refusal")
 
 # ===========================================================================
 # Scenario 2 - an existing but empty output directory is accepted
@@ -482,6 +496,12 @@ _check(EXISTS "${_empty_out}/shaders/Anime4K_Clamp_Highlights.glsl"
   "the shaders are copied into the output")
 _check(EXISTS "${_empty_out}/platforms/qwindows.dll"
   "the Qt runtime deploy step ran against the staging root")
+_check(EXISTS "${_empty_out}/benchmarks/1920x1080.mp4"
+  "the benchmark clips are copied beside the executable")
+file(GLOB _installed_clips LIST_DIRECTORIES FALSE "${_empty_out}/benchmarks/*")
+list(LENGTH _installed_clips _installed_clip_count)
+_check(_installed_clip_count EQUAL 5
+  "exactly the five benchmark clips are packaged")
 _check(NOT EXISTS "${_empty_out}/native"
   "MIKAI_DIST_NATIVE=OFF packages no native tree at all")
 
@@ -759,6 +779,52 @@ foreach(_entry
     "${_native_root}/runtime/a-real-bundle/deeper/far/nest/records/ledger.json"
     "${_native_root}/runtime/a-real-bundle/keep/runtime-state.json")
   _check(EXISTS "${_entry}" "the source input survives intact: ${_entry}")
+endforeach()
+
+# ===========================================================================
+# Scenario 8 - a missing benchmark clip is refused by name, before any write
+# ===========================================================================
+set(_workdir "${_cases}/missing-benchmark-clip")
+file(MAKE_DIRECTORY "${_workdir}")
+set(_clip_source "${_workdir}/source")
+file(MAKE_DIRECTORY "${_clip_source}/resources/benchmarks")
+foreach(_clip IN LISTS _clips)
+  if(_clip STREQUAL "1920x1080.mp4")
+    continue()
+  endif()
+  file(WRITE "${_clip_source}/resources/benchmarks/${_clip}" "synthetic clip ${_clip}\n")
+endforeach()
+set(_clip_out "${_workdir}/dist")
+file(MAKE_DIRECTORY "${_clip_out}")
+
+# The same synthetic inputs as _common_args; only SOURCE_DIR points at the tree
+# that is missing one clip.
+set(_rc "")
+_run_dist(_rc _out _err "missing-benchmark-clip"
+  "EXE=${_exe_path}"
+  "WINDEPLOYQT=${_stub_bin}"
+  "SHADERS=${_shaders_src}"
+  "SOURCE_DIR=${_clip_source}"
+  "MIKAI_MPV_ARCHIVE_NAME=verified-mpv.7z"
+  "MIKAI_MPV_ARCHIVE_URL=https://invalid.invalid/unverified"
+  "MIKAI_MPV_ARCHIVE_SHA256=${_mpv_archive_sha}"
+  "MIKAI_DIST_CACHE_DIR=${_mpv_cache}"
+  "MIKAI_DIST_MPV_ARCHIVE=${_mpv_archive}"
+  "DIST_DIR=${_clip_out}"
+  "MIKAI_DIST_NATIVE=OFF")
+_check(NOT _rc EQUAL 0 "a missing benchmark clip is refused (nonzero exit)")
+set(_combined "${_out}\n${_err}")
+string(FIND "${_combined}" "1920x1080.mp4" _at)
+_check(_at GREATER -1 "the refusal names the missing clip")
+string(FIND "${_combined}" "resources/benchmarks" _at_source)
+_check(_at_source GREATER -1
+  "the refusal names the source directory it looked in")
+# The clip set is validated before the first write, so a refusal leaves no
+# half-assembled folder that could be mistaken for a payload.
+foreach(_artifact IN ITEMS "run.bat" "VERSION" "mikai.exe" "mpv" "shaders"
+                          "translations" "platforms" "benchmarks")
+  _check(NOT EXISTS "${_clip_out}/${_artifact}"
+    "the missing-clip refusal writes nothing: no ${_artifact}")
 endforeach()
 
 message(STATUS "${_prefix}: sweep complete")

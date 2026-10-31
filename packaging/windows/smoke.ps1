@@ -305,6 +305,19 @@ try {
     $payloadFileCount = Assert-InstalledPayload $installPath
     $script:Evidence.payloadFileCount = $payloadFileCount
     $script:Evidence.checks.installedPayloadMatchesManifest = $true
+    # The benchmark catalogue resolves these beside the executable. The inventory
+    # check above only proves the files came from the payload; this proves a run
+    # installed them at the path the application actually reads.
+    foreach ($clip in @('480x360.mp4','640x480.mp4','768x576.mp4','1280x720.mp4','1920x1080.mp4')) {
+        $clipPath = Join-Path $installPath "benchmarks\$clip"
+        if (-not (Test-Path -LiteralPath $clipPath -PathType Leaf)) {
+            throw "Installed benchmark clip is missing: benchmarks\$clip"
+        }
+        if ((Get-Item -LiteralPath $clipPath).Length -le 0) {
+            throw "Installed benchmark clip is empty: benchmarks\$clip"
+        }
+    }
+    $script:Evidence.checks.installedBenchmarkClips = $true
     # App-adjacent data paths, observed from NativePaths.cpp, AnimeJanaiConfig.cpp,
     # and CrashLog.cpp. Never touch QSettings: that belongs to the real user profile.
     $models = Join-Path $installPath 'native\animejanai\models\custom\smoke-unknown-model.bin'
