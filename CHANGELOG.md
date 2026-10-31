@@ -2,6 +2,8 @@
 
 ## 0.1.0 — Unreleased
 
+- Player rendering now retries temporarily suppressed paints without waiting for another mpv callback, isolates raw OpenGL rendering and processing-transition captures from Qt painter state, and invalidates framebuffer depth/format caches when their target changes. Windowed canvas sizing uses display aspect and rotation without changing the coded dimensions supplied to processing or source-resolution labels. These source fixes do not establish that all intermittent black frames are resolved.
+
 - Settings Appearance now initializes accent, radius, gradient and general controls from the current saved appearance when the tab is built and when the dialog is reopened, including saved custom colors, with checked swatch indicators kept in sync. Preview, save, cancel, reset and live language/appearance refresh behavior are preserved.
 
 - Title-page buttons now use the global corner radius, and secondary actions remain visibly outlined before hover. Watch, Episodes and More details share a wrapping hero action row; clicking either displayed title name copies it, with Enter/Space activation also available.

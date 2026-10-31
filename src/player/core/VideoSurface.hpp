@@ -503,6 +503,8 @@ signals:
     void positionChanged(double seconds);
     void durationChanged(double seconds);
     void videoSizeChanged(int width, int height);
+    /// Aspect after sample-aspect correction and rotation; zero while unavailable.
+    void displayAspectRatioChanged(double ratio);
     void streamStatsChanged(double bytesPerSecond, double framesPerSecond,
                             StreamFpsSource fpsSource);
     void errorOccurred(const QString& message);
@@ -826,12 +828,18 @@ private:
     /// Schedules a pending frame against mpv's target_time without blocking.
     void schedulePacedPaint();
     /// The deferred paint slot arrived: repaint now, and remember when this
-    /// paint was released so paintGL can measure the scheduling lead.
+    /// paint was released so paintGL can measure the scheduling lead. When the
+    /// widget still cannot paint, the render state is advanced instead so the
+    /// held work reaches the skip/ack path exactly once.
     void onPacingTick();
+    /// Publishes the display aspect, dropping anything a consumer cannot use.
+    void publishDisplayAspectRatio(double ratio);
     /// Runtime rollback for client-side frame pacing.
     static bool clientFramePacingEnabled();
     /// Queries the widget color attachment's actual internal format.
     void probeFboColorDepth();
+    /// Forgets the probed attachment format after a context or framebuffer change.
+    void resetRenderTargetFormat();
     /// Adds one record to the optional timing log.
     void logFrameTiming(const QString& line);
     /// Consumes the swap report owed for the frame this paint rendered. Called
@@ -982,15 +990,27 @@ private:
     // Client pacing remains nonblocking; the timer is canceled on direct paint
     // and source/context teardown.
     QTimer pacingTimer_;
-    /// Raw target_time in the loaded API's units; 0 with no timer armed.
+    /// Raw target_time in the loaded API's units; 0 with no timer armed, and also
+    /// for a grace retry, which deliberately has no mpv slot behind it.
     qint64 pacingTargetTime_ = 0;
     bool pacingTimerArmed_ = false;
+    /// True while the armed run is the bounded unpaintable-grace retry rather
+    /// than a mpv presentation slot: it carries no target_time and its arrival
+    /// is not a render-lead measurement.
+    bool pacingRetryOnly_ = false;
     /// Estimated render lead subtracted from mpv's target time.
     double renderLeadMs_ = 1.5;
     /// Steady-clock ns of the moment the pacing timer released the paint whose
     /// lead the next paintGL should measure.
     qint64 pacingFiredAtNs_ = 0;
     bool pacingMeasurePending_ = false;
+    /// Output geometry mpv reports after its filters: aspect-corrected size and
+    /// the intended clockwise rotation that is not yet applied to that output.
+    double observedOutputWidth_ = 0.0;
+    double observedOutputHeight_ = 0.0;
+    double observedOutputRotation_ = 0.0;
+    /// Last published display aspect; 0 when no usable geometry is known.
+    double displayAspectRatio_ = 0.0;
     /// T-204: consecutive advanceRenderState rounds that could not paint.
     /// Skip/drop mode is latched only after this exceeds the grace bound, so a
     /// transiently empty visibleRegion() no longer discards frames.

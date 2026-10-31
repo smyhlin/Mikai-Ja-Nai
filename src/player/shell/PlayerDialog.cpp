@@ -214,7 +214,6 @@ PlayerDialog::PlayerDialog(const QString& caption,
       currentEmbed_(),
       currentHeight_(initialHeight),
       episodeIndex_(0),
-      aspect_(kAspectFallback),
       volume_(0.7),
       speed_(1.0),
       muted_(false),
@@ -678,12 +677,9 @@ void PlayerDialog::connectEngine() {
     connect(surface_, &VideoSurface::durationChanged, this, &PlayerDialog::onEngineDuration);
     connect(surface_, &VideoSurface::positionChanged, this, &PlayerDialog::onEnginePosition);
     connect(surface_, &VideoSurface::playingChanged, this, &PlayerDialog::onEnginePlaying);
-    // T-420: one play-icon path. Every playingChanged already runs
-    // onEnginePlaying -> shell_->setPlaying -> updatePlayIcon, and
-    // updatePlayIcon itself reads the ENGINE as the authority (a stale cached
-    // flag cannot misdraw the control), so the second, direct connection this
-    // slot used to install here was a pure duplicate run per event.
-    connect(surface_, &VideoSurface::videoSizeChanged, this, &PlayerDialog::onEngineVideoSize);
+    connect(surface_, &VideoSurface::videoSizeChanged, shell_, &PlayerShell::setSourceSize);
+    connect(surface_, &VideoSurface::displayAspectRatioChanged, shell_,
+            &PlayerShell::setAspectRatio);
     connect(surface_, &VideoSurface::streamStatsChanged, shell_, &PlayerShell::setStreamStats);
     // The filter's own status arrives from the surface's reader, which is the
     // only thing that may report a chain as running. The held inputs and the HUD
@@ -860,15 +856,6 @@ void PlayerDialog::onEnginePlaying(bool playing) {
     shell_->setMuted(muted_);
     shell_->setRate(std::clamp(speed_, kShellRateMin, kShellRateMax));
     syncPipBar();
-}
-
-void PlayerDialog::onEngineVideoSize(int width, int height) {
-    if (closed_ || width <= 0 || height <= 0) {
-        return;
-    }
-    aspect_ = static_cast<double>(width) / static_cast<double>(height);
-    shell_->setSourceSize(width, height);
-    shell_->setAspectRatio(aspect_);
 }
 
 bool PlayerDialog::openStream(const QString& url, int height, bool resume) {

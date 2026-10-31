@@ -12,6 +12,7 @@
 #include <QOpenGLExtraFunctions>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLFunctions>
+#include <QOpenGLPaintDevice>
 #include <QPainter>
 #include <QRegularExpression>
 #include <QScopedValueRollback>
@@ -50,6 +51,10 @@ constexpr int kRestoreSettleMaxAttempts = 5;
 constexpr int kProbeReadTimeoutMs = 250;
 
 constexpr int kUnpaintableGraceTicks = 2;
+// Bounded re-check of an unpaintable widget: about one 60 Hz frame, so a grace
+// that became paintable again is not left waiting for a callback mpv may never
+// raise for it.
+constexpr int kUnpaintableRetryMs = 16;
 constexpr double kMinRenderLeadMs = 0.25;
 constexpr double kMaxRenderLeadMs = 8.0;
 
@@ -649,34 +654,48 @@ bool VideoSurface::captureEngineFrameHold() {
     snapshotFboFormat.setAttachment(QOpenGLFramebufferObject::NoAttachment);
     snapshotFboFormat.setInternalTextureFormat(kGlInternalFormatRgba8);
     auto snapshot = std::make_unique<QOpenGLFramebufferObject>(size, snapshotFboFormat);
-    if (!snapshot->isValid() || !snapshot->bind()) {
-        snapshot.reset();
-        releaseRenderContextCurrent(previous);
-        return false;
+    QOpenGLFunctions* gl = context_->functions();
+    bool frameConsumed = false;
+    bool captured = false;
+    {
+        // Isolate capture from Qt's overlay state; end this painter before changing contexts.
+        QOpenGLPaintDevice device(size);
+        device.setDevicePixelRatio(1.0);
+        QPainter painter(&device);
+        painter.beginNativePainting();
+        if (snapshot->isValid() && snapshot->bind()) {
+            gl->glViewport(0, 0, size.width(), size.height());
+            gl->glDisable(GL_BLEND);
+            gl->glDisable(GL_SCISSOR_TEST);
+            // New attachments have undefined pixels outside the video rectangle.
+            gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            gl->glClear(GL_COLOR_BUFFER_BIT);
+            // Copying the widget FBO would retain HUD pixels.
+            const uint64_t updateFlags = render_->update();
+            frameConsumed = framePending_ || (updateFlags & MPV_RENDER_UPDATE_FRAME) != 0;
+            const int snapshotFormat =
+                static_cast<int>(snapshot->format().internalTextureFormat());
+            GLint snapshotDepth = 0;
+            if (QOpenGLExtraFunctions* extra = context_->extraFunctions()) {
+                extra->glGetFramebufferAttachmentParameteriv(
+                    GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 0x8212, &snapshotDepth);
+            }
+            const int result =
+                render_->render(snapshot->handle(), size.width(), size.height(),
+                                snapshotFormat, snapshotDepth > 0 ? snapshotDepth : 0);
+            captured = result >= 0;
+        }
+        if (QOpenGLExtraFunctions* extra = context_->extraFunctions()) {
+            extra->glBindVertexArray(0);
+            extra->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+            extra->glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        }
+        gl->glBindFramebuffer(GL_FRAMEBUFFER,
+                              static_cast<GLuint>(defaultFramebufferObject()));
+        painter.endNativePainting();
+        painter.end();
     }
-
-    // Re-render mpv's cached image into a video-only target. The Qt widget FBO
-    // may already contain paintOverlay() from its previous composition, so
-    // blitting it would bake HUD pixels into the transition image.
-    const uint64_t updateFlags = render_->update();
-    const bool frameConsumed = framePending_ || (updateFlags & MPV_RENDER_UPDATE_FRAME) != 0;
-    const int snapshotFormat =
-        static_cast<int>(snapshot->format().internalTextureFormat());
-    GLint snapshotDepth = 0;
-    if (QOpenGLExtraFunctions* extra = context_->extraFunctions()) {
-        extra->glGetFramebufferAttachmentParameteriv(
-            GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 0x8212, &snapshotDepth);
-    }
-    const int result = render_->render(snapshot->handle(), size.width(), size.height(),
-                                       snapshotFormat, snapshotDepth > 0 ? snapshotDepth : 0);
-    if (QOpenGLExtraFunctions* extra = context_->extraFunctions()) {
-        extra->glBindVertexArray(0);
-        extra->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        extra->glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-    }
-    context_->functions()->glBindFramebuffer(
-        GL_FRAMEBUFFER, static_cast<GLuint>(defaultFramebufferObject()));
-    if (result < 0) {
+    if (!captured) {
         snapshot.reset();
         releaseRenderContextCurrent(previous);
         return false;
@@ -775,6 +794,13 @@ bool VideoSurface::open(const QString& url, quint64 mediaToken) {
     observedContainerFps_ = 0.0;
     observedVideoWidth_ = 0.0;
     observedVideoHeight_ = 0.0;
+    // Nothing of the previous source describes the one being opened: its output
+    // geometry and the shape published from it are gone until this source
+    // reports its own.
+    observedOutputWidth_ = 0.0;
+    observedOutputHeight_ = 0.0;
+    observedOutputRotation_ = 0.0;
+    publishDisplayAspectRatio(0.0);
     emit streamStatsChanged(0.0, 0.0, StreamFpsSource::Unknown);
     try {
         if (mpv_ != nullptr) {
@@ -847,6 +873,7 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
     pacingTimer_.stop();
     pacingTimerArmed_ = false;
     pacingTargetTime_ = 0;
+    pacingRetryOnly_ = false;
     pacingMeasurePending_ = false;
     framePending_ = false;
     if (url_.isEmpty() || mpv_ == nullptr) {
@@ -871,6 +898,11 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
     observedDuration_ = 0.0;
     observedPosition_ = 0.0;
     observedVideoWidth_ = observedVideoHeight_ = 0.0;
+    // Same boundary for the filtered output: the loaded file's geometry cannot
+    // shape the replacement, and a reset published aspect lets an identical
+    // value from the new file be announced rather than suppressed as unchanged.
+    observedOutputWidth_ = observedOutputHeight_ = observedOutputRotation_ = 0.0;
+    publishDisplayAspectRatio(0.0);
     hasVideo_ = false;
     observedColorProfile_ = {};
     sourceColorProfile_ = {};
@@ -938,6 +970,7 @@ void VideoSurface::close() {
     pacingTimer_.stop();
     pacingTimerArmed_ = false;
     pacingTargetTime_ = 0;
+    pacingRetryOnly_ = false;
     pacingMeasurePending_ = false;
     framePending_ = false;
     // pooled surface's last URL.
@@ -988,6 +1021,10 @@ void VideoSurface::close() {
     animeJanaiEpoch_ = mpv_->sourceEpoch();
     observedVideoWidth_ = 0.0;
     observedVideoHeight_ = 0.0;
+    observedOutputWidth_ = 0.0;
+    observedOutputHeight_ = 0.0;
+    observedOutputRotation_ = 0.0;
+    publishDisplayAspectRatio(0.0);
     observedContainerFps_ = 0.0;
     emit sourceEpochChanged(mpv_->sourceEpoch());
     // A stop on an already-dead core is not worth reporting. Keep the keyed
@@ -1338,6 +1375,9 @@ void VideoSurface::initializeGL() {
 
 void VideoSurface::createRenderContext() {
     if (mpv_ == nullptr || context_ == nullptr) return;
+    // A new context owns a new widget framebuffer whose attachment format says
+    // nothing about the one the previous context probed.
+    resetRenderTargetFormat();
     const GlApi gl = loadGlApi();
     ++renderGeneration_;
     const quint64 generation = renderGeneration_;
@@ -1364,8 +1404,11 @@ void VideoSurface::createRenderContext() {
 void VideoSurface::resizeGL(int width, int height) {
     QOpenGLWidget::resizeGL(width, height);
     // Qt hands QOpenGLWidget a freshly allocated framebuffer on a resize, so
-    // whatever the last paint drew into the old one is gone. The next paint
-    // has to render even though no frame has been decoded since.
+    // whatever the last paint drew into the old one is gone - and its attachment
+    // is a different object that has to be probed again before mpv is told what
+    // to render into. The next paint has to render even though no frame has been
+    // decoded since.
+    resetRenderTargetFormat();
     forceRender_ = true;
     if (contextReady_) render_->update();
     // Ask for that paint rather than hoping Qt repaints on its own: the fresh
@@ -1397,6 +1440,7 @@ void VideoSurface::paintGL() {
     pacingTimer_.stop();
     pacingTimerArmed_ = false;
     pacingTargetTime_ = 0;
+    pacingRetryOnly_ = false;
     QOpenGLWidget::paintGL();
     if (!contextReady_ || !render_) {
         // No engine, so there is no frame to render - but NoPartialUpdate leaves
@@ -1445,6 +1489,13 @@ void VideoSurface::paintGL() {
         return;
     }
     QOpenGLFunctions* gl = glContext->functions();
+    // The boundary around mpv's raw GL, which maps logical widget coordinates
+    // onto this framebuffer. Everything raw stays inside it: Qt owns the paint
+    // engine's target and state outside this window, and mpv leaves the
+    // vertex-array binding and unpack row length behind, so both are put back
+    // before the window closes.
+    QPainter painter(this);
+    painter.beginNativePainting();
     // Clear reused Qt buffers before rendering, including pixels outside the video rectangle.
     gl->glBindFramebuffer(GL_FRAMEBUFFER, target);
     gl->glViewport(0, 0, targetWidth, targetHeight);
@@ -1454,15 +1505,11 @@ void VideoSurface::paintGL() {
     gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     gl->glClear(GL_COLOR_BUFFER_BIT);
 
-    // Query the widget color attachment once per GL context.
+    // Query the widget color attachment once per context/target, with that
+    // target actually bound, so the format handed to mpv is the one it draws
+    // into rather than a previous framebuffer's.
     if (!renderFormatProbed_) probeFboColorDepth();
 
-    // The boundary around mpv's raw GL, which maps logical widget coordinates
-    // onto this framebuffer. mpv leaves the vertex-array binding and unpack row
-    // length behind and Qt only re-establishes its own state on the next paint,
-    // so both are put back inside the native window.
-    QPainter painter(this);
-    painter.beginNativePainting();
     int renderResult = 0;
     if (retainedPictureVisible && drawEngineFrameHold(target, targetWidth, targetHeight)) {
         if (newOutputFrame) {
@@ -1590,6 +1637,19 @@ void VideoSurface::advanceRenderState() {
         ++unpaintableStreak_;
         if (unpaintableStreak_ < kUnpaintableGraceTicks) {
             framePending_ = framePending_ || frame;
+            // A one-shot redraw may be the last callback; retry before mpv's VO timeout.
+            if (framePending_ || videoFramePainted_) {
+                const int remainingMs =
+                    pacingTimer_.isActive() ? pacingTimer_.remainingTime() : -1;
+                if (!pacingTimer_.isActive() || remainingMs < 0 ||
+                    remainingMs > kUnpaintableRetryMs) {
+                    pacingTimerArmed_ = true;
+                    // Retry timers must not bias presentation-lead estimates.
+                    pacingTargetTime_ = 0;
+                    pacingRetryOnly_ = true;
+                    pacingTimer_.start(kUnpaintableRetryMs);
+                }
+            }
             if (!g_frameTimingLogPath.isEmpty())
                 logFrameTiming(QStringLiteral("unpaintable streak=%1 (grace; frame held)")
                                    .arg(unpaintableStreak_));
@@ -1687,6 +1747,7 @@ void VideoSurface::schedulePacedPaint() {
         pacingTimer_.stop();
         pacingTimerArmed_ = false;
         pacingTargetTime_ = 0;
+        pacingRetryOnly_ = false;
         update();
         return;
     }
@@ -1713,6 +1774,7 @@ void VideoSurface::schedulePacedPaint() {
         pacingTimer_.stop();
         pacingTimerArmed_ = false;
         pacingTargetTime_ = 0;
+        pacingRetryOnly_ = false;
         if (!g_frameTimingLogPath.isEmpty()) {
             const char* reason = repeatedOrRedraw
                                      ? ((info.flags & MPV_RENDER_FRAME_INFO_REPEAT) != 0
@@ -1726,13 +1788,13 @@ void VideoSurface::schedulePacedPaint() {
         update();
         return;
     }
-    if (pacingTimerArmed_ && pacingTargetTime_ <= targetTime) {
-        // An earlier slot is already armed and is the paint mpv expects next;
-        // re-arming to a later target would only delay that one.
+    if (pacingTimerArmed_ && !pacingRetryOnly_ && pacingTargetTime_ <= targetTime) {
+        // Preserve earlier presentation slots; retries have no presentation target.
         return;
     }
     pacingTimerArmed_ = true;
     pacingTargetTime_ = targetTime;
+    pacingRetryOnly_ = false;
     // Round up so the timer never fires before the lead-adjusted slot.
     const int delayMs = *delay;
     pacingTimer_.start(delayMs);
@@ -1747,24 +1809,44 @@ void VideoSurface::schedulePacedPaint() {
 }
 
 void VideoSurface::onPacingTick() {
+    const bool retry = pacingRetryOnly_;
     pacingTimerArmed_ = false;
     pacingTargetTime_ = 0;
+    pacingRetryOnly_ = false;
     if (!contextReady_ || render_ == nullptr) return;
-    // The frame may already have been consumed by a direct paint (a resize
-    // repaint, a readback grab); then this is a no-op, which is what disarms
-    // the timer without scheduling a stray repaint.
-    if (framePending_ || forceRender_) {
-        pacingFiredAtNs_ = steadyClockNowNs();
-        pacingMeasurePending_ = true;
+    if (!paintCanHappen()) {
+        // Qt would discard update(); advance to skip/ack rather than strand the frame.
+        advanceRenderState();
+        return;
+    }
+    unpaintableStreak_ = 0;
+    // An unpresented painted frame still needs composition and one swap report.
+    if (framePending_ || forceRender_ || videoFramePainted_) {
+        pacingFiredAtNs_ = retry ? 0 : steadyClockNowNs();
+        pacingMeasurePending_ = !retry;
         update();
     }
 }
 
+void VideoSurface::resetRenderTargetFormat() {
+    // Never called per paint: the queries below cost a round trip, and their
+    // answer describes one target - so a new context, a released one or a resized
+    // framebuffer makes it unknown again rather than merely stale.
+    renderFormatProbed_ = false;
+    renderInternalFormat_ = 0;
+    renderDepthBitsPerChannel_ = 0;
+    renderTargetColorBits_ = {};
+}
+
 void VideoSurface::probeFboColorDepth() {
-    renderFormatProbed_ = true;
     if (context_ == nullptr) return;
     QOpenGLExtraFunctions* gl = context_->extraFunctions();
     if (gl == nullptr) return;
+    // Probe the framebuffer mpv will actually draw into, not whichever one a
+    // caller happened to leave bound.
+    context_->functions()->glBindFramebuffer(
+        GL_FRAMEBUFFER, static_cast<GLuint>(defaultFramebufferObject()));
+    renderFormatProbed_ = true;
     // Discover the attached object's actual sized format. Component bit counts
     // are not enough to distinguish e.g. packed normalized and float formats.
     constexpr GLenum kAttachmentObjectType = 0x8CD0;
@@ -2075,9 +2157,12 @@ void VideoSurface::releaseRenderContextCurrent(QOpenGLContext* previous) {
 }
 
 void VideoSurface::releaseRenderContext() {
+    // The format cache describes a framebuffer this context owned.
+    resetRenderTargetFormat();
     pacingTimer_.stop();
     pacingTimerArmed_ = false;
     pacingTargetTime_ = 0;
+    pacingRetryOnly_ = false;
     pacingMeasurePending_ = false;
     if (render_ == nullptr) {
         if (contextDestroyedConnection_) {
@@ -2176,6 +2261,16 @@ void VideoSurface::observePlaybackState() {
           [this](const Property& p) { observedVideoWidth_ = p.isNumber() ? p.number : 0.0; });
     watch("video-params/h", MPV_FORMAT_DOUBLE,
           [this](const Property& p) { observedVideoHeight_ = p.isNumber() ? p.number : 0.0; });
+    // What the picture actually looks like after mpv's filters: dw/dh already
+    // carry the sample aspect ratio, while rotate is the intended clockwise turn
+    // that has NOT been applied to that output. handleState composes the two, so
+    // an anamorphic or portrait source is not measured by its coded size.
+    watch("video-out-params/dw", MPV_FORMAT_DOUBLE,
+          [this](const Property& p) { observedOutputWidth_ = p.isNumber() ? p.number : 0.0; });
+    watch("video-out-params/dh", MPV_FORMAT_DOUBLE,
+          [this](const Property& p) { observedOutputHeight_ = p.isNumber() ? p.number : 0.0; });
+    watch("video-out-params/rotate", MPV_FORMAT_DOUBLE,
+          [this](const Property& p) { observedOutputRotation_ = p.isNumber() ? p.number : 0.0; });
     watch("cache-speed", MPV_FORMAT_DOUBLE,
           [this](const Property& p) { observedCacheSpeed_ = p.isNumber() ? p.number : 0.0; });
     watch("estimated-vf-fps", MPV_FORMAT_DOUBLE, [this](const Property& p) {
@@ -2455,8 +2550,39 @@ void VideoSurface::handleState() {
             emit videoSizeChanged(w, h);
         }
     }
+    if (!hasVideo_) {
+        publishDisplayAspectRatio(0.0);
+        return;
+    }
+    // Display geometry includes sample aspect and rotation; processing retains coded size.
+    double aspectWidth = 0.0;
+    double aspectHeight = 0.0;
+    if (std::isfinite(observedOutputWidth_) && observedOutputWidth_ > 0.0 &&
+        std::isfinite(observedOutputHeight_) && observedOutputHeight_ > 0.0) {
+        aspectWidth = observedOutputWidth_;
+        aspectHeight = observedOutputHeight_;
+        // vo_libmpv handles quarter turns without swapping its reported dw/dh.
+        const double reportedRotation =
+            std::isfinite(observedOutputRotation_) ? observedOutputRotation_ : 0.0;
+        long rotation = std::lround(reportedRotation);
+        rotation %= 360;
+        if (rotation < 0) rotation += 360;
+        if (rotation % 180 == 90) std::swap(aspectWidth, aspectHeight);
+    } else if (videoWidth_ > 0 && videoHeight_ > 0) {
+        aspectWidth = videoWidth_;
+        aspectHeight = videoHeight_;
+    }
+    publishDisplayAspectRatio(aspectWidth > 0.0 && aspectHeight > 0.0
+                                  ? aspectWidth / aspectHeight
+                                  : 0.0);
 }
 
+void VideoSurface::publishDisplayAspectRatio(double ratio) {
+    if (!std::isfinite(ratio) || ratio <= 0.0) ratio = 0.0;
+    if (ratio == displayAspectRatio_) return;
+    displayAspectRatio_ = ratio;
+    emit displayAspectRatioChanged(ratio);
+}
 
 PlaybackDiagnostics VideoSurface::playbackDiagnostics() const {
     return diagnostics_;

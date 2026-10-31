@@ -468,7 +468,6 @@ private:
     void offerResume(double seconds);
     void onEnginePosition(double seconds);
     void onEnginePlaying(bool playing);
-    void onEngineVideoSize(int width, int height);
     /// Loads `url` and restores the position, pause, volume and speed the
     /// surface was carrying, so a stream swap continues instead of restarting.
     /// `height` is the stream's height in pixels, 0 when the caller has none:
@@ -599,7 +598,6 @@ private:
     int episodeIndex_ = 0;
     /// Prevents duplicate main/PiP completions; an actual load rearms it.
     int lastFinishedEpisodeIndex_ = -1;
-    double aspect_ = 16.0 / 9.0;
     double volume_ = 0.7;      // 0..1, what the shell shows
     double speed_ = 1.0;
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
