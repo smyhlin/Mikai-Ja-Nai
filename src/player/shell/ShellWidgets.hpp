@@ -23,6 +23,7 @@
 #include <QPoint>
 #include <QPushButton>
 #include <QString>
+#include <QTimer>
 #include <QVector>
 #include <QWidget>
 #include <QWindow>
@@ -34,7 +35,6 @@ class QEnterEvent;
 class QEvent;
 class QMouseEvent;
 class QPainter;
-class QTimer;
 class QVBoxLayout;
 QT_END_NAMESPACE
 
@@ -292,6 +292,8 @@ public:
     explicit CenterGlyph(QWidget* parent = nullptr);
 
     void setKind(Kind kind);
+    void setLoading(bool loading);
+    bool isLoading() const { return loading_; }
 
     void paintChrome(QPainter& painter) override;
 
@@ -300,6 +302,9 @@ protected:
 
 private:
     Kind kind_ = Kind::Play;
+    QTimer spinnerTimer_;
+    qreal spinnerAngle_ = 0.0;
+    bool loading_ = false;
 };
 
 /// Transient centred notification.

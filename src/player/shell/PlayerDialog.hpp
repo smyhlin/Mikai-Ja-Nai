@@ -3,6 +3,7 @@
 #include <QDialog>
 #include <QEvent>
 #include <QList>
+#include <QMetaObject>
 #include <QPoint>
 #include <QPointF>
 #include <QPointer>
@@ -517,6 +518,10 @@ private:
     /// Destroys the pooled float, whichever state PiP is in. The float is
     /// parentless, so the dialog is the only thing that can release it.
     void releasePipPool();
+    void finishCompareLoading();
+    void scheduleCompareStart(quint64 generation, int delayMs);
+    void startCompareWindow(quint64 generation);
+    void checkCompareLoading(quint64 generation);
 
     PlayerShell* shell_ = nullptr;
     VideoSurface* surface_ = nullptr;
@@ -623,6 +628,12 @@ private:
     /// The comparison window, created on first use and kept: it borrows the
     /// surface, and two of them would fight over the same core.
     CompareWindow* compare_ = nullptr;
+    bool compareLoadingActive_ = false;
+    quint64 compareLoadingGeneration_ = 0;
+    uint64_t compareLoadingSourceEpoch_ = 0;
+    QMetaObject::Connection compareLoadingFrameSwapped_;
+    bool compareLoadingWasVisible_ = false;
+    bool compareLoadingStartScheduled_ = false;
     bool muted_ = false;
     QRect windowedSize_;
     bool fullscreen_ = true;

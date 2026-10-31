@@ -941,10 +941,7 @@ void PlayerShell::applyState() {
     btnNext_->setVisible(!hidden && hasNextEpisode_);
     dock_->setVisible(!hidden);
     footerLeft_->setVisible(!hidden);
-    if (center_ != nullptr) {
-        center_->setKind((hidden || playing_ || !hasMedia_) ? CenterGlyph::Kind::None
-                                                            : CenterGlyph::Kind::Play);
-    }
+    updateCenterGlyph();
     if (hidden) {
         dismissOverlay();
     }
@@ -1182,6 +1179,7 @@ void PlayerShell::setMedia(const QString& path, const QString& origin, const QSt
     // the rows follow the media rather than being frozen at build time.
     updatePictureMenu();
     updateEmptyState();
+    updateCenterGlyph();
     layoutChrome();
 }
 
@@ -1200,11 +1198,27 @@ void PlayerShell::setPosition(double seconds) {
 void PlayerShell::setPlaying(bool playing) {
     playing_ = playing;
     updatePlayIcon();
-    center_->setKind((playing || hudHidden_ || !hasMedia_) ? CenterGlyph::Kind::None
-                                                           : CenterGlyph::Kind::Play);
+    updateCenterGlyph();
     if (!hudHidden_) {
         hideTimer_.start(kAutohideMs);
     }
+}
+
+void PlayerShell::setCompareLoading(bool loading) {
+    if (center_ == nullptr) {
+        return;
+    }
+    center_->setLoading(loading);
+    updateCenterGlyph();
+}
+
+void PlayerShell::updateCenterGlyph() {
+    if (center_ == nullptr) {
+        return;
+    }
+    center_->setKind((hudHidden_ || playing_ || !hasMedia_)
+                         ? CenterGlyph::Kind::None
+                         : CenterGlyph::Kind::Play);
 }
 
 void PlayerShell::updatePlayIcon() {

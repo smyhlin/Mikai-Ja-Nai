@@ -50,6 +50,7 @@
 #include <QLinearGradient>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QOpenGLWidget>
 #include <QPainterPath>
 #include <QPixmap>
 #include <QPushButton>
@@ -331,6 +332,11 @@ PlayerDialog::PlayerDialog(const QString& caption,
             &PlayerDialog::onAnimeJanaiSourceContextChanged);
     connect(surface_, &VideoSurface::sourceEpochChanged, this,
             &PlayerDialog::onAnimeJanaiSourceContextChanged);
+    connect(surface_, &VideoSurface::sourceEpochChanged, this, [this] {
+        if (compareLoadingActive_) {
+            finishCompareLoading();
+        }
+    });
     shell_->setAnimeJanaiBackend(animeJanaiBackendName(animeJanaiBackend_));
     shell_->setAnimeJanaiSelection(animeJanaiPresetId_, tr("Off"));
 
@@ -346,6 +352,7 @@ PlayerDialog::PlayerDialog(const QString& caption,
 }
 
 PlayerDialog::~PlayerDialog() {
+    finishCompareLoading();
     closed_ = true;
     closeMediaInformation();
     // Child teardown (PlayerShell/surface_ destruction in ~QDialog) emits
@@ -1044,39 +1051,148 @@ void PlayerDialog::onShellFullscreenChanged(bool fullscreen) {
 }
 
 void PlayerDialog::openCompareWindow() {
-    if (closed_ || pip_ != nullptr) {
+    if (closed_ || pip_ != nullptr || surface_ == nullptr || !surface_->hasVideo()) {
+        finishCompareLoading();
+        if (!closed_ && pip_ == nullptr && (surface_ == nullptr || !surface_->hasVideo())) {
+            flashStatus(tr("No video to compare"));
+        }
         return;
     }
     // Both guards say what is wrong rather than opening a window that cannot
     // show anything: without the shader folder the preset chains cannot render,
     // and without video there is no frame to compare.
-    if (!surface_->hasVideo()) {
-        flashStatus(tr("No video to compare"));
-        return;
-    }
     if (anime4k::findShadersDir().isEmpty()) {
+        finishCompareLoading();
         flashStatus(tr("Shaders folder not found — comparison is unavailable"));
         return;
     }
     if (anime4k::availableModes().size() < 2) {
+        finishCompareLoading();
         flashStatus(tr("Not enough variants to compare"));
+        return;
+    }
+    if (compareLoadingActive_) {
         return;
     }
     // One window, kept and reused: it borrows the surface, and a second one
     // would fight the first for the same core while it swaps chains.
     const bool wasVisible = compare_ != nullptr && compare_->isVisible();
+    if (wasVisible && compare_->comparisonPending()) {
+        compare_->raise();
+        compare_->activateWindow();
+        return;
+    }
+    compareLoadingActive_ = true;
+    compareLoadingSourceEpoch_ = surface_->sourceEpoch();
+    compareLoadingWasVisible_ = wasVisible;
+    compareLoadingStartScheduled_ = false;
+    const quint64 generation = ++compareLoadingGeneration_;
+    shell_->setCompareLoading(true);
+    compareLoadingFrameSwapped_ =
+        connect(surface_, &QOpenGLWidget::frameSwapped, this, [this, generation] {
+            // Qt emits this after the top-level window has composed the GL
+            // child. Keep the loading frame visible long enough for a desktop
+            // capture/presentation interval before synchronous comparison setup
+            // takes over the GUI thread.
+            scheduleCompareStart(generation, 80);
+        });
+    surface_->update();
+    // Some window systems defer frame swaps while a surface is obscured or
+    // minimized. The rendered-frame path wins when available; this bound keeps
+    // Compare from waiting forever for an exposure event.
+    QTimer::singleShot(250, this, [this, generation] {
+        scheduleCompareStart(generation, 0);
+    });
+}
+
+void PlayerDialog::scheduleCompareStart(quint64 generation, int delayMs) {
+    if (!compareLoadingActive_ || generation != compareLoadingGeneration_ ||
+        compareLoadingStartScheduled_) {
+        return;
+    }
+    compareLoadingStartScheduled_ = true;
+    QTimer::singleShot(delayMs, this, [this, generation] {
+        startCompareWindow(generation);
+    });
+}
+
+void PlayerDialog::startCompareWindow(quint64 generation) {
+    if (!compareLoadingActive_ || generation != compareLoadingGeneration_) {
+        return;
+    }
+    if (closed_ || pip_ != nullptr || surface_ == nullptr ||
+        !surface_->hasVideo() || surface_->sourceEpoch() != compareLoadingSourceEpoch_ ||
+        (compareLoadingWasVisible_ && (compare_ == nullptr || !compare_->isVisible()))) {
+        finishCompareLoading();
+        return;
+    }
+
     if (compare_ == nullptr) {
         compare_ = new CompareWindow(surface_, anime4kChainId_, this, animeJanaiBackend_);
-    } else if (!wasVisible) {
+    } else if (!compareLoadingWasVisible_) {
         compare_->setCurrentCandidateId(anime4kChainId_);
     }
-    compare_->setAjiBackend(animeJanaiBackend_);
-    compare_->show();
-    if (wasVisible && !compare_->comparisonPending()) {
-        compare_->captureNow();
+    if (!compareLoadingActive_ || generation != compareLoadingGeneration_ || closed_ ||
+        pip_ != nullptr || surface_ == nullptr || !surface_->hasVideo() ||
+        surface_->sourceEpoch() != compareLoadingSourceEpoch_) {
+        finishCompareLoading();
+        return;
     }
-    compare_->raise();
-    compare_->activateWindow();
+    compare_->setAjiBackend(animeJanaiBackend_);
+
+    QPointer<PlayerDialog> self(this);
+    QPointer<CompareWindow> window(compare_);
+    if (window.isNull()) {
+        finishCompareLoading();
+        return;
+    }
+    if (!compareLoadingWasVisible_) {
+        window->show();
+    } else {
+        window->captureNow();
+    }
+    if (self.isNull() || !compareLoadingActive_ ||
+        generation != compareLoadingGeneration_ || closed_) {
+        return;
+    }
+    if (window.isNull() || !window->isVisible() || pip_ != nullptr ||
+        surface_ == nullptr || !surface_->hasVideo() ||
+        surface_->sourceEpoch() != compareLoadingSourceEpoch_) {
+        finishCompareLoading();
+        return;
+    }
+    window->raise();
+    window->activateWindow();
+    checkCompareLoading(generation);
+}
+
+void PlayerDialog::finishCompareLoading() {
+    if (!compareLoadingActive_) {
+        return;
+    }
+    compareLoadingActive_ = false;
+    compareLoadingStartScheduled_ = false;
+    QObject::disconnect(compareLoadingFrameSwapped_);
+    compareLoadingFrameSwapped_ = {};
+    ++compareLoadingGeneration_;
+    if (shell_ != nullptr) {
+        shell_->setCompareLoading(false);
+    }
+}
+
+void PlayerDialog::checkCompareLoading(quint64 generation) {
+    if (!compareLoadingActive_ || generation != compareLoadingGeneration_) {
+        return;
+    }
+    if (closed_ || pip_ != nullptr || surface_ == nullptr || !surface_->hasVideo() ||
+        surface_->sourceEpoch() != compareLoadingSourceEpoch_ || compare_ == nullptr ||
+        !compare_->isVisible() || !compare_->comparisonPending()) {
+        finishCompareLoading();
+        return;
+    }
+    QTimer::singleShot(50, this, [this, generation] {
+        checkCompareLoading(generation);
+    });
 }
 
 void PlayerDialog::copyCurrentFrame() {
@@ -2149,6 +2265,7 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
         ownerAtClose != nullptr && ownerAtClose->nativePlaybackStatus().confirmed;
     shuttingDown_ = true;
     closed_ = true;
+    finishCompareLoading();
     closeMediaInformation();
     // A window hand-off may still be waiting for a picture. The float it was
     // holding is on screen right now, so it is put away here rather than left to

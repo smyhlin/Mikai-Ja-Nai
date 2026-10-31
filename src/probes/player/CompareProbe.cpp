@@ -17,8 +17,12 @@
 #include <QLabel>
 #include <QPointer>
 #include <QProgressBar>
+#include <QPixmap>
+#include <QScreen>
 #include <QPushButton>
 #include <QMenu>
+#include <QMetaObject>
+#include <QOpenGLWidget>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTest>
@@ -252,6 +256,376 @@ double meanDifference(const QImage& a, const QImage& b) {
         }
     }
     return counted > 0 ? total / static_cast<double>(counted) : -1.0;
+}
+
+double centerRegionDifference(const QImage& a, const QImage& b) {
+    if (a.isNull() || b.isNull() || a.size() != b.size()) {
+        return -1.0;
+    }
+    const int side = std::clamp(std::min(a.width(), a.height()) / 6, 100, 240);
+    if (side <= 0) return -1.0;
+    const QRect center((a.width() - side) / 2, (a.height() - side) / 2, side, side);
+    return meanDifference(a.copy(center), b.copy(center));
+}
+
+bool waitForSurfaceFrameSwap(VideoSurface* surface, const std::function<void()>& request,
+                             int timeoutMs = 10000);
+
+struct DesktopPlayerCapture {
+    QImage desktop;
+    QImage player;
+    QRect screenGeometry;
+    QRect playerRect;
+};
+
+DesktopPlayerCapture grabDesktopPlayer(QScreen* screen, QWidget* player) {
+    DesktopPlayerCapture capture;
+    if (screen == nullptr || player == nullptr) return capture;
+    const QPixmap desktop = screen->grabWindow(0);
+    if (desktop.isNull()) return capture;
+    capture.desktop = desktop.toImage();
+    capture.screenGeometry = screen->geometry();
+    if (capture.screenGeometry.width() <= 0 || capture.screenGeometry.height() <= 0) {
+        return capture;
+    }
+    const QRect playerGeometry =
+        player->frameGeometry().translated(-capture.screenGeometry.topLeft());
+    const qreal scaleX =
+        static_cast<qreal>(capture.desktop.width()) / capture.screenGeometry.width();
+    const qreal scaleY =
+        static_cast<qreal>(capture.desktop.height()) / capture.screenGeometry.height();
+    capture.playerRect =
+        QRect(qRound(playerGeometry.x() * scaleX), qRound(playerGeometry.y() * scaleY),
+              qRound(playerGeometry.width() * scaleX), qRound(playerGeometry.height() * scaleY))
+            .intersected(capture.desktop.rect());
+    capture.player = capture.desktop.copy(capture.playerRect);
+    return capture;
+}
+
+void saveLoadingDiagnosticCapture(const DesktopPlayerCapture& capture) {
+    const QString playerPath = qEnvironmentVariable("COMPARE_PROBE_LOADING_SCREENSHOT");
+    const QString desktopPath = qEnvironmentVariable("COMPARE_PROBE_LOADING_DESKTOP");
+    if (!playerPath.isEmpty() && !capture.player.isNull()) {
+        std::fprintf(stderr, "     failure player capture %s: %s\n", qPrintable(playerPath),
+                     capture.player.save(playerPath) ? "saved" : "save failed");
+    }
+    if (!desktopPath.isEmpty() && !capture.desktop.isNull()) {
+        std::fprintf(stderr, "     failure desktop capture %s: %s\n", qPrintable(desktopPath),
+                     capture.desktop.save(desktopPath) ? "saved" : "save failed");
+    }
+}
+
+void logDesktopPlayerCapture(const DesktopPlayerCapture& capture, qint64 elapsedMs,
+                             double centerDifference, bool compareConstructed) {
+    const QPoint center = capture.playerRect.center();
+    std::fprintf(stderr,
+                 "     desktop poll t=%lldms screen=%dx%d logical=(%d,%d %dx%d) "
+                 "playerCrop=(%d,%d %dx%d) center=(%d,%d) delta=%.4f compare=%d\n",
+                 static_cast<long long>(elapsedMs), capture.desktop.width(),
+                 capture.desktop.height(), capture.screenGeometry.x(),
+                 capture.screenGeometry.y(), capture.screenGeometry.width(),
+                 capture.screenGeometry.height(), capture.playerRect.x(),
+                 capture.playerRect.y(), capture.playerRect.width(),
+                 capture.playerRect.height(), center.x(), center.y(), centerDifference,
+                 compareConstructed ? 1 : 0);
+}
+
+void finishLoadingOnlyProbe(QApplication* app, PlayerDialog* dialog, VideoSurface* surface,
+                            PlayerShell* shell, const QImage& before,
+                            const QImage& beforeScreen, const QImage& loading,
+                            const DesktopPlayerCapture& loadingCapture) {
+    const QImage& loadingScreen = loadingCapture.player;
+    const double loadingCenterDifference = centerRegionDifference(before, loading);
+    const double loadingScreenDifference =
+        centerRegionDifference(beforeScreen, loadingScreen);
+    std::fprintf(stderr, "     desktop player capture: %dx%d physical pixels\n",
+                 loadingScreen.width(), loadingScreen.height());
+    std::fprintf(stderr, "     framebuffer center difference: %.4f / 255\n",
+                 loadingCenterDifference);
+    std::fprintf(stderr, "     desktop-screen center difference: %.4f / 255\n",
+                 loadingScreenDifference);
+    check(loadingCenterDifference > 0.01,
+          "loading frame changes the actual center control region");
+    check(loadingScreenDifference > 0.01,
+          "loading ring is visible in the real screen center");
+
+    const QString screenshotPath =
+        qEnvironmentVariable("COMPARE_PROBE_LOADING_SCREENSHOT");
+    const QString framebufferPath =
+        qEnvironmentVariable("COMPARE_PROBE_LOADING_FRAMEBUFFER");
+    if (!screenshotPath.isEmpty()) {
+        check(!loadingScreen.isNull() && loadingScreen.save(screenshotPath),
+              "real player screen screenshot saved after the loading frame was presented");
+        std::fprintf(stderr, "     loading screen: %s\n", qPrintable(screenshotPath));
+    }
+    const QString desktopPath =
+        qEnvironmentVariable("COMPARE_PROBE_LOADING_DESKTOP");
+    if (!framebufferPath.isEmpty()) {
+        check(!loading.isNull() && loading.save(framebufferPath),
+              "loading framebuffer diagnostic saved separately");
+        std::fprintf(stderr, "     loading framebuffer: %s\n",
+                     qPrintable(framebufferPath));
+    }
+    if (!desktopPath.isEmpty()) {
+        check(!loadingCapture.desktop.isNull() && loadingCapture.desktop.save(desktopPath),
+              "full desktop image saved separately");
+        std::fprintf(stderr, "     loading desktop: %s\n", qPrintable(desktopPath));
+    }
+
+    const bool duplicateRequested =
+        QMetaObject::invokeMethod(shell, "compareRequested", Qt::DirectConnection);
+    check(duplicateRequested, "duplicate PlayerShell Compare request is invokable");
+    check(dialog->findChildren<CompareWindow*>().isEmpty(),
+          "duplicate request during loading does not construct Compare early");
+
+    QElapsedTimer completionWait;
+    completionWait.start();
+    CompareWindow* compare = nullptr;
+    bool completed = false;
+    while (completionWait.elapsed() < 120000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        const QList<CompareWindow*> windows = dialog->findChildren<CompareWindow*>();
+        compare = windows.isEmpty() ? nullptr : windows.first();
+        if (compare != nullptr && compare->isVisible() &&
+            !compare->comparisonPending()) {
+            completed = !compare->frozenFrame().isNull() &&
+                        compare->captureError().isEmpty();
+            const double restoredCenter =
+                centerRegionDifference(before, surface->grabFramebuffer());
+            if (restoredCenter >= 0.0 && restoredCenter < 0.01) {
+                break;
+            }
+        }
+        QThread::msleep(10);
+    }
+    check(compare != nullptr && compare->isVisible(),
+          "Compare opens one real window after the loading frame");
+    check(completed, "Compare captures a real frozen frame without native model work");
+    const double completedCenterDifference =
+        centerRegionDifference(before, surface->grabFramebuffer());
+    check(completionWait.elapsed() < 120000 && completedCenterDifference >= 0.0 &&
+              completedCenterDifference < 0.01,
+          "successful Compare completion clears the loading center control");
+
+    bool repeatedSwapped = false;
+    const bool repeatedRequest = waitForSurfaceFrameSwap(surface, [&] {
+        repeatedSwapped =
+            QMetaObject::invokeMethod(shell, "compareRequested", Qt::DirectConnection);
+    });
+    check(repeatedRequest && repeatedSwapped,
+          "repeat request presents a second loading frame");
+    const double repeatedCenterDifference =
+        centerRegionDifference(before, surface->grabFramebuffer());
+    check(repeatedCenterDifference > 0.01,
+          "repeat loading frame is visible in the center control region");
+    if (compare != nullptr) {
+        compare->close();
+    }
+
+    QElapsedTimer cancelWait;
+    cancelWait.start();
+    bool cancelled = false;
+    while (cancelWait.elapsed() < 5000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        const double restoredCenter =
+            centerRegionDifference(before, surface->grabFramebuffer());
+        if (restoredCenter >= 0.0 && restoredCenter < 0.01) {
+            cancelled = true;
+            break;
+        }
+        QThread::msleep(10);
+    }
+    check(compare != nullptr && !compare->isVisible(),
+          "closing a repeated request leaves Compare hidden");
+    check(cancelled, "cancelling a repeated request clears the loading center control");
+    app->exit(failures == 0 ? 0 : 1);
+}
+
+void waitForLoadingPresentation(QApplication* app, PlayerDialog* dialog,
+                               VideoSurface* surface, PlayerShell* shell,
+                               const QImage& baseline, const QImage& baselineScreen) {
+    const auto loadingSwapped = std::make_shared<bool>(false);
+    const QMetaObject::Connection loadingSwap =
+        QObject::connect(surface, &QOpenGLWidget::frameSwapped, app,
+                         [loadingSwapped] { *loadingSwapped = true; });
+    const bool requested =
+        QMetaObject::invokeMethod(shell, "compareRequested", Qt::DirectConnection);
+    check(requested, "real PlayerShell Compare request is invokable");
+
+    auto* presentationPoll = new QTimer(app);
+    presentationPoll->setInterval(30);
+    auto* presentationElapsed = new QElapsedTimer;
+    presentationElapsed->start();
+    auto* lastCapture = new DesktopPlayerCapture;
+    QObject::connect(presentationPoll, &QTimer::timeout, app,
+                     [app, presentationPoll, presentationElapsed, lastCapture,
+                      loadingSwap, loadingSwapped, dialog, surface, shell,
+                      baseline, baselineScreen] {
+        *lastCapture = grabDesktopPlayer(dialog->screen(), dialog);
+        const double screenDifference =
+            centerRegionDifference(baselineScreen, lastCapture->player);
+        const bool compareConstructed =
+            !dialog->findChildren<CompareWindow*>().isEmpty();
+        const qint64 polledMs = presentationElapsed->elapsed();
+        if (compareConstructed || polledMs == 0 || polledMs % 500 < 30) {
+            logDesktopPlayerCapture(*lastCapture, polledMs, screenDifference,
+                                    compareConstructed);
+        }
+
+        if (compareConstructed) {
+            saveLoadingDiagnosticCapture(*lastCapture);
+            check(false, "real desktop presents loading before Compare is constructed");
+            check(*loadingSwapped, "loading glyph reaches a real composed surface frame");
+            presentationPoll->stop();
+            QObject::disconnect(loadingSwap);
+            delete presentationElapsed;
+            delete lastCapture;
+            app->exit(1);
+            return;
+        }
+
+        if (*loadingSwapped && !lastCapture->player.isNull() &&
+            screenDifference > 0.01) {
+            check(true, "real desktop presents loading before Compare is constructed");
+            presentationPoll->stop();
+            QObject::disconnect(loadingSwap);
+            const QImage loading = surface->grabFramebuffer();
+            finishLoadingOnlyProbe(app, dialog, surface, shell, baseline,
+                                   baselineScreen, loading, *lastCapture);
+            delete presentationElapsed;
+            delete lastCapture;
+            return;
+        }
+        if (presentationElapsed->elapsed() >= 3000) {
+            saveLoadingDiagnosticCapture(*lastCapture);
+            check(*loadingSwapped, "loading glyph reaches a real composed surface frame");
+            check(false, "loading ring is visible in the real screen center before Compare");
+            std::fprintf(stderr, "     poll stopped: t=%lldms compare=0\n",
+                         static_cast<long long>(presentationElapsed->elapsed()));
+            presentationPoll->stop();
+            QObject::disconnect(loadingSwap);
+            delete presentationElapsed;
+            delete lastCapture;
+            app->exit(1);
+        }
+    });
+    check(dialog->findChildren<CompareWindow*>().isEmpty(),
+          "loading screenshot is captured before Compare opens");
+    if (!requested) {
+        presentationPoll->stop();
+        QObject::disconnect(loadingSwap);
+        delete presentationElapsed;
+        delete lastCapture;
+        app->exit(1);
+        return;
+    }
+    presentationPoll->start();
+}
+
+void beginLoadingOnlyProbe(QApplication* app, PlayerDialog* dialog, VideoSurface* surface) {
+    PlayerShell* shell = dialog->findChild<PlayerShell*>();
+    if (shell == nullptr) {
+        check(false, "--loading-only player shell exists");
+        app->exit(1);
+        return;
+    }
+
+    const DesktopPlayerCapture frameOneCapture = grabDesktopPlayer(dialog->screen(), dialog);
+    logDesktopPlayerCapture(frameOneCapture, 0, 0.0, false);
+    if (frameOneCapture.player.isNull()) {
+        saveLoadingDiagnosticCapture(frameOneCapture);
+        check(false, "desktop capture of the paused one-second frame is available");
+        app->exit(1);
+        return;
+    }
+
+    const QImage frameOneScreen = frameOneCapture.player;
+    surface->seek(6.0);
+    auto* seekPoll = new QTimer(app);
+    seekPoll->setInterval(30);
+    auto* seekElapsed = new QElapsedTimer;
+    seekElapsed->start();
+    auto* latestCapture = new DesktopPlayerCapture;
+    QObject::connect(seekPoll, &QTimer::timeout, app,
+                     [app, dialog, surface, shell, frameOneScreen,
+                      seekPoll, seekElapsed, latestCapture] {
+        *latestCapture = grabDesktopPlayer(dialog->screen(), dialog);
+        const double difference =
+            meanDifference(frameOneScreen, latestCapture->player);
+        const bool compareConstructed =
+            !dialog->findChildren<CompareWindow*>().isEmpty();
+        const qint64 polledMs = seekElapsed->elapsed();
+        if (compareConstructed || polledMs == 0 || polledMs % 500 < 30) {
+            logDesktopPlayerCapture(*latestCapture, polledMs, difference,
+                                    compareConstructed);
+        }
+        if (compareConstructed) {
+            saveLoadingDiagnosticCapture(*latestCapture);
+            check(false, "Compare remains unopened while establishing the paused-six-second baseline");
+            seekPoll->stop();
+            delete seekElapsed;
+            delete latestCapture;
+            app->exit(1);
+            return;
+        }
+        if (!latestCapture->player.isNull() && difference > 0.01) {
+            const QImage baseline = surface->grabFramebuffer();
+            if (baseline.isNull()) {
+                check(false, "framebuffer baseline exists after the desktop presents the seek");
+                seekPoll->stop();
+                delete seekElapsed;
+                delete latestCapture;
+                app->exit(1);
+                return;
+            }
+            waitForLoadingPresentation(app, dialog, surface, shell, baseline,
+                                       latestCapture->player);
+            seekPoll->stop();
+            delete seekElapsed;
+            delete latestCapture;
+            return;
+        }
+        if (seekElapsed->elapsed() >= 3000) {
+            saveLoadingDiagnosticCapture(*latestCapture);
+            // The desktop never showed an ordinary paused seek. That capture
+            // path is independent of Compare, so no spinner claim can be made
+            // either way; a red result here would blame the loading state for
+            // a display the probe cannot observe (locked/RDP sessions freeze
+            // the composited image while the FBO keeps updating).
+            std::fprintf(stderr,
+                         "SKIP  desktop stayed on the paused one-second frame through a "
+                         "six-second seek; this session does not expose composited "
+                         "player updates (t=%lldms)\n",
+                         static_cast<long long>(seekElapsed->elapsed()));
+            seekPoll->stop();
+            delete seekElapsed;
+            delete latestCapture;
+            app->exit(0);
+        }
+    });
+    seekPoll->start();
+}
+
+bool waitForSurfaceFrameSwap(VideoSurface* surface, const std::function<void()>& request,
+                             int timeoutMs) {
+    if (surface == nullptr) return false;
+    QEventLoop loop;
+    bool swapped = false;
+    QMetaObject::Connection connection =
+        QObject::connect(surface, &QOpenGLWidget::frameSwapped, &loop, [&] {
+            swapped = true;
+            loop.quit();
+        });
+    QTimer timeout;
+    timeout.setSingleShot(true);
+    QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+    request();
+    if (!swapped) {
+        timeout.start(timeoutMs);
+        loop.exec();
+    }
+    QObject::disconnect(connection);
+    return swapped;
 }
 
 struct LiveShaderSnapshot {
@@ -501,7 +875,13 @@ int main(int argc, char** argv) {
     if (timestampTrace) {
         std::fprintf(stderr, "TRACE timestamp diagnostics enabled\n");
     }
+    const bool loadingOnly =
+        argc > 1 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--loading-only");
     const bool ajiMode = argc > 1 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--aji");
+    if (loadingOnly && argc > 3) {
+        std::fprintf(stderr, "usage: compare_probe.exe --loading-only [video]\n");
+        return 2;
+    }
     if (ajiMode && argc != 3) {
         std::fprintf(stderr, "usage: compare_probe.exe --aji <video>\n");
         return 2;
@@ -511,8 +891,12 @@ int main(int argc, char** argv) {
     }
     static StubHost host;
     const QString url = ajiMode ? QString::fromLocal8Bit(argv[2])
-                                : (argc > 1 ? QString::fromLocal8Bit(argv[1])
-                                            : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25"));
+                                : (loadingOnly
+                                       ? (argc == 3
+                                              ? QString::fromLocal8Bit(argv[2])
+                                              : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25"))
+                                       : (argc > 1 ? QString::fromLocal8Bit(argv[1])
+                                                   : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25")));
     const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};
 
     auto* dialog = new PlayerDialog(QStringLiteral("compare probe"), url, qualities, 720, &host);
@@ -540,6 +924,13 @@ int main(int argc, char** argv) {
             QThread::msleep(50);
         }
         if (surface == nullptr || !surface->hasVideo()) {
+            if (loadingOnly) {
+                std::fprintf(stderr,
+                             "FAIL --loading-only source did not load within %d ms: video=%s, surface=%d\n",
+                             sourceWatchdogMs, qPrintable(url), surface != nullptr);
+                app.exit(1);
+                return;
+            }
             if (ajiMode) {
                 std::fprintf(stderr,
                              "FAIL --aji source did not load within %d ms: video=%s, surface=%d\n",
@@ -555,6 +946,21 @@ int main(int argc, char** argv) {
             return;
         }
         surface->setPaused(true);
+        if (loadingOnly) {
+            surface->seek(1.0);
+            const QPointer<PlayerDialog> dialogGuard(dialog);
+            const QPointer<VideoSurface> surfaceGuard(surface);
+            QTimer::singleShot(1000, &app, [&app, dialogGuard, surfaceGuard] {
+                if (dialogGuard.isNull() || surfaceGuard.isNull() ||
+                    !surfaceGuard->hasVideo()) {
+                    check(false, "paused one-second frame is available for desktop baseline");
+                    app.exit(1);
+                    return;
+                }
+                beginLoadingOnlyProbe(&app, dialogGuard, surfaceGuard);
+            });
+            return;
+        }
         surface->seek(6.0);
         QTest::qWait(1200);
 

@@ -110,6 +110,9 @@ public:
     void setDuration(double seconds);
     void setPosition(double seconds);
     void setPlaying(bool playing);
+    /// Shows the centered comparison-loading indicator without changing the
+    /// player's playback or HUD state.
+    void setCompareLoading(bool loading);
     void setVolume(double volume, bool fromHost = false);
     void setMuted(bool muted);
     void setRate(double rate);
@@ -262,6 +265,7 @@ private:
     void paintChrome(QPainter& painter, const QRect& clip);
 
     void enterAutoHidden();
+    void updateCenterGlyph();
     void onPlayClicked();
     void onSkipForward();
     void onScrub(double fraction);

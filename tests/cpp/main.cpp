@@ -29,6 +29,7 @@
 #include "TestStreams.hpp"
 #include "TestMpvAsync.hpp"
 #include "TestCompareGif.hpp"
+#include "TestCompareLoading.hpp"
 #include "TestNativeAssets.hpp"
 #include "TestNativeUserRecipes.hpp"
 #include "TestNativeBundle.hpp"
@@ -93,6 +94,7 @@ constexpr const char* kSuites[] = {
     "TestPlaybackDiagnostics", "TestMediaInformation", "TestHdrRenderContracts",
     "TestNativePrefs",
     "TestNativeMenu", "TestNativeUserRecipes", "TestNativeAssets", "TestMpvAsync", "TestCompareGif",
+    "TestCompareLoading",
 #ifdef MIKAI_WITH_MODEL_INSPECTION
     "TestNativeCatalog",
 #endif
@@ -236,6 +238,7 @@ int main(int argc, char** argv) {
   TestNativeAssets nativeAssets;
   TestMpvAsync mpvAsync;
   TestCompareGif compareGif;
+  TestCompareLoading compareLoading;
 #ifdef MIKAI_WITH_MODEL_INSPECTION
   TestNativeCatalog nativeCatalog;
 #endif
@@ -342,6 +345,7 @@ int main(int argc, char** argv) {
   run("TestNativeAssets", &nativeAssets, true);
   run("TestMpvAsync", &mpvAsync, true);
   run("TestCompareGif", &compareGif, true);
+  run("TestCompareLoading", &compareLoading, true);
   runWrapper("TestDownloads", runTestDownloads);
   runWrapper("TestDiagnostics", runTestDiagnostics);
   runWrapper("TestApiClient", runTestApiClient);

@@ -737,11 +737,21 @@ constexpr qreal kCenterWidget = kCenterDisc + 2.0 * kCenterHalo;
 CenterGlyph::CenterGlyph(QWidget* parent) : QWidget(parent) {
     setAttribute(Qt::WA_TransparentForMouseEvents);
     setFixedSize(static_cast<int>(kCenterWidget), static_cast<int>(kCenterWidget));
+    spinnerTimer_.setInterval(40);
+    connect(&spinnerTimer_, &QTimer::timeout, this, [this] {
+        spinnerAngle_ = std::fmod(spinnerAngle_ + 15.0, 360.0);
+        chromeUpdate(this);
+    });
     hide();
 }
 
 void CenterGlyph::setKind(Kind kind) {
     kind_ = kind;
+    if (loading_) {
+        show();
+        chromeUpdate(this);
+        return;
+    }
     if (kind == Kind::None) {
         hide();
         return;
@@ -750,10 +760,30 @@ void CenterGlyph::setKind(Kind kind) {
     chromeUpdate(this);
 }
 
+void CenterGlyph::setLoading(bool loading) {
+    if (loading_ == loading) {
+        return;
+    }
+    loading_ = loading;
+    if (loading_) {
+        setAccessibleName(tr("Loading comparison"));
+        setAccessibleDescription(tr("A comparison is being prepared."));
+        spinnerAngle_ = 0.0;
+        spinnerTimer_.start();
+        show();
+    } else {
+        spinnerTimer_.stop();
+        setAccessibleName(QString());
+        setAccessibleDescription(QString());
+        setKind(kind_);
+    }
+    chromeUpdate(this);
+}
+
 void CenterGlyph::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 void CenterGlyph::paintChrome(QPainter& painter) {
-    if (kind_ == Kind::None) {
+    if (!loading_ && kind_ == Kind::None) {
         return;
     }
     const QRectF disc(kCenterHalo + 0.5, kCenterHalo + 0.5, kCenterDisc - 1.0, kCenterDisc - 1.0);
@@ -776,6 +806,20 @@ void CenterGlyph::paintChrome(QPainter& painter) {
     painter.setPen(Qt::NoPen);
     painter.setBrush(sheen);
     painter.drawEllipse(disc);
+
+    if (loading_) {
+        const QPointF center(width() / 2.0, height() / 2.0);
+        painter.setRenderHint(QPainter::Antialiasing);
+        QPen track(QColor(255, 255, 255, 70), 4.0, Qt::SolidLine, Qt::RoundCap);
+        painter.setPen(track);
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(center, 17.0, 17.0);
+        QPen arc(w95(), 4.0, Qt::SolidLine, Qt::RoundCap);
+        painter.setPen(arc);
+        painter.drawArc(QRectF(center.x() - 17.0, center.y() - 17.0, 34.0, 34.0),
+                        static_cast<int>(spinnerAngle_ * 16.0), 245 * 16);
+        return;
+    }
 
     // Centred on the glyph's own bounds, not on the 24-grid cell: the triangle
     // spans 8..19.5 and the bars 7..17, so both sit a little right of centre in

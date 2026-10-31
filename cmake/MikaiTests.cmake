@@ -157,6 +157,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/player/TestMpvAsync.cpp
     tests/cpp/player/TestCompareGif.hpp
     tests/cpp/player/TestCompareGif.cpp
+    tests/cpp/player/TestCompareLoading.hpp
+    tests/cpp/player/TestCompareLoading.cpp
     tests/cpp/player/TestPlaybackDiagnostics.hpp
     tests/cpp/player/TestPlaybackDiagnostics.cpp
     tests/cpp/player/TestMediaInformation.hpp
@@ -326,6 +328,7 @@ if(MIKAI_BUILD_PROBES)
     TestNativeAssets
     TestMpvAsync
     TestCompareGif
+    TestCompareLoading
     TestModels
     TestReleases
     TestAnime4K
