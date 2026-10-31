@@ -13,6 +13,20 @@ Status: **published, with open rights and QA work**. The owner published [v0.1.0
 
 ## Build evidence
 
+**Local Haruna source review (2026-10-31, uncommitted working tree):** Windows release application, tests and rendering probes built successfully. Checks ran from owned staged executable directories, not beside an installed native store.
+
+| Check | Observed result |
+| --- | --- |
+| Complete CTest | 58/58 passed, including aggregate and per-suite entries |
+| Native playback controls | 19 passed, 0 failed, 0 skipped |
+| Native application UI / pagers | 21 and 17 passed respectively, with no failures or skips |
+| Native long-controls layout | Passed at 860 and 1080 logical pixels |
+| Render lifecycle | 114 requirements passed in each run at actual DPR 1.75 and 3.0625 |
+| Original fullscreen/PiP | 70 seconds; 2,165 sampled compositions; 0 black, 0 stalled seconds; maximum GUI gap 181 ms |
+| Anime4K Fast A fullscreen/PiP | 70 seconds; 2,134 sampled compositions; 0 black, 0 stalled seconds; maximum GUI gap 173 ms; core shader list/files confirmed |
+
+Local JSON/logs and functional fixture captures are under `.probe-out/haruna-review/`. The full suite passed after temporary layout diagnostics were removed. These bounded checks do not establish that every intermittent black flash is resolved, certify each shader or inference backend, or refresh the public gallery. Linux was not rebuilt/run because the registered WSL VHDX is missing. No TensorRT build, inference benchmark, installer check, package regeneration, signing or publication approval is claimed for this source review. The historical artifact records below remain unchanged.
+
 - **Published release (2026-10-30, revision `488b928`):** [v0.1.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0) carries six artifacts and `SHA256SUMS` — AppImage, Linux `tar.gz`, Arch `pkg.tar.zst`, Debian `.deb`, Windows portable ZIP and Windows setup. The retained historical record in commit `cb8d4ac` attributes those six artifacts and historical runtime checks to revision `488b928`; it records the downloaded `tar.gz` re-hashing to its published digest. On 2026-10-30, direct inspection of the Linux tarball and Windows portable ZIP `VERSION` files identified revision `488b928`; the other four artifacts were not independently inspected in that check. The release page states the same limitations as this document: no signing, no universal Linux package, and unresolved third-party source/redistribution obligations.
 
 - **Windows product build (2026-10-29, revision `fe4db7e`):** cross-built with MinGW-w64 GCC 13 (`-DMIKAI_DISABLE_IPO=ON`, `-DMIKAI_BUILD_REVISION=fe4db7e`); `windeployqt.exe` crashes under wine, so the payload (132 files) is assembled from the `dist.cmake` allowlist with Qt 6.12, the MinGW runtime and the pinned `mpv/libmpv-2.dll` (`d22a8a765abe`, full: `packaging/provenance/windows-runtime.json`, the dev archive's DLL). `mikai-0.1.0-windows-x64-portable.zip` (`b31c3877`, truncated historical 8-character digest prefix; full digest not retained here, 77.8 MB (77,767,851 B)) answers `mikai 0.1.0 (fe4db7e, …)` under wine from its own folder; `mikai-0.1.0-windows-x64-setup.exe` (`dd52285b`, truncated historical 8-character digest prefix; full digest not retained here, 58.8 MB (58,819,163 B)) silently installed to a wine prefix, ran with the same version, carried the same DLL and uninstalled cleanly.

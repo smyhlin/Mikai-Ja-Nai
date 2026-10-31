@@ -59,6 +59,18 @@ On-video controls paint in the OpenGL pass while retaining their existing widget
 
 Keyboard and skip-button navigation sends asynchronous `relative+exact` seeks to mpv; the timeline and resume workflow retain absolute targets. Explicit precision preserves the old absolute seek accuracy: mpv's default relative seek is keyframe-oriented, unlike its default absolute seek. The UI may show an optimistic position, but it cannot clamp or derive a backend-relative step from a delayed progress observation. Both seek kinds emit the same argument-free intent edge so Compare invalidates a pending capture before the resulting position update arrives.
 
+### Comparative player-source review
+
+The local IINA Windows candidate uses `QQuickFramebufferObject`; the local Nami candidate uses mpv's D3D11 composition swapchain inside WinUI, not the libmpv render API. Nami's native-window erase hook and delayed swapchain resizing are specific to that topology and are not Qt Widgets fixes. The IINA candidate also has weaker context teardown and callback/timing handling than the existing player, so neither renderer is adopted wholesale.
+
+Both candidate source trees declare GPLv3 licensing. No candidate source is copied into this Unlicense application; the integrations implement documented Qt/mpv contracts independently. The useful retained contracts are bounded handling of temporarily suppressed paints, explicit GL-state ownership, target-lifetime-aware framebuffer metadata, and distinct coded/display geometry.
+
+These changes do not establish that every intermittent black frame is resolved. Destroying a libmpv render context still disables its video output and requires the existing source-reload path. A GPU framebuffer cannot survive its context's destruction. Automatic HDR passthrough and WinUI-style background snapshots are not enabled: their compositor assumptions do not match this player's cross-platform Qt surface.
+
+The Haruna review also followed its external MpvQt renderer. The supplied Haruna tree does not pin an MpvQt version; the inspected upstream implementation uses Qt Quick framebuffers and mpv's default, non-advanced render API mode. Its lack of advanced-control updates and swap reports is not evidence that those calls should be removed from this player. Haruna's backend-relative exact keyboard seeks informed the asynchronous navigation fix; its blocking pause-on-drag writes and KDE/Qt Quick UI dependencies were not adopted.
+
+The bundled mpv revision was checked when comparing render invalidation: changing `glsl-shaders` updates the GPU renderer's options without discarding libmpv's cached frame, while video-filter and hardware-decoder reconfiguration can discard it. The existing paused shader-refresh path is preserved; a blanket redraw on `vo-configured=false` is not used as a black-frame fix.
+
 ## Optional enhancement paths
 
 Original playback is the default and does not require model components. Anime4K runs as OpenGL shader processing. AnimeJaNai uses the external AJI stack and separately acquired runtime/model content; its presets and custom profiles are selected explicitly. Prepared Native processing is a separately verified bundle track, with preparation/inspection tools documented in [`native/README.md`](../native/README.md) and [`native/build-msvc.md`](../native/build-msvc.md).
