@@ -67,6 +67,10 @@ Filename: "{app}\mikai.exe"; Description: "Launch Mikai Ja Nai"; Flags: nowait p
 ; below to the exact executable AND ownership marker, never by product name.
 [Code]
 const
+  CurrentVersion = '{#AppVersion}';
+  // Inno registers a per-user install here; the AppId braces are literal.
+  InstalledProductKey =
+    'Software\Microsoft\Windows\CurrentVersion\Uninstall\{0D3BBE76-AC5C-48E3-9EBF-8563798364AA}_is1';
   RegistrationOwner = '{7D1829D9-6F44-47BA-B79B-871D57145C86}';
   OwnerValue = 'MikaiRegistrationOwner';
   AppKey = 'Software\Mikai\DefaultVideoPlayer';
@@ -74,6 +78,138 @@ const
   CapabilitiesKey = 'Software\Mikai\DefaultVideoPlayer\Capabilities';
   RegisteredAppsKey = 'Software\RegisteredApplications';
   RunKey = 'Software\Microsoft\Windows\CurrentVersion\Run';
+
+var
+  InstalledVersion: String;
+  InstallMode: String;
+  WelcomeLabel2Base: String;
+  FinishedLabelBase: String;
+
+function VersionPart(Value: String; Index: Integer): Integer;
+var
+  Separator, I: Integer;
+begin
+  Result := 0;
+  for I := 1 to Index - 1 do
+  begin
+    Separator := Pos('.', Value);
+    if Separator = 0 then exit;
+    Value := Copy(Value, Separator + 1, Length(Value));
+  end;
+  Separator := Pos('.', Value);
+  if Separator > 0 then
+    Value := Copy(Value, 1, Separator - 1);
+  Result := StrToIntDef(Trim(Value), 0);
+end;
+
+function CompareVersions(A, B: String): Integer;
+var
+  I, Left, Right: Integer;
+begin
+  Result := 0;
+  for I := 1 to 4 do
+  begin
+    Left := VersionPart(A, I);
+    Right := VersionPart(B, I);
+    if Left < Right then
+    begin
+      Result := -1;
+      exit;
+    end;
+    if Left > Right then
+    begin
+      Result := 1;
+      exit;
+    end;
+  end;
+end;
+
+function DetectionInstalledVersion(): String;
+begin
+  Result := '';
+  if not RegQueryStringValue(HKCU, InstalledProductKey, 'DisplayVersion', Result) then
+    Result := '';
+end;
+
+function InitializeSetup(): Boolean;
+var
+  Comparison: Integer;
+begin
+  Result := True;
+  InstalledVersion := DetectionInstalledVersion();
+  InstallMode := 'install';
+  if InstalledVersion = '' then exit;
+  Comparison := CompareVersions(InstalledVersion, CurrentVersion);
+  if Comparison = 0 then
+    InstallMode := 'repair'
+  else if Comparison < 0 then
+    InstallMode := 'upgrade'
+  else
+    InstallMode := 'downgrade';
+  if InstallMode = 'downgrade' then
+  begin
+    Log('Refusing downgrade: installed ' + InstalledVersion + ' is newer than ' + CurrentVersion);
+    if not WizardSilent then
+      MsgBox('Mikai Ja Nai ' + InstalledVersion + ' is newer than the ' + CurrentVersion +
+        ' package in this setup. Setup will not replace a newer installation. ' +
+        'Uninstall it first if you really need the older version.', mbError, MB_OK);
+    Result := False;
+  end;
+end;
+
+procedure InitializeWizard();
+begin
+  WelcomeLabel2Base := WizardForm.WelcomeLabel2.Caption;
+  FinishedLabelBase := WizardForm.FinishedLabel.Caption;
+end;
+
+procedure UpdateInstallModePage();
+var
+  ModeText, NextCaption: String;
+begin
+  if InstallMode = 'repair' then
+  begin
+    ModeText := 'Mikai Ja Nai ' + InstalledVersion + ' is already installed. ' +
+      'Setup detected a matching version and will repair the existing installation.';
+    NextCaption := 'Repair';
+  end
+  else if InstallMode = 'upgrade' then
+  begin
+    ModeText := 'Mikai Ja Nai ' + InstalledVersion + ' is installed. ' +
+      'Setup will upgrade that installation to ' + CurrentVersion + '.';
+    NextCaption := 'Upgrade';
+  end
+  else
+    exit;
+
+  WizardForm.WelcomeLabel2.Caption :=
+    WelcomeLabel2Base + #13#10#13#10 + ModeText;
+  if not WizardSilent then
+    WizardForm.NextButton.Caption := NextCaption;
+end;
+
+procedure UpdateFinishedPage();
+var
+  ModeText: String;
+begin
+  if InstallMode = 'repair' then
+    ModeText := 'Mikai Ja Nai ' + CurrentVersion + ' was repaired successfully.'
+  else if InstallMode = 'upgrade' then
+    ModeText := 'Mikai Ja Nai was upgraded from ' + InstalledVersion + ' to ' +
+      CurrentVersion + '.'
+  else
+    exit;
+  WizardForm.FinishedLabel.Caption :=
+    FinishedLabelBase + #13#10#13#10 + ModeText;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = wpWelcome then
+    UpdateInstallModePage
+  else if CurPageID = wpFinished then
+    UpdateFinishedPage;
+end;
 
 function SameRegistryString(const Key, Name, Expected: String): Boolean;
 var
