@@ -25,6 +25,7 @@ class TestPagers : public QObject {
   void pagerUsesRealNumbersWhenGiven();
   void pagerWindowScrollsWithTheCurrentPage();
   void pagerWindowClampsAtTheEnd();
+  void pagerWrapsRangeCaptionsInsteadOfWideningThePage();
   void pagerEmitsTheRequestedPage();
   void pagerArrowEnablesAtTheEdges();
 

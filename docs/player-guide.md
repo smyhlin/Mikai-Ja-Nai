@@ -12,6 +12,8 @@ This guide covers the player window, catalogue episodes, local videos and URLs. 
 
 The catalogue owns the episode list. Open it with **S**, choose an episode to switch, or use the previous/next episode controls when available. Those controls are shown only when another episode exists in the playlist. Episode-context actions can mark an episode watched or mark earlier episodes watched/unwatched in the provider’s catalogue order.
 
+On the title page, episode range buttons wrap in narrow layouts rather than pushing the page sideways. First/last navigation and direct page entry stay available.
+
 ### Local video or URL
 
 From the main window, choose **Open video → Video file…** and select a file. The picker lists common video extensions and **All files**. **Open video → Video URL…** accepts a video or stream URL. You can also drag a video file onto the main window to open a standalone player, or onto an existing player to replace its media.

@@ -262,6 +262,10 @@ private:
     /// Creates the pill for `entry` and points `entry->button` at it.
     QPushButton* buildEpisodeButton(EpisodeEntry* entry, QWidget* grid);
     void reflowGrid(int stateIndex);
+    /// Width the episode grid really has: the scroll viewport minus the column
+    /// and workspace insets. Never derived from the grid's own width, which a
+    /// wider layout leaves stale.
+    int availableEpisodeWidth() const;
 
     void playEpisode(EpisodeEntry* entry);
     bool confirmExplicitPlayback();

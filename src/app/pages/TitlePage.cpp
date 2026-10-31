@@ -70,6 +70,7 @@
 #include <QSizePolicy>
 #include <QStandardPaths>
 #include <QStyle>
+#include <QStyleOption>
 #include <QPointer>
 #include <QTabBar>
 #include <QTabWidget>
@@ -145,6 +146,22 @@ void fillHeroChips(QWidget* host, const backend::AnimeDetail& detail) {
     addChips(detail.tags, kHeroTagMax, QStringLiteral("titleTagChip"));
     host->setVisible(added > 0);
 }
+
+// Styled pane geometry can omit frame space still reserved by Qt's minimum-size contract.
+class TitlePageTabs final : public QTabWidget {
+public:
+    using QTabWidget::QTabWidget;
+
+    int contentWidthForOuterWidth(int outerWidth) const {
+        QStyleOptionTabWidgetFrame option;
+        initStyleOption(&option);
+        const QSize contents(qMax(1, outerWidth), 1);
+        const QSize framed =
+            style()->sizeFromContents(QStyle::CT_TabWidget, &option, contents, this);
+        const int frameWidth = qMax(0, framed.width() - contents.width());
+        return qMax(1, outerWidth - frameWidth);
+    }
+};
 
 }  // namespace
 
@@ -986,7 +1003,7 @@ void TitlePage::buildEpisodeWorkspace() {
     providerSelectorHeading_->hide();
     playbackLayout->addWidget(providerSelectorHeading_);
 
-    tabs_ = new QTabWidget(playbackControls_);
+    tabs_ = new TitlePageTabs(playbackControls_);
     tabs_->setObjectName(QStringLiteral("episodeTabs"));
     tabs_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     tabs_->setDocumentMode(true);
@@ -2923,7 +2940,9 @@ void TitlePage::renderTabPage(int stateIndex) {
     }
     state.pager->setState(state.page + 1, totalPages, state.entries.size(), numbers);
     const int spacing = theme::kSpacingSmall;
-    const int available = state.grid->width() > 0 ? state.grid->width() : tabs_->width();
+    const int available =
+        qMin(state.grid->width() > 0 ? state.grid->width() : tabs_->width(),
+             availableEpisodeWidth());
     const int columns = qMax(
         1, (available + spacing) / (theme::kTitleEpisodeButtonWidth + spacing));
     QVector<QWidget*> buttons;
@@ -2968,6 +2987,18 @@ void TitlePage::goToEpisodePage(int stateIndex, int page) {
     }
 }
 
+int TitlePage::availableEpisodeWidth() const {
+    // A grid's stale width must not prevent its parent shrinking to the viewport.
+    const int viewport = overviewScroll_ != nullptr && overviewScroll_->viewport() != nullptr
+                             ? overviewScroll_->viewport()->width()
+                             : width();
+    const bool compact = width() > 0 && width() < theme::kTitleCompactBreakpoint;
+    const int inset = compact ? theme::kTitlePageCompactInset : theme::kTitlePageInset;
+    const int tabsWidth = qMax(1, viewport - 2 * inset - 2 * theme::kSpacingMedium);
+    if (tabs_ == nullptr) return tabsWidth;
+    return static_cast<const TitlePageTabs*>(tabs_)->contentWidthForOuterWidth(tabsWidth);
+}
+
 void TitlePage::reflowGrid(int stateIndex) {
     if (stateIndex < 0 || stateIndex >= tabStates_.size()) {
         return;
@@ -2975,7 +3006,9 @@ void TitlePage::reflowGrid(int stateIndex) {
     TabState& state = tabStates_[stateIndex];
     // A compact pill per episode: 64px plus the gutter fits a row of 16.
     const int spacing = theme::kSpacingSmall;
-    const int available = state.grid->width() > 0 ? state.grid->width() : tabs_->width();
+    const int available =
+        qMin(state.grid->width() > 0 ? state.grid->width() : tabs_->width(),
+             availableEpisodeWidth());
     const int columns = qMax(
         1, (available + spacing) / (theme::kTitleEpisodeButtonWidth + spacing));
     if (columns == state.columns) {
@@ -3095,9 +3128,13 @@ void TitlePage::fitEpisodeSection() {
     }
     const int frame = style()->pixelMetric(QStyle::PM_DefaultFrameWidth);
     const int tabBarHeight = tabs_->count() > 0 ? tabs_->tabBar()->sizeHint().height() : 0;
+    // A pager whose chips wrapped needs the height its width implies; its
+    // one-line size hint would clip the second row inside the fixed tab height.
+    const int pageHeight = qMax(currentPage->sizeHint().height(),
+                                currentPage->heightForWidth(currentPage->width()));
     // Size from the active page only: a taller grid from another release would
     // leave a blank panel. The page scroll owns the overflow.
-    const int desired = tabBarHeight + currentPage->sizeHint().height() + 2 * frame;
+    const int desired = tabBarHeight + pageHeight + 2 * frame;
     if (fittedHeight_ == desired && tabs_->height() == desired) {
         return;
     }

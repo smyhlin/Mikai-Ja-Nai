@@ -178,6 +178,30 @@ QString cannedDescription() {
              "зміни мови, а вже відкритий текст не згортається назад у попередній стан.");
 }
 
+/// A synopsis that is genuinely several screens long, for the case that has to
+/// prove the expand action is reachable. The shared fixture is deliberately
+/// shorter: how far it wraps depends on the platform's font and on the width of
+/// the column, so a case that asserts a collapsed preview brings its own text
+/// instead of inheriting whatever a font happens to fit in three lines.
+QString longCannedDescription() {
+  return QStringLiteral(
+             "Перший абзац довгого опису. Він описує події, які відбуваються на "
+             "початку історії, і навмисно не вміщується у три рядки попереднього "
+             "перегляду, щоб кнопка розгортання мала що показати читачеві. ")
+      + QStringLiteral(
+             "Другий абзац продовжує розповідь: герої вирушають у подорож, "
+             "зустрічають нових союзників, втрачають старі зв'язки й поступово "
+             "розуміють, що причина подій глибша, ніж здавалося спочатку. ")
+      + QStringLiteral(
+             "Третій абзац додає контекст про світ: правила, які тут діють, не "
+             "пояснюються прямо, і читач має збирати їх із деталей, розкиданих по "
+             "всьому тексту, разом із натяками на минуле окремих персонажів. ")
+      + QStringLiteral(
+             "Четвертий абзац завершує опис і наголошує, що повний текст не можна "
+             "скорочувати без дії читача: попередній перегляд лише ховає решту за "
+             "кнопкою, а самі дані сервера залишаються незмінними.");
+}
+
 QJsonObject detail(int id, const QString& name, const QString& poster, bool longTitle = false,
                    bool discovery = false) {
   QJsonObject out = summary(id, name, poster, QStringLiteral("tv"));
@@ -308,6 +332,11 @@ class CannedApi : public QObject {
   void setLongTitleFixture(bool enabled) { longTitleFixture_ = enabled; }
   void setLongTeamFixture(bool enabled) { longTeamFixture_ = enabled; }
   void setDiscoveryFixture(bool enabled) { discoveryFixture_ = enabled; }
+
+  /// Replaces the canned description for one case. Empty keeps the shared
+  /// fixture, so a case that needs a genuinely long synopsis asks for one
+  /// instead of relying on how a particular font happens to wrap the default.
+  void setDescription(const QString& text) { descriptionOverride_ = text; }
 
   int requestCount() const {
     QMutexLocker locker(&mutex_);
@@ -503,11 +532,14 @@ class CannedApi : public QObject {
     }
     if (rest.startsWith(QStringLiteral("/anime/"))) {
       const QString ref = rest.mid(QStringLiteral("/anime/").size());
+      QJsonObject entry = detail(ref.toInt(), QStringLiteral("Canned 1"), imageUrl(),
+                                 longTitleFixture_, discoveryFixture_);
+      if (!descriptionOverride_.isEmpty()) {
+        entry.insert(QStringLiteral("description"), descriptionOverride_);
+      }
       QJsonObject payload;
       payload.insert(QStringLiteral("ok"), true);
-      payload.insert(QStringLiteral("result"),
-                     detail(ref.toInt(), QStringLiteral("Canned 1"), imageUrl(),
-                            longTitleFixture_, discoveryFixture_));
+      payload.insert(QStringLiteral("result"), entry);
       return QJsonDocument(payload).toJson(QJsonDocument::Compact);
     }
     return {};
@@ -551,6 +583,7 @@ class CannedApi : public QObject {
   bool longTitleFixture_ = false;
   bool longTeamFixture_ = false;
   bool discoveryFixture_ = false;
+  QString descriptionOverride_;
   QSet<QString> delayedPopularRequests_;
   mutable QMutex mutex_;
   int requests_ = 0;
@@ -1552,6 +1585,10 @@ void TestFeedRender::titlePageKeepsLongControlsReachableAtDesktopMinimum() {
   api.setLongTitleFixture(true);
   api.setLongTeamFixture(true);
   api.setReleaseEpisodeCount(300);
+  // The synopsis has to be long in this case's own terms, not merely longer than
+  // a font happens to fit: the expand action below is only meaningful while the
+  // preview really is truncated at both desktop widths.
+  api.setDescription(longCannedDescription());
   QString error;
   QVERIFY2(api.start(&error), qPrintable(error));
 
@@ -1559,7 +1596,6 @@ void TestFeedRender::titlePageKeepsLongControlsReachableAtDesktopMinimum() {
   Runner runner;
   QualityCache cache;
   TitlePage page(runner, client, cache, QString::number(kRef));
-  page.setAttribute(Qt::WA_DontShowOnScreen, true);
   page.resize(860, 620);
   page.show();
 
@@ -1614,20 +1650,50 @@ void TestFeedRender::titlePageKeepsLongControlsReachableAtDesktopMinimum() {
     QVERIFY(releases.at(0)->text().contains(fullTeamName) ||
             releases.at(0)->toolTip().contains(fullTeamName) ||
             releases.at(0)->accessibleName().contains(fullTeamName));
-    QTest::mouseClick(watched, Qt::LeftButton);
-    QVERIFY(watched->isChecked());
+    // The shown page owns real keyboard focus: Tab from the grid moves focus on
+    // to another control inside the page instead of dropping it.
     QTest::keyClick(pills.first(), Qt::Key_Tab);
-    QVERIFY(QApplication::focusWidget() != nullptr);
+    QCoreApplication::processEvents();
+    QWidget* focused = QApplication::focusWidget();
+    QVERIFY2(focused != nullptr, "Tab from the episode grid left no focus widget");
+    QVERIFY2(page.isAncestorOf(focused), "Tab moved focus outside the title page");
+    // The persisted watched flag outlives the first pass, so the action is read
+    // as a toggle from wherever it starts rather than from one assumed state.
+    const bool watchedBeforeClick = watched->isChecked();
+    QTest::mouseClick(watched, Qt::LeftButton);
+    QVERIFY2(watched->isChecked() != watchedBeforeClick,
+             "clicking the watched action did not change the mark");
+    const bool watchedAfterClick = watched->isChecked();
+    QTest::keyClick(watched, Qt::Key_Space);
+    QCoreApplication::processEvents();
+    QVERIFY2(watched->isChecked() != watchedAfterClick,
+             "Space did not operate the watched action");
+    QTest::keyClick(watched, Qt::Key_Space);
+    QCoreApplication::processEvents();
+    QVERIFY2(watched->isChecked() == watchedAfterClick,
+             "Space did not restore the watched action");
+    // The column scrolls vertically only: neither it nor the first pill may stick
+    // out of the page's left or right edge at either desktop minimum.
+    auto* body = page.findChild<QWidget*>(QStringLiteral("titleBody"));
+    QVERIFY2(body != nullptr, "the page does not expose its content column");
+    const QRect bodyRect(body->mapTo(&page, QPoint(0, 0)), body->size());
+    QVERIFY2(bodyRect.left() >= page.rect().left() && bodyRect.right() <= page.rect().right(),
+             qPrintable(QStringLiteral("the content column spans %1..%2 on a %3px page")
+                            .arg(bodyRect.left())
+                            .arg(bodyRect.right())
+                            .arg(page.width())));
+    const QRect pillRect(pills.first()->mapTo(&page, QPoint(0, 0)), pills.first()->size());
+    QVERIFY2(pillRect.left() >= page.rect().left() && pillRect.right() <= page.rect().right(),
+             qPrintable(QStringLiteral("the first episode pill spans %1..%2 on a %3px page")
+                            .arg(pillRect.left())
+                            .arg(pillRect.right())
+                            .arg(page.width())));
     if (tabs->count() > 1) {
       tabs->setCurrentIndex((tabs->currentIndex() + 1) % tabs->count());
       QTRY_VERIFY_WITH_TIMEOUT(tabs->currentWidget() != nullptr, 5000);
       QVERIFY(!tabs->currentWidget()
                    ->findChildren<QPushButton*>(QStringLiteral("episodeButton")).isEmpty());
     }
-    const QRect bodyRect(page.findChild<QWidget*>(QStringLiteral("titleBody"))
-                             ->mapTo(&page, QPoint(0, 0)),
-                         page.findChild<QWidget*>(QStringLiteral("titleBody"))->size());
-    QVERIFY(page.rect().contains(bodyRect));
   }
 
   auto* description = page.findChild<QLabel*>(QStringLiteral("titleDescription"));
@@ -1638,9 +1704,13 @@ void TestFeedRender::titlePageKeepsLongControlsReachableAtDesktopMinimum() {
   auto* overlay = page.findChild<QWidget*>(QStringLiteral("titleDetailsOverlay"));
   QVERIFY(description != nullptr && synopsisToggle != nullptr && detailsToggle != nullptr &&
           overlay != nullptr);
+  // The description this case supplied does not fit its preview, so the action
+  // has to be there for the click below to prove anything.
+  QVERIFY2(synopsisToggle->isVisible(),
+           "the long description has no visible expand action to reach");
   overview->ensureWidgetVisible(synopsisToggle, 0, 0);
   QTest::mouseClick(synopsisToggle, Qt::LeftButton);
-  QCOMPARE(description->text(), cannedDescription());
+  QCOMPARE(description->text(), longCannedDescription());
   QTest::mouseClick(detailsToggle, Qt::LeftButton);
   QTRY_VERIFY_WITH_TIMEOUT(overlay->isVisible(), 5000);
   QTest::keyClick(&page, Qt::Key_Escape);

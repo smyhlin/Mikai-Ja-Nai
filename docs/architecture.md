@@ -35,6 +35,8 @@ Application settings retain the QSettings identity `Mikai` / `Mikai Wrapper`. Na
 
 On start the app removes only abandoned work from that store (`scratch/` and `*.previous` older than a day; `aji-stage-*` and `*.partial` older than an hour). It never removes an installed component, model or configuration. Builds, tests and package staging must use owned directories and must not reuse user state as disposable output.
 
+Episode range pagers use height-for-width and wrap their caption group instead of imposing its one-line minimum on the page. Title-page grids derive their column cap from the scroll viewport and the tab style's `CT_TabWidget` sizing contract, not the grid's previous allocation or pane paint geometry. Hidden provider pages must not retain a wider grid minimum after the viewport shrinks.
+
 ## Playback and rendering
 
 Playback uses Qt Widgets with `QOpenGLWidget` and libmpv's `mpv_render_context`; it does not use Qt Quick's RHI. The render surface loads libmpv dynamically (`LoadLibraryExW` on Windows, `dlopen` on Linux). GUI playback commands are asynchronous, and native update callbacks queue/coalesce work to the GUI thread.

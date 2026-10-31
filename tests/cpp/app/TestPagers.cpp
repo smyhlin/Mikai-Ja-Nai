@@ -4,6 +4,9 @@
 #include <theme/Metrics.hpp>
 #include <widgets/RangePager.hpp>
 
+#include <QtCore/QCoreApplication>
+#include <QtCore/QPoint>
+#include <QtCore/QRect>
 #include <QtCore/QStringList>
 #include <QtTest/QSignalSpy>
 #include <QtWidgets/QGridLayout>
@@ -147,6 +150,60 @@ void TestPagers::pagerWindowClampsAtTheEnd() {
   QCOMPARE(chipCount(pager), 7);
   const QStringList labels = chipLabels(pager);
   QCOMPARE(labels.last(), QStringLiteral("3951 – 4000"));
+}
+
+void TestPagers::pagerWrapsRangeCaptionsInsteadOfWideningThePage() {
+  // THE REGRESSION: the chip row used to be one unbreakable horizontal box, so
+  // seven range captions made the pager demand 906px and, through the tab page
+  // and the workspace, a 974px content column inside an 846px viewport. A pager
+  // that cannot shrink pans the page sideways; one that shrinks by clipping
+  // hides a page. The captions wrap inside their own row instead.
+  RangePager pager(mikai::app::theme::kSearchResultsPerPage);
+  pager.setState(40, 80, 4000);
+  QCOMPARE(chipCount(pager), mikai::app::theme::kPagerChipWindow);
+  const int naturalWidth = pager.sizeHint().width();
+  const int narrowWidth = pager.minimumSizeHint().width() + 20;
+  QVERIFY2(narrowWidth < naturalWidth,
+           qPrintable(QStringLiteral("the pager cannot shrink below its natural width "
+                                     "(%1px of %2px)")
+                          .arg(narrowWidth)
+                          .arg(naturalWidth)));
+
+  pager.resize(narrowWidth, pager.heightForWidth(narrowWidth));
+  pager.show();
+  QCoreApplication::processEvents();
+
+  // Nothing is hidden to make it fit: every chip is on screen, inside the pager.
+  for (int index = 0; index < chipCount(pager); ++index) {
+    QPushButton* chip = chipAt(pager, index);
+    QVERIFY2(chip != nullptr && chip->isVisible(),
+             qPrintable(QStringLiteral("range chip %1 is not visible").arg(index)));
+    const QRect rect(chip->mapTo(&pager, QPoint(0, 0)), chip->size());
+    QVERIFY2(pager.rect().contains(rect),
+             qPrintable(QStringLiteral("range chip %1 is clipped at %2..%3 of %4px")
+                            .arg(index)
+                            .arg(rect.left())
+                            .arg(rect.right())
+                            .arg(pager.width())));
+  }
+
+  // The captions took a second row, and the pager asked for that extra height
+  // instead of having it cut off.
+  const int firstRow = chipAt(pager, 0)->mapTo(&pager, QPoint(0, 0)).y();
+  const int lastRow = chipAt(pager, chipCount(pager) - 1)->mapTo(&pager, QPoint(0, 0)).y();
+  QVERIFY2(lastRow > firstRow, "the range captions did not wrap at the narrow width");
+  QVERIFY2(pager.heightForWidth(narrowWidth) > pager.sizeHint().height(),
+           "a wrapped pager did not ask for the height of its second row");
+
+  // Wrapping never costs a page: the last chip still requests its page.
+  QSignalSpy requested(&pager, &RangePager::pageRequested);
+  chipAt(pager, chipCount(pager) - 1)->click();
+  QCOMPARE(requested.count(), 1);
+
+  // And with room the same chips sit on one row again.
+  pager.resize(naturalWidth + 40, pager.sizeHint().height());
+  QCoreApplication::processEvents();
+  QCOMPARE(chipAt(pager, chipCount(pager) - 1)->mapTo(&pager, QPoint(0, 0)).y(), firstRow);
 }
 
 void TestPagers::pagerEmitsTheRequestedPage() {

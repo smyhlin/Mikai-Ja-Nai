@@ -5,12 +5,13 @@
 #include <QWidget>
 
 class QEvent;
-class QHBoxLayout;
 class QLabel;
 class QPushButton;
 class QSpinBox;
 
 namespace mikai::app {
+
+class FlowLayout;
 
 /// The chip label a page of `totalEntries` rows really holds.
 ///
@@ -81,7 +82,7 @@ private:
     QPushButton* firstButton_ = nullptr;
     QPushButton* prevButton_ = nullptr;
     QWidget* chipsHost_ = nullptr;
-    QHBoxLayout* chipLayout_ = nullptr;
+    FlowLayout* chipLayout_ = nullptr;
     /// The fixed-size chip window, built once and re-labelled by renderChips.
     QList<QPushButton*> chips_;
     QPushButton* nextButton_ = nullptr;
