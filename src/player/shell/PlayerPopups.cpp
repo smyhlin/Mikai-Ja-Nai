@@ -2,7 +2,9 @@
 
 #include <QAction>
 #include <QCursor>
+#include <QDebug>
 #include <QEvent>
+#include <QGuiApplication>
 #include <QHash>
 #include <QKeyEvent>
 #include <QLabel>
@@ -14,6 +16,13 @@
 #include <QScrollArea>
 #include <QTimer>
 #include <QVBoxLayout>
+
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace mplayer {
 namespace shell {
@@ -637,6 +646,22 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
     finishTimer_->setSingleShot(true);
     connect(finishTimer_, &QTimer::timeout, this, &QWidget::hide);
 
+    // Windows can let a competing topmost window cover this tool after its
+    // initial show; X11 window managers can do the same. Reassert only on
+    // platforms where raising is observable and non-activating. Wayland owns
+    // stacking and must not be polled with futile raise requests.
+    const QString platform = QGuiApplication::platformName();
+#ifdef Q_OS_WIN
+    const bool canReassertStacking = platform == QStringLiteral("windows");
+#else
+    const bool canReassertStacking = platform == QStringLiteral("xcb");
+#endif
+    if (canReassertStacking) {
+        stackingTimer_ = new QTimer(this);
+        stackingTimer_->setInterval(250);
+        connect(stackingTimer_, &QTimer::timeout, this, &ProcessingOverlay::maintainTopmost);
+    }
+
     cancel_ = new QPushButton(this);
     cancel_->setObjectName(QStringLiteral("processingOverlayCancel"));
     cancel_->setStyleSheet(rowQss(kPopupText, "rgba(255, 255, 255, 0.08)"));
@@ -679,6 +704,10 @@ void ProcessingOverlay::begin(const QString& title) {
     adjustSize();
     show();
     raise();
+    if (stackingTimer_ != nullptr) {
+        maintainTopmost();
+        stackingTimer_->start();
+    }
 }
 
 void ProcessingOverlay::setStage(int stageIndex, int stageCount, const QString& phase,
@@ -740,6 +769,45 @@ void ProcessingOverlay::changeEvent(QEvent* event) {
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
     }
+}
+
+void ProcessingOverlay::showEvent(QShowEvent* event) {
+    QFrame::showEvent(event);
+    if (run_ == Run::Idle) return;
+    if (stackingTimer_ != nullptr) {
+        maintainTopmost();
+        stackingTimer_->start();
+    }
+}
+
+void ProcessingOverlay::hideEvent(QHideEvent* event) {
+    if (stackingTimer_ != nullptr) stackingTimer_->stop();
+    QFrame::hideEvent(event);
+}
+
+void ProcessingOverlay::maintainTopmost() {
+    if (!isVisible()) {
+        if (stackingTimer_ != nullptr) stackingTimer_->stop();
+        return;
+    }
+#ifdef Q_OS_WIN
+    const HWND window = reinterpret_cast<HWND>(winId());
+    if (window != nullptr) {
+        if (SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER)) {
+            stackingFailureReported_ = false;
+        } else if (!stackingFailureReported_) {
+            const DWORD error = GetLastError();
+            qWarning() << "ProcessingOverlay could not reassert HWND_TOPMOST for HWND"
+                       << static_cast<void*>(window) << "; Win32 error" << error;
+            stackingFailureReported_ = true;
+        }
+    }
+#else
+    // QWidget::raise() is non-activating on X11; the timer is not created on
+    // Wayland, where the compositor alone controls global stacking.
+    raise();
+#endif
 }
 
 void ProcessingOverlay::renderElapsed() {

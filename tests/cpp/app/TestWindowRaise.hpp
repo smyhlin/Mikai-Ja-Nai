@@ -34,4 +34,7 @@ private slots:
   void theExemptionIsVisibleBeforeTheWindowIsShown();
   void thePolicyAppliesToADialogShownOnTopOfAWindow();
   void pipWindowManagerCloseRequestsPlayerTeardown();
+  void processingOverlayStaysHiddenAfterDismissal();
+  void processingOverlayReassertsWindowsTopmostWithoutActivation();
+  void processingOverlayReassertsX11TopmostWithoutActivation();
 };

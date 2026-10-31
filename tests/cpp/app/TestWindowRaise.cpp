@@ -3,14 +3,28 @@
 #include "WindowRaisePolicy.hpp"
 #include "PipFloat.hpp"
 
+#include <player/shell/PlayerPopups.hpp>
+
 #include <QApplication>
 #include <QCloseEvent>
-#include <QSignalSpy>
+#include <QColor>
 #include <QDialog>
+#include <QImage>
+#include <QPalette>
+#include <QPixmap>
+#include <QScreen>
+#include <QSignalSpy>
 #include <QWidget>
 
 #include <QtCore/QEventLoop>
 #include <QtGui/QGuiApplication>
+
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -35,6 +49,16 @@ bool activationIsObservable() {
     const QString platform = QGuiApplication::platformName();
     return platform != QStringLiteral("offscreen") && platform != QStringLiteral("minimal");
 }
+
+#ifdef Q_OS_WIN
+bool isAbove(HWND candidate, HWND other) {
+    for (HWND previous = GetWindow(other, GW_HWNDPREV); previous != nullptr;
+         previous = GetWindow(previous, GW_HWNDPREV)) {
+        if (previous == candidate) return true;
+    }
+    return false;
+}
+#endif
 
 }  // namespace
 
@@ -70,6 +94,128 @@ void TestWindowRaise::pipWindowManagerCloseRequestsPlayerTeardown() {
     QCoreApplication::sendEvent(&pip, &event);
     QCOMPARE(closeRequests.count(), 1);
     QVERIFY(!event.isAccepted());
+}
+
+void TestWindowRaise::processingOverlayStaysHiddenAfterDismissal() {
+    mplayer::shell::ProcessingOverlay overlay;
+    const QWidget* activeBefore = activeWidget();
+    overlay.begin(QStringLiteral("Preparing engine"));
+    QVERIFY(overlay.isVisible());
+    QVERIFY(overlay.windowFlags().testFlag(Qt::WindowStaysOnTopHint));
+    QVERIFY(overlay.testAttribute(Qt::WA_ShowWithoutActivating));
+    const QString platform = QGuiApplication::platformName();
+    if (platform == QStringLiteral("windows") || platform == QStringLiteral("xcb")) {
+        pump();
+        QCOMPARE(activeWidget(), activeBefore);
+    }
+    overlay.hide();
+    // A delayed stacking reassertion must not re-show a dismissed/cancelled overlay.
+    QTest::qWait(300);
+    QVERIFY(!overlay.isVisible());
+}
+
+void TestWindowRaise::processingOverlayReassertsWindowsTopmostWithoutActivation() {
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() != QStringLiteral("windows")) QSKIP("Requires Windows native z-order");
+    QWidget owner;
+    owner.setAttribute(Qt::WA_ShowWithoutActivating);
+    owner.show();
+
+    QWidget blocker;
+    blocker.setWindowFlags(blocker.windowFlags() | Qt::WindowStaysOnTopHint);
+    blocker.setAttribute(Qt::WA_ShowWithoutActivating);
+    blocker.setObjectName(QStringLiteral("processingOverlayTopmostBlocker"));
+    blocker.show();
+
+    mplayer::shell::ProcessingOverlay overlay(&owner);
+    overlay.begin(QStringLiteral("Preparing engine"));
+    pump();
+
+    const HWND blockerHandle = reinterpret_cast<HWND>(blocker.winId());
+    const HWND overlayHandle = reinterpret_cast<HWND>(overlay.winId());
+    const HWND ownerHandle = reinterpret_cast<HWND>(owner.winId());
+    QVERIFY(blockerHandle != nullptr);
+    QVERIFY(overlayHandle != nullptr);
+    QVERIFY(ownerHandle != nullptr);
+
+    // Force a real competing topmost raise after the overlay's initial show.
+    QVERIFY(SetWindowPos(blockerHandle, HWND_TOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE));
+    QTRY_VERIFY_WITH_TIMEOUT(isAbove(blockerHandle, overlayHandle), 1000);
+    QTRY_VERIFY_WITH_TIMEOUT(isAbove(overlayHandle, blockerHandle), 3000);
+    QVERIFY(GetForegroundWindow() != overlayHandle);
+
+    owner.showFullScreen();
+    QVERIFY(SetWindowPos(blockerHandle, HWND_TOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE));
+    QTRY_VERIFY_WITH_TIMEOUT(isAbove(overlayHandle, blockerHandle), 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(isAbove(overlayHandle, ownerHandle), 3000);
+    QVERIFY(GetForegroundWindow() != overlayHandle);
+    owner.showNormal();
+
+    owner.hide();
+    QVERIFY(overlay.isVisible());
+    QVERIFY(IsWindowVisible(overlayHandle));
+    owner.show();
+    QVERIFY(overlay.isVisible());
+    QVERIFY(IsWindowVisible(overlayHandle));
+    QVERIFY(SetWindowPos(blockerHandle, HWND_TOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE));
+    QTRY_VERIFY_WITH_TIMEOUT(isAbove(blockerHandle, overlayHandle), 1000);
+    QTRY_VERIFY_WITH_TIMEOUT(isAbove(overlayHandle, blockerHandle), 3000);
+    QVERIFY(GetForegroundWindow() != overlayHandle);
+
+    overlay.hide();
+    QTest::qWait(300);
+    QVERIFY(!overlay.isVisible());
+    QVERIFY(GetForegroundWindow() != overlayHandle);
+#else
+    QSKIP("Windows native z-order assertion");
+#endif
+}
+
+void TestWindowRaise::processingOverlayReassertsX11TopmostWithoutActivation() {
+#if defined(Q_OS_LINUX)
+    if (QGuiApplication::platformName() != QStringLiteral("xcb")) {
+        QSKIP("Requires the X11/XCB platform plugin");
+    }
+    QScreen* screen = QGuiApplication::primaryScreen();
+    if (screen == nullptr) QSKIP("No screen available for pixel-based stacking check");
+
+    mplayer::shell::ProcessingOverlay overlay;
+    overlay.begin(QStringLiteral("Preparing engine"));
+    const QRect area = screen->availableGeometry();
+    const QRect geometry(area.center().x() - overlay.width() / 2,
+                         area.center().y() - overlay.height() / 2,
+                         overlay.width(), overlay.height());
+    overlay.setGeometry(geometry);
+    pump();
+
+    QWidget blocker;
+    blocker.setWindowFlags(blocker.windowFlags() | Qt::WindowStaysOnTopHint);
+    blocker.setAttribute(Qt::WA_ShowWithoutActivating);
+    blocker.setAutoFillBackground(true);
+    QPalette palette = blocker.palette();
+    palette.setColor(QPalette::Window, QColor(Qt::red));
+    blocker.setPalette(palette);
+    blocker.setGeometry(geometry);
+    blocker.show();
+    blocker.raise();
+    blocker.activateWindow();
+    pump();
+    if (activeWidget() != &blocker) QSKIP("Window manager did not activate the competing blocker");
+    const QWidget* activeBefore = activeWidget();
+
+    const QPoint sample = geometry.center();
+    const auto samplePixel = [screen, sample] {
+        return screen->grabWindow(0, sample.x(), sample.y(), 1, 1).toImage().pixelColor(0, 0);
+    };
+    QTRY_COMPARE_WITH_TIMEOUT(samplePixel(), QColor(Qt::red), 1000);
+    QTRY_VERIFY_WITH_TIMEOUT(samplePixel() != QColor(Qt::red), 3000);
+    QCOMPARE(activeWidget(), activeBefore);
+#else
+    QSKIP("X11 native stacking assertion");
+#endif
 }
 
 void TestWindowRaise::aNewWindowRaisesOverAnExistingOneAndTakesActivation() {

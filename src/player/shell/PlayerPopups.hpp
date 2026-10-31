@@ -18,7 +18,9 @@
 QT_BEGIN_NAMESPACE
 class QAction;
 class QEvent;
+class QHideEvent;
 class QKeyEvent;
+class QShowEvent;
 class QLabel;
 class QMenu;
 class QProgressBar;
@@ -184,6 +186,9 @@ private:
 /// be invisible for the whole build. Staying on top of the player is what makes
 /// a long compile visible while the viewer keeps watching. The window manager
 /// must not activate it: viewers can continue using PiP while the build runs.
+/// While visible, Windows and X11 reassert the native topmost position without
+/// activation so a competing topmost window cannot cover a long build. Wayland
+/// keeps Qt's initial topmost request because its compositor owns global stacking.
 ///
 /// No percentage is invented. The bar steps over the plan's own stage count -
 /// `BuilderProgress::stageIndex` against `PreparationPlan::stages` - and a stage
@@ -213,8 +218,12 @@ signals:
 
 protected:
     void changeEvent(QEvent* event) override;
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
 
 private:
+    void maintainTopmost();
+
     /// What the window is showing, never a copy of the words showing it: a
     /// language switch restates the chrome from this and leaves the run alone.
     enum class Run { Idle, Running, Succeeded, Failed };
@@ -229,6 +238,7 @@ private:
     QLabel* elapsedLabel_ = nullptr;
     QTimer* elapsedTimer_ = nullptr;
     QTimer* finishTimer_ = nullptr;
+    QTimer* stackingTimer_ = nullptr;
     QElapsedTimer elapsed_;
     QPushButton* cancel_ = nullptr;
     Run run_ = Run::Idle;
@@ -236,6 +246,9 @@ private:
     /// its pending mark and stays disabled until finish() settles the run, and a
     /// language switch must not turn it back into a second click.
     bool cancelPending_ = false;
+#ifdef Q_OS_WIN
+    bool stackingFailureReported_ = false;
+#endif
     /// The caller's own words, kept only so the app-owned wrapper around them -
     /// "Stage n of m" - can be rebuilt. They are re-emitted verbatim; this window
     /// never translates a caller's title, phase, detail or summary. A caller that
