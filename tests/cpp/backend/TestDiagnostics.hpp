@@ -50,6 +50,7 @@ class TestDiagnostics : public QObject {
 
   // An AppImage mounts its payload read-only, so the session log cannot land
   // beside the exe; it must fall back to a writable per-user folder instead of
-  // silently dropping every line.
-  void aReadOnlyExeFolderFallsBackToAWritableLogFolder();
+  // silently dropping every line. The fixture blocks the preferred path itself
+  // rather than relying on permission bits, which only bind the owner on POSIX.
+  void aBlockedPreferredLogFolderFallsBackToThePerUserFolder();
 };

@@ -4,20 +4,24 @@
 #include <app/support/CrashLog.hpp>
 
 #include <cstdio>
+#include <utility>
 
+#include <QtCore/QByteArray>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDebug>
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
-#include <QtCore/QDirIterator>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QLibraryInfo>
+#include <QtCore/QList>
 #include <QtCore/QProcess>
 #include <QtCore/QProcessEnvironment>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QStringList>
+#include <QtCore/QTemporaryDir>
 #include <QtCore/QTemporaryFile>
+#include <QtCore/QUuid>
 #include <QtCore/QtGlobal>
 
 using mikai::backend::redactDiagnostic;
@@ -43,6 +47,44 @@ constexpr auto kJsonSecret =
 // The one marker redaction leaves behind. It is fixed, so what a report says is
 // "something was here", never which something.
 constexpr auto kMarker = "<redacted>";
+
+// The cross-process handles the fallback case shares with its child run: the
+// child reports where the log contract put it, and writes the same two lines
+// the parent then reads back from a different process.
+constexpr auto kLogPathReport = "mikai-log-path:";
+constexpr auto kMessageMarkerPrefix = "qt-message-preservation-";
+constexpr auto kFallbackBoundaryMarker = "fallback-boundary";
+// The per-user identity the child adopts, so the folder a fallback run creates
+// is one this test owns outright: nothing else writes there, and the whole
+// folder can be removed afterwards.
+constexpr auto kLogIdentityVariable = "MIKAI_DIAGNOSTICS_LOG_IDENTITY";
+
+/// Whether `path` names something inside `folder`. The two strings come from
+/// different processes, so a Windows drive-letter case difference must not read
+/// as a different folder.
+bool isUnder(const QString& path, const QString& folder) {
+  QString candidate = QDir::cleanPath(path);
+  QString root = QDir::cleanPath(folder) + QLatin1Char('/');
+#ifdef Q_OS_WIN
+  candidate = candidate.toLower();
+  root = root.toLower();
+#endif
+  return candidate.startsWith(root);
+}
+
+/// Releases a per-user folder a fallback run created. The machine must be left
+/// as it was found even when an assertion fails halfway, so the folder goes away
+/// with the scope rather than at the end of the test body.
+class ScopedFolderRemoval final {
+ public:
+  explicit ScopedFolderRemoval(QString path) : path_(std::move(path)) {}
+  ~ScopedFolderRemoval() { QDir(path_).removeRecursively(); }
+  ScopedFolderRemoval(const ScopedFolderRemoval&) = delete;
+  ScopedFolderRemoval& operator=(const ScopedFolderRemoval&) = delete;
+
+ private:
+  QString path_;
+};
 
 }  // namespace
 
@@ -235,13 +277,34 @@ void TestDiagnostics::aMediaLogLineCarriesNoSignedUrl() {
 }
 
 void TestDiagnostics::qtMessageHandlerPreservesTheOriginalMessage() {
+  // The fallback case runs this slot in a child process whose preferred log
+  // folder refuses writes. That child names the per-user identity whose folder
+  // it owns, so the parent can inspect and remove exactly that folder and
+  // nothing else; an ordinary in-suite run carries no identity and keeps the
+  // runner's.
+  const QString identity = qEnvironmentVariable(kLogIdentityVariable);
+  if (!identity.isEmpty()) {
+    QCoreApplication::setApplicationName(identity);
+  }
+
   mikai::app::installCrashLog();
   const QString path = mikai::app::logPath();
   QVERIFY(!path.isEmpty());
 
-  const QString marker =
-      QStringLiteral("qt-message-preservation-%1").arg(QDateTime::currentMSecsSinceEpoch());
+  // Where the public log contract actually put this run's log. The parent reads
+  // this rather than re-deriving the platform's per-user folder on its own.
+  std::fprintf(stdout, "%s%s\n", kLogPathReport, path.toLocal8Bit().constData());
+  std::fflush(stdout);
+
+  const QString marker = QStringLiteral("%1%2")
+                             .arg(QString::fromLatin1(kMessageMarkerPrefix))
+                             .arg(QDateTime::currentMSecsSinceEpoch());
   qWarning().noquote() << marker;
+  // A credential in the same run, so the file the parent reads is evidence for
+  // both halves of the boundary: the message survives, the token does not.
+  mikai::app::writeLogLine(QStringLiteral("%1 GET %2")
+                               .arg(QString::fromLatin1(kFallbackBoundaryMarker),
+                                    QString::fromLatin1(kSignedUrl)));
 
   QFile file(path);
   QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
@@ -304,10 +367,12 @@ void TestDiagnostics::aSignedUrlWrittenToTheLogFileIsRedactedOnDisk() {
                           .arg(stored)));
 }
 
-void TestDiagnostics::aReadOnlyExeFolderFallsBackToAWritableLogFolder() {
-  // The fallback decision keys off the executable's own folder, so it is
-  // exercised in a child process whose exe sits in a read-only directory -
-  // the AppImage situation, where the squashfs mount refuses writes.
+void TestDiagnostics::aBlockedPreferredLogFolderFallsBackToThePerUserFolder() {
+  // The preferred log folder is the executable's own, and the AppImage case is
+  // that mount refusing writes. Permission bits do not stop the owner on
+  // Windows, so the fixture blocks the preferred path itself: a directory where
+  // the run would write makes every open of that path fail on both platforms,
+  // with no ACL dependency and no change to how the product decides.
   QTemporaryDir sandbox;
   QVERIFY(sandbox.isValid());
   const QString exeDir = QDir(sandbox.path()).filePath(QStringLiteral("bin"));
@@ -315,9 +380,38 @@ void TestDiagnostics::aReadOnlyExeFolderFallsBackToAWritableLogFolder() {
   const QString childExe = QDir(exeDir).filePath(
       QFileInfo(QCoreApplication::applicationFilePath()).fileName());
   QVERIFY(QFile::copy(QCoreApplication::applicationFilePath(), childExe));
-  QFile::setPermissions(childExe, QFileDevice::ReadOwner | QFileDevice::WriteOwner |
-                                    QFileDevice::ExeOwner);
-  QFile::setPermissions(exeDir, QFileDevice::ReadOwner | QFileDevice::ExeOwner);
+  QVERIFY(QFile::setPermissions(childExe, QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                             QFileDevice::ExeOwner));
+  // Both names a run could write there: the log file itself, and the write probe
+  // the folder decision takes before it writes anything. A directory at either
+  // name refuses the open, and neither leaves a log behind to mistake for one.
+  for (const QString& blocked :
+       {QStringLiteral("mikai.log"), QStringLiteral(".mikai-log-probe")}) {
+    QVERIFY2(QDir().mkpath(QDir(exeDir).filePath(blocked)),
+             qPrintable(QStringLiteral("cannot block the preferred log path %1").arg(blocked)));
+  }
+  // The block is the fixture, so it is checked rather than assumed: a platform
+  // where an open of a directory succeeded would silently stop exercising the
+  // fallback at all.
+  QFile blockedProbe(QDir(exeDir).filePath(QStringLiteral(".mikai-log-probe")));
+  QVERIFY2(!blockedProbe.open(QIODevice::WriteOnly),
+           "the fixture did not block the preferred log path");
+
+  // The child names the per-user identity whose folder it owns, and the parent
+  // derives that same folder from the same public setting, so what follows is
+  // about the folder this run created and not about another run's log.
+  const QString identity =
+      QStringLiteral("log-fallback-%1").arg(QUuid::createUuid().toString(QUuid::Id128));
+  const QString applicationName = QCoreApplication::applicationName();
+  QCoreApplication::setApplicationName(identity);
+  const QString ownerFolder =
+      QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+  QCoreApplication::setApplicationName(applicationName);
+  QVERIFY2(!ownerFolder.isEmpty(), "the platform named no per-user data folder");
+  QVERIFY2(ownerFolder.contains(identity),
+           qPrintable(QStringLiteral("the per-user folder is not the one this run owns: %1")
+                          .arg(ownerFolder)));
+  const ScopedFolderRemoval ownerCleanup(ownerFolder);
 
   QProcess child;
   QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
@@ -328,34 +422,66 @@ void TestDiagnostics::aReadOnlyExeFolderFallsBackToAWritableLogFolder() {
   environment.insert(QStringLiteral("PATH"),
                      QLibraryInfo::path(QLibraryInfo::BinariesPath) + QDir::listSeparator() +
                          environment.value(QStringLiteral("PATH")));
+  environment.insert(QString::fromLatin1(kLogIdentityVariable), identity);
   child.setProcessEnvironment(environment);
   child.setWorkingDirectory(sandbox.path());
   child.start(childExe, {QStringLiteral("TestDiagnostics"),
                          QStringLiteral("qtMessageHandlerPreservesTheOriginalMessage")});
   QVERIFY2(child.waitForStarted(), qPrintable(child.errorString()));
   QVERIFY2(child.waitForFinished(30000), "child log-fallback run did not finish");
-  QCOMPARE(child.exitStatus(), QProcess::NormalExit);
-  QCOMPARE(child.exitCode(), 0);
+  const QByteArray childOutput = child.readAllStandardOutput();
+  const QByteArray childError = child.readAllStandardError();
+  QVERIFY2(child.exitStatus() == QProcess::NormalExit && child.exitCode() == 0,
+           qPrintable(QStringLiteral("child fallback run failed (%1): %2")
+                          .arg(child.exitCode())
+                          .arg(QString::fromLocal8Bit(childError))));
 
-  // The child's log must not be in the read-only exe folder, and must exist
-  // somewhere writable instead.
-  QVERIFY(!QFileInfo::exists(QDir(exeDir).filePath(QStringLiteral("mikai.log"))));
-  bool found = false;
-  const QStringList roots{
-      QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation),
-      QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)};
-  for (const QString& root : roots) {
-    QDirIterator it(root, {QStringLiteral("mikai.log")}, QDir::Files,
-                    QDirIterator::Subdirectories);
-    while (it.hasNext()) {
-      if (QFileInfo(it.next()).lastModified() >= QDateTime::currentDateTime().addSecs(-60)) {
-        found = true;
-        break;
-      }
+  // Where the contract put the log, reported by the process that resolved it
+  // rather than guessed from a data folder this test would have to re-derive.
+  QString loggedPath;
+  const QByteArray pathReport(kLogPathReport);
+  const QList<QByteArray> childLines = childOutput.split('\n');
+  for (const QByteArray& line : childLines) {
+    if (line.startsWith(pathReport)) {
+      loggedPath = QString::fromLocal8Bit(line.mid(pathReport.size())).trimmed();
+      break;
     }
-    if (found) break;
   }
-  QVERIFY2(found, "no fresh mikai.log appeared in any writable data location");
+  QVERIFY2(!loggedPath.isEmpty(),
+           qPrintable(QStringLiteral("the child reported no log path:\n%1%2")
+                          .arg(QString::fromLocal8Bit(childOutput),
+                               QString::fromLocal8Bit(childError))));
+
+  // The preferred folder refused writes, so the log must be in the per-user
+  // folder this run owns - never beside the exe that could not take it.
+  QVERIFY2(!isUnder(loggedPath, exeDir),
+           qPrintable(QStringLiteral("the log landed in the blocked folder: %1").arg(loggedPath)));
+  QVERIFY2(isUnder(loggedPath, ownerFolder),
+           qPrintable(QStringLiteral("the log did not land in the per-user folder %1: %2")
+                          .arg(ownerFolder, loggedPath)));
+
+  // The file at that path, not just the path: the fallback folder has to receive
+  // the lines, with the message intact and the credential already gone.
+  QFile fallbackLog(loggedPath);
+  QVERIFY2(fallbackLog.open(QIODevice::ReadOnly | QIODevice::Text),
+           qPrintable(QStringLiteral("nothing was written to the fallback log %1: %2")
+                          .arg(loggedPath, fallbackLog.errorString())));
+  const QString stored = QString::fromUtf8(fallbackLog.readAll());
+  fallbackLog.close();
+
+  // The child's own message arrived verbatim, in the folder the fallback chose.
+  QVERIFY2(stored.contains(QString::fromLatin1(kMessageMarkerPrefix)),
+           qPrintable(QStringLiteral("the message never reached the fallback log: %1").arg(stored)));
+  // And the signed line it wrote is there, redacted, exactly as it is beside a
+  // writable exe: the fallback moves the file, never the boundary.
+  QVERIFY2(stored.contains(QString::fromLatin1(kFallbackBoundaryMarker)),
+           qPrintable(QStringLiteral("the boundary line never reached the fallback log: %1")
+                          .arg(stored)));
+  QVERIFY2(!stored.contains(QStringLiteral("SE.MARKER_TOKEN")) &&
+               !stored.contains(QStringLiteral("index.m3u8")),
+           qPrintable(QStringLiteral("the signed URL reached the fallback log: %1").arg(stored)));
+  QVERIFY2(stored.contains(QString::fromLatin1(kMarker)),
+           qPrintable(QStringLiteral("nothing was redacted in the fallback log: %1").arg(stored)));
 }
 
 int runTestDiagnostics(int argc, char** argv) {

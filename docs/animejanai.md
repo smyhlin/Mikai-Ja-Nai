@@ -96,6 +96,7 @@ verified digests in `components/aji/<version>/` must stay as installed.
   `mikai.log` falls back to `AppLocalDataLocation` (`~/.local/share/mikai.log` here).
 - Regression tests: `TestAnimeJanaiRuntime::tensorRtPlanCarriesTheBackendLoaderDir`,
   `TestAnimeJanaiRuntime::shellSafeLibDirAvoidsASplitLibraryPath`,
-  `TestDiagnostics::aReadOnlyExeFolderFallsBackToAWritableLogFolder`.
+  `TestDiagnostics::aBlockedPreferredLogFolderFallsBackToThePerUserFolder` (blocks the preferred
+  write probe; it does not assume a directory's read-only attribute prevents writes on Windows).
 - Pre-release gate for a packaged Linux artifact: [`releasing.md`](releasing.md), *AnimeJaNai gate for
   a Linux artifact*.
