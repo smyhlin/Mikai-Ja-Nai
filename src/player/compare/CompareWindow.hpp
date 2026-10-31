@@ -41,6 +41,7 @@ class CompareRenderer;
 class CompareCanvas;
 class CompareGrid;
 class CompareGifExport;
+class CompareClipExport;
 
 // Each candidate renders in an isolated core from one immutable source PNG.
 class CompareWindow : public QDialog {
@@ -99,7 +100,7 @@ private slots:
     void onFlickerChanged(int value);
     void onGainChanged(int value);
     void onFlickerTimeout();
-    void saveGif();
+    void exportComparison();
     void onCandidateChosen(int side, const QString& id);
     void onHoverPixel(int x, int y, bool valid, QRgb rgb);
 
@@ -156,7 +157,7 @@ private:
     void dismissCandidateMenus();
     void updateInfo();
     void updateFlickerTimer();
-    void updateGifExport();
+    void updateExport();
     bool ensurePlanLock();
     void releasePlanLock();
     void onNativeStatusSettled();
@@ -174,8 +175,10 @@ private:
     QPushButton* recaptureButton_ = nullptr;
     QPushButton* pinButton_ = nullptr;
     QToolButton* closeButton_ = nullptr;
-    QPushButton* saveGifButton_ = nullptr;
+    QPushButton* exportButton_ = nullptr;
     QPointer<CompareGifExport> gifExport_;
+    QPointer<CompareClipExport> clipExport_;
+    bool exportDialogActive_ = false;
     QToolButton* fullscreenButton_ = nullptr;
     QAction* fullscreenAction_ = nullptr;
     QFrame* modeDivider_ = nullptr;

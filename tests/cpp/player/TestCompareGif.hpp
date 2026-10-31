@@ -7,6 +7,7 @@ class TestCompareGif : public QObject {
 
 private slots:
     void exportAlternatesBothImagesWithTimingAndInfiniteLoop();
+    void adaptivePalettePreservesSourceColorsAndFrameDifferences();
     void differentlySizedImagesShareOneCanvasWithoutCropping();
     void cancellationPreservesExistingDestination();
     void invalidDestinationReportsFailure();

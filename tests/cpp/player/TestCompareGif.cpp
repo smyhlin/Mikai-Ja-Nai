@@ -8,6 +8,9 @@
 #include <QTemporaryDir>
 #include <QTimer>
 
+#include <algorithm>
+#include <array>
+
 using mplayer::shell::saveComparisonGif;
 
 void TestCompareGif::exportAlternatesBothImagesWithTimingAndInfiniteLoop() {
@@ -47,6 +50,42 @@ void TestCompareGif::exportAlternatesBothImagesWithTimingAndInfiniteLoop() {
     QCOMPARE(second.pixelColor(255, 128), QColor(Qt::blue));
     QCOMPARE(reader.nextImageDelay(), 330);
     QVERIFY(!reader.canRead());
+}
+
+void TestCompareGif::adaptivePalettePreservesSourceColorsAndFrameDifferences() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath(QStringLiteral("adaptive.gif"));
+    const std::array<QRgb, 10> colors = {
+        qRgb(17, 52, 86), qRgb(211, 74, 119), qRgb(39, 181, 143), qRgb(232, 167, 43),
+        qRgb(91, 36, 207), qRgb(18, 203, 226), qRgb(193, 119, 28), qRgb(74, 149, 31),
+        qRgb(226, 41, 55), qRgb(33, 96, 173)};
+    QImage a(200, 100, QImage::Format_RGB32);
+    QImage b(a.size(), a.format());
+    for (int y = 0; y < a.height(); ++y) {
+        auto* rowA = reinterpret_cast<QRgb*>(a.scanLine(y));
+        auto* rowB = reinterpret_cast<QRgb*>(b.scanLine(y));
+        for (int x = 0; x < a.width(); ++x) {
+            const size_t band = static_cast<size_t>(x / 20);
+            rowA[x] = colors[band];
+            rowB[x] = colors[(band + 3) % colors.size()];
+        }
+    }
+
+    std::atomic_bool cancelled{false};
+    QString error;
+    QVERIFY2(saveComparisonGif(path, a, b, 400, cancelled, &error), qPrintable(error));
+    QImageReader reader(path);
+    const QImage first = reader.read();
+    QVERIFY2(!first.isNull(), qPrintable(reader.errorString()));
+    for (int band = 0; band < static_cast<int>(colors.size()); ++band) {
+        QCOMPARE(first.pixel(band * 20 + 10, 50), colors[band]);
+    }
+    const QImage second = reader.read();
+    QVERIFY(!second.isNull());
+    for (int band = 0; band < static_cast<int>(colors.size()); ++band) {
+        QCOMPARE(second.pixel(band * 20 + 10, 50), colors[(band + 3) % colors.size()]);
+    }
 }
 
 void TestCompareGif::differentlySizedImagesShareOneCanvasWithoutCropping() {

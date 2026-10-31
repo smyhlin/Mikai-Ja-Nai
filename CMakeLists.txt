@@ -249,6 +249,9 @@ set(PLAYER_SOURCES
   src/player/compare/CompareCanvas.cpp
   src/player/compare/CompareGrid.cpp
   src/player/compare/CompareGif.cpp
+  src/player/compare/CompareClip.cpp
+  src/player/compare/CompareExportDialog.cpp
+  src/player/compare/CompareExportComplete.cpp
   src/player/compare/CompareLayout.cpp
   src/player/compare/ComparePane.cpp
   src/player/compare/CompareRenderer.cpp
@@ -283,6 +286,9 @@ set(PLAYER_HEADERS
   src/player/compare/CompareCanvas.hpp
   src/player/compare/CompareGrid.hpp
   src/player/compare/CompareGif.hpp
+  src/player/compare/CompareClip.hpp
+  src/player/compare/CompareExportDialog.hpp
+  src/player/compare/CompareExportComplete.hpp
   src/player/compare/CompareLayout.hpp
   src/player/compare/ComparePane.hpp
   src/player/compare/CompareRenderer.hpp

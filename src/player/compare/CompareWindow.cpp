@@ -4,6 +4,9 @@
 #include "CompareCanvas.hpp"
 #include "CompareGrid.hpp"
 #include "CompareGif.hpp"
+#include "CompareClip.hpp"
+#include "CompareExportComplete.hpp"
+#include "CompareExportDialog.hpp"
 #include "CompareRenderer.hpp"
 #include "ShellTheme.hpp"
 #include "VideoSurface.hpp"
@@ -306,6 +309,7 @@ CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandid
 
 CompareWindow::~CompareWindow() {
     if (gifExport_) gifExport_->cancel();
+    if (clipExport_) clipExport_->cancel();
     if (preparationTask_) {
         preparationTask_->cancelled.store(true, std::memory_order_release);
     }
@@ -480,6 +484,7 @@ void CompareWindow::keyReleaseEvent(QKeyEvent* event) {
 
 void CompareWindow::closeEvent(QCloseEvent* event) {
     if (gifExport_) gifExport_->cancel();
+    if (clipExport_) clipExport_->cancel();
     requestPlaybackHoldRelease();
     QDialog::closeEvent(event);
 }
@@ -491,6 +496,7 @@ void CompareWindow::hideEvent(QHideEvent* event) {
     }
     dismissCandidateMenus();
     if (gifExport_) gifExport_->cancel();
+    if (clipExport_) clipExport_->cancel();
     ++selectionGeneration_;
     if (preparationTask_) {
         preparationTask_->cancelled.store(true, std::memory_order_release);
@@ -566,10 +572,10 @@ void CompareWindow::retranslateUi() {
         closeButton_->setToolTip(tr("Close (Esc)"));
         closeButton_->setAccessibleName(tr("Close Compare window"));
     }
-    if (saveGifButton_ != nullptr) {
-        saveGifButton_->setText(gifExport_ ? tr("Saving GIF…") : tr("Save GIF"));
-        saveGifButton_->setToolTip(tr("Save the two images as a blinking GIF"));
-        saveGifButton_->setAccessibleName(tr("Save as GIF"));
+    if (exportButton_ != nullptr) {
+        exportButton_->setText((gifExport_ || clipExport_) ? tr("Exporting…") : tr("Export…"));
+        exportButton_->setToolTip(tr("Export the two comparison images"));
+        exportButton_->setAccessibleName(tr("Export comparison"));
     }
     syncFullscreenButton();
     if (splitLabel_ != nullptr) splitLabel_->setText(tr("Split:"));
@@ -822,13 +828,13 @@ void CompareWindow::buildUi() {
             &CompareWindow::toggleFullscreen);
     header->addWidget(fullscreenButton_);
 
-    saveGifButton_ = new QPushButton(tr("Save GIF"), toolbarCard);
-    saveGifButton_->setObjectName(QStringLiteral("compareSaveGif"));
-    saveGifButton_->setFocusPolicy(Qt::NoFocus);
-    saveGifButton_->setCursor(Qt::PointingHandCursor);
-    saveGifButton_->setToolTip(tr("Save the two images as a blinking GIF"));
-    saveGifButton_->setAccessibleName(tr("Save as GIF"));
-    connect(saveGifButton_, &QPushButton::clicked, this, &CompareWindow::saveGif);
+    exportButton_ = new QPushButton(tr("Export…"), toolbarCard);
+    exportButton_->setObjectName(QStringLiteral("compareExport"));
+    exportButton_->setFocusPolicy(Qt::NoFocus);
+    exportButton_->setCursor(Qt::PointingHandCursor);
+    exportButton_->setToolTip(tr("Export the two comparison images"));
+    exportButton_->setAccessibleName(tr("Export comparison"));
+    connect(exportButton_, &QPushButton::clicked, this, &CompareWindow::exportComparison);
 
     closeButton_ = new QToolButton(toolbarCard);
     closeButton_->setObjectName(QStringLiteral("compareClose"));
@@ -914,7 +920,7 @@ void CompareWindow::buildUi() {
     modeControls_->hide();
 
     actions->addWidget(modeControls_);
-    actions->addWidget(saveGifButton_);
+    actions->addWidget(exportButton_);
     actions->addStretch(1);
     hoverSwatch_ = new QLabel(toolbarCard);
     hoverSwatch_->setObjectName(QStringLiteral("compareHoverSwatch"));
@@ -1869,7 +1875,7 @@ void CompareWindow::render() {
              (isVisible() && playbackHoldOwned() && !frame_.isNull() &&
               activeRenderGeneration_ != selectionGeneration_));
     rendering_ = false;
-    updateGifExport();
+    updateExport();
     if (!isVisible() || !playbackHoldOwned()) {
         if (isolatedRenderer_) isolatedRenderer_->stop();
     }
@@ -2005,43 +2011,63 @@ void CompareWindow::onFlickerTimeout() {
     canvas_->setFlickerShowA(flickerShowA_);
 }
 
-void CompareWindow::updateGifExport() {
-    if (saveGifButton_ == nullptr) return;
-    saveGifButton_->setVisible(mode_ == CompareMode::Flicker);
-    saveGifButton_->setEnabled(!gifExport_ && !comparisonPending() &&
+void CompareWindow::updateExport() {
+    if (exportButton_ == nullptr) return;
+    const bool busy = gifExport_ || clipExport_ || exportDialogActive_;
+    exportButton_->setVisible(mode_ == CompareMode::Flicker);
+    exportButton_->setEnabled(!busy && !comparisonPending() &&
                               !renderedA_.isNull() && !renderedB_.isNull() &&
                               renderedAId_ == sideA() && renderedBId_ == sideB() &&
                               playbackHoldOwned());
-    saveGifButton_->setText(gifExport_ ? tr("Saving GIF…") : tr("Save GIF"));
+    exportButton_->setText((gifExport_ || clipExport_) ? tr("Exporting…") : tr("Export…"));
 }
 
-void CompareWindow::saveGif() {
-    updateGifExport();
-    if (!saveGifButton_->isEnabled()) return;
+void CompareWindow::exportComparison() {
+    updateExport();
+    if (!exportButton_->isEnabled()) return;
     const QImage a = renderedA_;
     const QImage b = renderedB_;
     const int delay = 1000 / std::max(1, flicker_->value());
     const QPointer<CompareWindow> self(this);
-    QPointer<QFileDialog> picker = new QFileDialog(this, tr("Save GIF"));
-    picker->setAcceptMode(QFileDialog::AcceptSave);
-    picker->setNameFilter(tr("GIF images (*.gif)"));
-    picker->setDefaultSuffix(QStringLiteral("gif"));
-    const int result = picker->exec();
-    if (self.isNull() || picker.isNull()) return;
-    const QStringList files = picker->selectedFiles();
-    picker->deleteLater();
-    if (result != QDialog::Accepted || files.isEmpty() || !isVisible()) return;
-    auto* job = new CompareGifExport();
-    gifExport_ = job;
-    connect(job, &CompareGifExport::finished, this, [this](bool succeeded, const QString& error) {
+    QPointer<CompareExportDialog> dialog = new CompareExportDialog(this);
+    exportDialogActive_ = true;
+    updateExport();
+    const int result = dialog->exec();
+    if (self.isNull() || dialog.isNull()) return;
+    const QString path = dialog->outputPath();
+    const CompareExportFormat format = dialog->format();
+    dialog->deleteLater();
+    exportDialogActive_ = false;
+    updateExport();
+    if (result != QDialog::Accepted || path.isEmpty() || !isVisible()) return;
+
+    auto finish = [this, path](bool succeeded, const QString& error) {
         gifExport_.clear();
-        updateGifExport();
-        if (!succeeded && isVisible()) {
-            QMessageBox::warning(this, tr("GIF export failed"), error);
+        clipExport_.clear();
+        updateExport();
+        if (!isVisible()) return;
+        if (!succeeded) {
+            QMessageBox::warning(this, tr("Export failed"), error);
+            return;
         }
-    }, Qt::QueuedConnection);
-    updateGifExport();
-    job->start(files.first(), a, b, delay);
+        auto* popup = new CompareExportComplete(path, this);
+        popup->setAttribute(Qt::WA_DeleteOnClose);
+        popup->show();
+    };
+    if (format == CompareExportFormat::Gif) {
+        auto* job = new CompareGifExport;
+        gifExport_ = job;
+        connect(job, &CompareGifExport::finished, this, finish, Qt::QueuedConnection);
+        job->start(path, a, b, delay);
+    } else {
+        auto* job = new CompareClipExport;
+        clipExport_ = job;
+        connect(job, &CompareClipExport::finished, this, finish, Qt::QueuedConnection);
+        job->start(path, a, b, delay, format == CompareExportFormat::Mp4
+                                         ? CompareClipFormat::Mp4
+                                         : CompareClipFormat::AnimatedWebP);
+    }
+    updateExport();
 }
 
 void CompareWindow::onModeChanged(int index) {
@@ -2056,7 +2082,7 @@ void CompareWindow::onModeChanged(int index) {
     // does nothing, and a hidden one cannot be asked.
     const bool isSplit = mode == CompareMode::SplitH || mode == CompareMode::SplitV;
     const bool isFlicker = mode == CompareMode::Flicker;
-    updateGifExport();
+    updateExport();
     const bool isDifference = mode == CompareMode::Difference;
     splitLabel_->setVisible(isSplit);
     if (splitSlider_ != nullptr) splitSlider_->setVisible(isSplit);
@@ -2254,7 +2280,7 @@ QString CompareWindow::unavailableReason(const QString& id) const {
 }
 
 void CompareWindow::updateInfo() {
-    updateGifExport();
+    updateExport();
     QStringList parts;
     if (!lockError_.isEmpty()) parts.append(tr("Native plan not frozen: %1").arg(lockError_));
     if (!captureError_.isEmpty()) parts.append(tr("Capture error: %1").arg(captureError_));

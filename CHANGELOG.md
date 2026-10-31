@@ -1,6 +1,8 @@
 # Changelog
 
 ## 0.1.0 — Unreleased
+
+- Compare's Flicker export now offers GIF, animated WebP and silent Motion-JPEG MP4, with a folder chooser and completion actions. GIF uses adaptive per-frame palettes and dithering instead of the fixed 3-3-2 palette; MP4 playback support depends on the viewer.
 - The Components page no longer labels the TensorRT runtime or GPU kernels installed when no Native runtime bundle is discoverable, or GPU kernels installed when no compatible resource pack is selected; empty directory-resolution results and unsupported GPU generations are not treated as installed. The same bundle/store availability decision feeds recommendations and acquisition checks on Windows and Linux.
 
 

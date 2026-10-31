@@ -85,7 +85,7 @@ Choose a view in the mode menu:
 
 Choose **Bilinear** or **Nearest Neighbor** for scaling. The mouse wheel zooms around the pointer. Drag the picture to pan; double-click the picture away from the split divider fits the image. **Fit** (or **F**) fits the view. **S** swaps A and B; **R** captures the current player frame again; **P** pins/unpins the Compare window so it stays on top. Hold **Space** to peek at Side A; releasing it restores the selected comparison view, including its zoom and pan. **F11** toggles Compare fullscreen. **Esc** leaves fullscreen first, otherwise closes Compare.
 
-**Save GIF** is available only in Flicker mode and when the current A/B render is ready. It saves the two captured images as an infinitely looping, aspect-preserving two-frame GIF; its colors are quantized to GIF’s fixed 256-color palette, so it is a visual convenience, not a bit-exact comparison. If export cannot be written or otherwise fails, the app displays an error. The export is atomic, so a failed write does not publish a partial file as the completed result.
+**Export** is available in Flicker mode when both current A/B renders are ready. Choose an output folder, file name and format: looping GIF, looping animated WebP, or a silent ten-second MP4. GIF uses an adaptive palette of at most 256 colors per frame; use WebP or MP4 when more color detail is needed. MP4 uses Motion JPEG, which may not play in every browser or video player. A short-lived completion window can open the file or its folder, or copy the file to the clipboard. Exports are written atomically; an error or cancellation does not publish a partial file.
 
 ## Practical troubleshooting
 
@@ -94,4 +94,4 @@ Choose **Bilinear** or **Nearest Neighbor** for scaling. The mouse wheel zooms a
 - **No resume prompt:** catalogue history ignores positions below 30 seconds, and watched episodes do not resume. Local media is not covered by the catalogue’s watch-history thresholds.
 - **HDR badge or output does not match expectations:** badges reflect source metadata, not display behavior. Check the HDR playback policy; remember that Native HDR override may reduce image quality.
 - **PiP cannot be moved/resized or stay above other windows:** compositor/window-manager policy can constrain it, especially on Wayland; use **Restore** to return to the player.
-- **Compare does not offer Save GIF:** GIF export is Flicker-only and disabled until both selected renders are ready. If export starts but fails, read the displayed error and choose a writable destination.
+- **Compare does not offer Export:** Export is Flicker-only and disabled until both selected renders are ready. If it fails, read the displayed error and choose a writable destination.
