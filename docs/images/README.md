@@ -21,6 +21,22 @@ A run writes `gallery-evidence.json` with application/Qt/platform details, scree
 
 The current run's `gallery-evidence.json` records a 12-second project-generated FFmpeg `testsrc2` video fixture (`tests/fixtures/generate_media.sh`; the operator-declared credit is not independently verified), live anonymous catalogue metadata and artwork, capture timestamps, widget identities, state and SHA-256 digests. These are real widget grabs, not AI-generated or composited images. The run completed on Windows on 2026-10-30; its captures are stored here without image edits. It finished at `2026-10-30T16:44:19Z`, succeeded with no errors, and drained workers cleanly.
 
+## Current TitlePage capture (manual, 2026-10-31)
+
+`docs/images/screenshots/title-page-current-20261031.png` (stored as `screenshots/title-page-current-20261031.png`) is a separate, manually captured TitlePage image from the running application on 2026-10-31. It is **not** part of the 2026-10-30 gallery evidence and does not alter or replace any historical gallery file or digest.
+
+Capture conditions:
+- Platform: Windows, Qt 6.12.0, MinGW build `build/release/mikai.exe`.
+- API: live anonymous Mikai API; no API key used or recorded. Captured title is ref `7461` ("Мачуха та зведені сестри, які не цькують мене" / "My Stepmother and Stepsisters Aren't Wicked").
+- Isolation: staged temporary home/config/data/cache under `build/release/_capture-root`; the app was launched normally, not through a probe, with no user data destroyed.
+- Window: 1505×1085 client pixels captured; interface language Ukrainian (system default), default appearance, no playback started.
+- MPV runtime was available in the build tree but no video was played; this is a static widget grab.
+
+Limitations:
+- Not a probe run: no `gallery-evidence.json`, no clean-shutdown or worker-drain attestation, and no evidence beyond the file digest below.
+- Single viewport, scale, language, theme and appearance; it does not cover the full review matrix.
+- SHA-256: `47d76554533b674c914abf6c705012c8392dba22ac216834ff9ae637f7b763ea`.
+
 ## Capture procedure
 
 Build the opt-in probe with `MIKAI_BUILD_PROBES=ON` and run it on an interactive desktop whose available work area is at least 1280×840, with working desktop OpenGL. Use the real desktop platform plugin (Windows or X11); offscreen/minimal platforms are refused. The run requires a bright original local video of at least eight seconds with ready video-track metadata (audio is optional), an installed Standard mpv runtime module, and network access to the anonymous catalogue API and artwork. The probe uses only Original playback and non-AI comparison; it does not acquire models, runtimes or invoke AI inference. A successful run requires all five surfaces; a catalogue/API/artwork failure leaves the gallery incomplete.

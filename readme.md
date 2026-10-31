@@ -68,6 +68,13 @@ AI-generated or composited; they do not imply sign-in, provider playback, AI inf
 clearance or approval for distribution. Live catalogue artwork, titles and availability belong to their
 rights holders and change upstream — the layout is what is being shown, not a snapshot of catalogue contents.
 
+A separate, manually captured TitlePage image (`docs/images/screenshots/title-page-current-20261031.png`,
+SHA-256 `47d76554533b674c914abf6c705012c8392dba22ac216834ff9ae637f7b763ea`) is also stored in the same
+directory. It is a normal-application widget grab from 2026-10-31 (live anonymous API, ref 7461, Ukrainian UI,
+default appearance, no playback), taken with a staged isolated runtime/settings and no credential exposure.
+It is **not** part of the 2026-10-30 gallery evidence run and has no probe/evidence attestation; see
+`docs/images/README.md` for its full capture conditions and limitations.
+
 The probe uses Original playback and non-AI comparison only: it never downloads models and never runs
 inference. Regenerating the set needs an interactive desktop with working desktop OpenGL, an original
 local video of at least eight seconds, the installed Standard mpv runtime module and network access to the
