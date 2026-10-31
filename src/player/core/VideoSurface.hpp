@@ -932,6 +932,8 @@ private:
     /// widget that already let the renderer go.
     QMetaObject::Connection contextDestroyedConnection_;
     std::unique_ptr<MpvHandle> mpv_;
+    double requestedVolume_ = 100.0;
+    bool requestedMuted_ = false;
     uint64_t mpvApiVersion_ = 0;
     std::unique_ptr<MpvRenderContext> render_;
     QString url_;

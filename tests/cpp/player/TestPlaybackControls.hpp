@@ -26,6 +26,9 @@ private slots:
     void aLostReleaseEndsTheDragWithoutCommittingTheHover_data();
     void aLostReleaseEndsTheDragWithoutCommittingTheHover();
 
+    void aNewPlayerStartsAtTheShownVolume();
+    void aPipKeepsItsVolumeAndMuteBeforeOpening();
+
     void aPiPArrowStepIsResolvedByTheCoreWhenThePumpIsSuspended_data();
     void aPiPArrowStepIsResolvedByTheCoreWhenThePumpIsSuspended();
 

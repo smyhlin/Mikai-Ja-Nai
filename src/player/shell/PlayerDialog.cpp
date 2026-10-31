@@ -237,6 +237,7 @@ PlayerDialog::PlayerDialog(const QString& caption,
     shell_ = new PlayerShell(this, false);
     shell_->setFocusPolicy(Qt::StrongFocus);
     surface_ = shell_->videoSurface();
+    surface_->setVolume(volume_ * 100.0);
     // T-205: the shipped player consumes none of the raw counter poll (the
     // benchmark/compare probes are the only readers, and they own their own
     // surfaces with polling on), so this surface performs no recurring mpv

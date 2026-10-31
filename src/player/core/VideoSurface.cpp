@@ -231,7 +231,8 @@ void VideoSurface::ensureEngine() {
         {"http-header-fields", "Accept-Language: uk-UA"},
         {"hwdec", "auto-safe"},
         {"keepaspect", "yes"},
-        {"volume", "100"},
+        {"volume", mpvNumber(requestedVolume_)},
+        {"mute", requestedMuted_ ? "yes" : "no"},
         // The keyboard belongs to the shell: mpv's own bindings would consume
         // Space and the arrow keys before Qt ever sees them.
         {"input-default-bindings", "no"},
@@ -1174,11 +1175,13 @@ void VideoSurface::seekRelative(double delta) {
 }
 
 void VideoSurface::setVolume(double volume) {
+    requestedVolume_ = volume;
     if (!mpv_) return;
     issueCoreCommand({"set", "volume", mpvNumber(volume)}, "volume", /*reportRefusal=*/true);
 }
 
 void VideoSurface::setMuted(bool muted) {
+    requestedMuted_ = muted;
     if (!mpv_) return;
     issueCoreCommand({"set", "mute", muted ? "yes" : "no"}, "mute", /*reportRefusal=*/true);
 }

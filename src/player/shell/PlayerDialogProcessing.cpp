@@ -1193,15 +1193,12 @@ void PlayerDialog::enterPip() {
     const bool enteringPaused = enginePreparationActive_ || enteringPauseIntent;
     window->setPlaying(!enteringPaused);
     window->setTime(surface_->position(), surface_->duration());
+    window->setVolume(volume_);
     window->setMuted(muted_);
     if (directMedia_) {
         window->videoSurface()->setNextMediaTrackSelection(surface_->mediaTrackSelection());
     }
     window->openStream(url_, surface_->position(), enteringPaused, episodeMediaToken());
-    // Volume lives on the core and the float has its own. Without this it
-    // opens at mpv's default 100% while the player sits wherever the viewer
-    // set it, so the volume jumps on entering PiP.
-    window->videoSurface()->setVolume(volume_ * 100.0);
     // The float has its own mpv core, so the main one keeps decoding behind a
     // hidden window unless it is stopped. That doubled the bandwidth, burned
     // the rate budget, and meant coming back to two videos at different

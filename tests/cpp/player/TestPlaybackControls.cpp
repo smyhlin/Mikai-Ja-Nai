@@ -373,6 +373,93 @@ void TestPlaybackControls::aPiPArrowStepIsResolvedByTheCoreWhenThePumpIsSuspende
     QVERIFY2(coreIsPaused(surface), "seeking must not unpause the float");
 }
 
+void TestPlaybackControls::aNewPlayerStartsAtTheShownVolume() {
+    if (!nativePlatformAvailable()) {
+        QSKIP("the main player needs a native window and a real GL context");
+    }
+    if (!requireRuntime()) return;
+
+    const QString fixture = fixtureClip();
+    QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
+    const std::unique_ptr<mplayer::shell::PlayerDialog> dialog(
+        new mplayer::shell::PlayerDialog(QStringLiteral("volume"), fixture));
+    auto* shell = dialog->findChild<mplayer::shell::PlayerShell*>();
+    QVERIFY(shell != nullptr);
+    auto* surface = shell->findChild<mplayer::VideoSurface*>();
+    auto* volume = shell->findChild<mplayer::shell::VolumeGroup*>();
+    QVERIFY(surface != nullptr);
+    QVERIFY(volume != nullptr);
+
+    dialog->show();
+    if (!QTest::qWaitForWindowExposed(dialog.get(), 15000)) {
+        QSKIP("the player window was never exposed on this platform");
+    }
+    if (!surface->waitForContext(20000)) {
+        QSKIP("no OpenGL context for the player surface");
+    }
+    dialog->startPlayer();
+    QVERIFY2(settleUntil([surface] { return surface->duration() > 10.0; }, 30000),
+             "the player did not load the fixture");
+    const auto initialVolume = coreNumber(surface, "volume");
+    QVERIFY(initialVolume.has_value());
+    QVERIFY2(std::abs(*initialVolume - volume->effective() * 100.0) < 0.1,
+             qPrintable(QStringLiteral("mpv volume %1 differs from displayed %2")
+                            .arg(*initialVolume)
+                            .arg(volume->effective() * 100.0)));
+
+    volume->setVolume(0.25);
+    QVERIFY2(settleUntil([surface, volume] {
+                 const auto actual = coreNumber(surface, "volume");
+                 return actual && std::abs(*actual - volume->effective() * 100.0) < 0.1;
+             }, 10000),
+             "the changed slider level did not reach mpv");
+}
+
+void TestPlaybackControls::aPipKeepsItsVolumeAndMuteBeforeOpening() {
+    if (!nativePlatformAvailable()) {
+        QSKIP("the PiP player needs a native window and a real GL context");
+    }
+    if (!requireRuntime()) return;
+
+    const QString fixture = fixtureClip();
+    QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
+    mplayer::shell::PipFloat pip;
+    pip.setVolume(0.31);
+    pip.setMuted(true);
+    pip.resize(480, 270);
+    pip.show();
+    if (!QTest::qWaitForWindowExposed(&pip, 15000)) {
+        QSKIP("the float's window was never exposed on this platform");
+    }
+    auto* surface = pip.videoSurface();
+    QVERIFY(surface != nullptr);
+    if (!surface->waitForContext(20000)) {
+        QSKIP("no OpenGL context for the float's surface");
+    }
+    pip.openStream(fixture, 0.0, true, 1);
+    QVERIFY2(settleUntil([surface] { return surface->duration() > 10.0; }, 30000),
+             "the float did not load the fixture");
+
+    const auto volume = coreNumber(surface, "volume");
+    const auto muted = surface->probeMpvProperty(QStringLiteral("mute"),
+                                                 mplayer::ProbePropertyKind::Flag);
+    QVERIFY(volume.has_value());
+    QVERIFY(std::abs(*volume - 31.0) < 0.1);
+    QVERIFY(muted.has_value());
+    QVERIFY(muted->flag);
+
+    pip.setMuted(false);
+    QVERIFY2(settleUntil([surface] {
+                 const auto state = surface->probeMpvProperty(QStringLiteral("mute"),
+                                                              mplayer::ProbePropertyKind::Flag);
+                 return state && !state->flag;
+             }, 10000),
+             "the float did not unmute");
+    const auto unmutedVolume = coreNumber(surface, "volume");
+    QVERIFY(unmutedVolume.has_value());
+    QVERIFY(std::abs(*unmutedVolume - 31.0) < 0.1);
+}
+
 void TestPlaybackControls::aPlayerDialogArrowStepIgnoresALateStaleProgressReport_data() {
     QTest::addColumn<int>("secondKey");
     QTest::addColumn<double>("stalePosition");
