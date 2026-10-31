@@ -16,7 +16,6 @@
 #include "theme/Palette.hpp"
 #include "widgets/FailureView.hpp"
 #include "widgets/FlowLayout.hpp"
-#include "widgets/PageGlow.hpp"
 #include "widgets/RangePager.hpp"
 #include "widgets/TitleCard.hpp"
 #include "widgets/RateLimitLabel.hpp"
@@ -32,13 +31,14 @@
 #include <QAccessible>
 #include <QApplication>
 #include <QBoxLayout>
-#include <QBrush>
 #include <QButtonGroup>
 #include <QColor>
 #include <QtCore/QDebug>
 #include <QDesktopServices>
 #include <QDateTime>
+#include <QEasingCurve>
 #include <QEvent>
+#include <QFontMetrics>
 #include <QKeyEvent>
 #include <QFileDialog>
 #include <QFrame>
@@ -55,12 +55,13 @@
 #include <QLabel>
 #include <QLocale>
 #include <QLayout>
-#include <QLinearGradient>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPixmap>
 #include <QProcess>
+#include <QPropertyAnimation>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QScrollArea>
@@ -73,12 +74,79 @@
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTimer>
+#include <QTextLayout>
+#include <QTextOption>
 #include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
 
 namespace mikai::app {
+namespace {
+
+constexpr bool kShowHeroChips = true;
+constexpr int kHeroGenreMax = 6;
+constexpr int kHeroTagMax = 3;
+constexpr int kSheetSlideMs = 220;
+constexpr int kSheetSlidePx = 36;
+
+/// Flips a label's dynamic "state" property and re-resolves only that label.
+void setLabelState(QLabel* label, const char* state) {
+    if (label == nullptr) {
+        return;
+    }
+    const QString wanted = QString::fromLatin1(state);
+    if (label->property("state").toString() == wanted) {
+        return;
+    }
+    label->setProperty("state", wanted);
+    label->style()->unpolish(label);
+    label->style()->polish(label);
+    label->update();
+}
+
+/// Genre and tag chips for the hero, rebuilt from the retained detail so a
+/// language switch re-words them. Purely presentational: no signal, no state.
+void fillHeroChips(QWidget* host, const backend::AnimeDetail& detail) {
+    if (host == nullptr || host->layout() == nullptr) {
+        return;
+    }
+    QLayout* layout = host->layout();
+    while (QLayoutItem* item = layout->takeAt(0)) {
+        if (item->widget() != nullptr) {
+            item->widget()->deleteLater();
+        }
+        delete item;
+    }
+    if (!kShowHeroChips) {
+        host->hide();
+        return;
+    }
+    int added = 0;
+    const auto addChips = [&](const auto& source, int limit, const QString& objectName) {
+        int count = 0;
+        for (const backend::GenreTag& tag : source) {
+            if (count >= limit) {
+                break;
+            }
+            const QString text = tag.ua.isEmpty() ? tag.name : tag.ua;
+            if (text.isEmpty()) {
+                continue;
+            }
+            auto* chip = new QLabel(text, host);
+            chip->setObjectName(objectName);
+            chip->setTextFormat(Qt::PlainText);
+            layout->addWidget(chip);
+            ++count;
+            ++added;
+        }
+    };
+    addChips(detail.genres, kHeroGenreMax, QStringLiteral("titleGenreChip"));
+    addChips(detail.tags, kHeroTagMax, QStringLiteral("titleTagChip"));
+    host->setVisible(added > 0);
+}
+
+}  // namespace
 
 /// The cover blurred once per cover, tails included, on a surface small enough
 /// that the poster reads as its palette and not as a second face.
@@ -102,13 +170,12 @@ QImage blurredCover(const QImage& poster) {
     return out;
 }
 
-/// The cover as atmosphere: blurred once per cover, then composited once per
-/// size, so a repaint is one blit and the poster is never a second copy.
+/// A single cached composite behind the hero. Poster blur is refreshed only
+/// when artwork changes; size and appearance changes only rebuild the composite.
 class PosterBackdrop : public QWidget {
 public:
     explicit PosterBackdrop(QWidget* parent) : QWidget(parent) {
         setAttribute(Qt::WA_TransparentForMouseEvents);
-        setAttribute(Qt::WA_OpaquePaintEvent);
         setFocusPolicy(Qt::NoFocus);
     }
 
@@ -119,80 +186,104 @@ public:
         posterKey_ = poster.cacheKey();
         image_ = poster.isNull() ? QImage() : blurredCover(poster.toImage());
         rebuild();
-        update();
     }
 
-    void refreshPalette() {
-        rebuild();
-        update();
-    }
+    void refreshPalette() { rebuild(); }
 
 protected:
+    bool event(QEvent* event) override {
+        const bool dprChanged = event->type() == QEvent::DevicePixelRatioChange;
+        const bool result = QWidget::event(event);
+        if (dprChanged) {
+            rebuild();
+        }
+        return result;
+    }
+
     void resizeEvent(QResizeEvent* event) override {
         QWidget::resizeEvent(event);
         rebuild();
     }
 
     void paintEvent(QPaintEvent*) override {
-        QPainter painter(this);
-        if (art_.isNull()) {
-            // Opaque paint is promised: an empty backdrop still covers its rect.
-            painter.fillRect(rect(), theme::paletteFor(mikai::app::currentAppearance())
-                                        .titleBackgroundValue);
-            return;
+        if (!composite_.isNull()) {
+            QPainter painter(this);
+            painter.drawPixmap(0, 0, composite_);
         }
-        painter.drawPixmap(0, 0, art_);
     }
 
 private:
     void rebuild() {
-        art_ = QPixmap();
-        if (image_.isNull() || width() <= 0 || height() <= 0) {
+        composite_ = QPixmap();
+        if (width() <= 0 || height() <= 0) {
             return;
         }
-        const QColor background =
-            theme::paletteFor(mikai::app::currentAppearance()).titleBackgroundValue;
-        const QSize region(theme::kTitleBackdropWidth, theme::kTitleBackdropHeight);
-        QPixmap art(size());
-        art.fill(background);
-        QPainter painter(&art);
-        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-        painter.setOpacity(theme::kTitleBackdropAlpha / 255.0);
-        painter.drawImage(QRect(-theme::kSpacingLarge, 0, region.width(), region.height()),
-                          image_.scaled(region, Qt::KeepAspectRatioByExpanding,
-                                        Qt::SmoothTransformation));
-        painter.setOpacity(1.0);
-        // The bed takes over towards the facts, and the right edge dissolves, so
-        // the atmosphere never ends in a line of its own.
-        QColor clear = background;
-        clear.setAlpha(0);
-        QColor soft = background;
-        soft.setAlpha(theme::kTitleBackdropFadeAlpha);
-        QLinearGradient fade(0, 0, 0, height());
-        fade.setColorAt(0.0, clear);
-        fade.setColorAt(0.55, soft);
-        fade.setColorAt(1.0, background);
-        painter.fillRect(rect(), QBrush(fade));
-        const int imageLeft = -theme::kSpacingLarge;
-        const int imageRight = imageLeft + region.width();
-        const int fadeHeight = qMin(height(), region.height());
-        const int edgeFade = qMin(theme::kTitleBackdropEdgeFade, region.width() / 2);
-        QLinearGradient right(imageRight - edgeFade, 0, imageRight, 0);
-        right.setColorAt(0.0, clear);
-        right.setColorAt(1.0, background);
-        painter.fillRect(QRect(imageRight - edgeFade, 0, edgeFade, fadeHeight), QBrush(right));
-        // The crop starts inside the page, so its left edge dissolves too.
-        const int leftFade = qMin(edgeFade, theme::kSpacingLarge * 3);
-        QLinearGradient left(imageLeft, 0, imageLeft + leftFade, 0);
-        left.setColorAt(0.0, background);
-        left.setColorAt(1.0, clear);
-        painter.fillRect(QRect(imageLeft, 0, leftFade, fadeHeight), QBrush(left));
-        art_ = art;
+        const qreal dpr = devicePixelRatioF();
+        const QSize pixels(qRound(width() * dpr), qRound(height() * dpr));
+        QImage result(pixels, QImage::Format_ARGB32_Premultiplied);
+        result.fill(Qt::transparent);
+        QPainter painter(&result);
+        painter.scale(dpr, dpr);
+        const theme::Appearance& appearance = currentAppearance();
+        const auto palette = theme::paletteFor(appearance);
+        const bool light = palette.light;
+        const qreal intensity = appearance.backgroundGradient
+                                    ? qBound(0, appearance.gradientIntensity, 100) / 100.0
+                                    : 0.0;
+        const qreal gradientHeight =
+            qBound(0, height() * qBound(0, appearance.gradientHeight, 100) / 100,
+                   height());
+        if (intensity > 0.0) {
+            if (!image_.isNull()) {
+                const qreal baseOpacity = light ? 0.07 : 0.14;
+                const qreal opacity = qMin(light ? 0.10 : 0.20,
+                                           baseOpacity * intensity * (100.0 / 30.0));
+                painter.setOpacity(opacity);
+                painter.drawImage(QPoint(0, 0),
+                                  image_.scaled(theme::kTitleBackdropWidth,
+                                                theme::kTitleBackdropHeight,
+                                                Qt::KeepAspectRatioByExpanding,
+                                                Qt::SmoothTransformation));
+                painter.setOpacity(1.0);
+            }
+            QColor configured = theme::gradientColor(appearance);
+            configured.setAlphaF(intensity * (light ? 0.08 : 0.16));
+            painter.fillRect(rect(), configured);
+            QImage mask(pixels, QImage::Format_Alpha8);
+            mask.fill(0);
+            for (int y = 0; y < pixels.height(); ++y) {
+                const qreal logicalY = y / dpr;
+                const qreal top = qBound<qreal>(0.0, logicalY / 16.0, 1.0);
+                const qreal fadeStart = gradientHeight * 0.35;
+                const qreal bottom = logicalY <= fadeStart
+                                         ? 1.0
+                                         : qBound<qreal>(0.0,
+                                                         (gradientHeight - logicalY) /
+                                                             qMax<qreal>(1.0, gradientHeight - fadeStart),
+                                                         1.0);
+                const qreal vertical = top * bottom;
+                for (int x = 0; x < pixels.width(); ++x) {
+                    const qreal logicalX = x / dpr;
+                    const qreal left = qBound<qreal>(0.0, logicalX / 16.0, 1.0);
+                    const qreal right = qBound<qreal>(0.0, (width() * 0.85 - logicalX) /
+                                                               qMax(1.0, width() * 0.85 - 16.0), 1.0);
+                    mask.scanLine(y)[x] = uchar(qRound(255.0 * vertical * left * right));
+                }
+            }
+            painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+            painter.drawImage(QRect(0, 0, width(), height()), mask);
+            painter.end();
+        } else {
+            painter.end();
+        }
+        composite_ = QPixmap::fromImage(std::move(result));
+        composite_.setDevicePixelRatio(dpr);
+        update();
     }
 
     qint64 posterKey_ = 0;
     QImage image_;
-    QPixmap art_;
+    QPixmap composite_;
 };
 
 namespace {
@@ -381,19 +472,23 @@ void TitlePage::buildUi() {
                                       theme::kTitlePageInset, theme::kTitlePageInset);
     columnLayout_->setSpacing(theme::kTitleSectionSpacing);
 
-    backdrop_ = new PosterBackdrop(column_);
-    backdrop_->setObjectName(QStringLiteral("titleBackdrop"));
-    backdrop_->show();
-    backdrop_->lower();
-
     buildBody();
 
-    pageGlow_ = new PageGlow(this);
     connect(&appearanceNotifier(), &AppearanceNotifier::changed, this,
             [this](const theme::Appearance& previous) {
                 const auto& appearance = currentAppearance();
-                if (previous.siteTheme != appearance.siteTheme && backdrop_ != nullptr) {
+                if (backdrop_ != nullptr &&
+                    (previous.siteTheme != appearance.siteTheme ||
+                     previous.accent != appearance.accent ||
+                     previous.gradientColor != appearance.gradientColor ||
+                     previous.backgroundGradient != appearance.backgroundGradient ||
+                     previous.gradientIntensity != appearance.gradientIntensity ||
+                     previous.gradientHeight != appearance.gradientHeight)) {
                     backdrop_->refreshPalette();
+                }
+                if ((previous.siteTheme != appearance.siteTheme ||
+                     previous.accent != appearance.accent) && hasDetail_) {
+                    refreshLinkTexts();
                 }
                 if (previous.radiusStep != appearance.radiusStep ||
                     previous.coverGradient != appearance.coverGradient) {
@@ -445,6 +540,7 @@ void TitlePage::buildHeader() {
 
     homeButton_ = new QPushButton(tr("Home"), headerRow_);
     homeButton_->setObjectName(QStringLiteral("titleHome"));
+    homeButton_->setCursor(Qt::PointingHandCursor);
     connect(homeButton_, &QPushButton::clicked, this, &TitlePage::homeRequested);
 
     status_ = new QLabel(headerRow_);
@@ -468,6 +564,14 @@ void TitlePage::buildHeader() {
     settingsButton_->setCursor(Qt::PointingHandCursor);
     connect(settingsButton_, &QPushButton::clicked, this, &TitlePage::settingsRequested);
 
+    // One control height across the row, so the pills, the rate chip and the
+    // gear read as a single bar whatever the font does to their text.
+    QPushButton* const headerControls[] = {backButton_, homeButton_, settingsButton_};
+    for (QPushButton* control : headerControls) {
+        control->setMinimumHeight(theme::kTitleControlHeight);
+    }
+    settingsButton_->setMinimumWidth(theme::kTitleControlHeight);
+
     rateLabel_ = new RateLimitLabel(client_, headerRow_);
     headerRowLayout_->addWidget(backButton_);
     headerRowLayout_->addWidget(homeButton_);
@@ -478,8 +582,20 @@ void TitlePage::buildHeader() {
 }
 
 void TitlePage::buildBody() {
+    buildHero();
+    buildEpisodeWorkspace();
+    buildDiscovery();
+    columnLayout_->addStretch(1);
+}
+
+void TitlePage::buildHero() {
     hero_ = new QWidget(column_);
     hero_->setObjectName(QStringLiteral("titleHero"));
+    hero_->installEventFilter(this);
+    backdrop_ = new PosterBackdrop(hero_);
+    backdrop_->setObjectName(QStringLiteral("titleBackdrop"));
+    backdrop_->show();
+    backdrop_->lower();
     heroLayout_ = new QBoxLayout(QBoxLayout::LeftToRight, hero_);
     heroLayout_->setContentsMargins(0, 0, 0, 0);
     heroLayout_->setSpacing(theme::kTitleHeroSpacing);
@@ -520,6 +636,11 @@ void TitlePage::buildBody() {
     heading_->setTextFormat(Qt::PlainText);
     wrapLabel(heading_);
     heading_->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    heading_->setFocusPolicy(Qt::StrongFocus);
+    heading_->setCursor(Qt::PointingHandCursor);
+    heading_->setToolTip(tr("Copy title"));
+    heading_->setAccessibleDescription(tr("Copy title"));
+    heading_->installEventFilter(this);
     textColumn->addWidget(heading_);
 
     subtitle_ = new QLabel(hero_);
@@ -527,15 +648,13 @@ void TitlePage::buildBody() {
     subtitle_->setTextFormat(Qt::PlainText);
     wrapLabel(subtitle_);
     subtitle_->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    subtitle_->setFocusPolicy(Qt::StrongFocus);
+    subtitle_->setCursor(Qt::PointingHandCursor);
+    subtitle_->setToolTip(tr("Copy title"));
+    subtitle_->setAccessibleDescription(tr("Copy title"));
+    subtitle_->installEventFilter(this);
     textColumn->addWidget(subtitle_);
 
-    textColumn->addSpacing(theme::kSpacingSmall);
-    accentRule_ = new QLabel(hero_);
-    accentRule_->setObjectName(QStringLiteral("titleAccentRule"));
-    accentRule_->setFixedSize(theme::kTitleAccentRuleWidth, theme::kTitleAccentRuleHeight);
-    accentRule_->setAttribute(Qt::WA_StyledBackground, true);
-    accentRule_->setAccessibleName(QString());
-    textColumn->addWidget(accentRule_, 0, Qt::AlignLeft);
     textColumn->addSpacing(theme::kSpacingMedium);
 
     failure_ = new FailureView(hero_);
@@ -550,10 +669,88 @@ void TitlePage::buildBody() {
     scores_ = new QLabel(hero_);
     scores_->setObjectName(QStringLiteral("titleScores"));
     wrapLabel(scores_);
-    textColumn->addWidget(scores_);
+    scores_->hide();
+    textColumn->addWidget(scores_, 0, Qt::AlignLeft);
+
+    // Genre and tag chips: wrapped like the disclosure actions, filled from the
+    // retained detail, hidden until there is one.
+    auto* chipsHost = new QWidget(hero_);
+    chipsHost->setObjectName(QStringLiteral("titleGenres"));
+    QSizePolicy chipsPolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    chipsPolicy.setHeightForWidth(true);
+    chipsHost->setSizePolicy(chipsPolicy);
+    chipsHost->setLayout(new FlowLayout(theme::kSpacingSmall, theme::kSpacingXs));
+    chipsHost->hide();
+
+    heroWatchButton_ = new QPushButton(tr("Watch"), hero_);
+    heroWatchButton_->setObjectName(QStringLiteral("titleHeroWatchButton"));
+    heroWatchButton_->setMinimumHeight(48);
+    heroWatchButton_->setMinimumWidth(180);
+    heroWatchButton_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
+    heroWatchButton_->setCursor(Qt::PointingHandCursor);
+    heroWatchButton_->setEnabled(false);
+    heroWatchButton_->setToolTip(tr("Select an available episode to watch"));
+    connect(heroWatchButton_, &QPushButton::clicked, this, [this] {
+        if (watchEntry_ != nullptr) {
+            playEpisode(watchEntry_);
+        }
+    });
+    auto* heroActionsHost = new QWidget(hero_);
+    heroActionsHost->setObjectName(QStringLiteral("titleHeroActions"));
+    QSizePolicy heroActionsPolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    heroActionsPolicy.setHeightForWidth(true);
+    heroActionsHost->setSizePolicy(heroActionsPolicy);
+    auto* heroActions = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
+    heroActionsHost->setLayout(heroActions);
+
+    heroWatchButton_->setMinimumHeight(48);
+    heroActions->addWidget(heroWatchButton_);
+    heroActions->setAlignment(heroWatchButton_, Qt::AlignVCenter);
+    episodesButton_ = new QPushButton(tr("Episodes"), heroActionsHost);
+    episodesButton_->setObjectName(QStringLiteral("titleEpisodesAnchor"));
+    episodesButton_->setMinimumHeight(40);
+    episodesButton_->setCursor(Qt::PointingHandCursor);
+    episodesButton_->setToolTip(tr("Jump to episodes"));
+    episodesButton_->setAccessibleDescription(
+        tr("Jump to the available episodes without starting playback"));
+    episodesButton_->setAccessibleName(tr("Episodes"));
+    connect(episodesButton_, &QPushButton::clicked, this, &TitlePage::scrollToEpisodes);
+    heroActions->addWidget(episodesButton_);
+    heroActions->setAlignment(episodesButton_, Qt::AlignVCenter);
+    metaButton_ = new QPushButton(tr("More details"), heroActionsHost);
+    metaButton_->setObjectName(QStringLiteral("titleDetailsToggle"));
+    metaButton_->setMinimumHeight(40);
+    metaButton_->hide();
+    metaButton_->setCheckable(true);
+    metaButton_->setToolTip(tr("Show title details"));
+    metaButton_->setAccessibleName(tr("More details"));
+    metaButton_->setCursor(Qt::PointingHandCursor);
+    connect(metaButton_, &QPushButton::toggled, this, &TitlePage::toggleMetadata);
+    heroActions->addWidget(metaButton_);
+    heroActions->setAlignment(metaButton_, Qt::AlignVCenter);
+    QWidget::setTabOrder(heading_, subtitle_);
+    QWidget::setTabOrder(subtitle_, heroWatchButton_);
+    QWidget::setTabOrder(heroWatchButton_, episodesButton_);
+    QWidget::setTabOrder(episodesButton_, metaButton_);
+    textColumn->addWidget(heroActionsHost);
+
+    heroActionContextHost_ = new QWidget(hero_);
+    auto* actionContext = new QVBoxLayout(heroActionContextHost_);
+    actionContext->setContentsMargins(0, 0, 0, 0);
+    actionContext->setSpacing(theme::kSpacingXs);
+    heroWatchContext_ = new QLabel(heroActionContextHost_);
+    heroWatchContext_->setObjectName(QStringLiteral("titleHeroWatchContext"));
+    heroWatchContext_->setWordWrap(true);
+    heroWatchContext_->setTextFormat(Qt::PlainText);
+    heroWatchContext_->hide();
+    actionContext->addWidget(heroWatchContext_);
+    actionContext->addWidget(chipsHost);
+    heroActionContextHost_->hide();
+    textColumn->addWidget(heroActionContextHost_);
 
     textColumn->addSpacing(theme::kSpacingSmall);
     description_ = new QLabel(hero_);
+    description_->installEventFilter(this);
     description_->setObjectName(QStringLiteral("titleDescription"));
     description_->setTextFormat(Qt::PlainText);
     wrapLabel(description_);
@@ -561,7 +758,6 @@ void TitlePage::buildBody() {
     description_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     textColumn->addWidget(description_);
 
-    textColumn->addSpacing(theme::kSpacingMedium);
     disclosureRow_ = new QWidget(hero_);
     disclosureRow_->setObjectName(QStringLiteral("titleDisclosureActions"));
     // The actions wrap: their widest translation must not pan a compact column.
@@ -571,27 +767,14 @@ void TitlePage::buildBody() {
     auto* disclosure = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
     disclosureRow_->setLayout(disclosure);
     descriptionButton_ = new QPushButton(tr("Read more"), disclosureRow_);
-    descriptionButton_->setObjectName(QStringLiteral("textAction"));
+    descriptionButton_->setObjectName(QStringLiteral("titleSynopsisToggle"));
+    descriptionButton_->setMinimumHeight(40);
     descriptionButton_->setCursor(Qt::PointingHandCursor);
     descriptionButton_->hide();
     connect(descriptionButton_, &QPushButton::clicked, this, &TitlePage::toggleDescription);
-    metaButton_ = new QPushButton(tr("More details"), disclosureRow_);
-    metaButton_->setObjectName(QStringLiteral("textAction"));
-    metaButton_->setCheckable(true);
-    metaButton_->setCursor(Qt::PointingHandCursor);
-    connect(metaButton_, &QPushButton::toggled, this, &TitlePage::toggleMetadata);
-    relatedButton_ = new QPushButton(tr("Related and similar"), disclosureRow_);
-    relatedButton_->setObjectName(QStringLiteral("textAction"));
-    relatedButton_->setCheckable(true);
-    relatedButton_->setCursor(Qt::PointingHandCursor);
-    relatedButton_->hide();
-    // A press of this button is the one expansion that scrolls the overview.
-    connect(relatedButton_, &QPushButton::toggled, this,
-            [this](bool checked) { setRelatedExpanded(checked, true); });
+    QWidget::setTabOrder(metaButton_, descriptionButton_);
     disclosure->addWidget(descriptionButton_);
-    disclosure->addWidget(metaButton_);
-    disclosure->addWidget(relatedButton_);
-    // The row appears with the first real detail: no action opens an empty sheet.
+    // Synopsis is the only action directly below its preview.
     disclosureRow_->hide();
     textColumn->addWidget(disclosureRow_);
 
@@ -606,21 +789,46 @@ void TitlePage::buildBody() {
     textColumn->addStretch(1);
     heroLayout_->addLayout(textColumn, 1);
     columnLayout_->addWidget(hero_);
+}
 
-    // Page sections, not hero text: full content width in the same scroll.
-    relatedHost_ = new QWidget(column_);
+void TitlePage::buildDiscovery() {
+    // Discovery follows playback in the one overview scroll.
+    discoveryHost_ = new QWidget(column_);
+    discoveryHost_->setObjectName(QStringLiteral("titleDiscoverySection"));
+    auto* discoveryLayout = new QVBoxLayout(discoveryHost_);
+    discoveryLayout->setContentsMargins(0, 0, 0, 0);
+    discoveryLayout->setSpacing(theme::kTitleStackSpacing);
+    auto* discoveryHeader = new QHBoxLayout();
+    discoveryHeading_ = new QLabel(tr("More to explore"), discoveryHost_);
+    discoveryHeading_->setObjectName(QStringLiteral("titleSectionHeading"));
+    discoveryHeader->addWidget(discoveryHeading_);
+    discoveryHeader->addStretch(1);
+    relatedButton_ = new QPushButton(tr("Hide"), discoveryHost_);
+    relatedButton_->setObjectName(QStringLiteral("titleDiscoveryToggle"));
+    relatedButton_->setMinimumHeight(40);
+    relatedButton_->setCheckable(true);
+    relatedButton_->setCursor(Qt::PointingHandCursor);
+    connect(relatedButton_, &QPushButton::toggled, this,
+            [this](bool checked) { setRelatedExpanded(checked, true); });
+    discoveryHeader->addWidget(relatedButton_);
+    discoveryLayout->addLayout(discoveryHeader);
+    relatedHost_ = new QWidget(discoveryHost_);
     relatedHost_->setObjectName(QStringLiteral("titleRelated"));
     relatedLayout_ = new QVBoxLayout(relatedHost_);
     relatedLayout_->setContentsMargins(0, 0, 0, 0);
     relatedLayout_->setSpacing(theme::kTitleSectionSpacing);
     relatedHost_->hide();
-    columnLayout_->addWidget(relatedHost_);
+    discoveryLayout->addWidget(relatedHost_);
+    discoveryHost_->hide();
+    columnLayout_->addWidget(discoveryHost_);
+}
 
+void TitlePage::buildEpisodeWorkspace() {
     episodesHost_ = new QWidget(column_);
     episodesHost_->setObjectName(QStringLiteral("titleEpisodes"));
     auto* episodesLayout = new QVBoxLayout(episodesHost_);
     episodesLayout->setContentsMargins(0, 0, 0, 0);
-    episodesLayout->setSpacing(theme::kSpacingMedium);
+    episodesLayout->setSpacing(theme::kTitleWorkspaceGroupGap);
 
     episodeHeaderHost_ = new QWidget(episodesHost_);
     episodeHeaderHost_->setObjectName(QStringLiteral("titleEpisodeHeader"));
@@ -630,6 +838,7 @@ void TitlePage::buildBody() {
     episodeHeader->setSpacing(theme::kSpacingMedium);
     episodesHeading_ = new QLabel(tr("Episodes"), episodeHeaderHost_);
     episodesHeading_->setObjectName(QStringLiteral("episodeSectionHeading"));
+    episodesHeading_->setFocusPolicy(Qt::StrongFocus);
     episodeCount_ = new QLabel(episodeHeaderHost_);
     episodeCount_->setObjectName(QStringLiteral("titleEpisodeCount"));
     episodeCount_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
@@ -639,10 +848,19 @@ void TitlePage::buildBody() {
     episodeHeader->addWidget(episodeCount_);
     episodesLayout->addWidget(episodeHeaderHost_);
 
+    episodeStatus_ = new QLabel(episodesHost_);
+    episodeStatus_->setObjectName(QStringLiteral("titleEpisodeStatus"));
+    episodeStatus_->setTextFormat(Qt::PlainText);
+    episodeStatus_->setWordWrap(true);
+    episodeStatus_->setFocusPolicy(Qt::StrongFocus);
+    episodeStatus_->hide();
+    episodesLayout->addWidget(episodeStatus_);
+
     episodeAvailability_ = new QLabel(episodesHost_);
     episodeAvailability_->setObjectName(QStringLiteral("episodeAvailabilityLabel"));
     episodeAvailability_->setTextFormat(Qt::PlainText);
     episodeAvailability_->setWordWrap(true);
+    episodeAvailability_->setFocusPolicy(Qt::StrongFocus);
     episodeAvailability_->hide();
     episodesLayout->addWidget(episodeAvailability_);
     nextAiring_ = new QLabel(episodesHost_);
@@ -666,12 +884,27 @@ void TitlePage::buildBody() {
     });
     episodesLayout->addWidget(licenseInfo_);
 
-    releaseChipsHost_ = new QWidget(episodesHost_);
+    playbackControls_ = new QWidget(episodesHost_);
+    playbackControls_->setObjectName(QStringLiteral("titlePlaybackControls"));
+    playbackControls_->setAttribute(Qt::WA_StyledBackground, true);
+    playbackControls_->hide();
+    auto* playbackLayout = new QVBoxLayout(playbackControls_);
+    playbackLayout->setContentsMargins(theme::kSpacingMedium, theme::kSpacingMedium,
+                                       theme::kSpacingMedium, theme::kSpacingMedium);
+    playbackLayout->setSpacing(theme::kTitleWorkspaceGroupGap);
+    episodesLayout->addWidget(playbackControls_);
+    releaseSelectorHeading_ = new QLabel(tr("Release"), playbackControls_);
+    releaseSelectorHeading_->setObjectName(QStringLiteral("releaseSelectorHeading"));
+    releaseSelectorHeading_->hide();
+    playbackLayout->addWidget(releaseSelectorHeading_);
+
+    releaseChipsHost_ = new QWidget(playbackControls_);
     releaseChipsHost_->setObjectName(QStringLiteral("releaseChipsHost"));
     releaseRowsLayout_ = new QVBoxLayout(releaseChipsHost_);
-    releaseRowsLayout_->setContentsMargins(0, 0, 0, 0);
+    releaseRowsLayout_->setContentsMargins(theme::kSpacingSmall, theme::kSpacingSmall,
+                                            theme::kSpacingSmall, theme::kSpacingSmall);
     releaseRowsLayout_->setSpacing(theme::kSpacingXs);
-    episodesLayout->addWidget(releaseChipsHost_);
+    playbackLayout->addWidget(releaseChipsHost_);
 
     releaseGroup_ = new QButtonGroup(this);
     releaseGroup_->setExclusive(true);
@@ -682,14 +915,15 @@ void TitlePage::buildBody() {
         probeReleaseQualities();
     });
 
-    watchPanel_ = new QWidget(episodesHost_);
+    watchPanel_ = new QWidget(playbackControls_);
     watchPanel_->setObjectName(QStringLiteral("titleWatchPanel"));
     watchPanel_->setAttribute(Qt::WA_StyledBackground, true);
-    watchPanel_->setMinimumHeight(theme::kTitleControlHeight * 2);
-    auto* watchLayout = new QHBoxLayout(watchPanel_);
-    watchLayout->setContentsMargins(theme::kTitlePageInset, theme::kSpacingMedium,
-                                    theme::kTitlePageInset, theme::kSpacingMedium);
-    watchLayout->setSpacing(theme::kSpacingMedium);
+    watchLayout_ = new QBoxLayout(QBoxLayout::LeftToRight, watchPanel_);
+    watchLayout_->setContentsMargins(theme::kTitleWatchPanelPadding,
+                                     theme::kTitleWatchPanelPadding,
+                                     theme::kTitleWatchPanelPadding,
+                                     theme::kTitleWatchPanelPadding);
+    watchLayout_->setSpacing(theme::kTitleWatchPanelGap);
     auto* watchText = new QVBoxLayout();
     watchText->setContentsMargins(0, 0, 0, 0);
     watchText->setSpacing(theme::kSpacingXs);
@@ -713,7 +947,7 @@ void TitlePage::buildBody() {
     watchProgress_->hide();
     watchText->addWidget(watchProgress_);
     watchText->addStretch(1);
-    watchLayout->addLayout(watchText, 1);
+    watchLayout_->addLayout(watchText, 1);
     watchWatchedButton_ = new QPushButton(tr("Watched"), watchPanel_);
     watchWatchedButton_->setObjectName(QStringLiteral("titleWatchWatchedToggle"));
     watchWatchedButton_->setCheckable(true);
@@ -725,28 +959,43 @@ void TitlePage::buildBody() {
         }
         setEpisodeWatched(watchEntry_->number, checked);
     });
-    watchLayout->addWidget(watchWatchedButton_, 0, Qt::AlignVCenter);
     watchButton_ = new QPushButton(tr("Watch"), watchPanel_);
     watchButton_->setObjectName(QStringLiteral("titleWatchButton"));
-    watchButton_->setMinimumHeight(theme::kTitleControlHeight);
+    watchButton_->setMinimumHeight(theme::kPrimaryControlSize);
     watchButton_->setCursor(Qt::PointingHandCursor);
     connect(watchButton_, &QPushButton::clicked, this, [this] {
         if (watchEntry_ != nullptr) {
             playEpisode(watchEntry_);
         }
     });
-    watchLayout->addWidget(watchButton_, 0, Qt::AlignVCenter);
+    auto* watchActions = new QWidget(watchPanel_);
+    watchActions->setObjectName(QStringLiteral("titleWatchActions"));
+    QSizePolicy actionsPolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    actionsPolicy.setHeightForWidth(true);
+    watchActions->setSizePolicy(actionsPolicy);
+    auto* watchActionsLayout =
+        new FlowLayout(theme::kTitleWatchPanelGap, theme::kTitleWatchPanelGap);
+    watchActions->setLayout(watchActionsLayout);
+    watchActionsLayout->addWidget(watchWatchedButton_);
+    watchActionsLayout->addWidget(watchButton_);
+    watchLayout_->addWidget(watchActions, 0, Qt::AlignVCenter);
     watchPanel_->hide();
-    episodesLayout->addWidget(watchPanel_);
 
-    tabs_ = new QTabWidget(episodesHost_);
+    providerSelectorHeading_ = new QLabel(tr("Provider"), playbackControls_);
+    providerSelectorHeading_->setObjectName(QStringLiteral("providerSelectorHeading"));
+    providerSelectorHeading_->hide();
+    playbackLayout->addWidget(providerSelectorHeading_);
+
+    tabs_ = new QTabWidget(playbackControls_);
     tabs_->setObjectName(QStringLiteral("episodeTabs"));
     tabs_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     tabs_->setDocumentMode(true);
     tabs_->tabBar()->setExpanding(false);
     tabs_->tabBar()->setDrawBase(false);
     tabs_->tabBar()->setUsesScrollButtons(true);
-    episodesLayout->addWidget(tabs_);
+    tabs_->tabBar()->setCursor(Qt::PointingHandCursor);
+    playbackLayout->addWidget(tabs_);
+    playbackLayout->addWidget(watchPanel_);
 
     episodeLegend_ = new QWidget(episodesHost_);
     episodeLegend_->setObjectName(QStringLiteral("titleEpisodeLegend"));
@@ -757,10 +1006,12 @@ void TitlePage::buildBody() {
                                                  QLabel** caption) {
         auto* swatch = new QWidget(episodeLegend_);
         swatch->setObjectName(swatchName);
+        swatch->setAttribute(Qt::WA_StyledBackground, true);
         swatch->setFixedSize(swatchSize);
         *caption = new QLabel(episodeLegend_);
         (*caption)->setObjectName(QStringLiteral("episodeLegendLabel"));
         (*caption)->setTextFormat(Qt::PlainText);
+        wrapLabel(*caption);
         legendRow->addWidget(swatch, 0, Qt::AlignVCenter);
         legendRow->addWidget(*caption, 0, Qt::AlignVCenter);
     };
@@ -792,7 +1043,6 @@ void TitlePage::buildBody() {
     });
 
     columnLayout_->addWidget(episodesHost_);
-    columnLayout_->addStretch(1);
 }
 
 void TitlePage::buildDetailsSheet() {
@@ -881,7 +1131,7 @@ void TitlePage::buildDetailsSheet() {
     wrapLabel(detailsScore_);
     identityText->addWidget(detailsTitle_);
     identityText->addWidget(detailsOriginal_);
-    identityText->addWidget(detailsScore_);
+    identityText->addWidget(detailsScore_, 0, Qt::AlignLeft);
     identityText->addStretch(1);
     identity->addWidget(detailsThumb_, 0, Qt::AlignTop);
     identity->addLayout(identityText, 1);
@@ -906,28 +1156,54 @@ void TitlePage::applyResponsiveLayout() {
     }
     applyingLayout_ = true;
     const bool compact = width() > 0 && width() < theme::kTitleCompactBreakpoint;
+    const bool narrow = width() > 0 && width() < theme::kTitleHeroStackBreakpoint;
+    const bool stackedHero = narrow;
+    heroLayout_->setDirection(stackedHero ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+    heroLayout_->setSpacing(stackedHero ? theme::kSpacingMedium
+                                        : (compact ? theme::kSpacingLarge
+                                                   : theme::kTitleHeroSpacing));
+    const Qt::Alignment posterAlignment =
+        stackedHero ? Qt::Alignment(Qt::AlignHCenter)
+                    : Qt::Alignment(Qt::AlignLeft | Qt::AlignTop);
+    heroLayout_->setAlignment(heroPosterHost_, posterAlignment);
+    studio_->setAlignment((stackedHero ? Qt::AlignHCenter : Qt::AlignLeft) | Qt::AlignTop);
     if (compact != compact_) {
         compact_ = compact;
         // Theme-owned type sizes key off this property, so the switch has to
         // re-resolve the scoped sheet once rather than set fonts here.
         setProperty("compact", compact);
         repolishTitleSubtree();
-        heroLayout_->setDirection(compact ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
-        heroLayout_->setSpacing(compact ? theme::kSpacingLarge : theme::kTitleHeroSpacing);
-        const Qt::Alignment posterAlignment =
-            compact ? Qt::Alignment(Qt::AlignHCenter)
-                    : Qt::Alignment(Qt::AlignLeft | Qt::AlignTop);
-        heroLayout_->setAlignment(heroPosterHost_, posterAlignment);
-        const int coverWidth =
-            compact ? theme::kTitleCompactCoverWidth : theme::kTitleHeroCoverWidth;
-        const int coverHeight =
-            compact ? theme::kTitleCompactCoverHeight : theme::kTitleHeroCoverHeight;
+        heroLayout_->setContentsMargins(0, 0, 0, 0);
+        const int coverWidth = narrow ? theme::kTitleNarrowCoverWidth
+                                      : compact ? theme::kTitleCompactCoverWidth
+                                                : theme::kTitleHeroCoverWidth;
+        const int coverHeight = narrow ? theme::kTitleNarrowCoverHeight
+                                       : compact ? theme::kTitleCompactCoverHeight
+                                                 : theme::kTitleHeroCoverHeight;
         cover_->setFixedSize(coverWidth, coverHeight);
         heroPosterHost_->setFixedWidth(coverWidth);
-        studio_->setAlignment((compact ? Qt::AlignHCenter : Qt::AlignLeft) | Qt::AlignTop);
         if (coverState_ == CoverState::Ready && !coverPixmap_.isNull()) {
             applyCoverPixmap();
         }
+    }
+    const int responsiveCoverWidth = narrow ? theme::kTitleNarrowCoverWidth
+                                            : compact ? theme::kTitleCompactCoverWidth
+                                                      : theme::kTitleHeroCoverWidth;
+    const int responsiveCoverHeight = narrow ? theme::kTitleNarrowCoverHeight
+                                             : compact ? theme::kTitleCompactCoverHeight
+                                                       : theme::kTitleHeroCoverHeight;
+    if (cover_ != nullptr &&
+        cover_->size() != QSize(responsiveCoverWidth, responsiveCoverHeight)) {
+        cover_->setFixedSize(responsiveCoverWidth, responsiveCoverHeight);
+        heroPosterHost_->setFixedWidth(responsiveCoverWidth);
+        if (coverState_ == CoverState::Ready && !coverPixmap_.isNull()) {
+            applyCoverPixmap();
+        }
+    }
+    if (narrow_ != narrow) {
+        narrow_ = narrow;
+        setProperty("narrow", narrow);
+        repolishTitleSubtree();
     }
     const int inset = compact ? theme::kTitlePageCompactInset : theme::kTitlePageInset;
     columnLayout_->setContentsMargins(inset, theme::kTitlePageInset, inset,
@@ -942,10 +1218,21 @@ void TitlePage::applyResponsiveLayout() {
         headerRowLayout_->setContentsMargins(inset, theme::kSpacingMedium, inset,
                                              theme::kSpacingMedium);
     }
-    if (watchPanel_ != nullptr && watchPanel_->layout() != nullptr) {
-        watchPanel_->layout()->setContentsMargins(inset, theme::kSpacingMedium, inset,
-                                                  theme::kSpacingMedium);
+    if (watchLayout_ != nullptr) {
+        watchLayout_->setDirection(compact ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
     }
+    for (int index = 0; index < releaseChips_.size() && index < releases_.size(); ++index) {
+        QPushButton* chip = releaseChips_.at(index);
+        if (chip != nullptr) {
+            QString label = releaseChipLabel(releases_.at(index));
+            const int quality = releaseQuality_.value(index, 0);
+            if (quality > 0) {
+                label += QStringLiteral(" · %1p").arg(quality);
+            }
+            setReleaseChipText(chip, label);
+        }
+    }
+    refreshDescriptionPreview();
     updateBackdrop();
     updateDetailsGeometry();
     applyingLayout_ = false;
@@ -957,13 +1244,23 @@ void TitlePage::updateBackdrop() {
     if (backdrop_ == nullptr || column_ == nullptr) {
         return;
     }
-    const int height = qMin(theme::kTitleBackdropHeight, qMax(0, column_->height()));
-    backdrop_->setGeometry(0, 0, column_->width(), height);
+    if (hero_ != nullptr) {
+        backdrop_->setGeometry(hero_->rect());
+        backdrop_->lower();
+    }
 }
 
 void TitlePage::updateDetailsGeometry() {
     if (detailsOverlay_ == nullptr) {
         return;
+    }
+    // A resize or a reopen settles the panel where it belongs: a slide still
+    // running toward an older geometry is stopped first.
+    const auto slides = findChildren<QPropertyAnimation*>(QString(), Qt::FindDirectChildrenOnly);
+    for (QPropertyAnimation* slide : slides) {
+        if (slide->targetObject() == detailsPanel_) {
+            slide->stop();
+        }
     }
     detailsOverlay_->setGeometry(rect());
     if (detailsScrim_ != nullptr) {
@@ -1078,8 +1375,15 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
     hasFailure_ = false;
     const QString name = labels::titleName(detail.titles);
     heading_->setText(name == QLatin1String("?") ? ref_ : name);
-    subtitle_->setText(detail.titles.english.isEmpty() ? detail.titles.original
-                                                       : detail.titles.english);
+    QString alternate = detail.titles.english;
+    if (alternate.isEmpty() || alternate.compare(heading_->text(), Qt::CaseInsensitive) == 0) {
+        alternate = detail.titles.original;
+    }
+    if (alternate.compare(heading_->text(), Qt::CaseInsensitive) == 0) {
+        alternate.clear();
+    }
+    subtitle_->setText(alternate);
+    subtitle_->setVisible(!alternate.isEmpty());
     // Retained before the sheet is restated: its Synopsis block reads this text.
     rawDescription_ = detail.description.trimmed();
     fullDescription_ = rawDescription_.isEmpty() ? tr("No description available.") : rawDescription_;
@@ -1092,7 +1396,7 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
     descriptionExpanded_ = false;
     description_->setText(descriptionPreview());
     descriptionButton_->setText(tr("Read more"));
-    descriptionButton_->setVisible(fullDescription_.size() > theme::kTitleDescriptionPreviewChars);
+    refreshDescriptionPreview();
 
     if (!cover.isEmpty()) {
         loadCover(cover, true);
@@ -1112,9 +1416,25 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
     releaseProbed_.clear();
     rebuildReleaseChips();
 
+    watchEntry_ = nullptr;
+    updateWatchPanel();
     player_ = player;
     updateLicenseInfo(player_);
     if (releases_.isEmpty()) {
+        {
+            const QSignalBlocker blocker(tabs_);
+            while (tabs_->count() > 0) {
+                QWidget* page = tabs_->widget(0);
+                tabs_->removeTab(0);
+                page->deleteLater();
+            }
+        }
+        tabStates_.clear();
+        activeRelease_ = -1;
+        providerSelectorHeading_->hide();
+        tabs_->hide();
+        episodeLegend_->hide();
+        updateEpisodeSummary();
         setStatusKind(playbackRestricted ? BaseStatus::Licensed : BaseStatus::NoReleases);
         return;
     }
@@ -1123,6 +1443,27 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
 }
 
 void TitlePage::onError(const backend::Failure& failure) {
+    {
+        const QSignalBlocker blocker(tabs_);
+        while (tabs_->count() > 0) {
+            QWidget* page = tabs_->widget(0);
+            tabs_->removeTab(0);
+            page->deleteLater();
+        }
+    }
+    tabStates_.clear();
+    activeRelease_ = -1;
+    releases_.clear();
+    rebuildReleaseChips();
+    providerSelectorHeading_->hide();
+    updateEpisodeSummary();
+    tabs_->hide();
+    episodeLegend_->hide();
+    watchEntry_ = nullptr;
+    updateWatchPanel();
+    if (heroWatchContext_ != nullptr) {
+        heroWatchContext_->clear();
+    }
     rateLabel_->refresh();
     setStatus(backend::failureLine(failure));
     hasFailure_ = true;
@@ -1147,14 +1488,28 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
 /// rows are rebuilt from the model, and nothing outside the metadata grid and
 /// the facts/score/link labels is touched.
 void TitlePage::refreshDetailTexts() {
-    scores_->setText(scoresText(detail_));
+    const QString heroScores = scoresText(detail_);
+    scores_->setText(heroScores);
+    scores_->setVisible(!heroScores.isEmpty());
     disclosureRow_->setVisible(true);
+    metaButton_->show();
 
     // The hero caption and the sheet read one model; both hide what it lacks.
     studio_->setText(detail_.studio);
     studio_->setVisible(!detail_.studio.isEmpty());
     const QString detailName = labels::titleName(detail_.titles);
-    detailsTitle_->setText(detailName == QLatin1String("?") ? ref_ : detailName);
+    const QString visibleTitle = detailName == QLatin1String("?") ? ref_ : detailName;
+    heading_->setText(visibleTitle);
+    QString alternate = detail_.titles.english;
+    if (alternate.isEmpty() || alternate.compare(visibleTitle, Qt::CaseInsensitive) == 0) {
+        alternate = detail_.titles.original;
+    }
+    if (alternate.compare(visibleTitle, Qt::CaseInsensitive) == 0) {
+        alternate.clear();
+    }
+    subtitle_->setText(alternate);
+    subtitle_->setVisible(!alternate.isEmpty());
+    detailsTitle_->setText(visibleTitle);
     const QString originalTitle =
         detail_.titles.original.isEmpty() ? detail_.titles.english : detail_.titles.original;
     detailsOriginal_->setText(originalTitle);
@@ -1211,8 +1566,8 @@ void TitlePage::refreshDetailTexts() {
     if (!statusText.isEmpty()) facts << statusText;
     if (!formatText.isEmpty()) facts << formatText;
     if (!seasonText.isEmpty()) facts << seasonText;
-    facts << episodesLabel;
     facts_->setText(facts.join(QStringLiteral(" · ")));
+    fillHeroChips(hero_->findChild<QWidget*>(QStringLiteral("titleGenres")), detail_);
 
     QVector<std::pair<QString, QString>> rows;
     rows.append({tr("Episode availability"), episodesLabel});
@@ -1267,6 +1622,7 @@ void TitlePage::refreshDetailTexts() {
         key->setObjectName(QStringLiteral("muted"));
         key->setWordWrap(true);
         auto* value = new QLabel(entry.second, cell);
+        value->setObjectName(QStringLiteral("titleDetailsValue"));
         wrapLabel(value);
         value->setTextFormat(Qt::PlainText);
         value->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -1286,6 +1642,7 @@ void TitlePage::refreshDetailTexts() {
     auto* synopsis = new QLabel(fullDescription_.isEmpty() ? tr("No description available.")
                                                            : fullDescription_,
                                synopsisHost);
+    synopsis->setObjectName(QStringLiteral("titleDetailsValue"));
     wrapLabel(synopsis);
     synopsis->setTextFormat(Qt::PlainText);
     synopsis->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -1297,23 +1654,30 @@ void TitlePage::refreshDetailTexts() {
         detailsThumb_->setText(tr("No cover"));
     }
 
-    QVector<std::pair<QString, QString>> links = backend::externalLinks(detail_);
-    // The site serves the title at /anime/<id>-<slug> and 404s on either half
-    // alone, so the link is built from both rather than preferring the slug.
+    refreshLinkTexts();
+}
+
+void TitlePage::refreshLinkTexts() {
+    if (links_ == nullptr || !hasDetail_) {
+        return;
+    }
+    QVector<std::pair<QString, QString>> external = backend::externalLinks(detail_);
     const QString page =
         backend::animePageUrl(detail_.ref, detail_.ids.value(QStringLiteral("slug")).toString());
     if (!detail_.ref.isEmpty()) {
-        links.prepend({tr("Mikai"), page});
+        external.prepend({tr("Mikai"), page});
     }
-    const QString accent = QString::fromLatin1(theme::kTitleAccent);
-    const QString muted = QString::fromLatin1(theme::kTitleMuted);
+    const theme::Palette palette = theme::paletteFor(currentAppearance());
+    const QString linkColor = palette.titleText;
+    const QString separatorColor = palette.titleMuted;
     QStringList anchors;
-    for (const auto& link : links) {
-        anchors << QStringLiteral("<a style=\"color: %1; text-decoration: none; font-weight: 600;\" href=\"%2\">%3</a>")
-                       .arg(accent, link.second.toHtmlEscaped(), link.first.toHtmlEscaped());
+    for (const auto& link : external) {
+        anchors << QStringLiteral("<a style=\"color: %1; text-decoration: underline; font-weight: 600;\" href=\"%2\">%3</a>")
+                       .arg(linkColor, link.second.toHtmlEscaped(), link.first.toHtmlEscaped());
     }
-    links_->setText(anchors.join(QStringLiteral("<span style=\"color: %1;\"> &nbsp;·&nbsp; </span>")
-                                     .arg(muted)));
+    links_->setText(anchors.join(
+        QStringLiteral("<span style=\"color: %1;\"> &nbsp;·&nbsp; </span>")
+            .arg(separatorColor)));
 }
 
 void TitlePage::populateRelated(const backend::AnimeDetail& detail) {
@@ -1346,10 +1710,12 @@ void TitlePage::populateRelated(const backend::AnimeDetail& detail) {
         }
     }
     if (relations.isEmpty() && similar.isEmpty()) {
-        relatedHost_->hide();
+        discoveryHost_->hide();
         relatedButton_->hide();
         return;
     }
+    discoveryHost_->show();
+    relatedButton_->show();
     if (!relations.isEmpty()) {
         relatedLayout_->addWidget(buildRelatedCarousel(QStringLiteral("related"), relations));
     }
@@ -1472,7 +1838,10 @@ QWidget* TitlePage::buildRelatedCarousel(
         auto* posterLabel = new QLabel(tr("Poster unavailable"), card);
         posterLabel->setObjectName(QStringLiteral("carouselPoster"));
         posterLabel->setAlignment(Qt::AlignCenter);
-        posterLabel->setFixedSize(theme::kCarouselPosterWidth, theme::kCarouselPosterHeight);
+        posterLabel->setFixedSize(
+            theme::kCarouselPosterWidth,
+            theme::kCarouselPosterHeight +
+                (headingKey == QLatin1String("related") ? 0 : theme::kTitleTinyPixelSize));
         posterLabel->setWordWrap(true);
         posterLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
         // Registered only for its fallback: a switch re-words the label while it
@@ -1480,13 +1849,14 @@ QWidget* TitlePage::buildRelatedCarousel(
         relatedPosterLabels_.append(posterLabel);
         cardLayout->addWidget(posterLabel, 0, Qt::AlignHCenter);
 
-        auto* kind = new QLabel(labels::relation(entry.first), card);
-        kind->setObjectName(QStringLiteral("carouselKind"));
-        kind->setAlignment(Qt::AlignCenter);
-        kind->setAttribute(Qt::WA_TransparentForMouseEvents);
-        // Keyed by the raw relation, so the caption is re-derived on a switch.
-        relatedKindLabels_.append({entry.first, kind});
-        cardLayout->addWidget(kind);
+        if (headingKey == QLatin1String("related")) {
+            auto* kind = new QLabel(labels::relation(entry.first), card);
+            kind->setObjectName(QStringLiteral("carouselKind"));
+            kind->setAlignment(Qt::AlignCenter);
+            kind->setAttribute(Qt::WA_TransparentForMouseEvents);
+            relatedKindLabels_.append({entry.first, kind});
+            cardLayout->addWidget(kind);
+        }
 
         auto* titleLabel = new QLabel(card);
         titleLabel->setObjectName(QStringLiteral("carouselTitle"));
@@ -1561,35 +1931,105 @@ QWidget* TitlePage::buildRelatedCarousel(
 
 void TitlePage::setRelatedExpanded(bool expanded, bool fromUser) {
     relatedHost_->setVisible(expanded);
+    discoveryHost_->setVisible(relatedLayout_->count() > 0);
     relatedButton_->setVisible(true);
-    relatedButton_->setText(expanded ? tr("Hide similar") : tr("Related and similar"));
+    relatedButton_->setText(expanded ? tr("Hide") : tr("Show"));
     const QSignalBlocker blocker(relatedButton_);
     relatedButton_->setChecked(expanded);
     if (expanded && fromUser) {
-        QTimer::singleShot(0, this, [this] { overviewScroll_->ensureWidgetVisible(relatedHost_); });
+        QTimer::singleShot(0, this, [this] {
+            overviewScroll_->ensureWidgetVisible(discoveryHost_);
+        });
     }
 }
 
 void TitlePage::toggleDescription() {
     descriptionExpanded_ = !descriptionExpanded_;
-    description_->setText(descriptionExpanded_ ? fullDescription_ : descriptionPreview());
-    descriptionButton_->setText(descriptionExpanded_ ? tr("Collapse description")
-                                                      : tr("Read more"));
+    refreshDescriptionPreview();
 }
 
 QString TitlePage::descriptionPreview() const {
-    if (fullDescription_.size() <= theme::kTitleDescriptionPreviewChars) {
+    if (description_ == nullptr || fullDescription_.isEmpty()) {
         return fullDescription_;
     }
-    QString excerpt = fullDescription_.left(theme::kTitleDescriptionPreviewChars);
-    const int lastSpace = excerpt.lastIndexOf(QLatin1Char(' '));
-    if (lastSpace > 0) {
-        excerpt = excerpt.left(lastSpace);
+    const int availableWidth = qMax(1, description_->width());
+    QTextLayout layout(fullDescription_, description_->font());
+    QTextOption option;
+    option.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    layout.setTextOption(option);
+    layout.beginLayout();
+    QVector<QTextLine> lines;
+    while (true) {
+        QTextLine line = layout.createLine();
+        if (!line.isValid()) {
+            break;
+        }
+        line.setLineWidth(availableWidth);
+        lines.append(line);
     }
-    while (!excerpt.isEmpty() && QStringLiteral(" ,.;:").contains(excerpt.back())) {
-        excerpt.chop(1);
+    layout.endLayout();
+    if (lines.size() <= theme::kTitleDescriptionPreviewLines) {
+        return fullDescription_;
     }
-    return excerpt + QStringLiteral("…");
+    const QTextLine& finalLine = lines.at(theme::kTitleDescriptionPreviewLines - 1);
+    const QString finalText =
+        fullDescription_.mid(finalLine.textStart(), finalLine.textLength());
+    const QFontMetrics metrics(description_->font());
+    QString elided = metrics.elidedText(finalText, Qt::ElideRight, availableWidth);
+    if (!elided.endsWith(QChar(0x2026))) {
+        elided = metrics.elidedText(finalText + QChar(0x2026), Qt::ElideRight,
+                                    availableWidth);
+    }
+    QStringList previewLines;
+    for (int index = 0; index < theme::kTitleDescriptionPreviewLines - 1; ++index) {
+        const QTextLine& line = lines.at(index);
+        previewLines.append(fullDescription_.mid(line.textStart(), line.textLength()).trimmed());
+    }
+    previewLines.append(elided);
+    return previewLines.join(QLatin1Char('\n'));
+}
+
+void TitlePage::refreshDescriptionPreview() {
+    if (description_ == nullptr || descriptionButton_ == nullptr) {
+        return;
+    }
+    descriptionPreviewWidth_ = description_->width();
+    const QString preview = descriptionPreview();
+    description_->setText(descriptionExpanded_ ? fullDescription_ : preview);
+    const bool hasMore = preview != fullDescription_;
+    descriptionButton_->setVisible(hasMore);
+    disclosureRow_->setVisible(hasDetail_ && hasMore);
+    descriptionButton_->setText(descriptionExpanded_ ? tr("Show less") : tr("Read more"));
+}
+
+void TitlePage::scrollToEpisodes() {
+    if (overviewScroll_ == nullptr || episodesHost_ == nullptr) {
+        return;
+    }
+    QWidget* target = nullptr;
+    const int stateIndex = tabs_ != nullptr ? tabs_->currentIndex() : -1;
+    if (stateIndex >= 0 && stateIndex < tabStates_.size()) {
+        TabState& state = tabStates_[stateIndex];
+        if (!state.rendered) {
+            renderTabPage(stateIndex);
+        }
+        for (EpisodeEntry* entry : state.entries) {
+            if (entryIsPlayable(entry) && entry->button != nullptr &&
+                entry->button->isEnabled()) {
+                target = entry->button;
+                break;
+            }
+        }
+    }
+    if (target == nullptr) {
+        target = episodeStatus_ != nullptr && episodeStatus_->isVisible()
+                     ? static_cast<QWidget*>(episodeStatus_)
+                     : episodeAvailability_ != nullptr && episodeAvailability_->isVisible()
+                           ? static_cast<QWidget*>(episodeAvailability_)
+                           : static_cast<QWidget*>(episodesHeading_);
+    }
+    target->setFocus(Qt::OtherFocusReason);
+    overviewScroll_->ensureWidgetVisible(target, 0, 0);
 }
 
 void TitlePage::toggleMetadata(bool expanded) {
@@ -1605,6 +2045,14 @@ void TitlePage::setDetailsOpen(bool open) {
     if (open) {
         updateDetailsGeometry();
         detailsOverlay_->raise();
+        // The panel eases in from the right edge it lives on. Closing stays
+        // immediate: Escape, scrim and the close button never wait on motion.
+        auto* slide = new QPropertyAnimation(detailsPanel_, "pos", this);
+        slide->setDuration(kSheetSlideMs);
+        slide->setStartValue(detailsPanel_->pos() + QPoint(kSheetSlidePx, 0));
+        slide->setEndValue(detailsPanel_->pos());
+        slide->setEasingCurve(QEasingCurve::OutCubic);
+        slide->start(QAbstractAnimation::DeleteWhenStopped);
         if (detailsScroll_ != nullptr) {
             detailsScroll_->verticalScrollBar()->setValue(0);
         }
@@ -1621,6 +2069,8 @@ void TitlePage::setDetailsOpen(bool open) {
         metaButton_->setChecked(false);
     }
     metaButton_->setText(open ? tr("Hide details") : tr("More details"));
+    metaButton_->setToolTip(open ? tr("Hide title details") : tr("Show title details"));
+    metaButton_->setAccessibleName(metaButton_->text());
 }
 
 void TitlePage::selectWatchEntry(EpisodeEntry* entry) {
@@ -1708,19 +2158,22 @@ void TitlePage::applyEpisodeState(EpisodeEntry* entry) {
     const bool current = playable && !watchHistory_.current(ref_).isEmpty() &&
                          entry->number == watchHistory_.current(ref_);
     const bool watched = playable && watchHistory_.isWatched(ref_, entry->number);
-    if (entry->paintedCurrent != current) {
+    const bool currentChanged = entry->paintedCurrent != current;
+    const bool watchedChanged = entry->paintedWatched != watched;
+    if (currentChanged || watchedChanged) {
         entry->paintedCurrent = current;
-        // Avoid repolishing a whole page of pills when only one mark changed.
+        entry->paintedWatched = watched;
+        // Both marks are style properties of the pill (current ring, watched
+        // tint); one repolish covers either, and only a pill whose state changed
+        // pays for it - never a whole page of them.
         button->setProperty("current", current);
+        button->setProperty("watched", watched);
         button->style()->unpolish(button);
         button->style()->polish(button);
         button->update();
     }
-    if (entry->paintedWatched != watched) {
-        entry->paintedWatched = watched;
-        if (entry->watchedMark != nullptr) {
-            entry->watchedMark->setVisible(watched);
-        }
+    if (watchedChanged && entry->watchedMark != nullptr) {
+        entry->watchedMark->setVisible(watched);
     }
 
     const QString type = episodeType(entry);
@@ -1832,7 +2285,22 @@ void TitlePage::updateWatchPanel() {
     const bool hasEpisode = watchEntry_ != nullptr;
     watchPanel_->setVisible(hasEpisode);
     if (!hasEpisode) {
+        watchPanel_->hide();
         watchButton_->setEnabled(false);
+        if (heroWatchContext_ != nullptr) {
+            heroWatchContext_->clear();
+            heroWatchContext_->hide();
+        }
+        if (heroActionContextHost_ != nullptr) {
+            const QWidget* genres = heroActionContextHost_->findChild<QWidget*>(
+                QStringLiteral("titleGenres"));
+            heroActionContextHost_->setVisible(genres != nullptr && !genres->isHidden());
+        }
+        if (heroWatchButton_ != nullptr) {
+            heroWatchButton_->setEnabled(false);
+            heroWatchButton_->setText(tr("Watch"));
+            heroWatchButton_->setToolTip(tr("Select an available episode to watch"));
+        }
         if (watchWatchedButton_ != nullptr) {
             watchWatchedButton_->hide();
         }
@@ -1863,11 +2331,21 @@ void TitlePage::updateWatchPanel() {
     const double offset = playable ? watchHistory_.offset(ref_, number) : 0.0;
     const double length = playable ? watchHistory_.duration(ref_, number) : 0.0;
     if (offset > 0.0) {
-        meta << (length > offset ? QStringLiteral("%1 / %2").arg(mplayer::shell::formatTime(offset),
-                                                                 mplayer::shell::formatTime(length))
-                                 : mplayer::shell::formatTime(offset));
+        meta << (length > 0.0 ? QStringLiteral("%1 / %2").arg(mplayer::shell::formatTime(offset),
+                                                               mplayer::shell::formatTime(length))
+                              : mplayer::shell::formatTime(offset));
     }
     watchMeta_->setText(meta.join(QStringLiteral(" · ")));
+    if (heroWatchContext_ != nullptr) {
+        heroWatchContext_->setText(meta.isEmpty()
+                                       ? watchEpisode_->text()
+                                       : watchEpisode_->text() + QStringLiteral(" · ") +
+                                             meta.join(QStringLiteral(" · ")));
+        heroWatchContext_->show();
+    }
+    if (heroActionContextHost_ != nullptr) {
+        heroActionContextHost_->show();
+    }
     if (watchProgress_ != nullptr) {
         watchProgress_->setVisible(offset > 0.0 && length > offset);
         if (length > 0.0) {
@@ -1875,7 +2353,14 @@ void TitlePage::updateWatchPanel() {
                 ->setValue(int(std::clamp(offset / length, 0.0, 1.0) * 1000.0));
         }
     }
-    watchButton_->setText(offset > 0.0 ? tr("Continue") : tr("Watch"));
+    const QString actionText = offset > 0.0 ? tr("Continue") : tr("Watch");
+    watchButton_->setText(actionText);
+    if (heroWatchButton_ != nullptr) {
+        heroWatchButton_->setText(actionText);
+        heroWatchButton_->setEnabled(playable);
+        heroWatchButton_->setToolTip(playable ? tr("%1 — watch").arg(watchEpisode_->text())
+                                              : tr("This player has no video for this episode"));
+    }
     watchButton_->setEnabled(playable);
     watchButton_->setToolTip(playable ? tr("%1 — watch").arg(watchEpisode_->text())
                                       : tr("This player has no video for this episode"));
@@ -2041,6 +2526,44 @@ QString TitlePage::releaseTrackLabel(const backend::Release& release) const {
     return labels::kind(release.kind);
 }
 
+void TitlePage::setReleaseChipText(QPushButton* chip, const QString& text) {
+    if (chip == nullptr) {
+        return;
+    }
+    const int rowWidth = releaseChipsHost_ != nullptr ? releaseChipsHost_->width()
+                                                       : theme::kTitlePageMaxWidth;
+    int kindWidth = 0;
+    for (const auto& kind : releaseKindLabels_) {
+        if (!kind.second.isNull()) {
+            kindWidth = qMax(kindWidth, kind.second->width());
+        }
+    }
+    const int available = qMax(
+        80, rowWidth - theme::kSpacingSmall * 3 - kindWidth -
+                theme::kTitleChipPaddingH * 2);
+    chip->setMinimumWidth(0);
+    chip->setMaximumWidth(available);
+    chip->setAccessibleName(text);
+    const QFontMetrics metrics(chip->font());
+    const int textWidth = qMax(1, available - theme::kTitleChipPaddingH * 2);
+    if (metrics.horizontalAdvance(text) <= textWidth) {
+        chip->setText(text);
+        return;
+    }
+    QStringList words = text.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    QString prefix;
+    for (const QString& word : words) {
+        const QString candidate = prefix.isEmpty() ? word : prefix + QLatin1Char(' ') + word;
+        if (metrics.horizontalAdvance(candidate + QChar(0x2026)) > textWidth) {
+            break;
+        }
+        prefix = candidate;
+    }
+    chip->setText(prefix.isEmpty()
+                      ? metrics.elidedText(text, Qt::ElideRight, textWidth)
+                      : prefix + QChar(0x2026));
+}
+
 void TitlePage::rebuildReleaseChips() {
     releaseKindLabels_.clear();
     for (QAbstractButton* button : releaseGroup_->buttons()) {
@@ -2054,6 +2577,8 @@ void TitlePage::rebuildReleaseChips() {
     }
     releaseChips_.fill(nullptr, releases_.size());
     activeRelease_ = -1;
+    releaseSelectorHeading_->setVisible(!releases_.isEmpty());
+    playbackControls_->setVisible(!releases_.isEmpty());
 
     QVector<QString> kindOrder;
     QMap<QString, QVector<int>> releasesByKind;
@@ -2074,6 +2599,10 @@ void TitlePage::rebuildReleaseChips() {
 
         auto* kindLabel = new QLabel(labels::kind(kind), rowWidget);
         kindLabel->setObjectName(QStringLiteral("releaseKind"));
+        // The caption centres on the chip row beside it rather than hanging from
+        // the top of it.
+        kindLabel->setFixedHeight(theme::kTitleControlHeight);
+        kindLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         // Keyed by the raw kind so a language switch re-words the row's caption
         // in place rather than rebuilding the chips and their selection.
         releaseKindLabels_.append({kind, kindLabel});
@@ -2087,8 +2616,10 @@ void TitlePage::rebuildReleaseChips() {
             chip->setToolTip(releaseChipToolTip(releases_.at(index)));
             chip->setObjectName(QStringLiteral("releaseChip"));
             chip->setCheckable(true);
+            chip->setCursor(Qt::PointingHandCursor);
             chip->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
             chip->setFixedHeight(theme::kTitleControlHeight);
+            setReleaseChipText(chip, releaseChipLabel(releases_.at(index)));
             releaseGroup_->addButton(chip, index);
             releaseChips_[index] = chip;
             chips->addWidget(chip);
@@ -2108,6 +2639,17 @@ void TitlePage::rebuildReleaseChips() {
     for (QLabel* label : kindLabels) {
         label->setFixedWidth(kindLabelWidth);
     }
+    for (int index = 0; index < releaseChips_.size() && index < releases_.size(); ++index) {
+        QPushButton* chip = releaseChips_.at(index);
+        if (chip != nullptr) {
+            QString label = releaseChipLabel(releases_.at(index));
+            const int quality = releaseQuality_.value(index, 0);
+            if (quality > 0) {
+                label += QStringLiteral(" · %1p").arg(quality);
+            }
+            setReleaseChipText(chip, label);
+        }
+    }
 }
 
 void TitlePage::releaseContextMenu(QPushButton* chip, const QPoint& globalPos) {
@@ -2116,6 +2658,7 @@ void TitlePage::releaseContextMenu(QPushButton* chip, const QPoint& globalPos) {
         return;
     }
     QMenu menu(this);
+    menu.setObjectName(QStringLiteral("titleContextMenu"));
     for (const backend::Team& team : releases_.at(index).teams) {
         const QString teamRef = teamReference(team);
         if (teamRef.isEmpty()) {
@@ -2260,6 +2803,8 @@ void TitlePage::fillEpisodes(int index) {
         const QString known = labels::provider(provider);
         tabs_->addTab(tabPage, known.isEmpty() ? capitalize(provider) : known);
     }
+    providerSelectorHeading_->setVisible(tabs_->count() > 0);
+    tabs_->setVisible(tabs_->count() > 0);
 
     if (tabs_->count() > 0 && tabs_->currentIndex() < 0) {
         tabs_->setCurrentIndex(0);
@@ -2311,6 +2856,9 @@ QPushButton* TitlePage::buildEpisodeButton(EpisodeEntry* entry, QWidget* grid) {
     if (!type.isEmpty()) {
         auto* badge = new QLabel(episodeTypeBadgeText(type), button);
         badge->setObjectName(QStringLiteral("episodeTypeBadge"));
+        // Canon, anime-canon, filler and mixed each get their own colour; set
+        // before the first size hint so the badge is measured in its final style.
+        badge->setProperty("kind", type);
         badge->setToolTip(episodeTypeCaption(type));
         badge->setAccessibleName(badge->toolTip());
         badge->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -2447,6 +2995,41 @@ void TitlePage::reflowGrid(int stateIndex) {
 }
 
 bool TitlePage::eventFilter(QObject* watched, QEvent* event) {
+    if ((watched == heading_ || watched == subtitle_) &&
+        event->type() == QEvent::MouseButtonRelease) {
+        auto* mouse = static_cast<QMouseEvent*>(event);
+        if (mouse->button() == Qt::LeftButton &&
+            static_cast<QLabel*>(watched)->rect().contains(mouse->pos())) {
+            const QString displayed = static_cast<QLabel*>(watched)->text();
+            if (!mikai::gui::copyText(displayed)) {
+                flashStatus(tr("Failed to copy title"), true);
+            } else {
+                flashStatus(tr("Title copied"));
+            }
+            return true;
+        }
+    }
+    if ((watched == heading_ || watched == subtitle_) &&
+        event->type() == QEvent::KeyPress) {
+        auto* key = static_cast<QKeyEvent*>(event);
+        if (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter ||
+            key->key() == Qt::Key_Space) {
+            const QString displayed = static_cast<QLabel*>(watched)->text();
+            if (!mikai::gui::copyText(displayed)) {
+                flashStatus(tr("Failed to copy title"), true);
+            } else {
+                flashStatus(tr("Title copied"));
+            }
+            return true;
+        }
+    }
+    if (watched == description_ && event->type() == QEvent::Resize &&
+        description_ != nullptr && description_->width() != descriptionPreviewWidth_) {
+        refreshDescriptionPreview();
+    }
+    if (watched == hero_ && event->type() == QEvent::Resize) {
+        updateBackdrop();
+    }
     if (event->type() == QEvent::Resize) {
         for (int index = 0; index < tabStates_.size(); ++index) {
             if (tabStates_.at(index).grid == watched) {
@@ -2884,10 +3467,9 @@ void TitlePage::applyReleaseQuality(int index, const QMap<int, QString>& qualiti
     releaseQuality_.insert(index, height);
     QPushButton* chip = releaseChips_.at(index);
     if (chip != nullptr) {
-        chip->setText(releaseChipLabel(releases_.at(index)) +
-                      QStringLiteral(" · %1p").arg(height));
-        chip->setToolTip(releaseChipToolTip(releases_.at(index)) +
-                         QStringLiteral(" · %1p").arg(height));
+        const QString suffix = QStringLiteral(" · %1p").arg(height);
+        setReleaseChipText(chip, releaseChipLabel(releases_.at(index)) + suffix);
+        chip->setToolTip(releaseChipToolTip(releases_.at(index)) + suffix);
     }
     if (index == activeRelease_) {
         updateWatchPanel();
@@ -3038,6 +3620,7 @@ void TitlePage::applyCoverPixmap() {
 
 void TitlePage::coverContextMenu(const QPoint& globalPos) {
     QMenu menu(this);
+    menu.setObjectName(QStringLiteral("titleContextMenu"));
     QAction* copyUrl = menu.addAction(tr("Copy cover URL"));
     copyUrl->setToolTip(tr("Copy image address"));
     copyUrl->setEnabled(!coverUrl_.isEmpty());
@@ -3105,12 +3688,30 @@ void TitlePage::setStatus(const QString& text) {
     statusKind_ = BaseStatus::Raw;
     baseStatus_ = text;
     status_->setText(text);
+    setLabelState(status_, "error");
+    if (episodeStatus_ != nullptr) {
+        episodeStatus_->setText(text);
+        episodeStatus_->setAccessibleName(tr("Episode status"));
+        setLabelState(episodeStatus_, "error");
+        episodeStatus_->show();
+    }
 }
 
 void TitlePage::setStatusKind(BaseStatus kind) {
     statusKind_ = kind;
     baseStatus_ = baseStatusText(kind);
     status_->setText(baseStatus_);
+    setLabelState(status_, "base");
+    if (episodeStatus_ != nullptr) {
+        const bool episodeProblem = kind == BaseStatus::Loading ||
+                                    kind == BaseStatus::Licensed ||
+                                    kind == BaseStatus::NoReleases ||
+                                    kind == BaseStatus::NoSources;
+        episodeStatus_->setText(baseStatus_);
+        episodeStatus_->setAccessibleName(tr("Episode status"));
+        setLabelState(episodeStatus_, "base");
+        episodeStatus_->setVisible(episodeProblem);
+    }
 }
 
 QString TitlePage::baseStatusText(BaseStatus kind) const {
@@ -3166,6 +3767,7 @@ void TitlePage::applyCoverFallback() {
 
 void TitlePage::flashStatus(const QString& text, bool failure) {
     status_->setText(text);
+    setLabelState(status_, failure ? "error" : "flash");
     if (failure) {
         QAccessibleEvent event(status_, QAccessible::Alert);
         QAccessible::updateAccessibility(&event);
@@ -3173,11 +3775,16 @@ void TitlePage::flashStatus(const QString& text, bool failure) {
     QTimer::singleShot(kFlashMs, this, [this] {
         if (!closed_) {
             status_->setText(baseStatus_);
+            setLabelState(status_, statusKind_ == BaseStatus::Raw ? "error" : "base");
         }
     });
 }
 
 void TitlePage::retranslateUi() {
+    const int overviewScrollValue =
+        overviewScroll_ != nullptr ? overviewScroll_->verticalScrollBar()->value() : 0;
+    const int detailsScrollValue =
+        detailsScroll_ != nullptr ? detailsScroll_->verticalScrollBar()->value() : 0;
     if (backButton_ != nullptr) {
         backButton_->setText(tr("← Back"));
     }
@@ -3191,6 +3798,27 @@ void TitlePage::retranslateUi() {
     if (episodesHeading_ != nullptr) {
         episodesHeading_->setText(tr("Episodes"));
     }
+    if (releaseSelectorHeading_ != nullptr) {
+        releaseSelectorHeading_->setText(tr("Release"));
+    }
+    if (providerSelectorHeading_ != nullptr) {
+        providerSelectorHeading_->setText(tr("Provider"));
+    }
+    if (episodesButton_ != nullptr) {
+        episodesButton_->setText(tr("Episodes"));
+        episodesButton_->setAccessibleName(tr("Episodes"));
+        episodesButton_->setToolTip(tr("Jump to episodes"));
+        episodesButton_->setAccessibleDescription(
+            tr("Jump to the available episodes without starting playback"));
+    }
+    if (heading_ != nullptr) {
+        heading_->setToolTip(tr("Copy title"));
+        heading_->setAccessibleDescription(tr("Copy title"));
+    }
+    if (subtitle_ != nullptr) {
+        subtitle_->setToolTip(tr("Copy title"));
+        subtitle_->setAccessibleDescription(tr("Copy title"));
+    }
 
     // A flash still on screen is left to run out: its own timer restores the
     // base line below, which is re-worded here.
@@ -3198,6 +3826,16 @@ void TitlePage::retranslateUi() {
     baseStatus_ = baseStatusText(statusKind_);
     if (showingBase) {
         status_->setText(baseStatus_);
+    }
+    if (episodeStatus_ != nullptr) {
+        episodeStatus_->setAccessibleName(tr("Episode status"));
+        if (statusKind_ != BaseStatus::Raw) {
+            episodeStatus_->setText(baseStatus_);
+            episodeStatus_->setVisible(statusKind_ == BaseStatus::Loading ||
+                                       statusKind_ == BaseStatus::Licensed ||
+                                       statusKind_ == BaseStatus::NoReleases ||
+                                       statusKind_ == BaseStatus::NoSources);
+        }
     }
 
     applyCoverFallback();
@@ -3207,16 +3845,23 @@ void TitlePage::retranslateUi() {
         fullDescription_ =
             rawDescription_.isEmpty() ? tr("No description available.") : rawDescription_;
         refreshDetailTexts();
-        description_->setText(descriptionExpanded_ ? fullDescription_ : descriptionPreview());
-        descriptionButton_->setText(descriptionExpanded_ ? tr("Collapse description")
-                                                          : tr("Read more"));
+        refreshDescriptionPreview();
+    } else {
+        refreshDescriptionPreview();
     }
     if (metaButton_ != nullptr) {
         metaButton_->setText(metaButton_->isChecked() ? tr("Hide details") : tr("More details"));
+        metaButton_->setToolTip(metaButton_->isChecked() ? tr("Hide title details")
+                                                         : tr("Show title details"));
+        metaButton_->setAccessibleName(metaButton_->text());
+        metaButton_->setVisible(hasDetail_);
     }
     if (relatedButton_ != nullptr) {
-        relatedButton_->setText(relatedButton_->isChecked() ? tr("Hide similar")
-                                                            : tr("Related and similar"));
+        relatedButton_->setMinimumHeight(40);
+        relatedButton_->setText(relatedButton_->isChecked() ? tr("Hide") : tr("Show"));
+    }
+    if (discoveryHeading_ != nullptr) {
+        discoveryHeading_->setText(tr("More to explore"));
     }
     if (hasFailure_) {
         // The view re-words its own canonical line; only the context clause is
@@ -3247,6 +3892,16 @@ void TitlePage::retranslateUi() {
         updateLicenseInfo(player_);
     }
     updateWatchPanel();
+    QTimer::singleShot(0, this, [this, overviewScrollValue, detailsScrollValue] {
+        if (overviewScroll_ != nullptr) {
+            QScrollBar* bar = overviewScroll_->verticalScrollBar();
+            bar->setValue(qBound(bar->minimum(), overviewScrollValue, bar->maximum()));
+        }
+        if (detailsScroll_ != nullptr) {
+            QScrollBar* bar = detailsScroll_->verticalScrollBar();
+            bar->setValue(qBound(bar->minimum(), detailsScrollValue, bar->maximum()));
+        }
+    });
 }
 
 void TitlePage::refreshRelatedTexts() {
@@ -3319,7 +3974,7 @@ void TitlePage::refreshReleaseTexts() {
             label += suffix;
             tooltip += suffix;
         }
-        chip->setText(label);
+        setReleaseChipText(chip, label);
         chip->setToolTip(tooltip);
     }
 }

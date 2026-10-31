@@ -1241,64 +1241,64 @@
         <translation>Зразок JPEG перевищує обмеження формату MP4.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareClip.cpp" line="138"/>
+        <location filename="../src/player/compare/CompareClip.cpp" line="140"/>
         <source>MP4 exceeds the 32-bit chunk offset limit.</source>
         <translation>MP4 перевищує обмеження 32-бітного зміщення фрагментів.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareClip.cpp" line="161"/>
+        <location filename="../src/player/compare/CompareClip.cpp" line="182"/>
         <source>MP4 chunk table exceeds supported atom limits.</source>
         <translation>Таблиця фрагментів MP4 перевищує підтримувані обмеження атомів.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareClip.cpp" line="180"/>
+        <location filename="../src/player/compare/CompareClip.cpp" line="264"/>
         <source>MP4 metadata exceeds supported atom limits.</source>
         <translation>Метадані MP4 перевищують підтримувані обмеження атомів.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareClip.cpp" line="200"/>
+        <location filename="../src/player/compare/CompareClip.cpp" line="287"/>
         <source>Qt WebP writer produced unsupported or malformed chunks.</source>
         <translation>Засіб запису WebP у Qt створив непідтримувані або некоректні фрагменти.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareClip.cpp" line="214"/>
+        <location filename="../src/player/compare/CompareClip.cpp" line="317"/>
         <source>Animated WebP exceeds the RIFF size limit.</source>
         <translation>Анімований WebP перевищує обмеження розміру RIFF.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareClip.cpp" line="228"/>
+        <location filename="../src/player/compare/CompareClip.cpp" line="334"/>
         <source>Comparison images or frame delay are invalid; maximum clip duration is 10 seconds.</source>
         <translation>Зображення порівняння або затримка кадру некоректні; максимальна тривалість кліпу — 10 секунд.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareClip.cpp" line="231"/>
+        <location filename="../src/player/compare/CompareClip.cpp" line="337"/>
         <source>Image dimensions are invalid.</source>
         <translation>Некоректні розміри зображення.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareClip.cpp" line="233"/>
+        <location filename="../src/player/compare/CompareClip.cpp" line="339"/>
         <source>MP4 image dimensions exceed the 65535-pixel sample-entry limit.</source>
         <translation>Розміри зображення MP4 перевищують обмеження 65 535 пікселів для запису зразка.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareClip.cpp" line="235"/>
+        <location filename="../src/player/compare/CompareClip.cpp" line="341"/>
         <source>Image dimensions or frame duration exceed WebP limits.</source>
         <translation>Розміри зображення або тривалість кадру перевищують обмеження WebP.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareClip.cpp" line="237"/>
+        <location filename="../src/player/compare/CompareClip.cpp" line="343"/>
         <source>Unsupported comparison clip format.</source>
         <translation>Непідтримуваний формат кліпу порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareClip.cpp" line="239"/>
+        <location filename="../src/player/compare/CompareClip.cpp" line="345"/>
         <source>Not enough memory to prepare comparison frames.</source>
         <translation>Недостатньо пам’яті для підготовки кадрів порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareClip.cpp" line="240"/>
-        <location filename="../src/player/compare/CompareClip.cpp" line="246"/>
-        <location filename="../src/player/compare/CompareClip.cpp" line="250"/>
+        <location filename="../src/player/compare/CompareClip.cpp" line="346"/>
+        <location filename="../src/player/compare/CompareClip.cpp" line="352"/>
+        <location filename="../src/player/compare/CompareClip.cpp" line="356"/>
         <source>Clip export cancelled.</source>
         <translation>Експорт кліпу скасовано.</translation>
     </message>
@@ -2583,7 +2583,7 @@
         <translation>Команд: %1 · сторінка %2 з %3</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="276"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="367"/>
         <source>Team %1</source>
         <translation>Команда %1</translation>
     </message>
@@ -2948,8 +2948,8 @@ If a portable folder was moved, disable startup from the old location before mov
 <context>
     <name>TitlePage</name>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2992"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3159"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3571"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3757"/>
         <source>Click to open the cover</source>
         <translation>Натисніть, щоб відкрити обкладинку</translation>
     </message>
@@ -2964,7 +2964,7 @@ If a portable folder was moved, disable startup from the old location before mov
         <translation>Не вдалося скопіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3014"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3593"/>
         <source>No cover</source>
         <translation>Немає обкладинки</translation>
     </message>
@@ -7238,248 +7238,467 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mikai::app::TitlePage</name>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1990"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2011"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2038"/>
-        <source> (collab)</source>
-        <translation> (колаб)</translation>
-    </message>
-    <message numerus="yes">
-        <location filename="../src/app/pages/TitlePage.cpp" line="2015"/>
-        <source> · %n episode(s)</source>
-        <translation>
-            <numerusform> · %n серія</numerusform>
-            <numerusform> · %n серії</numerusform>
-            <numerusform> · %n серій</numerusform>
-        </translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="536"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3786"/>
+        <source>← Back</source>
+        <translation>← Назад</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1221"/>
-        <source>%1 min</source>
-        <translation>%1 хв</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1749"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1759"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1880"/>
-        <source>%1 — watch</source>
-        <translation>%1 — дивитися</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2671"/>
-        <source>%1p</source>
-        <translation>%1p</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="466"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="467"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3188"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3189"/>
-        <source>API token settings</source>
-        <translation>Налаштування токена API</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="446"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3185"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="541"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3789"/>
         <source>Home</source>
         <translation>На головну</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="717"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1821"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1888"/>
-        <source>Watched</source>
-        <translation>Переглянуто</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="562"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="563"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3792"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3793"/>
+        <source>API token settings</source>
+        <translation>Налаштування токена API</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="729"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1878"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3239"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="610"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3717"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3748"/>
+        <source>Loading…</source>
+        <translation>Завантаження…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="685"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="959"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2298"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2353"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3881"/>
         <source>Watch</source>
         <translation>Дивитися</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="804"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="829"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3229"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="692"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2299"/>
+        <source>Select an available episode to watch</source>
+        <translation>Виберіть доступну серію для перегляду</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="708"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="715"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="836"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3796"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3805"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3806"/>
+        <source>Episodes</source>
+        <translation>Серії</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="766"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1395"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1999"/>
+        <source>Read more</source>
+        <translation>Читати далі</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="718"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="724"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2068"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3850"/>
+        <source>More details</source>
+        <translation>Докладніше</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="641"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="642"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="653"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="654"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3812"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3813"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3816"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3817"/>
+        <source>Copy title</source>
+        <translation>Скопіювати назву</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="712"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3807"/>
+        <source>Jump to episodes</source>
+        <translation>Перейти до серій</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="714"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3809"/>
+        <source>Jump to the available episodes without starting playback</source>
+        <translation>Перейти до доступних серій без початку відтворення</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="723"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2069"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3852"/>
+        <source>Show title details</source>
+        <translation>Показати подробиці про тайтл</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="799"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3861"/>
+        <source>More to explore</source>
+        <translation>Більше для перегляду</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="803"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1933"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3858"/>
+        <source>Hide</source>
+        <translation>Сховати</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="893"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3799"/>
+        <source>Release</source>
+        <translation>Випуск</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="948"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2271"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2370"/>
+        <source>Watched</source>
+        <translation>Переглянуто</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="981"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3802"/>
+        <source>Provider</source>
+        <translation>Провайдер</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1051"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1076"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3871"/>
         <source>Details</source>
         <translation>Деталі</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="811"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="836"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="837"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3232"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3233"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3236"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1058"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1083"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1084"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3874"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3875"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3878"/>
         <source>Close details</source>
         <translation>Закрити деталі</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1178"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1113"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1404"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1405"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1470"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1471"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1651"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3751"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3761"/>
+        <source>No cover</source>
+        <translation>Немає обкладинки</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1386"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1639"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3843"/>
+        <source>No description available.</source>
+        <translation>Опис відсутній.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1467"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3867"/>
+        <source>Could not open this title</source>
+        <translation>Не вдалося відкрити цей тайтл</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1530"/>
         <source>unknown</source>
         <translation>невідомо</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1180"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1532"/>
         <source>Aired: %1 · Localized: %2 · Total: %3</source>
         <translation>Випущено: %1 · Локалізовано: %2 · Усього: %3</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1185"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1218"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1537"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1570"/>
         <source>Episode availability</source>
         <translation>Доступність серій</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1195"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1547"/>
         <source>Next episode airing %1 (local time)</source>
         <translation>Наступна серія вийде %1 (за місцевим часом)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1196"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1548"/>
         <source>Episode %1 airs %2 (local time)</source>
         <translation>Серія %1 вийде %2 (за місцевим часом)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1199"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1551"/>
         <source>Next airing: %1</source>
         <translation>Наступний вихід: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1200"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1552"/>
         <source>Episode %1 airing: %2</source>
         <translation>Вихід серії %1: %2</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1233"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1571"/>
+        <source>Type</source>
+        <translation>Тип</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1573"/>
+        <source>Duration</source>
+        <translation>Тривалість</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1573"/>
+        <source>%1 min</source>
+        <translation>%1 хв</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1575"/>
+        <source>Status</source>
+        <translation>Стан</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1576"/>
+        <source>Season</source>
+        <translation>Сезон</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1578"/>
+        <source>Original source</source>
+        <translation>Оригінальне джерело</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1580"/>
+        <source>Studio</source>
+        <translation>Студія</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1582"/>
+        <source>Country</source>
+        <translation>Країна</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1585"/>
         <source>Age rating</source>
         <translation>Віковий рейтинг</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1284"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1594"/>
+        <source>Genres</source>
+        <translation>Жанри</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1602"/>
+        <source>Tags</source>
+        <translation>Теги</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1637"/>
         <source>Synopsis</source>
         <translation>Опис</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1576"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3211"/>
-        <source>Collapse description</source>
-        <translation>Згорнути опис</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1665"/>
+        <source>Mikai</source>
+        <translation>Mikai</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1730"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1794"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3912"/>
+        <source>Previous page</source>
+        <translation>Попередня сторінка</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1797"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3915"/>
+        <source>Next page</source>
+        <translation>Наступна сторінка</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1835"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3930"/>
+        <source>Poster unavailable</source>
+        <translation>Постер недоступний</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1933"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3858"/>
+        <source>Show</source>
+        <translation>Показати</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1999"/>
+        <source>Show less</source>
+        <translation>Показати менше</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2068"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3850"/>
+        <source>Hide details</source>
+        <translation>Сховати деталі</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2069"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3851"/>
+        <source>Hide title details</source>
+        <translation>Сховати подробиці про тайтл</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2180"/>
         <source>%1, %2</source>
         <translation>%1, %2</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1732"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2182"/>
         <source>%1 — unavailable</source>
         <translation>%1 — недоступна</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1741"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2191"/>
         <source>%1 — no video for this player</source>
         <translation>%1 — немає відео для цього плеєра</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1751"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2199"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2209"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2358"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2362"/>
+        <source>%1 — watch</source>
+        <translation>%1 — дивитися</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2201"/>
         <source>current episode</source>
         <translation>поточна серія</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1754"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2204"/>
         <source>watched episode</source>
         <translation>переглянута серія</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1818"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2268"/>
         <source>Current</source>
         <translation>Поточна</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1824"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1858"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2274"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2323"/>
         <source>Unavailable</source>
-        <translation>Недоступна</translation>
+        <translation>Недоступно</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1878"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2325"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3237"/>
+        <source>No video available</source>
+        <translation>Відео недоступне</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2353"/>
         <source>Continue</source>
         <translation>Продовжити</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1889"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2359"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2363"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3136"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3191"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3240"/>
+        <source>This player has no video for this episode</source>
+        <translation>У цьому плеєрі немає відео для цієї серії</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2370"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3278"/>
+        <source>Mark as watched</source>
+        <translation>Позначити як переглянуту</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2371"/>
         <source>Mark this episode as unwatched</source>
         <translation>Позначити цю серію як непереглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1890"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2372"/>
         <source>Mark this episode as watched</source>
         <translation>Позначити цю серію як переглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1893"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2375"/>
         <source>%1 — mark as unwatched</source>
         <translation>%1 — позначити як непереглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1894"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2376"/>
         <source>%1 — mark as watched</source>
         <translation>%1 — позначити як переглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1909"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2391"/>
         <source>Manga canon</source>
         <translation>Канон манґи</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1910"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2392"/>
         <source>Anime canon</source>
         <translation>Канон аніме</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1911"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2393"/>
         <source>Filler</source>
         <translation>Філер</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1912"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2394"/>
         <source>Mixed</source>
         <translation>Змішане</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1917"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2399"/>
         <source>M</source>
         <translation>М</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1918"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2400"/>
         <source>A</source>
         <translation>А</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1919"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2401"/>
         <source>F</source>
         <translation>Ф</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1920"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2402"/>
         <source>Mix</source>
         <translation>Міш.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1934"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2416"/>
         <source>This title is licensed, but license details were not provided by the API.</source>
         <translation>Цей тайтл ліцензовано, але API не надав відомостей про ліцензію.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1935"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2417"/>
         <source>Licensed information: %1</source>
         <translation>Відомості про ліцензію: %1</translation>
     </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2419"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3719"/>
+        <source>Playback unavailable due to licensing</source>
+        <translation>Відтворення недоступне через ліцензійні обмеження</translation>
+    </message>
     <message numerus="yes">
-        <location filename="../src/app/pages/TitlePage.cpp" line="1952"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2434"/>
         <source>%n episode(s)</source>
         <translation>
             <numerusform>%n серія</numerusform>
@@ -7488,430 +7707,298 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         </translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1888"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2698"/>
-        <source>Mark as watched</source>
-        <translation>Позначити як переглянуту</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2472"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2493"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2520"/>
+        <source> (collab)</source>
+        <translation> (колаб)</translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/app/pages/TitlePage.cpp" line="2497"/>
+        <source> · %n episode(s)</source>
+        <translation>
+            <numerusform> · %n серія</numerusform>
+            <numerusform> · %n серії</numerusform>
+            <numerusform> · %n серій</numerusform>
+        </translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2706"/>
-        <source>Remove this episode from watched</source>
-        <translation>Прибрати цю серію з переглянутих</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2504"/>
+        <source>Right-click to browse releases from %1</source>
+        <translation>Правий клік — переглянути релізи %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2700"/>
-        <source>Add this episode to watched</source>
-        <translation>Додати цю серію до переглянутих</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2665"/>
+        <source>Browse %1 releases</source>
+        <translation>Переглянути релізи %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3041"/>
-        <source>Copy cover URL</source>
-        <translation>Копіювати URL обкладинки</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2666"/>
+        <source>Browse titles from %1</source>
+        <translation>Переглянути тайтли від %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3042"/>
-        <source>Copy image address</source>
-        <translation>Копіювати адресу зображення</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3002"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3016"/>
+        <source>Failed to copy title</source>
+        <translation>Не вдалося скопіювати назву</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2653"/>
-        <source>Copy the episode page URL</source>
-        <translation>Копіювати URL сторінки серії</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3004"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3018"/>
+        <source>Title copied</source>
+        <translation>Назву скопійовано</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2651"/>
-        <source>Copy to clipboard</source>
-        <translation>Копіювати до буфера обміну</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3108"/>
+        <source>Explicit content</source>
+        <translation>Відвертий контент</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2621"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3108"/>
+        <source>This title is rated 18+. Start playback?</source>
+        <translation>Цей тайтл має рейтинг 18+. Почати відтворення?</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3146"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3238"/>
+        <source>Loading quality options…</source>
+        <translation>Завантаження варіантів якості…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3193"/>
+        <source>Failed to load episode qualities</source>
+        <translation>Не вдалося завантажити варіанти якості серії</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3201"/>
         <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="166"/>
         <source>Could not find a stream for this episode</source>
         <translation>Не вдалося знайти потік для цієї серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1129"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3225"/>
-        <source>Could not open this title</source>
-        <translation>Не вдалося відкрити цей тайтл</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3231"/>
+        <source>Copy to clipboard</source>
+        <translation>Копіювати до буфера обміну</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1230"/>
-        <source>Country</source>
-        <translation>Країна</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3232"/>
+        <source>Page URL</source>
+        <translation>URL сторінки</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2022"/>
-        <source>Right-click to browse releases from %1</source>
-        <translation>Правий клік — переглянути релізи %1</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3233"/>
+        <source>Copy the episode page URL</source>
+        <translation>Копіювати URL сторінки серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2125"/>
-        <source>Browse %1 releases</source>
-        <translation>Переглянути релізи %1</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3241"/>
+        <source>Fetching direct video links</source>
+        <translation>Отримання прямих посилань на відео</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2126"/>
-        <source>Browse titles from %1</source>
-        <translation>Переглянути тайтли від %1</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3251"/>
+        <source>%1p</source>
+        <translation>%1p</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2528"/>
-        <source>Explicit content</source>
-        <translation>Відвертий контент</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3280"/>
+        <source>Add this episode to watched</source>
+        <translation>Додати цю серію до переглянутих</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2528"/>
-        <source>This title is rated 18+. Start playback?</source>
-        <translation>Цей тайтл має рейтинг 18+. Почати відтворення?</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2704"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3284"/>
         <source>Unwatch</source>
         <translation>Позначити як непереглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2736"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3286"/>
+        <source>Remove this episode from watched</source>
+        <translation>Прибрати цю серію з переглянутих</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3316"/>
         <source>Watch all previous</source>
         <translation>Позначити всі попередні переглянутими</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2748"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3328"/>
         <source>Unwatch all previous</source>
         <translation>Позначити всі попередні непереглянутими</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3060"/>
-        <source>Cover URL copied</source>
-        <translation>URL обкладинки скопійовано</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3341"/>
+        <source>Open in external player</source>
+        <translation>Відкрити у зовнішньому плеєрі</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3077"/>
-        <source>Cover saved: %1</source>
-        <translation>Обкладинку збережено: %1</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3342"/>
+        <source>Open the best quality in mpv or VLC</source>
+        <translation>Відкрити найкращу якість у mpv або VLC</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2777"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3345"/>
+        <source>Open in browser</source>
+        <translation>Відкрити у браузері</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3346"/>
+        <source>Open the episode page</source>
+        <translation>Відкрити сторінку серії</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3354"/>
+        <source>Failed to copy link</source>
+        <translation>Не вдалося скопіювати посилання</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3357"/>
         <source>Direct link copied (%1p)</source>
         <translation>Пряме посилання скопійовано (%1p)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1221"/>
-        <source>Duration</source>
-        <translation>Тривалість</translation>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3361"/>
+        <source>Failed to copy episode URL</source>
+        <translation>Не вдалося скопіювати URL серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1842"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1958"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3365"/>
+        <source>URL copied (no video available for this player)</source>
+        <translation>URL скопійовано (для цього плеєра немає відео)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3366"/>
+        <source>URL copied</source>
+        <translation>URL скопійовано</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3371"/>
+        <source>Opened in browser</source>
+        <translation>Відкрито у браузері</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3373"/>
+        <source>Failed to open in browser</source>
+        <translation>Не вдалося відкрити у браузері</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3386"/>
+        <source>No available video quality found</source>
+        <translation>Не знайдено доступних варіантів якості відео</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3400"/>
+        <source>External player not found — install mpv or VLC</source>
+        <translation>Зовнішній плеєр не знайдено — встановіть mpv або VLC</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3409"/>
+        <source>Opened in %1 · %2p</source>
+        <translation>Відкрито в %1 · %2p</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3411"/>
+        <source>Failed to launch %1</source>
+        <translation>Не вдалося запустити %1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3621"/>
+        <source>Copy cover URL</source>
+        <translation>Копіювати URL обкладинки</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3622"/>
+        <source>Copy image address</source>
+        <translation>Копіювати адресу зображення</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3625"/>
+        <source>Save cover…</source>
+        <translation>Зберегти обкладинку…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3626"/>
+        <source>Save image to file</source>
+        <translation>Зберегти зображення у файл</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3637"/>
+        <source>Failed to copy cover URL</source>
+        <translation>Не вдалося скопіювати URL обкладинки</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3640"/>
+        <source>Cover URL copied</source>
+        <translation>URL обкладинки скопійовано</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3651"/>
+        <source>Save cover</source>
+        <translation>Зберегти обкладинку</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3651"/>
+        <source>cover.%1</source>
+        <translation>cover.%1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3652"/>
+        <source>Images (*.png *.jpg *.webp)</source>
+        <translation>Зображення (*.png *.jpg *.webp)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3657"/>
+        <source>Cover saved: %1</source>
+        <translation>Обкладинку збережено: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3659"/>
+        <source>Failed to save cover</source>
+        <translation>Не вдалося зберегти обкладинку</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3691"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3708"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3828"/>
+        <source>Episode status</source>
+        <translation>Стан серій</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3721"/>
+        <source>No releases available</source>
+        <translation>Немає доступних релізів</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3723"/>
+        <source>No sources in this release</source>
+        <translation>У цьому релізі немає джерел</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3734"/>
+        <source>Related titles</source>
+        <translation>Пов’язані тайтли</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3737"/>
+        <source>Similar anime</source>
+        <translation>Схожі аніме</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3740"/>
+        <source>Recommended on Mikai</source>
+        <translation>Рекомендоване на Mikai</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2307"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2440"/>
         <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="624"/>
         <source>Episode %1</source>
         <translation>Серія %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="631"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3192"/>
-        <source>Episodes</source>
-        <translation>Серії</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2820"/>
-        <source>External player not found — install mpv or VLC</source>
-        <translation>Зовнішній плеєр не знайдено — встановіть mpv або VLC</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3057"/>
-        <source>Failed to copy cover URL</source>
-        <translation>Не вдалося скопіювати URL обкладинки</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2781"/>
-        <source>Failed to copy episode URL</source>
-        <translation>Не вдалося скопіювати URL серії</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2774"/>
-        <source>Failed to copy link</source>
-        <translation>Не вдалося скопіювати посилання</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2831"/>
-        <source>Failed to launch %1</source>
-        <translation>Не вдалося запустити %1</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2613"/>
-        <source>Failed to load episode qualities</source>
-        <translation>Не вдалося завантажити варіанти якості серії</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2793"/>
-        <source>Failed to open in browser</source>
-        <translation>Не вдалося відкрити у браузері</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3079"/>
-        <source>Failed to save cover</source>
-        <translation>Не вдалося зберегти обкладинку</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2661"/>
-        <source>Fetching direct video links</source>
-        <translation>Отримання прямих посилань на відео</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1242"/>
-        <source>Genres</source>
-        <translation>Жанри</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1623"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3215"/>
-        <source>Hide details</source>
-        <translation>Сховати деталі</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1565"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3218"/>
-        <source>Hide similar</source>
-        <translation>Сховати схожі</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3072"/>
-        <source>Images (*.png *.jpg *.webp)</source>
-        <translation>Зображення (*.png *.jpg *.webp)</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2566"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2658"/>
-        <source>Loading quality options…</source>
-        <translation>Завантаження варіантів якості…</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="494"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3119"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3150"/>
-        <source>Loading…</source>
-        <translation>Завантаження…</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1306"/>
-        <source>Mikai</source>
-        <translation>Mikai</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="578"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1623"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3215"/>
-        <source>More details</source>
-        <translation>Докладніше</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2806"/>
-        <source>No available video quality found</source>
-        <translation>Не знайдено доступних варіантів якості відео</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="866"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1103"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1104"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1132"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1133"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1297"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3153"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3163"/>
-        <source>No cover</source>
-        <translation>Немає обкладинки</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1085"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1286"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3208"/>
-        <source>No description available.</source>
-        <translation>Опис відсутній.</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1937"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3121"/>
-        <source>Playback unavailable due to licensing</source>
-        <translation>Відтворення недоступне через ліцензійні обмеження</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3123"/>
-        <source>No releases available</source>
-        <translation>Немає доступних релізів</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3125"/>
-        <source>No sources in this release</source>
-        <translation>У цьому релізі немає джерел</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1860"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2657"/>
-        <source>No video available</source>
-        <translation>Відео недоступне</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2765"/>
-        <source>Open in browser</source>
-        <translation>Відкрити у браузері</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2761"/>
-        <source>Open in external player</source>
-        <translation>Відкрити у зовнішньому плеєрі</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2762"/>
-        <source>Open the best quality in mpv or VLC</source>
-        <translation>Відкрити найкращу якість у mpv або VLC</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2766"/>
-        <source>Open the episode page</source>
-        <translation>Відкрити сторінку серії</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2829"/>
-        <source>Opened in %1 · %2p</source>
-        <translation>Відкрито в %1 · %2p</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2791"/>
-        <source>Opened in browser</source>
-        <translation>Відкрито у браузері</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1226"/>
-        <source>Original source</source>
-        <translation>Оригінальне джерело</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2652"/>
-        <source>Page URL</source>
-        <translation>URL сторінки</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1472"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3278"/>
-        <source>Poster unavailable</source>
-        <translation>Постер недоступний</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="573"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1094"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1577"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3212"/>
-        <source>Read more</source>
-        <translation>Читати далі</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3142"/>
-        <source>Recommended on Mikai</source>
-        <translation>Рекомендоване на Mikai</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="583"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1565"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3219"/>
-        <source>Related and similar</source>
-        <translation>Пов’язані та схожі</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3136"/>
-        <source>Related titles</source>
-        <translation>Пов’язані тайтли</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3071"/>
-        <source>Save cover</source>
-        <translation>Зберегти обкладинку</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3045"/>
-        <source>Save cover…</source>
-        <translation>Зберегти обкладинку…</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3046"/>
-        <source>Save image to file</source>
-        <translation>Зберегти зображення у файл</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1224"/>
-        <source>Season</source>
-        <translation>Сезон</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3139"/>
-        <source>Similar anime</source>
-        <translation>Схожі аніме</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1223"/>
-        <source>Status</source>
-        <translation>Стан</translation>
-    </message>
-    <message>
         <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="495"/>
         <source>Stream expired — refreshing URL…</source>
         <translation>Термін дії потоку минув — оновлення URL…</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1228"/>
-        <source>Studio</source>
-        <translation>Студія</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1250"/>
-        <source>Tags</source>
-        <translation>Теги</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1881"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2556"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2611"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2660"/>
-        <source>This player has no video for this episode</source>
-        <translation>У цьому плеєрі немає відео для цієї серії</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1219"/>
-        <source>Type</source>
-        <translation>Тип</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2786"/>
-        <source>URL copied</source>
-        <translation>URL скопійовано</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2785"/>
-        <source>URL copied (no video available for this player)</source>
-        <translation>URL скопійовано (для цього плеєра немає відео)</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3071"/>
-        <source>cover.%1</source>
-        <translation>cover.%1</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="441"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3182"/>
-        <source>← Back</source>
-        <translation>← Назад</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1431"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3260"/>
-        <source>Previous page</source>
-        <translation>Попередня сторінка</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1434"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3263"/>
-        <source>Next page</source>
-        <translation>Наступна сторінка</translation>
     </message>
 </context>
 <context>

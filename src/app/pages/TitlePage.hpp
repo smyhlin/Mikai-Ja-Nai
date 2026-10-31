@@ -55,7 +55,6 @@ namespace mikai::app {
 class CoverLabel;
 class CoverViewer;
 class FailureView;
-class PageGlow;
 class PosterBackdrop;
 class QualityCache;
 class RangePager;
@@ -63,10 +62,9 @@ class RateLimitLabel;
 class Runner;
 
 /// One title, laid out as the editorial detail page: a sticky header, one
-/// scrolling body with the responsive poster/title hero, the related and
-/// recommended carousels full-width beneath it, and the release selector,
-/// watch panel and provider episode grids last. The metadata sheet is a
-/// dismissible layer over the page, not a second window.
+/// scrolling body with a responsive poster/title hero, the release/provider
+/// playback workspace, and related/recommended discovery beneath it. The
+/// metadata sheet is a dismissible layer over the page, not a second window.
 ///
 /// Quality extraction happens once per episode, only when that episode is
 /// opened. The result is cached per embed URL and persisted, so replaying an
@@ -174,6 +172,9 @@ private:
     void buildUi();
     void buildHeader();
     void buildBody();
+    void buildHero();
+    void buildEpisodeWorkspace();
+    void buildDiscovery();
     void buildDetailsSheet();
     /// Applies the one responsive decision the page has: the compact hero below
     /// `kTitleCompactBreakpoint`, and with it the poster size, the hero axis and
@@ -181,7 +182,7 @@ private:
     void applyResponsiveLayout();
     /// Places the fixed details layer and its right-hand sheet over the page.
     void updateDetailsGeometry();
-    /// Re-crops the cached cover for the poster-derived backdrop.
+    /// Sizes and lowers the cached composite behind the hero's actual bounds.
     void updateBackdrop();
     /// Re-resolves the title page's scoped QSS after the `compact` property
     /// changed. Only property selectors need this; no widget is rebuilt.
@@ -208,6 +209,8 @@ private:
     void setRelatedExpanded(bool expanded, bool fromUser = true);
     void toggleDescription();
     QString descriptionPreview() const;
+    void refreshDescriptionPreview();
+    void scrollToEpisodes();
     void toggleMetadata(bool expanded);
     /// Opens or dismisses the metadata sheet without touching data. The
     /// disclosure button is kept in step when the sheet is dismissed from
@@ -243,6 +246,7 @@ private:
     QString releaseChipLabel(const backend::Release& release) const;
     QString releaseChipToolTip(const backend::Release& release) const;
     void rebuildReleaseChips();
+    void setReleaseChipText(QPushButton* chip, const QString& text);
     /// Release chips carry no inline team links; the row stays one chip per
     /// release and each team's browse command lives on this menu.
     void releaseContextMenu(QPushButton* chip, const QPoint& globalPos);
@@ -342,6 +346,7 @@ private:
     void retranslateUi();
     /// Facts, scores, details rows and links, rebuilt from the retained detail.
     void refreshDetailTexts();
+    void refreshLinkTexts();
     /// Carousel headings, pager tooltips, relation captions and poster
     /// fallbacks, keeping every painted poster and the carousels themselves.
     void refreshRelatedTexts();
@@ -380,17 +385,18 @@ protected:
     /// width and centred by the scroll area; `column_` fills it.
     QWidget* body_ = nullptr;
     QWidget* column_ = nullptr;
-    PageGlow* pageGlow_ = nullptr;
     bool adultConfirmed_ = false;
     QVBoxLayout* columnLayout_ = nullptr;
     QWidget* hero_ = nullptr;
     QBoxLayout* heroLayout_ = nullptr;
+    QLabel* heroWatchContext_ = nullptr;
+    QPushButton* episodesButton_ = nullptr;
+    QWidget* heroActionContextHost_ = nullptr;
     QWidget* heroPosterHost_ = nullptr;
     QLabel* studio_ = nullptr;
     /// Poster-derived atmosphere behind the hero. Custom-painted from a cached
     /// downscale, so no paint path blurs or rescales the real cover.
     PosterBackdrop* backdrop_ = nullptr;
-    QLabel* accentRule_ = nullptr;
     QWidget* disclosureRow_ = nullptr;
     /// Metadata sheet: the full-page layer, its dimming scrim, the right-hand
     /// panel and the scrolling content widget the facts grid is built into.
@@ -412,17 +418,22 @@ protected:
     /// Episode section: its full-width header, the real watch panel for the
     /// active provider, and the provider tabs holding the pill grids.
     QWidget* episodesHost_ = nullptr;
+    QWidget* playbackControls_ = nullptr;
     QWidget* episodeHeaderHost_ = nullptr;
     QLabel* episodeCount_ = nullptr;
     QLabel* episodeAvailability_ = nullptr;
+    QLabel* episodeStatus_ = nullptr;
     QLabel* nextAiring_ = nullptr;
     QLabel* licenseInfo_ = nullptr;
     backend::PlayerResult player_;
     QWidget* watchPanel_ = nullptr;
+    QBoxLayout* watchLayout_ = nullptr;
     QLabel* watchEpisode_ = nullptr;
     QLabel* watchMeta_ = nullptr;
     QWidget* watchProgress_ = nullptr;
     QPushButton* watchButton_ = nullptr;
+    /// Hero-level shortcut to the selected episode's existing watch action.
+    QPushButton* heroWatchButton_ = nullptr;
     /// The manual mark: checked while the selected episode is watched.
     QPushButton* watchWatchedButton_ = nullptr;
     EpisodeEntry* watchEntry_ = nullptr;
@@ -433,6 +444,7 @@ protected:
     QLabel* legendUnavailable_ = nullptr;
 
     bool compact_ = false;
+    bool narrow_ = false;
     /// Guards `applyResponsiveLayout` against re-entering itself through the
     /// layout invalidation its own margin/axis changes post.
     bool applyingLayout_ = false;
@@ -448,9 +460,12 @@ protected:
     QLabel* facts_ = nullptr;
     QLabel* scores_ = nullptr;
     QLabel* description_ = nullptr;
+    int descriptionPreviewWidth_ = -1;
     QPushButton* descriptionButton_ = nullptr;
     QPushButton* metaButton_ = nullptr;
     QPushButton* relatedButton_ = nullptr;
+    QWidget* discoveryHost_ = nullptr;
+    QLabel* discoveryHeading_ = nullptr;
     /// The scrolling sheet content widget; `titleDetails` carries its name.
     QWidget* metaHost_ = nullptr;
     QLabel* links_ = nullptr;
@@ -458,6 +473,8 @@ protected:
     QVBoxLayout* relatedLayout_ = nullptr;
     QTabWidget* tabs_ = nullptr;
     QWidget* releaseChipsHost_ = nullptr;
+    QLabel* releaseSelectorHeading_ = nullptr;
+    QLabel* providerSelectorHeading_ = nullptr;
     QVBoxLayout* releaseRowsLayout_ = nullptr;
     QButtonGroup* releaseGroup_ = nullptr;
     QVector<QPushButton*> releaseChips_;

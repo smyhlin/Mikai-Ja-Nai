@@ -67,25 +67,48 @@ private:
         const QMargins margins = contentsMargins();
         const QRect content = rect.adjusted(margins.left(), margins.top(),
                                             -margins.right(), -margins.bottom());
-        int x = content.x();
         int y = content.y();
         int lineHeight = 0;
         const int right = content.x() + content.width();
+        int first = 0;
 
-        for (QLayoutItem* item : items_) {
-            const QSize size = item->sizeHint();
-            if (x > content.x() && x + size.width() > right) {
-                x = content.x();
-                y += lineHeight + verticalSpacing_;
-                lineHeight = 0;
+        while (first < items_.size()) {
+            int last = first;
+            int rowWidth = 0;
+            int rowHeight = 0;
+            while (last < items_.size()) {
+                const QSize size = items_.at(last)->sizeHint();
+                const int nextWidth =
+                    last == first ? size.width() : rowWidth + horizontalSpacing_ + size.width();
+                if (last > first && content.x() + nextWidth > right) {
+                    break;
+                }
+                rowWidth = nextWidth;
+                rowHeight = qMax(rowHeight, size.height());
+                ++last;
             }
-            if (!testOnly) {
-                item->setGeometry(QRect(QPoint(x, y), size));
+
+            int x = content.x();
+            for (int index = first; index < last; ++index) {
+                QLayoutItem* item = items_.at(index);
+                const QSize size = item->sizeHint();
+                const int verticalOffset =
+                    item->alignment().testFlag(Qt::AlignVCenter)
+                        ? (rowHeight - size.height()) / 2
+                        : 0;
+                if (!testOnly) {
+                    item->setGeometry(QRect(QPoint(x, y + verticalOffset), size));
+                }
+                x += size.width() + horizontalSpacing_;
             }
-            x += size.width() + horizontalSpacing_;
-            lineHeight = qMax(lineHeight, size.height());
+            lineHeight += rowHeight;
+            if (last < items_.size()) {
+                lineHeight += verticalSpacing_;
+            }
+            y += rowHeight + verticalSpacing_;
+            first = last;
         }
-        return y - rect.y() + lineHeight + margins.bottom();
+        return content.y() - rect.y() + lineHeight + margins.bottom();
     }
 
     QList<QLayoutItem*> items_;

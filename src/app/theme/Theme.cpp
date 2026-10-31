@@ -8,6 +8,8 @@
 #include <QApplication>
 #include <QPalette>
 
+#include <cmath>
+
 /// The arrow asset lives in the app's resource bundle; a static library keeps
 /// that object only when something references its initialiser. Q_INIT_RESOURCE
 /// declares its symbol in the enclosing namespace, so this must stay at global
@@ -430,17 +432,30 @@ QWidget#coverViewerView { background: transparent; border: none; }
 )QSS");
 }
 
-// The media detail page is the one editorial surface in the application: a
-// neutral near-black bed, a steel-blue accent, wide whitespace and pill
-// controls. Every rule is scoped to QWidget#titlePage so the settings-led
-// palette in base() keeps driving the rest of the application. The reference
-// is deliberately generous with whitespace; spacing and column widths are
-// owned by TitlePage's layout, while this sheet owns colour, type scale,
+// The media detail page is the one editorial surface in the application.
+// Every rule is scoped to QWidget#titlePage and derives its roles from the
+// selected application appearance. Spacing and column widths are owned by
+// TitlePage's layout, while this sheet owns colour, type scale,
 // radii and control states.
+QColor contrastText(const QColor& background) {
+    const auto linear = [](double channel) {
+        channel /= 255.0;
+        return channel <= 0.04045 ? channel / 12.92
+                                  : std::pow((channel + 0.055) / 1.055, 2.4);
+    };
+    const double luminance = 0.2126 * linear(background.red()) +
+                             0.7152 * linear(background.green()) +
+                             0.0722 * linear(background.blue());
+    const double blackContrast = (luminance + 0.05) / 0.05;
+    const double whiteContrast = 1.05 / (luminance + 0.05);
+    return blackContrast >= whiteContrast ? QColor(Qt::black) : QColor(Qt::white);
+}
+
 QString titlePage(const Palette& p, const Appearance& a) {
-    // A radius step scales every rounded corner on the page by the ratio the
-    // viewer chose against the sheet's own MD default, so one control moves
-    // chips, cards, posters and the details panel together.
+    const QColor accentText = contrastText(p.accentValue);
+    const QColor hoverText = contrastText(QColor(p.titleAccentHover));
+    // Decorative chips, cards, posters and the details panel retain their
+    // appearance-scaled radii; buttons use the application radius directly.
     const double scale = radiusSmall(a) / 8.0;
     const auto scaled = [scale](int value) {
         return qMax(0, qRound(value * scale));
@@ -468,11 +483,11 @@ QWidget#titlePage QWidget#titleHeader QPushButton {
     background: %2;
     color: %6;
     border: 1px solid transparent;
-    border-radius: %13px;
+    border-radius: %42px;
     min-height: %12px;
     max-height: %12px;
-    padding: 0 %38px;
-    font-size: %27px;
+    padding: 0 %37px;
+    font-size: %26px;
     font-weight: 500;
 }
 QWidget#titlePage QWidget#titleHeader QPushButton:hover:enabled { border-color: %4; }
@@ -482,7 +497,7 @@ QWidget#titlePage QWidget#titleHeader QPushButton:disabled { color: %7; }
 QWidget#titlePage QPushButton#settingsChip {
     background: %2;
     border: 1px solid %8;
-    border-radius: %13px;
+    border-radius: %42px;
     min-width: %12px;
     max-width: %12px;
     min-height: %12px;
@@ -493,84 +508,159 @@ QWidget#titlePage QPushButton#settingsChip:hover { border-color: %4; }
 QWidget#titlePage QPushButton#settingsChip:pressed { background: %3; }
 QWidget#titlePage QPushButton#settingsChip:focus { border-color: %4; }
 QWidget#titlePage QLabel#status,
-QWidget#titlePage QLabel#muted { color: %7; font-size: %30px; }
+QWidget#titlePage QLabel#muted { color: %7; font-size: %29px; }
 
 QWidget#titlePage QLabel#titleHeading {
     color: %6;
-    font-size: %22px;
-    font-weight: 800;
+    font-size: %21px;
+    font-weight: 600;
 }
-QWidget#titlePage[compact="true"] QLabel#titleHeading { font-size: %23px; }
+QWidget#titlePage QLabel#titleHeading:focus,
+QWidget#titlePage QLabel#titleSubtitle:focus {
+    border-bottom: 2px solid %4;
+}
+QWidget#titlePage[compact="true"] QLabel#titleHeading { font-size: %22px; }
+QWidget#titlePage[narrow="true"] QLabel#titleHeading { font-size: %41px; }
 QWidget#titlePage QLabel#titleSubtitle {
     color: %7;
-    font-size: %24px;
+    font-size: %23px;
     font-weight: 400;
 }
-QWidget#titlePage QWidget#titleAccentRule {
-    background: %4;
-    border: none;
-    min-height: %21px;
-    max-height: %21px;
+QWidget#titlePage QLabel#titleFacts,
+QWidget#titlePage QLabel#titleScores,
+QWidget#titlePage QLabel#titleLinks,
+QWidget#titlePage QLabel#titleHeroWatchContext { font-size: %26px; }
+QWidget#titlePage QLabel#titleScores {
+    background: transparent; border: none; padding: 0; color: %7; font-weight: 500;
 }
 QWidget#titlePage QLabel#titleStudio {
     color: %7;
-    font-size: %28px;
+    font-size: %26px;
     font-weight: 600;
 }
-QWidget#titlePage QLabel#titleFacts { color: %7; font-size: %27px; }
+QWidget#titlePage QLabel#titleFacts { color: %7; font-size: %26px; }
 QWidget#titlePage QLabel#titleScores {
-    color: %4;
-    font-size: %25px;
-    font-weight: 600;
-}
-QWidget#titlePage QLabel#titleDescription { color: %6; font-size: %25px; }
-QWidget#titlePage QLabel#titleLinks { color: %4; font-size: %25px; }
-
-QWidget#titlePage QPushButton#textAction {
-    background: %2;
-    color: %6;
-    border: 1px solid transparent;
-    border-radius: %13px;
-    min-height: %12px;
-    max-height: %12px;
-    padding: 0 %38px;
-    font-size: %27px;
+    color: %7;
+    font-size: %26px;
     font-weight: 500;
 }
-QWidget#titlePage QPushButton#textAction:hover:enabled { border-color: rgba(%9, 0.60); }
+QWidget#titlePage QLabel#titleDescription { color: %6; font-size: %24px; }
+QWidget#titlePage QPushButton#titleSynopsisToggle,
+QWidget#titlePage QPushButton#titleDetailsToggle,
+QWidget#titlePage QPushButton#titleDiscoveryToggle {
+    min-height: 32px;
+}
+QWidget#titlePage QLabel#titleLinks { color: %6; font-size: %26px; }
+
+QWidget#titlePage QPushButton#textAction,
+QWidget#titlePage QPushButton#titleSynopsisToggle,
+QWidget#titlePage QPushButton#titleDetailsToggle,
+QWidget#titlePage QPushButton#titleDiscoveryToggle {
+    background: %2;
+    color: %6;
+    border: 1px solid %8;
+    border-radius: %42px;
+    min-height: 32px;
+    padding: 0 %37px;
+    font-size: %26px;
+    font-weight: 500;
+}
+QWidget#titlePage QPushButton#textAction:hover:enabled,
+QWidget#titlePage QPushButton#titleSynopsisToggle:hover:enabled,
+QWidget#titlePage QPushButton#titleDetailsToggle:hover:enabled,
+QWidget#titlePage QPushButton#titleDiscoveryToggle:hover:enabled {
+    background: %3; border-color: rgba(%9, 0.60);
+}
 QWidget#titlePage QPushButton#textAction:pressed { background: %3; }
-QWidget#titlePage QPushButton#textAction:checked { background: %3; border-color: %4; color: %6; }
-QWidget#titlePage QPushButton#textAction:checked:hover { border-color: %5; }
-QWidget#titlePage QPushButton#textAction:focus { border-color: %4; }
+QWidget#titlePage QPushButton#textAction:checked,
+QWidget#titlePage QPushButton#titleDetailsToggle:checked,
+QWidget#titlePage QPushButton#titleDiscoveryToggle:checked {
+    background: %3; border-color: %4; color: %6;
+}
+QWidget#titlePage QPushButton#textAction:checked:hover,
+QWidget#titlePage QPushButton#titleDetailsToggle:checked:hover,
+QWidget#titlePage QPushButton#titleDiscoveryToggle:checked:hover { border-color: %5; }
+QWidget#titlePage QPushButton#textAction:focus,
+QWidget#titlePage QPushButton#titleSynopsisToggle:focus,
+QWidget#titlePage QPushButton#titleDetailsToggle:focus,
+QWidget#titlePage QPushButton#titleDiscoveryToggle:focus { border-color: %4; }
+QWidget#titlePage QPushButton#titleDetailsToggle:disabled,
+QWidget#titlePage QPushButton#titleDiscoveryToggle:disabled,
+QWidget#titlePage QPushButton#titleSynopsisToggle:disabled {
+    color: %7; background: %2; border-color: %8;
+}
 QWidget#titlePage QPushButton#textAction:disabled { color: %7; border-color: transparent; }
 
+QWidget#titlePage QWidget#titlePlaybackControls {
+    background: %2;
+    border: 1px solid %8;
+    border-radius: %14px;
+}
+QWidget#titlePage QPushButton#titleEpisodesAnchor {
+    background: %2;
+    color: %6;
+    border: 1px solid %8;
+    border-radius: %42px;
+    min-height: 32px;
+    padding: 0 %37px;
+    font-size: %26px;
+}
+QWidget#titlePage QPushButton#titleEpisodesAnchor:hover:enabled {
+    background: %3; border-color: rgba(%9, 0.60);
+}
+QWidget#titlePage QPushButton#titleEpisodesAnchor:focus {
+    border-color: %4;
+}
 QWidget#titlePage QWidget#titleWatchPanel {
     background: %2;
     border: 1px solid %8;
     border-radius: %14px;
 }
+QWidget#titlePage QLabel#episodeAvailabilityLabel,
+QWidget#titlePage QLabel#nextAiringLabel {
+    background: transparent; border: none; color: %7; padding: 0; font-size: %26px;
+}
+QWidget#titlePage QLabel#titleEpisodeStatus {
+    background: transparent; border: none; color: %7; padding: 0; font-size: %26px;
+}
+QWidget#titlePage QLabel#titleEpisodeStatus[state="error"] {
+    color: %6; font-weight: 600;
+}
 QWidget#titlePage QLabel#titleWatchEpisode {
     color: %6;
-    font-size: %31px;
+    font-size: %30px;
     font-weight: 500;
 }
-QWidget#titlePage QLabel#titleWatchMeta { color: %7; font-size: %29px; }
-QWidget#titlePage QLabel#titleWatchStatus { color: %7; font-size: %30px; }
-QWidget#titlePage QPushButton#titleWatchButton {
-    background: %4;
-    color: %1;
-    border: 1px solid %4;
-    border-radius: %13px;
-    min-height: %12px;
-    max-height: %12px;
-    padding: 0 %38px;
-    font-size: %27px;
-    font-weight: 700;
+QWidget#titlePage QLabel#titleWatchMeta { color: %7; font-size: %26px; }
+QWidget#titlePage QLabel#titleWatchStatus { color: %7; font-size: %29px; }
+QWidget#titlePage QProgressBar#titleWatchProgress {
+    background: %8; border: none; border-radius: 2px;
+    min-height: 4px; max-height: 4px;
 }
-QWidget#titlePage QPushButton#titleWatchButton:hover:enabled { background: %5; border-color: %5; }
-QWidget#titlePage QPushButton#titleWatchButton:pressed { background: %4; border-color: %4; }
-QWidget#titlePage QPushButton#titleWatchButton:focus { border-color: %6; }
-QWidget#titlePage QPushButton#titleWatchButton:disabled {
+QWidget#titlePage QProgressBar#titleWatchProgress::chunk {
+    background: %4; border-radius: 2px;
+}
+QWidget#titlePage QPushButton#titleWatchButton,
+QWidget#titlePage QPushButton#titleHeroWatchButton {
+    background: %4;
+    color: %39;
+    border: 1px solid %4;
+    border-radius: %42px;
+    min-height: 44px;
+    padding: 0 20px;
+    font-size: %24px;
+    font-weight: 600;
+}
+QWidget#titlePage QPushButton#titleWatchButton:hover:enabled,
+QWidget#titlePage QPushButton#titleHeroWatchButton:hover:enabled {
+    background: %5; border-color: %5; color: %40;
+}
+QWidget#titlePage QPushButton#titleWatchButton:pressed,
+QWidget#titlePage QPushButton#titleHeroWatchButton:pressed { background: %4; border-color: %4; }
+QWidget#titlePage QPushButton#titleWatchButton:focus,
+QWidget#titlePage QPushButton#titleHeroWatchButton:focus { border-color: %6; }
+QWidget#titlePage QPushButton#titleWatchButton:disabled,
+QWidget#titlePage QPushButton#titleHeroWatchButton:disabled {
     background: %2;
     border-color: %8;
     color: %7;
@@ -578,7 +668,7 @@ QWidget#titlePage QPushButton#titleWatchButton:disabled {
 
 QWidget#titlePage QLabel#releaseKind {
     color: %7;
-    font-size: %27px;
+    font-size: %26px;
     font-weight: 500;
 }
 QWidget#titlePage QWidget#releaseChipsHost { background: transparent; }
@@ -586,11 +676,11 @@ QWidget#titlePage QPushButton#releaseChip {
     background: %2;
     color: %7;
     border: 1px solid transparent;
-    border-radius: %13px;
+    border-radius: %42px;
     min-height: %12px;
     max-height: %12px;
     padding: 0 %20px;
-    font-size: %27px;
+    font-size: %26px;
     font-weight: 500;
 }
 QWidget#titlePage QPushButton#releaseChip:hover:enabled {
@@ -617,10 +707,10 @@ QWidget#titlePage QTabWidget#episodeTabs QTabBar::tab {
     background: %2;
     color: %7;
     border: 1px solid transparent;
-    border-radius: %13px;
-    padding: %33px %34px;
-    margin-right: %35px;
-    font-size: %27px;
+    border-radius: %42px;
+    padding: %32px %33px;
+    margin-right: %34px;
+    font-size: %26px;
     font-weight: 500;
 }
 QWidget#titlePage QTabWidget#episodeTabs QTabBar::tab:selected {
@@ -637,7 +727,7 @@ QWidget#titlePage QTabWidget#episodeTabs QTabBar::tab:disabled { color: rgba(%10
 QWidget#titlePage QLabel#titleSectionHeading,
 QWidget#titlePage QLabel#episodeSectionHeading {
     color: %6;
-    font-size: %26px;
+    font-size: %25px;
     font-weight: 700;
 }
 QWidget#titlePage QWidget#titleSectionHeader,
@@ -645,7 +735,7 @@ QWidget#titlePage QWidget#titleEpisodeHeader {
     background: transparent;
     border-bottom: 1px solid %8;
 }
-QWidget#titlePage QLabel#titleEpisodeCount { color: %7; font-size: %27px; }
+QWidget#titlePage QLabel#titleEpisodeCount { color: %7; font-size: %26px; }
 
 QWidget#titlePage QScrollArea#animeCarousel { background: transparent; border: none; }
 QWidget#titlePage QWidget#animeCarouselTrack { background: transparent; }
@@ -653,7 +743,7 @@ QWidget#titlePage QPushButton#carouselControl {
     background: %2;
     color: %6;
     border: 1px solid %8;
-    border-radius: %19px;
+    border-radius: %42px;
     min-width: %18px;
     max-width: %18px;
     min-height: %18px;
@@ -672,7 +762,7 @@ QWidget#titlePage QPushButton#animeCard {
     background: %2;
     color: %6;
     border: 1px solid %8;
-    border-radius: %14px;
+    border-radius: %42px;
     padding: 0;
 }
 QWidget#titlePage QPushButton#animeCard:hover { background: %2; border-color: %4; }
@@ -683,16 +773,16 @@ QWidget#titlePage QLabel#carouselPoster {
     color: %7;
     border: none;
     border-radius: %15px;
-    font-size: %29px;
+    font-size: %28px;
 }
 QWidget#titlePage QLabel#carouselKind {
     color: %7;
-    font-size: %28px;
+    font-size: %27px;
     font-weight: 600;
 }
 QWidget#titlePage QLabel#carouselTitle {
     color: %6;
-    font-size: %27px;
+    font-size: %26px;
     font-weight: 500;
 }
 QWidget#titlePage QLabel#carouselStatus {
@@ -700,7 +790,7 @@ QWidget#titlePage QLabel#carouselStatus {
     color: %7;
     border-radius: %13px;
     padding: 2px 6px;
-    font-size: %28px;
+    font-size: %27px;
     font-weight: 600;
 }
 QWidget#titlePage QLabel#carouselStatusLive {
@@ -708,20 +798,20 @@ QWidget#titlePage QLabel#carouselStatusLive {
     color: %5;
     border-radius: %13px;
     padding: 2px 6px;
-    font-size: %28px;
+    font-size: %27px;
     font-weight: 700;
 }
-QWidget#titlePage QLabel#carouselEpisodes { color: %7; font-size: %29px; }
+QWidget#titlePage QLabel#carouselEpisodes { color: %7; font-size: %28px; }
 
 QWidget#titlePage QPushButton#episodeButton {
     background: %2;
     color: %6;
     border: 1px solid transparent;
-    border-radius: %16px;
+    border-radius: %42px;
     min-height: %17px;
     max-height: %17px;
     padding: 0;
-    font-size: %27px;
+    font-size: %26px;
     font-weight: 500;
 }
 QWidget#titlePage QPushButton#episodeButton:hover:enabled { border-color: rgba(%9, 0.55); }
@@ -751,11 +841,11 @@ QWidget#titlePage QWidget#episodeWatchedMark {
     border-radius: 1px;
 }
 QWidget#titlePage QWidget#titleEpisodeLegend { background: transparent; }
-QWidget#titlePage QLabel#episodeLegendLabel { color: %7; font-size: %28px; }
+QWidget#titlePage QLabel#episodeLegendLabel { color: %7; font-size: %27px; }
 QWidget#titlePage QWidget#episodeLegendCurrent {
     background: transparent;
     border: 1px solid %4;
-    border-radius: %41px;
+    border-radius: %38px;
 }
 QWidget#titlePage QWidget#episodeLegendWatched {
     background: %4;
@@ -765,17 +855,16 @@ QWidget#titlePage QWidget#episodeLegendWatched {
 QWidget#titlePage QWidget#episodeLegendUnavailable {
     background: %2;
     border: none;
-    border-radius: %41px;
+    border-radius: %38px;
 }
 QWidget#titlePage QPushButton#titleWatchWatchedToggle {
-    background: transparent;
+    background: %2;
     color: %7;
     border: 1px solid %8;
-    border-radius: %13px;
-    min-height: %12px;
-    max-height: %12px;
-    padding: 0 %38px;
-    font-size: %27px;
+    border-radius: %42px;
+    min-height: 40px;
+    padding: 0 %37px;
+    font-size: %26px;
     font-weight: 500;
 }
 QWidget#titlePage QPushButton#titleWatchWatchedToggle:hover:enabled {
@@ -800,7 +889,7 @@ QWidget#titlePage QLabel#titleCover {
     color: %7;
     border: 1px solid %8;
     border-radius: %14px;
-    font-size: %27px;
+    font-size: %26px;
 }
 
 QWidget#titlePage QWidget#titleDetailsOverlay { background: transparent; }
@@ -828,29 +917,29 @@ QWidget#titlePage QWidget#titleDetailsHeader {
 }
 QWidget#titlePage QLabel#titleDetailsHeading {
     color: %6;
-    font-size: %32px;
+    font-size: %31px;
     font-weight: 700;
 }
 QWidget#titlePage QLabel#titleDetailsTitle {
     color: %6;
-    font-size: %31px;
+    font-size: %30px;
     font-weight: 600;
 }
 QWidget#titlePage QWidget#titleDetailsFacts { background: transparent; }
 QWidget#titlePage QLabel#titleDetailsThumb {
     background: %1;
     border: 1px solid %8;
-    border-radius: %36px;
+    border-radius: %35px;
 }
 QWidget#titlePage QPushButton#titleDetailsClose {
     background: %2;
     color: %6;
     border: 1px solid %8;
-    border-radius: %19px;
-    min-width: %37px;
-    max-width: %37px;
-    min-height: %37px;
-    max-height: %37px;
+    border-radius: %42px;
+    min-width: %36px;
+    max-width: %36px;
+    min-height: %36px;
+    max-height: %36px;
     padding: 0;
 }
 QWidget#titlePage QPushButton#titleDetailsClose:hover { border-color: %4; }
@@ -872,12 +961,9 @@ QWidget#titlePage QPushButton#titleDetailsClose:focus { border-color: %4; }
         .arg(scaled(kTitlePillRadiusRound))
         .arg(scaled(kTitleCardRadius))
         .arg(scaled(kTitlePosterRadius))
-        .arg(scaled(kTitleEpisodeRadius))
         .arg(kTitleEpisodeButtonHeight)
         .arg(kTitleCircleControlSize)
-        .arg(scaled(kTitleCircleRadius))
         .arg(kTitleChipPaddingH)
-        .arg(kTitleAccentRuleHeight)
         .arg(kTitleHeroTitlePixelSize)
         .arg(kTitleHeroTitlePixelSizeCompact)
         .arg(kTitleSubtitlePixelSize)
@@ -895,7 +981,11 @@ QWidget#titlePage QPushButton#titleDetailsClose:focus { border-color: %4; }
         .arg(scaled(kTitleDetailsThumbRadius))
         .arg(kTitleDetailsCloseSize)
         .arg(kTitleButtonPaddingH)
-        .arg(scaled(kTitleLegendSwatchRadius));
+        .arg(scaled(kTitleLegendSwatchRadius))
+        .arg(accentText.name())
+        .arg(hoverText.name())
+        .arg(kTitleHeroTitlePixelSizeNarrow)
+        .arg(radiusSmall(a));
 }
 
 }  // namespace
