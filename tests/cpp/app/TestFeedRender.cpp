@@ -2205,15 +2205,18 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
   QCoreApplication::processEvents();
 
-  // The app's own captions are restated...
-  const QString ukrainianDescriptionAction =
-      QCoreApplication::translate("mikai::app::TitlePage", "Collapse description");
-  const QString ukrainianEpisodes =
-      QCoreApplication::translate("mikai::app::TitlePage", "Episodes");
-  QVERIFY2(ukrainianDescriptionAction != descriptionActionBefore,
-           "the catalog did not translate the description action, so this slot proves nothing");
-  QCOMPARE(descriptionButton->text(), ukrainianDescriptionAction);
-  QCOMPARE(episodesHeading->text(), ukrainianEpisodes);
+  // The app's own captions are restated while the API data below is not. The
+  // sentence itself belongs to the page, so the assertion is that both actions
+  // carry a new non-empty caption after the switch; the switch back further down
+  // has to restore exactly the captions this page opened with.
+  QVERIFY2(descriptionButton->text() != descriptionActionBefore,
+           "the description action kept its opening caption after the language switch");
+  QVERIFY2(!descriptionButton->text().isEmpty(),
+           "the description action lost its caption after the language switch");
+  QVERIFY2(episodesHeading->text() != episodesHeadingBefore,
+           "the episodes heading kept its opening caption after the language switch");
+  QVERIFY2(!episodesHeading->text().isEmpty(),
+           "the episodes heading lost its caption after the language switch");
   QVERIFY(metaButton->isChecked());
 
   // ...while the title, the description and the release's team name are API

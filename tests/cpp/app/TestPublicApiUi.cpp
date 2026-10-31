@@ -514,6 +514,10 @@ void TestPublicApiUi::titleMetadataPreservesUnknownCountsBadgesAndFutureAiring()
   QVERIFY(api.start());
   mikai::backend::MikaiClient client(kFixtureKey, api.base());
   mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Title metadata workers did not stop");
+  });
   mikai::app::QualityCache cache;
   mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"));
   page.resize(1120, 800);
@@ -612,6 +616,10 @@ void TestPublicApiUi::aWatchedFractionalEpisodeKeepsItsClassificationBadge() {
   QVERIFY(api.start());
   mikai::backend::MikaiClient client(kFixtureKey, api.base());
   mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Fractional episode workers did not stop");
+  });
   mikai::app::QualityCache cache;
   mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"));
   page.resize(1120, 800);
@@ -646,6 +654,10 @@ void TestPublicApiUi::licensedTitleShowsLegalInformation() {
   QVERIFY(api.start());
   mikai::backend::MikaiClient client(kFixtureKey, api.base());
   mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Licensed title workers did not stop");
+  });
   mikai::app::QualityCache cache;
   mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"));
   page.resize(1120, 800);
@@ -672,6 +684,10 @@ void TestPublicApiUi::anUnlicensedTitleShowsNoLegalInformation() {
   QVERIFY(api.start());
   mikai::backend::MikaiClient client(kFixtureKey, api.base());
   mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Unlicensed title workers did not stop");
+  });
   mikai::app::QualityCache cache;
   mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"));
   page.resize(1120, 800);
@@ -695,6 +711,10 @@ void TestPublicApiUi::explicitTitleAsksBeforePlaybackUnlessAllowed() {
 
   mikai::backend::MikaiClient client(kFixtureKey, api.base());
   mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Explicit title workers did not stop");
+  });
   mikai::app::QualityCache cache;
   mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7431"));
   page.resize(1120, 800);
@@ -740,6 +760,10 @@ void TestPublicApiUi::headerLogoTracksLightAndDarkAppearance() {
   QVERIFY(api.start());
   mikai::backend::MikaiClient client(kFixtureKey, api.base());
   mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Header logo workers did not stop");
+  });
   mikai::app::SearchPage page(runner, client);
   page.resize(900, 640);
   page.show();
@@ -801,6 +825,10 @@ void TestPublicApiUi::liveCoverShadingChangesWithoutResizing() {
   QVERIFY(api.start());
   mikai::backend::MikaiClient client(kFixtureKey, api.base());
   mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Cover shading workers did not stop");
+  });
   mikai::app::QualityCache cache;
   mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"));
   page.resize(1000, 740);
@@ -843,6 +871,10 @@ void TestPublicApiUi::invalidSelectedPosterFallsBackToHint() {
   QVERIFY(api.start());
   mikai::backend::MikaiClient client(kFixtureKey, api.base());
   mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Poster fallback workers did not stop");
+  });
   mikai::app::QualityCache cache;
   const QString hint = QUrl(api.base()).resolved(QUrl(QStringLiteral("/poster.png"))).toString();
   mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"), hint);
@@ -1043,6 +1075,10 @@ void TestPublicApiUi::catalogueFiltersRetainCanonicalSelectionsAndReset() {
   QVERIFY(api.start());
   mikai::backend::MikaiClient client(kFixtureKey, api.base());
   mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Catalogue filter workers did not stop");
+  });
   mikai::app::SearchPage page(runner, client);
   page.resize(1120, 800);
   page.show();
@@ -1235,6 +1271,10 @@ void TestPublicApiUi::teamBrowsingAndFilteringKeepSelectionsConsistent() {
   QVERIFY(api.start());
   mikai::backend::MikaiClient client(kFixtureKey, api.base());
   mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Team browsing workers did not stop");
+  });
   mikai::app::SearchPage page(runner, client);
   page.resize(1120, 800);
   page.show();
@@ -1582,15 +1622,17 @@ void TestPublicApiUi::titleHomeSkipsHistoryAndEscapeUnwindsDetailsAndHistory() {
       continue;
     }
 
-    auto* actions = title->findChild<QWidget*>(QStringLiteral("titleDisclosureActions"));
-    QVERIFY(actions);
-    QPushButton* detailsAction = nullptr;
-    for (auto* action : actions->findChildren<QPushButton*>(QStringLiteral("textAction"))) {
-      if (action->isVisible() && action->isCheckable() && !action->isChecked()) detailsAction = action;
-    }
+    // The details control is a named hero action, not one of a subset of generic
+    // disclosure chips: it has to exist, be offered by the loaded page, and be
+    // closed before the click means anything.
+    auto* detailsAction = title->findChild<QPushButton*>(QStringLiteral("titleDetailsToggle"));
+    QVERIFY(detailsAction != nullptr);
+    QVERIFY2(detailsAction->isVisible(), "the loaded title offers no visible details action");
+    QVERIFY2(detailsAction->isCheckable() && !detailsAction->isChecked(),
+             "the details action must open the sheet from its closed state");
     auto* overlay = title->findChild<QWidget*>(QStringLiteral("titleDetailsOverlay"));
     auto* close = button(*title, "titleDetailsClose");
-    QVERIFY(detailsAction && overlay && close);
+    QVERIFY(overlay != nullptr && close != nullptr);
     auto* detailsOverview = title->findChild<QScrollArea*>(QStringLiteral("titleOverview"));
     QVERIFY(detailsOverview);
     detailsOverview->ensureWidgetVisible(detailsAction);
