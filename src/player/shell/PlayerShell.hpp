@@ -82,6 +82,7 @@ class SettingsFlyout;
 class Toast;
 class VolumeGroup;
 class ScrubBar;
+class HoverPreview;
 class IconButton;
 class SkipButton;
 class EpisodeNavButton;
@@ -308,6 +309,13 @@ private:
     /// it, one above the other.
     void layoutSkipButtons();
     void onSkipSegmentActivated(int index);
+    // ── timeline hover preview ─────────────────────────────────────
+    /// The timeline reported the instant under the pointer. The card shows the
+    /// decoded frame of that instant, its timestamp and the skip segment it falls
+    /// in; while the playhead is being dragged it stays a time-and-label card,
+    /// because a decode per pixel of travel is work nobody asked for.
+    void onTimelineHover(double seconds, const QPoint& globalPosition);
+    void dismissHoverPreview();
     /// Chrome that is nobody's widget - the chevron discs and the empty-state
     /// hint - plus the adopted controls. `clip` separates the two callers: the
     /// surface's painter passes the whole shell, the shell's paintEvent passes
@@ -467,6 +475,10 @@ private:
 
     Toast* toast_ = nullptr;
     CenterGlyph* center_ = nullptr;
+    /// The timeline's hover card. It is a child of the shell - not a popup window
+    /// - so it is positioned and clipped against the player's own bounds, and it
+    /// owns the worker thread that decodes the frame under the pointer.
+    HoverPreview* hoverPreview_ = nullptr;
 
     QTimer hideTimer_;
     QTimer enhancementHoverTimer_;

@@ -239,11 +239,7 @@ void VideoSurface::ensureEngine() {
         {"input-vo-keyboard", "no"},
         {"input-cursor", "no"},
         {"osc", "no"},
-        // Reference captures must be the decoded source frame, not what the VO
-        // rendered: with this set, screenshot-raw reads the current video frame
-        // from the software path (no GLSL shader chain, no OSD), which is the
-        // only capture this app's oracle may use. Nothing else in the player
-        // reads mpv screenshots.
+        // Reference captures must use decoded frames without shaders or OSD.
         {"screenshot-sw", "yes"},
         // Qt owns presentation, so render calls stay nonblocking. mpv documents
         // video-timing-offset=0 as an alternative to its render-time wait; this

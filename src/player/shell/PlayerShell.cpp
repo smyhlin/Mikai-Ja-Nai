@@ -26,6 +26,7 @@
 #include <cmath>
 
 #include "EpisodeNavButton.hpp"
+#include "HoverPreview.hpp"
 #include "ShellSliders.hpp"
 #include "ShellWidgets.hpp"
 #include "VideoSurface.hpp"
@@ -445,7 +446,7 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
     for (QWidget* widget : {static_cast<QWidget*>(windowControls_), static_cast<QWidget*>(titleBar_),
                             static_cast<QWidget*>(btnPrev_), static_cast<QWidget*>(btnNext_),
                             static_cast<QWidget*>(dock_), static_cast<QWidget*>(footerLeft_),
-                            static_cast<QWidget*>(center_)}) {
+                            static_cast<QWidget*>(center_), static_cast<QWidget*>(hoverPreview_)}) {
         widget->raise();
     }
 
@@ -674,6 +675,17 @@ void PlayerShell::buildDock() {
     scrub_->setAccessibleName(tr("Timeline"));
     scrub_->setMinimumWidth(120);
     connect(scrub_, &RangeSlider::valueChanged, this, &PlayerShell::onScrub);
+    // The card above the timeline follows the pointer, not the playhead: the
+    // preview is a read of the source and never moves what is playing.
+    connect(scrub_, &ScrubBar::hoverTimeChanged, this, &PlayerShell::onTimelineHover);
+    connect(scrub_, &ScrubBar::hoverLeft, this, &PlayerShell::dismissHoverPreview);
+    // A release ends the gesture, so the instant the pointer rests on gets the
+    // frame the drag deliberately withheld; without this the card would keep its
+    // time-and-label state until the pointer moved again.
+    connect(scrub_, &RangeSlider::released, this, [this] {
+        if (scrub_ == nullptr || !scrub_->isHovering() || scrub_->hoverTime() < 0.0) return;
+        onTimelineHover(scrub_->hoverTime(), QCursor::pos());
+    });
     timeline->addWidget(scrub_, 1);
 
     lblRemaining_ = new ChromeLabel(QStringLiteral("-00:00"), monoFont(9), white(185), dock_);
@@ -908,6 +920,7 @@ void PlayerShell::buildOverlays() {
     toast_ = new Toast(this);
     center_ = new CenterGlyph(this);
     center_->setKind(CenterGlyph::Kind::None);
+    hoverPreview_ = new HoverPreview(this);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -949,6 +962,11 @@ void PlayerShell::applyState() {
     btnNext_->setVisible(!hidden && hasNextEpisode_);
     dock_->setVisible(!hidden);
     footerLeft_->setVisible(!hidden);
+    // The pointer cannot be over a timeline that just went away; a card left
+    // standing would name an instant nothing on screen is pointing at.
+    if (hidden) {
+        dismissHoverPreview();
+    }
     updateCenterGlyph();
     if (hidden) {
         dismissOverlay();
@@ -1175,6 +1193,11 @@ void PlayerShell::layoutChrome() {
 void PlayerShell::setMedia(const QString& path, const QString& origin, const QString& quality) {
     path_ = path;
     hasMedia_ = !path.isEmpty();
+    // The frame source follows the media: a quality or a dub swap publishes a new
+    // URL here, and the card must decode from the source that is playing.
+    if (hoverPreview_ != nullptr) {
+        hoverPreview_->setSource(hasMedia_ ? path : QString());
+    }
     btnSkipForward_->setEnabled(hasMedia_ && duration_ > 0.0);
     if (!origin.isEmpty()) origin_ = origin;
     if (!quality.isEmpty()) setQuality(quality);
@@ -1357,6 +1380,8 @@ void PlayerShell::syncSkipSegments() {
         skipButtons_.append(button);
     }
     if (skipButtons_.size() != before) {
+        // Keep the preview above new controls in the surface's paint order.
+        hoverPreview_->raise();
         chrome_.adopt(this, this);
     }
     refreshSkipLabels();
@@ -1491,6 +1516,32 @@ void PlayerShell::onPlayClicked() {
         return;
     }
     emit playPauseRequested();
+}
+
+void PlayerShell::onTimelineHover(double seconds, const QPoint& globalPosition) {
+    if (hoverPreview_ == nullptr || scrub_ == nullptr || duration_ <= 0.0 || !hasMedia_ ||
+        !scrub_->isHovering()) {
+        // A length that changes under a stationary pointer re-reports the instant
+        // it is over; a pointer that is not over the bar at all is not hovering,
+        // and no card may stand for it.
+        dismissHoverPreview();
+        return;
+    }
+    const QRect barGlobal(dock_->mapToGlobal(QPoint(0, 0)), dock_->size());
+    const bool wasVisible = hoverPreview_->isVisible();
+    hoverPreview_->present(seconds, globalPosition, barGlobal, scrub_->segmentLabelAt(seconds),
+                           !scrub_->isDragging());
+    if (!wasVisible && hoverPreview_->isVisible()) {
+        hoverPreview_->raise();
+        chrome_.adopt(this, this);
+        chromeDirtyAll();
+    }
+}
+
+void PlayerShell::dismissHoverPreview() {
+    if (hoverPreview_ != nullptr) {
+        hoverPreview_->dismiss();
+    }
 }
 
 void PlayerShell::onScrub(double fraction) {
@@ -2549,6 +2600,10 @@ void PlayerShell::paintEvent(QPaintEvent* event) {
 void PlayerShell::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     layoutChrome();
+    // The card was placed against the old bounds; it re-places on the next
+    // pointer move, and a stale rect standing over the new layout is worse than
+    // no card at all.
+    dismissHoverPreview();
 }
 
 void PlayerShell::showEvent(QShowEvent* event) {
@@ -2563,6 +2618,11 @@ void PlayerShell::closeEvent(QCloseEvent* event) {
     resizingLeft_ = resizingTop_ = resizingRight_ = resizingBottom_ = false;
     hideTimer_.stop();
     dismissOverlay();
+    // The decoder is owned by this window, so it is stopped before the window
+    // goes away rather than being left in a thread that outlives the picture.
+    if (hoverPreview_ != nullptr) {
+        hoverPreview_->release();
+    }
     QWidget::closeEvent(event);
 }
 

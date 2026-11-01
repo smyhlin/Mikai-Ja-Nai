@@ -173,6 +173,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/player/TestMediaInformation.cpp
     tests/cpp/player/TestHdrRenderContracts.hpp
     tests/cpp/player/TestHdrRenderContracts.cpp
+    tests/cpp/player/TestHoverPreview.hpp
+    tests/cpp/player/TestHoverPreview.cpp
     # Native bundle, component, model, preparation & status suites
     tests/cpp/native/TestAnimeJanaiRuntime.hpp
     tests/cpp/native/TestAnimeJanaiRuntime.cpp
@@ -333,6 +335,7 @@ if(MIKAI_BUILD_PROBES)
     TestTimelineMarks
     TestMediaInformation
     TestHdrRenderContracts
+    TestHoverPreview
     TestNativePrefs
     TestNativeMenu
     TestNativeUserRecipes

@@ -54,6 +54,7 @@
 #include "TestTimelineMarks.hpp"
 #include "TestMediaInformation.hpp"
 #include "TestHdrRenderContracts.hpp"
+#include "TestHoverPreview.hpp"
 #include "TestNativeTypes.hpp"
 #include "TestRuntimeSelection.hpp"
 #ifdef MIKAI_WITH_MODEL_INSPECTION
@@ -97,7 +98,7 @@ constexpr const char* kSuites[] = {
     "TestNativePreparationReferences", "TestNativeComponents", "TestNativeStoredModels", "TestNativePreparedPlan", "TestNativePlaybackController", "TestNativeStatus",
     "TestPlaybackDiagnostics", "TestPlaybackControls", "TestSkipSegments", "TestTimelineMarks",
     "TestMediaInformation",
-    "TestHdrRenderContracts",
+    "TestHdrRenderContracts", "TestHoverPreview",
     "TestNativePrefs",
     "TestNativeMenu", "TestNativeUserRecipes", "TestNativeAssets", "TestMpvAsync", "TestCompareGif",
     "TestCompareClip", "TestCompareLoading",
@@ -241,6 +242,7 @@ int main(int argc, char** argv) {
   TestTimelineMarks timelineMarks;
   TestMediaInformation mediaInformation;
   TestHdrRenderContracts hdrRenderContracts;
+  TestHoverPreview hoverPreview;
   TestNativePrefs nativePrefs;
   TestNativeMenu nativeMenu;
   TestNativeUserRecipes nativeUserRecipes;
@@ -352,6 +354,7 @@ int main(int argc, char** argv) {
   run("TestTimelineMarks", &timelineMarks, true);
   run("TestMediaInformation", &mediaInformation, true);
   run("TestHdrRenderContracts", &hdrRenderContracts, true);
+  run("TestHoverPreview", &hoverPreview, true);
   run("TestNativePrefs", &nativePrefs, true);
   run("TestNativeMenu", &nativeMenu, true);
   run("TestNativeUserRecipes", &nativeUserRecipes, true);

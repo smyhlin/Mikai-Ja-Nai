@@ -8049,7 +8049,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::VideoSurface</name>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="2055"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="2051"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="286"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="799"/>
         <source>Skipped on HDR: native stages force 8-bit NV12</source>
@@ -8106,7 +8106,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Компіляція вибраної моделі для цієї роздільної здатності відео.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="427"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="423"/>
         <source>Could not play the video (mpv: %1)</source>
         <translation>Не вдалося відтворити відео (mpv: %1)</translation>
     </message>
@@ -8121,7 +8121,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Немає активного ядра mpv для захоплення кадру.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="987"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="983"/>
         <source>Playback closed during engine preparation.</source>
         <translation>Відтворення закрито під час підготовки рушія.</translation>
     </message>
@@ -8136,87 +8136,87 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Збирання рушія TensorRT скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="439"/>
-        <location filename="../src/player/core/VideoSurface.cpp" line="470"/>
-        <location filename="../src/player/core/VideoSurface.cpp" line="497"/>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1995"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="435"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="466"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="493"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1991"/>
         <source>Anime4K skipped: source transfer metadata is unknown or HDR</source>
         <translation>Anime4K пропущено: передавальна функція джерела невідома або відповідає HDR</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="817"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="813"/>
         <source>Could not activate the video OpenGL context.</source>
         <translation>Не вдалося активувати контекст OpenGL для відео.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1126"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1122"/>
         <source>pause: %1</source>
         <translation>Пауза: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1136"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1132"/>
         <source>pause: the mpv transport did not accept the command</source>
         <translation>Пауза: транспорт mpv не прийняв команду</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1208"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1204"/>
         <source>%1: %2</source>
         <translation>%1: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1229"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1225"/>
         <source>%1: the mpv transport did not accept the command</source>
         <translation>%1: транспорт mpv не прийняв команду</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="2056"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="2052"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="287"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="800"/>
         <source>Skipped: source transfer metadata is unknown</source>
         <translation>Пропущено: метадані передавальної функції джерела невідомі</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="2069"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="2065"/>
         <source>TensorRT engine build stopped for this source.</source>
         <translation>Побудову рушія TensorRT для цього джерела зупинено.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="2379"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="2375"/>
         <source>Cannot read audio/subtitle tracks: %1</source>
         <translation>Не вдалося прочитати аудіодоріжки та доріжки субтитрів: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="2393"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="2389"/>
         <source>The playback core did not accept the track discovery request.</source>
         <translation>Модуль відтворення не прийняв запит на визначення доріжок.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="2402"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="2398"/>
         <source>The media changed. Reopen the track menu.</source>
         <translation>Медіафайл змінився. Відкрийте меню доріжок знову.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="2409"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="2405"/>
         <source>The selected track is no longer available.</source>
         <translation>Вибрана доріжка більше не доступна.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="2421"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="2417"/>
         <source>Cannot select %1: %2</source>
         <translation>Не вдалося вибрати %1: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="2422"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="2418"/>
         <source>audio track</source>
         <translation>аудіодоріжку</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="2422"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="2418"/>
         <source>subtitle track</source>
         <translation>доріжку субтитрів</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="2434"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="2430"/>
         <source>The playback core did not accept the track selection request.</source>
         <translation>Модуль відтворення не прийняв запит на вибір доріжки.</translation>
     </message>
@@ -8311,8 +8311,8 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Сусідній вихідний кадр збігається за пікселями з попереднім, тому не може слугувати другим еталоном.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="779"/>
-        <location filename="../src/player/core/VideoSurface.cpp" line="2494"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="775"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="2490"/>
         <source>The source changed during engine preparation.</source>
         <translation>Джерело змінилося під час підготовки рушія.</translation>
     </message>
@@ -8357,7 +8357,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>У цій збірці не вказано декодер для запитаного провайдера.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1593"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1589"/>
         <source>Video render failed (mpv: %1)</source>
         <translation>Помилка рендерингу відео (mpv: %1)</translation>
     </message>
@@ -9044,6 +9044,148 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <location filename="../src/player/compare/CompareWindow.cpp" line="2246"/>
         <source>%1, %2 · %3 (%4, %5, %6)</source>
         <translation>%1, %2 · %3 (%4, %5, %6)</translation>
+    </message>
+</context>
+<context>
+    <name>mplayer::shell::FramePreviewService</name>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="796"/>
+        <source>No media is loaded, so there is no frame to preview.</source>
+        <translation>Медіа не завантажено, тому кадр для перегляду відсутній.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="133"/>
+        <source>The captured frame is not in the requested RGBA order.</source>
+        <translation>Захоплений кадр має не той порядок RGBA, який було запитано.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="138"/>
+        <source>The capture declared a size this build cannot hold.</source>
+        <translation>Захоплення заявило розмір, який ця збірка не може вмістити.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="143"/>
+        <source>The capture pitch does not cover the declared width.</source>
+        <translation>Крок рядка захоплення не покриває заявлену ширину.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="150"/>
+        <source>The capture payload is shorter than the declared rows.</source>
+        <translation>Даних захоплення менше, ніж заявлено рядків.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="156"/>
+        <source>The captured frame could not be allocated.</source>
+        <translation>Не вдалося виділити пам&apos;ять під захоплений кадр.</translation>
+    </message>
+</context>
+<context>
+    <name>mplayer::shell::FramePreviewWorker</name>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="316"/>
+        <source>No media is loaded, so there is no frame to preview.</source>
+        <translation>Медіа не завантажено, тому кадр для перегляду відсутній.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="323"/>
+        <source>The frame preview is not available for this source.</source>
+        <translation>Попередній перегляд кадру для цього джерела недоступний.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="388"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="599"/>
+        <source>The source could not be opened: %1</source>
+        <translation>Не вдалося відкрити джерело: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="392"/>
+        <source>The source did not open in time, so there is no frame to preview.</source>
+        <translation>Джерело не відкрилося вчасно, тому кадр для перегляду відсутній.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="415"/>
+        <source>This source cannot be seeked, so no frame preview is available.</source>
+        <translation>Це джерело не підтримує перемотування, тому попередній перегляд кадру недоступний.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="425"/>
+        <source>The player would not report whether this source can be seeked.</source>
+        <translation>Плеєр не повідомив, чи можна перемотувати це джерело.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="435"/>
+        <source>The source stopped before the hovered position could be decoded: %1</source>
+        <translation>Джерело зупинилося до того, як вибрану позицію вдалося декодувати: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="440"/>
+        <source>The seek did not finish in time, so there is no frame to preview.</source>
+        <translation>Перемотування не завершилося вчасно, тому кадр для перегляду відсутній.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="461"/>
+        <source>The player could not report the position of the requested frame.</source>
+        <translation>Плеєр не зміг повідомити позицію запитаного кадру.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="486"/>
+        <source>The source would not settle on the hovered position.</source>
+        <translation>Джерело не зупинилося на вибраній позиції.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="492"/>
+        <source>The player would not take the position read.</source>
+        <translation>Плеєр не прийняв запит позиції.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="504"/>
+        <source>The frame could not be captured in time.</source>
+        <translation>Не вдалося захопити кадр вчасно.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="673"/>
+        <source>The player would not take the capture request.</source>
+        <translation>Плеєр не прийняв запит на захоплення кадру.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="547"/>
+        <source>The video engine is not available, so the frame cannot be decoded.</source>
+        <translation>Відеодвигун недоступний, тому кадр неможливо декодувати.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="561"/>
+        <source>The preview decoder could not be created: %1</source>
+        <translation>Не вдалося створити декодер попереднього перегляду: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="619"/>
+        <source>The source refused the seek: %1</source>
+        <translation>Джерело відхилило перемотування: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="622"/>
+        <source>The player would not take the seek request.</source>
+        <translation>Плеєр не прийняв запит на перемотування.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="641"/>
+        <source>The frame could not be captured: %1</source>
+        <translation>Не вдалося захопити кадр: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="646"/>
+        <source>The frame capture did not report its pixels.</source>
+        <translation>Захоплення кадру не повідомило його пікселі.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="656"/>
+        <source>The frame capture is missing a declared member.</source>
+        <translation>У захопленні кадру бракує заявленого члена.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="666"/>
+        <source>The captured frame could not be read.</source>
+        <translation>Не вдалося прочитати захоплений кадр.</translation>
     </message>
 </context>
 <context>
@@ -10125,6 +10267,16 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <location filename="../src/player/shell/PlayerShell.cpp" line="2568"/>
         <source>no media loaded</source>
         <translation>медіафайл не завантажено</translation>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2052"/>
+        <source>mpv output FPS</source>
+        <translation>вихідний FPS mpv</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1209"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2451"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2568"/>
+        <source>no media loaded</source>
+        <translation>медіафайл не завантажено</translation>
     </message>
 </context>
 <context>
@@ -10169,16 +10321,6 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Рушій готовий</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerPopups.cpp" line="754"/>
-        <location filename="../src/player/shell/PlayerPopups.cpp" line="858"/>
-        <source>Engine build stopped</source>
-        <translation>Збирання рушія зупинено</translation>
-    </message>
-    <message>
-        <location filename="../src/player/shell/PlayerPopups.cpp" line="761"/>
-        <location filename="../src/player/shell/PlayerPopups.cpp" line="864"/>
-        <source>Dismiss</source>
-        <translation>Закрити</translation>
     </message>
 </context>
 <context>
@@ -10216,14 +10358,14 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 </context>
 <context>
     <name>mplayer::shell::SeriesDrawer</name>
+    </message>
     <message>
-        <location filename="../src/player/shell/PlayerPopups.cpp" line="529"/>
-        <location filename="../src/player/shell/PlayerPopups.cpp" line="594"/>
-        <source>SERIES</source>
-        <translation>СЕРІЇ</translation>
+        <location filename="../src/player/shell/PlayerPopups.cpp" line="761"/>
+        <location filename="../src/player/shell/PlayerPopups.cpp" line="864"/>
+        <source>Dismiss</source>
+        <translation>Закрити</translation>
     </message>
 </context>
-<context>
     <name>mplayer::shell::SettingsFlyout</name>
     <message>
         <location filename="../src/player/shell/ShellWidgets.cpp" line="48"/>
@@ -10255,6 +10397,49 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <source>Double speed</source>
         <translation>Подвійна швидкість</translation>
     </message>
+    <message>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="445"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="617"/>
+        <source>SPEED</source>
+        <translation>ШВИДКІСТЬ</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="461"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="620"/>
+        <source>Speed</source>
+        <translation>Швидкість</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="492"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="621"/>
+        <source>Quality</source>
+        <translation>Якість</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="499"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="618"/>
+        <source>QUALITY</source>
+        <translation>ЯКІСТЬ</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="622"/>
+        <source>Set as default video player…</source>
+        <translation>Зробити типовим відеопрогравачем…</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="626"/>
+        <source>Registers Mikai Ja Nai and opens desktop settings so you can choose it under Default Applications. Your defaults are not changed automatically.</source>
+        <translation>Реєструє Mikai Ja Nai та відкриває налаштування робочого середовища, де можна вибрати його в розділі «Типові програми». Типові програми не змінюються автоматично.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="629"/>
+        <source>Opens Windows Default Apps so you can choose Mikai Ja Nai. Your defaults are not changed automatically.</source>
+        <translation>Відкриває налаштування типових програм Windows, де можна вибрати Mikai Ja Nai. Типові програми не змінюються автоматично.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="630"/>
+        <source>Setting the default video player is only supported on Windows.</source>
+        <translation>Призначення типового відеопрогравача підтримується лише у Windows.</translation>
     <message>
         <location filename="../src/player/shell/ShellWidgets.cpp" line="445"/>
         <location filename="../src/player/shell/ShellWidgets.cpp" line="617"/>
