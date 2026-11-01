@@ -11,6 +11,7 @@
 #include "state/AppearanceStore.hpp"
 #include "theme/Metrics.hpp"
 #include "theme/Palette.hpp"
+#include "theme/Theme.hpp"
 #include "widgets/RangePager.hpp"
 #include "widgets/RateLimitLabel.hpp"
 #include "widgets/FailureView.hpp"
@@ -48,8 +49,11 @@
 #include <QPalette>
 #include <QPropertyAnimation>
 #include <QPushButton>
+#include <QResizeEvent>
+#include <QStyle>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSizePolicy>
 #include <QSettings>
 #include <QTabBar>
 #include <QTimer>
@@ -122,16 +126,26 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     enabledFeeds_ = feeds::enabled(settings.value(feeds::settingsKey()).toString());
     recentItems_ = readRecentTitles();
 
+    setObjectName(QStringLiteral("searchPage"));
+
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(theme::kSpacingLarge, theme::kSpacingLarge, theme::kSpacingLarge,
                              theme::kSpacingLarge);
     root->setSpacing(theme::kSpacingMedium);
 
+    // The header is two aligned rows: the brand with the passive quota pill and
+    // the icon actions above, the title search with its own actions below.
+    auto* header = new QWidget(this);
+    header->setObjectName(QStringLiteral("searchHeader"));
+    auto* headerLayout = new QVBoxLayout(header);
+    headerLayout->setContentsMargins(0, 0, 0, 0);
+    headerLayout->setSpacing(theme::kSearchHeaderRowGap);
+
     auto* topRow = new QHBoxLayout();
-    auto* heading = new QLabel(tr("Mikai Ja Nai"), this);
-    heading->setObjectName(QStringLiteral("heading"));
-    topRow->addWidget(heading);
-    headerLogo_ = new QLabel(this);
+    topRow->setContentsMargins(0, 0, 0, 0);
+    topRow->setSpacing(theme::kSearchHeaderSpacing);
+
+    headerLogo_ = new QLabel(header);
     headerLogo_->setObjectName(QStringLiteral("headerLogo"));
     headerLogo_->setAccessibleName(QString());
     headerLogo_->setAccessibleDescription(QString());
@@ -140,17 +154,32 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     headerLogo_->setMinimumSize(24, 24);
     headerLogo_->setFixedSize(36, 36);
     headerLogoSource_.load(QStringLiteral(":/icons/app/mikai-mono.png"));
-    topRow->insertWidget(topRow->indexOf(heading), headerLogo_);
+    topRow->addWidget(headerLogo_, 0, Qt::AlignVCenter);
+    auto* heading = new QLabel(tr("Mikai Ja Nai"), header);
+    heading->setObjectName(QStringLiteral("heading"));
+    topRow->addWidget(heading, 0, Qt::AlignVCenter);
     refreshHeaderLogo();
-    homeButton_ = new QPushButton(tr("Home"), this);
+
+    homeButton_ = new QPushButton(tr("Home"), header);
     homeButton_->setObjectName(QStringLiteral("homeButton"));
     connect(homeButton_, &QPushButton::clicked, this, &SearchPage::returnHome);
-    topRow->addWidget(homeButton_);
+    topRow->addWidget(homeButton_, 0, Qt::AlignVCenter);
     homeButton_->hide();
     topRow->addStretch();
-    mediaButton_ = new QPushButton(tr("Open video"), this);
+
+    rateLabel_ = new RateLimitLabel(client_, header);
+    rateLabel_->setObjectName(QStringLiteral("ratePill"));
+    // The main page presents the shared quota snapshot as the header pill; the
+    // catalogue and title page keep its inline line.
+    rateLabel_->setPresentation(RateLimitLabel::Presentation::Pill);
+    topRow->addWidget(rateLabel_, 0, Qt::AlignVCenter);
+
+    mediaButton_ = new QPushButton(tr("Open video"), header);
     mediaButton_->setObjectName(QStringLiteral("secondary"));
     mediaButton_->setAccessibleName(tr("Open video"));
+    mediaButton_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    mediaButton_->setIconSize(QSize(theme::kSearchIconSize + theme::kSearchIconGlyphPad,
+                                    theme::kSearchIconSize));
     // The menu and its actions are owned by the button; the actions are kept
     // because their captions are this page's to restate.
     auto* mediaMenu = new QMenu(mediaButton_);
@@ -162,11 +191,22 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     openUrlAction_->setObjectName(QStringLiteral("openVideoUrl"));
     connect(openUrlAction_, &QAction::triggered, this, &SearchPage::mediaUrlRequested);
     mediaButton_->setMenu(mediaMenu);
-    topRow->addWidget(mediaButton_);
-    rateLabel_ = new RateLimitLabel(client_, this);
-    topRow->addWidget(rateLabel_);
+    // The trailing chevron lives in its own layout rather than in the style's
+    // menu indicator, which cannot be inset from the border. It is transparent
+    // to the mouse, so the whole button keeps opening the menu.
+    mediaChevron_ = new QLabel(mediaButton_);
+    mediaChevron_->setObjectName(QStringLiteral("mediaButtonChevron"));
+    mediaChevron_->setFixedSize(theme::kSearchMenuChevronSize, theme::kSearchMenuChevronSize);
+    mediaChevron_->setFocusPolicy(Qt::NoFocus);
+    mediaChevron_->setAttribute(Qt::WA_TransparentForMouseEvents);
+    auto* chevronRow = new QHBoxLayout(mediaButton_);
+    chevronRow->setContentsMargins(0, 0, theme::kSearchActionPaddingH, 0);
+    chevronRow->setSpacing(0);
+    chevronRow->addStretch(1);
+    chevronRow->addWidget(mediaChevron_, 0, Qt::AlignVCenter);
+    topRow->addWidget(mediaButton_, 0, Qt::AlignVCenter);
 
-    keysButton_ = new QPushButton(this);
+    keysButton_ = new QPushButton(header);
     keysButton_->setObjectName(QStringLiteral("settingsChip"));
     keysButton_->setIcon(theme::keyboardIcon());
     keysButton_->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
@@ -179,30 +219,73 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
         keyHints_->popupNear(keysButton_->mapToGlobal(
             QPoint(keysButton_->width() / 2, keysButton_->height())));
     });
-    topRow->addWidget(keysButton_);
+    topRow->addWidget(keysButton_, 0, Qt::AlignVCenter);
 
-    settingsButton_ = new QPushButton(this);
+    settingsButton_ = new QPushButton(header);
     settingsButton_->setObjectName(QStringLiteral("settingsChip"));
-    settingsButton_->setIcon(theme::gearIcon());
+    settingsButton_->setIcon(theme::outlineGearIcon());
     settingsButton_->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
     settingsButton_->setToolTip(tr("API token settings"));
     settingsButton_->setAccessibleName(tr("API token settings"));
     connect(settingsButton_, &QPushButton::clicked, this, &SearchPage::settingsRequested);
-    topRow->addWidget(settingsButton_);
-    root->addLayout(topRow);
+    topRow->addWidget(settingsButton_, 0, Qt::AlignVCenter);
+    headerLayout->addLayout(topRow);
 
     auto* searchRow = new QHBoxLayout();
-    query_ = new QLineEdit(this);
+    searchRow->setContentsMargins(0, 0, 0, 0);
+    searchRow->setSpacing(theme::kSearchHeaderSpacing);
+
+    // The field is one framed control: a leading glyph, the line edit, and a
+    // non-interactive keycap in the trailing inset. The keycap is a sibling of
+    // the edit rather than an overlay, so neither it nor the clear button can
+    // ever cover the other.
+    searchField_ = new QWidget(header);
+    searchField_->setObjectName(QStringLiteral("searchField"));
+    // The frame's bed, hairline and focus ring are the sheet's: a plain widget
+    // has to ask the style to paint them.
+    searchField_->setAttribute(Qt::WA_StyledBackground, true);
+    searchField_->installEventFilter(this);
+    auto* fieldLayout = new QHBoxLayout(searchField_);
+    fieldLayout->setContentsMargins(theme::kSearchFieldInset, 0,
+                                    theme::kSearchFieldTrailingInset, 0);
+    fieldLayout->setSpacing(theme::kSearchIconTextGap);
+
+    searchGlyph_ = new QLabel(searchField_);
+    searchGlyph_->setObjectName(QStringLiteral("searchFieldGlyph"));
+    searchGlyph_->setFixedSize(theme::kSearchIconSize, theme::kSearchIconSize);
+    searchGlyph_->setFocusPolicy(Qt::NoFocus);
+    searchGlyph_->setAttribute(Qt::WA_TransparentForMouseEvents);
+    fieldLayout->addWidget(searchGlyph_, 0, Qt::AlignVCenter);
+
+    query_ = new QLineEdit(searchField_);
     query_->setObjectName(QStringLiteral("searchQuery"));
-    query_->setPlaceholderText(tr("Search by title — Enter or the button"));
+    query_->setPlaceholderText(tr("Search by title…"));
     query_->setClearButtonEnabled(true);
-    filtersButton_ = new QPushButton(tr("Filters"), this);
-    filtersButton_->setObjectName(QStringLiteral("catalogueFiltersButton"));
-    teamsButton_ = new QPushButton(tr("Teams…"), this);
-    teamsButton_->setObjectName(QStringLiteral("catalogueTeamsButton"));
-    searchButton_ = new QPushButton(tr("Search"), this);
-    searchButton_->setObjectName(QStringLiteral("primary"));
     query_->installEventFilter(this);
+    fieldLayout->addWidget(query_, 1);
+
+    searchKeycap_ = new QLabel(tr("Enter ↵"), searchField_);
+    searchKeycap_->setObjectName(QStringLiteral("searchKeycap"));
+    searchKeycap_->setAlignment(Qt::AlignCenter);
+    searchKeycap_->setFocusPolicy(Qt::NoFocus);
+    searchKeycap_->setAttribute(Qt::WA_TransparentForMouseEvents);
+    searchKeycap_->setAccessibleName(tr("Press Enter to search"));
+    fieldLayout->addWidget(searchKeycap_, 0, Qt::AlignVCenter);
+
+    searchRow->addWidget(searchField_, 1);
+
+    filtersButton_ = new QPushButton(tr("Filters"), header);
+    filtersButton_->setObjectName(QStringLiteral("catalogueFiltersButton"));
+    filtersButton_->setIconSize(QSize(theme::kSearchIconSize + theme::kSearchIconGlyphPad,
+                                      theme::kSearchIconSize));
+    teamsButton_ = new QPushButton(tr("Teams…"), header);
+    teamsButton_->setObjectName(QStringLiteral("catalogueTeamsButton"));
+    teamsButton_->setIconSize(QSize(theme::kSearchIconSize + theme::kSearchIconGlyphPad,
+                                    theme::kSearchIconSize));
+    searchButton_ = new QPushButton(tr("Search"), header);
+    searchButton_->setObjectName(QStringLiteral("primary"));
+    searchButton_->setIconSize(QSize(theme::kSearchIconSize + theme::kSearchIconGlyphPad,
+                                     theme::kSearchIconSize));
     connect(query_, &QLineEdit::returnPressed, this, &SearchPage::search);
     connect(searchButton_, &QPushButton::clicked, this, &SearchPage::search);
     connect(query_, &QLineEdit::textChanged, this, [this](const QString& text) {
@@ -220,15 +303,17 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
             loadOngoing();
         }
     });
-    searchRow->addWidget(query_);
     searchRow->addWidget(filtersButton_);
     searchRow->addWidget(teamsButton_);
     searchRow->addWidget(searchButton_);
+    headerLayout->addLayout(searchRow);
+
+    root->addWidget(header);
+
     connect(filtersButton_, &QPushButton::clicked, this, &SearchPage::showCatalogueFilters);
     connect(teamsButton_, &QPushButton::clicked, this, &SearchPage::openTeamPicker);
+    refreshHeaderIcons();
     loadDictionaries();
-
-    root->addLayout(searchRow);
 
     resultsHeading_ = new QLabel(tr("Currently airing · sorted by newest episode"), this);
     resultsHeading_->setObjectName(QStringLiteral("sectionHeading"));
@@ -320,6 +405,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
                     refreshCardFrames();
                 }
                 refreshHeaderLogo();
+                refreshHeaderIcons();
             });
 
     QTimer::singleShot(0, this, &SearchPage::loadOngoing);
@@ -382,6 +468,7 @@ void SearchPage::changeEvent(QEvent* event) {
                event->type() == QEvent::ScreenChangeInternal ||
                event->type() == QEvent::DevicePixelRatioChange) {
         refreshHeaderLogo();
+        refreshHeaderIcons();
     }
 }
 
@@ -408,12 +495,59 @@ void SearchPage::refreshHeaderLogo() {
     headerLogoDpr_ = dpr;
 }
 
+void SearchPage::refreshHeaderIcons() {
+    // The glyphs resolve their ink when they are built, so every path that
+    // re-tints the brand logo also rebuilds them: a theme switch cannot leave a
+    // white play glyph on a light secondary button.
+    const QPalette pagePalette = palette();
+    const QColor ink = pagePalette.color(QPalette::ButtonText);
+    const QColor muted = pagePalette.color(QPalette::PlaceholderText);
+    const QColor onPrimary(theme::searchHeaderPalette(currentAppearance()).onPrimary);
+    const int trailing = theme::kSearchIconGlyphPad;
+
+    if (mediaButton_ != nullptr) {
+        mediaButton_->setIcon(theme::playIcon(theme::kSearchIconSize, ink.name(), trailing));
+    }
+    if (filtersButton_ != nullptr) {
+        filtersButton_->setIcon(theme::filterIcon(theme::kSearchIconSize, ink.name(), trailing));
+    }
+    if (teamsButton_ != nullptr) {
+        teamsButton_->setIcon(theme::teamsIcon(theme::kSearchIconSize, ink.name(), trailing));
+    }
+    if (searchButton_ != nullptr) {
+        searchButton_->setIcon(
+            theme::searchIcon(theme::kSearchIconSize, onPrimary.name(), trailing));
+    }
+    if (keysButton_ != nullptr) {
+        keysButton_->setIcon(theme::keyboardIcon(theme::kIconSize, ink.name()));
+    }
+    if (settingsButton_ != nullptr) {
+        settingsButton_->setIcon(theme::outlineGearIcon(theme::kIconSize, ink.name()));
+    }
+    if (searchGlyph_ != nullptr) {
+        searchGlyph_->setPixmap(
+            theme::searchIcon(theme::kSearchIconSize, muted.name())
+                .pixmap(QSize(theme::kSearchIconSize, theme::kSearchIconSize),
+                        searchGlyph_->devicePixelRatioF()));
+    }
+    if (mediaChevron_ != nullptr) {
+        mediaChevron_->setPixmap(
+            theme::chevronDownIcon(theme::kSearchMenuChevronSize, muted.name())
+                .pixmap(QSize(theme::kSearchMenuChevronSize, theme::kSearchMenuChevronSize),
+                        mediaChevron_->devicePixelRatioF()));
+    }
+}
+
 void SearchPage::retranslateUi() {
     // Only words move. The query keeps its text and its focus, the result page
     // its rows, the format bar its filter, the carousels their cards and the
     // feeds the rows they already hold - and nothing below reaches the network.
     if (query_ != nullptr) {
-        query_->setPlaceholderText(tr("Search by title — Enter or the button"));
+        query_->setPlaceholderText(tr("Search by title…"));
+    }
+    if (searchKeycap_ != nullptr) {
+        searchKeycap_->setText(tr("Enter ↵"));
+        searchKeycap_->setAccessibleName(tr("Press Enter to search"));
     }
     if (homeButton_ != nullptr) homeButton_->setText(tr("Home"));
     if (mediaButton_ != nullptr) {
@@ -772,6 +906,30 @@ bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
          event->type() == QEvent::ScreenChangeInternal ||
          event->type() == QEvent::DevicePixelRatioChange)) {
         refreshHeaderLogo();
+    }
+    if (watched == query_ &&
+        (event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut) &&
+        searchField_ != nullptr) {
+        // The frame paints the focus ring: the field is one control, and the
+        // line edit inside it cannot draw the ring around the glyph and keycap.
+        searchField_->setProperty("focused", event->type() == QEvent::FocusIn);
+        searchField_->style()->unpolish(searchField_);
+        searchField_->style()->polish(searchField_);
+        searchField_->update();
+    }
+    if (watched == searchField_) {
+        if (event->type() == QEvent::Resize && searchKeycap_ != nullptr) {
+            // A keycap that no longer fits is dropped rather than left to
+            // squeeze the line edit; the field itself stays intact.
+            searchKeycap_->setVisible(
+                static_cast<QResizeEvent*>(event)->size().width() >=
+                theme::kSearchKeycapMinFieldWidth);
+        } else if (event->type() == QEvent::MouseButtonPress && query_ != nullptr) {
+            // The glyph and the keycap are decoration: a click anywhere in the
+            // frame belongs to the line edit.
+            query_->setFocus(Qt::MouseFocusReason);
+            return true;
+        }
     }
     if (event->type() == QEvent::KeyPress) {
         auto* ke = static_cast<QKeyEvent*>(event);

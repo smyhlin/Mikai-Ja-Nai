@@ -77,5 +77,12 @@ class TestI18n : public QObject {
   /// the queue depth, its timer and the request count stay where they were.
   void rateLimitLabelRetranslatesWithoutMovingTheQuotaOrAsking();
 
+  /// The main page presents the same quota snapshot as a pill with a status
+  /// dot. The dot may only report health once an answer carried quota figures;
+  /// a default limit with no answer behind it stays neutral, and a spent window
+  /// never reads healthy. The shared widget's inline default stays dot-free for
+  /// the catalogue and title page.
+  void rateLimitPillSeparatesNoDataHealthAndAnExhaustedWindow();
+
   void cleanup();
 };

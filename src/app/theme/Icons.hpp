@@ -11,6 +11,7 @@ namespace mikai::app::theme {
 /// cached, so it stays crisp at any device pixel ratio and adds nothing to the
 /// build.
 QIcon gearIcon(int size = 0, const QString& color = {});
+QIcon outlineGearIcon(int size = 0, const QString& color = {});
 
 /// The keyboard glyph for shortcuts list.
 QIcon keyboardIcon(int size = 0, const QString& color = {});
@@ -20,6 +21,17 @@ QIcon slidersIcon(int size = 0, const QString& color = {});
 
 /// The module cube glyph for the downloadable components tab.
 QIcon packageIcon(int size = 0, const QString& color = {});
+
+// The main page header's own glyphs. `trailingGap` widens the glyph's box with
+// transparent pixels on its trailing side: a widget that draws a button's icon
+// and label itself owns the spacing between them, and this is how the header
+// brings the style's fixed gap up to the 8 px its design asks for.
+QIcon searchIcon(int size = 0, const QString& color = {}, int trailingGap = 0);
+QIcon filterIcon(int size = 0, const QString& color = {}, int trailingGap = 0);
+QIcon teamsIcon(int size = 0, const QString& color = {}, int trailingGap = 0);
+QIcon playIcon(int size = 0, const QString& color = {}, int trailingGap = 0);
+/// The downward chevron a control that opens a menu carries at its trailing edge.
+QIcon chevronDownIcon(int size = 0, const QString& color = {});
 
 /// Crisp vector left/right chevrons for carousel navigation buttons.
 QIcon chevronLeftIcon(int size = 0);

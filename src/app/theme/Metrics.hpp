@@ -171,4 +171,44 @@ inline constexpr int kRelatedCarouselMax = 6;
 // Carousel card spacing between entries, in the track layout.
 inline constexpr int kCarouselCardSpacing = 10;
 
+// ── Search page header ──────────────────────────────────────────────────────
+// The main page's header is two aligned rows: the brand with the passive quota
+// pill and the icon actions above, the title search with its actions below.
+// These dimensions and radii are search-header-only, like the title page's
+// block above; the rest of the page keeps the shared spacing scale.
+inline constexpr int kSearchHeaderControlHeight = 40;
+// A 1px hairline is the only vertical padding a control carries, so the sheet
+// asks for a content height one border short of the row height.
+inline constexpr int kSearchHeaderContentHeight = kSearchHeaderControlHeight - 2;
+inline constexpr int kSearchHeaderSpacing = kSpacingSmall;
+inline constexpr int kSearchHeaderRowGap = kSpacingMedium;
+inline constexpr int kSearchHeaderRadius = 8;
+inline constexpr int kSearchKeycapRadius = 6;
+inline constexpr int kSearchActionPaddingH = 12;
+inline constexpr int kSearchActionPaddingRight = 14;
+inline constexpr int kSearchPrimaryPaddingH = 14;
+inline constexpr int kSearchPrimaryPaddingRight = 16;
+inline constexpr int kSearchFieldInset = 12;
+inline constexpr int kSearchFieldTrailingInset = 6;
+inline constexpr int kSearchKeycapPaddingH = 8;
+inline constexpr int kSearchKeycapPaddingV = 0;
+inline constexpr int kSearchKeycapContentHeight = 24;
+inline constexpr int kSearchKeycapMinFieldWidth = 240;
+inline constexpr int kSearchIconSize = 18;
+// The quota pill's status dot: a small filled disc, never an icon.
+inline constexpr int kSearchDotSize = 6;
+inline constexpr int kSearchDotRadius = kSearchDotSize / 2;
+inline constexpr int kSearchDotSpacing = 6;
+inline constexpr int kSearchPillPaddingLeft = 10;
+inline constexpr int kSearchPillPaddingRight = 12;
+// The chevron the Open video menu carries past its label.
+inline constexpr int kSearchMenuChevronSize = 10;
+inline constexpr int kSearchMenuPaddingRight =
+    kSearchActionPaddingH + kSearchMenuChevronSize + kSpacingSmall;
+// The spacing the header wants between a button's glyph and its label. The
+// widget style owns part of that gap and offers no knob for it, so the glyph
+// pads its own box with the remainder.
+inline constexpr int kSearchIconTextGap = 8;
+inline constexpr int kSearchIconGlyphPad = kSearchIconTextGap / 2;
+
 }  // namespace mikai::app::theme

@@ -13,6 +13,7 @@
 #include <theme/Metrics.hpp>
 #include <widgets/FailureView.hpp>
 #include <widgets/RangePager.hpp>
+#include <widgets/RateLimitLabel.hpp>
 #include <widgets/TitleCard.hpp>
 #include <workers/Runner.hpp>
 
@@ -1762,6 +1763,92 @@ void TestFeedRender::titlePageKeepsLongControlsReachableAtDesktopMinimum() {
   QTRY_VERIFY_WITH_TIMEOUT(!overlay->isVisible(), 5000);
 }
 
+void TestFeedRender::mainPageHeaderKeepsEveryActionAndSkipsTheKeycap() {
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  SearchPage page(runner, client);
+  page.resize(1120, 800);
+  page.show();
+  page.activateWindow();
+
+  auto* header = page.findChild<QWidget*>(QStringLiteral("searchHeader"));
+  auto* field = page.findChild<QWidget*>(QStringLiteral("searchField"));
+  auto* query = page.findChild<QLineEdit*>(QStringLiteral("searchQuery"));
+  auto* keycap = page.findChild<QLabel*>(QStringLiteral("searchKeycap"));
+  auto* filters = page.findChild<QPushButton*>(QStringLiteral("catalogueFiltersButton"));
+  auto* teams = page.findChild<QPushButton*>(QStringLiteral("catalogueTeamsButton"));
+  auto* search = page.findChild<QPushButton*>(QStringLiteral("primary"));
+  auto* media = page.findChild<QPushButton*>(QStringLiteral("secondary"));
+  auto* menu = page.findChild<QMenu*>(QStringLiteral("openMediaMenu"));
+  auto* ratePill = page.findChild<mikai::app::RateLimitLabel*>();
+  auto* dot = page.findChild<QLabel*>(QStringLiteral("rateDot"));
+  QVERIFY2(header != nullptr && field != nullptr && query != nullptr && keycap != nullptr &&
+               filters != nullptr && teams != nullptr && search != nullptr && media != nullptr &&
+               menu != nullptr && ratePill != nullptr && dot != nullptr,
+           "the header does not expose its field, keycap, actions, quota chip or menu");
+  QCOMPARE(ratePill->presentation(), mikai::app::RateLimitLabel::Presentation::Pill);
+  QVERIFY(dot->isVisible());
+  QVERIFY2(!media->icon().isNull(), "the Open video action lost its glyph");
+  QVERIFY2(media->width() <= media->sizeHint().width() + 2,
+           "the media menu must not expand across the utility cluster");
+  QVERIFY2(!filters->icon().isNull(), "the filters action lost its glyph");
+  QVERIFY2(!teams->icon().isNull(), "the teams action lost its glyph");
+  QVERIFY2(!search->icon().isNull(), "the primary action lost its glyph");
+
+  // The keycap is a hint, not a control: once the dictionary request answers
+  // and the filters action is live, the tab chain goes from the field straight
+  // to it instead of stopping on the keycap.
+  QTRY_VERIFY_WITH_TIMEOUT(filters->isEnabled(), 20000);
+  query->setFocus();
+  QTRY_VERIFY(query->hasFocus());
+  QTest::keyClick(query, Qt::Key_Tab);
+  QTRY_VERIFY_WITH_TIMEOUT(QApplication::focusWidget() == filters, 5000);
+
+  // The menu actions still reach the page.
+  auto* fileAction = page.findChild<QAction*>(QStringLiteral("openVideoFile"));
+  auto* urlAction = page.findChild<QAction*>(QStringLiteral("openVideoUrl"));
+  QVERIFY(fileAction != nullptr && urlAction != nullptr);
+  QSignalSpy fileSpy(&page, &SearchPage::mediaFileRequested);
+  QSignalSpy urlSpy(&page, &SearchPage::mediaUrlRequested);
+  fileAction->trigger();
+  urlAction->trigger();
+  QCOMPARE(fileSpy.count(), 1);
+  QCOMPARE(urlSpy.count(), 1);
+
+  // The settings chip in the icon cluster is still the token settings action.
+  QPushButton* settings = nullptr;
+  for (QPushButton* button : page.findChildren<QPushButton*>(QStringLiteral("settingsChip"))) {
+    if (button->accessibleName() == QStringLiteral("API token settings")) {
+      settings = button;
+      break;
+    }
+  }
+  QVERIFY(settings != nullptr);
+  QSignalSpy settingsSpy(&page, &SearchPage::settingsRequested);
+  QTest::mouseClick(settings, Qt::LeftButton);
+  QCOMPARE(settingsSpy.count(), 1);
+
+  // Both ways of asking for results still work.
+  auto* results = page.findChild<QListWidget*>(QStringLiteral("searchResults"));
+  QVERIFY(results != nullptr);
+  QTest::keyClicks(query, QStringLiteral("Probe"));
+  QTest::keyClick(query, Qt::Key_Return);
+  QTRY_VERIFY_WITH_TIMEOUT(results->isVisible() && results->count() > 0, 20000);
+
+  // The primary action starts its own result request: it drops the rows it
+  // held before the request goes out, then they land again. Asserting on that
+  // state avoids racing the page's format-count requests, which ride the same
+  // query and would make a bare request count pass on their own.
+  QTest::mouseClick(search, Qt::LeftButton);
+  QVERIFY2(results->count() == 0,
+           "the primary action did not start a new result request");
+  QTRY_VERIFY_WITH_TIMEOUT(results->count() > 0, 20000);
+}
+
 void TestFeedRender::loadedResultsRetranslateWithoutRefetchingOrLosingViewState() {
   const QString openingLanguage = mikai::app::activeInterfaceLanguage();
   QSettings settings;
@@ -1935,8 +2022,7 @@ void TestFeedRender::loadedResultsRetranslateWithoutRefetchingOrLosingViewState(
            "the catalog did not translate the search action, so this slot proves nothing");
   QCOMPARE(searchButton->text(), ukrainianSearch);
   QCOMPARE(query->placeholderText(),
-           QCoreApplication::translate("mikai::app::SearchPage",
-                                       "Search by title — Enter or the button"));
+           QCoreApplication::translate("mikai::app::SearchPage", "Search by title…"));
   QCOMPARE(resultsHeading->text(),
            QCoreApplication::translate("mikai::app::SearchPage", "Search results"));
   QCOMPARE(status->text(),

@@ -90,6 +90,13 @@ class TestFeedRender : public QObject {
   /// API data and must read the same in both languages.
   void loadedResultsRetranslateWithoutRefetchingOrLosingViewState();
 
+  /// The main page's header keeps every action through the two-row redesign:
+  /// the field submits by Enter and by the primary action, the Enter keycap is
+  /// decoration the tab chain skips, the quota chip is the pill presentation,
+  /// and the menu actions, the settings chip and the filter/team actions are
+  /// still wired to the page.
+  void mainPageHeaderKeepsEveryActionAndSkipsTheKeycap();
+
   /// A loaded title page, switched en -> uk -> en: the description and details
   /// disclosures stay open, the release chip and the episode page keep their
   /// selections, the body scroll does not move, the API's own description and

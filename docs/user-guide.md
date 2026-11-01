@@ -18,6 +18,8 @@ Launch the installed or portable application. Home offers discovery feeds; Searc
 
 Catalogue browsing works anonymously, subject to the service's anonymous limits. A key is optional: add one under **Settings → Access** to use the higher keyed limit. Keep the key private; it is sent to the Mikai API. The Access page provides a token test and API-usage readout. The [API reference](../docs.md) explains the public API contract.
 
+The header’s **RPM** badge shows the most recently reported request usage and limit. Its dot is neutral until quota data arrives; the colour reflects remaining quota, not a general connection-health check.
+
 ## Find titles and filter the catalogue
 
 1. Open **Search**, enter a title or search phrase, then press **Enter** or choose **Search**. Clear the field and search again to return to the unfiltered catalogue browse; if catalogue filters remain selected, they still apply.

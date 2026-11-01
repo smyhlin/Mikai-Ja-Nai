@@ -7,8 +7,10 @@
 
 #include <QApplication>
 #include <QPalette>
+#include <QVector>
 
 #include <cmath>
+#include <utility>
 
 /// The arrow asset lives in the app's resource bundle; a static library keeps
 /// that object only when something references its initialiser. Q_INIT_RESOURCE
@@ -988,7 +990,248 @@ QWidget#titlePage QPushButton#titleDetailsClose:focus { border-color: %4; }
         .arg(radiusSmall(a));
 }
 
+// The main page's header: two aligned rows with their own quiet surfaces. Every
+// rule is scoped to QWidget#searchPage, so the shared RateLimitLabel keeps its
+// catalogue/title-page line and no other surface inherits these fills.
+QString searchPageSheet(const SearchHeaderPalette& roles) {
+    QString sheet = QStringLiteral(R"QSS(
+QWidget#searchPage QWidget#searchField {
+    background: @input;
+    border: 1px solid @inputBorder;
+    border-radius: %1px;
+    min-height: %2px;
+    max-height: %2px;
+}
+QWidget#searchPage QWidget#searchField[focused="true"] { border-color: @primary; }
+QWidget#searchPage QLineEdit#searchQuery {
+    background: transparent;
+    border: none;
+    padding: 0;
+    min-height: 0;
+    font-size: 14px;
+    color: @text;
+    selection-background-color: @primary;
+    selection-color: @onPrimary;
+}
+QWidget#searchPage QLabel#searchKeycap {
+    background: @keycap;
+    color: @pillText;
+    border: 1px solid @keycapBorder;
+    border-radius: %3px;
+    min-height: %11px;
+    max-height: %11px;
+    padding: %4px %5px;
+    font-size: 11px;
+    font-weight: 600;
+}
+QWidget#searchPage QPushButton#catalogueFiltersButton,
+QWidget#searchPage QPushButton#catalogueTeamsButton,
+QWidget#searchPage QPushButton#homeButton,
+QWidget#searchPage QPushButton#secondary {
+    background: @secondary;
+    color: @text;
+    border: 1px solid @border;
+    border-radius: %1px;
+    min-height: %2px;
+    max-height: %2px;
+    padding: 0 %12px 0 %6px;
+    font-weight: 500;
+}
+QWidget#searchPage QPushButton#secondary { padding: 0 %7px 0 %6px; }
+QWidget#searchPage QPushButton#catalogueFiltersButton:hover,
+QWidget#searchPage QPushButton#catalogueTeamsButton:hover,
+QWidget#searchPage QPushButton#homeButton:hover,
+QWidget#searchPage QPushButton#secondary:hover {
+    background: @secondaryHover;
+    border-color: @borderStrong;
+}
+QWidget#searchPage QPushButton#catalogueFiltersButton:pressed,
+QWidget#searchPage QPushButton#catalogueTeamsButton:pressed,
+QWidget#searchPage QPushButton#homeButton:pressed,
+QWidget#searchPage QPushButton#secondary:pressed { background: @input; }
+QWidget#searchPage QPushButton#catalogueFiltersButton:focus,
+QWidget#searchPage QPushButton#catalogueTeamsButton:focus,
+QWidget#searchPage QPushButton#homeButton:focus,
+QWidget#searchPage QPushButton#secondary:focus { border-color: @primary; }
+QWidget#searchPage QPushButton#catalogueFiltersButton:disabled,
+QWidget#searchPage QPushButton#catalogueTeamsButton:disabled {
+    color: @pillText;
+    background: @secondary;
+    border-color: @border;
+}
+QWidget#searchPage QPushButton#secondary::menu-indicator {
+    image: none;
+    width: 0px;
+    height: 0px;
+}
+QWidget#searchPage QPushButton#secondary QLabel {
+    background: transparent;
+    border: none;
+    color: @text;
+}
+QWidget#searchPage QPushButton#primary {
+    background: @primary;
+    color: @onPrimary;
+    border: 1px solid transparent;
+    border-radius: %1px;
+    min-height: %2px;
+    max-height: %2px;
+    padding: 0 %13px 0 %8px;
+    font-weight: 600;
+}
+QWidget#searchPage QPushButton#primary:hover,
+QWidget#searchPage QPushButton#primary:pressed { background: @primaryHover; }
+QWidget#searchPage QPushButton#primary:focus { border-color: @onPrimary; }
+QWidget#searchPage QPushButton#primary:disabled {
+    background: @secondary;
+    color: @pillText;
+    border-color: @border;
+}
+QWidget#searchPage QPushButton#settingsChip {
+    background: @secondary;
+    border: 1px solid @border;
+    border-radius: %1px;
+    padding: 0;
+    min-width: %2px;
+    max-width: %2px;
+    min-height: %2px;
+    max-height: %2px;
+}
+QWidget#searchPage QPushButton#settingsChip:hover {
+    background: @secondaryHover;
+    border-color: @borderStrong;
+}
+QWidget#searchPage QPushButton#settingsChip:pressed { background: @input; }
+QWidget#searchPage QPushButton#settingsChip:focus { border-color: @primary; }
+QWidget#searchPage QWidget#ratePill {
+    background: @pillSurface;
+    border: 1px solid @pillBorder;
+    border-radius: %1px;
+    min-height: %2px;
+    max-height: %2px;
+}
+QWidget#searchPage QWidget#ratePill QLabel#muted {
+    background: transparent;
+    border: none;
+    color: @pillText;
+    font-size: 12px;
+    font-weight: 500;
+}
+QWidget#searchPage QLabel#rateDot {
+    background: @dotUnknown;
+    border: none;
+    border-radius: %9px;
+    min-width: %10px;
+    max-width: %10px;
+    min-height: %10px;
+    max-height: %10px;
+}
+QWidget#searchPage QLabel#rateDot[tone="healthy"] { background: @dotHealthy; }
+QWidget#searchPage QLabel#rateDot[tone="low"] { background: @dotLow; }
+QWidget#searchPage QLabel#rateDot[tone="exhausted"] { background: @dotExhausted; }
+QWidget#searchPage QLabel#rateDot[tone="unknown"] { background: @dotUnknown; }
+)QSS")
+        .arg(kSearchHeaderRadius)          // %1
+        .arg(kSearchHeaderContentHeight)   // %2
+        .arg(kSearchKeycapRadius)          // %3
+        .arg(kSearchKeycapPaddingV)        // %4
+        .arg(kSearchKeycapPaddingH)        // %5
+        .arg(kSearchActionPaddingH)        // %6
+        .arg(kSearchMenuPaddingRight)      // %7
+        .arg(kSearchPrimaryPaddingH)       // %8
+        .arg(kSearchDotRadius)             // %9
+        .arg(kSearchDotSize)               // %10
+        .arg(kSearchKeycapContentHeight)   // %11
+        .arg(kSearchActionPaddingRight)    // %12
+        .arg(kSearchPrimaryPaddingRight);  // %13
+    // Longest name first where one token is a prefix of another (@border and
+    // @borderStrong, @secondary and @secondaryHover, @primary and
+    // @primaryHover), or the shorter replacement would eat the longer name.
+    const QVector<std::pair<QString, QString>> rolesTable = {
+        {QStringLiteral("@inputBorder"), roles.inputBorder},
+        {QStringLiteral("@pillBorder"), roles.pillBorder},
+        {QStringLiteral("@keycapBorder"), roles.keycapBorder},
+        {QStringLiteral("@borderStrong"), roles.borderStrong},
+        {QStringLiteral("@secondaryHover"), roles.secondaryHover},
+        {QStringLiteral("@primaryHover"), roles.primaryHover},
+        {QStringLiteral("@dotExhausted"), roles.dotExhausted},
+        {QStringLiteral("@dotHealthy"), roles.dotHealthy},
+        {QStringLiteral("@dotUnknown"), roles.dotUnknown},
+        {QStringLiteral("@pillSurface"), roles.pillSurface},
+        {QStringLiteral("@onPrimary"), roles.onPrimary},
+        {QStringLiteral("@dotLow"), roles.dotLow},
+        {QStringLiteral("@pillText"), roles.pillText},
+        {QStringLiteral("@secondary"), roles.secondary},
+        {QStringLiteral("@primary"), roles.primary},
+        {QStringLiteral("@border"), roles.border},
+        {QStringLiteral("@keycap"), roles.keycapSurface},
+        {QStringLiteral("@input"), roles.input},
+        {QStringLiteral("@text"), roles.text},
+    };
+    for (const auto& entry : rolesTable) {
+        sheet.replace(entry.first, entry.second);
+    }
+    return sheet;
+}
+
 }  // namespace
+
+SearchHeaderPalette searchHeaderPalette(const Appearance& appearance) {
+    const Palette p = paletteFor(appearance);
+    SearchHeaderPalette roles;
+    if (p.light) {
+        roles.input = p.surfaceInput;
+        roles.inputBorder = p.border;
+        roles.border = p.border;
+        roles.borderStrong = p.textMutedSoft;
+        roles.secondary = p.surface;
+        roles.secondaryHover = p.surfaceHover;
+        roles.text = p.text;
+        roles.pillSurface = p.surfaceControl;
+        roles.pillBorder = p.border;
+        roles.pillText = p.muted;
+        roles.dotHealthy = p.successFill;
+        roles.dotLow = p.warningFill;
+        roles.dotExhausted = p.dangerFill;
+        roles.dotUnknown = p.textDisabled;
+        roles.keycapSurface = p.surfaceHover;
+        roles.keycapBorder = p.border;
+        roles.primary = p.accent;
+        roles.primaryHover = p.accentHover;
+    } else {
+        roles.input = QString::fromLatin1(kSearchInput);
+        roles.inputBorder = QString::fromLatin1(kSearchInputHairline);
+        roles.border = QString::fromLatin1(kSearchHairline);
+        roles.borderStrong = QString::fromLatin1(kSearchHairlineStrong);
+        roles.secondary = QString::fromLatin1(kSearchSecondary);
+        roles.secondaryHover = QString::fromLatin1(kSearchSecondaryHover);
+        roles.text = p.text;
+        roles.pillSurface = QString::fromLatin1(kSearchPill);
+        roles.pillBorder = QString::fromLatin1(kSearchPillHairline);
+        roles.pillText = QString::fromLatin1(kSearchPillText);
+        roles.dotHealthy = QString::fromLatin1(kSearchDotHealthy);
+        roles.dotLow = p.warningFill;
+        roles.dotExhausted = p.dangerFill;
+        roles.dotUnknown = QString::fromLatin1(kSearchDotUnknown);
+        roles.keycapSurface = QString::fromLatin1(kSearchKeycap);
+        roles.keycapBorder = QString::fromLatin1(kSearchKeycapHairline);
+        // The reference's pink is the primary action on the appearance the app
+        // ships with; a chosen accent replaces it and keeps the rest of the
+        // header on the same beds.
+        if (appearance.accent.compare(QStringLiteral("#bdacff"), Qt::CaseInsensitive) == 0) {
+            const QColor pink(kSearchDefaultPrimary);
+            roles.primary = hexOf(pink);
+            roles.primaryHover = hexOf(pink.lighter(112));
+        } else {
+            roles.primary = p.accent;
+            roles.primaryHover = p.accentHover;
+        }
+    }
+    roles.onPrimary = contrastText(QColor(roles.primary)) == QColor(Qt::black)
+                          ? QString::fromLatin1(kSearchOnPrimary)
+                          : QStringLiteral("#ffffff");
+    return roles;
+}
 
 QString buildStylesheet(const Appearance& appearance) {
     mikaiInitAssetResources();
@@ -1018,7 +1261,7 @@ QString buildStylesheet(const Appearance& appearance) {
             .arg(p.danger, 22)
             .arg(p.wash, 23)
             .arg(p.accentRgb, 24);
-    return application + titlePage(p, appearance);
+    return application + titlePage(p, appearance) + searchPageSheet(searchHeaderPalette(appearance));
 }
 
 QString buildStylesheet() { return buildStylesheet(Appearance{}); }

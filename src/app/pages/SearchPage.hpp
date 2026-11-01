@@ -194,6 +194,10 @@ private:
     /// re-read and nothing is requested - the query, the result page, the
     /// format filter, the cards and the loaded feeds stay exactly as they are.
     void refreshHeaderLogo();
+    /// Re-tints the header's glyphs from the active palette. Called wherever
+    /// the logo is re-tinted, so an icon can never stay on the previous theme's
+    /// ink while its button moves.
+    void refreshHeaderIcons();
     void retranslateUi();
     /// The heading of the block `key` names, in the active language. Both the
     /// constructor and a retranslate pass take it from here, so the two can
@@ -394,6 +398,15 @@ private:
     QImage headerLogoSource_;
     QColor headerLogoTint_;
     qreal headerLogoDpr_ = 0.0;
+    /// The search field's own frame: leading glyph, the line edit and the
+    /// non-interactive Enter keycap. The frame carries the focus ring so the
+    /// field reads as one control.
+    QWidget* searchField_ = nullptr;
+    QLabel* searchGlyph_ = nullptr;
+    QLabel* searchKeycap_ = nullptr;
+    /// The chip's trailing chevron. It lives in its own right-aligned layout
+    /// rather than the style's menu indicator, which offers no inset control.
+    QLabel* mediaChevron_ = nullptr;
     QPushButton* teamBackButton_ = nullptr;
     QLabel* teamDetailLabel_ = nullptr;
     QLabel* resultsHeading_ = nullptr;

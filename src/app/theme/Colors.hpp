@@ -119,4 +119,30 @@ inline constexpr const char* kTitleAccentRgb = "123, 138, 184";
 inline constexpr const char* kTitleBackgroundRgb = "11, 11, 14";
 inline constexpr const char* kTitleMutedRgb = "138, 138, 152";
 
+// ── Search header ───────────────────────────────────────────────────────────
+// The main page's two-row header keeps its own quiet surfaces: an input bed, a
+// secondary-control fill, the passive quota pill, the Enter keycap, and the
+// primary action. The rules that use them are scoped to QWidget#searchPage, so
+// the catalogue, title page, settings and player keep the palette above.
+//
+// On the default dark appearance the primary action is the reference's pink; a
+// chosen accent replaces it (see theme::searchHeaderPalette). The hairline is a
+// white alpha rather than a grey so it reads as an edge on every one of these
+// beds.
+inline constexpr const char* kSearchInput = "#101014";
+inline constexpr const char* kSearchSecondary = "#1a1a22";
+inline constexpr const char* kSearchSecondaryHover = "#22222c";
+inline constexpr const char* kSearchHairline = "rgba(255, 255, 255, 0.12)";
+inline constexpr const char* kSearchInputHairline = "rgba(255, 255, 255, 0.10)";
+inline constexpr const char* kSearchPillHairline = "rgba(255, 255, 255, 0.08)";
+inline constexpr const char* kSearchKeycapHairline = "rgba(255, 255, 255, 0.14)";
+inline constexpr const char* kSearchHairlineStrong = "rgba(255, 255, 255, 0.18)";
+inline constexpr const char* kSearchPill = "#14141b";
+inline constexpr const char* kSearchPillText = "#a1a1aa";
+inline constexpr const char* kSearchKeycap = "#22222b";
+inline constexpr const char* kSearchDotHealthy = "#22c55e";
+inline constexpr const char* kSearchDotUnknown = "#5c5c68";
+inline constexpr const char* kSearchDefaultPrimary = "#f472b6";
+inline constexpr const char* kSearchOnPrimary = "#09090b";
+
 }  // namespace mikai::app::theme

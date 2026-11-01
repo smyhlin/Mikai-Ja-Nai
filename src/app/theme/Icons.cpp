@@ -68,6 +68,29 @@ QPixmap renderGear(int size, const QColor& color) {
     return pixmap;
 }
 
+QPixmap renderOutlineGear(int size, const QColor& color) {
+    QPixmap pixmap(size, size);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.scale(size / 24.0, size / 24.0);
+    QPen pen(color);
+    pen.setWidthF(1.5);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    QPolygonF outline;
+    for (int i = 0; i < 32; ++i) {
+        const qreal angle = 2.0 * M_PI * i / 32.0;
+        const qreal radius = i % 4 == 1 || i % 4 == 2 ? 10.0 : 8.0;
+        outline << QPointF(12.0 + radius * qCos(angle), 12.0 + radius * qSin(angle));
+    }
+    painter.drawPolygon(outline);
+    painter.drawEllipse(QPointF(12.0, 12.0), 2.8, 2.8);
+    painter.end();
+    return pixmap;
+}
+
 QPixmap renderKeyboard(int size, const QColor& color) {
     QPixmap pixmap(size, size);
     pixmap.fill(Qt::transparent);
@@ -162,6 +185,155 @@ QPixmap renderPackage(int size, const QColor& color) {
     return pixmap;
 }
 
+/// A stroked magnifier: the search field's leading glyph and the primary
+/// action's icon read as the same tool.
+QPixmap renderSearch(int size, const QColor& color) {
+    QPixmap pixmap(size, size);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    const double scale = size / 24.0;
+    painter.scale(scale, scale);
+
+    QPen pen(color);
+    pen.setWidthF(1.9);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+
+    painter.drawEllipse(QPointF(10.4, 10.4), 6.2, 6.2);
+    painter.drawLine(QPointF(15.0, 15.0), QPointF(19.6, 19.6));
+
+    painter.end();
+    return pixmap;
+}
+
+/// The catalogue filters' funnel.
+QPixmap renderFilter(int size, const QColor& color) {
+    QPixmap pixmap(size, size);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    const double scale = size / 24.0;
+    painter.scale(scale, scale);
+
+    QPen pen(color);
+    pen.setWidthF(1.8);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+
+    QPainterPath funnel;
+    funnel.moveTo(4.0, 5.2);
+    funnel.lineTo(20.0, 5.2);
+    funnel.lineTo(13.6, 12.6);
+    funnel.lineTo(13.6, 18.8);
+    funnel.lineTo(10.4, 20.4);
+    funnel.lineTo(10.4, 12.6);
+    funnel.closeSubpath();
+    painter.drawPath(funnel);
+
+    painter.end();
+    return pixmap;
+}
+
+/// Two figures for the team browser: a full one in front, a smaller one behind.
+QPixmap renderTeams(int size, const QColor& color) {
+    QPixmap pixmap(size, size);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    const double scale = size / 24.0;
+    painter.scale(scale, scale);
+
+    QPen pen(color);
+    pen.setWidthF(1.7);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+
+    painter.drawEllipse(QPointF(9.1, 8.6), 3.3, 3.3);
+    QPainterPath front;
+    front.moveTo(3.4, 19.6);
+    front.cubicTo(3.4, 15.6, 6.0, 13.6, 9.1, 13.6);
+    front.cubicTo(12.2, 13.6, 14.8, 15.6, 14.8, 19.6);
+    painter.drawPath(front);
+
+    painter.drawEllipse(QPointF(16.8, 9.7), 2.5, 2.5);
+    QPainterPath back;
+    back.moveTo(15.4, 19.6);
+    back.cubicTo(15.6, 16.6, 17.7, 14.9, 20.4, 15.6);
+    painter.drawPath(back);
+
+    painter.end();
+    return pixmap;
+}
+
+/// The play triangle on the Open video menu action.
+QPixmap renderPlay(int size, const QColor& color) {
+    QPixmap pixmap(size, size);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    const double scale = size / 24.0;
+    painter.scale(scale, scale);
+
+    QPen pen(color);
+    pen.setWidthF(1.9);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+
+    QPainterPath triangle;
+    triangle.moveTo(8.8, 5.8);
+    triangle.lineTo(18.8, 12.0);
+    triangle.lineTo(8.8, 18.2);
+    triangle.closeSubpath();
+    painter.drawPath(triangle);
+
+    painter.end();
+    return pixmap;
+}
+
+QPixmap renderChevronDown(int size, const QColor& color) {
+    QPixmap pixmap(size, size);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    const double scale = size / 24.0;
+    painter.scale(scale, scale);
+
+    QPen pen(color);
+    pen.setWidthF(2.0);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+
+    QPainterPath path;
+    path.moveTo(7.0, 10.0);
+    path.lineTo(12.0, 15.0);
+    path.lineTo(17.0, 10.0);
+    painter.drawPath(path);
+
+    painter.end();
+    return pixmap;
+}
+
 QPixmap renderChevron(int size, const QColor& color, bool left) {
     QPixmap pixmap(size, size);
     pixmap.fill(Qt::transparent);
@@ -196,18 +368,25 @@ QPixmap renderChevron(int size, const QColor& color, bool left) {
 
 enum class Glyph {
     Gear,
+    OutlineGear,
     Keyboard,
     Sliders,
     Package,
     ChevronLeft,
-    ChevronRight
+    ChevronRight,
+    Search,
+    Filter,
+    Teams,
+    Play,
+    ChevronDown
 };
 
 class GlyphIconEngine final : public QIconEngine {
 public:
-    GlyphIconEngine(Glyph glyph, QColor normal, QColor active, QColor disabled)
+    GlyphIconEngine(Glyph glyph, QColor normal, QColor active, QColor disabled,
+                    int trailingGap = 0)
         : glyph_(glyph), normal_(std::move(normal)), active_(std::move(active)),
-          disabled_(std::move(disabled)) {}
+          disabled_(std::move(disabled)), trailingGap_(qMax(0, trailingGap)) {}
 
     QIconEngine* clone() const override { return new GlyphIconEngine(*this); }
 
@@ -231,14 +410,15 @@ public:
         const QColor color = mode == QIcon::Disabled ? disabled_
                             : mode == QIcon::Active || mode == QIcon::Selected ? active_
                                                                               : normal_;
-        const QString cacheKey = QStringLiteral("mikai-glyph:%1:%2x%3:%4:%5:%6:%7")
+        const QString cacheKey = QStringLiteral("mikai-glyph:%1:%2x%3:%4:%5:%6:%7:%8")
                                      .arg(static_cast<int>(glyph_))
                                      .arg(size.width())
                                      .arg(size.height())
                                      .arg(scale, 0, 'g', 8)
                                      .arg(static_cast<int>(mode))
                                      .arg(static_cast<int>(state))
-                                     .arg(color.name(QColor::HexArgb));
+                                     .arg(color.name(QColor::HexArgb))
+                                     .arg(trailingGap_);
         QPixmap pixmap;
         if (QPixmapCache::find(cacheKey, &pixmap)) return pixmap;
 
@@ -246,11 +426,29 @@ public:
         const int pixelSize = qMax(1, qCeil(logicalSize * scale));
         switch (glyph_) {
             case Glyph::Gear: pixmap = renderGear(pixelSize, color); break;
+            case Glyph::OutlineGear: pixmap = renderOutlineGear(pixelSize, color); break;
             case Glyph::Keyboard: pixmap = renderKeyboard(pixelSize, color); break;
             case Glyph::Sliders: pixmap = renderSliders(pixelSize, color); break;
             case Glyph::Package: pixmap = renderPackage(pixelSize, color); break;
             case Glyph::ChevronLeft: pixmap = renderChevron(pixelSize, color, true); break;
             case Glyph::ChevronRight: pixmap = renderChevron(pixelSize, color, false); break;
+            case Glyph::Search: pixmap = renderSearch(pixelSize, color); break;
+            case Glyph::Filter: pixmap = renderFilter(pixelSize, color); break;
+            case Glyph::Teams: pixmap = renderTeams(pixelSize, color); break;
+            case Glyph::Play: pixmap = renderPlay(pixelSize, color); break;
+            case Glyph::ChevronDown: pixmap = renderChevronDown(pixelSize, color); break;
+        }
+        if (trailingGap_ > 0) {
+            // A button that draws icon and label itself owns the spacing between
+            // them; the style's own gap is not adjustable, so the glyph carries
+            // the header's difference as transparent pixels.
+            const int extra = qMax(1, qCeil(trailingGap_ * scale));
+            QPixmap padded(pixmap.width() + extra, pixmap.height());
+            padded.fill(Qt::transparent);
+            QPainter painter(&padded);
+            painter.drawPixmap(0, 0, pixmap);
+            painter.end();
+            pixmap = padded;
         }
         pixmap.setDevicePixelRatio(scale);
         QPixmapCache::insert(cacheKey, pixmap);
@@ -259,7 +457,7 @@ public:
 
     QSize actualSize(const QSize& size, QIcon::Mode, QIcon::State) override {
         const int side = qMin(size.width(), size.height());
-        return QSize(side, side);
+        return QSize(side + trailingGap_, side);
     }
 
 private:
@@ -267,12 +465,13 @@ private:
     QColor normal_;
     QColor active_;
     QColor disabled_;
+    int trailingGap_ = 0;
 };
 
 QIcon glyphIcon(Glyph glyph, int size, const QColor& normal, const QColor& active,
-                const QColor& disabled) {
+                const QColor& disabled, int trailingGap = 0) {
     Q_UNUSED(size);
-    return QIcon(new GlyphIconEngine(glyph, normal, active, disabled));
+    return QIcon(new GlyphIconEngine(glyph, normal, active, disabled, trailingGap));
 }
 
 }  // namespace
@@ -280,6 +479,11 @@ QIcon glyphIcon(Glyph glyph, int size, const QColor& normal, const QColor& activ
 QIcon gearIcon(int size, const QString& color) {
     const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
     return glyphIcon(Glyph::Gear, size, fill, fill, fill);
+}
+
+QIcon outlineGearIcon(int size, const QString& color) {
+    const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
+    return glyphIcon(Glyph::OutlineGear, size, fill, fill, fill);
 }
 
 QIcon keyboardIcon(int size, const QString& color) {
@@ -295,6 +499,31 @@ QIcon slidersIcon(int size, const QString& color) {
 QIcon packageIcon(int size, const QString& color) {
     const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
     return glyphIcon(Glyph::Package, size, fill, fill, fill);
+}
+
+QIcon searchIcon(int size, const QString& color, int trailingGap) {
+    const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
+    return glyphIcon(Glyph::Search, size, fill, fill, fill, trailingGap);
+}
+
+QIcon filterIcon(int size, const QString& color, int trailingGap) {
+    const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
+    return glyphIcon(Glyph::Filter, size, fill, fill, fill, trailingGap);
+}
+
+QIcon teamsIcon(int size, const QString& color, int trailingGap) {
+    const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
+    return glyphIcon(Glyph::Teams, size, fill, fill, fill, trailingGap);
+}
+
+QIcon playIcon(int size, const QString& color, int trailingGap) {
+    const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
+    return glyphIcon(Glyph::Play, size, fill, fill, fill, trailingGap);
+}
+
+QIcon chevronDownIcon(int size, const QString& color) {
+    const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
+    return glyphIcon(Glyph::ChevronDown, size, fill, fill, fill);
 }
 
 QIcon chevronLeftIcon(int size) {

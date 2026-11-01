@@ -2313,6 +2313,54 @@ void TestI18n::rateLimitLabelRetranslatesWithoutMovingTheQuotaOrAsking() {
   QCOMPARE(api.requestCount(), requestsBefore);
 }
 
+void TestI18n::rateLimitPillSeparatesNoDataHealthAndAnExhaustedWindow() {
+  QuotaLoopback api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  api.setQuota(100, 100, 60);
+
+  mikai::backend::MikaiClient client(QStringLiteral("fixture-key"), api.baseUrl());
+
+  QWidget host;
+  auto* hostLayout = new QVBoxLayout(&host);
+  auto* pill = new mikai::app::RateLimitLabel(client, &host);
+  pill->setPresentation(mikai::app::RateLimitLabel::Presentation::Pill);
+  hostLayout->addWidget(pill);
+  host.show();
+  QCoreApplication::processEvents();
+
+  auto* line = pill->findChild<QLabel*>(QStringLiteral("muted"));
+  auto* dot = pill->findChild<QLabel*>(QStringLiteral("rateDot"));
+  QVERIFY(line != nullptr && dot != nullptr);
+  QVERIFY2(dot->isVisible(), "the pill does not show its status dot");
+  QVERIFY2(!line->text().isEmpty(), "the pill renders no quota line");
+  // Nothing has answered yet. The client knows a default limit, but a default
+  // is not evidence of a healthy window.
+  QCOMPARE(dot->property("tone").toString(), QStringLiteral("unknown"));
+
+  client.getSchedule();
+  QCOMPARE(api.requestCount(), 1);
+  pill->refresh();
+  QCOMPARE(dot->property("tone").toString(), QStringLiteral("healthy"));
+  QVERIFY2(line->text().contains(QString::number(100)), qPrintable(line->text()));
+  QVERIFY2(!line->toolTip().isEmpty(), "the pill lost the quota detail tooltip");
+
+  // A spent window: the next answer reports none left.
+  api.setQuota(100, 0, 60);
+  client.getSchedule();
+  QCOMPARE(api.requestCount(), 2);
+  pill->refresh();
+  QCOMPARE(dot->property("tone").toString(), QStringLiteral("exhausted"));
+
+  // The shared widget keeps its inline default for the catalogue and title
+  // page, where there is no dot at all.
+  mikai::app::RateLimitLabel plain(client, &host);
+  QCOMPARE(plain.presentation(), mikai::app::RateLimitLabel::Presentation::Inline);
+  QLabel* plainDot = plain.findChild<QLabel*>(QStringLiteral("rateDot"));
+  QVERIFY(plainDot != nullptr);
+  QVERIFY(plainDot->isHidden());
+}
+
 void TestI18n::cleanup() {
   // Unconditional English, not the stored preference: a Ukrainian system locale
   // would otherwise hand the next suite a translator and a comma-decimal locale
