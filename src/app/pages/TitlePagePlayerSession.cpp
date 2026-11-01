@@ -19,6 +19,7 @@
 #include "workers/Runner.hpp"
 
 #include <PlayerDialog.hpp>
+#include <backend/HttpTransport.hpp>
 #include <backend/MikaiClient.hpp>
 #include <backend/Releases.hpp>
 #include <backend/Streams.hpp>
@@ -258,6 +259,7 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
     bindNativePlaybackAssembly(runner_, *session->dialog);
     session->dialog->setPlaylist(session->playlist, currentIndex);
     session->dialog->setVariants(episodeVariants(entry->number), entry->embedUrl);
+    requestSkipSegments(session);
     // The episode the player opens first is not applied through applyEpisode, so
     // its resume point is handed over before startPlayer().
     session->dialog->setEpisodeResumePoint(watchHistory_.offset(ref_, entry->number));
@@ -478,6 +480,44 @@ void TitlePage::releaseSessionResolution(PlayerSession* session) {
     mplayer::native::endResolution(lease);
 }
 
+void TitlePage::requestSkipSegments(PlayerSession* session) {
+    if (closed_ || session == nullptr || !sessions_.contains(session) ||
+        session->entry == nullptr || session->dialog == nullptr) {
+        return;
+    }
+
+    const QString embed = session->entry->embedUrl;
+    session->dialog->setSkipSegments({});
+    if (!embed.contains(QStringLiteral("moonanime.art/iframe/"))) {
+        return;
+    }
+
+    const QPointer<TitlePage> self(this);
+    const QPointer<mplayer::shell::PlayerDialog> target(session->dialog);
+    const int seq = session->sourceSequence;
+    runner_.runStream(
+        [embed] {
+            return QVariant::fromValue(
+                backend::moonSkipSegments(backend::transportManagerForThread(), embed));
+        },
+        [self, target, session, embed, seq](const QVariant& result) {
+            if (self.isNull() || self->closed_ || target.isNull() ||
+                !self->sessions_.contains(session) || session->dialog != target.data() ||
+                seq != session->sourceSequence || target->currentEmbed() != embed) {
+                return;
+            }
+            target->setSkipSegments(result.value<QVector<QVariantMap>>());
+        },
+        [self, target, session, embed, seq](const backend::Failure& failure) {
+            if (self.isNull() || self->closed_ || target.isNull() ||
+                !self->sessions_.contains(session) || session->dialog != target.data() ||
+                seq != session->sourceSequence || target->currentEmbed() != embed) {
+                return;
+            }
+            qWarning().noquote() << "mikai: could not load skip segments:" << failure.message;
+        });
+}
+
 void TitlePage::recoverStream(PlayerSession* session) {
     // Signed stream URLs expire, so re-extract once before reporting failure.
     // The re-extraction targets whatever track the dialog is on RIGHT NOW: a
@@ -557,6 +597,7 @@ void TitlePage::switchPlayerVariant(PlayerSession* session, const QString& embed
             session->entry = loaded;
             session->dialog->applyVariant(toQualities(qualities), loaded->label,
                                           loaded->embedUrl);
+            self->requestSkipSegments(session);
         });
 }
 
@@ -650,6 +691,7 @@ void TitlePage::playEpisodeFrom(PlayerSession* session, const QVariantMap& item,
             target->setEpisodeResumePoint(self->watchHistory_.offset(self->ref_, loaded->number));
             session->dialog->applyEpisode(loaded->label, loaded->embedUrl, index,
                                           toQualities(qualities), variants);
+            self->requestSkipSegments(session);
         });
 }
 

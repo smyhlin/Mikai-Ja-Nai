@@ -33,6 +33,12 @@ class TestStreams : public QObject {
   void decodesATortugaToken();
   void rejectsATortugaTokenThatIsNotBase64();
 
+  void parsesMoonSkipSegmentsInPageOrder();
+  void ignoresInvalidMoonSegmentsWithoutDiscardingValidOnes();
+  void missingMoonSkipSegmentsYieldsAnEmptyList();
+  void malformedMoonSkipSegmentsYieldAnEmptyList();
+  void honoursAnArbitraryMoonObfuscationKey();
+
   void theTimeoutIsTwentySeconds();
   void theFetchRetriesTwice();
   void cancellingAQuietProviderFetchReturnsPromptly();

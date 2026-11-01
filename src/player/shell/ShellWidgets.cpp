@@ -13,6 +13,7 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <cmath>
 
 #include "ShellSliders.hpp"
@@ -58,6 +59,15 @@ QString presetLabel(int index) {
     return QCoreApplication::translate("mplayer::shell::SettingsFlyout",
                                        kSpeedPresets[index].label);
 }
+
+// ── skip pill metrics ──────────────────────────────────────────────────────
+// The pill is measured by its text, so a longer translation grows it instead of
+// being clipped. The height is fixed: a stack of offers reads as one column.
+constexpr int kSkipPillHeight = 34;
+constexpr int kSkipPillPadding = 14;
+constexpr int kSkipPillGlyph = 13;
+constexpr int kSkipPillGlyphGap = 7;
+constexpr int kSkipPillMinText = 64;
 
 /// paintRounded() with a brush instead of a flat colour, so an IconButton's
 /// standing fill can be the gradient the float's play disc is drawn with.
@@ -349,6 +359,71 @@ void IconButton::paintChrome(QPainter& painter) {
 }
 
 void IconButton::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SKIP BUTTON
+// ═══════════════════════════════════════════════════════════════════════════
+
+SkipButton::SkipButton(QWidget* parent) : QPushButton(parent) {
+    // Text is painted by paintChrome, never by QPushButton's own style, so the
+    // control is flat and carries no stylesheet of its own.
+    setFlat(true);
+    setCursor(Qt::PointingHandCursor);
+    setFocusPolicy(Qt::StrongFocus);
+    setFont(uiFont(9, true));
+    setFixedHeight(kSkipPillHeight);
+}
+
+void SkipButton::setLabel(const QString& label) {
+    if (label_ == label) {
+        return;
+    }
+    label_ = label;
+    // The base class keeps the string too, so a screen reader that reads the
+    // button's text and one that reads its accessible name agree.
+    QPushButton::setText(label);
+    resize(sizeHint());
+    chromeUpdate(this);
+}
+
+QSize SkipButton::sizeHint() const {
+    const QFontMetrics metrics(font());
+    const int text = std::max(kSkipPillMinText, metrics.horizontalAdvance(label_));
+    return {text + 2 * kSkipPillPadding + kSkipPillGlyphGap + kSkipPillGlyph, kSkipPillHeight};
+}
+
+void SkipButton::enterEvent(QEnterEvent* event) {
+    hover_ = true;
+    chromeUpdate(this);
+    QPushButton::enterEvent(event);
+}
+
+void SkipButton::leaveEvent(QEvent* event) {
+    hover_ = false;
+    chromeUpdate(this);
+    QPushButton::leaveEvent(event);
+}
+
+void SkipButton::paintChrome(QPainter& painter) {
+    // Inset by the stroke, so the outline lands inside the button's own rect.
+    const QRectF box(0.5, 0.5, width() - 1.0, height() - 1.0);
+    const double radius = std::min(cornerRadius() + 6.0, height() / 2.0);
+    paintRounded(painter, box, radius, hover_ ? QColor(48, 51, 58, 240) : pill(),
+                 hover_ ? w25() : w15());
+
+    const int glyphX = width() - kSkipPillPadding - kSkipPillGlyph;
+    const int textWidth = std::max(0, glyphX - kSkipPillGlyphGap - kSkipPillPadding);
+    painter.setFont(font());
+    painter.setPen(isEnabled() ? w95() : w45());
+    painter.drawText(QRect(kSkipPillPadding, 0, textWidth, height()),
+                     Qt::AlignLeft | Qt::AlignVCenter,
+                     QFontMetrics(font()).elidedText(label_, Qt::ElideRight, textWidth));
+    // Integer placement, so the chevron stays crisp at any scale factor.
+    IconPainter::chevronRight(painter, glyphX, (height() - kSkipPillGlyph) / 2, kSkipPillGlyph,
+                              hover_ ? accent() : w70());
+}
+
+void SkipButton::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  SETTINGS FLYOUT

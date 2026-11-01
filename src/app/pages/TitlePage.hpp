@@ -317,6 +317,7 @@ private:
     /// disposal and on a superseded completion. A stale release is a no-op, so it
     /// can never clear the resolution a newer owner is running.
     void releaseSessionResolution(PlayerSession* session);
+    void requestSkipSegments(PlayerSession* session);
     void recoverStream(PlayerSession* session);
     void switchPlayerVariant(PlayerSession* session, const QString& embed, const QString& label);
     void probeTrackQuality(PlayerSession* session, const QString& embed);

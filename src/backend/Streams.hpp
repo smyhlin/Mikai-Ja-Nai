@@ -3,6 +3,7 @@
 #include <QMap>
 #include <QString>
 #include <QStringList>
+#include <QVariant>
 #include <QVector>
 
 class QNetworkAccessManager;
@@ -52,6 +53,11 @@ QString fetchText(QNetworkAccessManager* manager, const QString& url,
 
 QString ashdiMaster(QNetworkAccessManager* manager, const QString& pageUrl);
 QString moonMaster(QNetworkAccessManager* manager, const QString& pageUrl);
+
+// Maps contain "type", "start" and "end" in seconds; provider order and overlaps are preserved.
+QVector<QVariantMap> moonSkipSegments(QNetworkAccessManager* manager, const QString& pageUrl);
+
+QVector<QVariantMap> parseMoonSkipSegments(const QString& html, const QString& pageUrl = {});
 QString tortugaDecode(const QString& token);
 QString tortugaMaster(QNetworkAccessManager* manager, const QString& pageUrl);
 QString extractMaster(QNetworkAccessManager* manager, const QString& pageUrl);

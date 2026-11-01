@@ -165,6 +165,10 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/player/TestPlaybackDiagnostics.cpp
     tests/cpp/player/TestPlaybackControls.hpp
     tests/cpp/player/TestPlaybackControls.cpp
+    tests/cpp/player/TestSkipSegments.hpp
+    tests/cpp/player/TestSkipSegments.cpp
+    tests/cpp/player/TestTimelineMarks.hpp
+    tests/cpp/player/TestTimelineMarks.cpp
     tests/cpp/player/TestMediaInformation.hpp
     tests/cpp/player/TestMediaInformation.cpp
     tests/cpp/player/TestHdrRenderContracts.hpp
@@ -325,6 +329,8 @@ if(MIKAI_BUILD_PROBES)
     TestNativeStatus
     TestPlaybackDiagnostics
     TestPlaybackControls
+    TestSkipSegments
+    TestTimelineMarks
     TestMediaInformation
     TestHdrRenderContracts
     TestNativePrefs

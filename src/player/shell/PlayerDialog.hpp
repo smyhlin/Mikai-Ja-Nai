@@ -120,6 +120,15 @@ public:
     /// Publishes the dub/sub variants the popover lists and which embed is
     /// current. The track chip only appears once there is something to pick.
     void setVariants(const QVector<QVariantMap>& variants, const QString& currentEmbed);
+    /// Publishes the current episode's skip segments. Each map names one by
+    /// `type` - the provider's identifier ("opening", "recap", …), not display
+    /// text - and its `start`/`end` in seconds. The shell drops entries that do
+    /// not name a forward interval, and the player's own clock decides what is
+    /// offered, so overlapping segments each stay individually actionable and a
+    /// list that arrives after the playhead entered a segment is offered
+    /// immediately. Pressing an offer seeks to that segment's end. An empty
+    /// list clears the offers.
+    void setSkipSegments(const QVector<QVariantMap>& segments);
     void stepEpisode(int delta);
     /// Badges one track with the quality a probe found for it.
     void setTrackQuality(const QString& embed, int quality);

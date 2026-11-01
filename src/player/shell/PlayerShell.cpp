@@ -22,6 +22,9 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <cmath>
+
 #include "EpisodeNavButton.hpp"
 #include "ShellSliders.hpp"
 #include "ShellWidgets.hpp"
@@ -58,6 +61,11 @@ QString stateName(PlayerShell::State state) {
 /// One panel per level of the enhancement tree: the root, the Anime4K level, a
 /// category, an experiment family, and the deepest one a preset hangs in.
 constexpr int kEnhancementTreeDepth = 6;
+
+/// The gap between the stacked skip offers and between the lowest one and the
+/// transport bar. They stand over the picture, so the space is the only thing
+/// separating a pill from the dock it sits above.
+constexpr int kSkipOfferGap = 8;
 constexpr auto kAnimeJanaiRoot = "animejanai";
 constexpr auto kAnimeJanaiRife = "animejanai:rife";
 constexpr auto kAnimeJanaiSpatial = "animejanai:spatial";
@@ -1146,6 +1154,9 @@ void PlayerShell::layoutChrome() {
     const int dw = std::min(kDockMaxWidth, w - 2 * kDockHorizontalInset);
     dock_->setGeometry((w - dw) / 2, h - kDockBottomInset - kDockHeight, dw, kDockHeight);
 
+    // ── skip offers (above the dock, right-aligned with it) ─────────
+    layoutSkipButtons();
+
     // ── status chip ───────────────────────────────────────────────
     footerLeft_->adjustSize();
     footerLeft_->move(12, 8);
@@ -1172,6 +1183,9 @@ void PlayerShell::setMedia(const QString& path, const QString& origin, const QSt
         path.isEmpty() ? tr("no media loaded") : QFileInfo(path).fileName();
     setWindowTitle(tr("%1 · Media Lightbox").arg(name));
     position_ = 0.0;
+    // The position just moved to the start of a source: an offer describing the
+    // outgoing playhead must not stay up over it.
+    syncSkipSegments();
     networkBytesPerSecond_ = 0.0;
     streamFramesPerSecond_ = 0.0;
     updateInfoChip();
@@ -1193,6 +1207,10 @@ void PlayerShell::setDuration(double seconds) {
 void PlayerShell::setPosition(double seconds) {
     position_ = std::max(0.0, seconds);
     updateTimeLabels();
+    // The video clock is what offers a skip segment, so every position is a
+    // chance to enter or leave one. The comparison inside is what keeps a tick
+    // inside the same segment from touching a widget.
+    syncSkipSegments();
 }
 
 void PlayerShell::setPlaying(bool playing) {
@@ -1255,6 +1273,145 @@ void PlayerShell::setEpisodeLabel(const QString& label) {
         lblEpisode_->setText(label.isEmpty() ? QStringLiteral("MIKAI JA NAI") : label);
         footerLeft_->adjustSize();
     }
+}
+
+// ── skip segments ──────────────────────────────────────────────────────
+
+void PlayerShell::setSkipSegments(const QVector<QVariantMap>& segments) {
+    QVector<SkipSegment> usable;
+    usable.reserve(segments.size());
+    for (const QVariantMap& map : segments) {
+        bool startOk = false;
+        bool endOk = false;
+        double start = map.value(QStringLiteral("start")).toDouble(&startOk);
+        const double end = map.value(QStringLiteral("end")).toDouble(&endOk);
+        if (!startOk || !endOk || !std::isfinite(start) || !std::isfinite(end)) {
+            continue;
+        }
+        start = std::max(0.0, start);
+        if (end <= start) {
+            continue;
+        }
+        SkipSegment segment;
+        segment.type = map.value(QStringLiteral("type")).toString();
+        segment.start = start;
+        segment.end = end;
+        usable.append(segment);
+    }
+    // Earlier segments sit nearest the dock; overlaps remain independently actionable.
+    std::stable_sort(usable.begin(), usable.end(), [](const SkipSegment& a, const SkipSegment& b) {
+        if (a.start != b.start) {
+            return a.start < b.start;
+        }
+        return a.end > b.end;
+    });
+    usable.erase(std::unique(usable.begin(), usable.end()), usable.end());
+    skipSegments_ = std::move(usable);
+    syncSkipSegments();
+    if (scrub_ != nullptr) {
+        QVector<QVariantMap> ranges;
+        ranges.reserve(skipSegments_.size());
+        for (const SkipSegment& segment : skipSegments_) {
+            QVariantMap range;
+            range.insert(QStringLiteral("type"), segment.type);
+            range.insert(QStringLiteral("start"), segment.start);
+            range.insert(QStringLiteral("end"), segment.end);
+            ranges.append(range);
+        }
+        scrub_->setSkipSegments(ranges);
+    }
+}
+
+void PlayerShell::syncSkipSegments() {
+    qsizetype index = 0;
+    bool changed = false;
+    if (hasMedia_) {
+        for (const SkipSegment& segment : skipSegments_) {
+            if (position_ < segment.start || position_ >= segment.end) continue;
+            if (index >= activeSkip_.size() || activeSkip_.at(index) != segment) {
+                changed = true;
+                break;
+            }
+            ++index;
+        }
+    }
+    if (!changed && index == activeSkip_.size()) return;
+
+    activeSkip_.clear();
+    if (hasMedia_) {
+        for (const SkipSegment& segment : skipSegments_) {
+            if (position_ >= segment.start && position_ < segment.end) {
+                activeSkip_.append(segment);
+            }
+        }
+    }
+
+    const qsizetype before = skipButtons_.size();
+    while (skipButtons_.size() < activeSkip_.size()) {
+        auto* button = new SkipButton(this);
+        button->setObjectName(QStringLiteral("playerSkipSegment"));
+        connect(button, &QPushButton::clicked, this, [this, button] {
+            onSkipSegmentActivated(static_cast<int>(skipButtons_.indexOf(button)));
+        });
+        button->raise();
+        skipButtons_.append(button);
+    }
+    if (skipButtons_.size() != before) {
+        chrome_.adopt(this, this);
+    }
+    refreshSkipLabels();
+    layoutSkipButtons();
+    chromeDirtyAll();
+}
+
+void PlayerShell::refreshSkipLabels() {
+    for (int i = 0; i < skipButtons_.size(); ++i) {
+        SkipButton* button = skipButtons_.at(i);
+        if (i >= activeSkip_.size()) {
+            button->setVisible(false);
+            continue;
+        }
+        const SkipSegment& segment = activeSkip_.at(i);
+        const QString label = ScrubBar::segmentTypeLabel(segment.type);
+        const QString hint = tr("Skip %1 — jump to %2").arg(label, formatTime(segment.end));
+        button->setVisible(true);
+        button->setLabel(tr("Skip %1").arg(label));
+        button->setToolTip(hint);
+        button->setAccessibleName(hint);
+    }
+}
+
+void PlayerShell::layoutSkipButtons() {
+    if (skipButtons_.isEmpty()) {
+        return;
+    }
+    const int w = width();
+    const int dockWidth = std::min(kDockMaxWidth, w - 2 * kDockHorizontalInset);
+    const int dockRight = (w + dockWidth) / 2;
+    int bottom = height() - kDockBottomInset - kDockHeight - kSkipOfferGap;
+    for (SkipButton* button : skipButtons_) {
+        if (button->isHidden()) {
+            continue;
+        }
+        const QSize hint = button->sizeHint();
+        const int offerWidth = std::min(hint.width(), std::max(0, dockRight - kDockHorizontalInset));
+        const int y = std::max(0, bottom - hint.height());
+        button->setGeometry(dockRight - offerWidth, y, offerWidth, hint.height());
+        bottom = y - kSkipOfferGap;
+    }
+}
+
+void PlayerShell::onSkipSegmentActivated(int index) {
+    if (index < 0 || index >= activeSkip_.size()) {
+        return;
+    }
+    const double target = activeSkip_.at(index).end;
+    // Retire the offer immediately while the asynchronous seek settles.
+    position_ = target;
+    updateTimeLabels();
+    syncSkipSegments();
+    wake();
+    emit seekRequested(target);
 }
 
 void PlayerShell::setVolume(double volume, bool fromHost) {
@@ -2285,6 +2442,11 @@ void PlayerShell::retranslateUi() {
     // The AnimeJaNai chip carries our own wording around the host's status
     // text, so it is re-derived here; the status itself is not re-requested.
     updateAnimeJanaiChip();
+    // A skip offer names its segment in our words, so the installed language is
+    // re-derived from the retained typed segments. The offer itself is not
+    // changed and the position is not read.
+    refreshSkipLabels();
+    layoutSkipButtons();
     updateInfoChip();
     updateTimeLabels();
     layoutChrome();

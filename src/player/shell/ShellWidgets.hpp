@@ -22,6 +22,7 @@
 #include <utility>
 #include <QPoint>
 #include <QPushButton>
+#include <QSize>
 #include <QString>
 #include <QTimer>
 #include <QVector>
@@ -196,6 +197,37 @@ private:
     QColor tint_;
     bool hover_ = false;
     bool hasTint_ = false;
+};
+
+/// A provider-announced skip segment as one pill: the segment's name in the
+/// installed language and a forward chevron, in the same fill and corner as the
+/// rest of the chrome. It stands over the picture, so its pixels belong to the
+/// surface painter like every adopted control; the widget itself is still the
+/// hit target, the tooltip and the accessible name.
+///
+/// The label is supplied already localized by the shell - this class knows
+/// nothing about openings or recaps, and nothing about a playhead.
+class SkipButton : public QPushButton, public ChromePaint {
+    Q_OBJECT
+public:
+    explicit SkipButton(QWidget* parent = nullptr);
+
+    /// The words this button offers. An unchanged label is not a state change
+    /// and repaints nothing; a longer one re-measures the pill.
+    void setLabel(const QString& label);
+    QString label() const { return label_; }
+
+    void paintChrome(QPainter& painter) override;
+    QSize sizeHint() const override;
+
+protected:
+    void enterEvent(QEnterEvent* event) override;
+    void leaveEvent(QEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
+
+private:
+    QString label_;
+    bool hover_ = false;
 };
 
 // ── settings flyout ────────────────────────────────────────────────────────

@@ -1215,6 +1215,9 @@ void PlayerDialog::onMediaDropped(const QString& path) {
     setSeriesExpanded(false);
     setPlaylist({});
     setVariants({}, {});
+    // The dropped file has no provider metadata, and the previous episode's
+    // offers describe a timeline that is no longer on screen.
+    shell_->setSkipSegments({});
     audioPopup_->close();
     subtitlesPopup_->close();
     shell_->dismissOverlay();
@@ -1332,6 +1335,11 @@ void PlayerDialog::applyEpisode(const QString& label,
     if (closed_ || directMedia_ || qualities.isEmpty()) {
         return;
     }
+    // A different episode is a different timeline: the outgoing episode's
+    // segments must not linger over this one while the host resolves the new
+    // list. A list pushed later appears at whatever position the playhead has
+    // reached by then.
+    shell_->setSkipSegments({});
     episodeIndex_ = index;
     QVector<VariantInfo> parsed;
     parsed.reserve(variants.size());
@@ -1614,6 +1622,17 @@ void PlayerDialog::setVariants(const QVector<QVariantMap>& variants, const QStri
     if (subtitlesPopup_->isVisible()) {
         subtitlesPopup_->setEntries(trackEntries(QStringLiteral("sub")));
     }
+}
+
+void PlayerDialog::setSkipSegments(const QVector<QVariantMap>& segments) {
+    if (closed_ || shell_ == nullptr) {
+        return;
+    }
+    // The shell owns the one reading of the provider's shape: it validates the
+    // ranges, decides what the clock offers and hands the timeline the same
+    // numbers. Re-checking them here would be a second convention to keep in
+    // step with it.
+    shell_->setSkipSegments(segments);
 }
 
 void PlayerDialog::setVariantsVisibility() {

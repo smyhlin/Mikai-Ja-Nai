@@ -15,6 +15,9 @@
 
 #include <QColor>
 #include <QPainter>
+#include <QPoint>
+#include <QVariantMap>
+#include <QVector>
 #include <QWidget>
 
 #include "ShellTheme.hpp"
@@ -67,6 +70,17 @@ protected:
 
     double hoverFraction() const { return hover_; }
     int margin() const { return margin_; }
+    /// Groove thickness in px; a subclass drawing around the track needs it.
+    int trackThickness() const { return track_; }
+    /// Drops the hover fraction. Subclasses call it when the pointer is no
+    /// longer meaningfully over the control but no leave event will follow.
+    void clearHover() {
+        hover_ = -1.0;
+        chromeUpdate(this);
+    }
+    /// Records the hover fraction for a pointer that arrived without a move -
+    /// a press lands where no move has been reported yet.
+    void setHoverFraction(double fraction) { hover_ = fraction; }
 
 private:
     double v_ = 0.0;
@@ -77,7 +91,13 @@ private:
     bool drag_ = false;
 };
 
-/// Timeline with a mono timestamp tooltip on hover.
+/// Timeline with the provider's opening / ending / recap ranges tinted on the
+/// track.
+///
+/// The bar itself only knows seconds and fractions, and it paints no hover card:
+/// the reading under the pointer is a signal, so whoever owns the preview (frame
+/// and segment name over the picture) draws it exactly once. A consumer that
+/// only wants the ranges drawn has to do nothing but hand over the segment list.
 class ScrubBar : public RangeSlider {
     Q_OBJECT
 
@@ -90,12 +110,59 @@ public:
     /// Fraction of the timeline to seconds.
     double timeAt(double frac) const { return frac * duration_; }
 
-    /// RangeSlider's bar, plus the hover timestamp above it.
+    /// Provider segments (`type`, `start`, `end` in seconds), the same shape the
+    /// shell validates and forwards. Entries that are unreadable, non-finite,
+    /// reversed or zero-length are ignored, and a range is clipped to the known
+    /// duration at paint and label time - so a list that arrives before the
+    /// media is measured still renders once the length is known.
+    void setSkipSegments(const QVector<QVariantMap>& segments);
+
+    /// Seconds under the pointer, or -1 when the pointer is off the bar or the
+    /// duration is not known yet.
+    double hoverTime() const;
+    bool isHovering() const { return hoverTime() >= 0.0; }
+
+    /// Every segment covering `seconds`, named in the UI language and joined in
+    /// list order - overlaps keep both names rather than the last one winning.
+    /// Empty when the instant is outside every range. Half-open like the clock
+    /// that offers a skip: `start <= seconds < end`.
+    QString segmentLabelAt(double seconds) const;
+
+    /// The UI name of one provider segment type; an unknown identifier is shown
+    /// as the provider's own word rather than a name invented for it.
+    static QString segmentTypeLabel(const QString& type);
+
+    /// RangeSlider's bar with the segment ranges painted behind its groove.
     void paintChrome(QPainter& painter) override;
 
+signals:
+    /// The pointer is over the timeline at `seconds`, in widget-global
+    /// coordinates for a popup to anchor on. Emitted for a move and for the
+    /// press that seeks, and not while the duration is unknown - there is no
+    /// time under the pointer to report.
+    void hoverTimeChanged(double seconds, const QPoint& globalPosition);
+    /// The pointer left the timeline.
+    void hoverLeft();
+
+protected:
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void leaveEvent(QEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
+
 private:
+    /// The one place the hover signal is derived from the current fraction.
+    void reportHover(const QPoint& globalPosition);
+    /// x position (px, widget-local) of a time in seconds, clamped to the track.
+    double xAtTime(double seconds) const;
+    /// The segment ranges as pixel columns, unioned so an overlap is one tint.
+    const QVector<QRect>& segmentBands() const;
+
     double duration_ = 0.0;
-    QFont font_;
+    QVector<QVariantMap> segments_;
+    mutable QVector<QRect> bands_;
+    mutable QSize bandsSize_;
+    mutable bool bandsDirty_ = true;
 };
 
 /// A horizontal level. The knob travels inside the widget, so at 0 and at full

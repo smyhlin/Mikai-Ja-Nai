@@ -3,6 +3,11 @@
 #include "HttpTransport.hpp"
 
 #include <QByteArray>
+#include <QDebug>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QNetworkRequest>
 #include <QRegularExpression>
 #include <QThread>
@@ -54,6 +59,38 @@ double retryDelaySeconds(const QMap<QString, QString>& headers, int attempt) {
         }
     }
     return 0.4 * (attempt + 1);
+}
+
+// The bootstrap uses a rolling XOR seeded by byte zero and a 32-byte key.
+QString decodeMoonPayload(const QString& html, const QString& pageUrl) {
+    static const QRegularExpression blobPattern(QStringLiteral("atob\\(\"([A-Za-z0-9+/=]{100,})\"\\)"));
+    const QRegularExpressionMatch blobMatch = blobPattern.match(html);
+    if (!blobMatch.hasMatch()) {
+        throw StreamError(QStringLiteral("moonanime payload not found in %1").arg(pageUrl));
+    }
+
+    const QByteArray cipher = QByteArray::fromBase64(blobMatch.captured(1).toLatin1());
+    if (cipher.size() < 34) {
+        throw StreamError(QStringLiteral("moonanime payload too short in %1").arg(pageUrl));
+    }
+    const char* key = cipher.constData() + 1;
+    const char* enc = cipher.constData() + 33;
+    const int length = cipher.size() - 33;
+    QByteArray out(length, Qt::Uninitialized);
+    unsigned char k = static_cast<unsigned char>(cipher.at(0));
+    for (int i = 0; i < length; ++i) {
+        const unsigned char kb = static_cast<unsigned char>(key[i % 32]);
+        const unsigned char e = static_cast<unsigned char>(enc[i]);
+        out[i] = static_cast<char>(e ^ kb ^ k);
+        k = static_cast<unsigned char>((e + kb) & 255);
+    }
+    return QString::fromUtf8(out);
+}
+
+bool knownMoonSegmentType(const QString& type) {
+    return type == QLatin1String("opening") || type == QLatin1String("ending") ||
+           type == QLatin1String("recap") || type == QLatin1String("mixed_opening") ||
+           type == QLatin1String("mixed_ending");
 }
 
 }  // namespace
@@ -142,28 +179,7 @@ QString ashdiMaster(QNetworkAccessManager* manager, const QString& pageUrl) {
 
 QString moonMaster(QNetworkAccessManager* manager, const QString& pageUrl) {
     const QString html = fetchText(manager, pageUrl, pageHeaderSet());
-    static const QRegularExpression blobPattern(QStringLiteral("atob\\(\"([A-Za-z0-9+/=]{100,})\"\\)"));
-    const QRegularExpressionMatch blobMatch = blobPattern.match(html);
-    if (!blobMatch.hasMatch()) {
-        throw StreamError(QStringLiteral("moonanime payload not found in %1").arg(pageUrl));
-    }
-
-    const QByteArray cipher = QByteArray::fromBase64(blobMatch.captured(1).toLatin1());
-    if (cipher.size() < 34) {
-        throw StreamError(QStringLiteral("moonanime payload too short in %1").arg(pageUrl));
-    }
-    const char* key = cipher.constData() + 1;
-    const char* enc = cipher.constData() + 33;
-    const int length = cipher.size() - 33;
-    QByteArray out(length, Qt::Uninitialized);
-    unsigned char k = static_cast<unsigned char>(cipher.at(0));
-    for (int i = 0; i < length; ++i) {
-        const unsigned char kb = static_cast<unsigned char>(key[i % 32]);
-        const unsigned char e = static_cast<unsigned char>(enc[i]);
-        out[i] = static_cast<char>(e ^ kb ^ k);
-        k = static_cast<unsigned char>((e + kb) & 255);
-    }
-    const QString js = QString::fromUtf8(out);
+    const QString js = decodeMoonPayload(html, pageUrl);
 
     static const QRegularExpression emptySource(
         QStringLiteral("var rawVideo\\s*=\\s*[\"']\\s*[\"']|file:\\s*[\"']\\s*[\"']"));
@@ -211,6 +227,95 @@ QString moonMaster(QNetworkAccessManager* manager, const QString& pageUrl) {
         throw StreamError(QStringLiteral("moonanime master not found in %1").arg(pageUrl));
     }
     return master;
+}
+
+QVector<QVariantMap> parseMoonSkipSegments(const QString& html, const QString& pageUrl) {
+    QString js;
+    try {
+        js = decodeMoonPayload(html, pageUrl);
+    } catch (const StreamError& failure) {
+        qWarning().noquote() << "mikai: moonanime skip metadata unavailable:" << failure.message;
+        return {};
+    }
+
+    if (!js.contains(QStringLiteral("__skipSegments"))) {
+        return {};
+    }
+
+    static const QRegularExpression skipPattern(
+        QStringLiteral("__skipSegments[\\s\\S]{0,512}?JSON\\.parse\\(\\s*_0xd\\(\\s*[\"']([^\"']*)[\"']\\s*\\)\\s*\\)"));
+    const QRegularExpressionMatch skipMatch = skipPattern.match(js);
+    if (!skipMatch.hasMatch()) {
+        qWarning().noquote()
+            << "mikai: moonanime skip metadata pattern not found in" << pageUrl;
+        return {};
+    }
+
+    static const QRegularExpression keyPattern(
+        QStringLiteral("function\\s+_0xd\\s*\\(\\s*e\\s*\\)\\s*\\{\\s*var\\s+k\\s*=\\s*[\"']([^\"']+)[\"']"));
+    const QRegularExpressionMatch keyMatch = keyPattern.match(js);
+    if (!keyMatch.hasMatch() || keyMatch.captured(1).isEmpty()) {
+        qWarning().noquote()
+            << "mikai: moonanime skip metadata key not found in" << pageUrl;
+        return {};
+    }
+
+    const QByteArray cipher = QByteArray::fromBase64(skipMatch.captured(1).toLatin1());
+    const QByteArray key = keyMatch.captured(1).toUtf8();
+    QByteArray decoded(cipher.size(), Qt::Uninitialized);
+    for (int i = 0; i < cipher.size(); ++i) {
+        decoded[i] = static_cast<char>(static_cast<unsigned char>(cipher.at(i)) ^
+                                       static_cast<unsigned char>(key.at(i % key.size())));
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(decoded, &parseError);
+    if (parseError.error != QJsonParseError::NoError) {
+        qWarning().noquote() << "mikai: moonanime skip metadata is not valid JSON in" << pageUrl
+                             << "at byte" << parseError.offset << "-" << parseError.errorString();
+        return {};
+    }
+    if (!document.isArray()) {
+        qWarning().noquote()
+            << "mikai: moonanime skip metadata is not a JSON array in" << pageUrl;
+        return {};
+    }
+
+    QVector<QVariantMap> segments;
+    int rejected = 0;
+    const QJsonArray items = document.array();
+    for (const QJsonValue& value : items) {
+        if (!value.isObject()) {
+            ++rejected;
+            continue;
+        }
+        const QJsonObject item = value.toObject();
+        const QString type = item.value(QStringLiteral("t")).toString();
+        const QJsonValue startValue = item.value(QStringLiteral("s"));
+        const QJsonValue endValue = item.value(QStringLiteral("e"));
+        const double start = startValue.toDouble();
+        const double end = endValue.toDouble();
+        if (!knownMoonSegmentType(type) || !startValue.isDouble() || !endValue.isDouble() ||
+            !std::isfinite(start) || !std::isfinite(end) || start < 0.0 || start >= end) {
+            ++rejected;
+            continue;
+        }
+        QVariantMap segment;
+        segment.insert(QStringLiteral("type"), type);
+        segment.insert(QStringLiteral("start"), start);
+        segment.insert(QStringLiteral("end"), end);
+        segments.append(segment);
+    }
+    if (rejected > 0) {
+        qWarning().noquote() << "mikai: moonanime skip metadata ignored" << rejected
+                             << "invalid segment(s) in" << pageUrl;
+    }
+    return segments;
+}
+
+QVector<QVariantMap> moonSkipSegments(QNetworkAccessManager* manager, const QString& pageUrl) {
+    const QString html = fetchText(manager, pageUrl, pageHeaderSet());
+    return parseMoonSkipSegments(html, pageUrl);
 }
 
 QString tortugaDecode(const QString& token) {

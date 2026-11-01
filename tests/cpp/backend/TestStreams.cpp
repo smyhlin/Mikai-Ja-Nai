@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <atomic>
 
+#include <QtCore/QByteArray>
 #include <QtCore/QStringList>
 #include <QtCore/QElapsedTimer>
 #include <QtNetwork/QHostAddress>
@@ -19,6 +20,7 @@ using mikai::backend::detectSite;
 using mikai::backend::kFetchRetries;
 using mikai::backend::kTimeoutMs;
 using mikai::backend::kUserAgent;
+using mikai::backend::parseMoonSkipSegments;
 using mikai::backend::parseVariants;
 using mikai::backend::qualityUrl;
 using mikai::backend::tortugaDecode;
@@ -47,6 +49,70 @@ QString urlAtHeight(const QVector<QualityVariant>& variants, int height) {
     }
   }
   return {};
+}
+
+// MoonAnime's _0xd is a plain XOR against a key carried in the page script.
+QByteArray moonObfuscate(const QByteArray& plain, const QByteArray& key) {
+  QByteArray out(plain.size(), Qt::Uninitialized);
+  for (int i = 0; i < plain.size(); ++i) {
+    out[i] = static_cast<char>(static_cast<unsigned char>(plain.at(i)) ^
+                               static_cast<unsigned char>(key.at(i % key.size())));
+  }
+  return out;
+}
+
+// The outer blob is seeded base64: byte 0 is the rolling seed, bytes 1..32 the
+// key, the rest the ciphertext.
+QString moonPageFromJavascript(const QString& javascript) {
+  const QByteArray key = QByteArrayLiteral("moon-test-outer-key-32-bytes!!!!");
+  const unsigned char seed = 0x5c;
+  const QByteArray plain = javascript.toUtf8();
+  QByteArray encrypted(plain.size(), Qt::Uninitialized);
+  unsigned char rolling = seed;
+  for (int i = 0; i < plain.size(); ++i) {
+    const unsigned char kb = static_cast<unsigned char>(key.at(i % key.size()));
+    const unsigned char e =
+        static_cast<unsigned char>(plain.at(i)) ^ kb ^ rolling;
+    encrypted[i] = static_cast<char>(e);
+    rolling = static_cast<unsigned char>((e + kb) & 255);
+  }
+  QByteArray cipher;
+  cipher.append(static_cast<char>(seed));
+  cipher.append(key);
+  cipher.append(encrypted);
+  return QStringLiteral("<html><script>!function(){var c=atob(\"%1\");}();</script></html>")
+      .arg(QString::fromLatin1(cipher.toBase64()));
+}
+
+QString moonIframeHtml(const QString& skipJson,
+                       const QString& obfuscationKey = QStringLiteral("sTH7MjkXZiar"),
+                       bool includeSkipBlock = true) {
+  const QByteArray key = obfuscationKey.toUtf8();
+  const QByteArray master = moonObfuscate(
+      QByteArrayLiteral("https://cdn.example/moon/master.m3u8"), key);
+  QString javascript = QStringLiteral(
+                           "function _0xd(e){var k=\"%1\";var b=atob(e);"
+                           "var r=\"\";for(var i=0;i<b.length;i++){"
+                           "r+=String.fromCharCode(b.charCodeAt(i)^k.charCodeAt(i%k.length));}"
+                           "return r;}\n"
+                           "var rawVideo = _0xd(\"%2\");\n")
+                           .arg(obfuscationKey, QString::fromLatin1(master.toBase64()));
+  if (includeSkipBlock) {
+    const QByteArray payload = moonObfuscate(skipJson.toUtf8(), key);
+    javascript += QStringLiteral(
+                      "var __skipSegments = (function(){ try { "
+                      "return JSON.parse(_0xd(\"%1\")); } catch(_) { return []; } })();\n")
+                      .arg(QString::fromLatin1(payload.toBase64()));
+  }
+  return moonPageFromJavascript(javascript);
+}
+
+QStringList skipSegmentTypes(const QVector<QVariantMap>& segments) {
+  QStringList types;
+  for (const QVariantMap& segment : segments) {
+    types << segment.value(QStringLiteral("type")).toString();
+  }
+  return types;
 }
 
 }  // namespace
@@ -194,6 +260,77 @@ void TestStreams::rejectsATortugaTokenThatIsNotBase64() {
     }
     QVERIFY2(raised, qPrintable(QStringLiteral("accepted token %1").arg(broken)));
   }
+}
+
+void TestStreams::parsesMoonSkipSegmentsInPageOrder() {
+  const QString json = QStringLiteral(
+      "[{\"t\":\"mixed_opening\",\"s\":64.21,\"e\":154.82,"
+      "\"n\":\"Пропустити змішаний опенінг\"},"
+      "{\"t\":\"recap\",\"s\":90.0,\"e\":180.0,\"n\":\"Пропустити рекап\"},"
+      "{\"t\":\"opening\",\"s\":512.91,\"e\":602.91,\"n\":\"Пропустити опенінг\"},"
+      "{\"t\":\"ending\",\"s\":1206.66,\"e\":1296.91,\"n\":\"Пропустити ендінг\"},"
+      "{\"t\":\"mixed_ending\",\"s\":1298.09,\"e\":1386.0,"
+      "\"n\":\"Пропустити змішаний ендінг\"}]");
+  const QVector<QVariantMap> segments = parseMoonSkipSegments(moonIframeHtml(json));
+
+  QCOMPARE(static_cast<int>(segments.size()), 5);
+  QCOMPARE(skipSegmentTypes(segments),
+           (QStringList{QStringLiteral("mixed_opening"), QStringLiteral("recap"),
+                        QStringLiteral("opening"), QStringLiteral("ending"),
+                        QStringLiteral("mixed_ending")}));
+  QCOMPARE(segments.at(0).value(QStringLiteral("start")).toDouble(), 64.21);
+  QCOMPARE(segments.at(0).value(QStringLiteral("end")).toDouble(), 154.82);
+  QCOMPARE(segments.at(1).value(QStringLiteral("start")).toDouble(), 90.0);
+  QVERIFY(segments.at(0).value(QStringLiteral("end")).toDouble() >
+          segments.at(1).value(QStringLiteral("start")).toDouble());
+  QCOMPARE(segments.at(4).value(QStringLiteral("end")).toDouble(), 1386.0);
+}
+
+void TestStreams::ignoresInvalidMoonSegmentsWithoutDiscardingValidOnes() {
+  const QString json = QStringLiteral(
+      "[{\"t\":\"opening\",\"s\":10,\"e\":20},"
+      "{\"t\":\"ending\",\"s\":-1,\"e\":5},"
+      "{\"t\":\"recap\",\"s\":20,\"e\":20},"
+      "{\"t\":\"ending\",\"s\":5,\"e\":10},"
+      "{\"t\":\"promo\",\"s\":30,\"e\":40},"
+      "{\"t\":\"recap\",\"s\":\"50\",\"e\":60},"
+      "{\"t\":\"recap\",\"s\":70},"
+      "\"not an object\"]");
+  const QVector<QVariantMap> segments = parseMoonSkipSegments(moonIframeHtml(json));
+
+  QCOMPARE(static_cast<int>(segments.size()), 2);
+  QCOMPARE(skipSegmentTypes(segments),
+           (QStringList{QStringLiteral("opening"), QStringLiteral("ending")}));
+  QCOMPARE(segments.at(0).value(QStringLiteral("start")).toDouble(), 10.0);
+  QCOMPARE(segments.at(1).value(QStringLiteral("start")).toDouble(), 5.0);
+  QCOMPARE(segments.at(1).value(QStringLiteral("end")).toDouble(), 10.0);
+}
+
+void TestStreams::missingMoonSkipSegmentsYieldsAnEmptyList() {
+  const QVector<QVariantMap> segments =
+      parseMoonSkipSegments(moonIframeHtml({}, QStringLiteral("sTH7MjkXZiar"), false));
+  QVERIFY(segments.isEmpty());
+
+  QVERIFY(parseMoonSkipSegments(QStringLiteral("<html><body>maintenance</body></html>"))
+              .isEmpty());
+}
+
+void TestStreams::malformedMoonSkipSegmentsYieldAnEmptyList() {
+  QVERIFY(parseMoonSkipSegments(moonIframeHtml(QStringLiteral("{not json"))).isEmpty());
+  QVERIFY(parseMoonSkipSegments(moonIframeHtml(QStringLiteral("{\"t\":\"opening\"}")))
+              .isEmpty());
+  QVERIFY(parseMoonSkipSegments(moonIframeHtml(QStringLiteral("[{\"t\":\"opening\","))).isEmpty());
+}
+
+void TestStreams::honoursAnArbitraryMoonObfuscationKey() {
+  const QString json =
+      QStringLiteral("[{\"t\":\"ending\",\"s\":12.5,\"e\":42.25}]");
+  const QVector<QVariantMap> segments =
+      parseMoonSkipSegments(moonIframeHtml(json, QStringLiteral("Qz9-AbCd_Efgh.Ijkl")));
+  QCOMPARE(static_cast<int>(segments.size()), 1);
+  QCOMPARE(skipSegmentTypes(segments), (QStringList{QStringLiteral("ending")}));
+  QCOMPARE(segments.at(0).value(QStringLiteral("start")).toDouble(), 12.5);
+  QCOMPARE(segments.at(0).value(QStringLiteral("end")).toDouble(), 42.25);
 }
 
 void TestStreams::cancellingAQuietProviderFetchReturnsPromptly() {

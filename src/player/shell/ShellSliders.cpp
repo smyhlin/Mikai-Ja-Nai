@@ -1,11 +1,16 @@
 #include "ShellSliders.hpp"
 
 #include <QCoreApplication>
+#include <QCursor>
 #include <QEvent>
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
+#include <QRegion>
+#include <QStringList>
 #include <QWheelEvent>
+
+#include <cmath>
 
 namespace mplayer {
 namespace shell {
@@ -116,26 +121,233 @@ void RangeSlider::paintChrome(QPainter& p) {
 
 // ── ScrubBar ───────────────────────────────────────────────────────────────
 
-ScrubBar::ScrubBar(QWidget* parent) : RangeSlider(w95(), 4, parent), font_(monoFont(9)) {}
+ScrubBar::ScrubBar(QWidget* parent) : RangeSlider(w95(), 4, parent) {}
 
-void ScrubBar::setDuration(double d) { duration_ = qMax(0.0, d); }
-
-void ScrubBar::paintChrome(QPainter& p) {
-    RangeSlider::paintChrome(p);
-    if (duration_ <= 0.0 || !underMouse() || hoverFraction() < 0.0 || hoverFraction() > 1.0) {
+void ScrubBar::setDuration(double d) {
+    const double next = std::isfinite(d) ? qMax(0.0, d) : 0.0;
+    if (qFuzzyCompare(1.0 + next, 1.0 + duration_)) {
         return;
     }
+    duration_ = next;
+    bandsDirty_ = true;
+    chromeUpdate(this);
+    const double underPointer = hoverTime();
+    if (underPointer >= 0.0) {
+        emit hoverTimeChanged(underPointer, QCursor::pos());
+    }
+}
 
-    const QString label = formatTime(hoverFraction() * duration_);
-    const double tw = textWidth(font_, label) + 12;
-    const double th = 17;
-    const double m = margin();
-    const double cx = m + span() * hoverFraction();
-    const double x = qBound(0.0, cx - tw / 2.0, width() - tw);
-    paintRounded(p, QRectF(x, 0, tw, th), 4, QColor(0, 0, 0, 205));
-    p.setFont(font_);
-    p.setPen(w90());
-    p.drawText(QRectF(x, 0, tw, th), Qt::AlignCenter, label);
+namespace {
+
+bool segmentNumber(const QVariantMap& map, const char* key, double* out) {
+    const QVariant value = map.value(QString::fromLatin1(key));
+    if (!value.isValid()) {
+        return false;
+    }
+    bool ok = false;
+    const double number = value.toDouble(&ok);
+    if (!ok || !std::isfinite(number)) {
+        return false;
+    }
+    *out = number;
+    return true;
+}
+
+}  // namespace
+
+void ScrubBar::setSkipSegments(const QVector<QVariantMap>& segments) {
+    segments_ = segments;
+    bandsDirty_ = true;
+    chromeUpdate(this);
+}
+
+double ScrubBar::xAtTime(double seconds) const {
+    if (duration_ <= 0.0) {
+        return margin();
+    }
+    const double frac = qBound(0.0, seconds / duration_, 1.0);
+    return margin() + span() * frac;
+}
+
+double ScrubBar::hoverTime() const {
+    if (duration_ <= 0.0) {
+        return -1.0;
+    }
+    const double frac = hoverFraction();
+    if (frac < 0.0 || frac > 1.0) {
+        return -1.0;
+    }
+    return frac * duration_;
+}
+
+QString ScrubBar::segmentTypeLabel(const QString& type) {
+    const QString id = type.trimmed().toLower();
+    if (id == QStringLiteral("opening")) {
+        return tr("Opening");
+    }
+    if (id == QStringLiteral("mixed_opening")) {
+        return tr("Mixed opening");
+    }
+    if (id == QStringLiteral("ending")) {
+        return tr("Ending");
+    }
+    if (id == QStringLiteral("mixed_ending")) {
+        return tr("Mixed ending");
+    }
+    if (id == QStringLiteral("recap")) {
+        return tr("Recap");
+    }
+    if (id.isEmpty()) {
+        return tr("Segment");
+    }
+    // An identifier with no name of its own is still worth reading: the
+    // provider's word, opened up, never a translation invented for it.
+    QString fallback = type.trimmed();
+    fallback.replace(QLatin1Char('_'), QLatin1Char(' '));
+    fallback.replace(QLatin1Char('-'), QLatin1Char(' '));
+    if (!fallback.isEmpty()) {
+        fallback[0] = fallback[0].toUpper();
+    }
+    return fallback;
+}
+
+QString ScrubBar::segmentLabelAt(double seconds) const {
+    if (!std::isfinite(seconds) || segments_.isEmpty()) {
+        return QString();
+    }
+    QStringList labels;
+    for (const QVariantMap& map : segments_) {
+        double start = 0.0;
+        double end = 0.0;
+        if (!segmentNumber(map, "start", &start) || !segmentNumber(map, "end", &end)) {
+            continue;
+        }
+        start = qMax(0.0, start);
+        if (end <= start) {
+            continue;
+        }
+        // Half-open, matching the clock that offers a skip: the end of a range
+        // is already outside it, so a pointer parked on the boundary names the
+        // next range, not the one that just finished.
+        if (seconds < start || seconds >= end) {
+            continue;
+        }
+        const QString label =
+            segmentTypeLabel(map.value(QStringLiteral("type")).toString());
+        if (!label.isEmpty()) {
+            labels.append(label);
+        }
+    }
+    return labels.join(QStringLiteral(", "));
+}
+
+const QVector<QRect>& ScrubBar::segmentBands() const {
+    if (!bandsDirty_ && bandsSize_ == size()) {
+        return bands_;
+    }
+    bandsDirty_ = false;
+    bandsSize_ = size();
+    bands_.clear();
+    if (duration_ <= 0.0 || segments_.isEmpty()) {
+        return bands_;
+    }
+    // The band is a couple of pixels taller than the groove, on both sides, so
+    // a range reads as a tint under the track rather than as a second progress
+    // bar competing with the played part.
+    const int thickness = trackThickness() + 6;
+    const int top = (height() - thickness) / 2;
+    if (thickness <= 0 || top + thickness <= 0) {
+        return bands_;
+    }
+    // Unioned first: two overlapping ranges are one tint, not double alpha over
+    // the pixels they share.
+    QRegion columns;
+    for (const QVariantMap& map : segments_) {
+        double start = 0.0;
+        double end = 0.0;
+        if (!segmentNumber(map, "start", &start) || !segmentNumber(map, "end", &end)) {
+            continue;
+        }
+        start = qMax(0.0, start);
+        end = qMin(end, duration_);
+        if (end <= start) {
+            continue;
+        }
+        const int x0 = qRound(xAtTime(start));
+        const int x1 = qRound(xAtTime(end));
+        if (x1 <= x0) {
+            continue;
+        }
+        columns |= QRect(x0, top, x1 - x0, thickness);
+    }
+    if (columns.isEmpty()) {
+        return bands_;
+    }
+    // The union is also the clip: a range that runs past either end of a known
+    // duration is drawn up to the edge and no further.
+    const QRegion clipped = columns.intersected(rect());
+    for (const QRect& column : clipped) {
+        bands_.append(column);
+    }
+    return bands_;
+}
+
+void ScrubBar::reportHover(const QPoint& globalPosition) {
+    const double seconds = hoverTime();
+    if (seconds < 0.0) {
+        return;
+    }
+    emit hoverTimeChanged(seconds, globalPosition);
+}
+
+void ScrubBar::mousePressEvent(QMouseEvent* event) {
+    RangeSlider::mousePressEvent(event);
+    if (event->button() != Qt::LeftButton) {
+        return;
+    }
+    // A press can be the first event after the pointer teleported onto the bar,
+    // so the fraction comes from the press itself rather than from a move that
+    // never happened.
+    setHoverFraction(at(event->position().x()));
+    reportHover(event->globalPosition().toPoint());
+}
+
+void ScrubBar::mouseMoveEvent(QMouseEvent* event) {
+    RangeSlider::mouseMoveEvent(event);
+    reportHover(event->globalPosition().toPoint());
+}
+
+void ScrubBar::leaveEvent(QEvent* event) {
+    RangeSlider::leaveEvent(event);
+    // Unconditional: a consumer holding a preview open has to be told the
+    // pointer is gone even when the time under it never resolved.
+    emit hoverLeft();
+}
+
+void ScrubBar::hideEvent(QHideEvent* event) {
+    RangeSlider::hideEvent(event);
+    // A bar that disappears under the pointer (the HUD auto-hides while it is
+    // hovered) is no longer under it, and Qt sends no leave event for a widget
+    // that vanished - so the hover ends here or a preview over the picture
+    // outlives the control it describes.
+    clearHover();
+    emit hoverLeft();
+}
+
+void ScrubBar::paintChrome(QPainter& p) {
+    const QVector<QRect>& bands = segmentBands();
+    if (!bands.isEmpty()) {
+        QColor tint = accent();
+        tint.setAlpha(110);
+        p.save();
+        p.setPen(Qt::NoPen);
+        p.setBrush(tint);
+        for (const QRect& band : bands) {
+            p.drawRect(band);
+        }
+        p.restore();
+    }
+    RangeSlider::paintChrome(p);
 }
 
 // ── VolumeTrack ────────────────────────────────────────────────────────────

@@ -2385,68 +2385,68 @@
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="346"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="355"/>
         <source>AnimeJaNai  ›</source>
         <translation>AnimeJaNai  ›</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="347"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="356"/>
         <source>AnimeJaNai official filter</source>
         <translation>Офіційний фільтр AnimeJaNai</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="127"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="136"/>
         <source>BACKEND</source>
         <translation>БЕКЕНД</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="178"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="187"/>
         <source>Unavailable · %1</source>
         <translation>Недоступно · %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="179"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="188"/>
         <source>This model is no longer in the catalogue. The selection is kept until you choose another.</source>
         <translation>Цієї моделі більше немає в каталозі. Вибір зберігається, доки ви не оберете іншу.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="189"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="198"/>
         <source>Backend</source>
         <translation>Бекенд</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="247"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="256"/>
         <source>DirectML</source>
         <translation>DirectML</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="150"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="159"/>
         <source>Disable only AnimeJaNai; Anime4K is unchanged.</source>
         <translation>Вимкнути лише AnimeJaNai; Anime4K залишається без змін.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="149"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="158"/>
         <source>Off</source>
         <translation>Вимкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="126"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="135"/>
         <source>RIFE MODELS</source>
         <translation>МОДЕЛІ RIFE</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="188"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="197"/>
         <source>RIFE models</source>
         <translation>Моделі RIFE</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="132"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="227"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="141"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="236"/>
         <source>RIFE v%1</source>
         <translation>RIFE v%1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="84"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="93"/>
         <source>RIFE v4.%1–v4.%2</source>
         <translation>RIFE v4.%1–v4.%2</translation>
     </message>
@@ -2456,23 +2456,23 @@
         <translation>Відмова замінити активний модуль mpv (%1) на інший (%2) під час роботи</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="125"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="134"/>
         <source>SPATIAL MODELS</source>
         <translation>ПРОСТОРОВІ МОДЕЛІ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="187"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="196"/>
         <source>Spatial models</source>
         <translation>Просторові моделі</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="246"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="255"/>
         <source>TensorRT</source>
         <translation>TensorRT</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="198"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="239"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="207"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="248"/>
         <source>Unavailable: %1</source>
         <translation>Недоступно: %1</translation>
     </message>
@@ -2954,12 +2954,12 @@ If a portable folder was moved, disable startup from the old location before mov
         <translation>Натисніть, щоб відкрити обкладинку</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="522"/>
+        <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="562"/>
         <source>Could not refresh the stream link.</source>
         <translation>Не вдалося оновити посилання на потік.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="125"/>
+        <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="126"/>
         <source>Failed to copy link</source>
         <translation>Не вдалося скопіювати посилання</translation>
     </message>
@@ -2969,7 +2969,7 @@ If a portable folder was moved, disable startup from the old location before mov
         <translation>Немає обкладинки</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="520"/>
+        <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="560"/>
         <source>This player has no video any more.</source>
         <translation>У цьому плеєрі більше немає відео.</translation>
     </message>
@@ -7774,7 +7774,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/app/pages/TitlePage.cpp" line="3241"/>
-        <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="166"/>
+        <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="167"/>
         <source>Could not find a stream for this episode</source>
         <translation>Не вдалося знайти потік для цієї серії</translation>
     </message>
@@ -7993,12 +7993,12 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     <message>
         <location filename="../src/app/pages/TitlePage.cpp" line="2327"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="2460"/>
-        <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="624"/>
+        <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="665"/>
         <source>Episode %1</source>
         <translation>Серія %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="495"/>
+        <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="535"/>
         <source>Stream expired — refreshing URL…</source>
         <translation>Термін дії потоку минув — оновлення URL…</translation>
     </message>
@@ -8390,12 +8390,12 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::shell::CenterGlyph</name>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="769"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="844"/>
         <source>Loading comparison</source>
         <translation>Завантаження порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="770"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="845"/>
         <source>A comparison is being prepared.</source>
         <translation>Підготовка порівняння.</translation>
     </message>
@@ -9049,58 +9049,58 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::shell::KeyHints</name>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="876"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="951"/>
         <source>Choose audio track</source>
         <translation>Вибрати аудіодоріжку</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="877"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="952"/>
         <source>Choose subtitle track</source>
         <translation>Вибрати субтитри</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="881"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="956"/>
         <source>Close panel / window</source>
         <translation>Закрити панель / вікно</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="875"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="950"/>
         <source>Episode list</source>
         <translation>Список серій</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="873"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="948"/>
         <source>Fullscreen / windowed</source>
         <translation>На весь екран / у вікні</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="895"/>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="932"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="970"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="1007"/>
         <source>KEYBOARD SHORTCUTS</source>
         <translation>ГАРЯЧІ КЛАВІШІ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="874"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="949"/>
         <source>Mute / unmute audio</source>
         <translation>Вимкнути / увімкнути звук</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="872"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="947"/>
         <source>Pause / play</source>
         <translation>Пауза / відтворення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="878"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="953"/>
         <source>Quality and speed</source>
         <translation>Якість та швидкість</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="879"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="954"/>
         <source>Seek ∓5s</source>
         <translation>Перемотування ∓5 с</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="880"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="955"/>
         <source>Volume ±10%</source>
         <translation>Гучність ±10%</translation>
     </message>
@@ -9476,7 +9476,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>%1 Залишаємо оригінальне зображення.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1732"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1751"/>
         <source>%1p is not available for this release</source>
         <translation>%1p недоступно для цього релізу</translation>
     </message>
@@ -9487,7 +9487,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="294"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2066"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2085"/>
         <source>AUDIO</source>
         <translation>ОЗВУЧЕННЯ</translation>
     </message>
@@ -9499,7 +9499,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="478"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2079"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2098"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="934"/>
         <source>Choose the processing provider</source>
         <translation>Вибрати провайдера обробки</translation>
@@ -9516,7 +9516,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="790"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1858"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1877"/>
         <source>Could not play the stream</source>
         <translation>Не вдалося відтворити потік</translation>
     </message>
@@ -9537,12 +9537,12 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="429"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1762"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1781"/>
         <source>Episode list (S)</source>
         <translation>Список серій (S)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1364"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1372"/>
         <source>Episode: %1</source>
         <translation>Серія: %1</translation>
     </message>
@@ -9562,77 +9562,77 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Кадр скопійовано (%1×%2)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1565"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1573"/>
         <source>Audio track %1</source>
         <translation>Аудіодоріжка %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1566"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1574"/>
         <source>Subtitle track %1</source>
         <translation>Доріжка субтитрів %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1570"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1578"/>
         <source>%1 ch</source>
         <translation>%1 кан.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1571"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1579"/>
         <source>External</source>
         <translation>Зовнішня</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1572"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1580"/>
         <source>Forced</source>
         <translation>Примусова</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1573"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1581"/>
         <source>Default</source>
         <translation>Типова</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1762"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1781"/>
         <source>Hide episode list (S)</source>
         <translation>Сховати список серій (S)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1924"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1943"/>
         <source>Continue playing</source>
         <translation>Продовжити перегляд</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1925"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1944"/>
         <source>Continue from %1?</source>
         <translation>Продовжити з %1?</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1926"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1945"/>
         <source>You stopped this episode at %1.</source>
         <translation>Ви зупинилися на %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1929"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1948"/>
         <source>Continue</source>
         <translation>Продовжити</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1930"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1949"/>
         <source>Start over</source>
         <translation>Почати спочатку</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1938"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1957"/>
         <source>Continued from %1</source>
         <translation>Продовжено з %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1941"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1960"/>
         <source>Starting from the beginning</source>
         <translation>Початок з нуля</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2328"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2347"/>
         <source>Native processing did not acknowledge its stop; the player stays open so it can be retried.</source>
         <translation>Нативна обробка не підтвердила зупинку; плеєр залишається відкритим для повторної спроби.</translation>
     </message>
@@ -9652,7 +9652,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Немає кадру для копіювання</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1461"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1469"/>
         <source>No other audio tracks available</source>
         <translation>Інших аудіодоріжок немає</translation>
     </message>
@@ -9667,7 +9667,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Жодне ядро відтворення не може прийняти нативний план.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1476"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1484"/>
         <source>No subtitles available</source>
         <translation>Субтитри недоступні</translation>
     </message>
@@ -9683,20 +9683,20 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="341"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1557"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1565"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="339"/>
         <source>Off</source>
         <translation>Вимкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2078"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2097"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="933"/>
         <source>Open processing and component settings</source>
         <translation>Відкрити налаштування обробки та компонентів</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="481"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2081"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2100"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="936"/>
         <source>Original</source>
         <translation>Оригінал</translation>
@@ -9708,25 +9708,25 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="228"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1223"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1347"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1226"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1355"/>
         <source>Player — %1</source>
         <translation>Плеєр — %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1230"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1233"/>
         <source>Playing local file</source>
         <translation>Відтворення локального файлу</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="474"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2072"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2091"/>
         <source>Prepare</source>
         <translation>Підготувати</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="475"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2073"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2092"/>
         <source>Prepare the selected recipe</source>
         <translation>Підготувати вибраний рецепт</translation>
     </message>
@@ -9737,22 +9737,22 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="477"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2076"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2095"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="931"/>
         <source>Providers</source>
         <translation>Провайдери</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="457"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2069"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2088"/>
         <source>Retry</source>
         <translation>Повторити</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="458"/>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="459"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2070"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2071"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2089"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2090"/>
         <source>Retry playback</source>
         <translation>Повторити відтворення</translation>
     </message>
@@ -9763,12 +9763,12 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="296"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2067"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2086"/>
         <source>SUBTITLES</source>
         <translation>СУБТИТРИ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2076"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2095"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="931"/>
         <source>Settings</source>
         <translation>Налаштування</translation>
@@ -9780,17 +9780,17 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="482"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2082"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2101"/>
         <source>Stay on the Original picture</source>
         <translation>Залишити оригінальне зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1411"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1419"/>
         <source>Stream link has expired — refreshing</source>
         <translation>Посилання на потік застаріло — оновлення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1725"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1744"/>
         <source>Switching to %1p…</source>
         <translation>Перемикання на %1p…</translation>
     </message>
@@ -9811,12 +9811,12 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Це потокове відео — у нього немає локальної папки</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1389"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1397"/>
         <source>Track: %1</source>
         <translation>Доріжка: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2081"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2100"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="936"/>
         <source>Turn off AnimeJaNai</source>
         <translation>Вимкнути AnimeJaNai</translation>
@@ -9861,258 +9861,268 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::shell::PlayerShell</name>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1173"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2244"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1210"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2452"/>
         <source>%1 · Media Lightbox</source>
         <translation>%1 · Медіа-переглядач</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1510"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1718"/>
         <source>Anime4K: %1</source>
         <translation>Anime4K: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="856"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="876"/>
         <source>Compare quality</source>
         <translation>Порівняти якість</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="692"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="712"/>
         <source>In desktop settings, choose Mikai Ja Nai under Default Applications. Your defaults have not been changed.</source>
         <translation>У налаштуваннях робочого середовища виберіть Mikai Ja Nai у розділі «Типові програми». Ваші типові програми не змінено.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="694"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="714"/>
         <source>Choose Mikai Ja Nai in Windows Default Apps. Your defaults have not been changed.</source>
         <translation>Виберіть Mikai Ja Nai у налаштуваннях типових програм Windows. Ваші типові програми не змінено.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="855"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="875"/>
         <source>Copy frame</source>
         <translation>Копіювати кадр</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="857"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="877"/>
         <source>Copy link</source>
         <translation>Копіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="706"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1543"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1918"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="726"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1751"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2126"/>
         <source>ENHANCEMENTS</source>
         <translation>ПОКРАЩЕННЯ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="867"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="887"/>
         <source>Exit  (Esc)</source>
         <translation>Вийти  (Esc)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="511"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="544"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2255"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2257"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="520"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="553"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2463"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2465"/>
         <source>Exit the player  (Esc)</source>
         <translation>Вийти з плеєра  (Esc)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="753"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="754"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1850"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="773"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="774"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2058"/>
         <source>FPS unknown</source>
         <translation>FPS невідомий</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="938"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2275"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="962"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2483"/>
         <source>Fullscreen mode</source>
         <translation>Повноекранний режим</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="866"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="886"/>
         <source>Keyboard shortcuts  (?)</source>
         <translation>Гарячі клавіші  (?)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="370"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="379"/>
         <source>Media Lightbox</source>
         <translation>Медіа-переглядач</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="505"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="534"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2253"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2256"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="514"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="543"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2461"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2464"/>
         <source>Minimize the window</source>
         <translation>Згорнути вікно</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="598"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="601"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="602"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2267"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="607"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="610"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="611"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2475"/>
         <source>Skip forward 85 seconds</source>
         <translation>Перейти вперед на 85 секунд</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="628"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2271"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="637"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2479"/>
         <source>Audio — choose a track  (T)</source>
         <translation>Аудіо — вибрати доріжку  (T)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="648"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2274"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="657"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2482"/>
         <source>Quality and speed</source>
         <translation>Якість та швидкість</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="685"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="705"/>
         <source>Default video player</source>
         <translation>Типовий відеопрогравач</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="864"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="884"/>
         <source>Media information</source>
         <translation>Відомості про медіафайл</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1357"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1403"/>
+        <source>Skip %1 — jump to %2</source>
+        <translation>Пропустити %1 — перейти до %2</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1404"/>
+        <source>Skip %1</source>
+        <translation>Пропустити %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1565"/>
         <source>Muted</source>
         <translation>Звук вимкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1414"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1622"/>
         <source>Unavailable · %1</source>
         <translation>Недоступно · %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1436"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1448"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1644"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1656"/>
         <source>Preparing…</source>
         <translation>Підготовка…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1547"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1666"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1755"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1874"/>
         <source>NATIVE PROCESSING</source>
         <translation>НАТИВНА ОБРОБКА</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="555"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2259"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="564"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2467"/>
         <source>Next episode  (→)</source>
         <translation>Наступна серія  (→)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1333"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1517"/>
         <source>No media loaded — drop a file to begin</source>
         <translation>Медіафайл не завантажено — перетягніть файл сюди</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="387"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="396"/>
         <source>No native status has been read.</source>
         <translation>Стан нативної обробки ще не зчитано.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="860"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="880"/>
         <source>Open containing folder</source>
         <translation>Відкрити папку з файлом</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="643"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2273"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="652"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2481"/>
         <source>Open enhancements</source>
         <translation>Відкрити покращення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="617"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2270"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="626"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2478"/>
         <source>Picture in picture</source>
         <translation>Картинка в картинці</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="595"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2266"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="604"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2474"/>
         <source>Play</source>
         <translation>Відтворити</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="588"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2265"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="597"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2473"/>
         <source>Play / pause  (Space)</source>
         <translation>Відтворити / пауза  (Пробіл)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="551"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2258"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="560"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2466"/>
         <source>Previous episode  (←)</source>
         <translation>Попередня серія  (←)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1364"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1572"/>
         <source>Speed %1x</source>
         <translation>Швидкість %1x</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="636"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2272"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="645"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2480"/>
         <source>Subtitles — choose a track  (C)</source>
         <translation>Субтитри — вибрати доріжку  (C)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="666"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2269"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="675"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2477"/>
         <source>Timeline</source>
         <translation>Шкала часу</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="539"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2254"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="548"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2462"/>
         <source>Toggle fullscreen / windowed</source>
         <translation>Перемкнути повноекранний / віконний режим</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="580"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2268"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="589"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2476"/>
         <source>Volume</source>
         <translation>Гучність</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1268"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1350"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1358"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1992"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1452"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1558"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1566"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2200"/>
         <source>Volume %1%</source>
         <translation>Гучність %1%</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="622"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="937"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2275"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="631"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="961"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2483"/>
         <source>Windowed mode</source>
         <translation>Віконний режим</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1847"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2055"/>
         <source>container source FPS</source>
         <translation>FPS вихідного контейнера</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2356"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2569"/>
         <source>drop a video file here  ·  or pass one as argv[1]</source>
         <translation>перетягніть відеофайл сюди  ·  або передайте його як argv[1]</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1844"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2052"/>
         <source>mpv output FPS</source>
         <translation>вихідний FPS mpv</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1172"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2243"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2355"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1209"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2451"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2568"/>
         <source>no media loaded</source>
         <translation>медіафайл не завантажено</translation>
     </message>
@@ -10172,6 +10182,39 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
 </context>
 <context>
+    <name>mplayer::shell::ScrubBar</name>
+    <message>
+        <location filename="../src/player/shell/ShellSliders.cpp" line="186"/>
+        <source>Opening</source>
+        <translation>Опенінг</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellSliders.cpp" line="189"/>
+        <source>Mixed opening</source>
+        <translation>Змішаний опенінг</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellSliders.cpp" line="192"/>
+        <source>Ending</source>
+        <translation>Ендінг</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellSliders.cpp" line="195"/>
+        <source>Mixed ending</source>
+        <translation>Змішаний ендінг</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellSliders.cpp" line="198"/>
+        <source>Recap</source>
+        <translation>Рекап</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellSliders.cpp" line="201"/>
+        <source>Segment</source>
+        <translation>Сегмент</translation>
+    </message>
+</context>
+<context>
     <name>mplayer::shell::SeriesDrawer</name>
     <message>
         <location filename="../src/player/shell/PlayerPopups.cpp" line="529"/>
@@ -10183,76 +10226,76 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::shell::SettingsFlyout</name>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="47"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="48"/>
         <source>Slow</source>
         <translation>Повільно</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="48"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="49"/>
         <source>Normal</source>
         <translation>Звичайно</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="49"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="50"/>
         <source>Slightly faster</source>
         <translation>Трохи швидше</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="50"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="51"/>
         <source>Fast</source>
         <translation>Швидко</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="51"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="52"/>
         <source>Very fast</source>
         <translation>Дуже швидко</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="52"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="53"/>
         <source>Double speed</source>
         <translation>Подвійна швидкість</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="370"/>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="542"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="445"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="617"/>
         <source>SPEED</source>
         <translation>ШВИДКІСТЬ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="386"/>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="545"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="461"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="620"/>
         <source>Speed</source>
         <translation>Швидкість</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="417"/>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="546"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="492"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="621"/>
         <source>Quality</source>
         <translation>Якість</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="424"/>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="543"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="499"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="618"/>
         <source>QUALITY</source>
         <translation>ЯКІСТЬ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="547"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="622"/>
         <source>Set as default video player…</source>
         <translation>Зробити типовим відеопрогравачем…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="551"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="626"/>
         <source>Registers Mikai Ja Nai and opens desktop settings so you can choose it under Default Applications. Your defaults are not changed automatically.</source>
         <translation>Реєструє Mikai Ja Nai та відкриває налаштування робочого середовища, де можна вибрати його в розділі «Типові програми». Типові програми не змінюються автоматично.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="554"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="629"/>
         <source>Opens Windows Default Apps so you can choose Mikai Ja Nai. Your defaults are not changed automatically.</source>
         <translation>Відкриває налаштування типових програм Windows, де можна вибрати Mikai Ja Nai. Типові програми не змінюються автоматично.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="555"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="630"/>
         <source>Setting the default video player is only supported on Windows.</source>
         <translation>Призначення типового відеопрогравача підтримується лише у Windows.</translation>
     </message>

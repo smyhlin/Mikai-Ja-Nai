@@ -44,6 +44,7 @@
 #include <QString>
 #include <QStringList>
 #include <QTimer>
+#include <QVariantMap>
 #include <QVector>
 #include <QWidget>
 
@@ -82,7 +83,21 @@ class Toast;
 class VolumeGroup;
 class ScrubBar;
 class IconButton;
+class SkipButton;
 class EpisodeNavButton;
+
+/// One skip segment a provider announced for the current episode. `type` is the
+/// provider's own identifier ("opening", "recap", …), never display text: the
+/// shell names it in the installed language, so a language change re-derives
+/// the button without the caller re-publishing anything. `start` and `end` are
+/// seconds on the video clock.
+struct SkipSegment {
+    QString type;
+    double start = 0.0;
+    double end = 0.0;
+
+    bool operator==(const SkipSegment&) const = default;
+};
 
 class PlayerShell : public QWidget, public ChromeHost {
     Q_OBJECT
@@ -149,6 +164,25 @@ public:
     void setEpisodeStepping(bool hasPrevious, bool hasNext);
     void setEpisodeLabel(const QString& label);
     QString episodeLabel() const { return episodeLabel_; }
+
+    // ── skip segments (provider metadata) ───────────────────────────
+    /// Publishes the current episode's skip segments in the provider's own
+    /// shape: each map carries `type` (the provider's identifier - "opening",
+    /// "recap", …), `start` and `end` in seconds. Entries that do not name a
+    /// forward interval are dropped here rather than shown.
+    ///
+    /// The video clock decides what is offered: a segment is actionable while
+    /// the position is inside [start, end), and every segment the position
+    /// falls inside gets its own button, so overlapping offers stay
+    /// individually actionable instead of collapsing into one. An empty list
+    /// clears them. A list that arrives after the playhead already entered a
+    /// segment is offered immediately - no new position report is needed.
+    /// Pressing a button emits seekRequested(end), the same absolute-seek path
+    /// the timeline uses.
+    ///
+    /// The validated ranges are also handed to the timeline, which paints them
+    /// beside the offer buttons, so both read one set of numbers.
+    void setSkipSegments(const QVector<QVariantMap>& segments);
     /// Re-reads the engine's pause state and repaints the play control, for
     /// the paths that change the core without a playingChanged arriving.
     void updatePlayIcon();
@@ -261,6 +295,19 @@ private:
     /// The surface's half of the chrome, connected to VideoSurface::paintOverlay
     /// with a painter in shell coordinates clipped to the picture.
     void paintSurfaceOverlay(QPainter* painter);
+
+    // ── skip segments ──────────────────────────────────────────────
+    /// Recomputes the offered set from the current position and wires the
+    /// buttons. Cheap when the set did not change: a position tick inside one
+    /// segment does not touch a widget.
+    void syncSkipSegments();
+    /// Restates the visible buttons from the typed segments in the installed
+    /// language. It changes no offer and reads no clock.
+    void refreshSkipLabels();
+    /// Places the offered buttons above the transport bar, right-aligned with
+    /// it, one above the other.
+    void layoutSkipButtons();
+    void onSkipSegmentActivated(int index);
     /// Chrome that is nobody's widget - the chevron discs and the empty-state
     /// hint - plus the adopted controls. `clip` separates the two callers: the
     /// surface's painter passes the whole shell, the shell's paintEvent passes
@@ -349,6 +396,13 @@ private:
 
     EpisodeNavButton* btnPrev_ = nullptr;
     EpisodeNavButton* btnNext_ = nullptr;
+
+    /// Skip segments as published, then the subset the current position falls
+    /// inside. The buttons are a pool grown to the widest overlap seen: a
+    /// segment offer costs no widget once the pool is big enough.
+    QVector<SkipSegment> skipSegments_;
+    QVector<SkipSegment> activeSkip_;
+    QVector<SkipButton*> skipButtons_;
 
     Panel* dock_ = nullptr;
     VolumeGroup* vol_ = nullptr;
