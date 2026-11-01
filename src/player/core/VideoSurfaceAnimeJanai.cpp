@@ -720,6 +720,25 @@ void VideoSurface::finishAnimeJanaiEngineBuild(bool succeeded, const QString& de
     endEnginePause(true);
 }
 
+// The fork reports a failed engine build as an execution-context error, which
+// names neither the build nor its cause. When the newest build log beside the
+// model shows the GPU ran out of memory, that log is the failure to report.
+void VideoSurface::reportAnimeJanaiBackendError(const QString& line) {
+    if (animeJanaiPlan_.enabled && animeJanaiPlan_.available &&
+        animeJanaiPlan_.backend == native::Backend::TensorRT) {
+        const QString evidence = native::animeJanaiOutOfMemoryEngineBuildEvidence(
+            animeJanaiPlan_.modelDir, native::nativeRoot());
+        if (!evidence.isEmpty()) {
+            animeJanaiFail(QStringLiteral("animejanai.build.outOfMemory"),
+                           tr("Not enough free GPU memory to build the TensorRT engine; "
+                              "free GPU memory and try again.") +
+                               QLatin1Char('\n') + evidence);
+            return;
+        }
+    }
+    animeJanaiFail(QStringLiteral("animejanai.backend.failed"), line);
+}
+
 void VideoSurface::animeJanaiFail(const QString& reasonKey, const QString& reason) {
     animeJanaiReportPending_ = false;
     if (animeJanaiFilterBound_ && !animeJanaiFailureCleanupActive_ && mpv_ != nullptr) {

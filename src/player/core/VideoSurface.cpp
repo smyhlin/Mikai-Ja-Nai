@@ -302,7 +302,7 @@ void VideoSurface::ensureEngine() {
                 (lower.contains(QStringLiteral("error")) ||
                  lower.contains(QStringLiteral("failed")) ||
                  lower.contains(QStringLiteral("failure")))) {
-                animeJanaiFail(QStringLiteral("animejanai.backend.failed"), line);
+                reportAnimeJanaiBackendError(line);
             }
             return;
         }

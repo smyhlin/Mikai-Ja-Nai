@@ -31,6 +31,9 @@ class TestFeedRender : public QObject {
   void buildLogDetectionDistinguishesCompilationFromOtherBackendWork();
   void theEngineBuildGateWithholdsMeasurementUntilTheSlotIsConfigured();
   void anAuthoritativeBackgroundBuildFailureSurfacesItsBoundedLogTail();
+  // A build that died on GPU memory is only visible in the newest build log;
+  // the fork reports it as a bare execution-context error.
+  void theNewestEngineBuildLogOwnsAnOutOfMemoryAttribution();
   void interpolationOnlyRunsWaitForTheirSelectedSlot_data();
   void interpolationOnlyRunsWaitForTheirSelectedSlot();
   void settingsClosingDuringAcquisitionRestoresMainWindowInput();

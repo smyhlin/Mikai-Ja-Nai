@@ -3,6 +3,9 @@
 #include <native/bundle/NativePaths.hpp>
 #include <native/status/NativeTypes.hpp>
 
+#include <QByteArray>
+#include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QString>
@@ -20,7 +23,7 @@ enum class AnimeJanaiBuildLogEvent {
 
 inline constexpr qsizetype kAnimeJanaiBuildLogTailBytes = 16 * 1024;
 
-inline QStringList readAnimeJanaiBuildLogTail(QStringView path, QStringView ownedRoot) {
+inline QByteArray readAnimeJanaiBuildLogContents(QStringView path, QStringView ownedRoot) {
     const QFileInfo info(path.toString());
     const QString root = ownedRoot.toString();
     const QString absolutePath = info.absoluteFilePath();
@@ -42,9 +45,11 @@ inline QStringList readAnimeJanaiBuildLogTail(QStringView path, QStringView owne
         contents += file.read(fileSize - lastStart);
     }
     if (file.error() != QFile::NoError) return {};
+    return contents;
+}
 
-    const QStringList sourceLines = QString::fromUtf8(contents).split(QLatin1Char('\n'),
-                                                                       Qt::SkipEmptyParts);
+inline QStringList animeJanaiBuildLogErrorLines(const QString& contents) {
+    const QStringList sourceLines = contents.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
     QStringList errors;
     const auto isBoilerplate = [](const QString& line) {
         return line.startsWith(QLatin1String("&&&&")) ||
@@ -65,6 +70,58 @@ inline QStringList readAnimeJanaiBuildLogTail(QStringView path, QStringView owne
     }
     while (errors.size() > 3) errors.removeAt(1);
     return errors;
+}
+
+inline QStringList readAnimeJanaiBuildLogTail(QStringView path, QStringView ownedRoot) {
+    const QByteArray contents = readAnimeJanaiBuildLogContents(path, ownedRoot);
+    if (contents.isEmpty()) return {};
+    const QString text = QString::fromUtf8(contents);
+    return animeJanaiBuildLogErrorLines(text);
+}
+
+/// The newest engine build log beside the model when that build ran out of GPU memory.
+/// The fork reports a bare createExecutionContext failure for this case, so the log is the
+/// only place the cause appears. Only the newest log is consulted: an older build's memory
+/// failure must not be attributed to the build that just ran.
+inline QString animeJanaiOutOfMemoryEngineBuildEvidence(QStringView modelDir,
+                                                       QStringView ownedRoot) {
+    const QString root = ownedRoot.toString();
+    const QString directory = QFileInfo(modelDir.toString()).absoluteFilePath();
+    if (root.isEmpty() || modelDir.isEmpty() || !QFileInfo(directory).isDir() ||
+        !pathWithinRoot(root, directory) || !pathHasNoReparsePoints(root, directory)) {
+        return {};
+    }
+
+    QFileInfo newestLog;
+    const QFileInfoList logs =
+        QDir(directory).entryInfoList({QStringLiteral("*.engine.build.log")}, QDir::Files);
+    for (const QFileInfo& log : logs) {
+        if (!newestLog.exists() || log.lastModified() > newestLog.lastModified()) newestLog = log;
+    }
+    if (!newestLog.exists()) return {};
+
+    const QByteArray contents =
+        readAnimeJanaiBuildLogContents(newestLog.absoluteFilePath(), ownedRoot);
+    if (contents.isEmpty()) return {};
+    const QString text = QString::fromUtf8(contents);
+    const QLatin1String marker("out of memory");
+    if (!text.contains(marker, Qt::CaseInsensitive)) return {};
+
+    QStringList evidence;
+    for (const QString& line : animeJanaiBuildLogErrorLines(text)) {
+        if (line.contains(marker, Qt::CaseInsensitive) && !evidence.contains(line)) {
+            evidence.append(line);
+        }
+    }
+    if (evidence.isEmpty()) {
+        for (const QString& line : text.split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
+            if (line.contains(marker, Qt::CaseInsensitive)) {
+                evidence.append(line.trimmed());
+                break;
+            }
+        }
+    }
+    return evidence.join(QLatin1Char('\n'));
 }
 
 inline QString animeJanaiBuildFailureEnginePath(QStringView prefix, QStringView line) {

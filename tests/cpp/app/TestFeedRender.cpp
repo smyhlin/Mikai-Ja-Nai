@@ -1024,6 +1024,51 @@ void TestFeedRender::anAuthoritativeBackgroundBuildFailureSurfacesItsBoundedLogT
   QVERIFY(!diagnosticOnly.failed());
 }
 
+void TestFeedRender::theNewestEngineBuildLogOwnsAnOutOfMemoryAttribution() {
+  const QByteArray starved =
+      "[11/01/2026-09:12:02] [I] Engine built in 2.77963 sec.\n"
+      "[11/01/2026-09:12:02] [E] Error[1]: [defaultAllocator.cpp::allocate::62] Error Code 1: Cuda "
+      "Runtime (In allocate at /_src/common/dispatch/defaultAllocator.cpp:62 (cudaError 2: out of "
+      "memory))\n"
+      "[11/01/2026-09:12:02] [E] Error[10]: IBuilder::buildSerializedNetworkToStream: Error Code 10: "
+      "Internal Error (Could not find any implementation for node {ForeignNode[/Pad_50]}.)\n"
+      "[11/01/2026-09:12:02] [E] Assertion failure: false && \"Attempting to access an empty "
+      "engine!\"\n";
+  const auto writeLog = [](const QString& directory, const QString& name, const QByteArray& body) {
+    QDir().mkpath(directory);
+    QFile file(directory + QLatin1Char('/') + name);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) return false;
+    return file.write(body) == body.size();
+  };
+
+  QTemporaryDir alone;
+  QVERIFY(alone.isValid());
+  const QString starvedOnly = alone.path() + QStringLiteral("/spatial");
+  QVERIFY(writeLog(starvedOnly, QStringLiteral("aji-1f13ce41.trt.engine.build.log"), starved));
+
+  const QString evidence =
+      mplayer::native::animeJanaiOutOfMemoryEngineBuildEvidence(starvedOnly, alone.path());
+  QVERIFY(evidence.contains(QStringLiteral("out of memory")));
+  QVERIFY(evidence.contains(QStringLiteral("Error[1]")));
+
+  // The engine that was built most recently owns the failure; an older build's
+  // memory error is history and must not be blamed for a later one.
+  QTemporaryDir shared;
+  QVERIFY(shared.isValid());
+  const QString models = shared.path() + QStringLiteral("/spatial");
+  QVERIFY(writeLog(models, QStringLiteral("aji-1f13ce41.trt.engine.build.log"), starved));
+  QTest::qWait(5);  // modification time resolves to milliseconds
+  QVERIFY(writeLog(models, QStringLiteral("aji-ac41ab87.trt.engine.build.log"),
+                   QByteArray("&&&& PASSED TensorRT.trtexec [TensorRT v110300]\n")));
+  QVERIFY(mplayer::native::animeJanaiOutOfMemoryEngineBuildEvidence(models, shared.path())
+              .isEmpty());
+
+  // A model directory outside the owned store is not evidence, however it reads.
+  QVERIFY(mplayer::native::animeJanaiOutOfMemoryEngineBuildEvidence(
+              starvedOnly, QDir(alone.path()).filePath(QStringLiteral("elsewhere")))
+              .isEmpty());
+}
+
 void TestFeedRender::interpolationOnlyRunsWaitForTheirSelectedSlot_data() {
   QTest::addColumn<bool>("coldBuild");
   QTest::newRow("cached-engine") << false;

@@ -575,6 +575,7 @@ private:
     void resetAnimeJanaiObservation();
     bool animeJanaiBackendLogsNeeded() const;
     void observeAnimeJanaiBackendLog(const QString& prefix, const QString& line);
+    void reportAnimeJanaiBackendError(const QString& line);
     void publishAnimeJanaiObservation(const QString& status, uint64_t epoch,
                                       quint64 generation);
     void publishPendingAnimeJanaiObservation(uint64_t epoch, quint64 generation);

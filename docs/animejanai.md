@@ -55,6 +55,7 @@ whenever the real path contains a space, quote or tab; both plan builders pass t
 | `animejanai.core.unsupported` | The loaded Standard core did not resolve the inventoried fork module, required filter/option markers are absent, or client API is below 2.5 |
 | `animejanai.backend.failed: Failed to create inference context` | The TensorRT closure was not preloaded; the fork's own line just before it reads `libnvinfer.so.11: cannot open shared object file` |
 | `animejanai.build.failed: … (see .build.log)` with `sh: line 1: Wrapper/…: No such file or directory` and `exit code: 127` | `trtexec-libdir` contained a space; `trtexec` never started |
+| `animejanai.build.outOfMemory: Not enough free GPU memory …` followed by the log's `[E] … out of memory` line | The engine build ran while another process held the GPU's memory. TensorRT could not allocate a tactic buffer, skipped every tactic and wrote an empty `.engine.tmp`; the fork then reported that as `ICudaEngine::createExecutionContext … [cask_fusion.cpp:397: initialize_cask_fusion] Cask unknown internal error`, which names neither the build nor its cause. Free GPU memory and retry: at 1080×1920 the spatial model needs about a gigabyte of headroom — it built in 14 s with 8 GB free where it had failed with 830 MB. |
 
 The build log beside the engine is the authoritative record — read it before guessing:
 
