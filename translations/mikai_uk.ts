@@ -8105,7 +8105,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     <message>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="733"/>
         <source>Not enough free GPU memory to build the TensorRT engine; free GPU memory and try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Недостатньо вільної відеопам’яті для збирання рушія TensorRT; звільніть відеопам’ять і спробуйте ще раз.</translation>
     </message>
     <message>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="905"/>
