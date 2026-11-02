@@ -944,10 +944,10 @@ void TestRunner::retainedDispatchDoesNotKeepACompletedPoolAlive() {
 
   auto* runner = new Runner();
   probe->runner.store(runner);
-  const Runner::GuiDispatch retained = runner->post();
+  Runner::GuiDispatch retained = runner->post();
 
   runner->run(
-      [retained, probe]() -> QVariant {
+      [retained = std::move(retained), probe]() -> QVariant {
         probe->workerThread.store(QThread::currentThread());
         // The retained binder's last copy is released on a non-GUI thread after
         // the owner and this task are gone, which is the shape the public
