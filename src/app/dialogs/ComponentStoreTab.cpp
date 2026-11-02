@@ -1028,8 +1028,8 @@ void ComponentStoreTab::reconcileProgressWithInventory() {
     const auto bareIdentity = [](const QString& key) {
         return key.startsWith(QLatin1String("pending:")) ? key.mid(8) : key;
     };
-    eraseInstalledWhere(QStringLiteral("tensorRtRuntimeCard"), [this, &bareIdentity](
-                                                                  const QString& key) {
+    eraseInstalledWhere(QStringLiteral("tensorRtRuntimeCard"),
+                        [this, &bareIdentity](const QString& key) {
         const QString name = bareIdentity(key);
         if (name == QLatin1String("trt-runtime")) return !runtimePackInstalled_;
         if (name == QLatin1String("trt-runtime-trtexec") ||
