@@ -63,9 +63,8 @@ struct Delivery {
 ///
 /// It is shared rather than owned by the Runner because destroying a Runner must
 /// not wait: ~QThreadPool blocks until the pool's work is done, and a quota wait
-/// has no bound an owner can shorten. So the Runner drops its reference, and the
-/// last reference retires the pools somewhere that is neither the GUI thread
-/// (which would reintroduce the freeze) nor one of the pool's own workers
+/// has no bound an owner can shorten. So the Runner drops its reference and the
+/// last one retires the pools from a queued GUI call, never from a pool worker
 /// (which would wait for a thread that can never finish).
 struct Shared {
     /// The pools are deliberately unparented: a child of the Runner is destroyed
@@ -115,7 +114,6 @@ std::shared_ptr<Shared> makeShared() {
     return shared;
 }
 
-/// Gives one task's slot back.
 void noteFinished(const std::shared_ptr<Shared>& shared) {
     const std::lock_guard<std::mutex> guard(shared->mutex);
     if (--shared->pending == 0) {
@@ -235,8 +233,6 @@ public:
             ok = false;
             failure.message = QString::fromUtf8(error.what());
         } catch (...) {
-            // The one message this file generates rather than forwarding from
-            // the backend, so it is the one message it owns end to end.
             ok = false;
             failure.message = QCoreApplication::translate("Runner", "Unknown error");
         }
@@ -311,30 +307,23 @@ Runner::~Runner() {
             return entry.expired() || entry.lock() == impl_->shared;
         });
     }
-    // Cancel first, so a task that is already running unwinds its backend waits
-    // instead of parking for a whole quota window, and so a completion queued
-    // behind this destructor is dropped rather than delivered.
+    // Unwinds running waits and suppresses a completion queued behind this
+    // destructor.
     abandon(impl_->shared);
     bool outstanding = false;
     {
-        // Recorded together with the check: a task cannot hand its reference
-        // back between the two, so an empty `pending` is never mistaken for
-        // "no runnable still retiring on a pool thread".
+        // Same lock as the check: an empty `pending` is not proof that no
+        // runnable is still retiring on a pool thread.
         const std::lock_guard<std::mutex> guard(impl_->shared->mutex);
         impl_->shared->abandoned = true;
         outstanding = impl_->shared->pending > 0 || impl_->shared->liveTasks > 0;
     }
     if (outstanding) {
-        // Work is still unwinding, so retiring the pools here would wait for it.
-        // The GUI event queue does that once the last task has handed its
-        // reference over. The reference is still impl_'s here: dropping it
-        // before this check would leave the state alive with no holder that
-        // could defer it.
+        // Retire from the queue instead of waiting here. impl_ keeps its own
+        // reference until that handoff is posted.
         releaseOnGui(impl_->shared);
     }
-    // Dropped last. Nothing after this reads impl_, and no thread waits on it:
-    // every task that may still be unwinding holds its own reference, so the
-    // state simply outlives this destructor until the last one finishes.
+    // Every task still unwinding holds a reference, so the state outlives this.
     impl_.reset();
 }
 
