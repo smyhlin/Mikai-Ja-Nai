@@ -2376,6 +2376,8 @@ void TestI18n::componentCountLineNeverStartsWithInstalledAtZero() {
   QVERIFY(mplayer::native::storedSpatialAssets().isEmpty());
 
   mikai::app::ComponentStoreTab tab;
+  tab.show();
+  QCoreApplication::processEvents();
   auto* state = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardState"));
   QVERIFY2(state != nullptr, "the upscaling card state label is missing");
   const QString english = state->text();
