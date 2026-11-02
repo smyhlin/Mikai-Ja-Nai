@@ -27,8 +27,8 @@ that name an unmeasured value `"unavailable"` rather than zero.
 
 The five baseline numbers below are **not yet measured on the integrated
 instrumentation branch**. They are the before-side of the GOAL-E/GOAL-F
-acceptance criteria and must be recorded from `baseline.jsonl` before those
-fixes land:
+acceptance criteria and must be recorded from `<output-directory>/samples.jsonl`
+before those fixes land:
 
 | Metric | Row / key | Value |
 |---|---|---|
