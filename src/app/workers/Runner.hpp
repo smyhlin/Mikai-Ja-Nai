@@ -71,15 +71,19 @@ public:
     Runner(const Runner&) = delete;
     Runner& operator=(const Runner&) = delete;
 
-    /// A copyable GUI dispatch closure anchored by a strongly retained
-    /// dispatcher plus this Runner's cancellation state. Copying it never
-    /// copies a widget pointer: the worker hands GUI bodies to the dispatcher,
-    /// which posts them, and the body then supplies its own GUI-thread guard -
-    /// an alive flag plus an address it resolves only once it is running on the
-    /// GUI thread - before touching a widget.
+    /// A copyable GUI dispatch closure that holds only a weak anchor to this
+    /// Runner's dispatcher and cancellation state, so a worker may keep or copy
+    /// it without owning the pools. Invoking it promotes that anchor for the
+    /// duration of one call and moves the strong reference into the queued GUI
+    /// body, which releases it on the GUI thread; a cancelled invocation hands
+    /// it off the same way. Copying the binder never copies a widget pointer:
+    /// the worker hands GUI bodies to the dispatcher, and the body then supplies
+    /// its own GUI-thread guard - an alive flag plus an address it resolves only
+    /// once it is running on the GUI thread - before touching a widget.
     ///
     /// Invoking the binder - or invoking the closure `post(OnGui)` returns -
-    /// after the Runner is gone is a no-op, never a dangling dereference.
+    /// after the Runner is gone is a no-op, never a dangling dereference and
+    /// never a pool retired from the calling thread.
     GuiDispatch post();
 
     /// A one-shot dispatch closure for `callback`, same guarantees as `post()`.

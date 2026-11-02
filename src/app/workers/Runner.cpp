@@ -135,6 +135,20 @@ void releaseOnGui(std::shared_ptr<Shared> keeper) {
                               Qt::QueuedConnection);
 }
 
+/// Drops `reference` without letting this thread be the last owner of the
+/// state. Under the lock a live owner or another live task still holds one;
+/// otherwise only the GUI queue may retire the pools.
+void dropReferenceOffWorker(std::shared_ptr<Shared>& reference) {
+    {
+        const std::lock_guard<std::mutex> guard(reference->mutex);
+        if (!(reference->abandoned && reference->liveTasks == 0)) {
+            reference.reset();
+            return;
+        }
+    }
+    releaseOnGui(std::move(reference));
+}
+
 /// Posts `callback` to the GUI thread, or runs it there-and-then when the
 /// application object is already gone: a shutdown report outlives every Runner,
 /// so it cannot be anchored on one.
@@ -329,14 +343,24 @@ Runner::~Runner() {
 }
 
 Runner::GuiDispatch Runner::post() {
-    const std::shared_ptr<Shared> shared = impl_->shared;
-    return [shared](OnGui callback) {
-        if (!callback || shared->suppressed()) {
+    const std::weak_ptr<Shared> anchor = impl_->shared;
+    return [anchor](OnGui callback) {
+        if (!callback) {
             return;
         }
+        std::shared_ptr<Shared> shared = anchor.lock();
+        if (!shared) {
+            return;
+        }
+        if (shared->suppressed()) {
+            dropReferenceOffWorker(shared);
+            return;
+        }
+        // The promoted reference moves into the queued body, so no strong copy
+        // survives this call on the worker and the GUI thread releases it.
         QMetaObject::invokeMethod(
             shared->dispatcher.get(),
-            [shared, callback = std::move(callback)]() mutable {
+            [shared = std::move(shared), callback = std::move(callback)]() mutable {
                 // Re-read on the GUI thread: an owner the body closes between
                 // this post and its delivery is a no-op, not a dangling
                 // dereference.
