@@ -1,6 +1,7 @@
 #include "TestPublicApiUi.hpp"
 
 #include <backend/MikaiClient.hpp>
+#include <backend/Models.hpp>
 #include <dialogs/ComponentStoreTab.hpp>
 #include <dialogs/SettingsDialog.hpp>
 #include <widgets/PageGlow.hpp>
@@ -12,6 +13,7 @@
 #include <state/QualityCache.hpp>
 #include <state/WatchHistory.hpp>
 #include <support/I18n.hpp>
+#include <support/Labels.hpp>
 #include <theme/Theme.hpp>
 #include <workers/Runner.hpp>
 #include <gui/ImageDecode.hpp>
@@ -59,6 +61,8 @@
 #include <QtWidgets/QScrollArea>
 #include <QtWidgets/QSpinBox>
 #include <QtWidgets/QSlider>
+#include <QtWidgets/QTabBar>
+#include <QtWidgets/QTabWidget>
 #include <cstdio>
 #include <functional>
 
@@ -167,6 +171,75 @@ QJsonObject releasePayload() {
   return release;
 }
 
+/// The provider's own URL shape, kept as a path so the fixture can serve it
+/// while `detectSite` still recognises the provider.
+QString providerUrlShape(const QString& provider) {
+  if (provider == QLatin1String("moon")) {
+    return QStringLiteral("moonanime.art/iframe");
+  }
+  if (provider == QLatin1String("tortuga")) {
+    return QStringLiteral("tortuga.tw/vod");
+  }
+  return QStringLiteral("ashdi.vip/vod");
+}
+
+/// One episode source naming `provider`, pointed at the fixture itself so the
+/// quality probe's request for it is observable.
+QJsonObject providerSource(const QString& provider, int port, int episode) {
+  return QJsonObject{
+      {QStringLiteral("provider"), provider},
+      {QStringLiteral("embedUrl"), QStringLiteral("http://127.0.0.1:%1/%2/%3")
+                                       .arg(port)
+                                       .arg(providerUrlShape(provider))
+                                       .arg(episode)}};
+}
+
+/// A dub release served by exactly one provider.
+QJsonObject providerRelease(const QString& id, const QString& provider,
+                            const QString& teamName, int port) {
+  QJsonArray episodes;
+  for (int n = 1; n <= 2; ++n) {
+    const QJsonObject episode{
+        {QStringLiteral("number"), n},
+        {QStringLiteral("label"), QStringLiteral("Fixture episode")},
+        {QStringLiteral("kind"), QStringLiteral("animeCanon")},
+        {QStringLiteral("sources"), QJsonArray{providerSource(provider, port, n)}}};
+    episodes.append(episode);
+  }
+  const QJsonObject team{{QStringLiteral("id"), 17},
+                         {QStringLiteral("slug"), QStringLiteral("fixture-team")},
+                         {QStringLiteral("name"), teamName}};
+  return QJsonObject{{QStringLiteral("id"), id},
+                     {QStringLiteral("kind"), QStringLiteral("voice")},
+                     {QStringLiteral("teams"), QJsonArray{team}},
+                     {QStringLiteral("episodes"), episodes},
+                     {QStringLiteral("episodesCount"), 2}};
+}
+
+/// A dub release whose every episode carries all three providers, listed in
+/// payload order (ashdi first), so only a preference can pick Moon.
+QJsonObject multiProviderRelease(const QString& id, const QString& teamName, int port) {
+  QJsonArray episodes;
+  for (int n = 1; n <= 2; ++n) {
+    const QJsonArray sources{providerSource(QStringLiteral("ashdi"), port, n),
+                             providerSource(QStringLiteral("moon"), port, n),
+                             providerSource(QStringLiteral("tortuga"), port, n)};
+    const QJsonObject episode{{QStringLiteral("number"), n},
+                              {QStringLiteral("label"), QStringLiteral("Fixture episode")},
+                              {QStringLiteral("kind"), QStringLiteral("animeCanon")},
+                              {QStringLiteral("sources"), sources}};
+    episodes.append(episode);
+  }
+  const QJsonObject team{{QStringLiteral("id"), 17},
+                         {QStringLiteral("slug"), QStringLiteral("fixture-team")},
+                         {QStringLiteral("name"), teamName}};
+  return QJsonObject{{QStringLiteral("id"), id},
+                     {QStringLiteral("kind"), QStringLiteral("voice")},
+                     {QStringLiteral("teams"), QJsonArray{team}},
+                     {QStringLiteral("episodes"), episodes},
+                     {QStringLiteral("episodesCount"), 2}};
+}
+
 QByteArray pngBytes() {
   static const QByteArray bytes = QByteArray::fromHex(
       "89504e470d0a1a0a0000000d494844520000000200000002080600000072b60d24000000"
@@ -194,6 +267,7 @@ class ApiFixture final : public QObject {
           const QByteArray line = connection.buffer.left(connection.buffer.indexOf("\r\n"));
           const QList<QByteArray> parts = line.split(' ');
           const QString target = QString::fromLatin1(parts.value(1));
+          requests.append(target);
           const bool poster = target.endsWith(QStringLiteral("/poster.png")) ||
                               target.endsWith(QStringLiteral("/ua-poster.png"));
           const bool selectedPoster = target.endsWith(QStringLiteral("/ua-poster.png"));
@@ -243,6 +317,13 @@ class ApiFixture final : public QObject {
   }
   QString teamCatalogueTitle() const { return QStringLiteral("Team Probe"); }
   bool licensed = false;
+  /// Which release list the player endpoint answers with: empty for the
+  /// original single-release fixture, "providers" for one release per provider,
+  /// "without-moon" for the pair that has no Moon source, "shared" for two
+  /// releases each carrying all three providers.
+  QString releaseLayout;
+  /// Every request target the fixture served, in arrival order.
+  QStringList requests;
   QByteArray posterBody = pngBytes();
   QByteArray selectedPosterBody = pngBytes();
   bool holdTeamResponses = false;
@@ -294,7 +375,37 @@ class ApiFixture final : public QObject {
                                                                        {QStringLiteral("url"), QStringLiteral("https://example.invalid/legal")}}
                                                         : QJsonObject{});
       if (!licensed) {
-        result.insert(QStringLiteral("releases"), QJsonArray{releasePayload()});
+        if (releaseLayout == QLatin1String("providers")) {
+          const int port = server_.serverPort();
+          result.insert(QStringLiteral("releases"),
+                        QJsonArray{providerRelease(QStringLiteral("release-ashdi"),
+                                                   QStringLiteral("ashdi"),
+                                                   QStringLiteral("Ashdi Team"), port),
+                                   providerRelease(QStringLiteral("release-moon"),
+                                                   QStringLiteral("moon"),
+                                                   QStringLiteral("Moon Team"), port),
+                                   providerRelease(QStringLiteral("release-tortuga"),
+                                                   QStringLiteral("tortuga"),
+                                                   QStringLiteral("Tortuga Team"), port)});
+        } else if (releaseLayout == QLatin1String("without-moon")) {
+          const int port = server_.serverPort();
+          result.insert(QStringLiteral("releases"),
+                        QJsonArray{providerRelease(QStringLiteral("release-ashdi"),
+                                                   QStringLiteral("ashdi"),
+                                                   QStringLiteral("Ashdi Team"), port),
+                                   providerRelease(QStringLiteral("release-tortuga"),
+                                                   QStringLiteral("tortuga"),
+                                                   QStringLiteral("Tortuga Team"), port)});
+        } else if (releaseLayout == QLatin1String("shared")) {
+          const int port = server_.serverPort();
+          result.insert(QStringLiteral("releases"),
+                        QJsonArray{multiProviderRelease(QStringLiteral("release-ashdi-row"),
+                                                        QStringLiteral("Ashdi Team"), port),
+                                   multiProviderRelease(QStringLiteral("release-moon-row"),
+                                                        QStringLiteral("Moon Team"), port)});
+        } else {
+          result.insert(QStringLiteral("releases"), QJsonArray{releasePayload()});
+        }
       }
     } else if (path.startsWith(QStringLiteral("/anime/"))) {
       result = titlePayload(QStringLiteral("http://127.0.0.1:%1/poster.png").arg(server_.serverPort()),
@@ -1660,6 +1771,233 @@ void TestPublicApiUi::titleHomeSkipsHistoryAndEscapeUnwindsDetailsAndHistory() {
   QVERIFY(window.isVisible());
   QVERIFY(discovery->isVisible());
   QVERIFY(browser.opened.isEmpty());
+}
+
+namespace {
+
+/// A one-source release, enough for the pure selection helpers.
+mikai::backend::Release providerReleaseModel(const QString& provider) {
+  mikai::backend::Release release;
+  release.id = provider;
+  release.kind = QStringLiteral("voice");
+  mikai::backend::Episode episode;
+  episode.number = 1;
+  mikai::backend::Source source;
+  source.provider = provider;
+  episode.sources.append(source);
+  release.episodes.append(episode);
+  return release;
+}
+
+QPushButton* chipForTeam(const QWidget& page, const QString& team) {
+  for (QPushButton* chip : page.findChildren<QPushButton*>(QStringLiteral("releaseChip"))) {
+    if (chip->toolTip().contains(team)) {
+      return chip;
+    }
+  }
+  return nullptr;
+}
+
+int tabForText(const QTabWidget* tabs, const QString& text) {
+  for (int index = 0; index < tabs->count(); ++index) {
+    if (tabs->tabText(index) == text) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+}  // namespace
+
+void TestPublicApiUi::providerPreferenceLeadsMoonAndFallsBackDeterministically() {
+  IsolatedSettings settings;
+  namespace labels = mikai::app::labels;
+  QCOMPARE(labels::providerKey(QStringLiteral(" Moon_Anime ")), QStringLiteral("moonanime"));
+  QCOMPARE(labels::providerKey(QStringLiteral("MOON")), QStringLiteral("moon"));
+  QCOMPARE(labels::providerKey(QStringLiteral("Ashdi")), QStringLiteral("ashdi"));
+  QCOMPARE(labels::preferredProviderRank(QStringLiteral("moon"), QStringLiteral("moon")), 0);
+  QCOMPARE(labels::preferredProviderRank(QStringLiteral("MoonAnime"), QStringLiteral("moon")), 2);
+  QCOMPARE(labels::preferredProviderRank(QStringLiteral("moon"), QStringLiteral("tortuga")), 1);
+  QCOMPARE(labels::preferredProviderRank(QStringLiteral("ashdi"), QStringLiteral("moon")), 3);
+
+  const QStringList providers{QStringLiteral("ashdi"), QStringLiteral("moon"),
+                              QStringLiteral("tortuga")};
+  QCOMPARE(labels::orderedProviders(providers, QStringLiteral("moon")),
+           QStringList({QStringLiteral("moon"), QStringLiteral("ashdi"),
+                        QStringLiteral("tortuga")}));
+  QCOMPARE(labels::orderedProviders(
+               QStringList({QStringLiteral("ashdi"), QStringLiteral("tortuga")}),
+               QStringLiteral("moon")),
+           QStringList({QStringLiteral("ashdi"), QStringLiteral("tortuga")}));
+  QCOMPARE(labels::orderedProviders(providers, QStringLiteral("tortuga")),
+           QStringList({QStringLiteral("tortuga"), QStringLiteral("moon"),
+                        QStringLiteral("ashdi")}));
+
+  const QVector<mikai::backend::Release> allThree{
+      providerReleaseModel(QStringLiteral("fenix")), providerReleaseModel(QStringLiteral("moon")),
+      providerReleaseModel(QStringLiteral("starly"))};
+  QCOMPARE(labels::preferredReleaseIndex(allThree, QStringLiteral("moon")), 1);
+  const QVector<mikai::backend::Release> withoutMoon{
+      providerReleaseModel(QStringLiteral("fenix")), providerReleaseModel(QStringLiteral("starly"))};
+  QCOMPARE(labels::preferredReleaseIndex(withoutMoon, QStringLiteral("moon")), 0);
+  QCOMPARE(labels::preferredReleaseIndex(withoutMoon, QStringLiteral("tortuga")), 0);
+  QCOMPARE(labels::preferredReleaseIndex({}, QStringLiteral("moon")), -1);
+
+  // Nothing stored means Moon; a stored preference is normalised rather than
+  // trusted verbatim, because the tab path compares normalised keys.
+  QCOMPARE(labels::preferredProvider(), QStringLiteral("moon"));
+  QSettings().setValue(QStringLiteral("playback/preferredProvider"),
+                       QStringLiteral(" Tortuga_"));
+  QCOMPARE(labels::preferredProvider(), QStringLiteral("tortuga"));
+  QSettings().remove(QStringLiteral("playback/preferredProvider"));
+}
+
+void TestPublicApiUi::moonLeadsTheProviderTabsAndReleaseChips() {
+  IsolatedSettings settings;
+  ApiFixture api;
+  api.releaseLayout = QStringLiteral("providers");
+  QVERIFY(api.start());
+  mikai::backend::MikaiClient client(kFixtureKey, api.base());
+  mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Moon default workers did not stop");
+  });
+  mikai::app::QualityCache cache;
+  mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"));
+  page.resize(1120, 800);
+  page.show();
+
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY2(tabs != nullptr, "the title page exposes no provider tabs");
+  // Each fixture release is served by one provider, so the opened release has a
+  // single tab: it has to be the Moon release, not the Ashdi one.
+  QTRY_COMPARE_WITH_TIMEOUT(tabs->count(), 1, 20000);
+  QTRY_COMPARE_WITH_TIMEOUT(tabs->tabText(tabs->currentIndex()),
+                            QStringLiteral("MoonAnime"), 10000);
+  QCOMPARE(tabs->currentIndex(), 0);
+
+  QPushButton* moonChip = chipForTeam(page, QStringLiteral("Moon Team"));
+  QPushButton* ashdiChip = chipForTeam(page, QStringLiteral("Ashdi Team"));
+  QPushButton* tortugaChip = chipForTeam(page, QStringLiteral("Tortuga Team"));
+  QVERIFY2(moonChip != nullptr && ashdiChip != nullptr && tortugaChip != nullptr,
+           "the fixture's three provider releases did not reach the chip row");
+  QTRY_VERIFY_WITH_TIMEOUT(moonChip->isChecked(), 5000);
+  QVERIFY(!ashdiChip->isChecked());
+  QVERIFY(!tortugaChip->isChecked());
+
+  // The watch button follows the selected tab, so the hero caption has to name
+  // the same provider the tab does.
+  auto* heroContext = page.findChild<QLabel*>(QStringLiteral("titleHeroWatchContext"));
+  QVERIFY(heroContext != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(heroContext->text().contains(QStringLiteral("MoonAnime")), 5000);
+}
+
+void TestPublicApiUi::aTitleWithoutMoonKeepsItsFirstProvider() {
+  IsolatedSettings settings;
+  ApiFixture api;
+  api.releaseLayout = QStringLiteral("without-moon");
+  QVERIFY(api.start());
+  mikai::backend::MikaiClient client(kFixtureKey, api.base());
+  mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Fallback workers did not stop");
+  });
+  mikai::app::QualityCache cache;
+  mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"));
+  page.resize(1120, 800);
+  page.show();
+
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY(tabs != nullptr);
+  QTRY_COMPARE_WITH_TIMEOUT(tabs->count(), 1, 20000);
+  QTRY_COMPARE_WITH_TIMEOUT(tabs->tabText(tabs->currentIndex()), QStringLiteral("Ashdi"), 10000);
+  QCOMPARE(tabs->currentIndex(), 0);
+
+  QPushButton* ashdiChip = chipForTeam(page, QStringLiteral("Ashdi Team"));
+  QPushButton* tortugaChip = chipForTeam(page, QStringLiteral("Tortuga Team"));
+  QVERIFY(ashdiChip != nullptr && tortugaChip != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(ashdiChip->isChecked(), 5000);
+  QVERIFY(!tortugaChip->isChecked());
+}
+
+void TestPublicApiUi::anExplicitProviderChoiceOutlivesTheReleaseRebuild() {
+  IsolatedSettings settings;
+  ApiFixture api;
+  api.releaseLayout = QStringLiteral("shared");
+  QVERIFY(api.start());
+  mikai::backend::MikaiClient client(kFixtureKey, api.base());
+  mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Provider choice workers did not stop");
+  });
+  mikai::app::QualityCache cache;
+  mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"));
+  page.resize(1120, 800);
+  page.show();
+
+  auto* overview = page.findChild<QScrollArea*>(QStringLiteral("titleOverview"));
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY2(overview != nullptr && tabs != nullptr, "the title page exposes no provider tabs");
+  QTRY_COMPARE_WITH_TIMEOUT(tabs->count(), 3, 20000);
+  QTRY_COMPARE_WITH_TIMEOUT(tabs->tabText(tabs->currentIndex()),
+                            QStringLiteral("MoonAnime"), 10000);
+  QPushButton* moonChip = chipForTeam(page, QStringLiteral("Moon Team"));
+  QPushButton* ashdiChip = chipForTeam(page, QStringLiteral("Ashdi Team"));
+  QVERIFY(moonChip != nullptr && ashdiChip != nullptr);
+  // Both releases carry Moon, so the first release wins the tie; the tab still
+  // opens on Moon because the release's own tabs are ordered by preference.
+  QTRY_VERIFY_WITH_TIMEOUT(ashdiChip->isChecked(), 5000);
+
+  const int tortuga = tabForText(tabs, QStringLiteral("Tortuga"));
+  QVERIFY(tortuga >= 0);
+  overview->ensureWidgetVisible(tabs->tabBar());
+  QCoreApplication::processEvents();
+  QTest::mouseClick(tabs->tabBar(), Qt::LeftButton, Qt::NoModifier,
+                    tabs->tabBar()->tabRect(tortuga).center());
+  QTRY_COMPARE_WITH_TIMEOUT(tabs->currentIndex(), tortuga, 5000);
+
+  // A different release rebuilds the tabs from scratch; the provider the
+  // viewer picked has to survive that rebuild for this title.
+  QTest::mouseClick(moonChip, Qt::LeftButton);
+  QTRY_VERIFY_WITH_TIMEOUT(moonChip->isChecked(), 5000);
+  QTRY_COMPARE_WITH_TIMEOUT(tabs->tabText(tabs->currentIndex()), QStringLiteral("Tortuga"),
+                            10000);
+}
+
+void TestPublicApiUi::theReleaseEmbedResolvesToTheMoonSource() {
+  IsolatedSettings settings;
+  ApiFixture api;
+  api.releaseLayout = QStringLiteral("shared");
+  QVERIFY(api.start());
+  mikai::backend::MikaiClient client(kFixtureKey, api.base());
+  mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Embed probe workers did not stop");
+  });
+  mikai::app::QualityCache cache;
+  mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"));
+  page.resize(1120, 800);
+  page.show();
+
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY(tabs != nullptr);
+  QTRY_COMPARE_WITH_TIMEOUT(tabs->count(), 3, 20000);
+  QPushButton* moonChip = chipForTeam(page, QStringLiteral("Moon Team"));
+  QVERIFY(moonChip != nullptr);
+
+  // A chip click starts the quality probe for every release; the page it
+  // fetches is firstEmbed()'s answer, not the first-listed source.
+  QTest::mouseClick(moonChip, Qt::LeftButton);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      api.requests.join(QLatin1Char('|')).contains(QStringLiteral("moonanime.art/iframe/1")),
+      15000);
+  QVERIFY2(!api.requests.join(QLatin1Char('|')).contains(QStringLiteral("ashdi.vip/vod/1")),
+           qPrintable(QStringLiteral("the release resolved its first-listed source: %1")
+                          .arg(api.requests.join(QLatin1Char('|')))));
 }
 
 int runTestPublicApiUi(int argc, char** argv) {

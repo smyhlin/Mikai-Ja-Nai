@@ -25,6 +25,11 @@ class TestPublicApiUi : public QObject {
   void titleSectionHeadersLetTheGradientThrough();
   void gradientPreviewKeepsItsLatestColorAndCancelRestoresIt();
   void aComponentsTabOutlivesTheProvisionerItsWindowOwns();
+  void providerPreferenceLeadsMoonAndFallsBackDeterministically();
+  void moonLeadsTheProviderTabsAndReleaseChips();
+  void aTitleWithoutMoonKeepsItsFirstProvider();
+  void anExplicitProviderChoiceOutlivesTheReleaseRebuild();
+  void theReleaseEmbedResolvesToTheMoonSource();
 };
 
 int runTestPublicApiUi(int argc, char** argv);
