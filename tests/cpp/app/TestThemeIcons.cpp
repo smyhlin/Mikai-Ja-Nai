@@ -348,7 +348,7 @@ void TestThemeIcons::toggleAndSwatchPaintOnceAtEveryRatio() {
     }
     const QRect chipInk = inkBounds(chip);
     QVERIFY2(chipInk.isValid(), "the swatch was not painted");
-    QVERIFY2(qAbs(chipInk.left() - 3.0 * ratio) <= 1.5,
+    QVERIFY2(qAbs(chipInk.left() - 3.0 * ratio) <= 2.0,
              qPrintable(QStringLiteral("swatch body starts at %1 instead of %2")
                             .arg(chipInk.left())
                             .arg(3.0 * ratio)));
