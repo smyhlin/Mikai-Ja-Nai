@@ -30,6 +30,7 @@ class TestPublicApiUi : public QObject {
   void aTitleWithoutMoonKeepsItsFirstProvider();
   void anExplicitProviderChoiceOutlivesTheReleaseRebuild();
   void theReleaseEmbedResolvesToTheMoonSource();
+  void aViewerChoiceLeadsTheProgrammaticWatchEmbed();
 };
 
 int runTestPublicApiUi(int argc, char** argv);

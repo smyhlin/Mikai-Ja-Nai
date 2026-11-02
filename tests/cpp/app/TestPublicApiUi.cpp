@@ -2000,6 +2000,51 @@ void TestPublicApiUi::theReleaseEmbedResolvesToTheMoonSource() {
                           .arg(api.requests.join(QLatin1Char('|')))));
 }
 
+void TestPublicApiUi::aViewerChoiceLeadsTheProgrammaticWatchEmbed() {
+  IsolatedSettings settings;
+  ApiFixture api;
+  api.releaseLayout = QStringLiteral("shared");
+  QVERIFY(api.start());
+  mikai::backend::MikaiClient client(kFixtureKey, api.base());
+  mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Session choice workers did not stop");
+  });
+  mikai::app::QualityCache cache;
+  mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"));
+  page.resize(1120, 800);
+  page.show();
+
+  auto* overview = page.findChild<QScrollArea*>(QStringLiteral("titleOverview"));
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY2(overview != nullptr && tabs != nullptr, "the title page exposes no provider tabs");
+  QTRY_COMPARE_WITH_TIMEOUT(tabs->count(), 3, 20000);
+  QTRY_COMPARE_WITH_TIMEOUT(tabs->tabText(tabs->currentIndex()),
+                            QStringLiteral("MoonAnime"), 10000);
+
+  const int tortuga = tabForText(tabs, QStringLiteral("Tortuga"));
+  QVERIFY(tortuga >= 0);
+  overview->ensureWidgetVisible(tabs->tabBar());
+  QCoreApplication::processEvents();
+  QTest::mouseClick(tabs->tabBar(), Qt::LeftButton, Qt::NoModifier,
+                    tabs->tabBar()->tabRect(tortuga).center());
+  QTRY_COMPARE_WITH_TIMEOUT(tabs->currentIndex(), tortuga, 5000);
+
+  // The viewer picked Tortuga, so the embed the page resolves for a quality
+  // probe (and hands to the player) has to be Tortuga's, not Moon's.
+  QPushButton* ashdiChip = chipForTeam(page, QStringLiteral("Ashdi Team"));
+  QVERIFY(ashdiChip != nullptr);
+  QTest::mouseClick(ashdiChip, Qt::LeftButton);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      api.requests.join(QLatin1Char('|')).contains(QStringLiteral("tortuga.tw/vod/1")), 15000);
+  QVERIFY2(!api.requests.join(QLatin1Char('|')).contains(
+               QStringLiteral("moonanime.art/iframe/1")),
+           qPrintable(QStringLiteral("the session choice did not lead the embed: %1")
+                          .arg(api.requests.join(QLatin1Char('|')))));
+  QCOMPARE(tabs->tabText(tabs->currentIndex()), QStringLiteral("Tortuga"));
+}
+
 int runTestPublicApiUi(int argc, char** argv) {
   TestPublicApiUi suite;
   QStringList arguments;
