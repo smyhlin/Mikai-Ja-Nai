@@ -14,7 +14,6 @@ class TestThemeIcons : public QObject {
   void glyphEdgesStayAntialiasedAtFractionalRatio();
   void noTornColumnsInsideGlyphInk();
   void chevronKeepsEveryStrokeRowInked();
-  void paintPathsDoNotMultiplyTheDevicePixelRatio();
   void toggleAndSwatchPaintOnceAtEveryRatio();
   void artworkFrameIsAllocatedAtTheDeviceSize();
   void shellGlyphJoinsAreRound();

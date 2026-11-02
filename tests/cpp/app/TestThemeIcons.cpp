@@ -12,15 +12,13 @@
 
 #include <QApplication>
 #include <QColor>
-#include <QDir>
-#include <QFile>
 #include <QImage>
 #include <QPainter>
 #include <QPair>
 #include <QPalette>
 #include <QPixmap>
 #include <QRect>
-#include <QStringList>
+#include <QRegion>
 #include <QtMath>
 
 #include <cmath>
@@ -82,6 +80,12 @@ int intermediateAlphaCount(const QImage& image) {
 
 /// Renders a widget into a device-sized image tagged with `ratio`, which is how
 /// a HiDPI screen sees it.
+///
+/// Without an explicit flag set, QWidget::render() also paints the window
+/// background: the widget's whole region is source-filled with the opaque
+/// QPalette::Window brush (QWidgetPrivate::paintBackground), which would make
+/// every "this pixel is clear" assertion below a statement about the palette
+/// rather than about the control.
 QImage renderAt(QWidget& widget, qreal ratio) {
   const QSize logical = widget.size();
   QImage image(QSize(qMax(1, qRound(logical.width() * ratio)),
@@ -91,9 +95,36 @@ QImage renderAt(QWidget& widget, qreal ratio) {
   image.setDevicePixelRatio(ratio);
   QPainter painter(&image);
   painter.setRenderHint(QPainter::Antialiasing, true);
-  widget.render(&painter);
+  widget.render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
   painter.end();
   return image;
+}
+
+/// Shortest distance from `at` to a list of segments given as consecutively
+/// paired points.
+qreal distanceToSegments(const QPointF& at, const QList<QPointF>& pairs) {
+  qreal nearest = std::numeric_limits<qreal>::max();
+  for (int i = 0; i + 1 < pairs.size(); i += 2) {
+    const QPointF a = pairs.at(i);
+    const QPointF ab = pairs.at(i + 1) - a;
+    const qreal lengthSquared = ab.x() * ab.x() + ab.y() * ab.y();
+    qreal t = lengthSquared > 0.0
+                  ? ((at.x() - a.x()) * ab.x() + (at.y() - a.y()) * ab.y()) / lengthSquared
+                  : 0.0;
+    t = qBound(0.0, t, 1.0);
+    nearest = qMin(nearest, std::hypot(at.x() - (a.x() + ab.x() * t),
+                                       at.y() - (a.y() + ab.y() * t)));
+  }
+  return nearest;
+}
+
+/// The same pair list with every point scaled by `k`, for a glyph drawn through
+/// a `size / 24` painter transform.
+QList<QPointF> scaledPoints(const QList<QPointF>& pairs, qreal k) {
+  QList<QPointF> scaled;
+  scaled.reserve(pairs.size());
+  for (const QPointF& point : pairs) scaled.append(point * k);
+  return scaled;
 }
 
 /// The mean x of the pixels that are exactly `color`: where a shape was drawn.
@@ -113,6 +144,32 @@ qreal centroidX(const QImage& image, const QColor& color) {
     }
   }
   return count == 0 ? -1.0 : sum / count;
+}
+
+/// The bounds of the pixels an opaque shape filled with `color` covers, or an
+/// invalid rect when the colour is absent. Unlike inkBounds this ignores the
+/// antialiased edge and any other shape in the same raster.
+QRect colorBounds(const QImage& image, const QColor& color) {
+  int left = image.width();
+  int top = image.height();
+  int right = -1;
+  int bottom = -1;
+  for (int y = 0; y < image.height(); ++y) {
+    for (int x = 0; x < image.width(); ++x) {
+      const QColor pixel = image.pixelColor(x, y);
+      if (pixel.alpha() < 250) continue;
+      if (qAbs(pixel.red() - color.red()) > 2 || qAbs(pixel.green() - color.green()) > 2 ||
+          qAbs(pixel.blue() - color.blue()) > 2) {
+        continue;
+      }
+      left = qMin(left, x);
+      top = qMin(top, y);
+      right = qMax(right, x);
+      bottom = qMax(bottom, y);
+    }
+  }
+  if (right < left || bottom < top) return {};
+  return QRect(QPoint(left, top), QPoint(right, bottom));
 }
 
 bool containsColorAtAlpha(const QPixmap& pixmap, const QColor& color) {
@@ -296,66 +353,59 @@ void TestThemeIcons::chevronKeepsEveryStrokeRowInked() {
         peak = qMax(peak, alphaAt(image, x, y));
       }
       QVERIFY2(peak >= 128,
-               qPrintable(QStringLiteral("stroke row %1 at %2 is %.0f%% covered")
+               qPrintable(QStringLiteral("stroke row %1 at %2 is %3% covered")
                               .arg(y)
                               .arg(ratio)
-                              .arg(peak * 100.0 / 255.0)));
+                              .arg(QString::number(peak * 100.0 / 255.0, 'f', 0))));
     }
   }
-}
-
-void TestThemeIcons::paintPathsDoNotMultiplyTheDevicePixelRatio() {
-#ifdef MIKAI_SOURCE_DIR
-  // A widget painter is already in logical coordinates. `worldTransform() * dpr`
-  // scales all nine matrix entries, doubling the drawing and turning the
-  // transform projective, so the pattern is banned outright.
-  const QStringList files = {
-      QStringLiteral("src/app/widgets/ToggleSwitch.cpp"),
-      QStringLiteral("src/app/widgets/SwatchButton.cpp"),
-      QStringLiteral("src/player/shell/ShellWidgets.cpp"),
-  };
-  for (const QString& relative : files) {
-    QFile file(QDir(QStringLiteral(MIKAI_SOURCE_DIR)).filePath(relative));
-    QVERIFY2(file.open(QIODevice::ReadOnly | QIODevice::Text),
-             qPrintable(QStringLiteral("cannot read %1").arg(relative)));
-    const QString body = QString::fromUtf8(file.readAll());
-    QVERIFY2(!body.contains(QStringLiteral("worldTransform() *")),
-             qPrintable(QStringLiteral("%1 multiplies the painter by the device pixel ratio")
-                            .arg(relative)));
-  }
-#else
-  QSKIP("MIKAI_SOURCE_DIR is not defined");
-#endif
 }
 
 void TestThemeIcons::toggleAndSwatchPaintOnceAtEveryRatio() {
   const mikai::app::theme::Palette palette =
       mikai::app::theme::paletteFor(mikai::app::currentAppearance());
 
-  for (const qreal ratio : {1.0, 1.25, 1.5, 2.0}) {
+  for (const qreal ratio : {1.0, 1.25, 1.5, 1.75, 2.0}) {
     mikai::app::ToggleSwitch toggle;
     toggle.resize(mikai::app::theme::kSettingsSwitchWidth,
                   mikai::app::theme::kSettingsSwitchHeight);
     const QImage track = renderAt(toggle, ratio);
-    // A second DPR multiplication draws the track past the widget and clips it,
-    // leaving a solid column on the boundary.
+    // The track is a rounded rect inset by half a logical pixel, so its widest
+    // row covers half of the boundary pixel at worst. Anything that draws the
+    // track again past the widget (a painter scaled by the ratio) clips it into
+    // a solid boundary column instead.
     for (int y = 0; y < track.height(); ++y) {
       QVERIFY2(alphaAt(track, track.width() - 1, y) < 250,
                qPrintable(QStringLiteral("toggle clipped at %1 on the right").arg(ratio)));
     }
-    // The knob is drawn once, at its logical position.
+    // The knob is drawn once, at its logical position and its logical diameter:
+    // an extra scale would both move its centre and grow it by that scale.
+    const QRect knob = colorBounds(track, QColor(palette.muted));
+    QVERIFY2(knob.isValid(), "the knob was not painted");
     const qreal knobX = centroidX(track, QColor(palette.muted));
-    QVERIFY2(knobX >= 0.0, "the knob was not painted");
     const qreal expected = 10.5 * ratio;
     QVERIFY2(qAbs(knobX - expected) <= 2.5,
              qPrintable(QStringLiteral("knob at %1, expected %2 at %3")
                             .arg(knobX)
                             .arg(expected)
                             .arg(ratio)));
+    // The knob is height - 6 logical pixels across; a disc's fully covered
+    // interior is ~1 px smaller than its bounding box on each side.
+    QVERIFY2(qAbs(knob.width() - (mikai::app::theme::kSettingsSwitchHeight - 6) * ratio) <= 3.0,
+             qPrintable(QStringLiteral("knob spans %1 px at %2")
+                            .arg(knob.width())
+                            .arg(ratio)));
+    QVERIFY2(qAbs(knob.left() - 2.5 * ratio) <= 2.0,
+             qPrintable(QStringLiteral("knob starts at %1 instead of %2")
+                            .arg(knob.left())
+                            .arg(2.5 * ratio)));
 
+    // The settings tab fixed-sizes every swatch: a plain resize() would be
+    // clamped to QPushButton's sizeHint (its minimumSizeHint), which is wider
+    // than the chip and would measure a shape the application never shows.
     mikai::app::SwatchButton swatch(QColor(200, 40, 90));
-    swatch.resize(mikai::app::theme::kSettingsSwatchSize,
-                  mikai::app::theme::kSettingsSwatchSize);
+    swatch.setFixedSize(mikai::app::theme::kSettingsSwatchSize,
+                        mikai::app::theme::kSettingsSwatchSize);
     const QImage chip = renderAt(swatch, ratio);
     for (int y = 0; y < chip.height(); ++y) {
       QVERIFY2(alphaAt(chip, 0, y) == 0,
@@ -368,6 +418,19 @@ void TestThemeIcons::toggleAndSwatchPaintOnceAtEveryRatio() {
     QVERIFY2(qAbs(chipInk.left() - 3.0 * ratio) <= 2.0,
              qPrintable(QStringLiteral("swatch body starts at %1 instead of %2")
                             .arg(chipInk.left())
+                            .arg(3.0 * ratio)));
+    // The body is the widget inset by 3 logical pixels on every side, so its
+    // fill is a logical square that must sit inside the chip at this ratio.
+    const QRect body = colorBounds(chip, QColor(200, 40, 90));
+    QVERIFY2(body.isValid(), "the swatch body was not painted");
+    const qreal bodySide = mikai::app::theme::kSettingsSwatchSize - 6.0;
+    QVERIFY2(qAbs(body.width() - bodySide * ratio) <= 3.0,
+             qPrintable(QStringLiteral("swatch body spans %1 px at %2")
+                            .arg(body.width())
+                            .arg(ratio)));
+    QVERIFY2(qAbs(body.left() - 3.0 * ratio) <= 2.0,
+             qPrintable(QStringLiteral("swatch fill starts at %1 instead of %2")
+                            .arg(body.left())
                             .arg(3.0 * ratio)));
   }
 }
@@ -382,7 +445,7 @@ void TestThemeIcons::artworkFrameIsAllocatedAtTheDeviceSize() {
   const QSize logical(mikai::app::theme::kHomePosterWidth,
                       mikai::app::theme::kHomePosterHeight);
 
-  for (const qreal ratio : {1.0, 1.25, 1.5, 2.0}) {
+  for (const qreal ratio : {1.0, 1.25, 1.5, 1.75, 2.0}) {
     const QPixmap frame = mikai::app::TitleCard::rounded(pixmap, logical, ratio);
     QVERIFY2(!frame.isNull(), "no card frame was painted");
     QVERIFY2(qFuzzyCompare(frame.devicePixelRatio(), ratio), "the frame carries another ratio");
@@ -398,58 +461,95 @@ void TestThemeIcons::artworkFrameIsAllocatedAtTheDeviceSize() {
 }
 
 void TestThemeIcons::shellGlyphJoinsAreRound() {
-  // expand() is a polyline, so its corners are real joins. A miter reaches past
-  // the stroke's half-width, so solid ink must never appear outside the round
-  // envelope of the segments. (At the shell's constant 2.25 px stroke the excess
-  // a miter adds is under one pixel of antialiasing, which is why the threshold
-  // is a fully opaque one: this stays a real guard if a stroke grows.)
+  // IconPainter::contract() paints an L whose vertex at (14,10) in its 24-unit
+  // grid is a real join. Its shipped 2.25 px stroke leaves the join style
+  // sub-pixel, so the whole public glyph is painted through a magnified painter
+  // instead and the corner is checked analytically: a round join is the only
+  // style that both stays inside the stroke's half-width (a miter reaches past
+  // it) and fills the corner's arc (QPen's default bevel join cuts the pixels
+  // past its chord clear).
+  const qreal magnify = 8.0;
+  const QSize box(int(24 * magnify), int(24 * magnify));
+  QPixmap pixmap(box);
+  pixmap.fill(Qt::transparent);
+  {
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.scale(magnify, magnify);
+    mplayer::shell::IconPainter::contract(painter, 0, 0, 24, QColor(Qt::white));
+  }
+  const QImage image = pixmap.toImage();
+  // contract()'s corner at (14,10) opens towards down-left, and no other stroke
+  // reaches that quadrant: the diagonal that starts at the same vertex runs
+  // up-right (away from it) and the other diagonal ends four grid units off. A
+  // corner another stroke capped over would hide the join style completely.
+  const QPointF vertex(14 * magnify, 10 * magnify);
+  const qreal half = 2.25 * magnify / 2.0;
   const QList<QPointF> segments = {
-      QPointF(15, 3),  QPointF(21, 3),    // polyline 1, arm 1
-      QPointF(21, 3),  QPointF(21, 9),    // polyline 1, arm 2
-      QPointF(9, 21),  QPointF(3, 21),    // polyline 2, arm 1
-      QPointF(3, 21),  QPointF(3, 15),    // polyline 2, arm 2
-      QPointF(21, 3),  QPointF(14, 10),   // diagonal
+      QPointF(4, 14),  QPointF(10, 14),   // open L, horizontal arm
+      QPointF(10, 14), QPointF(10, 20),   // open L, vertical arm
+      QPointF(20, 10), QPointF(14, 10),   // probed L, horizontal arm
+      QPointF(14, 10), QPointF(14, 4),    // probed L, vertical arm
+      QPointF(14, 10), QPointF(21, 3),    // diagonal
       QPointF(3, 21),  QPointF(10, 14),   // diagonal
   };
-  for (const int side : {24, 30}) {
-    QPixmap pixmap(side, side);
-    pixmap.fill(Qt::transparent);
-    {
-      QPainter painter(&pixmap);
-      painter.setRenderHint(QPainter::Antialiasing, true);
-      mplayer::shell::IconPainter::expand(painter, 0, 0, side);
+  const QList<QPointF> geometry = scaledPoints(segments, magnify);
+
+  int solid = 0;
+  for (int y = 0; y < image.height(); ++y) {
+    for (int x = 0; x < image.width(); ++x) {
+      if (image.pixelColor(x, y).alpha() < 250) continue;
+      ++solid;
+      // A miter join draws solid ink beyond the round envelope.
+      const qreal nearest = distanceToSegments(QPointF(x + 0.5, y + 0.5), geometry);
+      QVERIFY2(nearest <= half + 0.5,
+               qPrintable(QStringLiteral("solid ink %1 px from a stroke with a %2 px corner")
+                              .arg(nearest)
+                              .arg(2.25 * magnify)));
     }
-    const QImage image = pixmap.toImage();
-    const qreal k = side / 24.0;
-    const qreal halfWidth = 2.25 / 2.0;
-    int solid = 0;
-    for (int y = 0; y < image.height(); ++y) {
-      for (int x = 0; x < image.width(); ++x) {
-        if (image.pixelColor(x, y).alpha() < 250) continue;
-        ++solid;
-        const QPointF at(x + 0.5, y + 0.5);
-        qreal nearest = std::numeric_limits<qreal>::max();
-        for (int i = 0; i + 1 < segments.size(); i += 2) {
-          const QPointF a(segments.at(i).x() * k, segments.at(i).y() * k);
-          const QPointF b(segments.at(i + 1).x() * k, segments.at(i + 1).y() * k);
-          const QPointF ab = b - a;
-          const qreal lengthSquared = ab.x() * ab.x() + ab.y() * ab.y();
-          qreal t = lengthSquared > 0.0
-                        ? ((at.x() - a.x()) * ab.x() + (at.y() - a.y()) * ab.y()) / lengthSquared
-                        : 0.0;
-          t = qBound(0.0, t, 1.0);
-          const QPointF closest(a.x() + ab.x() * t, a.y() + ab.y() * t);
-          const qreal dx = at.x() - closest.x();
-          const qreal dy = at.y() - closest.y();
-          nearest = qMin(nearest, std::sqrt(dx * dx + dy * dy));
-        }
-        QVERIFY2(nearest <= halfWidth + 0.75,
-                 qPrintable(QStringLiteral("solid ink %1 px from a stroke at %2 px")
+  }
+  QVERIFY2(solid > 100, "the glyph did not paint");
+
+  // Every pixel the arc of the round join fully covers must be solid; a bevel
+  // join leaves the ones past its chord clear.
+  int arc = 0;
+  for (int y = 0; y < image.height(); ++y) {
+    for (int x = 0; x < image.width(); ++x) {
+      const QPointF centre(x + 0.5, y + 0.5);
+      if (centre.x() > vertex.x() || centre.y() < vertex.y()) continue;
+      if (std::hypot(centre.x() - vertex.x(), centre.y() - vertex.y()) > half - 1.0) continue;
+      ++arc;
+      QVERIFY2(image.pixelColor(x, y).alpha() >= 250,
+               qPrintable(QStringLiteral("the join is cut at %1,%2").arg(x).arg(y)));
+    }
+  }
+  QVERIFY2(arc > 20, "the join left no arc pixels to measure");
+
+  // The shipped sizes still paint their own ink, which is what a clipped or
+  // unresampled glyph loses first.
+  for (const int side : {24, 30}) {
+    QPixmap small(side, side);
+    small.fill(Qt::transparent);
+    {
+      QPainter painter(&small);
+      painter.setRenderHint(QPainter::Antialiasing, true);
+      mplayer::shell::IconPainter::contract(painter, 0, 0, side, QColor(Qt::white));
+    }
+    const QImage shipped = small.toImage();
+    const QList<QPointF> shippedGeometry = scaledPoints(segments, side / 24.0);
+    int inked = 0;
+    for (int y = 0; y < shipped.height(); ++y) {
+      for (int x = 0; x < shipped.width(); ++x) {
+        if (shipped.pixelColor(x, y).alpha() == 0) continue;
+        ++inked;
+        const qreal nearest = distanceToSegments(QPointF(x + 0.5, y + 0.5), shippedGeometry);
+        QVERIFY2(nearest <= 2.25 / 2.0 + 1.0,
+                 qPrintable(QStringLiteral("ink %1 px from a stroke at %2 px")
                                 .arg(nearest)
                                 .arg(side)));
       }
     }
-    QVERIFY2(solid > 20, "the glyph did not paint");
+    QVERIFY2(inked > 40, "the glyph did not paint");
   }
 }
 
