@@ -20,6 +20,31 @@ QString kind(const QString& raw);
 /// Translated label for a stream provider key, capitalised when unknown.
 QString provider(const QString& raw);
 
+/// Normalised provider identity: lower-cased, trimmed, with spaces, underscores
+/// and hyphens removed, so the API key `moon` and the display name `MoonAnime`
+/// compare as the same family instead of as two strings.
+QString providerKey(const QString& raw);
+
+/// The provider serving a source: its embed URL first, then the API's own
+/// provider field, `other` when neither names one.
+QString providerFor(const backend::Source& source);
+
+/// Ordering used to choose defaults: 0 for the preferred provider, 1 for Moon,
+/// 2 for its `MoonAnime` spelling, 3 for anything else. An empty `preferred`
+/// means Moon.
+int preferredProviderRank(const QString& raw, const QString& preferred);
+
+/// The provider keys in tab order: the preferred one first, then Moon, then
+/// whatever order the caller supplied.
+QStringList orderedProviders(const QStringList& providers, const QString& preferred);
+
+/// The release to open by default: the one served by `preferred`, else the
+/// first Moon release, else the first release. -1 for an empty list.
+int preferredReleaseIndex(const QVector<backend::Release>& releases, const QString& preferred);
+
+/// Persisted `playback/preferredProvider`, normalised; `moon` when unset.
+QString preferredProvider();
+
 /// Translated label for a title format, raw text when unknown.
 QString format(const QString& raw);
 

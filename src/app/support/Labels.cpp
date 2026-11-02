@@ -1,11 +1,16 @@
 #include "Labels.hpp"
 
+#include "backend/Streams.hpp"
 #include "state/AppearanceStore.hpp"
 
 #include <QCoreApplication>
+#include <QSettings>
 #include <QStringList>
 #include <QTranslator>
 #include <QVariant>
+
+#include <algorithm>
+#include <exception>
 
 // These are free functions rather than a QObject subclass, so every string is
 // extracted under the explicit "Labels" context instead of a class name, and
@@ -15,6 +20,11 @@
 // case-sensitive on the raw token, which is how the API spells them.
 namespace mikai::app::labels {
 namespace {
+
+/// Where the viewer's default source is stored. The Settings combo that writes
+/// it is optional; until it exists the value is only ever read, so an absent
+/// key means Moon.
+constexpr char kPreferredProviderSettingKey[] = "playback/preferredProvider";
 
 /// The embedded Ukrainian catalogue, used only to *look up* a content name in
 /// a language other than the interface's. It is never installed, so switching
@@ -46,6 +56,21 @@ QString content(const char* source, const QString& interfaceText) {
             break;
     }
     return interfaceText;
+}
+
+/// The best rank any of a release's sources reaches, so a release that ships
+/// the preferred provider among others counts as that provider's.
+int releaseRank(const backend::Release& release, const QString& preferred) {
+    int best = 3;
+    for (const backend::Episode& episode : release.episodes) {
+        for (const backend::Source& source : episode.sources) {
+            best = std::min(best, preferredProviderRank(providerFor(source), preferred));
+            if (best == 0) {
+                return best;
+            }
+        }
+    }
+    return best;
 }
 
 }  // namespace
@@ -116,6 +141,84 @@ QString provider(const QString& raw) {
         return QStringLiteral("Tortuga");
     }
     return raw;
+}
+
+QString providerKey(const QString& raw) {
+    // The API key, the display name and whatever separator a payload chose all
+    // have to fold to one token: `moon`, `Moon`, `MOON_ANIME` and `MoonAnime`
+    // are the same source to a viewer, and the restart must not read them as
+    // different providers either.
+    QString key;
+    key.reserve(raw.size());
+    for (const QChar character : raw) {
+        if (character.isSpace() || character == QLatin1Char('_') ||
+            character == QLatin1Char('-')) {
+            continue;
+        }
+        key.append(character.toLower());
+    }
+    return key;
+}
+
+int preferredProviderRank(const QString& raw, const QString& preferred) {
+    const QString key = providerKey(raw);
+    if (key.isEmpty()) {
+        return 3;
+    }
+    const QString wanted = providerKey(preferred);
+    if (!wanted.isEmpty() && key == wanted) {
+        return 0;
+    }
+    if (key == QLatin1String("moon")) {
+        return 1;
+    }
+    if (key == QLatin1String("moonanime")) {
+        return 2;
+    }
+    return 3;
+}
+
+QString providerFor(const backend::Source& source) {
+    QString provider;
+    try {
+        provider = backend::detectSite(source.embed_url);
+    } catch (const std::exception&) {
+        provider = source.provider.toLower().trimmed();
+    }
+    return provider.isEmpty() ? QStringLiteral("other") : provider;
+}
+
+QStringList orderedProviders(const QStringList& providers, const QString& preferred) {
+    QStringList ordered = providers;
+    std::stable_sort(ordered.begin(), ordered.end(),
+                     [&preferred](const QString& left, const QString& right) {
+                         return preferredProviderRank(left, preferred) <
+                                preferredProviderRank(right, preferred);
+                     });
+    return ordered;
+}
+
+int preferredReleaseIndex(const QVector<backend::Release>& releases, const QString& preferred) {
+    if (releases.isEmpty()) {
+        return -1;
+    }
+    int bestIndex = 0;
+    int bestRank = 4;
+    for (int index = 0; index < releases.size(); ++index) {
+        const int rank = releaseRank(releases.at(index), preferred);
+        if (rank < bestRank) {
+            bestRank = rank;
+            bestIndex = index;
+        }
+    }
+    return bestIndex;
+}
+
+QString preferredProvider() {
+    const QString stored = QSettings().value(QString::fromLatin1(kPreferredProviderSettingKey))
+                               .toString();
+    const QString key = providerKey(stored);
+    return key.isEmpty() ? QStringLiteral("moon") : key;
 }
 
 QString format(const QString& raw) {

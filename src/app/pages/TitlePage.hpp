@@ -532,6 +532,10 @@ protected:
     int activeRelease_ = -1;
     QMap<int, int> releaseQuality_;
     QSet<int> releaseProbed_;
+    /// The provider tab the viewer picked while this title is open, so switching
+    /// to another release rebuilds the tabs without dropping the choice. Empty
+    /// until a real tab change; cleared when a different title loads.
+    QString chosenProvider_;
 
     QVector<PlayerSession*> sessions_;
     QMap<QString, QVector<EpisodeEntry*>> fetchWaiters_;
