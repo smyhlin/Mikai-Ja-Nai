@@ -67,7 +67,7 @@ inline std::optional<int> componentProgressPercent(const CardState& state) {
     if (state.transfer.active > 0 || state.transfer.queued > 0) {
         if (state.transfer.total <= 0) return std::nullopt;
         const qint64 percent = state.transfer.received * 100 / state.transfer.total;
-        return static_cast<int>(qBound<qint64>(0, percent, 99));
+        return static_cast<int>(qBound(qint64{0}, percent, qint64{99}));
     }
     if (state.transfer.installed > 0) {
         const bool confirmed = state.inventory.known && state.inventory.installed > 0 &&
