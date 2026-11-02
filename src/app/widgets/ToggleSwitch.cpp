@@ -30,9 +30,11 @@ void ToggleSwitch::paintEvent(QPaintEvent*) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    if (windowHandle()) {
-        painter.setWorldTransform(painter.worldTransform() * windowHandle()->devicePixelRatio());
-    }
+    // A widget painter is already in logical coordinates with the window's
+    // device pixel ratio applied: multiplying the world transform by the DPR
+    // again scales every entry of the matrix - including m33 - which both
+    // doubles the drawing at any DPR > 1 and turns the transform into a
+    // projective TxProject that corrupts pens, gradients and AA coverage.
 
     const int height = theme::kSettingsSwitchHeight;
     const int width = theme::kSettingsSwitchWidth;

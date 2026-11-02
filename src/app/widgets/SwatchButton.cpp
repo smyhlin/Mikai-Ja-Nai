@@ -49,9 +49,9 @@ void SwatchButton::paintEvent(QPaintEvent*) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    if (windowHandle()) {
-        painter.setWorldTransform(painter.worldTransform() * windowHandle()->devicePixelRatio());
-    }
+    // Logical coordinates only: the window's device pixel ratio is already in
+    // the painter's transform, and scaling it again would draw the chip twice
+    // its size inside a TxProject transform that breaks AA coverage.
 
     // The ring needs room outside the fill, so the chip body is inset by it.
     const QRectF body = QRectF(rect()).adjusted(3.0, 3.0, -3.0, -3.0);
