@@ -332,7 +332,13 @@ void ComponentStoreTab::schedulePresenceRefresh() {
     // Presence, not proof: `inventorySnapshot` with hashing disabled still
     // reads bounded metadata off the GUI thread. It runs during an acquisition
     // so the spatial badge counts up 1/5 ... 5/5 instead of jumping at the end.
-    if (runner_ == nullptr || presenceScanning_) return;
+    if (runner_ == nullptr) return;
+    if (presenceScanning_) {
+        // A unit settled while a presence scan is in flight: run one more when
+        // it lands instead of dropping the newer disk state.
+        presenceRefreshPending_ = true;
+        return;
+    }
     presenceScanning_ = true;
     presenceRefreshPending_ = false;
     const quint64 generation = ++presenceGeneration_;
