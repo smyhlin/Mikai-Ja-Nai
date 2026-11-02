@@ -264,16 +264,16 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) cons
         ++painted;
     }
     if (timer.measured()) {
-        // The hit/miss field is a placeholder until GOAL-E/T-E7 adds a cache:
-        // this list repaints every adopted entry every pass, so no cache answer
-        // exists yet and reporting one would be an invented measurement.
+        // No cache exists until T-E7; a hit/miss number would be invented.
         mikai::gui::uiprofile::noteChromePaint(painted, timer.micros());
-        mikai::gui::uiprofile::log(
-            "chrome.list.paint",
-            QStringLiteral("entries=%1 painted=%2 elapsed_us=%3 cache=unavailable")
-                .arg(static_cast<qulonglong>(entries_.size()))
-                .arg(painted)
-                .arg(timer.micros()));
+        if (mikai::gui::uiprofile::enabled()) {
+            mikai::gui::uiprofile::log(
+                "chrome.list.paint",
+                QStringLiteral("entries=%1 painted=%2 elapsed_us=%3 cache=unavailable")
+                    .arg(static_cast<qulonglong>(entries_.size()))
+                    .arg(painted)
+                    .arg(timer.micros()));
+        }
     }
 }
 

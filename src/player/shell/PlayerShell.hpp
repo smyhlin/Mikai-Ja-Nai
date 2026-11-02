@@ -381,6 +381,9 @@ private:
     /// MIKAI_UI_PROFILE: records an activation transition once, arming the
     /// activation-to-first-paint clock on activation. No-op when profiling is off.
     void profileActivationChanged(bool active);
+    /// This shell is a child widget, so Qt delivers WindowActivate/deactivate to
+    /// the top-level dialog, not here. A filter on that QWindow forwards them.
+    void profileInstallWindowFilter();
 
     QSize fitted() const;
     bool hitEdges(const QPointF& pos);
@@ -493,8 +496,10 @@ private:
     // MIKAI_UI_PROFILE: the activation clock and the last active state observed.
     // Unused (and unwritten) when profiling is off.
     qint64 profileActivationNs_ = 0;
+    qint64 profileActivationToPaintEntryMs_ = -1;
     bool profileActivationPending_ = false;
     bool profileLastActive_ = false;
+    QPointer<QWindow> profileEventWindow_;
 
     QVector<QPointer<QWidget>> overlays_;
     /// Whether a corner mask is currently installed on the surface. Tracked

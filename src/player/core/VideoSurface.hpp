@@ -1069,6 +1069,11 @@ private:
     /// The reason the last pacing decision painted immediately, for the paint
     /// line's `skip_reason` field. A fixed literal, never built per frame.
     const char* profilePacingReason_ = "none";
+    /// True when onPacingTick released a presentation paint. The timer is no
+    /// longer active by then, so this is what distinguishes a paced paint from
+    /// a repaint for paint delay.
+    bool profilePacingFired_ = false;
+    void clearPacingProfile();
 
     // The one native-status reader this surface owns, bound to its own core.
     native::NativeStatusConsumer nativeStatus_;

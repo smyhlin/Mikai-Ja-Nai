@@ -88,6 +88,7 @@ mikai_add_probe(dialog_probe src/probes/player/DialogProbe.cpp
   DEPLOY_SHADERS)
 mikai_add_probe(fullscreen_stability_probe src/probes/player/FullscreenStabilityProbe.cpp
   LINKS mikai_player Qt6::Widgets Qt6::Test
+  EXTRA_SOURCES src/probes/shared/ForegroundPeer.cpp
   DEPLOY_SHADERS)
 if(TARGET mikai_app)
   # The focus-switch mode installs the real WindowRaisePolicy so its

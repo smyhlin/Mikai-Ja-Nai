@@ -6,6 +6,7 @@
 #include "VideoSurface.hpp"
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QCursor>
 #include <QDir>
 #include <QElapsedTimer>
@@ -38,6 +39,7 @@
 #include <optional>
 #include <utility>
 
+#include "ForegroundPeer.hpp"
 #include "gui/UiProfile.hpp"
 
 #ifdef MIKAI_PROBE_HAS_APP
@@ -280,6 +282,16 @@ bool forceForegroundNow(QWidget* window) {
 }
 #endif
 
+/// The shipping raise policy only exists, and only calls AttachThreadInput, on
+/// Windows with the app library linked into this probe.
+bool attachMetricSupported() {
+#if defined(Q_OS_WIN) && defined(MIKAI_PROBE_HAS_APP)
+    return true;
+#else
+    return false;
+#endif
+}
+
 void spinFor(int milliseconds) {
     QEventLoop loop;
     QTimer::singleShot(milliseconds, &loop, &QEventLoop::quit);
@@ -298,9 +310,9 @@ double percentileMs(QVector<qint64> values, double percentile) {
 /// the platform refused the grab; luma -1 means "not measured".
 QImage desktopCrop(QScreen* screen, const QRect& globalRect) {
     if (screen == nullptr || globalRect.isEmpty()) return QImage();
-    return screen->grabWindow(0, globalRect.x(), globalRect.y(), globalRect.width(),
-                              globalRect.height())
-        .toImage();
+    // grabWindow(0, ...) takes screen-relative x/y and adds the screen origin.
+    const QRect local = globalRect.translated(-screen->geometry().topLeft());
+    return screen->grabWindow(0, local.x(), local.y(), local.width(), local.height()).toImage();
 }
 
 double meanLuma(const QImage& image) {
@@ -438,8 +450,9 @@ struct ActivationRun {
 };
 
 ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
-                                  mplayer::VideoSurface* surface, QWidget* helper,
-                                  const QString& phase, int cycles, bool knownBright,
+                                  mplayer::VideoSurface* surface,
+                                  mikai::probes::ForegroundPeer& peer, const QString& phase,
+                                  int cycles, bool knownBright,
                                   const std::function<void(QJsonObject)>& record) {
     ActivationRun run;
     run.phase = phase;
@@ -465,27 +478,36 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
         // meaningful when the two differ.
         const double baselineLuma = meanLuma(grabDesktop());
 
-        const bool awayOwned = forceForegroundNow(helper);
+        const bool awayOwned = peer.activate();
         spinFor(650);
-        const bool stillAway = foregroundIs(helper);
+        const bool awayQtInactive =
+            QGuiApplication::applicationState() == Qt::ApplicationInactive;
+        const bool stillAway = peer.ownsForeground() && awayQtInactive;
         const double occludedLuma = meanLuma(grabDesktop());
         const bool occlusionVerified =
             baselineLuma >= 40.0 && occludedLuma >= 0.0 && occludedLuma < baselineLuma * 0.5;
         const quint64 attachAfterAway =
             mikai::gui::uiprofile::snapshot().threadInputAttaches;
-        run.attachCalls += attachAfterAway - attachBefore;
+        // Away-only: an attach made while the player still held the foreground
+        // is not a switch-away cost.
+        if (stillAway) run.attachCalls += attachAfterAway - attachBefore;
         record(QJsonObject{{"event", "focusSwitchAway"},
                            {"phase", phase},
                            {"cycle", cycle},
                            {"foregroundOwnedInstantly", awayOwned},
                            {"foregroundOwnedAfterWait", stillAway},
+                           {"awayQtInactive", awayQtInactive},
+                           {"peerPid", static_cast<qint64>(peer.processId())},
+                           {"peerWindow", static_cast<qint64>(peer.windowId())},
                            {"foregroundProcess", foregroundProcessImage()},
                            {"applicationState",
                             static_cast<int>(QGuiApplication::applicationState())},
                            {"playerActive", dialog->isActiveWindow()},
-                           {"helperActive", helper->isActiveWindow()},
-                           {"attachCallsDuringAway",
+                           {"attachCallsObserved",
                             static_cast<qint64>(attachAfterAway - attachBefore)},
+                           {"attachCallsCounted",
+                            static_cast<qint64>(stillAway ? attachAfterAway - attachBefore
+                                                          : 0)},
                            {"attachCounterScope",
                             "shipping WindowRaisePolicy only; the probe's own attach "
                             "dance is not counted"},
@@ -506,7 +528,7 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
                 paintAtNs = mikai::gui::uiprofile::nowNs();
             },
             Qt::DirectConnection);
-        const qint64 activationAtNs = mikai::gui::uiprofile::nowNs();
+        const qint64 activationRequestedNs = mikai::gui::uiprofile::nowNs();
         forceForegroundNow(dialog);
         // A foreign window (the parent's run saw Telegram.exe take the
         // foreground) would make the latency belong to that window, so the
@@ -516,12 +538,14 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
             forceForegroundNow(dialog);
         }
         const bool foregroundOwned = foregroundIs(dialog);
+        // The measured interval is owned activation -> visible composition, so
+        // the clock starts when this process actually owns the foreground.
+        const qint64 activationAtNs = mikai::gui::uiprofile::nowNs();
+        const qint64 activationRequestToOwnedMs =
+            (activationAtNs - activationRequestedNs) / 1000000;
         dialog->raise();
         dialog->activateWindow();
-        // Activation itself is expected to restack the player above the helper;
-        // lowering it here makes the occlusion transition deterministic on
-        // window managers that do not restack a borderless fullscreen window.
-        helper->lower();
+        peer.sendToBack();
         dialog->update();
         surface->update();
         QElapsedTimer wait;
@@ -532,12 +556,20 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
         // secondary diagnostic.
         qint64 activationToVisibleMs = -1;
         bool visibleObserved = false;
+        bool foregroundLostDuringPoll = !foregroundOwned;
         const double visibleThreshold = std::max(30.0, baselineLuma * 0.6);
-        if (occlusionVerified) {
+        if (occlusionVerified && foregroundOwned) {
             while (wait.elapsed() < 2500 && (!paintSeen || !visibleObserved)) {
+                // Another process can take the foreground mid-poll; its pixels
+                // must never be accepted as this player's composition.
+                if (!foregroundIs(dialog)) {
+                    foregroundLostDuringPoll = true;
+                    break;
+                }
                 if (!visibleObserved) {
                     const QImage composed = grabDesktop();
-                    if (!composed.isNull() && meanLuma(composed) >= visibleThreshold) {
+                    if (!composed.isNull() && meanLuma(composed) >= visibleThreshold &&
+                        foregroundIs(dialog)) {
                         visibleObserved = true;
                         activationToVisibleMs =
                             (mikai::gui::uiprofile::nowNs() - activationAtNs) / 1000000;
@@ -548,8 +580,11 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
         }
         while (!paintSeen && wait.elapsed() < 2500) spinFor(5);
         QObject::disconnect(connection);
+        const bool foregroundOwnedAtEnd = foregroundIs(dialog);
+        const bool cycleValid = foregroundOwned && stillAway && !foregroundLostDuringPoll &&
+                                foregroundOwnedAtEnd;
+        if (!cycleValid) visibleObserved = false;
         qint64 activationToFirstSwapMs = -1;
-        const bool cycleValid = foregroundOwned;
         if (paintSeen && cycleValid) {
             activationToFirstSwapMs = (paintAtNs - activationAtNs) / 1000000;
             ++run.paints;
@@ -601,6 +636,9 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
             {"baselineLuma", baselineLuma},
             {"occludedLuma", occludedLuma},
             {"foregroundOwned", foregroundOwned},
+            {"foregroundOwnedAtEnd", foregroundOwnedAtEnd},
+            {"foregroundLostDuringPoll", foregroundLostDuringPoll},
+            {"activationRequestToOwnedMs", activationRequestToOwnedMs},
             {"foregroundProcess", foregroundProcessImage()},
             {"cycleValid", cycleValid},
             {"black", black},
@@ -677,7 +715,10 @@ QJsonObject activationSummary(const ActivationRun& run) {
         {"latencyDefinition",
          "activation (owned foreground) to the next QOpenGLWidget::frameSwapped; this "
          "is a swap-completion latency, not a physical scanout/present timestamp"},
-        {"attachCallsDuringAway", static_cast<qint64>(run.attachCalls)},
+        {"attachCallsDuringAway",
+         attachMetricSupported() ? QJsonValue(static_cast<qint64>(run.attachCalls))
+                                 : QJsonValue(QStringLiteral("unavailable"))},
+        {"attachMetricSupported", attachMetricSupported()},
         {"contextGenerationChanges", static_cast<qint64>(run.contextGenerationChanges)},
         {"initializeGlCalls", static_cast<qint64>(run.initializeGlCalls)},
         {"dwmCompositionFramesDisplayed",
@@ -754,28 +795,29 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
         return 3;
     }
 
-    QWidget helper;
-    helper.setWindowTitle(QStringLiteral("Mikai focus helper"));
-    // Black and centred over the measured crop: while this window owns the
-    // foreground the crop must show black, so the first bright sample after
-    // activation is observable composited output rather than a guess.
-    // Not topmost: the player must be able to cover the helper again on
-    // reactivation, otherwise the crop would stay black and visible composition
-    // could never be observed.
-    helper.setStyleSheet(QStringLiteral("background:#000000;"));
-    helper.setWindowFlags(Qt::Window);
-    helper.resize(480, 360);
-    helper.move(dialog->mapToGlobal(dialog->rect().center()) - QPoint(240, 180));
-    helper.show();
-    helper.raise();
-    spinFor(300);
-
+    // A separate process owns the black helper: its window is another
+    // application's, so native activation and Qt's inactive state are real.
+    const QPoint center = dialog->mapToGlobal(dialog->rect().center());
+    mikai::probes::ForegroundPeer peer;
+    QString peerError;
+    if (!peer.start(QRect(center - QPoint(240, 180), QSize(480, 360)), &peerError)) {
+        *error = peerError;
+        record(QJsonObject{{"event", "focusSwitchResult"},
+                           {"result", "UNAVAILABLE"},
+                           {"reason", peerError},
+                           {"surfaceState", surfaceState(surface)}});
+        return 3;
+    }
+    record(QJsonObject{{"event", "foregroundPeer"},
+                       {"pid", static_cast<qint64>(peer.processId())},
+                       {"window", static_cast<qint64>(peer.windowId())},
+                       {"foreignPid", peer.processId() != QCoreApplication::applicationPid()}});
     QVector<ActivationRun> runs;
-    runs.append(runActivationCycles(dialog, surface, &helper, QStringLiteral("plain"),
+    runs.append(runActivationCycles(dialog, surface, peer, QStringLiteral("plain"),
                                     std::max(1, std::min(10, seconds / 3)), knownBright, record));
     dialog->beginEnginePreparation(QStringLiteral("Focus probe overlay"));
     spinFor(600);
-    runs.append(runActivationCycles(dialog, surface, &helper, QStringLiteral("engine-overlay"),
+    runs.append(runActivationCycles(dialog, surface, peer, QStringLiteral("engine-overlay"),
                                     std::max(1, std::min(5, seconds / 6)), knownBright, record));
     dialog->endEnginePreparation(true, QString());
     spinFor(300);
@@ -786,7 +828,7 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
         QTest::mouseMove(shell, overDock);
         spinFor(400);
     }
-    runs.append(runActivationCycles(dialog, surface, &helper, QStringLiteral("dock-hover"),
+    runs.append(runActivationCycles(dialog, surface, peer, QStringLiteral("dock-hover"),
                                     std::max(1, std::min(5, seconds / 6)), knownBright, record));
     QCursor::setPos(dialog->mapToGlobal(QPoint(2, 2)));
 
@@ -852,7 +894,7 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
                        {"presentationMode", presentationMode()},
                        {"surfaceState", surfaceState(surface)},
                        {"error", *error}});
-    helper.close();
+    peer.stop();
     return 0;
 }
 
@@ -1003,23 +1045,28 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
          stormChromePaintMax < 0 ? QJsonValue(QStringLiteral("unavailable"))
                                  : QJsonValue(stormChromePaintMax)}});
 
-    // ── metric 2: alt-tab away/back, ten cycles ────────────────────────────
-    QWidget helper;
-    helper.setWindowTitle(QStringLiteral("Mikai baseline helper"));
-    helper.setStyleSheet(QStringLiteral("background:#000000;"));
-    helper.setWindowFlags(Qt::Window);
-    helper.resize(480, 360);
-    helper.move(dialog->mapToGlobal(dialog->rect().center()) - QPoint(240, 180));
-    helper.show();
-    helper.raise();
-    spinFor(300);
-    const quint64 activationAttachBase =
-        mikai::gui::uiprofile::snapshot().threadInputAttaches;
-    const ActivationRun activation = runActivationCycles(
-        dialog, surface, &helper, QStringLiteral("plain"), 10, knownBright, record);
-    const quint64 activationAttaches =
-        mikai::gui::uiprofile::snapshot().threadInputAttaches - activationAttachBase;
-    helper.close();
+    // ── metric 2: away/back against another process, ten cycles ────────────
+    const QPoint activationCenter = dialog->mapToGlobal(dialog->rect().center());
+    mikai::probes::ForegroundPeer peer;
+    QString peerError;
+    const bool peerStarted =
+        peer.start(QRect(activationCenter - QPoint(240, 180), QSize(480, 360)), &peerError);
+    ActivationRun activation;
+    activation.phase = QStringLiteral("plain");
+    if (peerStarted) {
+        record(QJsonObject{{"event", "foregroundPeer"},
+                           {"pid", static_cast<qint64>(peer.processId())},
+                           {"window", static_cast<qint64>(peer.windowId())},
+                           {"foreignPid",
+                            peer.processId() != QCoreApplication::applicationPid()}});
+        activation = runActivationCycles(dialog, surface, peer, QStringLiteral("plain"), 10,
+                                         knownBright, record);
+        peer.stop();
+    } else {
+        record(QJsonObject{{"event", "foregroundPeerUnavailable"},
+                           {"reason", peerError},
+                           {"activationMetric", "unavailable"}});
+    }
     spinFor(300);
 
     // ── metric 4: surface-geometry writes per fullscreen transition ────────
@@ -1092,7 +1139,8 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     const bool swapMeasured = !activation.activationToFirstSwapMs.isEmpty();
     const bool visibleMeasured = !activation.activationToVisibleCompositionMs.isEmpty();
     const bool blackMeasured = loadSampled > 0;
-    const bool measured = preconditionsValid && stormValid && visibleMeasured && blackMeasured;
+    const bool measured =
+        preconditionsValid && stormValid && peerStarted && visibleMeasured && blackMeasured;
     record(QJsonObject{
         {"event", "baselineResult"},
         {"result", measured ? "MEASURED"
@@ -1140,7 +1188,10 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                                                  : QJsonValue(QStringLiteral("unavailable"))},
         {"loadfileSamplesMeasured", loadSampled},
         {"loadfileTransitionsCompleted", completedLoads},
-        {"attachCallsDuringAway", static_cast<qint64>(activationAttaches)},
+        {"attachCallsDuringAway",
+         attachMetricSupported() ? QJsonValue(static_cast<qint64>(activation.attachCalls))
+                                 : QJsonValue(QStringLiteral("unavailable"))},
+        {"attachMetricSupported", attachMetricSupported()},
         {"activationForegroundLostCycles", activation.foregroundLostCycles},
         {"hoverStormForegroundLostTicks", stormForegroundLost},
         {"contextGenerationChanges", static_cast<qint64>(activation.contextGenerationChanges)},
@@ -1163,10 +1214,14 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                   : (!preconditionsValid
                          ? QStringLiteral("paused bright frame and owned foreground were not "
                                           "verified before the storm")
-                         : (!stormValid ? QStringLiteral("hover storm was not valid for the "
-                                                         "requested interval")
-                                        : QStringLiteral("activation or loadfile measurement "
-                                                         "was unavailable")))},
+                         : (!stormValid
+                                ? QStringLiteral("hover storm was not valid for the requested "
+                                                 "interval")
+                                : (!peerStarted
+                                       ? QStringLiteral("foreign foreground helper was "
+                                                        "unavailable")
+                                       : QStringLiteral("activation or loadfile measurement "
+                                                        "was unavailable"))))},
         {"error", *error}});
     if (!measured && error != nullptr) {
         *error = !preconditionsValid
@@ -1186,6 +1241,8 @@ int main(int argc, char** argv) {
     QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
+    if (QCoreApplication::arguments().contains(QStringLiteral("--foreground-helper")))
+        return mikai::probes::runForegroundHelperMode(app, QCoreApplication::arguments());
     std::fprintf(stderr, "Platform: %s, screen: %s\n",
                  qPrintable(QGuiApplication::platformName()),
                  app.primaryScreen() != nullptr ? qPrintable(app.primaryScreen()->name()) : "none");

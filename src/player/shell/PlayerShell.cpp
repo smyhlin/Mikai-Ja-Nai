@@ -477,6 +477,7 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
 }
 
 PlayerShell::~PlayerShell() {
+    if (profileEventWindow_ != nullptr) profileEventWindow_->removeEventFilter(this);
     delete std::exchange(videoDrop_, nullptr);
     if (surface_ != nullptr) {
         disconnect(surface_, &VideoSurface::paintOverlay, this, &PlayerShell::paintSurfaceOverlay);
@@ -2368,6 +2369,13 @@ void PlayerShell::releasePointer() {
 }
 
 bool PlayerShell::eventFilter(QObject* watched, QEvent* event) {
+    if (profileEventWindow_ != nullptr && watched == profileEventWindow_.data()) {
+        if (event->type() == QEvent::WindowActivate) {
+            profileActivationChanged(true);
+        } else if (event->type() == QEvent::WindowDeactivate) {
+            profileActivationChanged(false);
+        }
+    }
     // First thing, and before the branches below: a chrome widget the surface
     // adopted reports its own change here - a label that was retexted, a panel
     // that was reshown - and an update() on a widget whose pixels come from the
@@ -2595,7 +2603,7 @@ void PlayerShell::paintSurfaceOverlay(QPainter* painter) {
     painter->translate(-surface_->x(), -surface_->y());
     paintChrome(*painter, QRect(QPoint(0, 0), size()));
     painter->restore();
-    if (timer.measured()) {
+    if (mikai::gui::uiprofile::enabled()) {
         mikai::gui::uiprofile::log(
             "shell.paintOverlay",
             QStringLiteral("elapsed_us=%1").arg(timer.micros()));
@@ -2630,6 +2638,14 @@ void PlayerShell::paintChrome(QPainter& painter, const QRect& clip) {
 }
 
 void PlayerShell::paintEvent(QPaintEvent* event) {
+    if (profileEventWindow_.isNull() && mikai::gui::uiprofile::enabled())
+        profileInstallWindowFilter();
+    // "First paint" means the first paint event, so its clock stops at entry,
+    // before gradient and chrome work.
+    if (profileActivationPending_) {
+        profileActivationToPaintEntryMs_ =
+            mikai::gui::uiprofile::elapsedMs(profileActivationNs_);
+    }
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
@@ -2650,7 +2666,7 @@ void PlayerShell::paintEvent(QPaintEvent* event) {
     p.setClipRegion(event->region().intersected(QRegion(rect()) - QRegion(surface_->geometry())));
     const mikai::gui::uiprofile::ScopedTimer chromeTimer;
     paintChrome(p, QRect(QPoint(0, 0), size()));
-    if (chromeTimer.measured()) {
+    if (mikai::gui::uiprofile::enabled()) {
         mikai::gui::uiprofile::log(
             "shell.paintEvent",
             QStringLiteral("gradient_us=%1 chrome_us=%2 fullscreen=%3")
@@ -2658,18 +2674,18 @@ void PlayerShell::paintEvent(QPaintEvent* event) {
                 .arg(chromeTimer.micros())
                 .arg(static_cast<int>(fullscreen_)));
     }
-    // Activation-to-first-paint: the clock is armed by the activation event, so
-    // a window that comes back with no repaint reports "no paint", not zero.
-    if (profileActivationPending_) {
+    if (profileActivationPending_ && profileActivationToPaintEntryMs_ >= 0) {
         profileActivationPending_ = false;
-        const qint64 activationMs =
-            mikai::gui::uiprofile::elapsedMs(profileActivationNs_);
+        const qint64 activationMs = profileActivationToPaintEntryMs_;
+        profileActivationToPaintEntryMs_ = -1;
         mikai::gui::uiprofile::noteActivationToPaint(activationMs);
-        mikai::gui::uiprofile::log(
-            "shell.activationToPaint",
-            QStringLiteral("ms=%1 applicationState=%2")
-                .arg(activationMs)
-                .arg(static_cast<int>(QGuiApplication::applicationState())));
+        if (mikai::gui::uiprofile::enabled()) {
+            mikai::gui::uiprofile::log(
+                "shell.activationToPaint",
+                QStringLiteral("ms=%1 applicationState=%2")
+                    .arg(activationMs)
+                    .arg(static_cast<int>(QGuiApplication::applicationState())));
+        }
     }
 }
 
@@ -2684,9 +2700,19 @@ void PlayerShell::resizeEvent(QResizeEvent* event) {
 
 void PlayerShell::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
+    profileInstallWindowFilter();
     applyState();
     layoutChrome();
     hideTimer_.start(kAutohideMs);
+}
+
+void PlayerShell::profileInstallWindowFilter() {
+    if (!mikai::gui::uiprofile::enabled()) return;
+    QWindow* handle = window() != nullptr ? window()->windowHandle() : nullptr;
+    if (handle == profileEventWindow_) return;
+    if (profileEventWindow_ != nullptr) profileEventWindow_->removeEventFilter(this);
+    profileEventWindow_ = handle;
+    if (handle != nullptr) handle->installEventFilter(this);
 }
 
 void PlayerShell::closeEvent(QCloseEvent* event) {

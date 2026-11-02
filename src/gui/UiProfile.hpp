@@ -1,14 +1,8 @@
 // Presentation-path profiling, gated by MIKAI_UI_PROFILE=1.
 //
-// Logging only: every call site guards with enabled() before it builds a string,
-// so an unset variable costs one cached bool read on the hot paint path. The
-// counters below are what a probe reads back; they are process-wide because the
-// surface, the shell and the app-side raise policy all contribute to one picture
-// and a probe links only some of those libraries.
-//
-// Output is one line per event on stderr, prefixed `[ui-profile]`, in the
-// `scope key=value ...` shape the probes parse. Nothing here is a user-facing
-// string, so none of it is translated.
+// Logging only. Call sites guard string construction with enabled(); counters
+// are process-wide because the surface, shell and raise policy all contribute.
+// Output is `[ui-profile] <scope> key=value ...` on stderr.
 
 #pragma once
 

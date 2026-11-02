@@ -884,6 +884,7 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
     }
     pendingOpen_ = false;
     pacingTimer_.stop();
+    clearPacingProfile();
     pacingTimerArmed_ = false;
     pacingTargetTime_ = 0;
     pacingRetryOnly_ = false;
@@ -981,6 +982,7 @@ void VideoSurface::close() {
     }
     // A later GL recreation may restore only an open source, never a stopped
     pacingTimer_.stop();
+    clearPacingProfile();
     pacingTimerArmed_ = false;
     pacingTargetTime_ = 0;
     pacingRetryOnly_ = false;
@@ -1481,22 +1483,24 @@ void VideoSurface::paintGL() {
     // Profile observations are recorded before the timer is stopped: the
     // counters describe what this paint found, not what it left behind.
     const bool profilePaint = mikai::gui::uiprofile::countersEnabled();
+    const bool pacingActiveAtEntry = profilePaint && pacingTimer_.isActive();
+    const bool pacingFired = profilePaint && profilePacingFired_;
     const qint64 profilePaintStartNs =
         profilePaint ? mikai::gui::uiprofile::nowNs() : 0;
     if (profilePaint) {
         ++profilePaintCalls_;
-        // The timer is armed only for a frame that is about to paint. A paint
-        // that arrives without one stops an armed timer for nothing, and that
-        // count is the GOAL-F/T-F1 before-metric.
-        if (profilePacingAwaitingPaint_) {
-            if (!framePending_) ++profilePacingDisarms_;
-            if (profilePacingArmedAtNs_ != 0)
-                profileLastPaintDelayMs_ =
-                    mikai::gui::uiprofile::elapsedMs(profilePacingArmedAtNs_);
+        // Only an ACTIVE timer can be disarmed by this paint; a timer that
+        // already fired is a paced paint, not a disarm.
+        if (pacingActiveAtEntry && !framePending_) ++profilePacingDisarms_;
+        if ((pacingActiveAtEntry || pacingFired) && profilePacingArmedAtNs_ != 0) {
+            profileLastPaintDelayMs_ =
+                mikai::gui::uiprofile::elapsedMs(profilePacingArmedAtNs_);
         } else {
             profileLastPaintDelayMs_ = -1;
         }
         profilePacingAwaitingPaint_ = false;
+        profilePacingArmedAtNs_ = 0;
+        profilePacingFired_ = false;
     }
     pacingTimer_.stop();
     pacingTimerArmed_ = false;
@@ -1743,6 +1747,7 @@ void VideoSurface::advanceRenderState() {
                     pacingTimer_.isActive() ? pacingTimer_.remainingTime() : -1;
                 if (!pacingTimer_.isActive() || remainingMs < 0 ||
                     remainingMs > kUnpaintableRetryMs) {
+                    clearPacingProfile();
                     pacingTimerArmed_ = true;
                     // Retry timers must not bias presentation-lead estimates.
                     pacingTargetTime_ = 0;
@@ -1846,6 +1851,7 @@ void VideoSurface::schedulePacedPaint() {
     // into the compositor slot mpv named for it, and nothing else may wait.
     if (forceRender_ || !framePending_ || !clientFramePacingEnabled()) {
         pacingTimer_.stop();
+        clearPacingProfile();
         pacingTimerArmed_ = false;
         pacingTargetTime_ = 0;
         pacingRetryOnly_ = false;
@@ -1874,6 +1880,7 @@ void VideoSurface::schedulePacedPaint() {
         // No frame info, a slot that already passed, or a target so far out it
         // belongs to a paused core: paint at once, exactly as before.
         pacingTimer_.stop();
+        clearPacingProfile();
         pacingTimerArmed_ = false;
         pacingTargetTime_ = 0;
         pacingRetryOnly_ = false;
@@ -1904,6 +1911,7 @@ void VideoSurface::schedulePacedPaint() {
     if (profilePacing) {
         profilePacingArmedAtNs_ = mikai::gui::uiprofile::nowNs();
         profilePacingAwaitingPaint_ = true;
+        profilePacingFired_ = false;
         profilePacingReason_ = "paced";
     }
     if (!g_frameTimingLogPath.isEmpty()) {
@@ -1930,6 +1938,10 @@ void VideoSurface::onPacingTick() {
     unpaintableStreak_ = 0;
     // An unpresented painted frame still needs composition and one swap report.
     if (framePending_ || forceRender_ || videoFramePainted_) {
+        if (!retry && mikai::gui::uiprofile::countersEnabled() &&
+            profilePacingAwaitingPaint_) {
+            profilePacingFired_ = true;
+        }
         pacingFiredAtNs_ = retry ? 0 : steadyClockNowNs();
         pacingMeasurePending_ = !retry;
         update();
@@ -2270,6 +2282,7 @@ void VideoSurface::releaseRenderContextCurrent(QOpenGLContext* previous) {
 void VideoSurface::releaseRenderContext() {
     // The format cache describes a framebuffer this context owned.
     resetRenderTargetFormat();
+    clearPacingProfile();
     pacingTimer_.stop();
     pacingTimerArmed_ = false;
     pacingTargetTime_ = 0;
@@ -2697,6 +2710,12 @@ void VideoSurface::publishDisplayAspectRatio(double ratio) {
 
 PlaybackDiagnostics VideoSurface::playbackDiagnostics() const {
     return diagnostics_;
+}
+
+void VideoSurface::clearPacingProfile() {
+    profilePacingAwaitingPaint_ = false;
+    profilePacingArmedAtNs_ = 0;
+    profilePacingFired_ = false;
 }
 
 VideoSurface::UiProfileCounters VideoSurface::uiProfileCounters() const {
