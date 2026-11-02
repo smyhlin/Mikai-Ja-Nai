@@ -422,6 +422,10 @@ bool ensureForeground(QWidget* window) {
     return foregroundIs(window);
 }
 
+/// A timeout is not "no measurement": it is at least this long. Every latency
+/// quantile includes it as a lower bound so a worst cycle cannot vanish.
+constexpr qint64 kVisibleCompositionDeadlineMs = 2500;
+
 struct ActivationRun {
     QString phase;
     int cycles = 0;
@@ -441,6 +445,8 @@ struct ActivationRun {
     /// picture again after the occluding helper was removed. This is the
     /// observable "visible composition" interval the <=300 ms criterion uses.
     QVector<qint64> activationToVisibleCompositionMs;
+    /// Observed values plus the deadline for each verified-occlusion timeout.
+    QVector<qint64> activationToVisibleCompositionLowerBoundMs;
     int visibleCompositionObserved = 0;
     int visibleCompositionUnsupported = 0;
     int visibleCompositionTimeouts = 0;
@@ -457,8 +463,10 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
     ActivationRun run;
     run.phase = phase;
     QScreen* const screen = surface->screen();
-    const QPoint centerGlobal = surface->mapToGlobal(surface->rect().center());
-    const QRect cropRect(centerGlobal - QPoint(48, 32), QSize(96, 64));
+    // Off-centre avoids the play glyph, header and dock; 28%/33% is plain video.
+    const QPoint sampleGlobal = surface->mapToGlobal(
+        QPoint(surface->width() * 28 / 100, surface->height() * 33 / 100));
+    const QRect cropRect(sampleGlobal - QPoint(48, 32), QSize(96, 64));
     const auto grabDesktop = [&]() -> QImage {
         const qint64 started = mikai::gui::uiprofile::nowNs();
         const QImage image = desktopCrop(screen, cropRect);
@@ -499,6 +507,9 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
                            {"awayQtInactive", awayQtInactive},
                            {"peerPid", static_cast<qint64>(peer.processId())},
                            {"peerWindow", static_cast<qint64>(peer.windowId())},
+                           {"cropRect", QJsonArray{cropRect.x(), cropRect.y(),
+                                                   cropRect.width(), cropRect.height()}},
+                           {"surfaceSize", QJsonArray{surface->width(), surface->height()}},
                            {"foregroundProcess", foregroundProcessImage()},
                            {"applicationState",
                             static_cast<int>(QGuiApplication::applicationState())},
@@ -595,10 +606,14 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
         if (visibleObserved && cycleValid) {
             ++run.visibleCompositionObserved;
             run.activationToVisibleCompositionMs.append(activationToVisibleMs);
+            run.activationToVisibleCompositionLowerBoundMs.append(activationToVisibleMs);
         } else if (!occlusionVerified) {
             ++run.visibleCompositionUnsupported;
         } else if (cycleValid) {
             ++run.visibleCompositionTimeouts;
+            // The sample never appeared: the true latency is at least the deadline.
+            run.activationToVisibleCompositionLowerBoundMs.append(
+                kVisibleCompositionDeadlineMs);
         }
         spinFor(250);
         // Sampling the screen while another process owns the foreground would
@@ -672,6 +687,14 @@ QJsonObject activationSummary(const ActivationRun& run) {
     qint64 visibleMaximum = -1;
     for (qint64 value : run.activationToVisibleCompositionMs)
         visibleMaximum = std::max(visibleMaximum, value);
+    const qint64 visibleLowerP95 =
+        static_cast<qint64>(percentileMs(run.activationToVisibleCompositionLowerBoundMs, 0.95));
+    qint64 visibleLowerMaximum = -1;
+    for (qint64 value : run.activationToVisibleCompositionLowerBoundMs)
+        visibleLowerMaximum = std::max(visibleLowerMaximum, value);
+    const bool visibleComplete =
+        run.visibleCompositionTimeouts == 0 && run.visibleCompositionUnsupported == 0 &&
+        run.visibleCompositionObserved == run.cycles - run.foregroundLostCycles;
     return QJsonObject{
         {"phase", run.phase},
         {"cycles", run.cycles},
@@ -687,17 +710,26 @@ QJsonObject activationSummary(const ActivationRun& run) {
                                                : QJsonValue(p95)},
         {"activationToFirstSwapMaxMs",
          maximum < 0 ? QJsonValue(QStringLiteral("unavailable")) : QJsonValue(maximum)},
-        {"activationToVisibleCompositionP50Ms",
+        {"activationToVisibleCompositionObservedP50Ms",
          run.activationToVisibleCompositionMs.isEmpty()
              ? QJsonValue(QStringLiteral("unavailable"))
              : QJsonValue(visibleP50)},
-        {"activationToVisibleCompositionP95Ms",
+        {"activationToVisibleCompositionObservedP95Ms",
          run.activationToVisibleCompositionMs.isEmpty()
              ? QJsonValue(QStringLiteral("unavailable"))
              : QJsonValue(visibleP95)},
-        {"activationToVisibleCompositionMaxMs",
+        {"activationToVisibleCompositionObservedMaxMs",
          visibleMaximum < 0 ? QJsonValue(QStringLiteral("unavailable"))
                             : QJsonValue(visibleMaximum)},
+        {"activationToVisibleCompositionP95LowerBoundMs",
+         run.activationToVisibleCompositionLowerBoundMs.isEmpty()
+             ? QJsonValue(QStringLiteral("unavailable"))
+             : QJsonValue(visibleLowerP95)},
+        {"activationToVisibleCompositionMaxLowerBoundMs",
+         visibleLowerMaximum < 0 ? QJsonValue(QStringLiteral("unavailable"))
+                                 : QJsonValue(visibleLowerMaximum)},
+        {"visibleCompositionComplete", visibleComplete},
+        {"visibleCompositionDeadlineMs", kVisibleCompositionDeadlineMs},
         {"visibleCompositionSamples", static_cast<int>(run.activationToVisibleCompositionMs.size())},
         {"visibleCompositionObservedCycles", run.visibleCompositionObserved},
         {"visibleCompositionUnsupportedCycles", run.visibleCompositionUnsupported},
@@ -797,10 +829,11 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
 
     // A separate process owns the black helper: its window is another
     // application's, so native activation and Qt's inactive state are real.
-    const QPoint center = dialog->mapToGlobal(dialog->rect().center());
+    const QPoint sampleCenter = surface->mapToGlobal(
+        QPoint(surface->width() * 28 / 100, surface->height() * 33 / 100));
     mikai::probes::ForegroundPeer peer;
     QString peerError;
-    if (!peer.start(QRect(center - QPoint(240, 180), QSize(480, 360)), &peerError)) {
+    if (!peer.start(QRect(sampleCenter - QPoint(240, 180), QSize(480, 360)), &peerError)) {
         *error = peerError;
         record(QJsonObject{{"event", "focusSwitchResult"},
                            {"result", "UNAVAILABLE"},
@@ -835,6 +868,7 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
     QJsonArray phaseRows;
     QVector<qint64> allSwapMs;
     QVector<qint64> allVisibleMs;
+    QVector<qint64> allVisibleLowerBoundMs;
     int blackSamples = 0;
     int blackMeasured = 0;
     int foregroundLost = 0;
@@ -847,6 +881,7 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
         phaseRows.append(activationSummary(run));
         allSwapMs += run.activationToFirstSwapMs;
         allVisibleMs += run.activationToVisibleCompositionMs;
+        allVisibleLowerBoundMs += run.activationToVisibleCompositionLowerBoundMs;
         blackSamples += run.blackSamples;
         blackMeasured += run.blackMeasured;
         foregroundLost += run.foregroundLostCycles;
@@ -856,23 +891,34 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
         grabMicros += run.desktopGrabTotalMicros;
         grabMaxMicros = std::max(grabMaxMicros, run.desktopGrabMaxMicros);
     }
-    const bool measurementAvailable = !allVisibleMs.isEmpty() && blackMeasured > 0;
+    const bool measurementAvailable =
+        !allVisibleLowerBoundMs.isEmpty() && blackMeasured > 0;
+    const bool latencyComplete =
+        visibleTimeouts == 0 && visibleUnsupported == 0 && measurementAvailable;
     const bool clean = measurementAvailable && blackSamples == 0;
     record(QJsonObject{{"event", "focusSwitchResult"},
                        {"result", !measurementAvailable ? "INCOMPLETE"
-                                : clean             ? "PASS"
-                                                    : "OBSERVED_BLACK"},
+                                : (clean && latencyComplete) ? "PASS"
+                                                             : "INCOMPLETE"},
                        {"phases", phaseRows},
                        {"fixtureMeanLuma", fixtureLuma},
                        {"fixtureSampled", !fixture.isNull()},
                        {"knownBrightFixture", knownBright},
                        {"attachCallsBeforePhaseReset", static_cast<qint64>(setupAttaches)},
-                       {"activationToVisibleCompositionP95Ms",
+                       {"activationToVisibleCompositionP95LowerBoundMs",
+                        allVisibleLowerBoundMs.isEmpty()
+                            ? QJsonValue(QStringLiteral("unavailable"))
+                            : QJsonValue(percentileMs(allVisibleLowerBoundMs, 0.95))},
+                       {"activationToVisibleCompositionObservedP95Ms",
                         allVisibleMs.isEmpty()
                             ? QJsonValue(QStringLiteral("unavailable"))
                             : QJsonValue(percentileMs(allVisibleMs, 0.95))},
                        {"activationToVisibleCompositionSamples",
                         static_cast<int>(allVisibleMs.size())},
+                       {"activationToVisibleCompositionLowerBoundSamples",
+                        static_cast<int>(allVisibleLowerBoundMs.size())},
+                       {"visibleCompositionComplete", latencyComplete},
+                       {"visibleCompositionDeadlineMs", kVisibleCompositionDeadlineMs},
                        {"visibleCompositionUnsupportedCycles", visibleUnsupported},
                        {"visibleCompositionTimeoutCycles", visibleTimeouts},
                        {"activationToFirstSwapP95Ms",
@@ -895,7 +941,7 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
                        {"surfaceState", surfaceState(surface)},
                        {"error", *error}});
     peer.stop();
-    return 0;
+    return (clean && latencyComplete) ? 0 : 3;
 }
 
 int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface* surface,
@@ -1046,7 +1092,8 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                                  : QJsonValue(stormChromePaintMax)}});
 
     // ── metric 2: away/back against another process, ten cycles ────────────
-    const QPoint activationCenter = dialog->mapToGlobal(dialog->rect().center());
+    const QPoint activationCenter = surface->mapToGlobal(
+        QPoint(surface->width() * 28 / 100, surface->height() * 33 / 100));
     mikai::probes::ForegroundPeer peer;
     QString peerError;
     const bool peerStarted =
@@ -1132,15 +1179,20 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         maxSwap = std::max(maxSwap, value);
     const double visibleP95 =
         percentileMs(activation.activationToVisibleCompositionMs, 0.95);
+    const double visibleLowerP95 =
+        percentileMs(activation.activationToVisibleCompositionLowerBoundMs, 0.95);
     qint64 maxVisible = -1;
     for (qint64 value : activation.activationToVisibleCompositionMs)
         maxVisible = std::max(maxVisible, value);
     const auto finalCounters = mikai::gui::uiprofile::snapshot();
     const bool swapMeasured = !activation.activationToFirstSwapMs.isEmpty();
     const bool visibleMeasured = !activation.activationToVisibleCompositionMs.isEmpty();
+    const bool latencyComplete = visibleMeasured &&
+                                 activation.visibleCompositionTimeouts == 0 &&
+                                 activation.visibleCompositionUnsupported == 0;
     const bool blackMeasured = loadSampled > 0;
-    const bool measured =
-        preconditionsValid && stormValid && peerStarted && visibleMeasured && blackMeasured;
+    const bool measured = preconditionsValid && stormValid && peerStarted &&
+                          latencyComplete && blackMeasured;
     record(QJsonObject{
         {"event", "baselineResult"},
         {"result", measured ? "MEASURED"
@@ -1154,14 +1206,20 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         {"hoverStormValidDurationMs", validStormMs},
         {"hoverStormLostTicks", stormForegroundLost},
         {"pacingDisarmsHoverStorm", stormPacingDisarms},
-        {"activationToVisibleCompositionP95Ms",
+        {"activationToVisibleCompositionP95LowerBoundMs",
+         activation.activationToVisibleCompositionLowerBoundMs.isEmpty()
+             ? QJsonValue(QStringLiteral("unavailable"))
+             : QJsonValue(visibleLowerP95)},
+        {"activationToVisibleCompositionObservedP95Ms",
          visibleMeasured ? QJsonValue(visibleP95)
                          : QJsonValue(QStringLiteral("unavailable"))},
         {"activationToVisibleCompositionSamples",
          static_cast<int>(activation.activationToVisibleCompositionMs.size())},
-        {"activationToVisibleCompositionMaxMs",
+        {"activationToVisibleCompositionMaxObservedMs",
          maxVisible < 0 ? QJsonValue(QStringLiteral("unavailable"))
                         : QJsonValue(maxVisible)},
+        {"visibleCompositionComplete", latencyComplete},
+        {"visibleCompositionDeadlineMs", kVisibleCompositionDeadlineMs},
         {"visibleCompositionUnsupportedCycles", activation.visibleCompositionUnsupported},
         {"visibleCompositionTimeoutCycles", activation.visibleCompositionTimeouts},
         {"desktopGrabMeanMicros",
@@ -1220,8 +1278,12 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                                 : (!peerStarted
                                        ? QStringLiteral("foreign foreground helper was "
                                                         "unavailable")
-                                       : QStringLiteral("activation or loadfile measurement "
-                                                        "was unavailable"))))},
+                                       : (!latencyComplete
+                                              ? QStringLiteral("visible-composition "
+                                                               "timeout; latency quantile "
+                                                               "reported as a lower bound")
+                                              : QStringLiteral("loadfile measurement was "
+                                                               "unavailable")))))},
         {"error", *error}});
     if (!measured && error != nullptr) {
         *error = !preconditionsValid

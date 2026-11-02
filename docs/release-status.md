@@ -33,7 +33,7 @@ before those fixes land:
 | Metric | Row / key | Value |
 |---|---|---|
 | Pacing disarms in a 30 s hover storm over paused video | `hoverStorm.pacingDisarms` | pending |
-| **Activation → first visible composited desktop frame** p95 (alt-tab away/back ×10; observed via a verified-occluded screen crop, not a paint/swap proxy) | `baselineResult.activationToVisibleCompositionP95Ms` | pending |
+| **Activation → first visible composited desktop frame** p95, timeouts censored as ≥ 2500 ms (alt-tab away/back ×10; verified-occluded off-centre screen crop, not a paint/swap proxy) | `baselineResult.activationToVisibleCompositionP95LowerBoundMs` | pending |
 | Activation-to-first-swap p95 (secondary diagnostic; `frameSwapped`, not physical scanout) | `baselineResult.activationToFirstSwapP95Ms` | pending |
 | Black samples across 20 `loadfile` transitions | `baselineResult.blackSamplesLoadfile20` | pending |
 | Surface-geometry writes per fullscreen transition | `baselineResult.surfaceGeometryWritesPerFullscreenTransition` | pending |
@@ -44,9 +44,10 @@ A run whose `profileCountersEnabled` is false, whose
 foreground not verified), or whose `hoverStorm.valid` is false does not produce
 these numbers: `baselineResult.result` reads `INVALID`/`INCOMPLETE`, the row
 names `invalidReason`, and the probe exits `3` instead of silently passing. Read
-the five values only from a `MEASURED` run; `hoverStorm.pacingDisarms` is the
-validated interval only, not ticks made while another application owned the
-foreground. The probe invocation, fixture options and extraction contract are in
+the five values only from a `MEASURED` run; that requires
+`visibleCompositionComplete == true`, so a timeout is censored at the 2500 ms
+deadline instead of being dropped. `hoverStorm.pacingDisarms` is the validated
+interval only, not ticks made while another application owned the foreground. The probe invocation, fixture options and extraction contract are in
 [the GOAL-00 report](ai/reports/GOAL-00.md). Until the table is filled, no claim
 is made that the instrumentation has measured a fix.
 
