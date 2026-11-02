@@ -864,6 +864,17 @@ int tabIndexWithData(const QTabBar& bar, const QString& data) {
   return -1;
 }
 
+/// Cancels a fixture's workers and waits for them while the borrowed client they
+/// dereference is still alive. A local Runner's destructor never waits, so
+/// without this a pool task could still reach the client's limiter after this
+/// frame has dropped it.
+auto drainWorkersBeforeClientDies(Runner& runner, const char* failure) {
+  return qScopeGuard([&runner, failure] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("%s", failure);
+  });
+}
+
 }  // namespace
 
 void TestFeedRender::theFormatFilterIsAskedOfTheServer() {
@@ -1132,6 +1143,8 @@ void TestFeedRender::interpolationOnlyRunsWaitForTheirSelectedSlot() {
 void TestFeedRender::benchmarkTabKeepsGroupedModelAndClipSelectionsConsistent() {
   MikaiClient client(QString(), QStringLiteral("http://127.0.0.1:1"));
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Settings dialog workers did not stop");
   SettingsDialog dialog(client, runner);
 
   QVERIFY(dialog.showPage(QStringLiteral("benchmark")));
@@ -1234,6 +1247,8 @@ void TestFeedRender::benchmarkTabKeepsGroupedModelAndClipSelectionsConsistent() 
 void TestFeedRender::benchmarkModelSearchFiltersRowsAndRestoresSelections() {
   MikaiClient client(QString(), QStringLiteral("http://127.0.0.1:1"));
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Settings dialog workers did not stop");
   SettingsDialog dialog(client, runner);
 
   QVERIFY(dialog.showPage(QStringLiteral("benchmark")));
@@ -1368,6 +1383,15 @@ void TestFeedRender::settingsClosingDuringAcquisitionRestoresMainWindowInput() {
 
   MikaiClient client(QString(), api.baseUrl());
   MainWindow window(client);
+  // The window owns its Runner and drops its registry entry on destruction, so
+  // the drain has to run while the window and its borrowed client are both
+  // still alive.
+  auto* windowRunner = window.findChild<Runner*>();
+  QVERIFY(windowRunner != nullptr);
+  const auto drainBeforeClientDestruction = qScopeGuard([windowRunner] {
+    windowRunner->cancel();
+    if (!windowRunner->waitForDone(10000)) qFatal("Main window workers did not stop");
+  });
   QTimer dismissSetupPrompt;
   dismissSetupPrompt.setInterval(10);
   connect(&dismissSetupPrompt, &QTimer::timeout, &window, [&window] {
@@ -1467,6 +1491,8 @@ void TestFeedRender::theHomeFeedRendersItsCards() {
 
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Search page workers did not stop");
   SearchPage page(runner, client);
   page.resize(1280, 900);
   page.show();
@@ -1489,6 +1515,8 @@ void TestFeedRender::theTitlePageRendersItsEpisodes() {
 
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
   QualityCache cache;
   TitlePage page(runner, client, cache, QString::number(kRef));
   page.resize(1280, 900);
@@ -1541,6 +1569,8 @@ void TestFeedRender::titlePagePrioritizesPlaybackAndAnchorsWithoutChangingSelect
 
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
   QualityCache cache;
   TitlePage page(runner, client, cache, QString::number(kRef));
   page.resize(1080, 760);
@@ -1640,6 +1670,8 @@ void TestFeedRender::titlePageKeepsLongControlsReachableAtDesktopMinimum() {
 
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
   QualityCache cache;
   TitlePage page(runner, client, cache, QString::number(kRef));
   page.resize(860, 620);
@@ -1770,6 +1802,8 @@ void TestFeedRender::mainPageHeaderKeepsEveryActionAndSkipsTheKeycap() {
 
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Search page workers did not stop");
   SearchPage page(runner, client);
   page.resize(1120, 800);
   page.show();
@@ -1856,18 +1890,6 @@ void TestFeedRender::loadedResultsRetranslateWithoutRefetchingOrLosingViewState(
   settings.sync();
   const bool storedLanguagePresent = settings.contains(languageKey);
   const QVariant storedLanguage = settings.value(languageKey);
-  const auto restoreState = qScopeGuard([&settings, languageKey, storedLanguagePresent,
-                                         storedLanguage, openingLanguage] {
-    if (storedLanguagePresent) {
-      settings.setValue(languageKey, storedLanguage);
-    } else {
-      settings.remove(languageKey);
-    }
-    settings.sync();
-    mikai::app::applyInterfaceLanguage(openingLanguage);
-    QCoreApplication::processEvents();
-  });
-  Q_UNUSED(restoreState);
 
   QVERIFY2(primeBuiltCatalogForSwitching(),
            qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") +
@@ -1880,6 +1902,20 @@ void TestFeedRender::loadedResultsRetranslateWithoutRefetchingOrLosingViewState(
 
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Results page workers did not stop");
+  const auto restoreState = qScopeGuard([&settings, languageKey, storedLanguagePresent,
+                                         storedLanguage, openingLanguage] {
+    if (storedLanguagePresent) {
+      settings.setValue(languageKey, storedLanguage);
+    } else {
+      settings.remove(languageKey);
+    }
+    settings.sync();
+    mikai::app::applyInterfaceLanguage(openingLanguage);
+    QCoreApplication::processEvents();
+  });
+  Q_UNUSED(restoreState);
   SearchPage page(runner, client);
   page.resize(1000, 560);
   page.show();
@@ -2154,18 +2190,6 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
   settings.sync();
   const bool storedLanguagePresent = settings.contains(languageKey);
   const QVariant storedLanguage = settings.value(languageKey);
-  const auto restoreState = qScopeGuard([&settings, languageKey, storedLanguagePresent,
-                                         storedLanguage, openingLanguage] {
-    if (storedLanguagePresent) {
-      settings.setValue(languageKey, storedLanguage);
-    } else {
-      settings.remove(languageKey);
-    }
-    settings.sync();
-    mikai::app::applyInterfaceLanguage(openingLanguage);
-    QCoreApplication::processEvents();
-  });
-  Q_UNUSED(restoreState);
 
   QVERIFY2(primeBuiltCatalogForSwitching(),
            qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") +
@@ -2180,6 +2204,20 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
 
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
+  const auto restoreState = qScopeGuard([&settings, languageKey, storedLanguagePresent,
+                                         storedLanguage, openingLanguage] {
+    if (storedLanguagePresent) {
+      settings.setValue(languageKey, storedLanguage);
+    } else {
+      settings.remove(languageKey);
+    }
+    settings.sync();
+    mikai::app::applyInterfaceLanguage(openingLanguage);
+    QCoreApplication::processEvents();
+  });
+  Q_UNUSED(restoreState);
   QualityCache cache;
   TitlePage page(runner, client, cache, QString::number(kRef));
   page.resize(1100, 620);
@@ -2420,6 +2458,8 @@ void TestFeedRender::titlePageBodyScrollsItsSectionsWithoutHorizontalClipping() 
 
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
   QualityCache cache;
   TitlePage page(runner, client, cache, QString::number(kRef));
   // A window manager clamps a first geometry to the screen it opens on, which
@@ -2538,6 +2578,8 @@ void TestFeedRender::titlePageContentColumnFillsItsViewportUpToTheCap() {
 
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
   QualityCache cache;
   TitlePage page(runner, client, cache, QString::number(kRef));
   page.setAttribute(Qt::WA_DontShowOnScreen, true);
@@ -2602,18 +2644,6 @@ void TestFeedRender::titleDetailsSheetDismissesInPlaceAndKeepsStateAcrossLanguag
   settings.sync();
   const bool storedLanguagePresent = settings.contains(languageKey);
   const QVariant storedLanguage = settings.value(languageKey);
-  const auto restoreState = qScopeGuard([&settings, languageKey, storedLanguagePresent,
-                                         storedLanguage, openingLanguage] {
-    if (storedLanguagePresent) {
-      settings.setValue(languageKey, storedLanguage);
-    } else {
-      settings.remove(languageKey);
-    }
-    settings.sync();
-    mikai::app::applyInterfaceLanguage(openingLanguage);
-    QCoreApplication::processEvents();
-  });
-  Q_UNUSED(restoreState);
 
   QVERIFY2(primeBuiltCatalogForSwitching(),
            qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") +
@@ -2626,6 +2656,20 @@ void TestFeedRender::titleDetailsSheetDismissesInPlaceAndKeepsStateAcrossLanguag
 
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
+  const auto restoreState = qScopeGuard([&settings, languageKey, storedLanguagePresent,
+                                         storedLanguage, openingLanguage] {
+    if (storedLanguagePresent) {
+      settings.setValue(languageKey, storedLanguage);
+    } else {
+      settings.remove(languageKey);
+    }
+    settings.sync();
+    mikai::app::applyInterfaceLanguage(openingLanguage);
+    QCoreApplication::processEvents();
+  });
+  Q_UNUSED(restoreState);
   QualityCache cache;
   TitlePage page(runner, client, cache, QString::number(kRef));
   page.resize(1100, 760);
@@ -2758,6 +2802,8 @@ void TestFeedRender::theTitlePageWatchActionFollowsTheSelectedRelease() {
 
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
   QualityCache cache;
   TitlePage page(runner, client, cache, QString::number(kRef));
   page.resize(1100, 800);
@@ -2855,6 +2901,8 @@ void TestFeedRender::episodeMarksPersistAcrossReopenAndViewChanges() {
   QVERIFY2(api.start(&error), qPrintable(error));
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
   QualityCache cache;
 
   {
@@ -2989,6 +3037,8 @@ void TestFeedRender::episodeContextMenuActionsUpdateOnlyTheOrderedPreviousEpisod
   api.setEmbedMarkers(true);
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
   QualityCache cache;
   TitlePage page(runner, client, cache, ref);
   page.resize(1100, 900);
@@ -3080,6 +3130,8 @@ void TestFeedRender::episodeContextMenuHandlesPagingAndSpecialIdentifiers() {
     api.setReleaseEpisodeCount(150);
     MikaiClient client(QString(), api.baseUrl());
     Runner runner;
+    const auto drainBeforeClientDestruction =
+        drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
     QualityCache cache;
     TitlePage page(runner, client, cache, ref);
     page.resize(1100, 900);
@@ -3124,6 +3176,8 @@ void TestFeedRender::episodeContextMenuHandlesPagingAndSpecialIdentifiers() {
     api.setSpecialEpisodes(true);
     MikaiClient client(QString(), api.baseUrl());
     Runner runner;
+    const auto drainBeforeClientDestruction =
+        drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
     QualityCache cache;
     TitlePage page(runner, client, cache, ref);
     page.resize(1100, 900);
@@ -3169,6 +3223,8 @@ void TestFeedRender::titlePageRendersDeclaredEpisodesTheReleaseLacks() {
   api.setReleaseEpisodeCount(9);
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
   QualityCache cache;
 
   TitlePage page(runner, client, cache, ref);
@@ -3221,6 +3277,8 @@ void TestFeedRender::titlePageKeepsSpecialEpisodeIdentifiers() {
   api.setSpecialEpisodes(true);
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
   QualityCache cache;
 
   TitlePage page(runner, client, cache, ref);
@@ -3259,6 +3317,8 @@ void TestFeedRender::clickingAnEpisodeDoesNotAdvanceTheCurrentEpisode() {
   QVERIFY2(api.start(&error), qPrintable(error));
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
   QualityCache cache;
 
   TitlePage page(runner, client, cache, ref);
@@ -3314,6 +3374,8 @@ void TestFeedRender::episodeMarksSurvivePagingAndLanguageSwitch() {
   api.setReleaseEpisodeCount(150);
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
   QualityCache cache;
 
   TitlePage page(runner, client, cache, ref);
@@ -3388,6 +3450,8 @@ void TestFeedRender::aFailedBackendShowsAVisibleFailureInsteadOfAnEmptyPage() {
 
   MikaiClient client(QString(), api.baseUrl());
   Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Feed and title page workers did not stop");
   QualityCache cache;
 
   // The feed: no content, and the block's retry affordance on screen instead of
