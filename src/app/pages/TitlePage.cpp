@@ -341,17 +341,6 @@ QString capitalize(const QString& text) {
     return result;
 }
 
-/// The provider key for an embed URL, falling back to what the API said.
-QString providerFor(const backend::Source& source) {
-    QString provider;
-    try {
-        provider = backend::detectSite(source.embed_url);
-    } catch (const std::exception&) {
-        provider = source.provider.toLower().trimmed();
-    }
-    return provider.isEmpty() ? QStringLiteral("other") : provider;
-}
-
 /// The identifier an episode shows on its pill, from its (possibly fractional)
 /// number. Episodes number from anywhere, so this is never assumed to start at
 /// 1. The API's label is only the identifier when there is no number: it is
@@ -1050,6 +1039,11 @@ void TitlePage::buildEpisodeWorkspace() {
         if (index < 0 || index >= tabStates_.size()) {
             return;
         }
+        // A tab change only reaches here from the viewer: fillEpisodes blocks
+        // the tabs while it applies the default, so the default never looks
+        // like a choice, and this one outlives the release switch that rebuilds
+        // the tabs.
+        chosenProvider_ = tabStates_.at(index).provider;
         if (!tabStates_.at(index).rendered) {
             renderTabPage(index);
         }
@@ -1388,6 +1382,9 @@ void TitlePage::joinLoad(const std::shared_ptr<LoadState>& state) {
 
 void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::PlayerResult& player) {
     adultConfirmed_ = false;
+    // A newly loaded title has no choice yet: the preferred source opens, and
+    // only the viewer's own clicks override it from here.
+    chosenProvider_.clear();
     rateLabel_->refresh();
     failure_->clear();
     hasFailure_ = false;
@@ -1456,8 +1453,13 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
         setStatusKind(playbackRestricted ? BaseStatus::Licensed : BaseStatus::NoReleases);
         return;
     }
-    releaseChips_.first()->setChecked(true);
-    fillEpisodes(0);
+    // The release that carries the preferred source opens first, so the chip
+    // row and the provider tabs agree on one default; without it the first
+    // release keeps the old behaviour.
+    const int openingRelease =
+        labels::preferredReleaseIndex(releases_, labels::preferredProvider());
+    releaseChips_.at(openingRelease)->setChecked(true);
+    fillEpisodes(openingRelease);
 }
 
 void TitlePage::onError(const backend::Failure& failure) {
@@ -1471,6 +1473,7 @@ void TitlePage::onError(const backend::Failure& failure) {
     }
     tabStates_.clear();
     activeRelease_ = -1;
+    chosenProvider_.clear();
     releases_.clear();
     rebuildReleaseChips();
     providerSelectorHeading_->hide();
@@ -2737,7 +2740,7 @@ void TitlePage::fillEpisodes(int index) {
             entry->kind = episode.kind;
             entry->embedUrl = source.embed_url;
             ownedEntries_.append(entry);
-            grouped[providerFor(source)].append(entry);
+            grouped[labels::providerFor(source)].append(entry);
         }
     }
 
@@ -2760,10 +2763,19 @@ void TitlePage::fillEpisodes(int index) {
         }
     }
 
+    // Tabs follow the preferred source rather than the alphabet: a title that
+    // ships Moon opens on it, and one without it keeps the old order.
+    QStringList providerOrder;
     for (auto it = grouped.constBegin(); it != grouped.constEnd(); ++it) {
+        providerOrder.append(it.key());
+    }
+    const QString preferredProvider = labels::preferredProvider();
+    providerOrder = labels::orderedProviders(providerOrder, preferredProvider);
+
+    for (const QString& tabProvider : providerOrder) {
         TabState state;
-        state.provider = it.key();
-        state.entries = it.value();
+        state.provider = tabProvider;
+        state.entries = grouped.value(tabProvider);
         state.pageSize = theme::kEpisodesPerPage;
         if (numbered) {
             QMap<int, EpisodeEntry*> byNumber;
@@ -2830,7 +2842,19 @@ void TitlePage::fillEpisodes(int index) {
     tabs_->setVisible(tabs_->count() > 0);
 
     if (tabs_->count() > 0 && tabs_->currentIndex() < 0) {
-        tabs_->setCurrentIndex(0);
+        // The viewer's own tab choice survives a release switch; otherwise the
+        // preferred source opens, and a title without it falls back to the
+        // first tab deterministically.
+        const QString wanted = labels::providerKey(
+            chosenProvider_.isEmpty() ? preferredProvider : chosenProvider_);
+        int index = 0;
+        for (int i = 0; i < tabStates_.size(); ++i) {
+            if (labels::providerKey(tabStates_.at(i).provider) == wanted) {
+                index = i;
+                break;
+            }
+        }
+        tabs_->setCurrentIndex(index);
     }
     // Only the visible tab gets its pills. A release can carry three providers
     // and each tab holds up to kEpisodesPerPage buttons, so building them all
@@ -3499,15 +3523,35 @@ void TitlePage::probeReleaseQualities() {
     }
 }
 
+int TitlePage::sessionProviderRank(const QString& provider) const {
+    // A click is the viewer's answer for this title: after one, the other
+    // sources only keep their payload order instead of Moon jumping back in
+    // front of it. Without a click the configured preference (Moon) decides.
+    if (!chosenProvider_.isEmpty()) {
+        return labels::providerKey(provider) == labels::providerKey(chosenProvider_) ? 0 : 1;
+    }
+    return labels::preferredProviderRank(provider, labels::preferredProvider());
+}
+
 QString TitlePage::firstEmbed(const backend::Release& release) const {
+    // The programmatic paths resolve a release through this one embed, so a
+    // release that ships several sources has to answer with the preferred one
+    // instead of whichever source the payload happened to list first.
+    int bestRank = 4;
+    QString best;
     for (const backend::Episode& episode : release.episodes) {
         for (const backend::Source& source : episode.sources) {
-            if (!source.embed_url.isEmpty()) {
-                return source.embed_url;
+            if (source.embed_url.isEmpty()) {
+                continue;
+            }
+            const int rank = sessionProviderRank(labels::providerFor(source));
+            if (best.isEmpty() || rank < bestRank) {
+                best = source.embed_url;
+                bestRank = rank;
             }
         }
     }
-    return {};
+    return best;
 }
 
 void TitlePage::applyReleaseQuality(int index, const QMap<int, QString>& qualities, int seq) {
@@ -3547,7 +3591,7 @@ QVector<QVariantMap> TitlePage::episodeVariants(const QString& number) const {
                     continue;
                 }
                 seen.insert(source.embed_url);
-                const QString provider = providerFor(source);
+                const QString provider = labels::providerFor(source);
                 const QString known = labels::provider(provider);
                 const QString track = known.isEmpty() ? capitalize(provider) : known;
                 const QString display = releaseTrackLabel(release);
@@ -3560,10 +3604,23 @@ QVector<QVariantMap> TitlePage::episodeVariants(const QString& number) const {
                                QStringLiteral("%1 · %2").arg(display, track));
                 variant.insert(QStringLiteral("embed"), source.embed_url);
                 variant.insert(QStringLiteral("quality"), releaseQuality_.value(index, 0));
+                // The raw key travels with the entry so the preferred source can
+                // lead without re-reading the display label.
+                variant.insert(QStringLiteral("provider"), labels::providerKey(provider));
                 variants.append(variant);
             }
         }
     }
+    // The player's source list leads with the source this page would play, so
+    // picking one from it starts where the page would have; the rest keep their
+    // release/provider order, and a viewer's tab choice leads over the default.
+    std::stable_sort(variants.begin(), variants.end(),
+                     [this](const QVariantMap& left, const QVariantMap& right) {
+                         return sessionProviderRank(
+                                    left.value(QStringLiteral("provider")).toString()) <
+                                sessionProviderRank(
+                                    right.value(QStringLiteral("provider")).toString());
+                     });
     return variants;
 }
 

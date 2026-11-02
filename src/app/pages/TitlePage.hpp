@@ -285,6 +285,10 @@ private:
     void openExternalStream(EpisodeEntry* entry, const QMap<int, QString>& qualities);
     void openEmbedInBrowser(EpisodeEntry* entry);
     void probeReleaseQualities();
+    /// How a provider ranks for this title right now: the viewer's explicit tab
+    /// choice wins outright, and only a page without one re-applies the
+    /// configured preference, so a programmatic path does not overrule a click.
+    int sessionProviderRank(const QString& provider) const;
     QString firstEmbed(const backend::Release& release) const;
     void applyReleaseQuality(int index, const QMap<int, QString>& qualities, int seq);
 
@@ -535,6 +539,10 @@ protected:
     int activeRelease_ = -1;
     QMap<int, int> releaseQuality_;
     QSet<int> releaseProbed_;
+    /// The provider tab the viewer picked while this title is open, so switching
+    /// to another release rebuilds the tabs without dropping the choice. Empty
+    /// until a real tab change; cleared when a different title loads.
+    QString chosenProvider_;
 
     QVector<PlayerSession*> sessions_;
     QMap<QString, QVector<EpisodeEntry*>> fetchWaiters_;
