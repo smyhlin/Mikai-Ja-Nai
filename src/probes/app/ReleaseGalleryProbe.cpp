@@ -183,6 +183,7 @@ private:
 
     void stop(const QString& message) {
         error(message);
+        evidence_.insert(QStringLiteral("failurePlaybackState"), playbackState());
         next(Stage::Close);
     }
 
@@ -216,6 +217,7 @@ private:
             {QStringLiteral("visibleOutputFrame"), surface_->hasVisibleOutputFrame()},
             {QStringLiteral("playing"), surface_->isPlaying()},
             {QStringLiteral("pauseObserved"), surface_->pauseObserved()},
+            {QStringLiteral("mediaTracksReady"), surface_->mediaTracks().ready},
             {QStringLiteral("shaderChain"), surface_->anime4KChainId()},
             {QStringLiteral("runtimeLoaded"), selection.loaded},
             {QStringLiteral("runtimeKind"), mplayer::native::bundleKindName(selection.kind)},
@@ -340,8 +342,7 @@ private:
                 firstPosition_ = surface_->position();
                 next(Stage::Pause);
             } else if (stageClock_.elapsed() > 30000) {
-                stop(QStringLiteral("Demo playback did not expose a frame, tracks and at least eight seconds of duration in 30 seconds. Runtime: ") +
-                     mplayer::native::runtimeUnavailablePlaybackText(QString()));
+                stop(QStringLiteral("Demo playback did not expose a frame, tracks and at least eight seconds of duration in 30 seconds; see failurePlaybackState for observed runtime and playback state."));
             }
             break;
         case Stage::Pause:
