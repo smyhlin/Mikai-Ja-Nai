@@ -666,8 +666,8 @@ void ComponentStoreTab::downloadNextModel() {
                                                            : acquisitionGeneration_;
     const auto cancelFlag = modelCancelFlag_;
     applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::Busy,
-                                        .busy = StatusReason::Busy::Models,
-                                        .count = modelDownloadsTotal_});
+                                        .count = modelDownloadsTotal_,
+                                        .busy = StatusReason::Busy::Models});
     updateControls();
     backend::MikaiClient* client = client_;
     const QVector<int> batch = std::exchange(pendingModels_, {});
