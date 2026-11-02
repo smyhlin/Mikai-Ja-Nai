@@ -371,6 +371,45 @@ bool waitForVideo(mplayer::VideoSurface* surface, int timeoutMs) {
     return surface->hasVideo();
 }
 
+/// Pauses through the surface and verifies it in the core itself. The local
+/// playing flag and the core's `pause` property must agree: a command that was
+/// not observed would otherwise let the "paused" baseline run on moving video.
+bool ensurePaused(mplayer::VideoSurface* surface, int timeoutMs, bool* corePaused) {
+    if (corePaused != nullptr) *corePaused = false;
+    if (surface == nullptr) return false;
+    QElapsedTimer wait;
+    wait.start();
+    while (wait.elapsed() < timeoutMs) {
+        if (!surface->isPlaying()) {
+            const auto pause = surface->probeMpvProperty(QStringLiteral("pause"),
+                                                         mplayer::ProbePropertyKind::Flag);
+            if (pause.has_value() && pause->kind == mplayer::ProbePropertyValue::Kind::Flag) {
+                if (corePaused != nullptr) *corePaused = pause->flag;
+                if (pause->flag) return true;
+            }
+        }
+        surface->setPaused(true);
+        spinFor(120);
+    }
+    const auto pause = surface->probeMpvProperty(QStringLiteral("pause"),
+                                                 mplayer::ProbePropertyKind::Flag);
+    if (corePaused != nullptr && pause.has_value() &&
+        pause->kind == mplayer::ProbePropertyValue::Kind::Flag)
+        *corePaused = pause->flag;
+    return !surface->isPlaying() && corePaused != nullptr && *corePaused;
+}
+
+/// Takes and verifies native foreground ownership, not just Qt's active flag.
+bool ensureForeground(QWidget* window) {
+    if (window == nullptr) return false;
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        if (foregroundIs(window)) return true;
+        forceForegroundNow(window);
+        spinFor(80);
+    }
+    return foregroundIs(window);
+}
+
 struct ActivationRun {
     QString phase;
     int cycles = 0;
@@ -677,20 +716,43 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
         return 2;
     }
     dialog->pauseIfPlaying();
-    spinFor(600);
+    spinFor(300);
+    bool corePaused = false;
+    const bool paused = ensurePaused(surface, 5000, &corePaused);
+    const bool foregroundOwnedAtStart = ensureForeground(dialog);
+    spinFor(300);
     const QImage fixture = readComposedCrop(surface);
     const double fixtureLuma = meanLuma(fixture);
+    const bool fixtureBright = fixtureLuma >= 40.0;
+    const bool preconditionsValid = paused && corePaused && fixtureBright &&
+                                    foregroundOwnedAtStart;
     const quint64 setupAttaches = mikai::gui::uiprofile::snapshot().threadInputAttaches;
     mikai::gui::uiprofile::resetCounters();
     record(QJsonObject{{"event", "focusModeStart"},
                        {"fixtureMeanLuma", fixtureLuma},
                        {"fixtureSampled", !fixture.isNull()},
+                       {"fixtureBright", fixtureBright},
                        {"knownBrightFixture", knownBright},
-                       {"paused", !surface->isPlaying()},
+                       {"paused", paused},
+                       {"corePaused", corePaused},
+                       {"foregroundOwned", foregroundOwnedAtStart},
                        {"attachCallsBeforePhaseReset", static_cast<qint64>(setupAttaches)},
                        {"profileCountersEnabled", mikai::gui::uiprofile::countersEnabled()},
                        {"presentationMode", presentationMode()},
                        {"surfaceState", surfaceState(surface)}});
+    if (!preconditionsValid) {
+        *error = QStringLiteral("focus mode requires a verified paused bright frame with "
+                                "owned foreground (paused=%1 corePaused=%2 luma=%3 foreground=%4)")
+                     .arg(paused)
+                     .arg(corePaused)
+                     .arg(fixtureLuma, 0, 'f', 1)
+                     .arg(foregroundOwnedAtStart);
+        record(QJsonObject{{"event", "focusSwitchResult"},
+                           {"result", "INVALID"},
+                           {"reason", *error},
+                           {"surfaceState", surfaceState(surface)}});
+        return 3;
+    }
 
     QWidget helper;
     helper.setWindowTitle(QStringLiteral("Mikai focus helper"));
@@ -808,9 +870,16 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         return 2;
     }
     dialog->pauseIfPlaying();
-    spinFor(600);
+    spinFor(300);
+    bool corePaused = false;
+    const bool paused = ensurePaused(surface, 5000, &corePaused);
+    const bool foregroundOwnedAtStart = ensureForeground(dialog);
+    spinFor(300);
     const QImage fixture = readComposedCrop(surface);
     const double fixtureLuma = meanLuma(fixture);
+    const bool fixtureBright = fixtureLuma >= 40.0;
+    const bool preconditionsValid =
+        paused && corePaused && fixtureBright && foregroundOwnedAtStart;
     const quint64 setupAttaches = mikai::gui::uiprofile::snapshot().threadInputAttaches;
     mikai::gui::uiprofile::resetCounters();
     record(QJsonObject{{"event", "baselineStart"},
@@ -818,7 +887,11 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                        {"knownBrightFixture", knownBright},
                        {"fixtureMeanLuma", fixtureLuma},
                        {"fixtureSampled", !fixture.isNull()},
-                       {"paused", !surface->isPlaying()},
+                       {"fixtureBright", fixtureBright},
+                       {"paused", paused},
+                       {"corePaused", corePaused},
+                       {"foregroundOwned", foregroundOwnedAtStart},
+                       {"preconditionsValid", preconditionsValid},
                        {"attachCallsBeforePhaseReset", static_cast<qint64>(setupAttaches)},
                        {"profileCountersEnabled", mikai::gui::uiprofile::countersEnabled()},
                        {"mediaFacts", mediaFacts(media)},
@@ -826,55 +899,109 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                        {"presentationMode", presentationMode()}});
 
     // ── metric 1 (pacing disarms) + 5 (chrome paint cost) ──────────────────
-    const auto hoverBefore = surface->uiProfileCounters();
-    const auto countersBefore = mikai::gui::uiprofile::snapshot();
+    // Only ticks made while this process owns the native foreground count: a
+    // synthetic hover in somebody else's active window is not the requested
+    // visible hover storm, and its paints are not baseline evidence.
     const int stormMs = std::max(3000, std::min(30000, seconds * 1000 / 2));
+    int validStormMs = 0;
+    int validStormTicks = 0;
     int stormForegroundLost = 0;
-    if (shell != nullptr) {
+    qint64 stormPacingDisarms = 0;
+    quint64 stormPaintCalls = 0;
+    quint64 stormChromeDirtyRequests = 0;
+    quint64 stormChromeDirtyApplied = 0;
+    quint64 stormChromePaintCalls = 0;
+    quint64 stormChromePaintEntries = 0;
+    qint64 stormChromePaintMicros = 0;
+    qint64 stormChromePaintMax = -1;
+    const bool stormAttempted = shell != nullptr && preconditionsValid;
+    if (stormAttempted) {
         const QPoint dock(shell->width() / 2, shell->height() - 62);
         const QPoint scrub(shell->width() / 2, shell->height() - 104);
         const QPoint volume(shell->width() / 2 - 140, shell->height() - 62);
-        QElapsedTimer storm;
-        storm.start();
-        for (int tick = 0; storm.elapsed() < stormMs; ++tick) {
-            if (!foregroundIs(dialog)) ++stormForegroundLost;
-            const QPoint point = tick % 3 == 0 ? dock : (tick % 3 == 1 ? scrub : volume);
+        QElapsedTimer wall;
+        wall.start();
+        while (validStormMs < stormMs && wall.elapsed() < stormMs * 3) {
+            if (!foregroundIs(dialog)) {
+                ++stormForegroundLost;
+                ensureForeground(dialog);
+                spinFor(16);
+                continue;
+            }
+            const auto profileBefore = surface->uiProfileCounters();
+            const auto countersBefore = mikai::gui::uiprofile::snapshot();
+            const QPoint point = validStormTicks % 3 == 0
+                                     ? dock
+                                     : (validStormTicks % 3 == 1 ? scrub : volume);
             QCursor::setPos(shell->mapToGlobal(point));
             QTest::mouseMove(shell, point);
             spinFor(16);
+            if (!foregroundIs(dialog)) {
+                // The tick started under our window and ended under somebody
+                // else's: its paints cannot be attributed to the storm.
+                ++stormForegroundLost;
+                continue;
+            }
+            const auto profileAfter = surface->uiProfileCounters();
+            const auto countersAfter = mikai::gui::uiprofile::snapshot();
+            ++validStormTicks;
+            validStormMs += 16;
+            stormPacingDisarms +=
+                profileAfter.pacingDisarms - profileBefore.pacingDisarms;
+            stormPaintCalls += profileAfter.paintCalls - profileBefore.paintCalls;
+            stormChromeDirtyRequests += countersAfter.chromeDirtyRequests -
+                                        countersBefore.chromeDirtyRequests;
+            stormChromeDirtyApplied += countersAfter.chromeDirtyApplied -
+                                       countersBefore.chromeDirtyApplied;
+            const quint64 paintCalls =
+                countersAfter.chromePaintCalls - countersBefore.chromePaintCalls;
+            stormChromePaintCalls += paintCalls;
+            stormChromePaintEntries += countersAfter.chromePaintEntries -
+                                       countersBefore.chromePaintEntries;
+            stormChromePaintMicros +=
+                static_cast<qint64>(countersAfter.chromePaintMicrosTotal -
+                                    countersBefore.chromePaintMicrosTotal);
+            stormChromePaintMax = std::max(stormChromePaintMax,
+                                           countersAfter.chromePaintMicrosMax);
         }
         QCursor::setPos(dialog->mapToGlobal(QPoint(2, 2)));
     }
-    spinFor(400);
-    const auto hoverAfter = surface->uiProfileCounters();
-    const auto countersAfter = mikai::gui::uiprofile::snapshot();
-    const quint64 stormChromePaintCalls =
-        countersAfter.chromePaintCalls - countersBefore.chromePaintCalls;
-    const quint64 stormChromePaintMicros =
-        countersAfter.chromePaintMicrosTotal - countersBefore.chromePaintMicrosTotal;
-    const qint64 pacingDisarms =
-        hoverAfter.pacingDisarms - hoverBefore.pacingDisarms;
+    const bool stormPausedAtEnd = !surface->isPlaying();
+    const bool stormValid = stormAttempted && validStormMs >= stormMs * 9 / 10 &&
+                            validStormTicks > 0 && stormChromeDirtyRequests > 0 &&
+                            stormPausedAtEnd;
     record(QJsonObject{
         {"event", "hoverStorm"},
-        {"durationMs", stormMs},
+        {"requestedDurationMs", stormMs},
+        {"validDurationMs", validStormMs},
+        {"validTicks", validStormTicks},
         {"foregroundLostTicks", stormForegroundLost},
-        {"pacingDisarms", pacingDisarms},
-        {"paintCalls", static_cast<qint64>(hoverAfter.paintCalls - hoverBefore.paintCalls)},
-        {"chromeDirtyRequests", static_cast<qint64>(countersAfter.chromeDirtyRequests -
-                                                    countersBefore.chromeDirtyRequests)},
-        {"chromeDirtyApplied", static_cast<qint64>(countersAfter.chromeDirtyApplied -
-                                                   countersBefore.chromeDirtyApplied)},
+        {"pausedAtEnd", stormPausedAtEnd},
+        {"valid", stormValid},
+        {"invalidReason", stormValid ? QString()
+                                     : (shell == nullptr
+                                            ? QStringLiteral("no shell")
+                                            : (!preconditionsValid
+                                                   ? QStringLiteral("preconditions failed")
+                                                   : (!stormPausedAtEnd
+                                                          ? QStringLiteral("playback resumed")
+                                                          : QStringLiteral("foreground not "
+                                                                           "owned for the "
+                                                                           "requested interval"))))},
+        {"pacingDisarms", stormPacingDisarms},
+        {"paintCalls", static_cast<qint64>(stormPaintCalls)},
+        {"chromeDirtyRequests", static_cast<qint64>(stormChromeDirtyRequests)},
+        {"chromeDirtyApplied", static_cast<qint64>(stormChromeDirtyApplied)},
         {"chromePaintCalls", static_cast<qint64>(stormChromePaintCalls)},
-        {"chromePaintEntries", static_cast<qint64>(countersAfter.chromePaintEntries -
-                                                   countersBefore.chromePaintEntries)},
+        {"chromePaintEntries", static_cast<qint64>(stormChromePaintEntries)},
         {"chromePaintMeanMicros",
          stormChromePaintCalls == 0
              ? QJsonValue(QStringLiteral("unavailable"))
-             : QJsonValue(static_cast<double>(stormChromePaintMicros) / stormChromePaintCalls)},
+             : QJsonValue(static_cast<double>(stormChromePaintMicros) /
+                          stormChromePaintCalls)},
         {"chromePaintMaxMicros",
-         countersAfter.chromePaintMicrosMax < 0
-             ? QJsonValue(QStringLiteral("unavailable"))
-             : QJsonValue(countersAfter.chromePaintMicrosMax)}});
+         stormChromePaintMax < 0 ? QJsonValue(QStringLiteral("unavailable"))
+                                 : QJsonValue(stormChromePaintMax)}});
 
     // ── metric 2: alt-tab away/back, ten cycles ────────────────────────────
     QWidget helper;
@@ -965,13 +1092,20 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     const bool swapMeasured = !activation.activationToFirstSwapMs.isEmpty();
     const bool visibleMeasured = !activation.activationToVisibleCompositionMs.isEmpty();
     const bool blackMeasured = loadSampled > 0;
+    const bool measured = preconditionsValid && stormValid && visibleMeasured && blackMeasured;
     record(QJsonObject{
         {"event", "baselineResult"},
-        {"result", (visibleMeasured && blackMeasured) ? "MEASURED" : "INCOMPLETE"},
+        {"result", measured ? "MEASURED"
+                            : (!preconditionsValid || !stormValid ? "INVALID" : "INCOMPLETE")},
         {"fixtureMeanLuma", fixtureLuma},
         {"fixtureSampled", !fixture.isNull()},
+        {"fixtureBright", fixtureBright},
         {"knownBrightFixture", knownBright},
-        {"pacingDisarmsHoverStorm", pacingDisarms},
+        {"preconditionsValid", preconditionsValid},
+        {"hoverStormValid", stormValid},
+        {"hoverStormValidDurationMs", validStormMs},
+        {"hoverStormLostTicks", stormForegroundLost},
+        {"pacingDisarmsHoverStorm", stormPacingDisarms},
         {"activationToVisibleCompositionP95Ms",
          visibleMeasured ? QJsonValue(visibleP95)
                          : QJsonValue(QStringLiteral("unavailable"))},
@@ -1024,8 +1158,26 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         {"surfaceState", surfaceState(surface)},
         {"presentationMode", presentationMode()},
         {"profileCountersEnabled", mikai::gui::uiprofile::countersEnabled()},
+        {"invalidReason",
+         measured ? QString()
+                  : (!preconditionsValid
+                         ? QStringLiteral("paused bright frame and owned foreground were not "
+                                          "verified before the storm")
+                         : (!stormValid ? QStringLiteral("hover storm was not valid for the "
+                                                         "requested interval")
+                                        : QStringLiteral("activation or loadfile measurement "
+                                                         "was unavailable")))},
         {"error", *error}});
-    return 0;
+    if (!measured && error != nullptr) {
+        *error = !preconditionsValid
+                     ? QStringLiteral("baseline INVALID: paused bright frame/foreground not "
+                                      "verified")
+                     : (!stormValid ? QStringLiteral("baseline INVALID: hover storm was not "
+                                                     "valid for the requested interval")
+                                    : QStringLiteral("baseline INCOMPLETE: activation or "
+                                                     "loadfile measurement unavailable"));
+    }
+    return measured ? 0 : 3;
 }
 
 } // namespace

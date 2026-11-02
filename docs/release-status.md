@@ -39,10 +39,14 @@ before those fixes land:
 | Surface-geometry writes per fullscreen transition | `baselineResult.surfaceGeometryWritesPerFullscreenTransition` | pending |
 | `ChromeList::paint` duration on frame paints | `baselineResult.chromePaintMeanMicros` | pending |
 
-A run whose `profileCountersEnabled` is false, or whose activation cycles are
-reported in `foregroundLostCycles` / `hoverStormForegroundLostTicks`, does not
-produce these numbers; it records interference instead. The probe invocation,
-fixture options and extraction contract are in
+A run whose `profileCountersEnabled` is false, whose
+`baselineStart.preconditionsValid` is false (paused bright frame / native
+foreground not verified), or whose `hoverStorm.valid` is false does not produce
+these numbers: `baselineResult.result` reads `INVALID`/`INCOMPLETE`, the row
+names `invalidReason`, and the probe exits `3` instead of silently passing. Read
+the five values only from a `MEASURED` run; `hoverStorm.pacingDisarms` is the
+validated interval only, not ticks made while another application owned the
+foreground. The probe invocation, fixture options and extraction contract are in
 [the GOAL-00 report](ai/reports/GOAL-00.md). Until the table is filled, no claim
 is made that the instrumentation has measured a fix.
 
