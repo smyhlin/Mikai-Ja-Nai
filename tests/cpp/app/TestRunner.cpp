@@ -947,12 +947,13 @@ void TestRunner::retainedDispatchDoesNotKeepACompletedPoolAlive() {
   Runner::GuiDispatch retained = runner->post();
 
   runner->run(
-      [retained = std::move(retained), probe]() -> QVariant {
+      [retained = std::move(retained), probe]() mutable -> QVariant {
         probe->workerThread.store(QThread::currentThread());
-        // The retained binder's last copy is released on a non-GUI thread after
-        // the owner and this task are gone, which is the shape the public
-        // binder contract promises is safe.
-        std::thread releaser([retained, probe]() mutable {
+        // Hand the only remaining copy to the off-GUI holder: the GUI local and
+        // this runnable's capture are empty from here on, and the holder clears
+        // it after the owner and this task are gone, which is the shape the
+        // public binder contract promises is safe.
+        std::thread releaser([retained = std::move(retained), probe]() mutable {
           probe->gate.waitUntilReleased();
           retained = Runner::GuiDispatch();
           probe->binderReleased.store(true);
