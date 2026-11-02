@@ -68,4 +68,9 @@ class TestNativeComponents : public QObject {
   void toolchainKeepsTheBundleDirsWithoutAnNvidiaDevice();
   void componentDirectoryAvailabilityTracksMissingAndInstalledResources();
   void gpuResourceStatusRequiresACompatiblePack();
+
+  // One closure predicate: either both store packs (or the bundle's declared
+  // builder resource) make the closure usable, or the missing pack is named.
+  void closureStatusNamesTheMissingPack();
+  void closureStatusAcceptsTheBundleDeclaredResource();
 };

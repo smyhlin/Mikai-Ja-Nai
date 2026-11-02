@@ -825,9 +825,15 @@ void ProcessingOverlay::renderStage() {
     }
     QString text = stagePhase_;
     if (stageIndex_ >= 0) {
+        // The user-facing count is one-based; `stageIndex_` stays the zero-based
+        // internal position, and a count that is not known keeps the old shape.
+        const int displayedStage = stageIndex_ + 1;
         text = stageCount_ > 0
-                   ? tr("Stage %1 of %2: %3").arg(stageIndex_).arg(stageCount_).arg(stagePhase_)
-                   : tr("Stage %1: %2").arg(stageIndex_).arg(stagePhase_);
+                   ? tr("Stage %1 of %2: %3")
+                         .arg(displayedStage)
+                         .arg(stageCount_)
+                         .arg(stagePhase_)
+                   : tr("Stage %1: %2").arg(displayedStage).arg(stagePhase_);
     }
     if (!stageDetail_.isEmpty()) text += QStringLiteral(" — ") + stageDetail_;
     detail_->setText(text);

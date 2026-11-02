@@ -1,6 +1,7 @@
 #include "TestNativeComponents.hpp"
 
 #include "dialogs/ComponentStoreTab.hpp"
+#include "dialogs/ComponentStoreTabInternal.hpp"
 #include "workers/Runner.hpp"
 
 #include "native/components/NativeComponentCatalog.hpp"
@@ -198,39 +199,45 @@ void TestNativeComponents::componentProgressSeparatesCardsAndAggregatesSpatialGr
     publish(QStringLiteral("trt-runtime"), 25, 100, ComponentProvisionStage::Downloading);
     publish(QStringLiteral("trt-sm120"), 80, 100, ComponentProvisionStage::Verifying);
     QCOMPARE(runtimeBar->value(), 25);
-    QCOMPARE(kernelsBar->value(), 80);
+    // A live verification is indeterminate, never a percentage that could read
+    // as completion.
+    QCOMPARE(kernelsBar->maximum(), 0);
     QVERIFY(runtimeStatus->text().contains(QStringLiteral("trt-runtime")));
     QVERIFY(kernelsStatus->text().contains(QStringLiteral("Verifying")));
     QVERIFY(kernelsStatus->text().contains(QStringLiteral("trt-sm120")));
 
+    // Terminal bytes without a disk inventory that confirms them are not 100 %:
+    // this is the "0/5 installed beside a full bar" contradiction.
     publish(QStringLiteral("trt-sm120"), 100, 100, ComponentProvisionStage::Installed);
-    QCOMPARE(kernelsBar->value(), 100);
+    QCOMPARE(kernelsBar->value(), 0);
     QVERIFY(kernelsStatus->text().contains(QStringLiteral("Installed")));
     QCOMPARE(runtimeBar->value(), 25);
     QVERIFY(runtimeStatus->text().contains(QStringLiteral("Downloading")));
 
     publish(QStringLiteral("trt-runtime"), 100, 100, ComponentProvisionStage::Downloading);
-    QCOMPARE(runtimeBar->value(), 100);
+    // Every byte arrived but the item is not published yet: still in flight,
+    // so it cannot read as complete.
+    QCOMPARE(runtimeBar->value(), 99);
     QVERIFY(runtimeStatus->text().contains(QStringLiteral("Downloading")));
     QVERIFY(!runtimeStatus->text().contains(QStringLiteral("Installed")));
     publish(QStringLiteral("trt-runtime"), 0, 0, ComponentProvisionStage::Verifying);
-    QCOMPARE(runtimeBar->value(), 100);
+    QCOMPARE(runtimeBar->maximum(), 0);
     QVERIFY(runtimeStatus->text().contains(QStringLiteral("Verifying")));
-    QVERIFY(runtimeStatus->text().contains(QStringLiteral("100")));
     QVERIFY(!runtimeStatus->text().contains(QStringLiteral("Installed")));
     publish(QStringLiteral("trt-runtime"), 100, 100, ComponentProvisionStage::Installed);
     QVERIFY(runtimeStatus->text().contains(QStringLiteral("Installed")));
+    QCOMPARE(runtimeBar->value(), 0);
 
     const RifeArchivePack& rifePack = rifeArchivePack();
     publish(rifePack.name, 40, 100, ComponentProvisionStage::Downloading);
     QCOMPARE(rifeBar->value(), 40);
-    QCOMPARE(runtimeBar->value(), 100);
-    QCOMPARE(kernelsBar->value(), 100);
+    QCOMPARE(runtimeBar->value(), 0);
+    QCOMPARE(kernelsBar->value(), 0);
     QVERIFY(rifeStatus->text().contains(rifePack.asset));
     publish(rifePack.name, 40, 100, ComponentProvisionStage::Extracting);
     QVERIFY(rifeStatus->text().contains(QStringLiteral("Extracting")));
     publish(rifePack.name, 100, 100, ComponentProvisionStage::Installed);
-    QCOMPARE(rifeBar->value(), 100);
+    QCOMPARE(rifeBar->value(), 0);
     QVERIFY(rifeStatus->text().contains(QStringLiteral("Installed")));
 
     const QVector<SpatialAsset> assets = spatialAssetCatalog();
@@ -251,8 +258,10 @@ void TestNativeComponents::componentProgressSeparatesCardsAndAggregatesSpatialGr
 
     tab.setParent(&reparentedHost);
     QApplication::processEvents();
-    QCOMPARE(runtimeBar->value(), 100);
-    QCOMPARE(kernelsBar->value(), 100);
+    // Terminal items without a confirming inventory stay at zero after the
+    // relayout, exactly as they did before it.
+    QCOMPARE(runtimeBar->value(), 0);
+    QCOMPARE(kernelsBar->value(), 0);
     QCOMPARE(spatialBar->value(),
              static_cast<int>(aggregateReceived * 100 / aggregateTotal));
 
@@ -272,6 +281,11 @@ void TestNativeComponents::componentProgressSeparatesCardsAndAggregatesSpatialGr
         QStringLiteral("Installed: ") + completedAsset.name));
     QVERIFY(runtimeStatus->text().contains(QStringLiteral("Installed")));
     QVERIFY(kernelsStatus->text().contains(QStringLiteral("Installed")));
+    // Cancelling resets the cancelled bytes: an abandoned run can never add up
+    // to a complete bar.
+    QVERIFY(spatialBar->value() < 100);
+    QVERIFY(runtimeBar->value() < 100);
+    QVERIFY(kernelsBar->value() < 100);
 
     emit provisioner.finished(false, true, QString());
     publish(QStringLiteral("trt-runtime"), 100, 100, ComponentProvisionStage::Downloading);
@@ -587,10 +601,13 @@ void TestNativeComponents::upscalingSelectionSurvivesRefreshAndMissingGraphsFail
 
     // A separate, explicit setup confirmation re-evaluates recommendations;
     // refresh, retranslation and the normal Apply action never do so.
+    // The check it starts is a tracked busy line now, not a leftover verdict:
+    // the status pipeline replaces the previous failure with the muted
+    // operation line.
     tab.installRecommended();
     QVERIFY(pack->isChecked());
-    QCOMPARE(status->accessibleDescription(), QStringLiteral("failure"));
-    QVERIFY(!status->text().isEmpty());
+    QCOMPARE(status->accessibleDescription(), QStringLiteral("busy"));
+    QVERIFY(status->text().contains(QStringLiteral("Checking selected components")));
 }
 
 void TestNativeComponents::cancelledTensorRtProvisioningDoesNotTouchItsFixtures() {
@@ -956,13 +973,104 @@ void TestNativeComponents::gpuResourceStatusRequiresACompatiblePack() {
     const StoredPack missing;
     const ComponentPack* pack = packNamed(QStringLiteral("trt-sm120"));
     QVERIFY(pack != nullptr);
-    QVERIFY(!gpuResourceInstalledForThisDevice(nullptr, missing, true));
-    QVERIFY(!gpuResourceInstalledForThisDevice(pack, missing, false));
+    QVERIFY(!gpuResourceInstalledForThisDevice(nullptr, missing));
+    QVERIFY(!gpuResourceInstalledForThisDevice(pack, missing));
 
     StoredPack installed;
     installed.installed = true;
-    QVERIFY(gpuResourceInstalledForThisDevice(pack, installed, false));
-    QVERIFY(gpuResourceInstalledForThisDevice(pack, missing, true));
+    // Store truth only: a usable closure elsewhere does not turn a pack the
+    // record does not contain into an installed pack.
+    QVERIFY(gpuResourceInstalledForThisDevice(pack, installed));
+    QVERIFY(!gpuResourceInstalledForThisDevice(nullptr, installed));
+}
+
+void TestNativeComponents::closureStatusNamesTheMissingPack() {
+    GpuComputeCapability gpu;
+    gpu.nvidia = true;
+    gpu.smMajor = 12;
+    gpu.smMinor = 0;
+    const ComponentPack* runtime = tensorRtRuntimePack();
+    const ComponentPack* kernels = packNamed(QStringLiteral("trt-sm120"));
+    QVERIFY(runtime != nullptr);
+    QVERIFY(kernels != nullptr);
+
+    QTemporaryDir onlyKernels;
+    QVERIFY(onlyKernels.isValid());
+    const ComponentStore kernelsStore{onlyKernels.path()};
+    QVERIFY(populateStore(kernelsStore, {*kernels}));
+    const TensorRtClosureStatus kernelsOnly =
+        tensorRtClosureStatus(kernelsStore, nullptr, gpu.smMajor, gpu.smMinor);
+    QVERIFY(kernelsOnly.kernelsStored);
+    QVERIFY(!kernelsOnly.runtimeStored);
+    QVERIFY(!kernelsOnly.dirsAvailable);
+    QCOMPARE(kernelsOnly.missing, QStringList({runtime->name}));
+
+    // The red line names the environment, not a generic "component pack".
+    const QStringList named =
+        mikai::app::component_store_detail::tensorRtClosureFailureLines(
+            kernelsOnly, true, true, kernels->name);
+    QCOMPARE(named.size(), 1);
+    QVERIFY2(named.first().contains(QStringLiteral("trt-runtime")),
+             qPrintable(named.first()));
+    QVERIFY(!named.first().contains(QStringLiteral("component pack is not installed")));
+
+    QTemporaryDir both;
+    QVERIFY(both.isValid());
+    const ComponentStore bothStore{both.path()};
+    QVERIFY(populateStore(bothStore, {*runtime, *kernels}));
+    // No bundle at all: the two store packs are the whole closure, so the
+    // early `no bundle => empty dirs` answer must not survive.
+    const TensorRtClosureStatus stored =
+        tensorRtClosureStatus(bothStore, nullptr, gpu.smMajor, gpu.smMinor);
+    QVERIFY(stored.runtimeStored);
+    QVERIFY(stored.kernelsStored);
+    QVERIFY(stored.dirsAvailable);
+    QVERIFY(stored.missing.isEmpty());
+    QVERIFY(mikai::app::component_store_detail::tensorRtClosureFailureLines(
+                stored, true, true, kernels->name)
+                .isEmpty());
+}
+
+void TestNativeComponents::closureStatusAcceptsTheBundleDeclaredResource() {
+    GpuComputeCapability gpu;
+    gpu.nvidia = true;
+    gpu.smMajor = 12;
+    gpu.smMinor = 0;
+    const ComponentPack* kernels = packNamed(QStringLiteral("trt-sm120"));
+    QVERIFY(kernels != nullptr);
+
+    Bundle bundle;
+    bundle.kind = BundleKind::Native;
+    BundlePreparation preparation;
+    preparation.runtime.trt = QStringLiteral("trt");
+    preparation.runtime.cuda = QStringLiteral("cuda");
+    bundle.preparation = preparation;
+    bundle.files.append(BundleFile{
+        QStringLiteral("trt/") + builderResourceFileName(*kernels), kernels->assetBytes,
+        QStringLiteral("0")});
+
+    QTemporaryDir empty;
+    QVERIFY(empty.isValid());
+    const TensorRtClosureStatus status =
+        tensorRtClosureStatus(ComponentStore{empty.path()}, &bundle, gpu.smMajor, gpu.smMinor);
+    QVERIFY(status.bundleProvidesDirs);
+    QVERIFY(status.dirsAvailable);
+    QVERIFY(!status.runtimeStored);
+    QVERIFY(status.missing.isEmpty());
+    // A valid bundle-provided closure satisfies the selection; it must not
+    // report a missing trt-runtime pack.
+    QVERIFY(mikai::app::component_store_detail::tensorRtClosureFailureLines(
+                status, true, true, kernels->name)
+                .isEmpty());
+
+    // A bundle that declares some other GPU's resource does not satisfy this
+    // machine: the missing pack is named again.
+    bundle.files.clear();
+    const TensorRtClosureStatus other =
+        tensorRtClosureStatus(ComponentStore{empty.path()}, &bundle, gpu.smMajor, gpu.smMinor);
+    QVERIFY(!other.bundleProvidesDirs);
+    QVERIFY(!other.dirsAvailable);
+    QCOMPARE(other.missing, QStringList({QStringLiteral("trt-runtime"), kernels->name}));
 }
 
 void TestNativeComponents::componentDirectoryAvailabilityTracksMissingAndInstalledResources() {

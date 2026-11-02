@@ -62,6 +62,11 @@ class TestI18n : public QObject {
   void failureViewRephrasesOnlyItsOwnWordsAndKeepsBackendDetail();
   void processingOverlayKeepsItsRunAcrossLanguageSwitches();
 
+  /// A 0/5 component card must never begin with the word "installed" in either
+  /// language; the Ukrainian catalog renders the explicit zero line, and the
+  /// switch back restores the English one without touching the inventory.
+  void componentCountLineNeverStartsWithInstalledAtZero();
+
   /// The popover's speed presets are one `const char*` table, so the only thing
   /// that makes them translatable is the context-carrying extraction the
   /// catalogue is built from. A catalogue that skipped that table left every row
