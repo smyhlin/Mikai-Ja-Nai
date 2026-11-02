@@ -357,9 +357,12 @@ Runner::GuiDispatch Runner::post() {
             return;
         }
         // The promoted reference moves into the queued body, so no strong copy
-        // survives this call on the worker and the GUI thread releases it.
+        // survives this call on the worker and the GUI thread releases it. The
+        // target is read first: argument evaluation order is unspecified, so
+        // the move below may empty `shared` before the dispatcher is fetched.
+        Runner::Dispatcher* const dispatcher = shared->dispatcher.get();
         QMetaObject::invokeMethod(
-            shared->dispatcher.get(),
+            dispatcher,
             [shared = std::move(shared), callback = std::move(callback)]() mutable {
                 // Re-read on the GUI thread: an owner the body closes between
                 // this post and its delivery is a no-op, not a dangling
