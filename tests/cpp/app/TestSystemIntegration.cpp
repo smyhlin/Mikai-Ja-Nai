@@ -464,14 +464,12 @@ void TestSystemIntegration::xdgRefreshesOnlyMissingOwnedInstallations() {
     QCOMPARE(file.write(old), qint64(old.size()));
     file.close();
 
-    // A canonical entry whose executable has vanished is still owned: disabling
-    // removes it, or hides the retained default candidate, instead of refusing.
+    // Stale-owned entries remain disposable: cleanup must not require the old executable.
     QVERIFY2(setEnabled(entry, false, &error), qPrintable(error));
     QVERIFY(!enabled(entry));
     if (entry == Entry::Startup) QVERIFY(!QFileInfo::exists(path));
     else QVERIFY(QFile::exists(path));
 
-    // Re-enabling refreshes the owned entry for the running installation.
     QVERIFY2(setEnabled(entry, true, &error), qPrintable(error));
     QVERIFY(enabled(entry));
     QVERIFY(file.open(QIODevice::ReadOnly));

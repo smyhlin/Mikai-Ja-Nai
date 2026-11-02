@@ -80,9 +80,7 @@ QString retainedContents(const QString& base, bool advertised) {
     return result + QStringLiteral("X-Mikai-DefaultRegistration=true\n");
 }
 
-// Early retained entries omitted MimeType and NoDisplay but still carried the
-// marker. Only this exact legacy-named serialization is owned; the current
-// generation always writes NoDisplay for hidden candidates.
+// Exact legacy-named retained form; foreign edits still fail full-file equality.
 QString legacyHiddenContents(const QString& legacyBase) {
     QString result = legacyBase;
     result.remove(QStringLiteral("MimeType=video/mp4;video/x-matroska;video/webm;video/quicktime;video/x-msvideo;video/mpeg;video/ogg;\n"));
