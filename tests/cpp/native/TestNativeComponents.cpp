@@ -215,7 +215,9 @@ void TestNativeComponents::componentProgressSeparatesCardsAndAggregatesSpatialGr
     QVERIFY(runtimeStatus->text().contains(QStringLiteral("Downloading")));
 
     publish(QStringLiteral("trt-runtime"), 100, 100, ComponentProvisionStage::Downloading);
-    QCOMPARE(runtimeBar->value(), 100);
+    // Every byte arrived but the item is not published yet: still in flight,
+    // so it cannot read as complete.
+    QCOMPARE(runtimeBar->value(), 99);
     QVERIFY(runtimeStatus->text().contains(QStringLiteral("Downloading")));
     QVERIFY(!runtimeStatus->text().contains(QStringLiteral("Installed")));
     publish(QStringLiteral("trt-runtime"), 0, 0, ComponentProvisionStage::Verifying);

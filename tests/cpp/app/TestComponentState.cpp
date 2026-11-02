@@ -140,6 +140,30 @@ void TestComponentState::progressDecisionNeverFabricatesCompletion() {
     QCOMPARE(componentProgressPercent(stale).value(), 0);
     QCOMPARE(componentProgressBar(stale).percent, 0);
 
+    // Full bytes while the transfer is still active: never 100 before the
+    // publish is confirmed by the disk.
+    CardState activeFull;
+    activeFull.transfer.active = 1;
+    activeFull.transfer.received = 100;
+    activeFull.transfer.total = 100;
+    activeFull.inventory.known = true;
+    activeFull.inventory.total = 5;
+    QCOMPARE(componentProgressPercent(activeFull).value(), 99);
+    QCOMPARE(componentProgressBar(activeFull).percent, 99);
+    QVERIFY(!componentProgressBar(activeFull).indeterminate);
+
+    // One success beside one failure: failure wins, even with a confirming
+    // inventory, and the pure function agrees with cardReadiness.
+    CardState mixed;
+    mixed.transfer.installed = 1;
+    mixed.transfer.failed = 1;
+    mixed.inventory.known = true;
+    mixed.inventory.installed = 1;
+    mixed.inventory.total = 5;
+    QCOMPARE(componentProgressPercent(mixed).value(), 0);
+    QVERIFY(componentProgressBar(mixed).failed);
+    QCOMPARE(static_cast<int>(cardReadiness(mixed)), static_cast<int>(Readiness::Failed));
+
     // All failed after a full byte transfer: the axis no longer carries those
     // bytes, and the bar is failure-coloured, never complete.
     CardState failed;
