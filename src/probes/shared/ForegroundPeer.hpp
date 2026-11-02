@@ -31,6 +31,9 @@ public:
     /// Places the peer behind the player after activation; cross-process
     /// SetWindowPos, so the occlusion removal is deterministic.
     void sendToBack() const;
+    /// Raises the peer's window without changing the foreground; used by the
+    /// readiness barrier so the first away interval shows the black window.
+    void raiseToFront() const;
     /// True only when the native foreground is this peer's window and its pid is
     /// not ours.
     bool ownsForeground() const;

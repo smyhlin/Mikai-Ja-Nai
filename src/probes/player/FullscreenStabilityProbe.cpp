@@ -426,6 +426,65 @@ bool ensureForeground(QWidget* window) {
 /// quantile includes it as a lower bound so a worst cycle cannot vanish.
 constexpr qint64 kVisibleCompositionDeadlineMs = 2500;
 
+QRect videoSampleCrop(mplayer::VideoSurface* surface) {
+    if (surface == nullptr) return QRect();
+    const QPoint point = surface->mapToGlobal(
+        QPoint(surface->width() * 28 / 100, surface->height() * 33 / 100));
+    return QRect(point - QPoint(48, 32), QSize(96, 64));
+}
+
+/// Launch-scoped readiness: the first away interval can find the peer behind
+/// the fullscreen player even though it owns the foreground. Settle z-order and
+/// verify the black window actually occludes the sample crop before measuring.
+bool settleForegroundPeer(mikai::probes::ForegroundPeer& peer,
+                          mplayer::shell::PlayerDialog* dialog,
+                          mplayer::VideoSurface* surface, const QRect& crop,
+                          const std::function<void(QJsonObject)>& record,
+                          QString* error) {
+    QScreen* const screen = surface != nullptr ? surface->screen() : nullptr;
+    const double baselineLuma = meanLuma(desktopCrop(screen, crop));
+    int attempts = 0;
+    bool occluded = false;
+    double occludedLuma = -1.0;
+    for (; attempts < 10; ++attempts) {
+        peer.activate();
+        peer.raiseToFront();
+        spinFor(250);
+        if (!peer.ownsForeground()) continue;
+        occludedLuma = meanLuma(desktopCrop(screen, crop));
+        if (baselineLuma >= 40.0 && occludedLuma >= 0.0 &&
+            occludedLuma < baselineLuma * 0.5) {
+            occluded = true;
+            break;
+        }
+    }
+    record(QJsonObject{{"event", "foregroundPeerWarmup"},
+                       {"baselineLuma", baselineLuma},
+                       {"occludedLuma", occludedLuma},
+                       {"attempts", attempts + 1},
+                       {"occluded", occluded}});
+    if (!occluded) {
+        *error = QStringLiteral("the foreign helper never occluded the sample crop "
+                                "(baseline=%1 occluded=%2)")
+                     .arg(baselineLuma, 0, 'f', 1)
+                     .arg(occludedLuma, 0, 'f', 1);
+        return false;
+    }
+    // Restore the pre-measurement state: player foreground and picture visible.
+    forceForegroundNow(dialog);
+    for (int attempt = 0; attempt < 40 && !foregroundIs(dialog); ++attempt) {
+        spinFor(50);
+        forceForegroundNow(dialog);
+    }
+    QElapsedTimer restore;
+    restore.start();
+    while (restore.elapsed() < 2000 &&
+           meanLuma(desktopCrop(screen, crop)) < baselineLuma * 0.6) {
+        spinFor(20);
+    }
+    return foregroundIs(dialog);
+}
+
 struct ActivationRun {
     QString phase;
     int cycles = 0;
@@ -463,10 +522,7 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
     ActivationRun run;
     run.phase = phase;
     QScreen* const screen = surface->screen();
-    // Off-centre avoids the play glyph, header and dock; 28%/33% is plain video.
-    const QPoint sampleGlobal = surface->mapToGlobal(
-        QPoint(surface->width() * 28 / 100, surface->height() * 33 / 100));
-    const QRect cropRect(sampleGlobal - QPoint(48, 32), QSize(96, 64));
+    const QRect cropRect = videoSampleCrop(surface);
     const auto grabDesktop = [&]() -> QImage {
         const qint64 started = mikai::gui::uiprofile::nowNs();
         const QImage image = desktopCrop(screen, cropRect);
@@ -829,16 +885,25 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
 
     // A separate process owns the black helper: its window is another
     // application's, so native activation and Qt's inactive state are real.
-    const QPoint sampleCenter = surface->mapToGlobal(
-        QPoint(surface->width() * 28 / 100, surface->height() * 33 / 100));
+    const QRect sampleCrop = videoSampleCrop(surface);
     mikai::probes::ForegroundPeer peer;
     QString peerError;
-    if (!peer.start(QRect(sampleCenter - QPoint(240, 180), QSize(480, 360)), &peerError)) {
+    if (!peer.start(QRect(sampleCrop.center() - QPoint(240, 180), QSize(480, 360)),
+                    &peerError)) {
         *error = peerError;
         record(QJsonObject{{"event", "focusSwitchResult"},
                            {"result", "UNAVAILABLE"},
                            {"reason", peerError},
                            {"surfaceState", surfaceState(surface)}});
+        return 3;
+    }
+    if (!settleForegroundPeer(peer, dialog, surface, sampleCrop, record, &peerError)) {
+        *error = peerError;
+        record(QJsonObject{{"event", "focusSwitchResult"},
+                           {"result", "INCOMPLETE"},
+                           {"reason", peerError},
+                           {"surfaceState", surfaceState(surface)}});
+        peer.stop();
         return 3;
     }
     record(QJsonObject{{"event", "foregroundPeer"},
@@ -1092,12 +1157,12 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                                  : QJsonValue(stormChromePaintMax)}});
 
     // ── metric 2: away/back against another process, ten cycles ────────────
-    const QPoint activationCenter = surface->mapToGlobal(
-        QPoint(surface->width() * 28 / 100, surface->height() * 33 / 100));
+    const QRect activationCrop = videoSampleCrop(surface);
     mikai::probes::ForegroundPeer peer;
     QString peerError;
-    const bool peerStarted =
-        peer.start(QRect(activationCenter - QPoint(240, 180), QSize(480, 360)), &peerError);
+    bool peerStarted =
+        peer.start(QRect(activationCrop.center() - QPoint(240, 180), QSize(480, 360)),
+                   &peerError);
     ActivationRun activation;
     activation.phase = QStringLiteral("plain");
     if (peerStarted) {
@@ -1106,10 +1171,15 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                            {"window", static_cast<qint64>(peer.windowId())},
                            {"foreignPid",
                             peer.processId() != QCoreApplication::applicationPid()}});
-        activation = runActivationCycles(dialog, surface, peer, QStringLiteral("plain"), 10,
-                                         knownBright, record);
+        peerStarted =
+            settleForegroundPeer(peer, dialog, surface, activationCrop, record, &peerError);
+        if (peerStarted) {
+            activation = runActivationCycles(dialog, surface, peer, QStringLiteral("plain"), 10,
+                                             knownBright, record);
+        }
         peer.stop();
-    } else {
+    }
+    if (!peerStarted) {
         record(QJsonObject{{"event", "foregroundPeerUnavailable"},
                            {"reason", peerError},
                            {"activationMetric", "unavailable"}});
@@ -1464,9 +1534,8 @@ int main(int argc, char** argv) {
                                                    seconds, record, &modeError);
         evidence.flush();
         dialog->close();
-        // A completed run is success even when a metric is unavailable: the row
-        // names that metric as unavailable instead of inventing a zero.
-        return modeExit == 0 ? 0 : 2;
+        // The mode's verdict is explicit: 0 measured, 3 incomplete/invalid.
+        return modeExit;
     }
     EvidenceWrites artifactWrites;
     QThreadPool artifactPool;

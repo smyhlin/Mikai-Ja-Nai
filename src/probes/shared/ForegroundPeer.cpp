@@ -102,6 +102,14 @@ void ForegroundPeer::sendToBack() const {
 #endif
 }
 
+void ForegroundPeer::raiseToFront() const {
+#ifdef Q_OS_WIN
+    const HWND target = reinterpret_cast<HWND>(windowId_);
+    if (target == nullptr || !IsWindow(target)) return;
+    SetWindowPos(target, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+#endif
+}
+
 bool ForegroundPeer::ownsForeground() const {
 #ifdef Q_OS_WIN
     const HWND foreground = GetForegroundWindow();
