@@ -157,6 +157,10 @@ void TestThemeIcons::customColorAlphaIsPreservedInCacheKey() {
 }
 
 void TestThemeIcons::glyphBoxIsPhysicalAtEveryScale() {
+  // The contract the user approved: the icon box is rasterised at the screen's
+  // own ratio, in exactly qRound(logical * dpr) device pixels, tagged with that
+  // same ratio. The glyph inside it is square in physical pixels, so no ratio can
+  // stretch it, and the pad is the only extra width.
   const QList<qreal> scales = {1.0, 1.25, 1.5, 1.75, 2.0};
   const QColor ink(QStringLiteral("#ffffff"));
   const int pad = mikai::app::theme::kSearchIconGlyphPad;
@@ -176,34 +180,35 @@ void TestThemeIcons::glyphBoxIsPhysicalAtEveryScale() {
       const int gap = request.second;
       const QIcon icon =
           mikai::app::theme::searchIcon(mikai::app::theme::kSearchIconSize, ink.name(), gap);
-      // The layout slot is the engine's own answer and never depends on how Qt
-      // re-tags the returned pixmap.
       QCOMPARE(icon.actualSize(box), box);
 
       const QPixmap pixmap = icon.pixmap(box, scale);
       QVERIFY2(!pixmap.isNull(), "no raster for a requested box");
-      QVERIFY2(pixmap.devicePixelRatio() > 0.0, "raster carries no device pixel ratio");
-      // Qt 6.12 re-tags whatever the engine returns, so the exposed logical box
-      // is not ours to guarantee. What decides whether a HiDPI screen shows a
-      // resampled glyph is the physical raster: never smaller than the device box
-      // the screen asked for, and never far larger than the ratio lattice needs.
-      const QSize wanted(qRound(box.width() * scale), qRound(box.height() * scale));
-      QVERIFY2(pixmap.width() >= wanted.width(),
-               qPrintable(QStringLiteral("%1 px wide, %2 needed at %3")
+      const QSize expected(qRound(box.width() * scale), qRound(box.height() * scale));
+      QVERIFY2(pixmap.size() == expected,
+               qPrintable(QStringLiteral("%1x%2 device px, expected %3x%4 at %5")
                               .arg(pixmap.width())
-                              .arg(wanted.width())
-                              .arg(scale)));
-      QVERIFY2(pixmap.height() >= wanted.height(),
-               qPrintable(QStringLiteral("%1 px high, %2 needed at %3")
                               .arg(pixmap.height())
-                              .arg(wanted.height())
+                              .arg(expected.width())
+                              .arg(expected.height())
                               .arg(scale)));
-      QVERIFY2(pixmap.width() <= qCeil(wanted.width() * 1.35) + 2,
-               qPrintable(QStringLiteral("%1 px wide exceeds the ratio lattice")
-                              .arg(pixmap.width())));
-      QVERIFY2(pixmap.height() <= qCeil(wanted.height() * 1.35) + 2,
-               qPrintable(QStringLiteral("%1 px high exceeds the ratio lattice")
-                              .arg(pixmap.height())));
+      QVERIFY2(qFuzzyCompare(pixmap.devicePixelRatio(), scale),
+               qPrintable(QStringLiteral("tagged %1, screen asks %2")
+                              .arg(pixmap.devicePixelRatio())
+                              .arg(scale)));
+
+      const QRect bounds = inkBounds(pixmap.toImage());
+      QVERIFY2(bounds.isValid(), "the glyph left no ink");
+      const int padColumns = expected.width() - qRound(box.height() * scale);
+      QVERIFY2(padColumns >= 0, "the box is narrower than its glyph");
+      QVERIFY2(bounds.right() < expected.width() - padColumns,
+               "glyph ink reached into the trailing pad");
+      // Square in physical pixels: the glyph is never stretched to fill the pad.
+      QVERIFY2(qAbs(bounds.width() - bounds.height()) <= 2,
+               qPrintable(QStringLiteral("ink %1x%2 is not square at %3")
+                              .arg(bounds.width())
+                              .arg(bounds.height())
+                              .arg(scale)));
     }
   }
 }

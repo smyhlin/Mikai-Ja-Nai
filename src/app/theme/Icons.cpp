@@ -32,8 +32,6 @@
 #include <QRectF>
 #include <QTransform>
 
-#include <cmath>
-#include <numeric>
 #include <utility>
 
 namespace mikai::app::theme {
@@ -424,42 +422,12 @@ enum class Glyph {
     ChevronDown
 };
 
-/// The device-pixel geometry of one icon box.
-///
-/// A QPixmap carries a single scalar ratio, so its logical size is
-/// device / ratio on both axes: the requested box comes out exact in whole
-/// device pixels only while the ratio is a whole multiple of the box's common
-/// logical divisor. For the header's padded 22x18 box that makes the ratio a
-/// multiple of 0.5, so a 125 % screen is served at 1.5 and rendered 33x27 - the
-/// multiple nearest (never below) the requested one. Setting the ratio to the
-/// screen's own value instead and rounding the device size up is what produced
-/// 18.4 logical pixels of glyph in an 18 px slot, and the fractional downscale
-/// into the layout rect is what tore the antialiased edges.
-struct GlyphRaster {
-    /// The pixmap's size in device pixels.
-    QSize device;
-    /// The box in logical pixels: exactly `device / ratio`.
-    QSize logical;
-    /// The ratio the pixmap is tagged with.
-    qreal ratio = 1.0;
-};
-
-GlyphRaster planGlyphRaster(const QSize& requested, int trailingGap, qreal scale) {
-    const qreal requestedRatio = scale > 0.0 ? scale : 1.0;
-    // The glyph keeps the square side the layout reserved for it; the trailing
-    // pad is transparent columns the box carries, never a wider glyph.
+/// The icon box a request asks for, in logical pixels: the glyph is square and
+/// takes the box height, the trailing pad is transparent columns on its trailing
+/// side and never widens the glyph.
+QSize glyphLogicalBox(const QSize& requested, int trailingGap) {
     const int side = qMax(1, qMin(requested.width() - trailingGap, requested.height()));
-    const int boxWidth = qMax(1, qMin(requested.width(), side + trailingGap));
-    const int boxHeight = side;
-    const int divisor = qMax(1, std::gcd(boxWidth, boxHeight));
-    // Never rasterise below what the screen asks for: that is the same
-    // source-upscale this pipeline exists to remove.
-    const int step = qMax(1, int(std::ceil(requestedRatio * divisor - 1e-9)));
-    GlyphRaster raster;
-    raster.ratio = qreal(step) / qreal(divisor);
-    raster.device = QSize(boxWidth / divisor * step, boxHeight / divisor * step);
-    raster.logical = QSize(boxWidth, boxHeight);
-    return raster;
+    return QSize(qMax(1, qMin(requested.width(), side + trailingGap)), side);
 }
 
 /// Rounds a logical position onto the device-pixel grid so a blit lands on whole
@@ -510,9 +478,9 @@ public:
         const qreal height = qreal(pixmap.height()) / ratio;
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing, true);
-        // A style is free to hand a rect that is not the size actualSize() asked
-        // for; smoothing is the safety net so the leftover fractional offset is
-        // interpolated instead of dropping pixel columns.
+        // The raster is tagged with the painter's own ratio, so drawing it at its
+        // natural size is a straight device-pixel copy. Smoothing stays as the
+        // safety net for a style that hands a rect actualSize() did not ask for.
         painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
         // Drawn at the raster's own logical size: the glyph keeps its square
         // aspect and the blit stays one raster pixel per screen pixel. Filling
@@ -535,15 +503,19 @@ public:
         const QColor color = mode == QIcon::Disabled ? disabled_
                             : mode == QIcon::Active || mode == QIcon::Selected ? active_
                                                                               : normal_;
-        const GlyphRaster raster = planGlyphRaster(size, trailingGap_, scale);
-        // The key carries the rasterised geometry, not the request: two callers
-        // asking for boxes that plan to the same device pixels share one entry,
-        // and a screen change lands on fresh keys rather than on stale pixmaps.
+        const qreal ratio = scale > 0.0 ? scale : 1.0;
+        const QSize logical = glyphLogicalBox(size, trailingGap_);
+        // The whole box is rasterised at the screen's own ratio, in whole device
+        // pixels. Tagging the raster with that same ratio is what makes the blit
+        // in paint() one raster pixel per screen pixel: the glyph is drawn at the
+        // screen's resolution instead of being resampled from another one.
+        const QSize device(qMax(1, qRound(logical.width() * ratio)),
+                           qMax(1, qRound(logical.height() * ratio)));
         const QString cacheKey = QStringLiteral("mikai-glyph:%1:%2x%3:%4:%5:%6:%7:%8")
                                      .arg(static_cast<int>(glyph_))
-                                     .arg(raster.device.width())
-                                     .arg(raster.device.height())
-                                     .arg(raster.ratio, 0, 'g', 8)
+                                     .arg(device.width())
+                                     .arg(device.height())
+                                     .arg(ratio, 0, 'g', 8)
                                      .arg(static_cast<int>(mode))
                                      .arg(static_cast<int>(state))
                                      .arg(color.name(QColor::HexArgb))
@@ -551,27 +523,27 @@ public:
         QPixmap pixmap;
         if (QPixmapCache::find(cacheKey, &pixmap)) return pixmap;
 
-        pixmap = renderGlyph(glyph_, raster.device.height(), color);
-        if (pixmap.width() != raster.device.width() ||
-            pixmap.height() != raster.device.height()) {
+        // The glyph is square in physical pixels - the box's device height - so
+        // no ratio can squash it; the remaining device columns are the pad.
+        pixmap = renderGlyph(glyph_, device.height(), color);
+        if (pixmap.width() != device.width() || pixmap.height() != device.height()) {
             // A button that draws icon and label itself owns the spacing between
             // them; the style's own gap is not adjustable, so the glyph carries
-            // the header's difference as transparent columns. The pad is part of
-            // the planned device box, so it can never widen the logical box.
-            QPixmap padded(raster.device);
+            // the header's difference as transparent columns on its trailing side.
+            QPixmap padded(device);
             padded.fill(Qt::transparent);
             QPainter painter(&padded);
             painter.drawPixmap(0, 0, pixmap);
             painter.end();
             pixmap = padded;
         }
-        pixmap.setDevicePixelRatio(raster.ratio);
+        pixmap.setDevicePixelRatio(ratio);
         QPixmapCache::insert(cacheKey, pixmap);
         return pixmap;
     }
 
     QSize actualSize(const QSize& size, QIcon::Mode, QIcon::State) override {
-        return planGlyphRaster(size, trailingGap_, 1.0).logical;
+        return glyphLogicalBox(size, trailingGap_);
     }
 
 private:
