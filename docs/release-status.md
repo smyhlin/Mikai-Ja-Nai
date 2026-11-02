@@ -12,7 +12,7 @@ Published packages, release-specific changes and checksums are available on the 
 
 HDR dark-scene instability and periodic frame substitution (KB-29 and KB-30) remain under measurement. Rendering fixes and bounded tests do not establish that every black flash is resolved; see [known bugs](../known_bugs.md). A historical Linux stock-runtime hour run ended with black, frozen output; its cause was not established.
 
-## Presentation baseline (instrumented, numbers pending)
+## Presentation baseline (Windows before-side)
 
 The presentation path is instrumented for a recorded before/after baseline of
 the R13/R14 symptoms (black flicker on in-window switches and during paused
@@ -25,19 +25,22 @@ requests to each paint line. The fullscreen stability probe gained
 through `mikai_test_launcher` in an owned disposable tree, and write JSONL rows
 that name an unmeasured value `"unavailable"` rather than zero.
 
-The five baseline numbers below are **not yet measured on the integrated
-instrumentation branch**. They are the before-side of the GOAL-E/GOAL-F
-acceptance criteria and must be recorded from `<output-directory>/samples.jsonl`
-before those fixes land:
+The before-side values below were recorded from
+[`win-before-baseline-04/samples.jsonl`](ai/GOAL-00/win-before-baseline-04/samples.jsonl)
+at `8deb325`, before GOAL-B/D/H1 or the presentation fixes were integrated.
+The run reported `MEASURED`: paused bright video and native foreground were
+validated throughout the 30-second hover interval. Of ten activation attempts,
+nine were valid; one lost foreground ownership and is excluded explicitly.
+There were no composition timeouts or unsupported captures.
 
 | Metric | Row / key | Value |
 |---|---|---|
-| Pacing disarms in a 30 s hover storm over paused video | `hoverStorm.pacingDisarms` | pending |
-| **Activation → first visible composited desktop frame** p95, timeouts censored as ≥ 2500 ms (alt-tab away/back ×10; verified-occluded off-centre screen crop, not a paint/swap proxy) | `baselineResult.activationToVisibleCompositionP95LowerBoundMs` | pending |
-| Activation-to-first-swap p95 (secondary diagnostic; `frameSwapped`, not physical scanout) | `baselineResult.activationToFirstSwapP95Ms` | pending |
-| Black samples across 20 `loadfile` transitions | `baselineResult.blackSamplesLoadfile20` | pending |
-| Surface-geometry writes per fullscreen transition | `baselineResult.surfaceGeometryWritesPerFullscreenTransition` | pending |
-| `ChromeList::paint` duration on frame paints | `baselineResult.chromePaintMeanMicros` | pending |
+| Pacing disarms in a 30 s hover storm over paused video | `hoverStorm.pacingDisarms` | 0 |
+| **Activation → first visible composited desktop frame** p95, timeouts censored as ≥ 2500 ms (verified-occluded off-centre screen crop, not a paint/swap proxy) | `baselineResult.activationToVisibleCompositionP95LowerBoundMs` | 11 ms; 9 valid samples |
+| Activation-to-first-swap p95 (secondary diagnostic; `frameSwapped`, not physical scanout) | `baselineResult.activationToFirstSwapP95Ms` | 24 ms; 9 valid samples |
+| Black samples across 20 `loadfile` transitions | `baselineResult.blackSamplesLoadfile20` | 0 / 463 samples; 20 transitions completed |
+| Surface-geometry writes per fullscreen transition | `baselineResult.surfaceGeometryWritesPerFullscreenTransition` | 2 |
+| `ChromeList::paint` mean per composition during the paused hover storm | `baselineResult.chromePaintMeanMicros` | 284.996 µs; 1850 paints |
 
 A run whose `profileCountersEnabled` is false, whose
 `baselineStart.preconditionsValid` is false (paused bright frame / native
@@ -48,8 +51,13 @@ the five values only from a `MEASURED` run; that requires
 `visibleCompositionComplete == true`, so a timeout is censored at the 2500 ms
 deadline instead of being dropped. `hoverStorm.pacingDisarms` is the validated
 interval only, not ticks made while another application owned the foreground. The probe invocation, fixture options and extraction contract are in
-[the GOAL-00 report](ai/reports/GOAL-00.md). Until the table is filled, no claim
-is made that the instrumentation has measured a fix.
+[the GOAL-00 report](ai/reports/GOAL-00.md).
+The idle-GPU lavfi run did not reproduce an eight-second activation delay or
+a black load transition. It does not prove behaviour during TensorRT builds,
+physical scanout latency, or DirectFlip promotion; the latter metric remains
+unsupported on this WGL path. Later presentation changes must retain this
+before-side evidence rather than describing these zero-event observations as
+a demonstrated fix.
 
 ## Recorded verification
 
