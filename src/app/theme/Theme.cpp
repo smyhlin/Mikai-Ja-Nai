@@ -190,7 +190,12 @@ QLineEdit, QComboBox, QSpinBox {
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus { border-color: %11; background: %8; }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right;
     width: 26px; border: none; background: transparent; }
-QComboBox::down-arrow { image: url(:/icons/chevron-down.svg); width: 10px; height: 10px; }
+/* No image for the combo arrow: a stylesheet image is loaded as a raster and
+   drawn at its own pixel size, so on a 125-200 % display Qt upscales ten pixels
+   of SVG into a blurry triangle. The style paints PE_IndicatorArrowDown as a
+   vector from the palette applied in applyPalette(), which is device-resolution
+   exact at every ratio. resources/chevron-down.svg is kept as the drawing
+   reference for that arrow's shape and weight. */
 QComboBox QAbstractItemView { background: %5; border: 1px solid %10;
     selection-background-color: %8; }
 QCheckBox { spacing: %3px; }
