@@ -307,6 +307,16 @@ void ComponentStoreTab::bumpRunGeneration(const QString& reason) {
     verifying_ = false;
     verificationActive_ = false;
     pendingModels_.clear();
+    // A continuation that is waiting for an inventory snapshot would otherwise
+    // start a run the user no longer asked for, under a generation nobody owns.
+    pendingBackendWork_ = false;
+    pendingRuntimeClosure_ = false;
+    pendingRifeArchive_ = false;
+    componentStagePending_ = false;
+    recommendedInstallPending_ = false;
+    if (inventoryCancelFlag_) inventoryCancelFlag_->store(true);
+    ++inventoryGeneration_;
+    inventoryScanning_ = false;
     // The stale presence callback is discarded by generation, so its own
     // "scan finished" reset would never run; release the coalescing latch here.
     presenceScanning_ = false;
