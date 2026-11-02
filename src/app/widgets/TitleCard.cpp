@@ -2,6 +2,7 @@
 
 #include "Labels.hpp"
 
+#include "gui/ImageDecode.hpp"
 #include "state/AppearanceStore.hpp"
 #include "theme/Appearance.hpp"
 #include "theme/Metrics.hpp"
@@ -17,6 +18,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QLinearGradient>
+#include <QPointF>
 #include <QPixmap>
 #include <QPushButton>
 #include <QStyle>
@@ -191,38 +193,54 @@ QString TitleCard::elideTwoLines(const QString& text, const QFont& font, int max
     return line1 + QLatin1Char('\n') + line2;
 }
 
-QPixmap TitleCard::rounded(const QPixmap& pixmap, const QSize& target) {
-    if (pixmap.isNull() || target.isEmpty()) {
+QPixmap TitleCard::rounded(const QPixmap& pixmap, const QSize& logical, qreal dpr) {
+    if (pixmap.isNull() || logical.isEmpty()) {
         return {};
     }
+    const qreal ratio = dpr > 0.0 ? dpr : 1.0;
+    const QSize device = gui::deviceSizeFor(logical, ratio);
+
+    // One smooth resample, straight to the device resolution the label shows.
+    // Scaling to the logical size first and letting Qt enlarge the result on a
+    // HiDPI display was the "soft poster" half of the unpolished report.
+    QPixmap source = pixmap;
+    // The source may itself be a device-pixel raster from another ratio; work in
+    // its own pixels so the scale lands on exactly `device`.
+    source.setDevicePixelRatio(1.0);
     QPixmap scaled =
-        pixmap.scaled(target, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-    const int cropX = qMax(0, (scaled.width() - target.width()) / 2);
-    const int cropY = qMax(0, (scaled.height() - target.height()) / 2);
+        source.scaled(device, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    const int cropX = qMax(0, (scaled.width() - device.width()) / 2);
+    const int cropY = qMax(0, (scaled.height() - device.height()) / 2);
+    scaled.setDevicePixelRatio(ratio);
 
     // Clip to rounded corners matching the card's inner radius so artwork
     // sits seamlessly inside the container without square corners overflowing.
     const theme::Appearance& appearance = currentAppearance();
     const int radius = theme::radiusSmall(appearance);
-    QPixmap out(target);
-    out.fill(Qt::transparent);
+    // Tagged target: the painter below is logical-coordinate only, so the
+    // radius, the shade and the clip stay in the caller's units while the
+    // raster behind them is `ratio` times larger.
+    QPixmap out = gui::pixmapForDevice(logical, ratio);
     QPainter painter(&out);
     painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform);
     QPainterPath path;
-    path.addRoundedRect(QRectF(0, 0, target.width(), target.height()), radius, radius);
+    path.addRoundedRect(QRectF(0, 0, logical.width(), logical.height()), radius, radius);
     painter.setClipPath(path);
     // Draw the centred region directly at its negative offset: the clip is
     // exactly the target box, so the parts outside it are discarded and the
-    // second allocation of scaled.copy() is pure cost.
-    painter.drawPixmap(-cropX, -cropY, scaled);
+    // second allocation of scaled.copy() is pure cost. Both the crop and the
+    // offset divide by the ratio, which keeps the blit one source pixel per
+    // device pixel.
+    painter.drawPixmap(QPointF(-qreal(cropX) / ratio, -qreal(cropY) / ratio), scaled);
     if (appearance.coverGradient) {
         // A bottom shade keeps a bright poster from swallowing the card's own
         // controls; the top stays untouched.
-        QLinearGradient shade(0, target.height() * 0.45, 0, target.height());
+        QLinearGradient shade(0, logical.height() * 0.45, 0, logical.height());
         shade.setColorAt(0.0, QColor(0, 0, 0, 0));
         shade.setColorAt(1.0, QColor(0, 0, 0, 120));
-        painter.fillRect(QRectF(0, target.height() * 0.45, target.width(),
-                                target.height() * 0.55),
+        painter.fillRect(QRectF(0, logical.height() * 0.45, logical.width(),
+                                logical.height() * 0.55),
                          shade);
     }
     return out;

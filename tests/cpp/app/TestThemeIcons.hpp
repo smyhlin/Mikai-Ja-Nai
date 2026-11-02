@@ -3,10 +3,20 @@
 #include <QtTest/QTest>
 
 class TestThemeIcons : public QObject {
-  Q_OBJECT
+    Q_OBJECT
 
  private slots:
   void requestedSizeAndDevicePixelRatioAreRendered();
   void defaultGlyphTracksPaletteChanges();
   void customColorAlphaIsPreservedInCacheKey();
+  void glyphBoxIsPhysicalAtEveryScale();
+  void trailingPadStaysOutsideTheGlyph();
+  void glyphEdgesStayAntialiasedAtFractionalRatio();
+  void noTornColumnsInsideGlyphInk();
+  void chevronKeepsEveryStrokeRowInked();
+  void paintPathsDoNotMultiplyTheDevicePixelRatio();
+  void toggleAndSwatchPaintOnceAtEveryRatio();
+  void artworkFrameIsAllocatedAtTheDeviceSize();
+  void shellGlyphJoinsAreRound();
+  void shellAtmosBadgeStaysInsideItsBox();
 };

@@ -3,10 +3,27 @@
 #include <QBuffer>
 #include <QImageIOHandler>
 #include <QImageReader>
+#include <QtMath>
 
 #include <utility>
 
 namespace mikai::gui {
+
+QSize deviceSizeFor(const QSize& logical, qreal dpr) {
+    if (logical.isEmpty()) return {};
+    const qreal ratio = dpr > 0.0 ? dpr : 1.0;
+    return QSize(qMax(1, qRound(logical.width() * ratio)),
+                 qMax(1, qRound(logical.height() * ratio)));
+}
+
+QPixmap pixmapForDevice(const QSize& logical, qreal dpr) {
+    const qreal ratio = dpr > 0.0 ? dpr : 1.0;
+    QPixmap pixmap(deviceSizeFor(logical, ratio));
+    if (pixmap.isNull()) return pixmap;
+    pixmap.fill(Qt::transparent);
+    pixmap.setDevicePixelRatio(ratio);
+    return pixmap;
+}
 
 DecodedImage decodeImage(const QByteArray& bytes, const QSize& target) {
     QBuffer buffer;

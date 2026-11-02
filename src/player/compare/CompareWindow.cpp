@@ -109,15 +109,25 @@ QString missingCatalogueReason() {
     return QCoreApplication::translate("AnimeJanaiRuntime",
                                        "The selected AnimeJaNai preset is not recognised.");
 }
-QIcon compareFullscreenIcon(bool fullscreen) {
-    QPixmap pixmap(24, 24);
+QIcon compareFullscreenIcon(bool fullscreen, qreal dpr) {
+    // The glyph is a 24-unit design drawn into a 24-logical-pixel box: the
+    // raster must therefore be 24 * DPR device pixels and carry that ratio, or
+    // Qt upscales a 1x bitmap on every HiDPI window. The painter on a tagged
+    // pixmap stays in logical coordinates, so the glyph's own geometry does not
+    // change with the ratio.
+    const qreal ratio = dpr > 0.0 ? dpr : 1.0;
+    const int side = qMax(1, qRound(24.0 * ratio));
+    QPixmap pixmap(side, side);
     pixmap.fill(Qt::transparent);
+    pixmap.setDevicePixelRatio(ratio);
     QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
     if (fullscreen) {
         IconPainter::contract(painter, 0, 0, 24);
     } else {
         IconPainter::expand(painter, 0, 0, 24);
     }
+    painter.end();
     return QIcon(pixmap);
 }
 
@@ -408,7 +418,7 @@ void CompareWindow::syncFullscreenButton() {
     const bool fullscreen = isFullScreen();
     const QSignalBlocker blocker(fullscreenButton_);
     fullscreenButton_->setChecked(fullscreen);
-    fullscreenButton_->setIcon(compareFullscreenIcon(fullscreen));
+    fullscreenButton_->setIcon(compareFullscreenIcon(fullscreen, devicePixelRatioF()));
     const QString hint = fullscreen ? tr("Exit fullscreen mode (F11)")
                                    : tr("Enter fullscreen mode (F11)");
     fullscreenButton_->setToolTip(hint);
@@ -510,6 +520,11 @@ void CompareWindow::changeEvent(QEvent* event) {
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
     } else if (event->type() == QEvent::WindowStateChange) {
+        syncFullscreenButton();
+    } else if (event->type() == QEvent::DevicePixelRatioChange ||
+               event->type() == QEvent::ScreenChangeInternal) {
+        // The icon is rasterised for the window's ratio: a window that moves to
+        // a screen with another ratio rebuilds it instead of upscaling the old.
         syncFullscreenButton();
     }
 }

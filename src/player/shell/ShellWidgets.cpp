@@ -112,10 +112,9 @@ void ChromePaint::paintOwnBackingStore(QWidget* widget) {
     QPainter painter(widget);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::SmoothPixmapTransform);
-    // Enable high-DPI scaling for crisp rendering
-    if (widget->windowHandle()) {
-        painter.setWorldTransform(painter.worldTransform() * widget->windowHandle()->devicePixelRatio());
-    }
+    // The painter is already in logical coordinates with the window's device
+    // pixel ratio applied. Scaling the world transform by the DPR again would
+    // double the chrome at any DPR > 1 and make the transform projective.
     paintChrome(painter);
 }
 

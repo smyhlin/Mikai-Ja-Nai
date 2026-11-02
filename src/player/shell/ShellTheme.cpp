@@ -44,13 +44,9 @@ QColor resolve(const QColor& c, const QColor& token) { return c.isValid() ? c : 
 
 /// Pen for a glyph: width is expressed in 24-grid units, and the painter is
 /// already scaled by size/24, so dividing by `k` keeps the stroke optically
-/// even at any requested pixel size.
+/// even at any requested pixel size. Joins are round like the caps: a miter at
+/// a 90-degree vertex reaches past the stroke and reads as a spike at 16-24 px.
 QPen glyphPen(const QColor& color, double width) {
-    return QPen(color, width, Qt::SolidLine, Qt::RoundCap);
-}
-
-/// Same, plus the round joins used by the base stroke state.
-QPen strokePen(const QColor& color, double width) {
     return QPen(color, width, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
 }
 
@@ -89,7 +85,7 @@ void IconPainter::stroke(QPainter& p, qreal x, qreal y, qreal size, qreal width)
     const qreal k = size / 24.0;
     p.scale(k, k);
     p.setBrush(Qt::NoBrush);
-    p.setPen(strokePen(w90(), width / k));
+    p.setPen(glyphPen(w90(), width / k));
 }
 
 void IconPainter::fill(QPainter& p, qreal x, qreal y, qreal size) {
@@ -369,18 +365,20 @@ void IconPainter::dolbyVision(QPainter& p, qreal x, qreal y, qreal s, const QCol
 }
 
 void IconPainter::dolbyAtmos(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
-    // Dolby Atmos badge: "A" in a circle
+    // Dolby Atmos badge: "A" in a circle. The circle is inset inside the 24-unit
+    // box the way the HDR and DV plates are: a badge whose antialiased fringe
+    // lands on the box edge is painted into the clip and loses that fringe.
     const QColor color = resolve(c, QColor(0, 156, 224));  // cyan-blue
     fill(p, x, y, s);
     p.setPen(Qt::NoPen);
     p.setBrush(QBrush(color));
-    p.drawEllipse(QRectF(2, 4, 20, 20));
+    p.drawEllipse(QRectF(3, 4, 16, 16));
     p.setPen(glyphPen(white(255), 1.6 * 24 / s));
     QFont font = p.font();
     font.setBold(true);
-    font.setPixelSize(static_cast<int>(14 * s / 24));
+    font.setPixelSize(static_cast<int>(12 * s / 24));
     p.setFont(font);
-    p.drawText(QRectF(2, 4, 20, 20), Qt::AlignCenter, QStringLiteral("A"));
+    p.drawText(QRectF(3, 4, 16, 16), Qt::AlignCenter, QStringLiteral("A"));
     p.restore();
 }
 

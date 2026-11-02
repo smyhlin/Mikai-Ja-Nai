@@ -1,11 +1,30 @@
 #include "TestThemeIcons.hpp"
 
+#include "state/AppearanceStore.hpp"
 #include "theme/Icons.hpp"
+#include "theme/Metrics.hpp"
+#include "theme/Palette.hpp"
+#include "widgets/SwatchButton.hpp"
+#include "widgets/TitleCard.hpp"
+#include "widgets/ToggleSwitch.hpp"
+
+#include <player/shell/ShellTheme.hpp>
 
 #include <QApplication>
+#include <QColor>
+#include <QDir>
+#include <QFile>
 #include <QImage>
+#include <QPainter>
+#include <QPair>
 #include <QPalette>
 #include <QPixmap>
+#include <QRect>
+#include <QStringList>
+#include <QtMath>
+
+#include <cmath>
+#include <limits>
 
 namespace {
 
@@ -22,6 +41,78 @@ bool containsColor(const QPixmap& pixmap, const QColor& color) {
     }
   }
   return false;
+}
+
+int alphaAt(const QImage& image, int x, int y) {
+  if (x < 0 || y < 0 || x >= image.width() || y >= image.height()) return 0;
+  return image.pixelColor(x, y).alpha();
+}
+
+/// Pixels the raster has touched, or an invalid rect when it is empty.
+QRect inkBounds(const QImage& image) {
+  int left = image.width();
+  int top = image.height();
+  int right = -1;
+  int bottom = -1;
+  for (int y = 0; y < image.height(); ++y) {
+    for (int x = 0; x < image.width(); ++x) {
+      if (image.pixelColor(x, y).alpha() == 0) continue;
+      left = qMin(left, x);
+      top = qMin(top, y);
+      right = qMax(right, x);
+      bottom = qMax(bottom, y);
+    }
+  }
+  if (right < left || bottom < top) return {};
+  return QRect(QPoint(left, top), QPoint(right, bottom));
+}
+
+/// Pixels an antialiased edge leaves between clear and solid. A nearest-neighbour
+/// resample of a vector glyph leaves almost none.
+int intermediateAlphaCount(const QImage& image) {
+  int count = 0;
+  for (int y = 0; y < image.height(); ++y) {
+    for (int x = 0; x < image.width(); ++x) {
+      const int alpha = image.pixelColor(x, y).alpha();
+      if (alpha > 12 && alpha < 243) ++count;
+    }
+  }
+  return count;
+}
+
+/// Renders a widget into a device-sized image tagged with `ratio`, which is how
+/// a HiDPI screen sees it.
+QImage renderAt(QWidget& widget, qreal ratio) {
+  const QSize logical = widget.size();
+  QImage image(QSize(qMax(1, qRound(logical.width() * ratio)),
+                     qMax(1, qRound(logical.height() * ratio))),
+               QImage::Format_ARGB32_Premultiplied);
+  image.fill(Qt::transparent);
+  image.setDevicePixelRatio(ratio);
+  QPainter painter(&image);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+  widget.render(&painter);
+  painter.end();
+  return image;
+}
+
+/// The mean x of the pixels that are exactly `color`: where a shape was drawn.
+qreal centroidX(const QImage& image, const QColor& color) {
+  qreal sum = 0.0;
+  int count = 0;
+  for (int y = 0; y < image.height(); ++y) {
+    for (int x = 0; x < image.width(); ++x) {
+      const QColor pixel = image.pixelColor(x, y);
+      if (pixel.alpha() != 255) continue;
+      if (qAbs(pixel.red() - color.red()) > 2 || qAbs(pixel.green() - color.green()) > 2 ||
+          qAbs(pixel.blue() - color.blue()) > 2) {
+        continue;
+      }
+      sum += x;
+      ++count;
+    }
+  }
+  return count == 0 ? -1.0 : sum / count;
 }
 
 bool containsColorAtAlpha(const QPixmap& pixmap, const QColor& color) {
@@ -63,6 +154,327 @@ void TestThemeIcons::customColorAlphaIsPreservedInCacheKey() {
                            .pixmap(QSize(25, 25));
   QVERIFY(containsColorAtAlpha(low, lowAlpha));
   QVERIFY(containsColorAtAlpha(high, highAlpha));
+}
+
+void TestThemeIcons::glyphBoxIsPhysicalAtEveryScale() {
+  // The contract the user approved: the icon box is rasterised at the screen's
+  // own ratio, in exactly qRound(logical * dpr) device pixels, tagged with that
+  // same ratio. The glyph inside it is square in physical pixels, so no ratio can
+  // stretch it, and the pad is the only extra width.
+  const QList<qreal> scales = {1.0, 1.25, 1.5, 1.75, 2.0};
+  const QColor ink(QStringLiteral("#ffffff"));
+  const int pad = mikai::app::theme::kSearchIconGlyphPad;
+  // The boxes the application really asks for: the padded header action, the
+  // unpadded square, and the menu chevron.
+  const QList<QPair<QSize, int>> requests = {
+      {QSize(mikai::app::theme::kSearchIconSize + pad, mikai::app::theme::kSearchIconSize), pad},
+      {QSize(mikai::app::theme::kSearchIconSize, mikai::app::theme::kSearchIconSize), 0},
+      {QSize(mikai::app::theme::kSearchMenuChevronSize,
+             mikai::app::theme::kSearchMenuChevronSize),
+       0},
+  };
+
+  for (const qreal scale : scales) {
+    for (const QPair<QSize, int>& request : requests) {
+      const QSize box = request.first;
+      const int gap = request.second;
+      const QIcon icon =
+          mikai::app::theme::searchIcon(mikai::app::theme::kSearchIconSize, ink.name(), gap);
+      QCOMPARE(icon.actualSize(box), box);
+
+      const QPixmap pixmap = icon.pixmap(box, scale);
+      QVERIFY2(!pixmap.isNull(), "no raster for a requested box");
+      const QSize expected(qRound(box.width() * scale), qRound(box.height() * scale));
+      QVERIFY2(pixmap.size() == expected,
+               qPrintable(QStringLiteral("%1x%2 device px, expected %3x%4 at %5")
+                              .arg(pixmap.width())
+                              .arg(pixmap.height())
+                              .arg(expected.width())
+                              .arg(expected.height())
+                              .arg(scale)));
+      QVERIFY2(qFuzzyCompare(pixmap.devicePixelRatio(), scale),
+               qPrintable(QStringLiteral("tagged %1, screen asks %2")
+                              .arg(pixmap.devicePixelRatio())
+                              .arg(scale)));
+
+      const QRect bounds = inkBounds(pixmap.toImage());
+      QVERIFY2(bounds.isValid(), "the glyph left no ink");
+      const int padColumns = expected.width() - qRound(box.height() * scale);
+      QVERIFY2(padColumns >= 0, "the box is narrower than its glyph");
+      QVERIFY2(bounds.right() < expected.width() - padColumns,
+               "glyph ink reached into the trailing pad");
+      // Square in physical pixels: the glyph is never stretched to fill the pad.
+      QVERIFY2(qAbs(bounds.width() - bounds.height()) <= 2,
+               qPrintable(QStringLiteral("ink %1x%2 is not square at %3")
+                              .arg(bounds.width())
+                              .arg(bounds.height())
+                              .arg(scale)));
+    }
+  }
+}
+
+void TestThemeIcons::trailingPadStaysOutsideTheGlyph() {
+  const int gap = mikai::app::theme::kSearchIconGlyphPad;
+  const QSize box(mikai::app::theme::kSearchIconSize + gap,
+                  mikai::app::theme::kSearchIconSize);
+  const QIcon icon = mikai::app::theme::searchIcon(
+      mikai::app::theme::kSearchIconSize, QStringLiteral("#ffffff"), gap);
+
+  for (const qreal scale : {1.0, 1.25, 1.5, 2.0}) {
+    const QPixmap pixmap = icon.pixmap(box, scale);
+    const QImage image = pixmap.toImage();
+    const int padColumns = pixmap.width() - pixmap.height();
+    QVERIFY2(padColumns > 0, "the trailing pad is missing from the raster");
+    const QRect bounds = inkBounds(image);
+    QVERIFY2(bounds.isValid(), "the glyph left no ink");
+    QVERIFY2(bounds.right() < pixmap.width() - padColumns,
+             "glyph ink reached into the trailing pad");
+    // The glyph itself stays square: a wider box must not stretch it.
+    QVERIFY2(qAbs(bounds.width() - bounds.height()) <= 2,
+             qPrintable(QStringLiteral("ink %1x%2 is not square")
+                            .arg(bounds.width())
+                            .arg(bounds.height())));
+  }
+}
+
+void TestThemeIcons::glyphEdgesStayAntialiasedAtFractionalRatio() {
+  const QIcon icon =
+      mikai::app::theme::playIcon(mikai::app::theme::kSearchIconSize, QStringLiteral("#ffffff"));
+  const QSize box(mikai::app::theme::kSearchIconSize, mikai::app::theme::kSearchIconSize);
+  for (const qreal scale : {1.25, 1.75}) {
+    const QImage image = icon.pixmap(box, scale).toImage();
+    QVERIFY2(intermediateAlphaCount(image) > 4,
+             qPrintable(QStringLiteral("no antialiased edge at %1").arg(scale)));
+  }
+}
+
+void TestThemeIcons::noTornColumnsInsideGlyphInk() {
+  // The keyboard glyph is a closed outline, so every column and row between its
+  // ink bounds carries ink. A resample that drops or duplicates columns shows up
+  // as a hole there.
+  const QIcon icon =
+      mikai::app::theme::keyboardIcon(mikai::app::theme::kIconSize, QStringLiteral("#e8e8f0"));
+  const qreal ratio = 1.25;
+  QImage image(qRound(22 * ratio), qRound(18 * ratio), QImage::Format_ARGB32_Premultiplied);
+  image.fill(Qt::transparent);
+  image.setDevicePixelRatio(ratio);
+  QPainter painter(&image);
+  icon.paint(&painter, QRect(0, 0, 22, 18));
+  painter.end();
+
+  const QRect bounds = inkBounds(image);
+  QVERIFY2(bounds.isValid(), "the glyph left no ink");
+  for (int x = bounds.left(); x <= bounds.right(); ++x) {
+    int peak = 0;
+    for (int y = bounds.top(); y <= bounds.bottom(); ++y) {
+      peak = qMax(peak, alphaAt(image, x, y));
+    }
+    QVERIFY2(peak > 0, qPrintable(QStringLiteral("transparent column %1 inside the glyph").arg(x)));
+  }
+  for (int y = bounds.top(); y <= bounds.bottom(); ++y) {
+    int peak = 0;
+    for (int x = bounds.left(); x <= bounds.right(); ++x) {
+      peak = qMax(peak, alphaAt(image, x, y));
+    }
+    QVERIFY2(peak > 0, qPrintable(QStringLiteral("transparent row %1 inside the glyph").arg(y)));
+  }
+}
+
+void TestThemeIcons::chevronKeepsEveryStrokeRowInked() {
+  const int side = mikai::app::theme::kSearchMenuChevronSize;
+  const QIcon icon = mikai::app::theme::chevronDownIcon(side, QStringLiteral("#c8c8d0"));
+  for (const qreal ratio : {1.0, 1.25, 1.5}) {
+    const QImage image = icon.pixmap(QSize(side, side), ratio).toImage();
+    const QRect bounds = inkBounds(image);
+    QVERIFY2(bounds.isValid(), "the chevron left no ink");
+    // The V's two arms plus the apex: at 12 px that is four or five rows, and the
+    // outermost ones are the round caps, which taper by design.
+    QVERIFY(bounds.height() >= 4);
+    for (int y = bounds.top() + 1; y < bounds.bottom(); ++y) {
+      int peak = 0;
+      for (int x = bounds.left(); x <= bounds.right(); ++x) {
+        peak = qMax(peak, alphaAt(image, x, y));
+      }
+      QVERIFY2(peak >= 128,
+               qPrintable(QStringLiteral("stroke row %1 at %2 is %.0f%% covered")
+                              .arg(y)
+                              .arg(ratio)
+                              .arg(peak * 100.0 / 255.0)));
+    }
+  }
+}
+
+void TestThemeIcons::paintPathsDoNotMultiplyTheDevicePixelRatio() {
+#ifdef MIKAI_SOURCE_DIR
+  // A widget painter is already in logical coordinates. `worldTransform() * dpr`
+  // scales all nine matrix entries, doubling the drawing and turning the
+  // transform projective, so the pattern is banned outright.
+  const QStringList files = {
+      QStringLiteral("src/app/widgets/ToggleSwitch.cpp"),
+      QStringLiteral("src/app/widgets/SwatchButton.cpp"),
+      QStringLiteral("src/player/shell/ShellWidgets.cpp"),
+  };
+  for (const QString& relative : files) {
+    QFile file(QDir(QStringLiteral(MIKAI_SOURCE_DIR)).filePath(relative));
+    QVERIFY2(file.open(QIODevice::ReadOnly | QIODevice::Text),
+             qPrintable(QStringLiteral("cannot read %1").arg(relative)));
+    const QString body = QString::fromUtf8(file.readAll());
+    QVERIFY2(!body.contains(QStringLiteral("worldTransform() *")),
+             qPrintable(QStringLiteral("%1 multiplies the painter by the device pixel ratio")
+                            .arg(relative)));
+  }
+#else
+  QSKIP("MIKAI_SOURCE_DIR is not defined");
+#endif
+}
+
+void TestThemeIcons::toggleAndSwatchPaintOnceAtEveryRatio() {
+  const mikai::app::theme::Palette palette =
+      mikai::app::theme::paletteFor(mikai::app::currentAppearance());
+
+  for (const qreal ratio : {1.0, 1.25, 1.5, 2.0}) {
+    mikai::app::ToggleSwitch toggle;
+    toggle.resize(mikai::app::theme::kSettingsSwitchWidth,
+                  mikai::app::theme::kSettingsSwitchHeight);
+    const QImage track = renderAt(toggle, ratio);
+    // A second DPR multiplication draws the track past the widget and clips it,
+    // leaving a solid column on the boundary.
+    for (int y = 0; y < track.height(); ++y) {
+      QVERIFY2(alphaAt(track, track.width() - 1, y) < 250,
+               qPrintable(QStringLiteral("toggle clipped at %1 on the right").arg(ratio)));
+    }
+    // The knob is drawn once, at its logical position.
+    const qreal knobX = centroidX(track, QColor(palette.muted));
+    QVERIFY2(knobX >= 0.0, "the knob was not painted");
+    const qreal expected = 10.5 * ratio;
+    QVERIFY2(qAbs(knobX - expected) <= 2.5,
+             qPrintable(QStringLiteral("knob at %1, expected %2 at %3")
+                            .arg(knobX)
+                            .arg(expected)
+                            .arg(ratio)));
+
+    mikai::app::SwatchButton swatch(QColor(200, 40, 90));
+    swatch.resize(mikai::app::theme::kSettingsSwatchSize,
+                  mikai::app::theme::kSettingsSwatchSize);
+    const QImage chip = renderAt(swatch, ratio);
+    for (int y = 0; y < chip.height(); ++y) {
+      QVERIFY2(alphaAt(chip, 0, y) == 0,
+               qPrintable(QStringLiteral("swatch clipped on the left at %1").arg(ratio)));
+      QVERIFY2(alphaAt(chip, chip.width() - 1, y) == 0,
+               qPrintable(QStringLiteral("swatch clipped on the right at %1").arg(ratio)));
+    }
+    const QRect chipInk = inkBounds(chip);
+    QVERIFY2(chipInk.isValid(), "the swatch was not painted");
+    QVERIFY2(qAbs(chipInk.left() - 3.0 * ratio) <= 2.0,
+             qPrintable(QStringLiteral("swatch body starts at %1 instead of %2")
+                            .arg(chipInk.left())
+                            .arg(3.0 * ratio)));
+  }
+}
+
+void TestThemeIcons::artworkFrameIsAllocatedAtTheDeviceSize() {
+  // The home card poster: an 80x114 slot must own a 160x228 raster at 200 %,
+  // not an 80x114 one that Qt upscales. The frame is also painted from logical
+  // coordinates, which is what keeps the corner radius and the shade readable.
+  QImage source(320, 456, QImage::Format_ARGB32_Premultiplied);
+  source.fill(QColor(30, 90, 200));
+  const QPixmap pixmap = QPixmap::fromImage(source);
+  const QSize logical(mikai::app::theme::kHomePosterWidth,
+                      mikai::app::theme::kHomePosterHeight);
+
+  for (const qreal ratio : {1.0, 1.25, 1.5, 2.0}) {
+    const QPixmap frame = mikai::app::TitleCard::rounded(pixmap, logical, ratio);
+    QVERIFY2(!frame.isNull(), "no card frame was painted");
+    QVERIFY2(qFuzzyCompare(frame.devicePixelRatio(), ratio), "the frame carries another ratio");
+    QCOMPARE(frame.size(), QSize(qRound(logical.width() * ratio),
+                                qRound(logical.height() * ratio)));
+    const QImage image = frame.toImage();
+    // Rounded corners are clipped, so the outermost pixel is clear while the
+    // middle of the artwork is solid: the clip ran in logical coordinates.
+    QVERIFY2(alphaAt(image, 0, 0) == 0, "the frame's corner is not rounded");
+    QVERIFY2(alphaAt(image, image.width() / 2, image.height() / 4) > 200,
+             "the frame's artwork is missing");
+  }
+}
+
+void TestThemeIcons::shellGlyphJoinsAreRound() {
+  // expand() is a polyline, so its corners are real joins. A miter reaches past
+  // the stroke's half-width, so solid ink must never appear outside the round
+  // envelope of the segments. (At the shell's constant 2.25 px stroke the excess
+  // a miter adds is under one pixel of antialiasing, which is why the threshold
+  // is a fully opaque one: this stays a real guard if a stroke grows.)
+  const QList<QPointF> segments = {
+      QPointF(15, 3),  QPointF(21, 3),    // polyline 1, arm 1
+      QPointF(21, 3),  QPointF(21, 9),    // polyline 1, arm 2
+      QPointF(9, 21),  QPointF(3, 21),    // polyline 2, arm 1
+      QPointF(3, 21),  QPointF(3, 15),    // polyline 2, arm 2
+      QPointF(21, 3),  QPointF(14, 10),   // diagonal
+      QPointF(3, 21),  QPointF(10, 14),   // diagonal
+  };
+  for (const int side : {24, 30}) {
+    QPixmap pixmap(side, side);
+    pixmap.fill(Qt::transparent);
+    {
+      QPainter painter(&pixmap);
+      painter.setRenderHint(QPainter::Antialiasing, true);
+      mplayer::shell::IconPainter::expand(painter, 0, 0, side);
+    }
+    const QImage image = pixmap.toImage();
+    const qreal k = side / 24.0;
+    const qreal halfWidth = 2.25 / 2.0;
+    int solid = 0;
+    for (int y = 0; y < image.height(); ++y) {
+      for (int x = 0; x < image.width(); ++x) {
+        if (image.pixelColor(x, y).alpha() < 250) continue;
+        ++solid;
+        const QPointF at(x + 0.5, y + 0.5);
+        qreal nearest = std::numeric_limits<qreal>::max();
+        for (int i = 0; i + 1 < segments.size(); i += 2) {
+          const QPointF a(segments.at(i).x() * k, segments.at(i).y() * k);
+          const QPointF b(segments.at(i + 1).x() * k, segments.at(i + 1).y() * k);
+          const QPointF ab = b - a;
+          const qreal lengthSquared = ab.x() * ab.x() + ab.y() * ab.y();
+          qreal t = lengthSquared > 0.0
+                        ? ((at.x() - a.x()) * ab.x() + (at.y() - a.y()) * ab.y()) / lengthSquared
+                        : 0.0;
+          t = qBound(0.0, t, 1.0);
+          const QPointF closest(a.x() + ab.x() * t, a.y() + ab.y() * t);
+          const qreal dx = at.x() - closest.x();
+          const qreal dy = at.y() - closest.y();
+          nearest = qMin(nearest, std::sqrt(dx * dx + dy * dy));
+        }
+        QVERIFY2(nearest <= halfWidth + 0.75,
+                 qPrintable(QStringLiteral("solid ink %1 px from a stroke at %2 px")
+                                .arg(nearest)
+                                .arg(side)));
+      }
+    }
+    QVERIFY2(solid > 20, "the glyph did not paint");
+  }
+}
+
+void TestThemeIcons::shellAtmosBadgeStaysInsideItsBox() {
+  for (const int side : {24, 48}) {
+    QPixmap pixmap(side, side);
+    pixmap.fill(Qt::transparent);
+    {
+      QPainter painter(&pixmap);
+      painter.setRenderHint(QPainter::Antialiasing, true);
+      mplayer::shell::IconPainter::dolbyAtmos(painter, 0, 0, side);
+    }
+    const QImage image = pixmap.toImage();
+    for (int i = 0; i < side; ++i) {
+      QVERIFY2(alphaAt(image, 0, i) == 0,
+               qPrintable(QStringLiteral("badge ink on the left edge at %1").arg(side)));
+      QVERIFY2(alphaAt(image, side - 1, i) == 0,
+               qPrintable(QStringLiteral("badge ink on the right edge at %1").arg(side)));
+      QVERIFY2(alphaAt(image, i, 0) == 0,
+               qPrintable(QStringLiteral("badge ink on the top edge at %1").arg(side)));
+      QVERIFY2(alphaAt(image, i, side - 1) == 0,
+               qPrintable(QStringLiteral("badge ink on the bottom edge at %1").arg(side)));
+    }
+    QVERIFY2(inkBounds(image).isValid(), "the badge did not paint");
+  }
 }
 
 void TestThemeIcons::defaultGlyphTracksPaletteChanges() {

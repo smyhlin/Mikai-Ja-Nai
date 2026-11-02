@@ -1,3 +1,18 @@
+// Painted application glyphs.
+//
+// Every glyph below is drawn on a 24-unit grid and rendered once into a
+// device-pixel raster by GlyphIconEngine, so the authoring rules are about the
+// stroke a viewer finally sees:
+//
+//   * A stroke never falls below 1.0 *device* pixel at the smallest size the
+//     glyph ships at (18 px for the header and settings chips, 12 px for the
+//     menu chevron). On the 24-unit grid that is 24 / smallest-size grid units
+//     - 1.33 units at 18 px - so a hairline like 1.4 units is the floor, and a
+//     dot or cap needs a radius of at least half of it.
+//   * Anything with a corner is stroked with round caps and round joins: at
+//     these sizes a miter join grows longer than the stroke and reads as a tear.
+//   * Fine detail (a sawtooth, a dot row) is reduced to shapes that survive the
+//     smallest size rather than trusting antialiasing to keep it legible.
 #include "theme/Icons.hpp"
 
 #include "theme/Colors.hpp"
@@ -12,6 +27,7 @@
 #include <QPixmap>
 #include <QPixmapCache>
 #include <QtMath>
+#include <QPointF>
 #include <QPolygonF>
 #include <QRectF>
 #include <QTransform>
@@ -68,25 +84,39 @@ QPixmap renderGear(int size, const QColor& color) {
     return pixmap;
 }
 
+/// The outline gear: a ring, eight capsule teeth and a hub, all stroked with
+/// round caps. The 32-vertex sawtooth this replaced could not survive 18 px -
+/// its teeth were two thirds of a pixel wide and the polygon's own joins spiked
+/// past them, so the settings chip showed a star instead of a gear.
 QPixmap renderOutlineGear(int size, const QColor& color) {
     QPixmap pixmap(size, size);
     pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.scale(size / 24.0, size / 24.0);
-    QPen pen(color);
-    pen.setWidthF(1.5);
-    pen.setJoinStyle(Qt::RoundJoin);
-    painter.setPen(pen);
-    painter.setBrush(Qt::NoBrush);
-    QPolygonF outline;
-    for (int i = 0; i < 32; ++i) {
-        const qreal angle = 2.0 * M_PI * i / 32.0;
-        const qreal radius = i % 4 == 1 || i % 4 == 2 ? 10.0 : 8.0;
-        outline << QPointF(12.0 + radius * qCos(angle), 12.0 + radius * qSin(angle));
+
+    constexpr int kTeeth = 8;
+    constexpr qreal kCentre = 12.0;
+    constexpr qreal kToothWidth = 2.4;
+    // The teeth start inside the ring so the two strokes merge into one shape.
+    constexpr qreal kToothInner = 6.6;
+    constexpr qreal kToothOuter = 10.4;
+
+    QPen toothPen(color, kToothWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    painter.setPen(toothPen);
+    for (int index = 0; index < kTeeth; ++index) {
+        const qreal angle = 2.0 * M_PI * index / kTeeth;
+        const qreal dx = qCos(angle);
+        const qreal dy = qSin(angle);
+        painter.drawLine(QPointF(kCentre + kToothInner * dx, kCentre + kToothInner * dy),
+                         QPointF(kCentre + kToothOuter * dx, kCentre + kToothOuter * dy));
     }
-    painter.drawPolygon(outline);
-    painter.drawEllipse(QPointF(12.0, 12.0), 2.8, 2.8);
+
+    QPen ringPen(color, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    painter.setPen(ringPen);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawEllipse(QPointF(kCentre, kCentre), 6.8, 6.8);
+    painter.drawEllipse(QPointF(kCentre, kCentre), 2.9, 2.9);
     painter.end();
     return pixmap;
 }
@@ -109,12 +139,15 @@ QPixmap renderKeyboard(int size, const QColor& color) {
     painter.setBrush(Qt::NoBrush);
     painter.drawRoundedRect(QRectF(2.5, 6.5, 19.0, 11.0), 2.0, 2.0);
 
+    // Three keys rather than four dots: a dot that reads at all at 18 px needs a
+    // radius of 1.4 grid units (1.05 px), and four of those do not fit the
+    // keycap's 19 units without merging into a bar.
     painter.setPen(Qt::NoPen);
     painter.setBrush(color);
-    for (const double cx : {6.5, 9.7, 12.9, 16.1}) {
-        painter.drawEllipse(QPointF(cx, 10.0), 0.85, 0.85);
+    for (const double cx : {8.0, 12.0, 16.0}) {
+        painter.drawEllipse(QPointF(cx, 10.0), 1.4, 1.4);
     }
-    painter.drawRoundedRect(QRectF(8.0, 13.8, 8.0, 1.4), 0.7, 0.7);
+    painter.drawRoundedRect(QRectF(8.0, 13.6, 8.0, 1.6), 0.8, 0.8);
 
     painter.end();
     return pixmap;
@@ -317,12 +350,20 @@ QPixmap renderChevronDown(int size, const QColor& color) {
     const double scale = size / 24.0;
     painter.scale(scale, scale);
 
+    // 2.4 grid units is 1.2 px at the menu chevron's 12 px: the 2.0-unit stroke
+    // this replaced was 0.83 px at 10 px, thin enough that whole device columns
+    // rounded away and the V read as a dashed line.
+    const double stroke = 2.4;
     QPen pen(color);
-    pen.setWidthF(2.0);
+    pen.setWidthF(stroke);
     pen.setCapStyle(Qt::RoundCap);
     pen.setJoinStyle(Qt::RoundJoin);
     painter.setPen(pen);
     painter.setBrush(Qt::NoBrush);
+
+    // Half a device pixel of shift puts the stroke's edges on pixel boundaries,
+    // so the antialiasing ramp down the V is even instead of one-sided.
+    painter.translate(0.5 / scale, 0.5 / scale);
 
     QPainterPath path;
     path.moveTo(7.0, 10.0);
@@ -381,6 +422,40 @@ enum class Glyph {
     ChevronDown
 };
 
+/// The icon box a request asks for, in logical pixels: the glyph is square and
+/// takes the box height, the trailing pad is transparent columns on its trailing
+/// side and never widens the glyph.
+QSize glyphLogicalBox(const QSize& requested, int trailingGap) {
+    const int side = qMax(1, qMin(requested.width() - trailingGap, requested.height()));
+    return QSize(qMax(1, qMin(requested.width(), side + trailingGap)), side);
+}
+
+/// Rounds a logical position onto the device-pixel grid so a blit lands on whole
+/// device pixels instead of being resampled across two of them.
+QPointF snapToDeviceGrid(QPointF logical, const QPaintDevice* device) {
+    const qreal dpr = device != nullptr ? device->devicePixelRatioF() : 1.0;
+    if (!(dpr > 0.0)) return logical;
+    return QPointF(qRound(logical.x() * dpr) / dpr, qRound(logical.y() * dpr) / dpr);
+}
+
+QPixmap renderGlyph(Glyph glyph, int side, const QColor& color) {
+    switch (glyph) {
+        case Glyph::Gear: return renderGear(side, color);
+        case Glyph::OutlineGear: return renderOutlineGear(side, color);
+        case Glyph::Keyboard: return renderKeyboard(side, color);
+        case Glyph::Sliders: return renderSliders(side, color);
+        case Glyph::Package: return renderPackage(side, color);
+        case Glyph::ChevronLeft: return renderChevron(side, color, true);
+        case Glyph::ChevronRight: return renderChevron(side, color, false);
+        case Glyph::Search: return renderSearch(side, color);
+        case Glyph::Filter: return renderFilter(side, color);
+        case Glyph::Teams: return renderTeams(side, color);
+        case Glyph::Play: return renderPlay(side, color);
+        case Glyph::ChevronDown: return renderChevronDown(side, color);
+    }
+    return {};
+}
+
 class GlyphIconEngine final : public QIconEngine {
 public:
     GlyphIconEngine(Glyph glyph, QColor normal, QColor active, QColor disabled,
@@ -395,14 +470,32 @@ public:
     void paint(QPainter* painter, const QRect& rect, QIcon::Mode mode,
                QIcon::State state) override {
         if (painter == nullptr || !painter->isActive() || rect.isEmpty()) return;
-        const qreal scale = painter->device() != nullptr
-                                ? painter->device()->devicePixelRatioF()
-                                : 1.0;
-        painter->drawPixmap(rect, scaledPixmap(rect.size(), mode, state, scale));
+        const QPaintDevice* device = painter->device();
+        const qreal scale = device != nullptr ? device->devicePixelRatioF() : 1.0;
+        const QPixmap pixmap = scaledPixmap(rect.size(), mode, state, scale);
+        if (pixmap.isNull()) return;
+        const qreal ratio = pixmap.devicePixelRatio() > 0.0 ? pixmap.devicePixelRatio() : 1.0;
+        const qreal height = qreal(pixmap.height()) / ratio;
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        // The raster is tagged with the painter's own ratio, so drawing it at its
+        // natural size is a straight device-pixel copy. Smoothing stays as the
+        // safety net for a style that hands a rect actualSize() did not ask for.
+        painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
+        // Drawn at the raster's own logical size: the glyph keeps its square
+        // aspect and the blit stays one raster pixel per screen pixel. Filling
+        // `rect` instead would stretch the box - which is not square, because it
+        // carries the trailing pad - across both axes by different factors.
+        const QPointF at(rect.x(), rect.y() + (rect.height() - height) / 2.0);
+        painter->drawPixmap(snapToDeviceGrid(at, device), pixmap);
+        painter->restore();
     }
 
     QPixmap pixmap(const QSize& size, QIcon::Mode mode, QIcon::State state) override {
-        return scaledPixmap(size, mode, state, 1.0);
+        // A caller that does not name a ratio gets the screen's own: hardcoding
+        // 1.0 here returns a 1x raster that a HiDPI label upscales.
+        const qreal scale = qApp != nullptr ? qApp->devicePixelRatio() : 1.0;
+        return scaledPixmap(size, mode, state, scale);
     }
 
     QPixmap scaledPixmap(const QSize& size, QIcon::Mode mode, QIcon::State state,
@@ -410,11 +503,19 @@ public:
         const QColor color = mode == QIcon::Disabled ? disabled_
                             : mode == QIcon::Active || mode == QIcon::Selected ? active_
                                                                               : normal_;
+        const qreal ratio = scale > 0.0 ? scale : 1.0;
+        const QSize logical = glyphLogicalBox(size, trailingGap_);
+        // The whole box is rasterised at the screen's own ratio, in whole device
+        // pixels. Tagging the raster with that same ratio is what makes the blit
+        // in paint() one raster pixel per screen pixel: the glyph is drawn at the
+        // screen's resolution instead of being resampled from another one.
+        const QSize device(qMax(1, qRound(logical.width() * ratio)),
+                           qMax(1, qRound(logical.height() * ratio)));
         const QString cacheKey = QStringLiteral("mikai-glyph:%1:%2x%3:%4:%5:%6:%7:%8")
                                      .arg(static_cast<int>(glyph_))
-                                     .arg(size.width())
-                                     .arg(size.height())
-                                     .arg(scale, 0, 'g', 8)
+                                     .arg(device.width())
+                                     .arg(device.height())
+                                     .arg(ratio, 0, 'g', 8)
                                      .arg(static_cast<int>(mode))
                                      .arg(static_cast<int>(state))
                                      .arg(color.name(QColor::HexArgb))
@@ -422,42 +523,27 @@ public:
         QPixmap pixmap;
         if (QPixmapCache::find(cacheKey, &pixmap)) return pixmap;
 
-        const int logicalSize = qMax(1, qMin(size.width(), size.height()));
-        const int pixelSize = qMax(1, qCeil(logicalSize * scale));
-        switch (glyph_) {
-            case Glyph::Gear: pixmap = renderGear(pixelSize, color); break;
-            case Glyph::OutlineGear: pixmap = renderOutlineGear(pixelSize, color); break;
-            case Glyph::Keyboard: pixmap = renderKeyboard(pixelSize, color); break;
-            case Glyph::Sliders: pixmap = renderSliders(pixelSize, color); break;
-            case Glyph::Package: pixmap = renderPackage(pixelSize, color); break;
-            case Glyph::ChevronLeft: pixmap = renderChevron(pixelSize, color, true); break;
-            case Glyph::ChevronRight: pixmap = renderChevron(pixelSize, color, false); break;
-            case Glyph::Search: pixmap = renderSearch(pixelSize, color); break;
-            case Glyph::Filter: pixmap = renderFilter(pixelSize, color); break;
-            case Glyph::Teams: pixmap = renderTeams(pixelSize, color); break;
-            case Glyph::Play: pixmap = renderPlay(pixelSize, color); break;
-            case Glyph::ChevronDown: pixmap = renderChevronDown(pixelSize, color); break;
-        }
-        if (trailingGap_ > 0) {
+        // The glyph is square in physical pixels - the box's device height - so
+        // no ratio can squash it; the remaining device columns are the pad.
+        pixmap = renderGlyph(glyph_, device.height(), color);
+        if (pixmap.width() != device.width() || pixmap.height() != device.height()) {
             // A button that draws icon and label itself owns the spacing between
             // them; the style's own gap is not adjustable, so the glyph carries
-            // the header's difference as transparent pixels.
-            const int extra = qMax(1, qCeil(trailingGap_ * scale));
-            QPixmap padded(pixmap.width() + extra, pixmap.height());
+            // the header's difference as transparent columns on its trailing side.
+            QPixmap padded(device);
             padded.fill(Qt::transparent);
             QPainter painter(&padded);
             painter.drawPixmap(0, 0, pixmap);
             painter.end();
             pixmap = padded;
         }
-        pixmap.setDevicePixelRatio(scale);
+        pixmap.setDevicePixelRatio(ratio);
         QPixmapCache::insert(cacheKey, pixmap);
         return pixmap;
     }
 
     QSize actualSize(const QSize& size, QIcon::Mode, QIcon::State) override {
-        const int side = qMin(size.width(), size.height());
-        return QSize(side + trailingGap_, side);
+        return glyphLogicalBox(size, trailingGap_);
     }
 
 private:

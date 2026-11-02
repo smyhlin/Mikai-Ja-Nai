@@ -201,13 +201,17 @@ inline constexpr int kSearchDotRadius = kSearchDotSize / 2;
 inline constexpr int kSearchDotSpacing = 6;
 inline constexpr int kSearchPillPaddingLeft = 10;
 inline constexpr int kSearchPillPaddingRight = 12;
-// The chevron the Open video menu carries past its label.
-inline constexpr int kSearchMenuChevronSize = 10;
+// The chevron the Open video menu carries past its label. Below 12 the glyph's
+// 2.4-unit stroke falls under a device pixel and single columns round away, so
+// the menu reads as a dashed line at 100 % scaling.
+inline constexpr int kSearchMenuChevronSize = 12;
 inline constexpr int kSearchMenuPaddingRight =
     kSearchActionPaddingH + kSearchMenuChevronSize + kSpacingSmall;
 // The spacing the header wants between a button's glyph and its label. The
 // widget style owns part of that gap and offers no knob for it, so the glyph
-// pads its own box with the remainder.
+// pads its own box with the remainder. The pad is part of the icon's planned
+// device box (Icons.cpp), so it stays inside the logical size the layout
+// reserved and never widens the icon at a fractional ratio.
 inline constexpr int kSearchIconTextGap = 8;
 inline constexpr int kSearchIconGlyphPad = kSearchIconTextGap / 2;
 

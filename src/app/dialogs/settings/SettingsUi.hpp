@@ -459,11 +459,10 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             border-bottom-right-radius: 8px;
             background: transparent;
         }
-        QComboBox::down-arrow {
-            image: url(:/icons/chevron-down.svg);
-            width: 10px;
-            height: 10px;
-        }
+        /* No combo-arrow image: the rule above belongs to the application sheet
+           and a stylesheet image is a fixed-size raster, so a HiDPI display
+           upscales it. The style's own PE_IndicatorArrowDown is painted from
+           the palette at the device ratio. */
         QComboBox QAbstractItemView {
             background-color: %28;
             color: %2;

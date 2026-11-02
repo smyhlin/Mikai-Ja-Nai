@@ -93,9 +93,9 @@ QString formatFeedTime(const QString& timestamp, bool timeOnly = false) {
                     : local.toString(QStringLiteral("dd.MM · HH:mm"));
 }
 
-/// The biggest box anything on the page draws a poster into: the home card
-/// poster. Search rows (56x78) and feed posters (34x48) are smaller, so
-/// decoding down to this leaves no consumer upscaling.
+/// The biggest box anything on the page draws a poster into, in logical pixels:
+/// the home card poster. Search rows (56x78) and feed posters (34x48) are
+/// smaller, so decoding down to its device size leaves no consumer upscaling.
 const QSize kThumbDecodeSize(theme::kHomePosterWidth, theme::kHomePosterHeight);
 
 /// Enable a carousel's arrows only where there is somewhere to scroll to.
@@ -469,6 +469,7 @@ void SearchPage::changeEvent(QEvent* event) {
                event->type() == QEvent::DevicePixelRatioChange) {
         refreshHeaderLogo();
         refreshHeaderIcons();
+        refreshArtwork();
     }
 }
 
@@ -2743,8 +2744,7 @@ void SearchPage::requestThumb(const QString& url) {
     }
     const auto icon = icons_.constFind(url);
     if (icon != icons_.constEnd()) {
-        const QPixmap ready = TitleCard::rounded(
-            icon.value(), QSize(theme::kHomePosterWidth, theme::kHomePosterHeight));
+        const QPixmap ready = roundedPoster(icon.value());
         rounded_.insert(url, ready);
         for (TitleCard* card : cardsByImageKey_.value(url)) {
             card->applyPixmap(ready);
@@ -2757,14 +2757,22 @@ void SearchPage::requestThumb(const QString& url) {
     thumbsInFlight_.insert(url);
     // The client travels into the worker by value; the page is reached only
     // through a guard, so a poster that lands after the page was closed is
-    // dropped rather than painted into a page that is gone.
+    // dropped rather than painted into a page that is gone. The decode target is
+    // the device size of the largest box the page draws a poster into, so a
+    // HiDPI label gets its own pixels rather than an upscaled 1x raster.
     backend::MikaiClient* client = &client_;
     const QPointer<SearchPage> self(this);
+    const qreal requestedDpr = devicePixelRatioF();
+    // Remember the ratio the first raster is decoded at, so a later palette or
+    // screen event at an unchanged ratio leaves that artwork alone instead of
+    // clearing caches that were never stale.
+    artworkDpr_ = requestedDpr;
     runner_.runImage(
-        [client, url] {
-            return QVariant::fromValue(gui::decodeImage(client->fetchBytes(url), kThumbDecodeSize));
+        [client, url, requestedDpr] {
+            return QVariant::fromValue(gui::decodeImage(
+                client->fetchBytes(url), gui::deviceSizeFor(kThumbDecodeSize, requestedDpr)));
         },
-        [self, url](const QVariant& result) {
+        [self, url, requestedDpr](const QVariant& result) {
             if (self.isNull()) {
                 return;
             }
@@ -2772,6 +2780,12 @@ void SearchPage::requestThumb(const QString& url) {
             auto decoded = result.value<gui::DecodedImage>();
             if (decoded.image.isNull()) {
                 qWarning().noquote() << "SearchPage: thumbnail decode failed:" << decoded.error;
+                return;
+            }
+            // A decode that started on another screen is answered again instead
+            // of being stretched onto this one.
+            if (!qFuzzyCompare(requestedDpr, self->devicePixelRatioF())) {
+                self->requestThumb(url);
                 return;
             }
             self->applyThumb(url, std::move(decoded.image));
@@ -2782,6 +2796,15 @@ void SearchPage::requestThumb(const QString& url) {
             }
             self->thumbsInFlight_.remove(url);
         });
+}
+
+QPixmap SearchPage::roundedPoster(const QPixmap& pixmap) {
+    // Every cache holds one frame per poster URL, so the frame is painted for
+    // the ratio the page is on: a frame baked at another ratio is either soft
+    // (upscaled) or wastefully large.
+    return TitleCard::rounded(
+        pixmap, QSize(theme::kHomePosterWidth, theme::kHomePosterHeight),
+        devicePixelRatioF());
 }
 
 void SearchPage::applyThumb(const QString& url, QImage image) {
@@ -2799,14 +2822,17 @@ void SearchPage::flushThumbs() {
     QImage image = std::move(it.value());
     pendingThumbs_.erase(it);
     if (!icons_.contains(key)) {
-        const QPixmap pixmap = QPixmap::fromImage(std::move(image));
+        QPixmap pixmap = QPixmap::fromImage(std::move(image));
         if (!pixmap.isNull()) {
+            // The decode landed at the device size, so the raster is tagged with
+            // the ratio it was asked for: an untagged pixmap would be drawn at
+            // its device size in logical units and overflow the slot.
+            pixmap.setDevicePixelRatio(devicePixelRatioF());
             icons_.insert(key, pixmap);
             // A poster URL is shared by several cards; the index turns that
             // into a lookup instead of a scan of every card on the page. The
             // rounded variant is painted once per URL, not once per card.
-            const QPixmap ready = TitleCard::rounded(
-                pixmap, QSize(theme::kHomePosterWidth, theme::kHomePosterHeight));
+            const QPixmap ready = roundedPoster(pixmap);
             rounded_.insert(key, ready);
             const QList<TitleCard*> cards = cardsByImageKey_.value(key);
             for (TitleCard* card : cards) {
@@ -2828,12 +2854,54 @@ void SearchPage::refreshCardFrames() {
     for (auto it = cardsByImageKey_.cbegin(); it != cardsByImageKey_.cend(); ++it) {
         const auto icon = icons_.constFind(it.key());
         if (icon == icons_.constEnd()) continue;
-        const QPixmap ready = TitleCard::rounded(
-            icon.value(), QSize(theme::kHomePosterWidth, theme::kHomePosterHeight));
+        const QPixmap ready = roundedPoster(icon.value());
         rounded_.insert(it.key(), ready);
         for (TitleCard* card : it.value()) {
             card->applyPixmap(ready);
         }
+    }
+    applyThumbs();
+    applyFeedPosters();
+}
+
+void SearchPage::refreshArtwork() {
+    const qreal dpr = devicePixelRatioF();
+    if (qFuzzyCompare(dpr, artworkDpr_)) {
+        // A palette or screen event that did not change the ratio leaves the
+        // decoded posters valid; only the decoded-at-one-ratio state is stale.
+        return;
+    }
+    artworkDpr_ = dpr;
+    // Poster rasters are decoded at the device size and the rounded frames bake
+    // the ratio into their corners, so both are dropped and asked for again.
+    icons_.clear();
+    rounded_.clear();
+    pendingThumbs_.clear();
+    // Every URL that paints a raster has to be asked for again, not only the
+    // carousel cards: feed posters and result-row thumbnails own slots of their
+    // own, and a slot whose `shown` still names the URL would keep the old
+    // raster. Collect first, request after, because a request re-enters
+    // applyFeedPosters().
+    QStringList urls;
+    for (auto it = cardsByImageKey_.cbegin(); it != cardsByImageKey_.cend(); ++it) {
+        urls.append(it.key());
+    }
+    for (auto it = feedPosterLabels_.begin(); it != feedPosterLabels_.end(); ++it) {
+        for (FeedPosterSlot& entry : it.value()) {
+            entry.shown.clear();
+            if (!entry.url.isEmpty()) urls.append(entry.url);
+        }
+    }
+    if (results_ != nullptr) {
+        for (int row = 0; row < results_->count(); ++row) {
+            const QVariantMap data = results_->item(row)->data(Qt::UserRole).toMap();
+            const QString thumb = data.value(QStringLiteral("thumb")).toString();
+            if (!thumb.isEmpty()) urls.append(thumb);
+        }
+    }
+    urls.removeDuplicates();
+    for (const QString& url : urls) {
+        requestThumb(url);
     }
     applyThumbs();
     applyFeedPosters();
@@ -2874,8 +2942,16 @@ void SearchPage::applyFeedPosters() {
             if (cached == icons_.constEnd()) {
                 continue;
             }
-            entry.label->setPixmap(cached.value().scaled(
-                entry.label->size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
+            // The slot is small but a 1x crop of it is still soft on a HiDPI
+            // screen: crop and scale in device pixels and tag the result.
+            const qreal ratio = entry.label->devicePixelRatioF();
+            QPixmap source = cached.value();
+            source.setDevicePixelRatio(1.0);
+            QPixmap scaled = source.scaled(gui::deviceSizeFor(entry.label->size(), ratio),
+                                           Qt::KeepAspectRatioByExpanding,
+                                           Qt::SmoothTransformation);
+            scaled.setDevicePixelRatio(ratio);
+            entry.label->setPixmap(scaled);
             entry.shown = entry.url;
         }
     }
