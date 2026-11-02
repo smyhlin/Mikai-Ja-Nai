@@ -1,5 +1,7 @@
 #pragma once
 
+#include "dialogs/ComponentCardState.hpp"
+
 #include <native/components/AnimeJanaiRuntime.hpp>
 #include <native/components/NativeComponentProvisioning.hpp>
 #include <native/models/NativeSpatialAssets.hpp>
@@ -70,8 +72,10 @@ public:
     void refresh();
     QString setupPrompt(qint64* bytes = nullptr) const;
     bool inventoryReady() const { return inventoryReady_; }
-    bool acquisitionRunning() const { return acquisitionSequenceActive_ || acquisitionChecking_ ||
-                                             inventoryScanning_ || downloadActive() || verifying_; }
+    bool acquisitionRunning() const {
+        return acquisitionSequenceActive_ || acquisitionChecking_ || inventoryScanning_ ||
+               downloadActive() || verifyActive();
+    }
 
     /// The manual check: re-hashes both AnimeJaNai closures and every installed
     /// component file, and re-proves every stored graph against its digest.
@@ -99,6 +103,9 @@ public:
         return (provisioner_ != nullptr && provisioner_->running()) ||
                animeJanaiRuntimeDownloading_ || rifeDownloading_ || modelsDownloading_;
     }
+    /// Hashing or a digest proof is running. A verification is not a download:
+    /// it never disables the transfer actions' meaning or reports a transfer.
+    bool verifyActive() const { return verificationActive_ || verifying_; }
 
 signals:
     void inventoryUpdated();
@@ -158,6 +165,28 @@ private:
             InstallFailed,
             MissingProvisioner,
             AllVerified,
+            /// A named long-running operation. Rendered muted, restated on a
+            /// language switch, and cleared by `bumpRunGeneration`.
+            Busy,
+            /// Verification started: transferred-but-unproved counts.
+            VerificationProgress,
+            /// The inventory is authoritative: installed and verified counts.
+            InventoryCounts,
+            /// The inventory knew the count and at least one element failed.
+            FailureCounts,
+        };
+
+        /// What the muted line is doing. The wording is looked up live, so a
+        /// language switch restates it without re-deriving the run.
+        enum class Busy {
+            None,
+            Checking,
+            Runtime,
+            LocalRuntime,
+            Rife,
+            Models,
+            Verification,
+            InstalledVerification,
         };
 
         Kind kind = Kind::None;
@@ -169,6 +198,11 @@ private:
         mplayer::native::Backend backend = mplayer::native::Backend::TensorRT;
         int rifeFailures = 0;
         int spatialFailures = 0;
+        Busy busy = Busy::None;
+        int downloaded = 0;
+        int verified = 0;
+        int installed = 0;
+        int total = 0;
     };
 
     /// Raw, opaque text (a tool/network cause or a joined failure list) that is
@@ -201,6 +235,25 @@ private:
     void clearProgressCard(const QString& cardId);
     void renderCardProgress(const QString& cardId);
     void renderAllCardProgress();
+    /// Builds the one displayed truth for `cardId` from the transfer items and
+    /// the disk inventory. Pure data; no widget is touched.
+    components::CardState cardStateFor(const QString& cardId) const;
+    /// Drops every terminal Installed claim whose bytes the fresh inventory no
+    /// longer confirms, so a stale full bar cannot survive a deleted store.
+    void reconcileProgressWithInventory();
+    /// Re-reads the store presence on a worker after a unit settles, without
+    /// waiting for the whole run. Coalesced; never hashes on the GUI thread.
+    void schedulePresenceRefresh();
+    /// The model counts the status line and the card share: present on disk and
+    /// proved by digest, out of the pinned catalogue.
+    int modelInstalledCount() const;
+    int modelVerifiedCount() const;
+    /// Whether the runtime card has an installed element on disk under the
+    /// currently selected backend (its pack, or that backend's closure).
+    int runtimeCardInstalledOnDisk() const;
+    /// The single generation bump: cancels pending units, resets in-flight
+    /// flags, clears a stale busy status and re-renders the cards.
+    void bumpRunGeneration(const QString& reason);
     int activeProgressItemCount() const;
     /// Publishes one completed off-GUI verification. `verifiedPacks`,
     /// `verifiedRifeGraphs` and `verifiedBackend` are exactly what the hashing
@@ -379,6 +432,18 @@ private:
     std::shared_ptr<std::atomic<bool>> inventoryCancelFlag_;
     bool rifeDownloading_ = false;
     bool modelsDownloading_ = false;
+    /// Verification-only activity. Distinct from `modelsDownloading_` on
+    /// purpose: a proof run is not a transfer and must never render through the
+    /// download path.
+    bool verificationActive_ = false;
+    bool runtimePackInstalled_ = false;
+    bool kernelsPackInstalled_ = false;
+    int installedSpatialCount_ = 0;
+    int verifiedSpatialCount_ = 0;
+    bool presenceScanning_ = false;
+    quint64 presenceGeneration_ = 0;
+    bool presenceRefreshPending_ = false;
+    std::shared_ptr<std::atomic<bool>> presenceCancelFlag_;
     int modelDownloadsInFlight_ = 0;
     int modelDownloadsTotal_ = 0;
     int modelDownloadsCompleted_ = 0;

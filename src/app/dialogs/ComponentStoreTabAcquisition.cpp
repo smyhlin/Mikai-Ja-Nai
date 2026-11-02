@@ -147,14 +147,16 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
         ++inventoryGeneration_;
         inventoryScanning_ = false;
     }
+    bumpRunGeneration(QStringLiteral("component check started"));
     acquisitionChecking_ = true;
     acquisitionCheckCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
     const auto cancelled = acquisitionCheckCancelFlag_;
-    const quint64 generation = ++runGeneration_;
+    const quint64 generation = runGeneration_;
     const Backend backend = selectedBackend();
     const GpuComputeCapability gpu = observeComputeCapability();
     const QSet<QString> selected = selectedPacks_;
-    status_->setText(tr("Checking selected components..."));
+    applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::Busy,
+                                        .busy = StatusReason::Busy::Checking});
     updateControls();
     acquisitionSequenceActive_ = true;
     updateControls();
@@ -279,9 +281,10 @@ void ComponentStoreTab::downloadAnimeJanaiRuntime() {
     animeJanaiCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
     const auto cancelFlag = animeJanaiCancelFlag_;
     const Backend backend = selectedBackend();
-    const quint64 generation = acquisitionGeneration_ == 0 ? ++runGeneration_
+    const quint64 generation = acquisitionGeneration_ == 0 ? runGeneration_
                                                            : acquisitionGeneration_;
-    status_->setText(tr("Installing AnimeJaNai runtime and selected backend dependencies..."));
+    applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::Busy,
+                                        .busy = StatusReason::Busy::Runtime});
     updateControls();
 
     // A plain owner address and a plain liveness flag are the only things the
@@ -372,11 +375,11 @@ void ComponentStoreTab::importAnimeJanaiRuntime(const QString& sourceDirectory) 
         return;
     }
 
+    bumpRunGeneration(QStringLiteral("local runtime import started"));
     animeJanaiRuntimeDownloading_ = true;
     animeJanaiCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
     const auto cancelFlag = animeJanaiCancelFlag_;
     const Backend backend = selectedBackend();
-    ++runGeneration_;
     const quint64 generation = runGeneration_;
     currentProgressItems_.clear();
     clearProgressCard(QStringLiteral("tensorRtRuntimeCard"));
@@ -385,7 +388,8 @@ void ComponentStoreTab::importAnimeJanaiRuntime(const QString& sourceDirectory) 
                     QStringLiteral("tensorRtRuntimeCard"),
                     tr("Local AnimeJaNai runtime and backend dependencies"),
                     ComponentProvisionStage::Downloading, 0, 0, true);
-    status_->setText(tr("Installing local AnimeJaNai runtime and selected backend dependencies..."));
+    applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::Busy,
+                                        .busy = StatusReason::Busy::LocalRuntime});
     updateControls();
 
     // The binder is taken on the GUI thread, before the work starts; the
@@ -579,9 +583,10 @@ void ComponentStoreTab::downloadRifeArchive() {
     rifeDownloading_ = true;
     rifeCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
     const auto cancelFlag = rifeCancelFlag_;
-    const quint64 generation = acquisitionGeneration_ == 0 ? ++runGeneration_
+    const quint64 generation = acquisitionGeneration_ == 0 ? runGeneration_
                                                            : acquisitionGeneration_;
-    status_->setText(tr("Downloading the RIFE 3.7.0 graph archive..."));
+    applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::Busy,
+                                        .busy = StatusReason::Busy::Rife});
     updateControls();
 
     // The binder is taken on the GUI thread, before the work starts; the
@@ -613,6 +618,7 @@ void ComponentStoreTab::downloadRifeArchive() {
                 rifeVerificationErrors_.remove(pin.fileName);
             }
             pendingRifeArchive_ = false;
+            schedulePresenceRefresh();
             finishAcquisitionUnit(QString(), false);
         },
         [this, alive = alive_, generation, cancelFlag](const backend::Failure& failure) {
@@ -653,11 +659,12 @@ void ComponentStoreTab::downloadNextModel() {
         modelFailure_.clear();
         modelCancelled_ = false;
     }
-    const quint64 generation = acquisitionGeneration_ == 0 ? ++runGeneration_
+    const quint64 generation = acquisitionGeneration_ == 0 ? runGeneration_
                                                            : acquisitionGeneration_;
     const auto cancelFlag = modelCancelFlag_;
-    status_->setText(tr("Downloading %1 upscaling models...")
-                         .arg(modelDownloadsTotal_));
+    applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::Busy,
+                                        .busy = StatusReason::Busy::Models,
+                                        .count = modelDownloadsTotal_});
     updateControls();
     backend::MikaiClient* client = client_;
     const QVector<int> batch = std::exchange(pendingModels_, {});
@@ -712,6 +719,9 @@ void ComponentStoreTab::downloadNextModel() {
                 } else {
                     settleProgressItem(asset.id, true, false);
                     ++modelDownloadsCompleted_;
+                    // Publish the new presence now: the badge counts up
+                    // 1/5 ... 5/5 instead of jumping when the run ends.
+                    schedulePresenceRefresh();
                 }
                 if (modelDownloadsInFlight_ == 0) finishModelDownloads();
                 else publishAcquisition();
@@ -758,12 +768,27 @@ void ComponentStoreTab::startAcquisitionVerification() {
         refresh();
         return;
     }
-    modelsDownloading_ = true;
+    // A proof run is not a transfer: it sets its own flag, never
+    // `modelsDownloading_`, so `downloadActive()` stays false and the card
+    // labels cannot report a download while hashing runs.
+    bumpRunGeneration(QStringLiteral("acquisition verification started"));
+    verificationActive_ = true;
     modelCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
-    const quint64 generation = ++runGeneration_;
+    const quint64 generation = runGeneration_;
     const auto cancelled = modelCancelFlag_;
     const GpuComputeCapability gpu = observeComputeCapability();
-    status_->setText(tr("Verifying installed components..."));
+    const bool spatialSelected =
+        selectedPacks_.contains(QStringLiteral("component:spatial"));
+    if (spatialSelected) {
+        applyStatus(QString(),
+                    StatusReason{.kind = StatusReason::Kind::VerificationProgress,
+                                 .downloaded = modelInstalledCount(),
+                                 .verified = 0,
+                                 .total = spatialAssetCatalog().size()});
+    } else {
+        applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::Busy,
+                                            .busy = StatusReason::Busy::Verification});
+    }
     updateControls();
     const std::shared_ptr<std::atomic<bool>> live = alive_;
     runner_->runTransfer(
@@ -773,7 +798,7 @@ void ComponentStoreTab::startAcquisitionVerification() {
         [this, live, generation, cancelled, gpu](const QVariant& value) {
             if (!live->load() || generation != runGeneration_) return;
             const QVariantMap result = value.toMap();
-            modelsDownloading_ = false;
+            verificationActive_ = false;
             modelCancelFlag_.reset();
             acquisitionSequenceActive_ = false;
             if (cancelled->load() || result.value(QStringLiteral("cancelled")).toBool()) {
@@ -801,10 +826,23 @@ void ComponentStoreTab::startAcquisitionVerification() {
                                     ? tr("The requested backend installation could not be verified.")
                                     : reason);
             }
-            if ((runtimeSelected || kernelsSelected) && backend == Backend::TensorRT &&
-                gpu.smMajor > 0 &&
-                !result.value(QStringLiteral("componentDirsAvailable")).toBool()) {
-                failures.append(tr("The requested TensorRT component pack is not installed."));
+            if (backend == Backend::TensorRT && gpu.smMajor > 0) {
+                TensorRtClosureStatus closure;
+                closure.runtimeStored =
+                    result.value(QStringLiteral("closureRuntimeStored")).toBool();
+                closure.kernelsStored =
+                    result.value(QStringLiteral("closureKernelsStored")).toBool();
+                closure.bundleProvidesDirs =
+                    result.value(QStringLiteral("closureBundleDirs")).toBool();
+                closure.dirsAvailable =
+                    result.value(QStringLiteral("componentDirsAvailable")).toBool();
+                QString kernelsName = result.value(QStringLiteral("kernelsName")).toString();
+                if (kernelsName.isEmpty())
+                    kernelsName = QStringLiteral("trt-sm%1%2").arg(gpu.smMajor).arg(gpu.smMinor);
+                for (const QString& line : tensorRtClosureFailureLines(
+                         closure, runtimeSelected, kernelsSelected, kernelsName)) {
+                    if (!failures.contains(line)) failures.append(line);
+                }
             }
             if (rifeSelected && !result.value(QStringLiteral("rifeVerified")).toBool()) {
                 for (const QVariant& entry : result.value(QStringLiteral("rifeFailures")).toList()) {
@@ -828,7 +866,23 @@ void ComponentStoreTab::startAcquisitionVerification() {
             acquisitionFailures_.clear();
             if (failures.isEmpty()) {
                 if (rifeSelected) rifeVerified_ = true;
-                applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::AllVerified});
+                if (spatialSelected) {
+                    applyStatus(QString(),
+                                StatusReason{.kind = StatusReason::Kind::InventoryCounts,
+                                             .verified = modelVerifiedCount(),
+                                             .installed = modelInstalledCount(),
+                                             .total = spatialAssetCatalog().size()});
+                } else {
+                    applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::AllVerified});
+                }
+            } else if (spatialSelected) {
+                // The count vocabulary stays truthful: what is installed, then
+                // the named failures - never a generic orphan sentence.
+                applyStatus(QStringLiteral("native.components.digest"),
+                            StatusReason{.kind = StatusReason::Kind::FailureCounts,
+                                         .causes = failures,
+                                         .installed = modelInstalledCount(),
+                                         .total = spatialAssetCatalog().size()});
             } else {
                 applyStatus(QStringLiteral("native.components.digest"),
                             failures.join(QStringLiteral("; ")));
@@ -837,13 +891,16 @@ void ComponentStoreTab::startAcquisitionVerification() {
         },
         [this, live, generation, cancelled](const backend::Failure& failure) {
             if (!live->load() || generation != runGeneration_) return;
-            modelsDownloading_ = false;
+            verificationActive_ = false;
             modelCancelFlag_.reset();
             acquisitionSequenceActive_ = false;
-            applyStatus(cancelled->load()
-                            ? QStringLiteral("native.components.cancelled")
-                            : QStringLiteral("native.components.digest"),
-                        cancelled->load() ? QString() : backend::failureLine(failure));
+            if (cancelled->load()) {
+                applyStatus(QStringLiteral("native.components.cancelled"), QString());
+            } else {
+                applyStatus(QStringLiteral("native.components.fetch"),
+                            StatusReason{.kind = StatusReason::Kind::NotVerified,
+                                         .detail = backend::failureLine(failure)});
+            }
             refresh();
         });
 }
@@ -895,8 +952,8 @@ void ComponentStoreTab::updateControls() {
     // actions that would start another one: the surface is non-reentrant while
     // any worker is alive.
     const bool busy = provisioning || animeJanaiRuntimeDownloading_ || rifeDownloading_ ||
-                      modelsDownloading_ || verifying_ || acquisitionChecking_ || inventoryScanning_ ||
-                      acquisitionSequenceActive_;
+                      modelsDownloading_ || verifyActive() || acquisitionChecking_ ||
+                      inventoryScanning_ || acquisitionSequenceActive_;
     downloadButton_->setEnabled(!busy);
     verifyButton_->setEnabled(!busy);
     cancelButton_->setEnabled(busy);
@@ -932,14 +989,14 @@ void ComponentStoreTab::cancelAcquisition() {
         updateControls();
         return;
     }
-    if (verifying_) {
+    if (verifyActive()) {
         // The in-flight hash run's delivery is discarded rather than
         // published: nothing proves a verdict from a run nobody waited for,
-        // and no partial result may be mistaken for the answer.
+        // and no partial result may be mistaken for the answer. The bump also
+        // releases every latch the abandoned run held.
         if (modelCancelFlag_) modelCancelFlag_->store(true);
         modelCancelFlag_.reset();
-        ++runGeneration_;
-        verifying_ = false;
+        bumpRunGeneration(QStringLiteral("verification cancelled"));
         applyStatus(QStringLiteral("native.components.cancelled"),
                     StatusReason{.kind = StatusReason::Kind::VerificationCancelled});
         updateControls();
@@ -989,7 +1046,7 @@ void ComponentStoreTab::syncAcquisitionState() {
 void ComponentStoreTab::publishAcquisition() {
     const bool downloading = (provisioner_ != nullptr && provisioner_->running()) ||
                              animeJanaiRuntimeDownloading_ || rifeDownloading_ ||
-                             modelsDownloading_ || verifying_ || acquisitionChecking_ ||
+                             modelsDownloading_ || verifyActive() || acquisitionChecking_ ||
                              acquisitionSequenceActive_;
     if (!downloading) {
         if (!acquisitionAnnounced_) return;
@@ -1005,7 +1062,7 @@ void ComponentStoreTab::publishAcquisition() {
         status = tr("%1 component items active").arg(activeItems);
     } else if (acquisitionChecking_) {
         status = tr("Checking selected components...");
-    } else if (verifying_) {
+    } else if (verifyActive()) {
         status = tr("Verifying installed components...");
     } else {
         status = tr("Installing selected components...");
@@ -1096,6 +1153,44 @@ QString ComponentStoreTab::renderStatusReason() const {
                       "provisioner is available.");
         case StatusReason::Kind::AllVerified:
             return tr("Every selected pack is installed and verified.");
+        case StatusReason::Kind::Busy:
+            switch (statusReason_.busy) {
+                case StatusReason::Busy::None:
+                    return QString();
+                case StatusReason::Busy::Checking:
+                    return tr("Checking selected components...");
+                case StatusReason::Busy::Runtime:
+                    return tr("Installing AnimeJaNai runtime and selected backend dependencies...");
+                case StatusReason::Busy::LocalRuntime:
+                    return tr("Installing local AnimeJaNai runtime and selected backend "
+                              "dependencies...");
+                case StatusReason::Busy::Rife:
+                    return tr("Downloading the RIFE 3.7.0 graph archive...");
+                case StatusReason::Busy::Models:
+                    return tr("Downloading %1 upscaling models...").arg(statusReason_.count);
+                case StatusReason::Busy::Verification:
+                    return tr("Verifying installed components...");
+                case StatusReason::Busy::InstalledVerification:
+                    return tr("Verifying the installed components...");
+            }
+            return QString();
+        case StatusReason::Kind::VerificationProgress:
+            // Transferred is not proved: the counts say downloaded until the
+            // hashing that is running now returns.
+            return tr("Verifying installed components... Downloaded: %1/%2 · Verified: %3/%2")
+                .arg(statusReason_.downloaded)
+                .arg(statusReason_.total)
+                .arg(statusReason_.verified);
+        case StatusReason::Kind::InventoryCounts:
+            return tr("Installed: %1/%2 · Verified: %3/%2")
+                .arg(statusReason_.installed)
+                .arg(statusReason_.total)
+                .arg(statusReason_.verified);
+        case StatusReason::Kind::FailureCounts:
+            return tr("Installed: %1/%2 · Failed: %3")
+                .arg(statusReason_.installed)
+                .arg(statusReason_.total)
+                .arg(statusReason_.causes.join(QStringLiteral("; ")));
     }
     return QString();
 }
@@ -1111,14 +1206,20 @@ void ComponentStoreTab::applyStatus(const QString& key,
     const QString rendered = renderStatusReason();
     statusRenderedReason_ = rendered;
     if (status_ != nullptr) {
+        const bool busy =
+            reason.kind == StatusReason::Kind::Busy ||
+            reason.kind == StatusReason::Kind::VerificationProgress;
         status_->setText(rendered);
         const QString severity =
-            key == QStringLiteral("native.components.cancelled")
-                ? QStringLiteral("cancelled")
-                : (key.isEmpty() ? (rendered.isEmpty() ? QStringLiteral("neutral")
-                                                       : QStringLiteral("success"))
-                                 : QStringLiteral("failure"));
+            busy ? QStringLiteral("busy")
+                 : (key == QStringLiteral("native.components.cancelled")
+                        ? QStringLiteral("cancelled")
+                        : (key.isEmpty() ? (rendered.isEmpty() ? QStringLiteral("neutral")
+                                                               : QStringLiteral("success"))
+                                         : QStringLiteral("failure")));
         status_->setProperty("statusSeverity", severity);
+        // Muted, never red or green: a busy line describes work, not a verdict.
+        status_->setProperty("textRole", busy ? QStringLiteral("muted") : QString());
         status_->setAccessibleDescription(severity);
         status_->style()->unpolish(status_);
         status_->style()->polish(status_);
@@ -1129,13 +1230,14 @@ void ComponentStoreTab::applyStatus(const QString& key,
 }
 
 void ComponentStoreTab::restateStatus() {
-    const QString reason = statusReason();
     // A progress or stage line that took the label over is not this status:
     // only a label still showing the last-rendered reason is restated, so a
     // language switch never overwrites a live transfer readout.
     if (status_ != nullptr && status_->text() == statusRenderedReason_) {
-        status_->setText(reason);
-        statusRenderedReason_ = reason;
+        // Re-apply the typed reason instead of assigning text: the same
+        // pipeline re-derives the wording, severity and muted role in the live
+        // language, so a language switch cannot leave a raw line behind.
+        applyStatus(statusKey_, statusReason_);
     }
     // Reuse the existing notification: a run that was already announced gets
     // its progress line restated, anything else is restated through the idle

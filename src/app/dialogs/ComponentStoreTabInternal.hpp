@@ -30,4 +30,12 @@ QVariantMap inventorySnapshot(const mplayer::native::GpuComputeCapability& gpu,
                               bool verifyRife, bool rehashBackend,
                               const std::atomic<bool>* cancelled);
 
+/// The named failure lines a selected TensorRT closure owes the user: the
+/// missing store pack is reported by name, and a present-but-unusable closure
+/// names the prerequisite separately. Empty exactly when the selection is
+/// satisfied. Wording stays in the tab's translation context.
+QStringList tensorRtClosureFailureLines(
+    const mplayer::native::TensorRtClosureStatus& closure, bool runtimeSelected,
+    bool kernelsSelected, const QString& kernelsName);
+
 }  // namespace mikai::app::component_store_detail

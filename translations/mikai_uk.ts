@@ -3944,7 +3944,43 @@ If a portable folder was moved, disable startup from the old location before mov
     <message>
         <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="909"/>
         <source>%1/%2 installed; %3/%2 verified</source>
-        <translation>встановлено %1/%2; перевірено %3/%2</translation>
+        <translation>%1/%2 встановлено · %3/%2 перевірено</translation>
+    </message>
+    <message>
+        <source>not installed (0/%1)</source>
+        <translation>не встановлено (0/%1)</translation>
+    </message>
+    <message>
+        <source>installed · recommended for this PC</source>
+        <translation>встановлено · рекомендовано для цього ПК</translation>
+    </message>
+    <message>
+        <source>not installed · recommended for this PC</source>
+        <translation>не встановлено · рекомендовано для цього ПК</translation>
+    </message>
+    <message>
+        <source>downloaded · runtime missing</source>
+        <translation>завантажено · відсутнє середовище виконання</translation>
+    </message>
+    <message>
+        <source>TensorRT environment (trt-runtime) is not installed — select it and apply changes.</source>
+        <translation>Середовище TensorRT (trt-runtime) не встановлено — виберіть його та застосуйте зміни.</translation>
+    </message>
+    <message>
+        <source>GPU kernels for this device (%1) are not installed.</source>
+        <translation>Ядра GPU для цього пристрою (%1) не встановлено.</translation>
+    </message>
+    <message>
+        <source>Verifying installed components... Downloaded: %1/%2 · Verified: %3/%2</source>
+        <translation>Перевірка встановлених компонентів... Завантажено: %1/%2 · Перевірено: %3/%2</translation>
+    </message>
+    <message>
+        <source>Installed: %1/%2 · Verified: %3/%2</source>
+        <translation>Встановлено: %1/%2 · Перевірено: %3/%2</translation>
+    </message>
+    <message>
+        <source>Installed: %1/%2 · Failed: %3</source>
+        <translation>Встановлено: %1/%2 · Помилка: %3</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="642"/>
@@ -4407,11 +4443,6 @@ Continue?</source>
 Орієнтовний розмір завантаження: %2
 
 Продовжити?</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="807"/>
-        <source>The requested TensorRT component pack is not installed.</source>
-        <translation>Запитаний пакет компонентів TensorRT не встановлено.</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="801"/>

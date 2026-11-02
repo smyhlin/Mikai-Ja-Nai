@@ -16,9 +16,50 @@ QString translated(const char* message) {
 bool componentBinDirsAvailable(const ComponentBinDirs& dirs) {
     return dirs.reasonKey.isEmpty() && !dirs.trtBinDir.isEmpty() && !dirs.cudaBinDir.isEmpty();
 }
-bool gpuResourceInstalledForThisDevice(const ComponentPack* pack, const StoredPack& stored,
-                                       bool componentDirsAvailable) {
-    return pack != nullptr && (stored.installed || componentDirsAvailable);
+bool gpuResourceInstalledForThisDevice(const ComponentPack* pack, const StoredPack& stored) {
+    return pack != nullptr && stored.installed;
+}
+
+TensorRtClosureStatus tensorRtClosureStatus(const ComponentStore& store, const Bundle* bundle,
+                                            int smMajor, int smMinor) {
+    TensorRtClosureStatus status;
+    const ComponentPack* runtimePack = tensorRtRuntimePack();
+    const ComponentPack* kernelsPack = tensorRtResourcePackFor(smMajor, smMinor);
+    if (runtimePack != nullptr) status.runtimeStored = storedPack(store, *runtimePack).installed;
+    if (kernelsPack != nullptr) status.kernelsStored = storedPack(store, *kernelsPack).installed;
+
+    // The bundle's preparation block is a statement about its own bytes: it
+    // provides the builder resource for this GPU only when its declared file
+    // inventory contains that exact runtime-relative file.
+    if (bundle != nullptr && bundle->preparation.has_value() && kernelsPack != nullptr) {
+        const BundlePreparation& preparation = *bundle->preparation;
+        const QString declared = preparation.runtime.trt + QLatin1Char('/') +
+                                 builderResourceFileName(*kernelsPack);
+        if (!preparation.runtime.trt.isEmpty() && !preparation.runtime.cuda.isEmpty()) {
+            for (const BundleFile& file : bundle->files) {
+                if (file.path == declared) {
+                    status.bundleProvidesDirs = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    status.dirsAvailable =
+        status.bundleProvidesDirs || (status.runtimeStored && status.kernelsStored);
+    if (!status.dirsAvailable) {
+        if (!status.runtimeStored) {
+            status.missing.append(runtimePack != nullptr
+                                      ? runtimePack->name
+                                      : QStringLiteral("trt-runtime"));
+        }
+        if (!status.kernelsStored) {
+            status.missing.append(kernelsPack != nullptr
+                                      ? kernelsPack->name
+                                      : QStringLiteral("trt-sm%1%2").arg(smMajor).arg(smMinor));
+        }
+    }
+    return status;
 }
 
 ComponentBinDirs componentBinDirs(const QString& bundleRoot, const QString& trtDirName,

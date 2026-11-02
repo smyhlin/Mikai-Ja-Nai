@@ -7,6 +7,7 @@
 #include "TestAnimeJanaiRuntime.hpp"
 #include "TestAnime4K.hpp"
 #include "TestBenchmarkReport.hpp"
+#include "TestComponentState.hpp"
 #include "TestI18n.hpp"
 #include "TestThemeIcons.hpp"
 #include "TestLayering.hpp"
@@ -105,7 +106,8 @@ constexpr const char* kSuites[] = {
 #ifdef MIKAI_WITH_MODEL_INSPECTION
     "TestNativeCatalog",
 #endif
-    "TestModels", "TestReleases", "TestAnime4K", "TestBenchmarkReport", "TestI18n",
+    "TestModels", "TestReleases", "TestAnime4K", "TestBenchmarkReport", "TestComponentState",
+    "TestI18n",
     "TestThemeIcons",
     "TestStreams", "TestPagers",
     "TestQualityCache", "TestRateLimiter", "TestWatchHistory", "TestDownloads", "TestDiagnostics",
@@ -258,6 +260,7 @@ int main(int argc, char** argv) {
   TestReleases releases;
   TestAnime4K anime4k;
   TestBenchmarkReport benchmarkReport;
+  TestComponentState componentState;
   TestI18n i18n;
   TestThemeIcons themeIcons;
   TestStreams streams;
@@ -377,6 +380,7 @@ int main(int argc, char** argv) {
   run("TestReleases", &releases, true);
   run("TestAnime4K", &anime4k, true);
   run("TestBenchmarkReport", &benchmarkReport, true);
+  run("TestComponentState", &componentState, true);
   run("TestI18n", &i18n, true);
   run("TestThemeIcons", &themeIcons, true);
   run("TestStreams", &streams, true);

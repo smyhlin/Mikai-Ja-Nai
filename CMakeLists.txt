@@ -421,6 +421,7 @@ set(APP_HEADERS
   src/app/widgets/SwatchButton.hpp
   src/app/widgets/TitleCard.hpp
   src/app/widgets/ToggleSwitch.hpp
+  src/app/dialogs/ComponentCardState.hpp
   src/app/dialogs/ComponentStoreTab.hpp
   src/app/dialogs/ComponentStoreTabInternal.hpp
   src/app/dialogs/CoverViewer.hpp
