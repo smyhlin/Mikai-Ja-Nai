@@ -14,6 +14,7 @@
 #include <QtCore/QMutex>
 #include <QtCore/QMutexLocker>
 #include <QtCore/QThread>
+#include <QtCore/QTimer>
 #include <QtCore/QTimerEvent>
 #include <QtCore/QWaitCondition>
 #include <QtTest/QTest>
@@ -838,6 +839,78 @@ void TestRunner::workCancelledBeforeShutdownNeverDelivers() {
   QCOMPARE(late.load(), 0);
   QCOMPARE(ledger.deliveries.load(), 0);
   QCOMPARE(ledger.failures.load(), 0);
+}
+
+// ── completed work still owns the worker that retires it ───────────────────
+//
+// A task's callable outlives its run(): the pool destroys the runnable on the
+// same worker after the slot has been given back. When that capture's destructor
+// blocks, the owner's deletion must not leave that worker holding the last
+// reference to the pools - ~QThreadPool waits for its own workers, so the worker
+// would be parked waiting for itself.
+void TestRunner::completedWorkDoesNotRetireItsPoolsOnTheWorkerThatRanIt() {
+  struct CaptureHold {
+    CaptureHold(Gate* armedGate, std::atomic_bool* enteredFlag)
+        : gate(armedGate), entered(enteredFlag) {}
+    Gate* gate;
+    std::atomic_bool* entered;
+    ~CaptureHold() {
+      entered->store(true);
+      if (gate != nullptr) gate->waitUntilReleased();
+    }
+  };
+
+  Gate gate;
+  struct GateRelease {
+    Gate& gate;
+    ~GateRelease() { gate.release(); }
+  } releaseGate{gate};
+
+  std::atomic_bool captureEntered{false};
+  std::atomic_bool continuationRan{false};
+  std::atomic_bool workerFinished{false};
+  std::atomic_int deliveries{0};
+  std::atomic<QThread*> workerThread{nullptr};
+
+  Runner* runner = new Runner();
+  runner->run(
+      [capture = std::make_shared<CaptureHold>(&gate, &captureEntered),
+       &workerThread]() -> QVariant {
+        workerThread.store(QThread::currentThread());
+        return QVariant::fromValue(1);
+      },
+      [runner, &deliveries, &captureEntered, &continuationRan, &workerFinished,
+       &workerThread, &gate](const QVariant&) {
+        ++deliveries;
+        // The slot is already back and the worker is inside the runnable's own
+        // destruction, so the owner deletion below lands exactly when that
+        // reference is the only thing keeping the pools alive.
+        spinUntil([&captureEntered] { return captureEntered.load(); }, kShortBudgetMs);
+        QThread* worker = workerThread.load();
+        if (worker != nullptr) {
+          QObject::connect(worker, &QThread::finished, worker,
+                           [&workerFinished] { workerFinished.store(true); },
+                           Qt::DirectConnection);
+        }
+        delete runner;
+        // Queued at zero delay: the gate can only lift after this callback - and
+        // the delivery it runs in - has unwound on the GUI thread.
+        QTimer::singleShot(0, [&gate, &continuationRan] {
+          continuationRan.store(true);
+          gate.release();
+        });
+      },
+      [&deliveries](const backend::Failure&) { ++deliveries; });
+
+  QVERIFY2(spinUntil([&deliveries] { return deliveries.load() == 1; }, kBudgetMs),
+           "the completed work delivered its result");
+  QCOMPARE(deliveries.load(), 1);
+  QVERIFY2(captureEntered.load(), "the callable's capture was destroyed on the worker");
+  QVERIFY2(spinUntil([&continuationRan] { return continuationRan.load(); }, kShortBudgetMs),
+           "the GUI continuation queued behind the callback was reached");
+  QVERIFY2(spinUntil([&workerFinished] { return workerFinished.load(); }, kShortBudgetMs),
+           "the worker that ran completed work retired inside the bound instead of "
+           "being the reference that destroyed its own pool");
 }
 
 // ── the suite entry point the shared runner registers ──────────────────────

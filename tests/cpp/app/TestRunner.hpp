@@ -54,6 +54,9 @@ class TestRunner : public QObject {
   void deletingAnOwnerReturnsPromptlyWhileWorkIsStillRunning();
   void deletingAnOwnerNeverDeliversToTheDeadOwner();
   void deletingAnOwnerLeavesOtherOwnersAnswering();
+  // A runnable's callable is destroyed on the worker after its slot is back;
+  // that reference must not be the one that retires the pools.
+  void completedWorkDoesNotRetireItsPoolsOnTheWorkerThatRanIt();
   void aSecondOwnerSeesAResponsiveGuiThreadWhileTheFirstOneWorkIs();
 
   // ── shutdownAll (KB-11) ────────────────────────────────────────────────
