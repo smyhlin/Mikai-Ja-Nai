@@ -1205,7 +1205,7 @@ void ComponentStoreTab::verifyAll() {
     // One run at a time. A second click while a run is hashing is refused by
     // the disabled control, and refused again here so no re-entrant path
     // (a keyboard activation, a shortcut, a test) can start a parallel run.
-    if (verifying_) return;
+    if (verifyActive()) return;
     if (runner_ == nullptr) {
         applyStatus(QStringLiteral("native.components.noRunner"),
                     StatusReason{.kind = StatusReason::Kind::VerifyNeedsRunner});

@@ -104,7 +104,7 @@ void ComponentStoreTab::downloadMissing() {
 }
 
 void ComponentStoreTab::installRecommended() {
-    if (acquisitionChecking_ || downloadActive() || verifying_) return;
+    if (acquisitionChecking_ || downloadActive() || verifyActive()) return;
     recommendedInstallPending_ = true;
     const GpuComputeCapability& gpu = observeComputeCapability();
 #ifdef Q_OS_WIN
@@ -136,7 +136,10 @@ void ComponentStoreTab::finishRecommendedInstall() {
 }
 
 void ComponentStoreTab::downloadMissing(bool showReview) {
-    if (acquisitionChecking_ || acquisitionSequenceActive_ || downloadActive() || verifying_) return;
+    if (acquisitionChecking_ || acquisitionSequenceActive_ || downloadActive() ||
+        verifyActive()) {
+        return;
+    }
     if (runner_ == nullptr) {
         applyStatus(QStringLiteral("native.components.noClient"),
                     StatusReason{.kind = StatusReason::Kind::CheckNeedsRunner});
