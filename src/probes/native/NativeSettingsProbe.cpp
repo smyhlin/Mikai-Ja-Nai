@@ -1,4 +1,5 @@
 
+#include <QAbstractButton>
 #include <QAccessible>
 #include <QApplication>
 #include <QAction>
@@ -2628,6 +2629,454 @@ void exerciseComponentProgress(SettingsDialog& dialog, QSize requestedSize,
     QApplication::processEvents();
 }
 
+// The real spatial acquisition is a live network scenario: the probe drives the
+// product's own Apply changes action against an empty owned store, lets the
+// real fetch/publish/verify workflow run, and records only what it observes.
+// Nothing here injects progress, seeds a catalogue or supplies bytes.
+constexpr int kSpatialAcquisitionDeadlineMs = 300000;
+
+struct SpatialAcquisitionEvidence {
+    QJsonObject initial;
+    QJsonObject terminal;
+    QJsonArray transitions;
+    QJsonArray assets;
+    QStringList screenshots;
+    int initialStorePresent = -1;
+    int terminalStorePresent = -1;
+    bool started = false;
+    bool timedOut = false;
+    bool finished = false;
+    bool terminalVerified = false;
+    bool reviewPresented = false;
+    bool reviewAccepted = false;
+};
+
+struct SpatialSurfaceSnapshot {
+    int storePresent = 0;
+    QString cardState;
+    QString status;
+    QString severity;
+    QString progressLine;
+    int barValue = 0;
+    bool barVisible = false;
+    bool downloadActive = false;
+    bool verifyActive = false;
+    bool running = false;
+
+    bool sameSurface(const SpatialSurfaceSnapshot& other) const {
+        return storePresent == other.storePresent && cardState == other.cardState &&
+               status == other.status && severity == other.severity &&
+               progressLine == other.progressLine && barValue == other.barValue &&
+               barVisible == other.barVisible && downloadActive == other.downloadActive &&
+               verifyActive == other.verifyActive && running == other.running;
+    }
+};
+
+QString spatialStoredDirectory(const mplayer::native::SpatialAsset& asset) {
+    const QString token = mplayer::native::SpatialAssetStore::directoryName(asset.id);
+    if (token.isEmpty()) return {};
+    return QDir(mplayer::native::spatialAssetRoot()).filePath(token);
+}
+
+QString spatialStoredGraphPath(const mplayer::native::SpatialAsset& asset) {
+    const QString directory = spatialStoredDirectory(asset);
+    if (directory.isEmpty()) return {};
+    return QDir(directory).filePath(mplayer::native::SpatialAssetStore::graphFileName());
+}
+
+QString spatialStoredManifestPath(const mplayer::native::SpatialAsset& asset) {
+    const QString directory = spatialStoredDirectory(asset);
+    if (directory.isEmpty()) return {};
+    return QDir(directory).filePath(mplayer::native::SpatialAssetStore::manifestFileName());
+}
+
+/// Presence only: `QFileInfo::isFile` never hashes, so polling the store during
+/// a transfer stays off the GUI thread's expensive path. Digest proof stays with
+/// the tab's own worker verification.
+int spatialStoredGraphCount() {
+    int present = 0;
+    for (const mplayer::native::SpatialAsset& asset :
+         mplayer::native::spatialAssetCatalog()) {
+        const QString graph = spatialStoredGraphPath(asset);
+        if (!graph.isEmpty() && QFileInfo(graph).isFile()) ++present;
+    }
+    return present;
+}
+
+SpatialSurfaceSnapshot spatialSurfaceState(mikai::app::ComponentStoreTab& tab) {
+    SpatialSurfaceSnapshot state;
+    state.storePresent = spatialStoredGraphCount();
+    if (QLabel* label =
+            tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardState"))) {
+        state.cardState = label->text();
+    }
+    if (QProgressBar* bar =
+            tab.findChild<QProgressBar*>(QStringLiteral("animeJanaiModelsCardProgress"))) {
+        state.barValue = bar->value();
+        state.barVisible = bar->isVisibleTo(&tab);
+    }
+    if (QLabel* line = tab.findChild<QLabel*>(
+            QStringLiteral("animeJanaiModelsCardProgressStatus"))) {
+        state.progressLine = line->text();
+    }
+    if (QLabel* status =
+            tab.findChild<QLabel*>(QStringLiteral("nativeComponentStatus"))) {
+        state.status = status->text();
+        state.severity = status->accessibleDescription();
+    }
+    state.downloadActive = tab.downloadActive();
+    state.verifyActive = tab.verifyActive();
+    state.running = tab.acquisitionRunning();
+    return state;
+}
+
+QJsonObject spatialSurfaceJson(qint64 elapsedMs, const SpatialSurfaceSnapshot& state) {
+    QJsonObject object;
+    object.insert(QStringLiteral("elapsedMs"), static_cast<double>(elapsedMs));
+    object.insert(QStringLiteral("storePresent"), state.storePresent);
+    object.insert(QStringLiteral("cardState"), state.cardState);
+    object.insert(QStringLiteral("status"), state.status);
+    object.insert(QStringLiteral("statusSeverity"), state.severity);
+    object.insert(QStringLiteral("progressLine"), state.progressLine);
+    object.insert(QStringLiteral("barValue"), state.barValue);
+    object.insert(QStringLiteral("barVisible"), state.barVisible);
+    object.insert(QStringLiteral("downloadActive"), state.downloadActive);
+    object.insert(QStringLiteral("verifyActive"), state.verifyActive);
+    object.insert(QStringLiteral("acquisitionRunning"), state.running);
+    return object;
+}
+
+/// One stored graph read back from its own manifest: the pinned identity, the
+/// size on disk and the provenance/licence the store wrote beside it. No digest
+/// is recomputed here; the tab's worker verification is the digest proof.
+QJsonObject spatialStoredRecord(const mplayer::native::SpatialAsset& asset) {
+    QJsonObject record;
+    record.insert(QStringLiteral("id"), asset.id);
+    record.insert(QStringLiteral("name"), asset.name);
+    record.insert(QStringLiteral("sha256"), asset.sha256);
+    record.insert(QStringLiteral("bytes"), static_cast<double>(asset.bytes));
+    record.insert(QStringLiteral("url"), asset.url);
+    record.insert(QStringLiteral("commit"), asset.commit);
+    const QString graphPath = spatialStoredGraphPath(asset);
+    const QString manifestPath = spatialStoredManifestPath(asset);
+    record.insert(QStringLiteral("path"), graphPath);
+    record.insert(QStringLiteral("manifestPath"), manifestPath);
+    const QFileInfo graph(graphPath);
+    record.insert(QStringLiteral("present"), graph.isFile());
+    record.insert(QStringLiteral("fileBytes"),
+                  static_cast<double>(graph.isFile() ? graph.size() : 0));
+    QFile manifestFile(manifestPath);
+    if (!manifestFile.open(QIODevice::ReadOnly)) {
+        record.insert(QStringLiteral("manifestReadable"), false);
+        return record;
+    }
+    const QJsonDocument manifest = QJsonDocument::fromJson(manifestFile.readAll());
+    manifestFile.close();
+    if (!manifest.isObject()) {
+        record.insert(QStringLiteral("manifestReadable"), false);
+        return record;
+    }
+    const QJsonObject object = manifest.object();
+    record.insert(QStringLiteral("manifestReadable"), true);
+    record.insert(QStringLiteral("manifestId"), object.value(QStringLiteral("id")).toString());
+    record.insert(QStringLiteral("manifestName"),
+                  object.value(QStringLiteral("name")).toString());
+    record.insert(QStringLiteral("manifestSha256"),
+                  object.value(QStringLiteral("sha256")).toString());
+    record.insert(QStringLiteral("manifestBytes"),
+                  object.value(QStringLiteral("bytes")).toDouble());
+    record.insert(QStringLiteral("acquiredAt"),
+                  object.value(QStringLiteral("acquiredAt")).toString());
+    record.insert(QStringLiteral("creator"),
+                  object.value(QStringLiteral("creator")).toString());
+    const QJsonObject source = object.value(QStringLiteral("source")).toObject();
+    record.insert(QStringLiteral("sourceCommit"),
+                  source.value(QStringLiteral("commit")).toString());
+    record.insert(QStringLiteral("sourceUrl"), source.value(QStringLiteral("url")).toString());
+    record.insert(QStringLiteral("sourcePath"), source.value(QStringLiteral("path")).toString());
+    const QJsonObject license = object.value(QStringLiteral("license")).toObject();
+    record.insert(QStringLiteral("license"), license.value(QStringLiteral("spdx")).toString());
+    return record;
+}
+
+void exerciseSpatialAcquisition(SettingsDialog& dialog, QSize requestedSize,
+                                SpatialAcquisitionEvidence& evidence) {
+    using mplayer::native::SpatialAsset;
+
+    requestedSize = fitSettingsDialogSize(dialog, requestedSize);
+    dialog.resize(requestedSize);
+    dialog.showComponentsTab();
+    dialog.show();
+    QApplication::processEvents();
+
+    auto* componentTab = dialog.findChild<mikai::app::ComponentStoreTab*>();
+    check(componentTab != nullptr && componentTab->isVisibleTo(&dialog),
+          "the real Components page is visible for spatial acquisition");
+    if (componentTab == nullptr) return;
+
+    const QVector<SpatialAsset> catalogue = mplayer::native::spatialAssetCatalog();
+    check(catalogue.size() == 5,
+          "the pinned spatial catalogue carries the five acquisition graphs");
+    const QString ownedRoot = mikai::probes::isolation::isolatedRoot();
+    const QString assetsRoot = mplayer::native::spatialAssetRoot();
+    const QString ownedPrefix =
+        ownedRoot.isEmpty() ? QString() : QDir::cleanPath(ownedRoot) + QLatin1Char('/');
+    const bool insideOwnedScratch =
+        !ownedRoot.isEmpty() &&
+        QDir::cleanPath(assetsRoot).startsWith(ownedPrefix, Qt::CaseInsensitive);
+    check(insideOwnedScratch,
+          "the spatial store resolves inside this probe's owned scratch", assetsRoot);
+
+    evidence.initialStorePresent = spatialStoredGraphCount();
+    const QStringList existingDirectories =
+        QDir(assetsRoot).entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    check(evidence.initialStorePresent == 0 && existingDirectories.isEmpty(),
+          "the owned spatial store holds nothing before acquisition",
+          existingDirectories.join(QStringLiteral(", ")));
+    // A store outside the owned scratch is never touched: acquiring into it
+    // would be the very mutation this isolation exists to prevent.
+    if (!insideOwnedScratch || evidence.initialStorePresent != 0 ||
+        !existingDirectories.isEmpty()) {
+        return;
+    }
+
+    // The tab is built before Settings hands it the runner and client, so its
+    // constructor-time refresh could not start. The real refresh is this call.
+    componentTab->refresh();
+    QApplication::processEvents();
+    check(waitForUi(
+              [componentTab] {
+                  return componentTab->inventoryReady() && !componentTab->acquisitionRunning();
+              },
+              60000),
+          "the Components inventory settles on the empty store");
+
+    SpatialSurfaceSnapshot initial = spatialSurfaceState(*componentTab);
+    evidence.initial = spatialSurfaceJson(0, initial);
+    const QString zeroLabel =
+        QCoreApplication::translate("mikai::app::ComponentStoreTab", "not installed (0/%1)")
+            .arg(catalogue.size());
+    check(initial.storePresent == 0,
+          "the store is still empty once the Components page has rendered");
+    check(initial.cardState == zeroLabel,
+          "the spatial card reads not installed (0/5)", initial.cardState);
+
+    if (QWidget* card =
+            componentTab->findChild<QWidget*>(QStringLiteral("animeJanaiModelsCardTitle"))) {
+        mikai::probes::revealWidget(card);
+    }
+    const QString initialShot = QStringLiteral("native-spatial-acquisition-initial.png");
+    check(dialog.grab().save(initialShot),
+          "the empty Components surface screenshot was saved");
+    evidence.screenshots.append(initialShot);
+
+    // Select exactly the spatial card through the real checkboxes. Other
+    // recommendations are cleared first so Apply cannot start a backend, RIFE
+    // or kernel unit.
+    QCheckBox* spatialCheck =
+        componentTab->findChild<QCheckBox*>(QStringLiteral("animeJanaiModelsCardCheck"));
+    QCheckBox* runtimeCheck =
+        componentTab->findChild<QCheckBox*>(QStringLiteral("tensorRtRuntimeCardCheck"));
+    QCheckBox* kernelsCheck =
+        componentTab->findChild<QCheckBox*>(QStringLiteral("tensorRtKernelsCardCheck"));
+    QCheckBox* rifeCheck =
+        componentTab->findChild<QCheckBox*>(QStringLiteral("rifeModelsCardCheck"));
+    check(spatialCheck != nullptr, "the spatial model card exposes its selector");
+    if (spatialCheck == nullptr) return;
+    for (QCheckBox* box : {runtimeCheck, kernelsCheck, rifeCheck}) {
+        if (box != nullptr && box->isChecked()) box->click();
+        if (box != nullptr) {
+            check(!box->isChecked(), "a non-spatial card is left unselected",
+                  box->objectName());
+        }
+    }
+    if (!spatialCheck->isChecked()) spatialCheck->click();
+    QApplication::processEvents();
+    check(spatialCheck->isChecked(), "the spatial model card is selected");
+    if (QWidget* card = spatialCheck->parentWidget()) {
+        check(card->property("selected").toBool(),
+              "only the spatial card renders an active selection");
+    }
+
+    SpatialSurfaceSnapshot beforeApply = spatialSurfaceState(*componentTab);
+    evidence.initial.insert(QStringLiteral("selectionCardState"), beforeApply.cardState);
+
+    // The review dialog is the tab's own acquisition review; nothing else is
+    // ever accepted. It carries no binding consent and appears only when the
+    // product's reviewed path asks for it.
+    QTimer reviewTimer;
+    reviewTimer.setInterval(50);
+    QObject::connect(&reviewTimer, &QTimer::timeout, [componentTab, &evidence] {
+        for (QWidget* top : QApplication::topLevelWidgets()) {
+            auto* box = qobject_cast<QMessageBox*>(top);
+            if (box == nullptr || !box->isVisible()) continue;
+            if (box->parentWidget() != componentTab) continue;
+            if (box->windowTitle() !=
+                QCoreApplication::translate("mikai::app::ComponentStoreTab",
+                                            "Review installation")) {
+                continue;
+            }
+            evidence.reviewPresented = true;
+            if (QAbstractButton* yes = box->button(QMessageBox::Yes)) {
+                evidence.reviewAccepted = true;
+                yes->click();
+            }
+        }
+    });
+    reviewTimer.start();
+
+    QPushButton* apply = accessibleAction(
+        *componentTab,
+        QCoreApplication::translate("mikai::app::ComponentStoreTab", "Apply changes"));
+    check(apply != nullptr && apply->isEnabled(),
+          "the real Apply changes action is available for the acquisition");
+    if (apply == nullptr) {
+        reviewTimer.stop();
+        return;
+    }
+
+    QElapsedTimer clock;
+    clock.start();
+    apply->click();
+    QApplication::processEvents();
+
+    evidence.started = waitForUi(
+        [componentTab] { return componentTab->acquisitionRunning(); }, 20000);
+    check(evidence.started, "Apply started the real acquisition workflow");
+
+    SpatialSurfaceSnapshot last;
+    bool haveLast = false;
+    bool progressCaptured = false;
+    QString stableStatus;
+    int stablePolls = 0;
+    while (evidence.started) {
+        QApplication::processEvents();
+        const qint64 elapsed = clock.elapsed();
+        const SpatialSurfaceSnapshot state = spatialSurfaceState(*componentTab);
+        if (!haveLast || !state.sameSurface(last)) {
+            evidence.transitions.append(spatialSurfaceJson(elapsed, state));
+            last = state;
+            haveLast = true;
+        }
+        if (!progressCaptured && state.storePresent > 0 &&
+            state.storePresent < catalogue.size() && state.cardState != initial.cardState) {
+            if (QWidget* card = componentTab->findChild<QWidget*>(
+                    QStringLiteral("animeJanaiModelsCardProgress"))) {
+                mikai::probes::revealWidget(card);
+            }
+            const QString progressShot =
+                QStringLiteral("native-spatial-acquisition-progress.png");
+            if (dialog.grab().save(progressShot)) {
+                progressCaptured = true;
+                evidence.screenshots.append(progressShot);
+            }
+        }
+        if (!state.running && componentTab->inventoryReady()) {
+            if (state.status == stableStatus) {
+                if (++stablePolls >= 3) {
+                    evidence.finished = true;
+                    break;
+                }
+            } else {
+                stableStatus = state.status;
+                stablePolls = 0;
+            }
+        }
+        if (elapsed >= kSpatialAcquisitionDeadlineMs) {
+            evidence.timedOut = true;
+            break;
+        }
+        QThread::msleep(10);
+    }
+    reviewTimer.stop();
+
+    if (evidence.timedOut) {
+        if (QPushButton* cancel = accessibleAction(
+                *componentTab,
+                QCoreApplication::translate("mikai::app::ComponentStoreTab", "Cancel"));
+            cancel != nullptr && cancel->isEnabled()) {
+            cancel->click();
+        }
+        waitForUi([componentTab] { return !componentTab->acquisitionRunning(); }, 60000);
+    }
+
+    SpatialSurfaceSnapshot terminal = spatialSurfaceState(*componentTab);
+    evidence.terminalStorePresent = terminal.storePresent;
+    evidence.terminal = spatialSurfaceJson(clock.elapsed(), terminal);
+    check(evidence.finished, "the acquisition reached an idle terminal state");
+    check(!evidence.timedOut, "the acquisition finished inside the probe deadline");
+    check(!evidence.reviewPresented || evidence.reviewAccepted,
+          "a presented acquisition review was accepted, never bypassed");
+    check(terminal.storePresent == catalogue.size(),
+          "every pinned graph is present in the owned store",
+          QString::number(terminal.storePresent) + QLatin1Char('/') +
+              QString::number(catalogue.size()));
+
+    const QString installedLabel =
+        QCoreApplication::translate("mikai::app::ComponentStoreTab",
+                                    "%1/%2 installed; %3/%2 verified")
+            .arg(catalogue.size())
+            .arg(catalogue.size())
+            .arg(catalogue.size());
+    check(terminal.cardState == installedLabel,
+          "the spatial card reads five installed and five verified", terminal.cardState);
+
+    const QString countsStatus =
+        QCoreApplication::translate("mikai::app::ComponentStoreTab",
+                                    "Installed: %1/%2 · Verified: %3/%2")
+            .arg(catalogue.size())
+            .arg(catalogue.size())
+            .arg(catalogue.size());
+    check(terminal.status == countsStatus,
+          "the Components status reports the installed and verified counts",
+          terminal.status);
+    check(terminal.severity == QLatin1String("success"),
+          "the terminal Components status carries the success severity",
+          terminal.severity);
+    evidence.terminalVerified =
+        terminal.storePresent == catalogue.size() && terminal.cardState == installedLabel &&
+        terminal.status == countsStatus && terminal.severity == QLatin1String("success");
+
+    if (QWidget* card =
+            componentTab->findChild<QWidget*>(QStringLiteral("animeJanaiModelsCardTitle"))) {
+        mikai::probes::revealWidget(card);
+    }
+    const QString terminalShot = QStringLiteral("native-spatial-acquisition-terminal.png");
+    check(dialog.grab().save(terminalShot),
+          "the completed Components surface screenshot was saved");
+    evidence.screenshots.append(terminalShot);
+
+    QStringList provenanceProblems;
+    for (const SpatialAsset& asset : catalogue) {
+        const QJsonObject record = spatialStoredRecord(asset);
+        evidence.assets.append(record);
+        const bool present = record.value(QStringLiteral("present")).toBool();
+        const bool readable = record.value(QStringLiteral("manifestReadable")).toBool();
+        const bool matches =
+            present && readable &&
+            record.value(QStringLiteral("fileBytes")).toDouble() ==
+                static_cast<double>(asset.bytes) &&
+            record.value(QStringLiteral("manifestBytes")).toDouble() ==
+                static_cast<double>(asset.bytes) &&
+            record.value(QStringLiteral("manifestId")).toString() == asset.id &&
+            record.value(QStringLiteral("manifestSha256")).toString() == asset.sha256 &&
+            record.value(QStringLiteral("sourceCommit")).toString() == asset.commit &&
+            record.value(QStringLiteral("sourceUrl")).toString() == asset.url;
+        if (!matches) {
+            provenanceProblems.append(QStringLiteral("%1: present=%2 readable=%3 bytes=%4/%5")
+                                          .arg(asset.name)
+                                          .arg(present ? 1 : 0)
+                                          .arg(readable ? 1 : 0)
+                                          .arg(record.value(QStringLiteral("fileBytes"))
+                                                   .toDouble())
+                                          .arg(asset.bytes));
+        }
+    }
+    check(provenanceProblems.isEmpty(),
+          "each stored graph carries its pinned size, digest and source provenance",
+          provenanceProblems.join(QStringLiteral("; ")));
+}
+
 void exerciseVerifyBackendIsolation(SettingsDialog& dialog,
                                     mplayer::native::Backend selected,
                                     mplayer::native::Backend inactive,
@@ -2800,10 +3249,15 @@ int main(int argc, char** argv) {
         QStringLiteral("hdr-settings-only"),
         QStringLiteral("Run only the actual General HDR settings presentation scenario."));
     parser.addOption(hdrSettingsOnlyOption);
+    QCommandLineOption spatialAcquisitionOnlyOption(
+        QStringLiteral("spatial-acquisition-only"),
+        QStringLiteral("Run only the real spatial-model acquisition from the empty owned store."));
+    parser.addOption(spatialAcquisitionOnlyOption);
     parser.process(app);
     const bool installRuntime = parser.isSet(installRuntimeOption);
     const bool componentProgressOnly = parser.isSet(componentProgressOnlyOption);
     const bool hdrSettingsOnly = parser.isSet(hdrSettingsOnlyOption);
+    const bool spatialAcquisitionOnly = parser.isSet(spatialAcquisitionOnlyOption);
     QCoreApplication::setOrganizationName(QStringLiteral("MikaiNativeSettingsProbe"));
     QCoreApplication::setApplicationName(QStringLiteral("NativeSettingsProbe"));
 
@@ -2871,13 +3325,89 @@ int main(int argc, char** argv) {
     const QSize hdrWide(mikai::app::theme::kSettingsDialogDefaultWidth,
                         mikai::app::theme::kSettingsDialogDefaultHeight);
     const QString hdrCatalog = qEnvironmentVariable("MIKAI_PROBE_TRANSLATION");
-    if (hdrSettingsOnly || !componentProgressOnly) {
+    if (hdrSettingsOnly || (!componentProgressOnly && !spatialAcquisitionOnly)) {
         for (const QString& language : {QStringLiteral("en"), QStringLiteral("uk")}) {
             exerciseHdrPresentation(client, runner, hdrCompact, language, hdrCatalog);
             exerciseHdrPresentation(client, runner, hdrWide, language, hdrCatalog);
         }
         check(mikai::app::applyInterfaceLanguage(hdrLanguageBefore, hdrCatalog),
               "the probe restores its original interface language after HDR captures");
+    }
+
+    if (spatialAcquisitionOnly) {
+        check(mikai::app::applyInterfaceLanguage(QStringLiteral("en"), probeCatalog),
+              "the acquisition surface is rendered in English for the evidence run");
+        // The acquisition needs a real backend client and a real runner. No
+        // credential is consulted for the pinned raw.githubusercontent.com URLs,
+        // and the environment-file search is pointed at a file this run owns, so
+        // a stray .env beside the output directory cannot supply one.
+        mikai::backend::setEnvFilePathOverride(
+            QDir(mikai::probes::isolation::isolatedRoot())
+                .filePath(QStringLiteral("probe-anonymous.env")));
+        mikai::backend::MikaiClient acquisitionClient;
+        Runner acquisitionRunner;
+        SpatialAcquisitionEvidence evidence;
+        {
+            SettingsDialog dialog(acquisitionClient, acquisitionRunner);
+            const QSize size(mikai::app::theme::kSettingsDialogDefaultWidth,
+                             mikai::app::theme::kSettingsDialogDefaultHeight);
+            exerciseSpatialAcquisition(dialog, size, evidence);
+            dialog.reject();
+            QApplication::processEvents();
+        }
+        // Drain before the borrowed client leaves scope: every transfer the tab
+        // started must be retired while the client it captured is still alive.
+        const bool drained = acquisitionRunner.waitForDone(30000);
+        check(drained, "the acquisition runner drained while its client was still alive");
+
+        const int catalogueSize = mplayer::native::spatialAssetCatalog().size();
+        const bool live = evidence.started && !evidence.timedOut &&
+                          evidence.terminalStorePresent == catalogueSize;
+        const bool proof = live && evidence.finished && evidence.terminalVerified &&
+                           evidence.assets.size() == catalogueSize && drained &&
+                           failures == 0;
+
+        QJsonObject result;
+        result.insert(QStringLiteral("probe"), QStringLiteral("native_settings_probe"));
+        result.insert(QStringLiteral("scenario"), QStringLiteral("spatial_acquisition_only"));
+        result.insert(QStringLiteral("syntheticProgressPresentation"), false);
+        result.insert(QStringLiteral("liveNetworkAcquisition"), live);
+        result.insert(QStringLiteral("acquisitionProof"), proof);
+        result.insert(QStringLiteral("inferenceProof"), false);
+        result.insert(QStringLiteral("store"), mplayer::native::spatialAssetRoot());
+        result.insert(QStringLiteral("catalogueSize"), catalogueSize);
+        result.insert(QStringLiteral("catalogueCommit"),
+                      mplayer::native::spatialAssetCommit());
+        result.insert(QStringLiteral("started"), evidence.started);
+        result.insert(QStringLiteral("timedOut"), evidence.timedOut);
+        result.insert(QStringLiteral("finished"), evidence.finished);
+        result.insert(QStringLiteral("terminalVerified"), evidence.terminalVerified);
+        result.insert(QStringLiteral("runnerDrained"), drained);
+        result.insert(QStringLiteral("reviewDialogPresented"), evidence.reviewPresented);
+        result.insert(QStringLiteral("reviewDialogAccepted"), evidence.reviewAccepted);
+        result.insert(QStringLiteral("initial"), evidence.initial);
+        result.insert(QStringLiteral("terminal"), evidence.terminal);
+        result.insert(QStringLiteral("transitions"), evidence.transitions);
+        result.insert(QStringLiteral("assets"), evidence.assets);
+        QJsonArray screenshots;
+        for (const QString& shot : evidence.screenshots) screenshots.append(shot);
+        result.insert(QStringLiteral("screenshots"), screenshots);
+        result.insert(QStringLiteral("passed"), failures == 0);
+        result.insert(QStringLiteral("checks"), checks);
+        result.insert(QStringLiteral("failures"), failures);
+        QFile evidenceFile(QStringLiteral("native-spatial-acquisition-evidence.json"));
+        if (evidenceFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            evidenceFile.write(QJsonDocument(result).toJson(QJsonDocument::Indented));
+            evidenceFile.close();
+        } else {
+            check(false, "the spatial acquisition evidence was written");
+        }
+        std::fprintf(stderr,
+                     "[native_settings_probe spatial-acquisition-only] %s (%d failures) "
+                     "live=%d proof=%d transition-records=%d\n",
+                     failures == 0 ? "PASS" : "FAIL", failures, live ? 1 : 0,
+                     proof ? 1 : 0, static_cast<int>(evidence.transitions.size()));
+        return failures == 0 ? 0 : 1;
     }
 
     if (hdrSettingsOnly) {
