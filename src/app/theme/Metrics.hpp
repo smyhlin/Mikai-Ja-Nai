@@ -209,7 +209,9 @@ inline constexpr int kSearchMenuPaddingRight =
     kSearchActionPaddingH + kSearchMenuChevronSize + kSpacingSmall;
 // The spacing the header wants between a button's glyph and its label. The
 // widget style owns part of that gap and offers no knob for it, so the glyph
-// pads its own box with the remainder.
+// pads its own box with the remainder. The pad is part of the icon's planned
+// device box (Icons.cpp), so it stays inside the logical size the layout
+// reserved and never widens the icon at a fractional ratio.
 inline constexpr int kSearchIconTextGap = 8;
 inline constexpr int kSearchIconGlyphPad = kSearchIconTextGap / 2;
 
