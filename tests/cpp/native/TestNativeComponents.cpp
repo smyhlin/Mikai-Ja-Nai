@@ -599,10 +599,13 @@ void TestNativeComponents::upscalingSelectionSurvivesRefreshAndMissingGraphsFail
 
     // A separate, explicit setup confirmation re-evaluates recommendations;
     // refresh, retranslation and the normal Apply action never do so.
+    // The check it starts is a tracked busy line now, not a leftover verdict:
+    // the status pipeline replaces the previous failure with the muted
+    // operation line.
     tab.installRecommended();
     QVERIFY(pack->isChecked());
-    QCOMPARE(status->accessibleDescription(), QStringLiteral("failure"));
-    QVERIFY(!status->text().isEmpty());
+    QCOMPARE(status->accessibleDescription(), QStringLiteral("busy"));
+    QVERIFY(status->text().contains(QStringLiteral("Checking selected components")));
 }
 
 void TestNativeComponents::cancelledTensorRtProvisioningDoesNotTouchItsFixtures() {

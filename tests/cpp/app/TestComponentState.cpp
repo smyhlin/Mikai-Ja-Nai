@@ -105,7 +105,7 @@ void TestComponentState::progressDecisionNeverFabricatesCompletion() {
     empty.inventory.total = 5;
     QVERIFY(!componentProgressBar(empty).visible);
     QVERIFY(!componentProgressPercent(empty).has_value());
-    QCOMPARE(cardReadiness(empty), Readiness::Missing);
+    QCOMPARE(static_cast<int>(cardReadiness(empty)), static_cast<int>(Readiness::Missing));
 
     // A real transfer reports its own bytes.
     CardState active;
@@ -168,7 +168,7 @@ void TestComponentState::progressDecisionNeverFabricatesCompletion() {
     verifying.transfer.total = 100;
     QVERIFY(!componentProgressPercent(verifying).has_value());
     QVERIFY(componentProgressBar(verifying).indeterminate);
-    QCOMPARE(cardReadiness(verifying), Readiness::Verifying);
+    QCOMPARE(static_cast<int>(cardReadiness(verifying)), static_cast<int>(Readiness::Verifying));
 }
 
 void TestComponentState::failedFullTransferNeverShowsAFullBar() {
