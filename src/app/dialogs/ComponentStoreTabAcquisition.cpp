@@ -105,7 +105,6 @@ void ComponentStoreTab::downloadMissing() {
 
 void ComponentStoreTab::installRecommended() {
     if (acquisitionChecking_ || downloadActive() || verifyActive()) return;
-    recommendedInstallPending_ = true;
     const GpuComputeCapability& gpu = observeComputeCapability();
 #ifdef Q_OS_WIN
     const Backend preferredBackend = gpu.nvidia ? Backend::TensorRT : Backend::DirectML;
@@ -115,8 +114,12 @@ void ComponentStoreTab::installRecommended() {
 #endif
     const int backendIndex = animeJanaiBackendCombo_->findData(
         static_cast<int>(preferredBackend));
+    // A different backend makes the combo handler bump the generation
+    // synchronously, and a bump clears the pending flag. Claim it only after
+    // the change, and let the refresh the handler started settle it.
     if (backendIndex >= 0) animeJanaiBackendCombo_->setCurrentIndex(backendIndex);
-    if (inventoryReady_) finishRecommendedInstall();
+    recommendedInstallPending_ = true;
+    if (inventoryReady_ && !inventoryScanning_) finishRecommendedInstall();
     else scheduleInventoryRefresh();
 }
 
@@ -794,6 +797,9 @@ void ComponentStoreTab::startAcquisitionVerification() {
                                             .busy = StatusReason::Busy::Verification});
     }
     updateControls();
+    // A completed transfer may have left a confirmed 100 % bar; the proof run
+    // must render indeterminate from its first frame.
+    renderAllCardProgress();
     const std::shared_ptr<std::atomic<bool>> live = alive_;
     runner_->runTransfer(
         [gpu, cancelled] {
@@ -807,6 +813,7 @@ void ComponentStoreTab::startAcquisitionVerification() {
             acquisitionSequenceActive_ = false;
             if (cancelled->load() || result.value(QStringLiteral("cancelled")).toBool()) {
                 applyStatus(QStringLiteral("native.components.cancelled"), QString());
+                renderAllCardProgress();
                 refresh();
                 return;
             }
@@ -905,6 +912,7 @@ void ComponentStoreTab::startAcquisitionVerification() {
                             StatusReason{.kind = StatusReason::Kind::NotVerified,
                                          .detail = backend::failureLine(failure)});
             }
+            renderAllCardProgress();
             refresh();
         });
 }

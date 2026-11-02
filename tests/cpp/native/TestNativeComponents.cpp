@@ -1057,6 +1057,11 @@ void TestNativeComponents::closureStatusAcceptsTheBundleDeclaredResource() {
     QVERIFY(status.dirsAvailable);
     QVERIFY(!status.runtimeStored);
     QVERIFY(status.missing.isEmpty());
+    // A valid bundle-provided closure satisfies the selection; it must not
+    // report a missing trt-runtime pack.
+    QVERIFY(mikai::app::component_store_detail::tensorRtClosureFailureLines(
+                status, true, true, kernels->name)
+                .isEmpty());
 
     // A bundle that declares some other GPU's resource does not satisfy this
     // machine: the missing pack is named again.

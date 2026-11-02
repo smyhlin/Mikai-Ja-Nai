@@ -19,6 +19,8 @@ class TestComponentState : public QObject {
   void progressDecisionNeverFabricatesCompletion();
   void failedFullTransferNeverShowsAFullBar();
   void deletedFilesClearTheStaleBarOnRefresh();
+  void staleModelItemIsClearedWhenUnrelatedModelsRemain();
+  void verificationTurnsAConfirmedBarIndeterminate();
   void verificationIsNotADownload();
   void generationBumpMidCheckReleasesEveryLatch();
 };

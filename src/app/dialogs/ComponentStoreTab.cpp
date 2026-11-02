@@ -240,14 +240,16 @@ QStringList tensorRtClosureFailureLines(const TensorRtClosureStatus& closure,
     };
     // Each selected element answers for itself; the runtime prerequisite is
     // reported separately instead of one generic orphan sentence.
-    if (runtimeSelected && !closure.runtimeStored) appendUnique(runtimeMissing);
+    if (runtimeSelected && !closure.runtimeStored && !closure.bundleProvidesDirs)
+        appendUnique(runtimeMissing);
     if (runtimeSelected && !closure.dirsAvailable && closure.runtimeStored &&
         !closure.kernelsStored) {
         appendUnique(kernelsMissing);
     }
     if (kernelsSelected && !closure.kernelsStored && !closure.bundleProvidesDirs)
         appendUnique(kernelsMissing);
-    if (kernelsSelected && !closure.runtimeStored) appendUnique(runtimeMissing);
+    if (kernelsSelected && !closure.runtimeStored && !closure.bundleProvidesDirs)
+        appendUnique(runtimeMissing);
     return failures;
 }
 
@@ -334,6 +336,7 @@ void ComponentStoreTab::bumpRunGeneration(const QString& reason) {
     // surface left to repaint and no announcement to make.
     if (alive_ != nullptr && alive_->load()) {
         renderCards();
+        renderAllCardProgress();
         updateControls();
     }
 }
@@ -1003,39 +1006,45 @@ int ComponentStoreTab::runtimeCardInstalledOnDisk() const {
 
 void ComponentStoreTab::reconcileProgressWithInventory() {
     if (!inventoryReady_) return;
-    struct CardTruth {
-        const char* cardId;
-        int installedOnDisk;
-    };
-    const CardTruth cards[]{
-        {"tensorRtRuntimeCard", runtimeCardInstalledOnDisk()},
-        {"tensorRtKernelsCard", kernelsPackInstalled_ ? 1 : 0},
-        {"rifeModelsCard", rifeInstalled_ ? 1 : 0},
-        {"animeJanaiModelsCard", installedSpatialCount_},
-    };
-    for (const CardTruth& truth : cards) {
-        const QString cardId = QString::fromLatin1(truth.cardId);
-        int installedItems = 0;
-        for (auto item = progressItems_.cbegin(); item != progressItems_.cend(); ++item) {
-            if (item->cardId == cardId &&
-                item->outcome == ProgressItem::Outcome::Installed) {
-                ++installedItems;
-            }
-        }
-        if (installedItems == 0 || truth.installedOnDisk >= installedItems) continue;
-        // The disk holds fewer than the transfer claimed. Demote the whole
-        // terminal claim for this card rather than keep a bar and an "Installed:"
-        // line that the inventory contradicts.
+    const auto eraseInstalledWhere = [this](const QString& cardId, const auto& stale) {
         for (auto item = progressItems_.begin(); item != progressItems_.end();) {
             if (item->cardId == cardId &&
-                item->outcome == ProgressItem::Outcome::Installed) {
+                item->outcome == ProgressItem::Outcome::Installed && stale(item.key())) {
                 currentProgressItems_.remove(item.key());
                 item = progressItems_.erase(item);
             } else {
                 ++item;
             }
         }
-    }
+    };
+
+    // Spatial models are separate files, so presence is answered per identity:
+    // a deleted model must not hide behind four unrelated files still present.
+    eraseInstalledWhere(QStringLiteral("animeJanaiModelsCard"), [this](const QString& id) {
+        const StoredSpatialAsset* row = spatialInventoryRow(storedSpatial_, id);
+        return row == nullptr || !QFileInfo(row->graphPath).isFile();
+    });
+
+    const auto bareIdentity = [](const QString& key) {
+        return key.startsWith(QLatin1String("pending:")) ? key.mid(8) : key;
+    };
+    eraseInstalledWhere(QStringLiteral("tensorRtRuntimeCard"), [this, &bareIdentity](
+                                                                  const QString& key) {
+        const QString name = bareIdentity(key);
+        if (name == QLatin1String("trt-runtime")) return !runtimePackInstalled_;
+        if (name == QLatin1String("trt-runtime-trtexec") ||
+            name == QLatin1String("animejanai-local-runtime") ||
+            name == QLatin1String("aji-v0.17.1") ||
+            name.startsWith(QLatin1String("onnxruntime-directml")) ||
+            name.startsWith(QLatin1String("directml-"))) {
+            return !(animeJanaiTensorRtInstalled_ || animeJanaiDirectMlInstalled_);
+        }
+        return runtimeCardInstalledOnDisk() == 0;
+    });
+    eraseInstalledWhere(QStringLiteral("tensorRtKernelsCard"),
+                        [this](const QString&) { return !kernelsPackInstalled_; });
+    eraseInstalledWhere(QStringLiteral("rifeModelsCard"),
+                        [this](const QString&) { return !rifeInstalled_; });
 }
 
 mplayer::native::Backend ComponentStoreTab::selectedBackend() const {
@@ -1679,6 +1688,7 @@ void ComponentStoreTab::applyVerifyResult(int verified, int failed, int failedRi
     // copy: a verification that ran while a pack was still arriving must not
     // render a state that is already gone.
     renderCards();
+    renderAllCardProgress();
     if (failed == 0) {
         applyStatus(QString(),
                     StatusReason{.kind = StatusReason::Kind::VerifiedCount, .count = verified});
@@ -1704,6 +1714,8 @@ void ComponentStoreTab::startVerify(const VerifyRequest& request) {
     applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::Busy,
                                         .busy = StatusReason::Busy::InstalledVerification});
     updateControls();
+    // The bars must leave 100 % for the whole proof, not just when it ends.
+    renderAllCardProgress();
 
     runner_->runTransfer(
         [request, alive = alive_, cancelled]() -> QVariant {

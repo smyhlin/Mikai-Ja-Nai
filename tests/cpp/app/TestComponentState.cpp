@@ -8,6 +8,7 @@
 #include "native/components/NativeComponentCatalog.hpp"
 #include "native/components/NativeComponentProvisioning.hpp"
 #include "native/components/NativeComponentStore.hpp"
+#include "native/models/NativeSpatialAssets.hpp"
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QCryptographicHash>
@@ -210,7 +211,7 @@ void TestComponentState::failedFullTransferNeverShowsAFullBar() {
 
     emit provisioner.progress(ComponentProvisionProgress{
         QStringLiteral("trt-runtime"), 100, 100, ComponentProvisionStage::Downloading});
-    QCOMPARE(runtimeBar->value(), 100);
+    QCOMPARE(runtimeBar->value(), 99);
     QVERIFY(runtimeStatus->text().contains(QStringLiteral("Downloading")));
 
     // The transfer reached every byte, then failed: the bar must not remain at
@@ -275,6 +276,109 @@ void TestComponentState::deletedFilesClearTheStaleBarOnRefresh() {
     QVERIFY(!spatialStatus->text().contains(QStringLiteral("Installed: ")));
     // A 0/5 card never begins with "installed" in English either.
     QVERIFY(spatialState->text().startsWith(QStringLiteral("not installed (0/")));
+    runner.waitForDone(5000);
+}
+
+void TestComponentState::staleModelItemIsClearedWhenUnrelatedModelsRemain() {
+    QVERIFY(storedSpatialAssets().isEmpty());
+    const QVector<SpatialAsset> catalog = spatialAssetCatalog();
+    QCOMPARE(catalog.size(), 5);
+    const QString root = spatialAssetRoot();
+    const bool rootExisted = QFileInfo::exists(root);
+    QStringList createdDirectories;
+    const auto cleanup = qScopeGuard([&] {
+        for (const QString& directory : createdDirectories)
+            QDir(directory).removeRecursively();
+        if (!rootExisted) QDir().rmdir(root);
+    });
+    // Presence only: named directories with a graph file. The bytes do not
+    // match the pins, but the inventory counts four unrelated present models,
+    // which is exactly the aggregate count that used to mask a deleted item.
+    for (const SpatialAsset& asset : catalog) {
+        const QString directory =
+            QDir(root).filePath(SpatialAssetStore::directoryName(asset.id));
+        QVERIFY(QDir().mkpath(directory));
+        createdDirectories << directory;
+        QVERIFY(writeBytes(QDir(directory).filePath(SpatialAssetStore::graphFileName()),
+                           QByteArrayLiteral("placeholder")));
+    }
+
+    mikai::app::Runner runner;
+    mikai::app::NativeComponentProvisioner provisioner(runner);
+    mikai::app::ComponentStoreTab tab;
+    tab.setComponentProvisioner(&provisioner);
+    tab.setRunner(&runner);
+    waitUntil([&] { return tab.inventoryReady() && !tab.acquisitionRunning(); });
+    QVERIFY(tab.inventoryReady());
+
+    auto* cardState = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardState"));
+    auto* cardBar =
+        tab.findChild<QProgressBar*>(QStringLiteral("animeJanaiModelsCardProgress"));
+    auto* progressStatus =
+        tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardProgressStatus"));
+    QVERIFY(cardState != nullptr && cardBar != nullptr && progressStatus != nullptr);
+    QVERIFY2(cardState->text().startsWith(QStringLiteral("5/5 installed")),
+             qPrintable(cardState->text()));
+
+    const SpatialAsset& installed = catalog.last();
+    emit provisioner.progress(ComponentProvisionProgress{
+        installed.id, 100, 100, ComponentProvisionStage::Installed});
+    QCOMPARE(cardBar->value(), 100);
+    QVERIFY(progressStatus->text().contains(QStringLiteral("Installed: ")));
+
+    // Delete only the item this session installed; four unrelated model files
+    // remain. Identity reconciliation must drop the stale item, not keep it
+    // because a catalog-wide count is still non-zero.
+    QVERIFY(QFile::remove(QDir(createdDirectories.last())
+                              .filePath(SpatialAssetStore::graphFileName())));
+    tab.refresh();
+    waitUntil([&] { return !tab.acquisitionRunning(); });
+
+    QVERIFY(progressStatus->isHidden());
+    QVERIFY(!progressStatus->text().contains(QStringLiteral("Installed: ")));
+    QVERIFY(cardBar->isHidden());
+    QVERIFY2(cardState->text().startsWith(QStringLiteral("4/5 installed")),
+             qPrintable(cardState->text()));
+    runner.waitForDone(5000);
+}
+
+void TestComponentState::verificationTurnsAConfirmedBarIndeterminate() {
+    const ComponentStore store = componentStore();
+    QVERIFY(installedPackNames(store).isEmpty());
+    const QString releaseDirectory = componentReleaseDirectory(store);
+    const QString tensorRtDirectory = QFileInfo(releaseDirectory).absolutePath();
+    const auto cleanup = qScopeGuard([&] {
+        QDir(releaseDirectory).removeRecursively();
+        QDir().rmdir(tensorRtDirectory);
+    });
+    const ComponentPack* runtime = tensorRtRuntimePack();
+    QVERIFY(runtime != nullptr);
+    QVERIFY(populateStore(store, {*runtime}));
+
+    mikai::app::Runner runner;
+    mikai::app::NativeComponentProvisioner provisioner(runner);
+    mikai::app::ComponentStoreTab tab;
+    tab.setComponentProvisioner(&provisioner);
+    tab.setRunner(&runner);
+    waitUntil([&] { return tab.inventoryReady() && !tab.acquisitionRunning(); });
+    QVERIFY(tab.inventoryReady());
+
+    auto* runtimeBar =
+        tab.findChild<QProgressBar*>(QStringLiteral("tensorRtRuntimeCardProgress"));
+    auto* verifyButton =
+        tab.findChild<QPushButton*>(QStringLiteral("nativeComponentVerifyButton"));
+    QVERIFY(runtimeBar != nullptr && verifyButton != nullptr);
+    emit provisioner.progress(ComponentProvisionProgress{
+        runtime->name, 100, 100, ComponentProvisionStage::Installed});
+    QCOMPARE(runtimeBar->value(), 100);
+
+    verifyButton->click();
+    QVERIFY(tab.verifyActive());
+    QCOMPARE(runtimeBar->maximum(), 0);
+    waitUntil([&] { return !tab.verifyActive(); });
+    // The proof is over; the confirmed terminal item may read 100 again.
+    QCOMPARE(runtimeBar->maximum(), 100);
+    QCOMPARE(runtimeBar->value(), 100);
     runner.waitForDone(5000);
 }
 
