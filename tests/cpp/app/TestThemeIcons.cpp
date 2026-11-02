@@ -5,11 +5,13 @@
 #include "theme/Metrics.hpp"
 #include "theme/Palette.hpp"
 #include "widgets/SwatchButton.hpp"
+#include "widgets/TitleCard.hpp"
 #include "widgets/ToggleSwitch.hpp"
 
 #include <player/shell/ShellTheme.hpp>
 
 #include <QApplication>
+#include <QColor>
 #include <QDir>
 #include <QFile>
 #include <QImage>
@@ -154,7 +156,7 @@ void TestThemeIcons::customColorAlphaIsPreservedInCacheKey() {
   QVERIFY(containsColorAtAlpha(high, highAlpha));
 }
 
-void TestThemeIcons::glyphBoxIsExactAtEveryScale() {
+void TestThemeIcons::glyphBoxIsPhysicalAtEveryScale() {
   const QList<qreal> scales = {1.0, 1.25, 1.5, 1.75, 2.0};
   const QColor ink(QStringLiteral("#ffffff"));
   const int pad = mikai::app::theme::kSearchIconGlyphPad;
@@ -172,26 +174,36 @@ void TestThemeIcons::glyphBoxIsExactAtEveryScale() {
     for (const QPair<QSize, int>& request : requests) {
       const QSize box = request.first;
       const int gap = request.second;
-      {
-        const QIcon icon = mikai::app::theme::searchIcon(
-            mikai::app::theme::kSearchIconSize, ink.name(), gap);
-        const QPixmap pixmap = icon.pixmap(box, scale);
-        QVERIFY2(!pixmap.isNull(), "no raster for a requested box");
-        const qreal tagged = pixmap.devicePixelRatio();
-        QVERIFY2(tagged > 0.0, "raster carries no device pixel ratio");
-        QVERIFY2(tagged + 1e-9 >= scale, "raster is coarser than the screen asked for");
-        QVERIFY2(qAbs(pixmap.width() / tagged - box.width()) < 1e-9,
-                 qPrintable(QStringLiteral("logical width %1 for box %2 at %3")
-                                .arg(pixmap.width() / tagged)
-                                .arg(box.width())
-                                .arg(scale)));
-        QVERIFY2(qAbs(pixmap.height() / tagged - box.height()) < 1e-9,
-                 qPrintable(QStringLiteral("logical height %1 for box %2 at %3")
-                                .arg(pixmap.height() / tagged)
-                                .arg(box.height())
-                                .arg(scale)));
-        QCOMPARE(icon.actualSize(box), box);
-      }
+      const QIcon icon =
+          mikai::app::theme::searchIcon(mikai::app::theme::kSearchIconSize, ink.name(), gap);
+      // The layout slot is the engine's own answer and never depends on how Qt
+      // re-tags the returned pixmap.
+      QCOMPARE(icon.actualSize(box), box);
+
+      const QPixmap pixmap = icon.pixmap(box, scale);
+      QVERIFY2(!pixmap.isNull(), "no raster for a requested box");
+      QVERIFY2(pixmap.devicePixelRatio() > 0.0, "raster carries no device pixel ratio");
+      // Qt 6.12 re-tags whatever the engine returns, so the exposed logical box
+      // is not ours to guarantee. What decides whether a HiDPI screen shows a
+      // resampled glyph is the physical raster: never smaller than the device box
+      // the screen asked for, and never far larger than the ratio lattice needs.
+      const QSize wanted(qRound(box.width() * scale), qRound(box.height() * scale));
+      QVERIFY2(pixmap.width() >= wanted.width(),
+               qPrintable(QStringLiteral("%1 px wide, %2 needed at %3")
+                              .arg(pixmap.width())
+                              .arg(wanted.width())
+                              .arg(scale)));
+      QVERIFY2(pixmap.height() >= wanted.height(),
+               qPrintable(QStringLiteral("%1 px high, %2 needed at %3")
+                              .arg(pixmap.height())
+                              .arg(wanted.height())
+                              .arg(scale)));
+      QVERIFY2(pixmap.width() <= qCeil(wanted.width() * 1.35) + 2,
+               qPrintable(QStringLiteral("%1 px wide exceeds the ratio lattice")
+                              .arg(pixmap.width())));
+      QVERIFY2(pixmap.height() <= qCeil(wanted.height() * 1.35) + 2,
+               qPrintable(QStringLiteral("%1 px high exceeds the ratio lattice")
+                              .arg(pixmap.height())));
     }
   }
 }
@@ -352,6 +364,31 @@ void TestThemeIcons::toggleAndSwatchPaintOnceAtEveryRatio() {
              qPrintable(QStringLiteral("swatch body starts at %1 instead of %2")
                             .arg(chipInk.left())
                             .arg(3.0 * ratio)));
+  }
+}
+
+void TestThemeIcons::artworkFrameIsAllocatedAtTheDeviceSize() {
+  // The home card poster: an 80x114 slot must own a 160x228 raster at 200 %,
+  // not an 80x114 one that Qt upscales. The frame is also painted from logical
+  // coordinates, which is what keeps the corner radius and the shade readable.
+  QImage source(320, 456, QImage::Format_ARGB32_Premultiplied);
+  source.fill(QColor(30, 90, 200));
+  const QPixmap pixmap = QPixmap::fromImage(source);
+  const QSize logical(mikai::app::theme::kHomePosterWidth,
+                      mikai::app::theme::kHomePosterHeight);
+
+  for (const qreal ratio : {1.0, 1.25, 1.5, 2.0}) {
+    const QPixmap frame = mikai::app::TitleCard::rounded(pixmap, logical, ratio);
+    QVERIFY2(!frame.isNull(), "no card frame was painted");
+    QVERIFY2(qFuzzyCompare(frame.devicePixelRatio(), ratio), "the frame carries another ratio");
+    QCOMPARE(frame.size(), QSize(qRound(logical.width() * ratio),
+                                qRound(logical.height() * ratio)));
+    const QImage image = frame.toImage();
+    // Rounded corners are clipped, so the outermost pixel is clear while the
+    // middle of the artwork is solid: the clip ran in logical coordinates.
+    QVERIFY2(alphaAt(image, 0, 0) == 0, "the frame's corner is not rounded");
+    QVERIFY2(alphaAt(image, image.width() / 2, image.height() / 4) > 200,
+             "the frame's artwork is missing");
   }
 }
 

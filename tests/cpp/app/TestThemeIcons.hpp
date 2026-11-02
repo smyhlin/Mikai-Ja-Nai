@@ -9,13 +9,14 @@ class TestThemeIcons : public QObject {
   void requestedSizeAndDevicePixelRatioAreRendered();
   void defaultGlyphTracksPaletteChanges();
   void customColorAlphaIsPreservedInCacheKey();
-  void glyphBoxIsExactAtEveryScale();
+  void glyphBoxIsPhysicalAtEveryScale();
   void trailingPadStaysOutsideTheGlyph();
   void glyphEdgesStayAntialiasedAtFractionalRatio();
   void noTornColumnsInsideGlyphInk();
   void chevronKeepsEveryStrokeRowInked();
   void paintPathsDoNotMultiplyTheDevicePixelRatio();
   void toggleAndSwatchPaintOnceAtEveryRatio();
+  void artworkFrameIsAllocatedAtTheDeviceSize();
   void shellGlyphJoinsAreRound();
   void shellAtmosBadgeStaysInsideItsBox();
 };
