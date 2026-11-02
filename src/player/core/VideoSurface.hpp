@@ -473,6 +473,24 @@ public:
     PlaybackDiagnostics playbackDiagnostics() const;
     void setDiagnosticsPolling(bool enabled);
 
+    /// Presentation-path counters a probe reads after a run (MIKAI_UI_PROFILE
+    /// gated). They are observations, never inputs: nothing in this surface
+    /// changes behaviour because they were read. `contextGeneration` is the
+    /// render-context generation, so a change across an activation means the
+    /// context was recreated rather than painted.
+    struct UiProfileCounters {
+        quint64 initializeGlCalls = 0;   ///< initializeGL() invocations
+        quint64 contextGeneration = 0;   ///< render contexts created (monotonic)
+        quint64 paintCalls = 0;          ///< paintGL() invocations
+        /// paintGL() calls that stopped an armed pacing timer while no frame was
+        /// pending - the GOAL-F/T-F1 before-metric.
+        quint64 pacingDisarms = 0;
+        /// schedulePacedPaint() -> paintGL() delay of the latest paced paint;
+        /// -1 when the latest paint was not released by the pacing timer.
+        qint64 lastPaintDelayMs = -1;
+    };
+    UiProfileCounters uiProfileCounters() const;
+
     /// T-207: stops (or restarts) this surface's 50 ms state pump. A pooled,
     /// paused, hidden surface - a parked PiP float - needs no observer, and the
     /// pump is pure Qt work, so it can be parked at any pool boundary and the
@@ -800,8 +818,8 @@ private:
     /// can start, and it is what refuses a capture during a build.
     std::optional<native::NativeWorkLease> nativeReferenceLease_;
 
-    enum DiagnosticSlot { kDecoderDropSlot = 0, kVoDropSlot, kVfSlot };
-    static constexpr int kDiagnosticSlotCount = 3;
+    enum DiagnosticSlot { kDecoderDropSlot = 0, kVoDropSlot, kVoDelayedSlot, kVfSlot };
+    static constexpr int kDiagnosticSlotCount = 4;
     struct DiagnosticRequest {
         AsyncRequestId pending;   // valid() is the in-flight flag
         qint64 lastRequestMs = 0;
@@ -1035,6 +1053,22 @@ private:
     qint64 lastSwapNs_ = 0;
     /// Stops retries after a timing-log failure.
     bool timingLogBroken_ = false;
+
+    // MIKAI_UI_PROFILE observations. They are incremented only while profiling
+    // is on, so the default launch pays nothing for them.
+    quint64 profileInitializeGlCalls_ = 0;
+    quint64 profilePaintCalls_ = 0;
+    quint64 profilePacingDisarms_ = 0;
+    qint64 profileLastPaintDelayMs_ = -1;
+    /// Steady-clock ns when schedulePacedPaint() armed pacingTimer_; 0 when the
+    /// latest paint was not released by that timer.
+    qint64 profilePacingArmedAtNs_ = 0;
+    /// True from the moment the pacing timer is armed until the next paintGL
+    /// consumes it, so that paint can tell a paced release from a repaint.
+    bool profilePacingAwaitingPaint_ = false;
+    /// The reason the last pacing decision painted immediately, for the paint
+    /// line's `skip_reason` field. A fixed literal, never built per frame.
+    const char* profilePacingReason_ = "none";
 
     // The one native-status reader this surface owns, bound to its own core.
     native::NativeStatusConsumer nativeStatus_;

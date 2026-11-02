@@ -4,12 +4,14 @@
 #include "PlayerPopups.hpp"
 #include "gui/VideoDropTarget.hpp"
 #include "gui/SystemDefaultPlayer.hpp"
+#include "gui/UiProfile.hpp"
 
 #include <QCoreApplication>
 #include <QCursor>
 #include <QDir>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QGuiApplication>
 #include <QKeyEvent>
 #include <QPainter>
 #include <QMap>
@@ -980,6 +982,7 @@ void PlayerShell::applyState() {
     if (radius > 0) {
         QPainterPath path;
         path.addRoundedRect(QRectF(surface_->geometry()), radius, radius);
+        mikai::gui::uiprofile::noteSetMask();
         surface_->setMask(QRegion(path.toFillPolygon().toPolygon()));
         hasMask_ = true;
     } else if (hasMask_) {
@@ -1134,6 +1137,10 @@ void PlayerShell::layoutChrome() {
     // common case is a layout pass that computes the rectangle it already has.
     const QRect canvas(sx, sy, sw, sh);
     if (surface_->geometry() != canvas) {
+        // A write here schedules a repaint of the GL surface; the count is what
+        // distinguishes one layout per transition from the double-resize
+        // GOAL-E/T-E10 fixes.
+        mikai::gui::uiprofile::noteLayoutGeometryWrite();
         surface_->setGeometry(canvas);
     }
     // devicePixelRatioF walks widget -> window -> screen, and both uses below
@@ -1488,9 +1495,21 @@ void PlayerShell::setAspectRatio(double ratio) {
 
 void PlayerShell::updateTimeLabels() {
     const QString elapsed = formatTime(position_);
-    if (elapsed != lblElapsed_->text()) lblElapsed_->setText(elapsed);
+    const bool elapsedChanged = elapsed != lblElapsed_->text();
+    if (elapsedChanged) lblElapsed_->setText(elapsed);
     const QString remaining = formatSigned(std::max(0.0, duration_ - position_));
-    if (remaining != lblRemaining_->text()) lblRemaining_->setText(remaining);
+    const bool remainingChanged = remaining != lblRemaining_->text();
+    if (remainingChanged) lblRemaining_->setText(remaining);
+    if (mikai::gui::uiprofile::enabled()) {
+        // Counts the throttled path, not the 20 Hz calls: only a text change
+        // dirties chrome, and a storm here means the guard stopped working.
+        mikai::gui::uiprofile::log(
+            "shell.timeLabels",
+            QStringLiteral("elapsed_changed=%1 remaining_changed=%2 position=%3")
+                .arg(static_cast<int>(elapsedChanged))
+                .arg(static_cast<int>(remainingChanged))
+                .arg(position_, 0, 'f', 3));
+    }
     if (duration_ > 0 && !scrub_->isDragging()) {
         // The bar is painted at pixel resolution, so a fraction finer than one
         // pixel moves the handle to where it already is. Snapping first keeps
@@ -2425,6 +2444,11 @@ bool PlayerShell::eventFilter(QObject* watched, QEvent* event) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 bool PlayerShell::event(QEvent* event) {
+    if (event->type() == QEvent::WindowActivate) {
+        profileActivationChanged(true);
+    } else if (event->type() == QEvent::WindowDeactivate) {
+        profileActivationChanged(false);
+    }
     // Prevent QWidget::event from calling update() on the full-screen shell
     // whenever focus moves between the shell and a child popup/button.
     if (event->type() == QEvent::FocusIn) {
@@ -2440,9 +2464,29 @@ bool PlayerShell::event(QEvent* event) {
     return QWidget::event(event);
 }
 
+void PlayerShell::profileActivationChanged(bool active) {
+    if (!mikai::gui::uiprofile::enabled() || active == profileLastActive_) return;
+    profileLastActive_ = active;
+    mikai::gui::uiprofile::log(
+        "shell.windowActivation",
+        QStringLiteral("active=%1 applicationState=%2")
+            .arg(static_cast<int>(active))
+            .arg(static_cast<int>(QGuiApplication::applicationState())));
+    if (active) {
+        profileActivationNs_ = mikai::gui::uiprofile::nowNs();
+        profileActivationPending_ = true;
+    } else {
+        // A deactivation with no paint in between is a measurement that did not
+        // happen, not a zero-latency activation.
+        profileActivationPending_ = false;
+    }
+}
+
 void PlayerShell::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
-    if (event->type() == QEvent::LanguageChange) {
+    if (event->type() == QEvent::ActivationChange) {
+        profileActivationChanged(isActiveWindow());
+    } else if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
     }
 }
@@ -2525,6 +2569,7 @@ void PlayerShell::chromeDirty(QWidget* widget, const QRect& rect) {
     if (!beside.isEmpty()) {
         update(beside);
     }
+    mikai::gui::uiprofile::noteChromeDirtyApplied();
 }
 
 void PlayerShell::chromeDirtyAll() {
@@ -2534,12 +2579,14 @@ void PlayerShell::chromeDirtyAll() {
         surface_->update();
     }
     update();
+    mikai::gui::uiprofile::noteChromeDirtyApplied();
 }
 
 void PlayerShell::paintSurfaceOverlay(QPainter* painter) {
     if (painter == nullptr || surface_ == nullptr) {
         return;
     }
+    const mikai::gui::uiprofile::ScopedTimer timer;
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
     // The painter is in the surface's coordinates and the chrome is laid out in
@@ -2548,6 +2595,11 @@ void PlayerShell::paintSurfaceOverlay(QPainter* painter) {
     painter->translate(-surface_->x(), -surface_->y());
     paintChrome(*painter, QRect(QPoint(0, 0), size()));
     painter->restore();
+    if (timer.measured()) {
+        mikai::gui::uiprofile::log(
+            "shell.paintOverlay",
+            QStringLiteral("elapsed_us=%1").arg(timer.micros()));
+    }
 }
 
 void PlayerShell::paintChrome(QPainter& painter, const QRect& clip) {
@@ -2581,6 +2633,7 @@ void PlayerShell::paintEvent(QPaintEvent* event) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
+    const mikai::gui::uiprofile::ScopedTimer gradientTimer;
     if (fullscreen_) {
         p.fillRect(rect(), bg0());
     } else {
@@ -2590,11 +2643,34 @@ void PlayerShell::paintEvent(QPaintEvent* event) {
         g.setColorAt(1.0, QColor(5, 6, 10, 250));
         p.fillRect(rect(), g);
     }
+    const qint64 gradientUs = gradientTimer.micros();
 
     // The half of the chrome the surface cannot carry: same routine, one clip
     // per paint device, so nothing is painted twice and nothing is left out.
     p.setClipRegion(event->region().intersected(QRegion(rect()) - QRegion(surface_->geometry())));
+    const mikai::gui::uiprofile::ScopedTimer chromeTimer;
     paintChrome(p, QRect(QPoint(0, 0), size()));
+    if (chromeTimer.measured()) {
+        mikai::gui::uiprofile::log(
+            "shell.paintEvent",
+            QStringLiteral("gradient_us=%1 chrome_us=%2 fullscreen=%3")
+                .arg(gradientUs)
+                .arg(chromeTimer.micros())
+                .arg(static_cast<int>(fullscreen_)));
+    }
+    // Activation-to-first-paint: the clock is armed by the activation event, so
+    // a window that comes back with no repaint reports "no paint", not zero.
+    if (profileActivationPending_) {
+        profileActivationPending_ = false;
+        const qint64 activationMs =
+            mikai::gui::uiprofile::elapsedMs(profileActivationNs_);
+        mikai::gui::uiprofile::noteActivationToPaint(activationMs);
+        mikai::gui::uiprofile::log(
+            "shell.activationToPaint",
+            QStringLiteral("ms=%1 applicationState=%2")
+                .arg(activationMs)
+                .arg(static_cast<int>(QGuiApplication::applicationState())));
+    }
 }
 
 void PlayerShell::resizeEvent(QResizeEvent* event) {

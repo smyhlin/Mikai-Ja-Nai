@@ -18,6 +18,7 @@
 
 #include "ShellSliders.hpp"
 #include "gui/SystemDefaultPlayer.hpp"
+#include "gui/UiProfile.hpp"
 
 namespace mplayer {
 namespace shell {
@@ -142,6 +143,7 @@ void chromeUpdate(QWidget* widget, const QRect& rect) {
         return;
     }
     if (ChromeHost* host = chromeHostOf(widget)) {
+        mikai::gui::uiprofile::noteChromeDirtyRequest();
         host->chromeDirty(widget, rect);
     }
 }
@@ -231,6 +233,8 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) cons
     if (root == nullptr) {
         return;
     }
+    const mikai::gui::uiprofile::ScopedTimer timer;
+    quint64 painted = 0;
     for (const Entry& entry : entries_) {
         QWidget* widget = entry.widget;
         if (widget == nullptr || !widget->isVisible()) {
@@ -257,6 +261,19 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) cons
         painter.setClipRect(box.translated(-at), Qt::IntersectClip);
         entry.painted->paintChrome(painter);
         painter.restore();
+        ++painted;
+    }
+    if (timer.measured()) {
+        // The hit/miss field is a placeholder until GOAL-E/T-E7 adds a cache:
+        // this list repaints every adopted entry every pass, so no cache answer
+        // exists yet and reporting one would be an invented measurement.
+        mikai::gui::uiprofile::noteChromePaint(painted, timer.micros());
+        mikai::gui::uiprofile::log(
+            "chrome.list.paint",
+            QStringLiteral("entries=%1 painted=%2 elapsed_us=%3 cache=unavailable")
+                .arg(static_cast<qulonglong>(entries_.size()))
+                .arg(painted)
+                .arg(timer.micros()));
     }
 }
 

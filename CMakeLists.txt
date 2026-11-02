@@ -262,6 +262,7 @@ set(PLAYER_SOURCES
 
 set(PLAYER_HEADERS
   src/gui/IdleInhibitor.hpp
+  src/gui/UiProfile.hpp
   src/gui/VideoDropTarget.hpp
   src/gui/SystemDefaultPlayer.hpp
   src/gui/SystemDefaultPlayerLaunch.hpp

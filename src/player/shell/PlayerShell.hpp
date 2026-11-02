@@ -378,6 +378,10 @@ private:
     /// is painted, not a widget, so no update carries it.
     void updateEmptyState();
 
+    /// MIKAI_UI_PROFILE: records an activation transition once, arming the
+    /// activation-to-first-paint clock on activation. No-op when profiling is off.
+    void profileActivationChanged(bool active);
+
     QSize fitted() const;
     bool hitEdges(const QPointF& pos);
     void grabPointer();
@@ -485,6 +489,12 @@ private:
     QPointer<MenuPopup> pendingEnhancementHoverPanel_;
     QPointer<QWidget> pendingEnhancementHoverRow_;
     int pendingEnhancementHoverSpot_ = -1;
+
+    // MIKAI_UI_PROFILE: the activation clock and the last active state observed.
+    // Unused (and unwritten) when profiling is off.
+    qint64 profileActivationNs_ = 0;
+    bool profileActivationPending_ = false;
+    bool profileLastActive_ = false;
 
     QVector<QPointer<QWidget>> overlays_;
     /// Whether a corner mask is currently installed on the surface. Tracked

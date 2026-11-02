@@ -1,5 +1,7 @@
 #include "WindowRaisePolicy.hpp"
 
+#include "gui/UiProfile.hpp"
+
 #include <QApplication>
 #include <QDebug>
 #include <QEvent>
@@ -41,13 +43,16 @@ bool forceForeground(QWidget* window) {
     if (currentThread == 0 || currentThread == targetThread) return false;
 
     const DWORD thisThread = GetCurrentThreadId();
+    mikai::gui::uiprofile::noteThreadInputAttach();
     if (!AttachThreadInput(currentThread, thisThread, TRUE)) {
         qDebug() << "mikai: raise: input attach refused for" << window->objectName();
         return false;
     }
-    const bool attachedTarget =
-        (targetThread != thisThread) &&
-        (AttachThreadInput(currentThread, targetThread, TRUE) != FALSE);
+    bool attachedTarget = false;
+    if (targetThread != thisThread) {
+        mikai::gui::uiprofile::noteThreadInputAttach();
+        attachedTarget = AttachThreadInput(currentThread, targetThread, TRUE) != FALSE;
+    }
     window->raise();
     window->activateWindow();
     SetForegroundWindow(target);

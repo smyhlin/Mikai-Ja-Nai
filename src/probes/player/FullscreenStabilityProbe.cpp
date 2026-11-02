@@ -9,7 +9,9 @@
 #include <QCursor>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
 #include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -25,14 +27,25 @@
 #include <QTemporaryDir>
 #include <QThreadPool>
 #include <QTimer>
+#include <QUrl>
+#include <QVector>
 #include <QtTest/QTest>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
+#include <functional>
 #include <optional>
 #include <utility>
 
+#include "gui/UiProfile.hpp"
+
+#ifdef MIKAI_PROBE_HAS_APP
+#include "WindowRaisePolicy.hpp"
+#endif
+
 #ifdef Q_OS_WIN
+#include <dwmapi.h>
 #include <windows.h>
 #include <psapi.h>
 #endif
@@ -166,6 +179,672 @@ private:
     EvidenceWrites* writes_;
 };
 
+#ifdef Q_OS_WIN
+std::optional<quint64> dwmFramesPresented() {
+    DWM_TIMING_INFO timing{};
+    timing.cbSize = sizeof(timing);
+    if (FAILED(DwmGetCompositionTimingInfo(nullptr, &timing))) return std::nullopt;
+    return static_cast<quint64>(timing.cFramesPresented);
+}
+
+QJsonObject presentationMode() {
+    QJsonObject info{{"directFlip", "unsupported"},
+                     {"reason", "the player presents through a WGL OpenGL surface; this process "
+                                "owns no DXGI swapchain to query, so DirectFlip cannot be "
+                                "observed without PresentMon or a DXGI backend"}};
+    BOOL composition = FALSE;
+    if (SUCCEEDED(DwmIsCompositionEnabled(&composition)))
+        info.insert(QStringLiteral("dwmCompositionEnabled"), composition != FALSE);
+    return info;
+}
+
+bool foregroundIs(QWidget* window) {
+    return window != nullptr &&
+           GetForegroundWindow() == reinterpret_cast<HWND>(window->winId());
+}
+
+QString foregroundProcessImage() {
+    const HWND foreground = GetForegroundWindow();
+    if (foreground == nullptr) return QStringLiteral("none");
+    DWORD processId = 0;
+    GetWindowThreadProcessId(foreground, &processId);
+    if (processId == 0) return QStringLiteral("unavailable");
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
+    if (process == nullptr) return QStringLiteral("unavailable");
+    wchar_t path[1024]{};
+    DWORD pathSize = 1024;
+    QString name = QStringLiteral("unavailable");
+    if (QueryFullProcessImageNameW(process, 0, path, &pathSize))
+        name = QString::fromWCharArray(path, pathSize).section(QLatin1Char('\\'), -1);
+    CloseHandle(process);
+    return name;
+}
+
+/// Owns the foreground interval: Qt's activateWindow() alone is refused for a
+/// process that does not already own the foreground, and a helper window from
+/// another process (the parent's run saw Telegram.exe take it) would otherwise
+/// silently invalidate an activation sample. Mirrors the shipping policy's
+/// attach dance deliberately; these attaches are the probe's, not the app
+/// policy's, and are not counted in the shipping-policy metric.
+bool forceForegroundNow(QWidget* window) {
+    if (window == nullptr) return false;
+    const HWND target = reinterpret_cast<HWND>(window->winId());
+    if (target == nullptr) return false;
+    if (SetForegroundWindow(target)) return true;
+    const HWND current = GetForegroundWindow();
+    const DWORD targetThread = GetWindowThreadProcessId(target, nullptr);
+    const DWORD currentThread =
+        current != nullptr ? GetWindowThreadProcessId(current, nullptr) : 0;
+    const DWORD thisThread = GetCurrentThreadId();
+    if (currentThread == 0 || targetThread == 0) return false;
+    bool attachedCurrent = false;
+    bool attachedTarget = false;
+    if (currentThread != thisThread)
+        attachedCurrent = AttachThreadInput(currentThread, thisThread, TRUE) != FALSE;
+    if (targetThread != thisThread)
+        attachedTarget = AttachThreadInput(currentThread, targetThread, TRUE) != FALSE;
+    window->raise();
+    window->activateWindow();
+    SetForegroundWindow(target);
+    SetActiveWindow(target);
+    if (attachedTarget) AttachThreadInput(currentThread, targetThread, FALSE);
+    if (attachedCurrent) AttachThreadInput(currentThread, thisThread, FALSE);
+    return GetForegroundWindow() == target;
+}
+#else
+std::optional<quint64> dwmFramesPresented() { return std::nullopt; }
+
+QJsonObject presentationMode() {
+    return QJsonObject{{"directFlip", "unsupported"},
+                       {"reason", "no DirectFlip query exists for this platform's compositor"}};
+}
+
+bool foregroundIs(QWidget* window) {
+    return window != nullptr && window->isActiveWindow();
+}
+
+QString foregroundProcessImage() {
+    return QStringLiteral("unavailable");
+}
+
+bool forceForegroundNow(QWidget* window) {
+    if (window == nullptr) return false;
+    window->raise();
+    window->activateWindow();
+    return window->isActiveWindow();
+}
+#endif
+
+void spinFor(int milliseconds) {
+    QEventLoop loop;
+    QTimer::singleShot(milliseconds, &loop, &QEventLoop::quit);
+    loop.exec();
+}
+
+double percentileMs(QVector<qint64> values, double percentile) {
+    if (values.isEmpty()) return -1.0;
+    std::sort(values.begin(), values.end());
+    const int index = std::clamp(static_cast<int>(std::ceil(percentile * values.size())) - 1, 0,
+                                 static_cast<int>(values.size()) - 1);
+    return static_cast<double>(values.at(index));
+}
+
+double meanLuma(const QImage& image) {
+    if (image.isNull()) return -1.0;
+    double total = 0.0;
+    int count = 0;
+    for (int y = 0; y < image.height(); y += 2) {
+        for (int x = 0; x < image.width(); x += 2) {
+            const QColor color = image.pixelColor(x, y);
+            total += 0.2126 * color.red() + 0.7152 * color.green() + 0.0722 * color.blue();
+            ++count;
+        }
+    }
+    return count > 0 ? total / count : -1.0;
+}
+
+/// Reads the composed picture back from the surface's own framebuffer, the same
+/// path the transition mode samples. Null means "not measured", never "black".
+QImage readComposedCrop(mplayer::VideoSurface* surface) {
+    if (surface == nullptr || surface->context() == nullptr) return QImage();
+    QOpenGLContext* previous = QOpenGLContext::currentContext();
+    QSurface* previousSurface = previous != nullptr ? previous->surface() : nullptr;
+    QImage image;
+    surface->makeCurrent();
+    QOpenGLContext* context = QOpenGLContext::currentContext();
+    if (context == surface->context()) {
+        auto* gl = context->functions();
+        GLint framebuffer = 0;
+        GLint alignment = 0;
+        gl->glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebuffer);
+        gl->glGetIntegerv(GL_PACK_ALIGNMENT, &alignment);
+        gl->glBindFramebuffer(GL_FRAMEBUFFER, surface->defaultFramebufferObject());
+        gl->glPixelStorei(GL_PACK_ALIGNMENT, 4);
+        const QSize deviceSize = surface->size() * surface->devicePixelRatioF();
+        if (deviceSize.width() >= 96 && deviceSize.height() >= 64) {
+            QImage capture(96, 64, QImage::Format_RGBA8888);
+            gl->glReadPixels(deviceSize.width() / 2 - 48, deviceSize.height() / 2 - 32, 96, 64,
+                             GL_RGBA, GL_UNSIGNED_BYTE, capture.bits());
+            image = capture;
+        }
+        gl->glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(framebuffer));
+        gl->glPixelStorei(GL_PACK_ALIGNMENT, alignment);
+    }
+    if (previous != nullptr && previousSurface != nullptr)
+        previous->makeCurrent(previousSurface);
+    else
+        surface->doneCurrent();
+    return image;
+}
+
+QJsonObject surfaceState(mplayer::VideoSurface* surface) {
+    if (surface == nullptr) return QJsonObject{{"surface", "absent"}};
+    const mplayer::PlaybackDiagnostics diagnostics = surface->playbackDiagnostics();
+    return QJsonObject{
+        {"hasVideo", surface->hasVideo()},
+        {"hasVisibleOutputFrame", surface->hasVisibleOutputFrame()},
+        {"isPlaying", surface->isPlaying()},
+        {"position", surface->position()},
+        {"duration", surface->duration()},
+        {"renderedOutputFrames", static_cast<qint64>(diagnostics.renderedOutputFrames)},
+        {"sourceEpoch", static_cast<qint64>(surface->sourceEpoch())}};
+}
+
+bool waitForVideo(mplayer::VideoSurface* surface, int timeoutMs) {
+    QElapsedTimer wait;
+    wait.start();
+    while (!surface->hasVideo() && wait.elapsed() < timeoutMs) spinFor(25);
+    return surface->hasVideo();
+}
+
+struct ActivationRun {
+    QString phase;
+    int cycles = 0;
+    int paints = 0;
+    int foregroundLostCycles = 0;
+    int blackSamples = 0;
+    int blackMeasured = 0;
+    quint64 attachCalls = 0;
+    quint64 contextGenerationChanges = 0;
+    quint64 initializeGlCalls = 0;
+    quint64 dwmFrames = 0;
+    bool dwmMeasured = false;
+    QVector<qint64> activationToPaintMs;
+};
+
+ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
+                                  mplayer::VideoSurface* surface, QWidget* helper,
+                                  const QString& phase, int cycles, bool knownBright,
+                                  const std::function<void(QJsonObject)>& record) {
+    ActivationRun run;
+    run.phase = phase;
+    for (int cycle = 0; cycle < cycles; ++cycle) {
+        const quint64 attachBefore =
+            mikai::gui::uiprofile::snapshot().threadInputAttaches;
+        const auto countersBefore = surface->uiProfileCounters();
+        const std::optional<quint64> dwmBefore = dwmFramesPresented();
+
+        const bool awayOwned = forceForegroundNow(helper);
+        spinFor(650);
+        const bool stillAway = foregroundIs(helper);
+        const quint64 attachAfterAway =
+            mikai::gui::uiprofile::snapshot().threadInputAttaches;
+        run.attachCalls += attachAfterAway - attachBefore;
+        record(QJsonObject{{"event", "focusSwitchAway"},
+                           {"phase", phase},
+                           {"cycle", cycle},
+                           {"foregroundOwnedInstantly", awayOwned},
+                           {"foregroundOwnedAfterWait", stillAway},
+                           {"foregroundProcess", foregroundProcessImage()},
+                           {"applicationState",
+                            static_cast<int>(QGuiApplication::applicationState())},
+                           {"playerActive", dialog->isActiveWindow()},
+                           {"helperActive", helper->isActiveWindow()},
+                           {"attachCallsDuringAway",
+                            static_cast<qint64>(attachAfterAway - attachBefore)},
+                           {"attachCounterScope",
+                            "shipping WindowRaisePolicy only; the probe's own attach "
+                            "dance is not counted"},
+                           {"contextGeneration",
+                            static_cast<qint64>(
+                                surface->uiProfileCounters().contextGeneration)},
+                           {"initializeGlCalls",
+                            static_cast<qint64>(
+                                surface->uiProfileCounters().initializeGlCalls)}});
+
+        bool paintSeen = false;
+        qint64 paintAtNs = 0;
+        QMetaObject::Connection connection = QObject::connect(
+            surface, &QOpenGLWidget::frameSwapped, surface,
+            [&paintSeen, &paintAtNs] {
+                if (paintSeen) return;
+                paintSeen = true;
+                paintAtNs = mikai::gui::uiprofile::nowNs();
+            },
+            Qt::DirectConnection);
+        const qint64 activationAtNs = mikai::gui::uiprofile::nowNs();
+        forceForegroundNow(dialog);
+        // A foreign window (the parent's run saw Telegram.exe take the
+        // foreground) would make the latency belong to that window, so the
+        // interval is retried and then declared invalid rather than measured.
+        for (int attempt = 0; attempt < 3 && !foregroundIs(dialog); ++attempt) {
+            spinFor(60);
+            forceForegroundNow(dialog);
+        }
+        const bool foregroundOwned = foregroundIs(dialog);
+        dialog->raise();
+        dialog->activateWindow();
+        dialog->update();
+        surface->update();
+        QElapsedTimer wait;
+        wait.start();
+        while (!paintSeen && wait.elapsed() < 2500) spinFor(5);
+        QObject::disconnect(connection);
+        qint64 activationToPaintMs = -1;
+        const bool cycleValid = foregroundOwned;
+        if (paintSeen && cycleValid) {
+            activationToPaintMs = (paintAtNs - activationAtNs) / 1000000;
+            ++run.paints;
+            run.activationToPaintMs.append(activationToPaintMs);
+        } else if (!cycleValid) {
+            ++run.foregroundLostCycles;
+        }
+        spinFor(250);
+        // Sampling the screen while another process owns the foreground would
+        // report that process's pixels; the cycle names the loss instead.
+        const QImage crop = cycleValid ? readComposedCrop(surface) : QImage();
+        bool black = false;
+        if (!crop.isNull()) {
+            ++run.blackMeasured;
+            black = isBlack(crop);
+            if (black) ++run.blackSamples;
+        }
+        const auto countersAfter = surface->uiProfileCounters();
+        run.contextGenerationChanges +=
+            countersAfter.contextGeneration - countersBefore.contextGeneration;
+        run.initializeGlCalls +=
+            countersAfter.initializeGlCalls - countersBefore.initializeGlCalls;
+        const std::optional<quint64> dwmAfter = dwmFramesPresented();
+        const bool dwmDeltaMeasured = dwmBefore.has_value() && dwmAfter.has_value();
+        const quint64 dwmDelta = dwmDeltaMeasured ? *dwmAfter - *dwmBefore : 0;
+        if (dwmDeltaMeasured) {
+            run.dwmMeasured = true;
+            run.dwmFrames += dwmDelta;
+        }
+        record(QJsonObject{
+            {"event", "focusSwitchBack"},
+            {"phase", phase},
+            {"cycle", cycle},
+            {"activationToPaintMs", activationToPaintMs},
+            {"paintObserved", paintSeen},
+            {"foregroundOwned", foregroundOwned},
+            {"foregroundProcess", foregroundProcessImage()},
+            {"cycleValid", cycleValid},
+            {"black", black},
+            {"blackMeasured", !crop.isNull()},
+            {"cropLuma", meanLuma(crop)},
+            {"contextGeneration",
+             static_cast<qint64>(countersAfter.contextGeneration)},
+            {"initializeGlCalls", static_cast<qint64>(countersAfter.initializeGlCalls)},
+            {"pacingDisarms", static_cast<qint64>(countersAfter.pacingDisarms)},
+            {"dwmFramesPresentedDelta",
+             dwmDeltaMeasured ? QJsonValue(static_cast<qint64>(dwmDelta))
+                              : QJsonValue(QStringLiteral("unavailable"))},
+            {"applicationState", static_cast<int>(QGuiApplication::applicationState())},
+            {"playerActive", dialog->isActiveWindow()},
+            {"knownBrightFixture", knownBright},
+            {"presentationMode", presentationMode()}});
+        ++run.cycles;
+    }
+    return run;
+}
+
+QJsonObject activationSummary(const ActivationRun& run) {
+    const double p50 = percentileMs(run.activationToPaintMs, 0.50);
+    const double p95 = percentileMs(run.activationToPaintMs, 0.95);
+    qint64 maximum = -1;
+    for (qint64 value : run.activationToPaintMs) maximum = std::max(maximum, value);
+    return QJsonObject{
+        {"phase", run.phase},
+        {"cycles", run.cycles},
+        {"paintsObserved", run.paints},
+        {"cyclesWithoutPaint", run.cycles - run.paints},
+        {"foregroundLostCycles", run.foregroundLostCycles},
+        {"cyclesValid", run.cycles - run.foregroundLostCycles},
+        {"activationToPaintP50Ms",
+         run.activationToPaintMs.isEmpty() ? QJsonValue(QStringLiteral("unavailable"))
+                                           : QJsonValue(p50)},
+        {"activationToPaintP95Ms",
+         run.activationToPaintMs.isEmpty() ? QJsonValue(QStringLiteral("unavailable"))
+                                           : QJsonValue(p95)},
+        {"activationToPaintMaxMs",
+         maximum < 0 ? QJsonValue(QStringLiteral("unavailable")) : QJsonValue(maximum)},
+        {"attachCallsDuringAway", static_cast<qint64>(run.attachCalls)},
+        {"contextGenerationChanges", static_cast<qint64>(run.contextGenerationChanges)},
+        {"initializeGlCalls", static_cast<qint64>(run.initializeGlCalls)},
+        {"dwmFramesPresented",
+         run.dwmMeasured ? QJsonValue(static_cast<qint64>(run.dwmFrames))
+                         : QJsonValue(QStringLiteral("unavailable"))},
+        {"blackSamples", run.blackSamples},
+        {"blackSamplesMeasured", run.blackMeasured},
+        {"presentationMode", presentationMode()}};
+}
+
+QJsonObject mediaFacts(const QString& media) {
+    QJsonObject facts{{"media", media}};
+    if (media.contains(QLatin1String("://"))) {
+        facts.insert(QStringLiteral("kind"), QStringLiteral("url"));
+        facts.insert(QStringLiteral("scheme"), QUrl(media).scheme());
+        facts.insert(QStringLiteral("host"), QUrl(media).host());
+        return facts;
+    }
+    const QFileInfo info(media);
+    facts.insert(QStringLiteral("kind"), QStringLiteral("file"));
+    facts.insert(QStringLiteral("exists"), info.exists());
+    facts.insert(QStringLiteral("bytes"), static_cast<qint64>(info.size()));
+    return facts;
+}
+
+int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface* surface,
+                       mplayer::shell::PlayerShell* shell, bool knownBright, int seconds,
+                       const std::function<void(QJsonObject)>& record, QString* error) {
+    if (!waitForVideo(surface, 20000)) {
+        *error = QStringLiteral("no video decoded before the focus-switch run");
+        record(QJsonObject{{"event", "focusSwitchResult"},
+                           {"result", "INCOMPLETE"},
+                           {"reason", "no video decoded"},
+                           {"surfaceState", surfaceState(surface)},
+                           {"error", *error}});
+        return 2;
+    }
+    dialog->pauseIfPlaying();
+    spinFor(600);
+    const QImage fixture = readComposedCrop(surface);
+    const double fixtureLuma = meanLuma(fixture);
+    const quint64 setupAttaches = mikai::gui::uiprofile::snapshot().threadInputAttaches;
+    mikai::gui::uiprofile::resetCounters();
+    record(QJsonObject{{"event", "focusModeStart"},
+                       {"fixtureMeanLuma", fixtureLuma},
+                       {"fixtureSampled", !fixture.isNull()},
+                       {"knownBrightFixture", knownBright},
+                       {"paused", !surface->isPlaying()},
+                       {"attachCallsBeforePhaseReset", static_cast<qint64>(setupAttaches)},
+                       {"profileCountersEnabled", mikai::gui::uiprofile::countersEnabled()},
+                       {"presentationMode", presentationMode()},
+                       {"surfaceState", surfaceState(surface)}});
+
+    QWidget helper;
+    helper.setWindowTitle(QStringLiteral("Mikai focus helper"));
+    helper.setStyleSheet(QStringLiteral("background:#3a4450;"));
+    helper.resize(360, 220);
+    if (QScreen* screen = dialog->screen())
+        helper.move(screen->availableGeometry().topLeft() + QPoint(48, 48));
+    helper.show();
+    helper.raise();
+    spinFor(300);
+
+    QVector<ActivationRun> runs;
+    runs.append(runActivationCycles(dialog, surface, &helper, QStringLiteral("plain"),
+                                    std::max(1, std::min(10, seconds / 3)), knownBright, record));
+    dialog->beginEnginePreparation(QStringLiteral("Focus probe overlay"));
+    spinFor(600);
+    runs.append(runActivationCycles(dialog, surface, &helper, QStringLiteral("engine-overlay"),
+                                    std::max(1, std::min(5, seconds / 6)), knownBright, record));
+    dialog->endEnginePreparation(true, QString());
+    spinFor(300);
+
+    if (shell != nullptr) {
+        const QPoint overDock(shell->width() / 2, shell->height() - 70);
+        QCursor::setPos(shell->mapToGlobal(overDock));
+        QTest::mouseMove(shell, overDock);
+        spinFor(400);
+    }
+    runs.append(runActivationCycles(dialog, surface, &helper, QStringLiteral("dock-hover"),
+                                    std::max(1, std::min(5, seconds / 6)), knownBright, record));
+    QCursor::setPos(dialog->mapToGlobal(QPoint(2, 2)));
+
+    QJsonArray phaseRows;
+    QVector<qint64> allMs;
+    int blackSamples = 0;
+    int blackMeasured = 0;
+    int foregroundLost = 0;
+    for (const ActivationRun& run : runs) {
+        phaseRows.append(activationSummary(run));
+        allMs += run.activationToPaintMs;
+        blackSamples += run.blackSamples;
+        blackMeasured += run.blackMeasured;
+        foregroundLost += run.foregroundLostCycles;
+    }
+    const bool measurementAvailable = !allMs.isEmpty() && blackMeasured > 0;
+    const bool clean = measurementAvailable && blackSamples == 0;
+    record(QJsonObject{{"event", "focusSwitchResult"},
+                       {"result", !measurementAvailable ? "INCOMPLETE"
+                                : clean             ? "PASS"
+                                                    : "OBSERVED_BLACK"},
+                       {"phases", phaseRows},
+                       {"fixtureMeanLuma", fixtureLuma},
+                       {"fixtureSampled", !fixture.isNull()},
+                       {"knownBrightFixture", knownBright},
+                       {"attachCallsBeforePhaseReset", static_cast<qint64>(setupAttaches)},
+                       {"activationToPaintP95Ms",
+                        allMs.isEmpty() ? QJsonValue(QStringLiteral("unavailable"))
+                                        : QJsonValue(percentileMs(allMs, 0.95))},
+                       {"activationToPaintSamples", static_cast<int>(allMs.size())},
+                       {"blackSamples", blackSamples},
+                       {"blackSamplesMeasured", blackMeasured},
+                       {"foregroundLostCycles", foregroundLost},
+                       {"presentationMode", presentationMode()},
+                       {"surfaceState", surfaceState(surface)},
+                       {"error", *error}});
+    helper.close();
+    return 0;
+}
+
+int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface* surface,
+                    mplayer::shell::PlayerShell* shell, const QString& media, bool knownBright,
+                    int seconds, const std::function<void(QJsonObject)>& record, QString* error) {
+    if (!waitForVideo(surface, 20000)) {
+        *error = QStringLiteral("no video decoded before the baseline run");
+        record(QJsonObject{{"event", "baselineResult"},
+                           {"result", "INCOMPLETE"},
+                           {"reason", "no video decoded"},
+                           {"mediaFacts", mediaFacts(media)},
+                           {"surfaceState", surfaceState(surface)},
+                           {"error", *error}});
+        return 2;
+    }
+    dialog->pauseIfPlaying();
+    spinFor(600);
+    const QImage fixture = readComposedCrop(surface);
+    const double fixtureLuma = meanLuma(fixture);
+    const quint64 setupAttaches = mikai::gui::uiprofile::snapshot().threadInputAttaches;
+    mikai::gui::uiprofile::resetCounters();
+    record(QJsonObject{{"event", "baselineStart"},
+                       {"seconds", seconds},
+                       {"knownBrightFixture", knownBright},
+                       {"fixtureMeanLuma", fixtureLuma},
+                       {"fixtureSampled", !fixture.isNull()},
+                       {"paused", !surface->isPlaying()},
+                       {"attachCallsBeforePhaseReset", static_cast<qint64>(setupAttaches)},
+                       {"profileCountersEnabled", mikai::gui::uiprofile::countersEnabled()},
+                       {"mediaFacts", mediaFacts(media)},
+                       {"surfaceState", surfaceState(surface)},
+                       {"presentationMode", presentationMode()}});
+
+    // ── metric 1 (pacing disarms) + 5 (chrome paint cost) ──────────────────
+    const auto hoverBefore = surface->uiProfileCounters();
+    const auto countersBefore = mikai::gui::uiprofile::snapshot();
+    const int stormMs = std::max(3000, std::min(30000, seconds * 1000 / 2));
+    int stormForegroundLost = 0;
+    if (shell != nullptr) {
+        const QPoint dock(shell->width() / 2, shell->height() - 62);
+        const QPoint scrub(shell->width() / 2, shell->height() - 104);
+        const QPoint volume(shell->width() / 2 - 140, shell->height() - 62);
+        QElapsedTimer storm;
+        storm.start();
+        for (int tick = 0; storm.elapsed() < stormMs; ++tick) {
+            if (!foregroundIs(dialog)) ++stormForegroundLost;
+            const QPoint point = tick % 3 == 0 ? dock : (tick % 3 == 1 ? scrub : volume);
+            QCursor::setPos(shell->mapToGlobal(point));
+            QTest::mouseMove(shell, point);
+            spinFor(16);
+        }
+        QCursor::setPos(dialog->mapToGlobal(QPoint(2, 2)));
+    }
+    spinFor(400);
+    const auto hoverAfter = surface->uiProfileCounters();
+    const auto countersAfter = mikai::gui::uiprofile::snapshot();
+    const quint64 stormChromePaintCalls =
+        countersAfter.chromePaintCalls - countersBefore.chromePaintCalls;
+    const quint64 stormChromePaintMicros =
+        countersAfter.chromePaintMicrosTotal - countersBefore.chromePaintMicrosTotal;
+    const qint64 pacingDisarms =
+        hoverAfter.pacingDisarms - hoverBefore.pacingDisarms;
+    record(QJsonObject{
+        {"event", "hoverStorm"},
+        {"durationMs", stormMs},
+        {"foregroundLostTicks", stormForegroundLost},
+        {"pacingDisarms", pacingDisarms},
+        {"paintCalls", static_cast<qint64>(hoverAfter.paintCalls - hoverBefore.paintCalls)},
+        {"chromeDirtyRequests", static_cast<qint64>(countersAfter.chromeDirtyRequests -
+                                                    countersBefore.chromeDirtyRequests)},
+        {"chromeDirtyApplied", static_cast<qint64>(countersAfter.chromeDirtyApplied -
+                                                   countersBefore.chromeDirtyApplied)},
+        {"chromePaintCalls", static_cast<qint64>(stormChromePaintCalls)},
+        {"chromePaintEntries", static_cast<qint64>(countersAfter.chromePaintEntries -
+                                                   countersBefore.chromePaintEntries)},
+        {"chromePaintMeanMicros",
+         stormChromePaintCalls == 0
+             ? QJsonValue(QStringLiteral("unavailable"))
+             : QJsonValue(static_cast<double>(stormChromePaintMicros) / stormChromePaintCalls)},
+        {"chromePaintMaxMicros",
+         countersAfter.chromePaintMicrosMax < 0
+             ? QJsonValue(QStringLiteral("unavailable"))
+             : QJsonValue(countersAfter.chromePaintMicrosMax)}});
+
+    // ── metric 2: alt-tab away/back, ten cycles ────────────────────────────
+    QWidget helper;
+    helper.setWindowTitle(QStringLiteral("Mikai baseline helper"));
+    helper.setStyleSheet(QStringLiteral("background:#3a4450;"));
+    helper.resize(360, 220);
+    if (QScreen* screen = dialog->screen())
+        helper.move(screen->availableGeometry().topLeft() + QPoint(48, 48));
+    helper.show();
+    helper.raise();
+    spinFor(300);
+    const quint64 activationAttachBase =
+        mikai::gui::uiprofile::snapshot().threadInputAttaches;
+    const ActivationRun activation = runActivationCycles(
+        dialog, surface, &helper, QStringLiteral("plain"), 10, knownBright, record);
+    const quint64 activationAttaches =
+        mikai::gui::uiprofile::snapshot().threadInputAttaches - activationAttachBase;
+    helper.close();
+    spinFor(300);
+
+    // ── metric 4: surface-geometry writes per fullscreen transition ────────
+    const quint64 geometryBefore = mikai::gui::uiprofile::snapshot().layoutGeometryWrites;
+    const quint64 masksBefore = mikai::gui::uiprofile::snapshot().setMaskApplications;
+    constexpr int kFullscreenTransitions = 5;
+    for (int index = 0; index < kFullscreenTransitions; ++index) {
+        dialog->showNormal();
+        spinFor(700);
+        dialog->showFullScreen();
+        spinFor(700);
+    }
+    const quint64 geometryAfter = mikai::gui::uiprofile::snapshot().layoutGeometryWrites;
+    const quint64 masksAfter = mikai::gui::uiprofile::snapshot().setMaskApplications;
+    record(QJsonObject{
+        {"event", "fullscreenTransitions"},
+        {"transitions", kFullscreenTransitions},
+        {"layoutGeometryWrites", static_cast<qint64>(geometryAfter - geometryBefore)},
+        {"layoutGeometryWritesPerTransition",
+         static_cast<double>(geometryAfter - geometryBefore) / kFullscreenTransitions},
+        {"setMaskApplications", static_cast<qint64>(masksAfter - masksBefore)}});
+
+    // ── metric 3: black samples across twenty loadfile transitions ─────────
+    constexpr int kLoadTransitions = 20;
+    int completedLoads = 0;
+    int loadBlack = 0;
+    int loadSampled = 0;
+    QString lastLoadError;
+    for (int index = 0; index < kLoadTransitions; ++index) {
+        if (!surface->open(media)) {
+            lastLoadError = QStringLiteral("open() refused at transition %1").arg(index);
+            break;
+        }
+        QElapsedTimer loadWait;
+        loadWait.start();
+        while (!surface->hasVideo() && loadWait.elapsed() < 5000) spinFor(20);
+        QElapsedTimer sampleClock;
+        sampleClock.start();
+        while (sampleClock.elapsed() < 600) {
+            const QImage crop = readComposedCrop(surface);
+            if (!crop.isNull()) {
+                ++loadSampled;
+                if (isBlack(crop)) ++loadBlack;
+            }
+            spinFor(24);
+        }
+        ++completedLoads;
+    }
+    const auto loadCounters = surface->uiProfileCounters();
+    record(QJsonObject{{"event", "loadfileTransitions"},
+                       {"transitionsRequested", kLoadTransitions},
+                       {"transitionsCompleted", completedLoads},
+                       {"blackSamples", loadBlack},
+                       {"samplesMeasured", loadSampled},
+                       {"sourceEpoch", static_cast<qint64>(surface->sourceEpoch())},
+                       {"pacingDisarms", static_cast<qint64>(loadCounters.pacingDisarms)},
+                       {"surfaceState", surfaceState(surface)},
+                       {"loadError", lastLoadError}});
+
+    const double p95 = percentileMs(activation.activationToPaintMs, 0.95);
+    qint64 maxActivation = -1;
+    for (qint64 value : activation.activationToPaintMs)
+        maxActivation = std::max(maxActivation, value);
+    const auto finalCounters = mikai::gui::uiprofile::snapshot();
+    const bool activationMeasured = !activation.activationToPaintMs.isEmpty();
+    const bool blackMeasured = loadSampled > 0;
+    record(QJsonObject{
+        {"event", "baselineResult"},
+        {"result", (activationMeasured && blackMeasured) ? "MEASURED" : "INCOMPLETE"},
+        {"fixtureMeanLuma", fixtureLuma},
+        {"fixtureSampled", !fixture.isNull()},
+        {"knownBrightFixture", knownBright},
+        {"pacingDisarmsHoverStorm", pacingDisarms},
+        {"activationToFirstPresentP95Ms",
+         activationMeasured ? QJsonValue(p95) : QJsonValue(QStringLiteral("unavailable"))},
+        {"activationToFirstPresentSamples",
+         static_cast<int>(activation.activationToPaintMs.size())},
+        {"activationToFirstPresentMaxMs",
+         maxActivation < 0 ? QJsonValue(QStringLiteral("unavailable"))
+                           : QJsonValue(maxActivation)},
+        {"blackSamplesLoadfile20", blackMeasured ? QJsonValue(loadBlack)
+                                                 : QJsonValue(QStringLiteral("unavailable"))},
+        {"loadfileSamplesMeasured", loadSampled},
+        {"loadfileTransitionsCompleted", completedLoads},
+        {"attachCallsDuringAway", static_cast<qint64>(activationAttaches)},
+        {"activationForegroundLostCycles", activation.foregroundLostCycles},
+        {"hoverStormForegroundLostTicks", stormForegroundLost},
+        {"contextGenerationChanges", static_cast<qint64>(activation.contextGenerationChanges)},
+        {"initializeGlCalls", static_cast<qint64>(activation.initializeGlCalls)},
+        {"surfaceGeometryWritesPerFullscreenTransition",
+         static_cast<double>(geometryAfter - geometryBefore) / kFullscreenTransitions},
+        {"setMaskApplicationsPerRun", static_cast<qint64>(masksAfter - masksBefore)},
+        {"chromePaintMeanMicros",
+         stormChromePaintCalls == 0
+             ? QJsonValue(QStringLiteral("unavailable"))
+             : QJsonValue(static_cast<double>(stormChromePaintMicros) / stormChromePaintCalls)},
+        {"chromePaintCalls", static_cast<qint64>(finalCounters.chromePaintCalls)},
+        {"blackSamplesActivationPhases", activation.blackSamples},
+        {"mediaFacts", mediaFacts(media)},
+        {"surfaceState", surfaceState(surface)},
+        {"presentationMode", presentationMode()},
+        {"profileCountersEnabled", mikai::gui::uiprofile::countersEnabled()},
+        {"error", *error}});
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -178,21 +857,42 @@ int main(int argc, char** argv) {
     QStringList positionalArguments;
     bool knownBright = false;
     bool steadyFullscreen = false;
+    bool focusSwitch = false;
+    bool baseline = false;
     for (int index = 1; index < argc; ++index) {
         const QString argument = QString::fromLocal8Bit(argv[index]);
         if (argument == QLatin1String("--known-bright")) {
             knownBright = true;
         } else if (argument == QLatin1String("--steady-fullscreen")) {
             steadyFullscreen = true;
+        } else if (argument == QLatin1String("--focus-switch")) {
+            focusSwitch = true;
+        } else if (argument == QLatin1String("--baseline")) {
+            baseline = true;
         } else {
             positionalArguments.append(argument);
         }
     }
+    if (focusSwitch && steadyFullscreen) {
+        std::fprintf(stderr, "--focus-switch and --steady-fullscreen are separate modes\n");
+        return 2;
+    }
     if (positionalArguments.size() < 3 || positionalArguments.size() > 4) {
         std::fprintf(stderr,
                      "Usage: fullscreen_stability_probe <video> <seconds> <output-directory> "
-                     "[anime4k-preset] [--known-bright] [--steady-fullscreen]\n");
+                     "[anime4k-preset] [--known-bright] [--steady-fullscreen] "
+                     "[--focus-switch] [--baseline]\n");
         return 2;
+    }
+    if (focusSwitch || baseline) {
+        // The counters are the measurement; the env var caches on first use, so
+        // it is set before any widget exists.
+        qputenv("MIKAI_UI_PROFILE", QByteArrayLiteral("1"));
+#ifdef MIKAI_PROBE_HAS_APP
+        // The shipping raise policy, so AttachThreadInput counts are the ones
+        // the application would make and not a probe-local imitation.
+        mikai::app::WindowRaisePolicy::install();
+#endif
     }
     bool validDuration = false;
     const int seconds = positionalArguments.at(1).toInt(&validDuration);
@@ -301,6 +1001,19 @@ int main(int argc, char** argv) {
         evidence.write("\n");
         evidence.flush();
     };
+    if (focusSwitch || baseline) {
+        QString modeError;
+        const int modeExit = focusSwitch
+                                 ? runFocusSwitchMode(dialog, surface, shell, knownBright, seconds,
+                                                      record, &modeError)
+                                 : runBaselineMode(dialog, surface, shell, media, knownBright,
+                                                   seconds, record, &modeError);
+        evidence.flush();
+        dialog->close();
+        // A completed run is success even when a metric is unavailable: the row
+        // names that metric as unavailable instead of inventing a zero.
+        return modeExit == 0 ? 0 : 2;
+    }
     EvidenceWrites artifactWrites;
     QThreadPool artifactPool;
     artifactPool.setMaxThreadCount(1);
