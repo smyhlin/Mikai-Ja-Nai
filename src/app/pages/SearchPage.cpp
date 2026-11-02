@@ -2763,6 +2763,10 @@ void SearchPage::requestThumb(const QString& url) {
     backend::MikaiClient* client = &client_;
     const QPointer<SearchPage> self(this);
     const qreal requestedDpr = devicePixelRatioF();
+    // Remember the ratio the first raster is decoded at, so a later palette or
+    // screen event at an unchanged ratio leaves that artwork alone instead of
+    // clearing caches that were never stale.
+    artworkDpr_ = requestedDpr;
     runner_.runImage(
         [client, url, requestedDpr] {
             return QVariant::fromValue(gui::decodeImage(
@@ -2873,8 +2877,31 @@ void SearchPage::refreshArtwork() {
     icons_.clear();
     rounded_.clear();
     pendingThumbs_.clear();
+    // Every URL that paints a raster has to be asked for again, not only the
+    // carousel cards: feed posters and result-row thumbnails own slots of their
+    // own, and a slot whose `shown` still names the URL would keep the old
+    // raster. Collect first, request after, because a request re-enters
+    // applyFeedPosters().
+    QStringList urls;
     for (auto it = cardsByImageKey_.cbegin(); it != cardsByImageKey_.cend(); ++it) {
-        requestThumb(it.key());
+        urls.append(it.key());
+    }
+    for (auto it = feedPosterLabels_.begin(); it != feedPosterLabels_.end(); ++it) {
+        for (FeedPosterSlot& entry : it.value()) {
+            entry.shown.clear();
+            if (!entry.url.isEmpty()) urls.append(entry.url);
+        }
+    }
+    if (results_ != nullptr) {
+        for (int row = 0; row < results_->count(); ++row) {
+            const QVariantMap data = results_->item(row)->data(Qt::UserRole).toMap();
+            const QString thumb = data.value(QStringLiteral("thumb")).toString();
+            if (!thumb.isEmpty()) urls.append(thumb);
+        }
+    }
+    urls.removeDuplicates();
+    for (const QString& url : urls) {
+        requestThumb(url);
     }
     applyThumbs();
     applyFeedPosters();
