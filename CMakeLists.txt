@@ -445,7 +445,6 @@ qt_add_resources(mikai_app "mikai_assets"
   PREFIX "/icons"
   BASE resources
   FILES
-    resources/chevron-down.svg
     resources/app/mikai-mono.png
 )
 set_target_properties(mikai_app PROPERTIES AUTOMOC ON POSITION_INDEPENDENT_CODE ON)
