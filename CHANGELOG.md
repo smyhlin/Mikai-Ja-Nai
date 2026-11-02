@@ -4,6 +4,9 @@ Published changes are recorded with their downloads on the [GitHub releases page
 
 ## Unreleased
 
+- Correct disabled-state detection for retained Linux desktop entries, and safely refresh or remove stale owned entries.
+- Add opt-in presentation profiling and a cross-process focus/composition probe.
+
 - Offer MoonAnime opening, ending and recap skips, with accent-tinted timeline ranges.
 - Show frame previews and segment labels on timeline hover.
 - Redesign the Home/Search header and its RPM indicator.

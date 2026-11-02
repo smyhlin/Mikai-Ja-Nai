@@ -25,19 +25,25 @@ requests to each paint line. The fullscreen stability probe gained
 through `mikai_test_launcher` in an owned disposable tree, and write JSONL rows
 that name an unmeasured value `"unavailable"` rather than zero.
 
-The before-side values below were recorded from
+The hover, loadfile, geometry and chrome before-side values come from
 [`win-before-baseline-04/samples.jsonl`](ai/GOAL-00/win-before-baseline-04/samples.jsonl)
-at `8deb325`, before GOAL-B/D/H1 or the presentation fixes were integrated.
-The run reported `MEASURED`: paused bright video and native foreground were
-validated throughout the 30-second hover interval. Of ten activation attempts,
-nine were valid; one lost foreground ownership and is excluded explicitly.
-There were no composition timeouts or unsupported captures.
+at `8deb325`. That run reported `MEASURED`, with paused bright video and native
+foreground validated throughout the requested hover interval.
+
+Activation values use the subsequent complete readiness-barrier run,
+[`win-before-focus-05/samples.jsonl`](ai/GOAL-00/win-before-focus-05/samples.jsonl)
+at `463b2a3`: every plain, processing-overlay and dock-hover cycle was valid,
+occluded and observed, with no timeout, unsupported capture or foreground loss.
+Both runs precede GOAL-B/D/H1 and all presentation product fixes. Earlier
+incomplete/interfered runs remain preserved, not silently promoted to passes.
 
 | Metric | Row / key | Value |
 |---|---|---|
 | Pacing disarms in a 30 s hover storm over paused video | `hoverStorm.pacingDisarms` | 0 |
-| **Activation → first visible composited desktop frame** p95, timeouts censored as ≥ 2500 ms (verified-occluded off-centre screen crop, not a paint/swap proxy) | `baselineResult.activationToVisibleCompositionP95LowerBoundMs` | 11 ms; 9 valid samples |
-| Activation-to-first-swap p95 (secondary diagnostic; `frameSwapped`, not physical scanout) | `baselineResult.activationToFirstSwapP95Ms` | 24 ms; 9 valid samples |
+| **Activation → first visible composited desktop frame** p95, plain (verified-occluded off-centre crop; timeouts censored as ≥ 2500 ms, not a paint/swap proxy) | `focusSwitchResult.phases[0].activationToVisibleCompositionP95LowerBoundMs` | 11 ms; 10 valid samples |
+| Activation → visible composition p95, processing overlay | `focusSwitchResult.phases[1].activationToVisibleCompositionP95LowerBoundMs` | 4 ms; 5 valid samples |
+| Activation → visible composition p95, dock hover | `focusSwitchResult.phases[2].activationToVisibleCompositionP95LowerBoundMs` | 4 ms; 5 valid samples |
+| Activation-to-first-swap p95, plain (secondary diagnostic; `frameSwapped`, not physical scanout) | `focusSwitchResult.phases[0].activationToFirstSwapP95Ms` | 22 ms; 10 valid samples |
 | Black samples across 20 `loadfile` transitions | `baselineResult.blackSamplesLoadfile20` | 0 / 463 samples; 20 transitions completed |
 | Surface-geometry writes per fullscreen transition | `baselineResult.surfaceGeometryWritesPerFullscreenTransition` | 2 |
 | `ChromeList::paint` mean per composition during the paused hover storm | `baselineResult.chromePaintMeanMicros` | 284.996 µs; 1850 paints |
@@ -46,14 +52,18 @@ A run whose `profileCountersEnabled` is false, whose
 `baselineStart.preconditionsValid` is false (paused bright frame / native
 foreground not verified), or whose `hoverStorm.valid` is false does not produce
 these numbers: `baselineResult.result` reads `INVALID`/`INCOMPLETE`, the row
-names `invalidReason`, and the probe exits `3` instead of silently passing. Read
-the five values only from a `MEASURED` run; that requires
-`visibleCompositionComplete == true`, so a timeout is censored at the 2500 ms
-deadline instead of being dropped. `hoverStorm.pacingDisarms` is the validated
+names `invalidReason`, and the probe exits `3` instead of silently passing.
+A complete baseline requires `baselineResult.result == MEASURED`; a complete
+focus run requires `focusSwitchResult.result == PASS`. Both require
+`visibleCompositionComplete == true`. An `INCOMPLETE` timeout still supplies
+failure evidence: its latency is censored at the 2500 ms deadline rather than
+dropped, but it cannot establish the activation target passed.
+`hoverStorm.pacingDisarms` is the validated
 interval only, not ticks made while another application owned the foreground. The probe invocation, fixture options and extraction contract are in
 [the GOAL-00 report](ai/reports/GOAL-00.md).
-The idle-GPU lavfi run did not reproduce an eight-second activation delay or
-a black load transition. It does not prove behaviour during TensorRT builds,
+The idle-GPU lavfi runs did not reproduce an eight-second activation delay or
+a black load transition. The processing overlay is UI stress, not a real
+TensorRT build. These observations do not prove behaviour during TensorRT builds,
 physical scanout latency, or DirectFlip promotion; the latter metric remains
 unsupported on this WGL path. Later presentation changes must retain this
 before-side evidence rather than describing these zero-event observations as
