@@ -294,6 +294,15 @@ double percentileMs(QVector<qint64> values, double percentile) {
     return static_cast<double>(values.at(index));
 }
 
+/// One small crop of the real desktop, as the compositor shows it. Null means
+/// the platform refused the grab; luma -1 means "not measured".
+QImage desktopCrop(QScreen* screen, const QRect& globalRect) {
+    if (screen == nullptr || globalRect.isEmpty()) return QImage();
+    return screen->grabWindow(0, globalRect.x(), globalRect.y(), globalRect.width(),
+                              globalRect.height())
+        .toImage();
+}
+
 double meanLuma(const QImage& image) {
     if (image.isNull()) return -1.0;
     double total = 0.0;
@@ -376,7 +385,17 @@ struct ActivationRun {
     bool dwmMeasured = false;
     /// Owned activation -> the next `frameSwapped` emission (swap completion),
     /// not a physical-present timestamp; JSON labels say so.
-    QVector<qint64> activationToPaintMs;
+    QVector<qint64> activationToFirstSwapMs;
+    /// Owned activation -> the first desktop sample that shows the paused bright
+    /// picture again after the occluding helper was removed. This is the
+    /// observable "visible composition" interval the <=300 ms criterion uses.
+    QVector<qint64> activationToVisibleCompositionMs;
+    int visibleCompositionObserved = 0;
+    int visibleCompositionUnsupported = 0;
+    int visibleCompositionTimeouts = 0;
+    qint64 desktopGrabCalls = 0;
+    qint64 desktopGrabTotalMicros = 0;
+    qint64 desktopGrabMaxMicros = 0;
 };
 
 ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
@@ -385,15 +404,34 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
                                   const std::function<void(QJsonObject)>& record) {
     ActivationRun run;
     run.phase = phase;
+    QScreen* const screen = surface->screen();
+    const QPoint centerGlobal = surface->mapToGlobal(surface->rect().center());
+    const QRect cropRect(centerGlobal - QPoint(48, 32), QSize(96, 64));
+    const auto grabDesktop = [&]() -> QImage {
+        const qint64 started = mikai::gui::uiprofile::nowNs();
+        const QImage image = desktopCrop(screen, cropRect);
+        const qint64 took = mikai::gui::uiprofile::nowNs() - started;
+        ++run.desktopGrabCalls;
+        run.desktopGrabTotalMicros += took / 1000;
+        run.desktopGrabMaxMicros = std::max(run.desktopGrabMaxMicros, took / 1000);
+        return image;
+    };
     for (int cycle = 0; cycle < cycles; ++cycle) {
         const quint64 attachBefore =
             mikai::gui::uiprofile::snapshot().threadInputAttaches;
         const auto countersBefore = surface->uiProfileCounters();
         const std::optional<quint64> dwmBefore = dwmCompositionFramesDisplayed();
+        // The picture before the helper covers it, and the helper's own pixels
+        // while it owns the foreground: a visible-composition sample is only
+        // meaningful when the two differ.
+        const double baselineLuma = meanLuma(grabDesktop());
 
         const bool awayOwned = forceForegroundNow(helper);
         spinFor(650);
         const bool stillAway = foregroundIs(helper);
+        const double occludedLuma = meanLuma(grabDesktop());
+        const bool occlusionVerified =
+            baselineLuma >= 40.0 && occludedLuma >= 0.0 && occludedLuma < baselineLuma * 0.5;
         const quint64 attachAfterAway =
             mikai::gui::uiprofile::snapshot().threadInputAttaches;
         run.attachCalls += attachAfterAway - attachBefore;
@@ -441,20 +479,52 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
         const bool foregroundOwned = foregroundIs(dialog);
         dialog->raise();
         dialog->activateWindow();
+        // Activation itself is expected to restack the player above the helper;
+        // lowering it here makes the occlusion transition deterministic on
+        // window managers that do not restack a borderless fullscreen window.
+        helper->lower();
         dialog->update();
         surface->update();
         QElapsedTimer wait;
         wait.start();
+        // Composition is observed on the real desktop: the crop shows the black
+        // helper until the compositor has actually put the player's picture back
+        // on screen. The swap signal is collected in the same loop as the
+        // secondary diagnostic.
+        qint64 activationToVisibleMs = -1;
+        bool visibleObserved = false;
+        const double visibleThreshold = std::max(30.0, baselineLuma * 0.6);
+        if (occlusionVerified) {
+            while (wait.elapsed() < 2500 && (!paintSeen || !visibleObserved)) {
+                if (!visibleObserved) {
+                    const QImage composed = grabDesktop();
+                    if (!composed.isNull() && meanLuma(composed) >= visibleThreshold) {
+                        visibleObserved = true;
+                        activationToVisibleMs =
+                            (mikai::gui::uiprofile::nowNs() - activationAtNs) / 1000000;
+                    }
+                }
+                spinFor(6);
+            }
+        }
         while (!paintSeen && wait.elapsed() < 2500) spinFor(5);
         QObject::disconnect(connection);
-        qint64 activationToPaintMs = -1;
+        qint64 activationToFirstSwapMs = -1;
         const bool cycleValid = foregroundOwned;
         if (paintSeen && cycleValid) {
-            activationToPaintMs = (paintAtNs - activationAtNs) / 1000000;
+            activationToFirstSwapMs = (paintAtNs - activationAtNs) / 1000000;
             ++run.paints;
-            run.activationToPaintMs.append(activationToPaintMs);
+            run.activationToFirstSwapMs.append(activationToFirstSwapMs);
         } else if (!cycleValid) {
             ++run.foregroundLostCycles;
+        }
+        if (visibleObserved && cycleValid) {
+            ++run.visibleCompositionObserved;
+            run.activationToVisibleCompositionMs.append(activationToVisibleMs);
+        } else if (!occlusionVerified) {
+            ++run.visibleCompositionUnsupported;
+        } else if (cycleValid) {
+            ++run.visibleCompositionTimeouts;
         }
         spinFor(250);
         // Sampling the screen while another process owns the foreground would
@@ -482,8 +552,15 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
             {"event", "focusSwitchBack"},
             {"phase", phase},
             {"cycle", cycle},
-            {"activationToFirstSwapMs", activationToPaintMs},
+            {"activationToFirstSwapMs", activationToFirstSwapMs},
             {"paintObserved", paintSeen},
+            {"activationToVisibleCompositionMs",
+             visibleObserved ? QJsonValue(activationToVisibleMs)
+                             : QJsonValue(QStringLiteral("unavailable"))},
+            {"visibleCompositionObserved", visibleObserved},
+            {"visibleCompositionSupported", occlusionVerified},
+            {"baselineLuma", baselineLuma},
+            {"occludedLuma", occludedLuma},
             {"foregroundOwned", foregroundOwned},
             {"foregroundProcess", foregroundProcessImage()},
             {"cycleValid", cycleValid},
@@ -507,10 +584,17 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
 }
 
 QJsonObject activationSummary(const ActivationRun& run) {
-    const double p50 = percentileMs(run.activationToPaintMs, 0.50);
-    const double p95 = percentileMs(run.activationToPaintMs, 0.95);
+    const double p50 = percentileMs(run.activationToFirstSwapMs, 0.50);
+    const double p95 = percentileMs(run.activationToFirstSwapMs, 0.95);
     qint64 maximum = -1;
-    for (qint64 value : run.activationToPaintMs) maximum = std::max(maximum, value);
+    for (qint64 value : run.activationToFirstSwapMs) maximum = std::max(maximum, value);
+    const double visibleP50 =
+        percentileMs(run.activationToVisibleCompositionMs, 0.50);
+    const double visibleP95 =
+        percentileMs(run.activationToVisibleCompositionMs, 0.95);
+    qint64 visibleMaximum = -1;
+    for (qint64 value : run.activationToVisibleCompositionMs)
+        visibleMaximum = std::max(visibleMaximum, value);
     return QJsonObject{
         {"phase", run.phase},
         {"cycles", run.cycles},
@@ -519,13 +603,38 @@ QJsonObject activationSummary(const ActivationRun& run) {
         {"foregroundLostCycles", run.foregroundLostCycles},
         {"cyclesValid", run.cycles - run.foregroundLostCycles},
         {"activationToFirstSwapP50Ms",
-         run.activationToPaintMs.isEmpty() ? QJsonValue(QStringLiteral("unavailable"))
-                                           : QJsonValue(p50)},
+         run.activationToFirstSwapMs.isEmpty() ? QJsonValue(QStringLiteral("unavailable"))
+                                               : QJsonValue(p50)},
         {"activationToFirstSwapP95Ms",
-         run.activationToPaintMs.isEmpty() ? QJsonValue(QStringLiteral("unavailable"))
-                                           : QJsonValue(p95)},
+         run.activationToFirstSwapMs.isEmpty() ? QJsonValue(QStringLiteral("unavailable"))
+                                               : QJsonValue(p95)},
         {"activationToFirstSwapMaxMs",
          maximum < 0 ? QJsonValue(QStringLiteral("unavailable")) : QJsonValue(maximum)},
+        {"activationToVisibleCompositionP50Ms",
+         run.activationToVisibleCompositionMs.isEmpty()
+             ? QJsonValue(QStringLiteral("unavailable"))
+             : QJsonValue(visibleP50)},
+        {"activationToVisibleCompositionP95Ms",
+         run.activationToVisibleCompositionMs.isEmpty()
+             ? QJsonValue(QStringLiteral("unavailable"))
+             : QJsonValue(visibleP95)},
+        {"activationToVisibleCompositionMaxMs",
+         visibleMaximum < 0 ? QJsonValue(QStringLiteral("unavailable"))
+                            : QJsonValue(visibleMaximum)},
+        {"visibleCompositionSamples", static_cast<int>(run.activationToVisibleCompositionMs.size())},
+        {"visibleCompositionObservedCycles", run.visibleCompositionObserved},
+        {"visibleCompositionUnsupportedCycles", run.visibleCompositionUnsupported},
+        {"visibleCompositionTimeoutCycles", run.visibleCompositionTimeouts},
+        {"desktopGrabMeanMicros",
+         run.desktopGrabCalls == 0
+             ? QJsonValue(QStringLiteral("unavailable"))
+             : QJsonValue(static_cast<double>(run.desktopGrabTotalMicros) /
+                          run.desktopGrabCalls)},
+        {"desktopGrabMaxMicros", run.desktopGrabMaxMicros},
+        {"visibleCompositionDefinition",
+         "activation (owned foreground) to the first desktop screen-crop sample whose "
+         "brightness matches the pre-switch picture after a verified occluding helper; "
+         "an observable composited-pixels interval, not a scanout timestamp"},
         {"latencyDefinition",
          "activation (owned foreground) to the next QOpenGLWidget::frameSwapped; this "
          "is a swap-completion latency, not a physical scanout/present timestamp"},
@@ -585,10 +694,16 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
 
     QWidget helper;
     helper.setWindowTitle(QStringLiteral("Mikai focus helper"));
-    helper.setStyleSheet(QStringLiteral("background:#3a4450;"));
-    helper.resize(360, 220);
-    if (QScreen* screen = dialog->screen())
-        helper.move(screen->availableGeometry().topLeft() + QPoint(48, 48));
+    // Black and centred over the measured crop: while this window owns the
+    // foreground the crop must show black, so the first bright sample after
+    // activation is observable composited output rather than a guess.
+    // Not topmost: the player must be able to cover the helper again on
+    // reactivation, otherwise the crop would stay black and visible composition
+    // could never be observed.
+    helper.setStyleSheet(QStringLiteral("background:#000000;"));
+    helper.setWindowFlags(Qt::Window);
+    helper.resize(480, 360);
+    helper.move(dialog->mapToGlobal(dialog->rect().center()) - QPoint(240, 180));
     helper.show();
     helper.raise();
     spinFor(300);
@@ -614,18 +729,30 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
     QCursor::setPos(dialog->mapToGlobal(QPoint(2, 2)));
 
     QJsonArray phaseRows;
-    QVector<qint64> allMs;
+    QVector<qint64> allSwapMs;
+    QVector<qint64> allVisibleMs;
     int blackSamples = 0;
     int blackMeasured = 0;
     int foregroundLost = 0;
+    int visibleUnsupported = 0;
+    int visibleTimeouts = 0;
+    qint64 grabCalls = 0;
+    qint64 grabMicros = 0;
+    qint64 grabMaxMicros = -1;
     for (const ActivationRun& run : runs) {
         phaseRows.append(activationSummary(run));
-        allMs += run.activationToPaintMs;
+        allSwapMs += run.activationToFirstSwapMs;
+        allVisibleMs += run.activationToVisibleCompositionMs;
         blackSamples += run.blackSamples;
         blackMeasured += run.blackMeasured;
         foregroundLost += run.foregroundLostCycles;
+        visibleUnsupported += run.visibleCompositionUnsupported;
+        visibleTimeouts += run.visibleCompositionTimeouts;
+        grabCalls += run.desktopGrabCalls;
+        grabMicros += run.desktopGrabTotalMicros;
+        grabMaxMicros = std::max(grabMaxMicros, run.desktopGrabMaxMicros);
     }
-    const bool measurementAvailable = !allMs.isEmpty() && blackMeasured > 0;
+    const bool measurementAvailable = !allVisibleMs.isEmpty() && blackMeasured > 0;
     const bool clean = measurementAvailable && blackSamples == 0;
     record(QJsonObject{{"event", "focusSwitchResult"},
                        {"result", !measurementAvailable ? "INCOMPLETE"
@@ -636,10 +763,27 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
                        {"fixtureSampled", !fixture.isNull()},
                        {"knownBrightFixture", knownBright},
                        {"attachCallsBeforePhaseReset", static_cast<qint64>(setupAttaches)},
+                       {"activationToVisibleCompositionP95Ms",
+                        allVisibleMs.isEmpty()
+                            ? QJsonValue(QStringLiteral("unavailable"))
+                            : QJsonValue(percentileMs(allVisibleMs, 0.95))},
+                       {"activationToVisibleCompositionSamples",
+                        static_cast<int>(allVisibleMs.size())},
+                       {"visibleCompositionUnsupportedCycles", visibleUnsupported},
+                       {"visibleCompositionTimeoutCycles", visibleTimeouts},
                        {"activationToFirstSwapP95Ms",
-                        allMs.isEmpty() ? QJsonValue(QStringLiteral("unavailable"))
-                                        : QJsonValue(percentileMs(allMs, 0.95))},
-                       {"activationToFirstSwapSamples", static_cast<int>(allMs.size())},
+                        allSwapMs.isEmpty() ? QJsonValue(QStringLiteral("unavailable"))
+                                            : QJsonValue(percentileMs(allSwapMs, 0.95))},
+                       {"activationToFirstSwapSamples", static_cast<int>(allSwapMs.size())},
+                       {"desktopGrabMeanMicros",
+                        grabCalls == 0
+                            ? QJsonValue(QStringLiteral("unavailable"))
+                            : QJsonValue(static_cast<double>(grabMicros) / grabCalls)},
+                       {"desktopGrabMaxMicros", grabMaxMicros},
+                       {"visibleCompositionDefinition",
+                        "activation (owned foreground) to the first desktop screen-crop "
+                        "sample matching the pre-switch picture after a verified "
+                        "occluding helper; observable composited pixels, not scanout"},
                        {"blackSamples", blackSamples},
                        {"blackSamplesMeasured", blackMeasured},
                        {"foregroundLostCycles", foregroundLost},
@@ -735,10 +879,10 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     // ── metric 2: alt-tab away/back, ten cycles ────────────────────────────
     QWidget helper;
     helper.setWindowTitle(QStringLiteral("Mikai baseline helper"));
-    helper.setStyleSheet(QStringLiteral("background:#3a4450;"));
-    helper.resize(360, 220);
-    if (QScreen* screen = dialog->screen())
-        helper.move(screen->availableGeometry().topLeft() + QPoint(48, 48));
+    helper.setStyleSheet(QStringLiteral("background:#000000;"));
+    helper.setWindowFlags(Qt::Window);
+    helper.resize(480, 360);
+    helper.move(dialog->mapToGlobal(dialog->rect().center()) - QPoint(240, 180));
     helper.show();
     helper.raise();
     spinFor(300);
@@ -808,27 +952,53 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                        {"surfaceState", surfaceState(surface)},
                        {"loadError", lastLoadError}});
 
-    const double p95 = percentileMs(activation.activationToPaintMs, 0.95);
-    qint64 maxActivation = -1;
-    for (qint64 value : activation.activationToPaintMs)
-        maxActivation = std::max(maxActivation, value);
+    const double swapP95 = percentileMs(activation.activationToFirstSwapMs, 0.95);
+    qint64 maxSwap = -1;
+    for (qint64 value : activation.activationToFirstSwapMs)
+        maxSwap = std::max(maxSwap, value);
+    const double visibleP95 =
+        percentileMs(activation.activationToVisibleCompositionMs, 0.95);
+    qint64 maxVisible = -1;
+    for (qint64 value : activation.activationToVisibleCompositionMs)
+        maxVisible = std::max(maxVisible, value);
     const auto finalCounters = mikai::gui::uiprofile::snapshot();
-    const bool activationMeasured = !activation.activationToPaintMs.isEmpty();
+    const bool swapMeasured = !activation.activationToFirstSwapMs.isEmpty();
+    const bool visibleMeasured = !activation.activationToVisibleCompositionMs.isEmpty();
     const bool blackMeasured = loadSampled > 0;
     record(QJsonObject{
         {"event", "baselineResult"},
-        {"result", (activationMeasured && blackMeasured) ? "MEASURED" : "INCOMPLETE"},
+        {"result", (visibleMeasured && blackMeasured) ? "MEASURED" : "INCOMPLETE"},
         {"fixtureMeanLuma", fixtureLuma},
         {"fixtureSampled", !fixture.isNull()},
         {"knownBrightFixture", knownBright},
         {"pacingDisarmsHoverStorm", pacingDisarms},
+        {"activationToVisibleCompositionP95Ms",
+         visibleMeasured ? QJsonValue(visibleP95)
+                         : QJsonValue(QStringLiteral("unavailable"))},
+        {"activationToVisibleCompositionSamples",
+         static_cast<int>(activation.activationToVisibleCompositionMs.size())},
+        {"activationToVisibleCompositionMaxMs",
+         maxVisible < 0 ? QJsonValue(QStringLiteral("unavailable"))
+                        : QJsonValue(maxVisible)},
+        {"visibleCompositionUnsupportedCycles", activation.visibleCompositionUnsupported},
+        {"visibleCompositionTimeoutCycles", activation.visibleCompositionTimeouts},
+        {"desktopGrabMeanMicros",
+         activation.desktopGrabCalls == 0
+             ? QJsonValue(QStringLiteral("unavailable"))
+             : QJsonValue(static_cast<double>(activation.desktopGrabTotalMicros) /
+                          activation.desktopGrabCalls)},
+        {"desktopGrabMaxMicros", activation.desktopGrabMaxMicros},
+        {"visibleCompositionDefinition",
+         "activation (owned foreground) to the first desktop screen-crop sample matching "
+         "the pre-switch picture after a verified occluding helper; observable "
+         "composited pixels, not scanout"},
         {"activationToFirstSwapP95Ms",
-         activationMeasured ? QJsonValue(p95) : QJsonValue(QStringLiteral("unavailable"))},
+         swapMeasured ? QJsonValue(swapP95) : QJsonValue(QStringLiteral("unavailable"))},
         {"activationToFirstSwapSamples",
-         static_cast<int>(activation.activationToPaintMs.size())},
+         static_cast<int>(activation.activationToFirstSwapMs.size())},
         {"activationToFirstSwapMaxMs",
-         maxActivation < 0 ? QJsonValue(QStringLiteral("unavailable"))
-                           : QJsonValue(maxActivation)},
+         maxSwap < 0 ? QJsonValue(QStringLiteral("unavailable"))
+                     : QJsonValue(maxSwap)},
         {"latencyDefinition",
          "activation (owned foreground) to the next QOpenGLWidget::frameSwapped; this "
          "is a swap-completion latency, not a physical scanout/present timestamp"},
