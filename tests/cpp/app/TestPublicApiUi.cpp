@@ -1951,18 +1951,32 @@ void TestPublicApiUi::anExplicitProviderChoiceOutlivesTheReleaseRebuild() {
   // opens on Moon because the release's own tabs are ordered by preference.
   QTRY_VERIFY_WITH_TIMEOUT(ashdiChip->isChecked(), 5000);
 
+  // Reaching another provider with the keyboard is the same intent as a click,
+  // so it has to stick too. The bar walks to the neighbouring tab and stops at
+  // the ends, so one step right of the opening tab is always index 1.
+  tabs->tabBar()->setFocus(Qt::OtherFocusReason);
+  QTest::keyClick(tabs->tabBar(), Qt::Key_Right);
+  QTRY_VERIFY_WITH_TIMEOUT(tabs->currentIndex() == 1, 5000);
+  const QString keyboardChoice = tabs->tabText(tabs->currentIndex());
+  QVERIFY2(keyboardChoice != QStringLiteral("MoonAnime"),
+           "one tab right of the opening tab is still the preferred provider");
+
+  // A different release rebuilds the tabs from scratch; the provider the
+  // viewer picked has to survive that rebuild for this title.
+  QTest::mouseClick(moonChip, Qt::LeftButton);
+  QTRY_VERIFY_WITH_TIMEOUT(moonChip->isChecked(), 5000);
+  QTRY_COMPARE_WITH_TIMEOUT(tabs->tabText(tabs->currentIndex()), keyboardChoice, 10000);
+
   const int tortuga = tabForText(tabs, QStringLiteral("Tortuga"));
-  QVERIFY(tortuga >= 0);
+  QVERIFY(tortuga > 0);
   overview->ensureWidgetVisible(tabs->tabBar());
   QCoreApplication::processEvents();
   QTest::mouseClick(tabs->tabBar(), Qt::LeftButton, Qt::NoModifier,
                     tabs->tabBar()->tabRect(tortuga).center());
   QTRY_COMPARE_WITH_TIMEOUT(tabs->currentIndex(), tortuga, 5000);
 
-  // A different release rebuilds the tabs from scratch; the provider the
-  // viewer picked has to survive that rebuild for this title.
-  QTest::mouseClick(moonChip, Qt::LeftButton);
-  QTRY_VERIFY_WITH_TIMEOUT(moonChip->isChecked(), 5000);
+  QTest::mouseClick(ashdiChip, Qt::LeftButton);
+  QTRY_VERIFY_WITH_TIMEOUT(ashdiChip->isChecked(), 5000);
   QTRY_COMPARE_WITH_TIMEOUT(tabs->tabText(tabs->currentIndex()), QStringLiteral("Tortuga"),
                             10000);
 }
