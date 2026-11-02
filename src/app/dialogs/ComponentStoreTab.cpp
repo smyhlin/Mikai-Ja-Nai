@@ -975,6 +975,16 @@ int ComponentStoreTab::modelInstalledCount() const { return installedSpatialCoun
 
 int ComponentStoreTab::modelVerifiedCount() const { return verifiedSpatialCount_; }
 
+int ComponentStoreTab::downloadedModelItemCount() const {
+    int downloaded = 0;
+    for (auto item = progressItems_.cbegin(); item != progressItems_.cend(); ++item) {
+        if (item->cardId != QLatin1String("animeJanaiModelsCard")) continue;
+        if (item->outcome != ProgressItem::Outcome::Installed) continue;
+        if (findSpatialAsset(item.key()) != nullptr) ++downloaded;
+    }
+    return downloaded;
+}
+
 int ComponentStoreTab::runtimeCardInstalledOnDisk() const {
     if (selectedBackend() == Backend::TensorRT)
         return (animeJanaiTensorRtInstalled_ || runtimePackInstalled_) ? 1 : 0;

@@ -248,6 +248,10 @@ private:
     /// proved by digest, out of the pinned catalogue.
     int modelInstalledCount() const;
     int modelVerifiedCount() const;
+    /// Spatial transfer items that reached a terminal Installed state in this
+    /// session. Used for the "Downloaded: n/5" line until a fresh inventory
+    /// proves the files on disk.
+    int downloadedModelItemCount() const;
     /// Whether the runtime card has an installed element on disk under the
     /// currently selected backend (its pack, or that backend's closure).
     int runtimeCardInstalledOnDisk() const;

@@ -785,7 +785,8 @@ void ComponentStoreTab::startAcquisitionVerification() {
     if (spatialSelected) {
         applyStatus(QString(),
                     StatusReason{.kind = StatusReason::Kind::VerificationProgress,
-                                 .downloaded = modelInstalledCount(),
+                                 .downloaded = qMax(modelInstalledCount(),
+                                                    downloadedModelItemCount()),
                                  .verified = 0,
                                  .total = spatialAssetCatalog().size()});
     } else {
