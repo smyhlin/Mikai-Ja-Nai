@@ -89,8 +89,14 @@ mikai_add_probe(dialog_probe src/probes/player/DialogProbe.cpp
 mikai_add_probe(fullscreen_stability_probe src/probes/player/FullscreenStabilityProbe.cpp
   LINKS mikai_player Qt6::Widgets Qt6::Test
   DEPLOY_SHADERS)
+if(TARGET mikai_app)
+  # The focus-switch mode installs the real WindowRaisePolicy so its
+  # AttachThreadInput counter measures the shipping policy, not a copy.
+  target_link_libraries(fullscreen_stability_probe PRIVATE mikai_app)
+  target_compile_definitions(fullscreen_stability_probe PRIVATE MIKAI_PROBE_HAS_APP=1)
+endif()
 if(WIN32)
-  target_link_libraries(fullscreen_stability_probe PRIVATE psapi)
+  target_link_libraries(fullscreen_stability_probe PRIVATE psapi dwmapi)
 endif()
 mikai_add_probe(interaction_probe src/probes/player/InteractionProbe.cpp
   LINKS mikai_player Qt6::Widgets Qt6::Test

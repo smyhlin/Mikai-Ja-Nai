@@ -18,6 +18,7 @@
 #include <QScopedValueRollback>
 #include <QThread>
 #include <QTimer>
+#include <QUrl>
 #include <QWindow>
 
 #include <algorithm>
@@ -27,6 +28,7 @@
 #include <vector>
 
 #include "gui/IdleInhibitor.hpp"
+#include "gui/UiProfile.hpp"
 
 #include "MpvApi.hpp"
 #include "MpvHandle.hpp"
@@ -155,6 +157,9 @@ constexpr const char* kDecoderDropProperty = "decoder-frame-drop-count";
 // Current mpv: "frame-drop-count" is the VO drop counter (the old
 // vo-drop-frame-count is gone), so it is never read as the decoder's.
 constexpr const char* kVoDropProperty = "frame-drop-count";
+// Frames the VO took out of their named presentation slot. This is the number
+// that separates "the compositor could not keep up" from "the decoder did".
+constexpr const char* kVoDelayedProperty = "vo-delayed-frame-count";
 constexpr const char* kVfProperty = "vf";
 
 
@@ -866,6 +871,17 @@ bool VideoSurface::open(const QString& url, quint64 mediaToken) {
 }
 
 bool VideoSurface::startPendingUrl(double resumeAt) {
+    if (mikai::gui::uiprofile::enabled()) {
+        // Host only: a stream URL carries a signed query that must never reach a
+        // log file, and a local path is identified by its scheme alone.
+        const QString host = url_.contains(QLatin1String("://"))
+                                 ? QUrl(url_).host()
+                                 : QStringLiteral("local");
+        mikai::gui::uiprofile::log(
+            "surface.startUrl",
+            QStringLiteral("position=%1 host=%2")
+                .arg(QString::number(resumeAt, 'f', 3), host));
+    }
     pendingOpen_ = false;
     pacingTimer_.stop();
     pacingTimerArmed_ = false;
@@ -1338,6 +1354,9 @@ uint64_t VideoSurface::sourceEpoch() const {
 // ── GL lifecycle ──────────────────────────────────────────────────────────
 
 void VideoSurface::initializeGL() {
+    const bool profileContext = mikai::gui::uiprofile::countersEnabled();
+    const qint64 profileStartNs = profileContext ? mikai::gui::uiprofile::nowNs() : 0;
+    if (profileContext) ++profileInitializeGlCalls_;
     QOpenGLWidget::initializeGL();
     context_ = QOpenGLContext::currentContext();
     // Failed runtime initialization still leaves a Qt context that needs tracking.
@@ -1379,6 +1398,19 @@ void VideoSurface::initializeGL() {
     } catch (const MpvError& e) {
         emit errorOccurred(QString::fromUtf8(e.what()));
         contextReady_ = false;
+    }
+    if (mikai::gui::uiprofile::enabled()) {
+        const qint64 elapsedUs =
+            profileContext ? (mikai::gui::uiprofile::nowNs() - profileStartNs) / 1000 : -1;
+        mikai::gui::uiprofile::log(
+            "surface.initializeGL",
+            QStringLiteral("generation=%1 recreated=%2 ready=%3 context=%4 elapsed_us=%5")
+                .arg(static_cast<qulonglong>(renderGeneration_))
+                .arg(static_cast<int>(recreated))
+                .arg(static_cast<int>(contextReady_))
+                .arg(QStringLiteral("0x%1").arg(
+                    static_cast<qulonglong>(reinterpret_cast<quintptr>(context_)), 0, 16))
+                .arg(elapsedUs));
     }
 }
 
@@ -1446,6 +1478,26 @@ void VideoSurface::hideEvent(QHideEvent* event) {
 }
 
 void VideoSurface::paintGL() {
+    // Profile observations are recorded before the timer is stopped: the
+    // counters describe what this paint found, not what it left behind.
+    const bool profilePaint = mikai::gui::uiprofile::countersEnabled();
+    const qint64 profilePaintStartNs =
+        profilePaint ? mikai::gui::uiprofile::nowNs() : 0;
+    if (profilePaint) {
+        ++profilePaintCalls_;
+        // The timer is armed only for a frame that is about to paint. A paint
+        // that arrives without one stops an armed timer for nothing, and that
+        // count is the GOAL-F/T-F1 before-metric.
+        if (profilePacingAwaitingPaint_) {
+            if (!framePending_) ++profilePacingDisarms_;
+            if (profilePacingArmedAtNs_ != 0)
+                profileLastPaintDelayMs_ =
+                    mikai::gui::uiprofile::elapsedMs(profilePacingArmedAtNs_);
+        } else {
+            profileLastPaintDelayMs_ = -1;
+        }
+        profilePacingAwaitingPaint_ = false;
+    }
     pacingTimer_.stop();
     pacingTimerArmed_ = false;
     pacingTargetTime_ = 0;
@@ -1458,6 +1510,15 @@ void VideoSurface::paintGL() {
         QPainter unrendered(this);
         unrendered.fillRect(rect(), Qt::black);
         if (!overlaySuppressed_) emit paintOverlay(&unrendered);
+        if (mikai::gui::uiprofile::enabled()) {
+            const qint64 elapsedUs = profilePaint
+                                         ? (mikai::gui::uiprofile::nowNs() - profilePaintStartNs) /
+                                               1000
+                                         : -1;
+            mikai::gui::uiprofile::log(
+                "surface.paintGL",
+                QStringLiteral("result=unrendered haveFrame=0 elapsed_us=%1").arg(elapsedUs));
+        }
         return;
     }
     // MPV_RENDER_UPDATE_FRAME marks a new output frame, independent of UI paints.
@@ -1546,12 +1607,26 @@ void VideoSurface::paintGL() {
         }
     }
     if (!g_frameTimingLogPath.isEmpty()) {
-        logFrameTiming(QStringLiteral("paint result=%1 newframe=%2 pending=%3 forced=%4 lead_ms=%5")
-                           .arg(renderResult)
-                           .arg(static_cast<int>(newOutputFrame))
-                           .arg(static_cast<int>(framePending_))
-                           .arg(static_cast<int>(forceRender_))
-                           .arg(QString::number(renderLeadMs_, 'f', 2)));
+        const auto counterValue = [](const std::optional<int64_t>& value) {
+            return value.has_value() ? QString::number(*value) : QStringLiteral("unknown");
+        };
+        logFrameTiming(
+            QStringLiteral("paint result=%1 newframe=%2 pending=%3 forced=%4 lead_ms=%5 "
+                           "paint_delay_ms=%6 skip_reason=%7 drop=%8 vo_delayed=%9 "
+                           "pause_held=%10 disarm=%11 chrome_dirty=%12")
+                .arg(renderResult)
+                .arg(static_cast<int>(newOutputFrame))
+                .arg(static_cast<int>(framePending_))
+                .arg(static_cast<int>(forceRender_))
+                .arg(QString::number(renderLeadMs_, 'f', 2))
+                .arg(profileLastPaintDelayMs_)
+                .arg(QString::fromLatin1(profilePacingReason_))
+                .arg(counterValue(diagnostics_.voDropCount))
+                .arg(counterValue(diagnostics_.voDelayedFrameCount))
+                .arg(static_cast<int>(enginePauseHeld()))
+                .arg(static_cast<qulonglong>(profilePacingDisarms_))
+                .arg(static_cast<qulonglong>(
+                    mikai::gui::uiprofile::g_chromeDirtyRequests.load())));
     }
     lastRenderedFboSize_ = deviceSize;
     hasRenderedFrame_ = hasRenderedFrame_ || renderResult == 0;
@@ -1602,6 +1677,22 @@ void VideoSurface::paintGL() {
     // No self-update here: mpv's own update callback is what asks for the next
     // paint, so scheduling one from paintGL would only spin on a paused core.
     if (!overlaySuppressed_) emit paintOverlay(&painter);
+    if (mikai::gui::uiprofile::enabled()) {
+        const qint64 elapsedUs =
+            profilePaint ? (mikai::gui::uiprofile::nowNs() - profilePaintStartNs) / 1000 : -1;
+        mikai::gui::uiprofile::log(
+            "surface.paintGL",
+            QStringLiteral("result=%1 haveFrame=%2 newframe=%3 presented=%4 elapsed_us=%5 "
+                           "paint_delay_ms=%6 skip_reason=%7")
+                .arg(renderResult)
+                .arg(static_cast<int>(haveFrame))
+                .arg(static_cast<int>(newOutputFrame))
+                .arg(static_cast<int>(presentedFrame))
+                .arg(elapsedUs)
+                .arg(profileLastPaintDelayMs_)
+                .arg(QString::fromLatin1(profilePacingReason_)));
+    }
+    if (profilePaint) profilePacingReason_ = "none";
 }
 
 void VideoSurface::onRenderUpdate(quint64 generation) {
@@ -1749,6 +1840,7 @@ bool VideoSurface::clientFramePacingEnabled() {
 }
 
 void VideoSurface::schedulePacedPaint() {
+    const bool profilePacing = mikai::gui::uiprofile::countersEnabled();
     // A forced repaint (resize, re-show, an engine hold) or pacing disabled
     // paints at once: the deferred path exists only to place a decoded frame
     // into the compositor slot mpv named for it, and nothing else may wait.
@@ -1757,6 +1849,7 @@ void VideoSurface::schedulePacedPaint() {
         pacingTimerArmed_ = false;
         pacingTargetTime_ = 0;
         pacingRetryOnly_ = false;
+        if (profilePacing) profilePacingReason_ = "forced";
         update();
         return;
     }
@@ -1784,11 +1877,12 @@ void VideoSurface::schedulePacedPaint() {
         pacingTimerArmed_ = false;
         pacingTargetTime_ = 0;
         pacingRetryOnly_ = false;
+        const char* reason = repeatedOrRedraw
+                                 ? ((info.flags & MPV_RENDER_FRAME_INFO_REPEAT) != 0
+                                        ? "repeat" : "redraw")
+                                 : (haveTarget ? "elapsed" : "no-info");
+        if (profilePacing) profilePacingReason_ = reason;
         if (!g_frameTimingLogPath.isEmpty()) {
-            const char* reason = repeatedOrRedraw
-                                     ? ((info.flags & MPV_RENDER_FRAME_INFO_REPEAT) != 0
-                                            ? "repeat" : "redraw")
-                                     : (haveTarget ? "elapsed" : "no-info");
             logFrameTiming(QStringLiteral("pace immediate target_time=%1 unit=%2 now_us=%3 reason=%4")
                                .arg(QString::number(targetTime),
                                     QString::fromLatin1(targetTimeInNanoseconds ? "ns" : "us"),
@@ -1807,6 +1901,11 @@ void VideoSurface::schedulePacedPaint() {
     // Round up so the timer never fires before the lead-adjusted slot.
     const int delayMs = *delay;
     pacingTimer_.start(delayMs);
+    if (profilePacing) {
+        profilePacingArmedAtNs_ = mikai::gui::uiprofile::nowNs();
+        profilePacingAwaitingPaint_ = true;
+        profilePacingReason_ = "paced";
+    }
     if (!g_frameTimingLogPath.isEmpty()) {
         logFrameTiming(QStringLiteral("pace deferred target_time=%1 unit=%2 now_us=%3 delay_ms=%4 lead_ms=%5")
                            .arg(QString::number(targetTime),
@@ -2129,6 +2228,9 @@ VideoSurface::HdrToneMappingPolicy VideoSurface::hdrToneMappingPolicy() {
 
 void VideoSurface::setFrameTimingLogPath(const QString& path) {
     g_frameTimingLogPath = path;
+    // The frame-timing log prints these counters, so they must be collected for
+    // that launch even when MIKAI_UI_PROFILE was not set.
+    mikai::gui::uiprofile::forceCounters(!path.isEmpty());
 }
 
 QString VideoSurface::frameTimingLogPath() {
@@ -2597,6 +2699,16 @@ PlaybackDiagnostics VideoSurface::playbackDiagnostics() const {
     return diagnostics_;
 }
 
+VideoSurface::UiProfileCounters VideoSurface::uiProfileCounters() const {
+    UiProfileCounters counters;
+    counters.initializeGlCalls = profileInitializeGlCalls_;
+    counters.contextGeneration = renderGeneration_;
+    counters.paintCalls = profilePaintCalls_;
+    counters.pacingDisarms = profilePacingDisarms_;
+    counters.lastPaintDelayMs = profileLastPaintDelayMs_;
+    return counters;
+}
+
 void VideoSurface::resetDiagnostics() {
     for (DiagnosticRequest& request : diagnosticRequests_) {
         if (request.pending.valid() && mpv_) mpv_->cancelAsync(request.pending);
@@ -2612,7 +2724,11 @@ void VideoSurface::pollDiagnostics() {
     // poll off on every surface it owns, so normal playback performs no mpv
     // reads at all here. Probes keep the constructor default (on) because their
     // verdicts assert on these counters, and they alone read them.
-    if (!mpv_ || !diagnosticsActive_ || !diagnosticsPolling_) return;
+    // A frame-timing log carries these counters, so that diagnostic launch keeps
+    // the poll alive even though the app normally switches it off (T-205).
+    if (!mpv_ || !diagnosticsActive_ ||
+        (!diagnosticsPolling_ && g_frameTimingLogPath.isEmpty()))
+        return;
     const qint64 nowMs = diagnosticsClock_.elapsed();
     if (nowMs - diagnosticsLastPollMs_ < kDiagnosticsPollIntervalMs) return;
     diagnosticsLastPollMs_ = nowMs;
@@ -2620,6 +2736,7 @@ void VideoSurface::pollDiagnostics() {
     const uint64_t epoch = mpv_->sourceEpoch();
     issueDiagnostic(kDecoderDropSlot, kDecoderDropProperty, epoch);
     issueDiagnostic(kVoDropSlot, kVoDropProperty, epoch);
+    issueDiagnostic(kVoDelayedSlot, kVoDelayedProperty, epoch);
     issueDiagnostic(kVfSlot, kVfProperty, epoch);
 }
 
@@ -2658,6 +2775,9 @@ void VideoSurface::applyDiagnosticReply(DiagnosticSlot slot, const AsyncReply& r
         case kVoDropSlot:
             diagnostics_.voDropCount = exactInteger(reply);
             break;
+        case kVoDelayedSlot:
+            diagnostics_.voDelayedFrameCount = exactInteger(reply);
+            break;
         case kVfSlot: {
             bool present = false;
             int count = 0;
@@ -2680,6 +2800,9 @@ void VideoSurface::setDiagnosticUnknown(DiagnosticSlot slot) {
             break;
         case kVoDropSlot:
             diagnostics_.voDropCount.reset();
+            break;
+        case kVoDelayedSlot:
+            diagnostics_.voDelayedFrameCount.reset();
             break;
         case kVfSlot:
             diagnostics_.nativeFilterPresent.reset();

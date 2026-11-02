@@ -22,6 +22,7 @@ struct PlaybackDiagnostics {
     std::optional<double> estimatedVfFps;     ///< raw, no container fallback
     std::optional<int64_t> decoderDropCount;  ///< decoder-frame-drop-count
     std::optional<int64_t> voDropCount;       ///< frame-drop-count (VO drops)
+    std::optional<int64_t> voDelayedFrameCount;  ///< vo-delayed-frame-count
     uint64_t renderedOutputFrames = 0;  ///< successful mpv-rendered new-frame updates
     /// nullopt = vf chain unread; true/false = what the live chain holds.
     std::optional<bool> nativeFilterPresent;
