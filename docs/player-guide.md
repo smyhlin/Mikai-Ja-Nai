@@ -27,7 +27,7 @@ Catalogue variant selection and local track selection are different operations: 
 - **Space** toggles play/pause. The player dock also has a play/pause control.
 - The timeline shows playback position and remaining time when duration is known. Drag/scrub it to seek; the final pointer position on left-button release selects the target, even if the last movement event was elsewhere.
 - Hover over a seekable video’s timeline to preview a frame and timestamp without moving playback. During a drag, the card shows the time without decoding a frame. Unseekable or unavailable sources show a reason instead.
-- MoonAnime opening, ending and recap ranges are tinted with the app accent; the hover card names each range under the pointer.
+- MoonAnime opening, ending, mixed-opening, mixed-ending and recap ranges are tinted with the app accent; the hover card names each range under the pointer.
 - The separate **+85** control advances by 85 seconds, bounded by a known duration.
 - When MoonAnime supplies skip markers, controls appear above the right side of the player dock during openings, endings, mixed segments, or recaps. Select one to seek to its end; overlapping segments remain separate choices. Markers depend on the selected episode and provider.
 - **← / →** seeks backward/forward by 5 seconds when duration is known. Steps use the playback core's current position, so rapid presses are not shortened by a delayed progress update. If duration is unknown, those keys request the previous/next episode instead.

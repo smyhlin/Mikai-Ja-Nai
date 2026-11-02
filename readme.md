@@ -26,7 +26,7 @@
 
 - Browse and search the Mikai catalogue, filter titles, view teams and schedules, and keep a local recently-opened list.
 - Play provider streams or open local video files in an integrated **libmpv** player. Local playback is independent of catalogue sign-in/API availability.
-- Compare a paused frame across Original, Anime4K, AnimeJaNai and prepared Native candidates; export a two-frame comparison GIF.
+- Compare a paused frame across Original, Anime4K, AnimeJaNai and prepared Native candidates; export flicker comparisons as GIF, animated WebP or silent MP4.
 - Optionally acquire GPU-specific components and models for AI processing. Ordinary Original playback does not require AI components; enhancement is opt-in.
 - Inspect local media metadata, manage audio/subtitle tracks, and customize the interface in English or Ukrainian.
 - Resume where you stopped: playback starts at 00:00 and offers a stored position instead, the episode is marked watched at 90 % of its length, and the title page shows the same progress.
@@ -35,20 +35,20 @@
 
 ## Screenshots
 
-The README hero above uses the new full-color application icon; the current gallery below captures the matching application header, which uses a themed transparent monochrome icon.
+Application captures and their provenance are documented in [Screenshot provenance](docs/images/README.md).
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/screenshots/catalogue.png" alt="Catalogue page with recommendations and currently airing titles"></td>
-    <td width="50%"><img src="docs/images/screenshots/compare.png" alt="Compare workstation showing the original frame beside a processed candidate"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-01/catalogue.png" alt="Catalogue page with recommendations and currently airing titles"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-01/compare.png" alt="Compare workstation showing the original frame beside a processed candidate"></td>
   </tr>
   <tr>
     <td align="center"><em><strong>Catalogue.</strong> Search, filters, recommendations, currently airing, latest updates.</em></td>
     <td align="center"><em><strong>Compare.</strong> One pinned frame, original against a candidate chain, side by side or free.</em></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/screenshots/settings.png" alt="Appearance settings with blue gradient and blue accent"></td>
-    <td width="50%"><img src="docs/images/screenshots/media-info.png" alt="Media information view listing container, codec, dimensions and track inventory"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-01/settings.png" alt="Appearance settings with blue gradient and blue accent"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-01/media-info.png" alt="Media information view listing container, codec, dimensions and track inventory"></td>
   </tr>
   <tr>
     <td align="center"><em><strong>Appearance.</strong> Accent, corner radius and gradient, applied to every surface at once.</em></td>
@@ -56,48 +56,17 @@ The README hero above uses the new full-color application icon; the current gall
   </tr>
 </table>
 
-These are unmodified full-resolution widget captures from the successful 2026-10-30 Windows run of the
-opt-in `release_gallery_probe`, stored with the run's unmodified raw evidence in
-[`docs/images/screenshots/`](docs/images/screenshots/). The probe recorded the live anonymous catalogue,
-application/widget state and SHA-256 for each image. Its successful run finished at `2026-10-30T16:44:19Z`,
-with no errors and workers drained cleanly. Its source video was the 12-second project-generated
-FFmpeg `testsrc2` fixture (`tests/fixtures/generate_media.sh`); the operator-declared credit is recorded in
-the evidence and is not independently verified. The separate 2026-10-24 historical run remains in
-[`docs/images/gallery-release-0.1.0/`](docs/images/gallery-release-0.1.0/). These captures are real and not
-AI-generated or composited; they do not imply sign-in, provider playback, AI inference, release QA, rights
-clearance or approval for distribution. Live catalogue artwork, titles and availability belong to their
-rights holders and change upstream — the layout is what is being shown, not a snapshot of catalogue contents.
-
-A separate, manually captured TitlePage image (`docs/images/screenshots/title-page-current-20261031.png`,
-SHA-256 `47d76554533b674c914abf6c705012c8392dba22ac216834ff9ae637f7b763ea`) is also stored in the same
-directory. It is a normal-application widget grab from 2026-10-31 (live anonymous API, ref 7461, Ukrainian UI,
-default appearance, no playback), taken with a staged isolated runtime/settings and no credential exposure.
-It is **not** part of the 2026-10-30 gallery evidence run and has no probe/evidence attestation; see
-`docs/images/README.md` for its full capture conditions and limitations.
-
-The probe uses Original playback and non-AI comparison only: it never downloads models and never runs
-inference. Regenerating the set needs an interactive desktop with working desktop OpenGL, an original
-local video of at least eight seconds, the installed Standard mpv runtime module and network access to the
-anonymous catalogue API. A headless software-GL display captures widgets but not the video surface, which
-is why the player's picture is not in this table.
+Catalogue artwork and availability can change upstream. These captures do not establish provider playback, AI inference or release QA.
 
 ## Download and install
 
 Builds are published at [github.com/smyhlin/Mikai-Ja-Nai/releases](https://github.com/smyhlin/Mikai-Ja-Nai/releases): a Windows portable ZIP and per-user setup, and four Linux formats — a dependency-based `tar.gz`, an `AppImage`, an Arch `pkg.tar.zst` and a Debian `.deb`.
 
-Every release ships `SHA256SUMS`; verify an artifact with `sha256sum -c SHA256SUMS` before running it, and never take these binaries from an unofficial mirror.
+Every release ships `SHA256SUMS`. Verify downloads against it before running them, and avoid unofficial mirrors.
 
 The artifacts are unsigned, and [release status](docs/release-status.md) records what remains unverified — including the third-party source and redistribution obligations in [redistribution](docs/redistribution.md).
 
-Every Linux artifact ships the project's own libmpv runtime — the fork the player and AnimeJaNai are built against, rebuilt with an FFmpeg TLS backend so https provider streams work. The tarball and AppImage keep it in `bin/mpv`, the Arch package in `/usr/lib/mikai/mpv`, and the `.deb` in `/usr/lib/mikai/mpv`; none needs or uses a distribution mpv. A developer build can still opt into `-DMIKAI_LINUX_BUNDLE_MPV=ON` to do the same.
-
-Bundling does not remove the host glibc/loader, graphics-driver, EGL and audio requirements, and no format is a universal Linux package. The separate October 24 packages recorded in prior local evidence are historical baseline artifacts, not builds of the current changes.
-
-Linux final-payload process smokes completed, including local video plus AAC; visual review of both playing captures confirmed a clear moving test pattern with no black or striped output. The final-source hour matrix completed with three PASS results and one unresolved Linux-stock black/frozen-output FAIL. The Windows setup is unsigned.
-
-The v0.1.0 release is already published. Further public binary distribution remains on hold while the upstream source/license closure and release QA remain incomplete; the existing publication does not imply rights clearance or QA approval.
-
-The published Windows v0.1.0 packages can fail at startup with a missing `__cxa_call_terminate` entry point. Corrected setup and portable builds in a developer's local `release-artifacts/` are private-review files, not replacements on the public release. See [release status](docs/release-status.md) for the source fix and verification limits.
+Linux packages include the project's libmpv runtime, but still require compatible host graphics, audio and system libraries. They are not universal Linux bundles. The original Windows v0.1.0 packages have a startup-runtime issue; the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101) includes the fix.
 
 ## Quick start
 

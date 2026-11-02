@@ -8,9 +8,9 @@ This guide gets you from opening the app to finding a title and choosing an epis
 
 Use the [official GitHub releases page](https://github.com/smyhlin/Mikai-Ja-Nai/releases) for published artifacts; do not use unofficial mirrors. On Windows, either run the per-user setup installer or extract the portable ZIP and launch the app from its extracted folder. On Linux, choose the AppImage, dependency-based `tar.gz`, Arch `pkg.tar.zst`, or Debian `.deb` that matches your distribution and workflow. The Arch and Debian packages are installed with their distribution's package manager; the AppImage is run as an AppImage, and the tarball is unpacked and run. See the [Linux packaging notes](releasing.md#linux-x86_64), [distribution package details](releasing.md#distribution-packages-arch-debian), and [build-from-source guide](building.md) for platform prerequisites and packaging details.
 
-The published artifacts are unsigned. Each release provides `SHA256SUMS`; further public binary distribution is on hold while release QA and third-party source/license obligations remain unresolved. See [release status](release-status.md) and [redistribution notes](redistribution.md); publication does not imply rights clearance or release approval. When launched directly, the app may offer optional component setup; file launches do not show this offer. You can decline it and use ordinary playback.
+Published artifacts are unsigned and each release provides `SHA256SUMS`. Release QA and third-party source/license obligations remain open; see [release status](release-status.md) and [redistribution notes](redistribution.md). When launched directly, the app may offer optional component setup; file launches do not show this offer. You can decline it and use ordinary playback.
 
-The published Windows v0.1.0 packages can fail on startup with `__cxa_call_terminate` missing from `Qt6Core.dll`. A source fix and locally rebuilt packages are recorded in [release status](release-status.md); they do not imply that a corrected public release has been published.
+The original Windows v0.1.0 packages can fail on startup with `__cxa_call_terminate` missing from `Qt6Core.dll`. The [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101) includes the fix.
 
 ## Start here
 
@@ -18,7 +18,7 @@ Launch the installed or portable application. Home offers discovery feeds; Searc
 
 Catalogue browsing works anonymously, subject to the service's anonymous limits. A key is optional: add one under **Settings → Access** to use the higher keyed limit. Keep the key private; it is sent to the Mikai API. The Access page provides a token test and API-usage readout. The [API reference](../docs.md) explains the public API contract.
 
-The header’s **RPM** badge shows the most recently reported request usage and limit. Its dot is neutral until quota data arrives; the colour reflects remaining quota, not a general connection-health check.
+The Home/Search header’s **RPM** badge shows the most recently reported request usage and limit. Its dot is neutral until quota data arrives; the colour reflects remaining quota, not a general connection-health check.
 
 ## Find titles and filter the catalogue
 
@@ -55,9 +55,9 @@ A saved position is recorded from 30 seconds onward. At 90% of a known duration 
 
 Recent titles, watch history and settings are local application data; they are not account-synced to Mikai. API requests go to the Mikai service, and an optional API key is sent with those requests. Do not share or commit your key. For the key controls, other settings, and local-data details, see [settings and privacy](settings-guide.md).
 
-## Compare and GIF export
+## Compare and export
 
-For frame comparison and GIF export, see the [playback and Compare guide](player-guide.md#compare-two-processing-results).
+For frame comparison and GIF, WebP or MP4 export, see the [playback and Compare guide](player-guide.md#compare-two-processing-results).
 
 ## Optional video processing and components
 

@@ -1,6 +1,6 @@
 # Packaging and release
 
-> SHA-256 values here are 12-char prefixes unless shown in a table; full digests live in `native/manifest/components.json`, `native/manifest/sources.json`, `packaging/provenance/{linux,windows}-runtime.json`, `packaging/third-party.json`, `packaging/licenses/NOTICE.txt`, and `release-artifacts/SHA256SUMS`. Historical inputs with no machine-readable full digest are retained in the table below.
+> Dependency SHA-256 values here are 12-char prefixes unless shown in a table; full input digests live in the native manifests, packaging provenance and notices. Product artifact checksums are published with each GitHub release and generated alongside local packages; do not copy them into documentation. A rebuild alone does not require a documentation commit.
 
 This guide covers local package generation, not publication.
 
@@ -10,9 +10,8 @@ This guide covers local package generation, not publication.
 
 ## Release status and redistribution
 
-- Package scripts and the CI/release workflow are preparation infrastructure; their existence alone is not evidence that an artifact was built, tested, or published. The v0.1.0 publication and its recorded evidence are documented in [release status](release-status.md).
-- The v0.1.0 release already exists; further public binary distribution remains blocked pending completion of the pinned mpv/FFmpeg/dependency source and license closure and outstanding release QA.
-- Local runtime, installer, and gallery acceptance are recorded separately in the current release status; they do not establish redistribution clearance.
+- Packaging and CI workflows do not by themselves establish that an artifact was built, tested or published. See [release status](release-status.md) for recorded results and [GitHub releases](https://github.com/smyhlin/Mikai-Ja-Nai/releases) for published packages.
+- Further public binary distribution remains blocked pending completion of the pinned mpv/FFmpeg/dependency source and license closure and outstanding release QA. Existing publications and local runtime, installer or gallery checks do not establish redistribution clearance.
 
 Current Windows DEV input:
 
@@ -79,7 +78,7 @@ Expected outputs are:
 - The portable application requires its deployed Qt/image-format/TLS/MinGW/mpv runtime files and a system Vulkan loader supplied with graphics drivers.
 - Optional AI components are not part of the base portable package.
 
-For an isolated per-user install/upgrade/uninstall check after packaging, invoke `packaging/windows/smoke.ps1` with the setup artifact and a new, absent output directory. Match any result to the exact installer SHA-256 recorded in its evidence; the checked artifacts and account scope are listed in the current release status:
+For an isolated per-user install/upgrade/uninstall check after packaging, invoke `packaging/windows/smoke.ps1` with the setup artifact and a new, absent output directory. Match the result to the exact installer SHA-256 recorded in its evidence:
 
 ```powershell
 pwsh -NoProfile -File packaging/windows/smoke.ps1 `
@@ -105,24 +104,7 @@ pwsh -NoProfile -File packaging/windows/smoke.ps1 `
 
 These outputs are local build products, not approval to upload them. Do not publish the Windows binaries while the mpv dependency/source/license closure described above remains unresolved.
 
-Current Windows mpv inputs (DEV archive):
-
-| Item | Value |
-|---|---|
-| DEV archive | `mpv-dev-x86_64-20261024-git-b4f9f5bfed.7z` (33.0 MB; SHA-256 `2efe77b9e302`; full: `native/manifest/components.json`, `native/manifest/sources.json`, `packaging/provenance/windows-runtime.json`, `packaging/third-party.json`, `packaging/licenses/NOTICE.txt`) |
-| Extracted DLL | `libmpv-2.dll` (122.6 MB; SHA-256 `d22a8a765abe`; full: same locations) |
-| CLI sibling (not selected) | `mpv-x86_64-20261024-git-b4f9f5bfed.7z` (33.8 MB (33,755,796 B); SHA-256 `3ba568335b83`; full: `packaging/provenance/windows-runtime.json`, `packaging/third-party.json`, `packaging/licenses/NOTICE.txt`) |
-| DLL identity | `mpv v0.41.0-dev-gb4f9f5bfe` |
-| FFmpeg (runtime-reported) | `N-128018-ga881f0a9a` — not verified source provenance |
-
-Caveats:
-
-- The pinned archive supplies `include/mpv/*`, `libmpv.dll.a`, and `libmpv-2.dll`; it is a developer binary/header archive, not a corresponding-source release.
-- Current workflow logs, dependency versions, patch bytes, FFmpeg source, and mpv source snapshot are not retained; source/license closure and corresponding-source delivery remain outstanding.
-- Do not assert a GPL/LGPL build mode for the current DLL.
-- The earlier 19c0fcf895 DEV asset, its CLI sibling `mpv-x86_64-20261009-git-19c0fcf895.7z` (SHA-256 `85134a3e4748`, full: `packaging/licenses/NOTICE.txt` only), and run 37965200722 materials are superseded-build evidence only, not current identities. That earlier CLI archive contains no `libmpv` DLL and is not bundled or executed.
-- A sibling FFmpeg archive `ffmpeg-x86_64-git-3fe6c8dee.7z` (SHA-256 `52ecb132577e`, full: `packaging/licenses/NOTICE.txt` only) is also not bundled.
-- The pinned archive and cache interface are documented in `cmake/FindOrFetchMpv.cmake`; `MIKAI_DIST_MPV_ARCHIVE` may override the cache copy, but its SHA-256 is always checked.
+The Windows DEV archive supplies headers, an import library and `libmpv-2.dll`; it is not corresponding source. Current input identities and unresolved source/license closure are documented in [Building](building.md#platforms-and-prerequisites) and [Redistribution](redistribution.md#windows-runtime-license-evidence). `MIKAI_DIST_MPV_ARCHIVE` may override the cache copy, but its pinned SHA-256 is always checked.
 
 ## Linux x86_64
 
@@ -183,23 +165,7 @@ bash packaging/linux/package.sh --build-dir build --output-dir /fresh/output --c
 - Inspect that generated receipt before building; CI uses the same receipt to stage the configured module and its private `.so` closure for renderer smoke, and package installation deploys that selected runtime.
 - The receipt's absolute paths are build-local and are not portable between machines.
 
-Current Linux runtime evidence:
-
-| Field | Value |
-|---|---|
-| Rebuilt runtime | `mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst` |
-| Release tag / mpv commit | `2026-10-24-c493f1c` / `c493f1c7e10a` (full: `packaging/provenance/linux-runtime.json`) |
-| Rebuild script | `packaging/mpv/build-tls-archive.sh` |
-| Rebuilt archive | 41.5 MB (41,533,948 B); 79 files; SHA-256 `6796d922cfd3` (full: `packaging/provenance/linux-runtime.json`) |
-| Published archive | `mpv-linux-x64-2026-10-24-c493f1c.tar.zst`; 41.7 MB (41,650,081 B); 78 members; SHA-256 `b6281a2c9241` (full: `packaging/provenance/linux-runtime.json`) |
-| Published libmpv member | `libmpv.so`, `libmpv.so.2`, and `libmpv.so.2.6.0` are carried unchanged; each 3.7 MB (3,708,024 B); SHA-256 `f50c5195aece` (full: `packaging/provenance/linux-runtime.json`) |
-| Rebuild changes | Published archive's `mpv` CLI removed; `libssl.so.3` and `libcrypto.so.3` added. Only the FFmpeg family (same `n9.0.2` tag, same flags plus `--enable-openssl`) and OpenSSL 3.0 differ. |
-
-Caveats and runtime behavior:
-
-- Neither archive contains headers or notices.
-- Current workflow logs, dependency versions, patch bytes, FFmpeg source and mpv source snapshot are not retained here; the archive is not corresponding source, and source/license closure and corresponding-source delivery remain outstanding.
-- The 19c0fcf895 Linux archive and its run/recipe evidence are superseded-build material, not the current pin.
+The pinned Linux runtime and its TLS rebuild are described in [Building](building.md#platforms-and-prerequisites) and [Redistribution](redistribution.md#current-linux-mpv-input). The runtime archive is not corresponding source; dependency/source/license closure remains outstanding.
 - The bundle requires `patchelf` (build-only dependency), uses extraction stamp `.mikai-linux-mpv.sha256` keyed by the archive SHA, creates an owned regular `libmpv.so.2` because symlink module paths are refused by the runtime trust policy, removes duplicate aliases, runs `patchelf --set-rpath "$ORIGIN"` on every owned `*.so*`, and installs the closure under `bin/mpv`.
 - Generated configuration variables are `MIKAI_LINUX_MPV_MODE`, `MIKAI_LINUX_MPV_BUNDLE`, `MIKAI_LINUX_MPV_ARCHIVE_SHA256` and `MIKAI_LINUX_MPV_PATCHED_RUNPATH`; `MIKAI_LINUX_MPV_VERSION` is set to the bundled marker when bundle mode is enabled.
 - The runtime resolver uses the existing candidate path `<executable>/mpv`, finds `libmpv.so.2`, and does not search system directories when that hint is present.
@@ -264,14 +230,7 @@ release step rather than a developer note.
 
 Two distribution formats are produced from the same source tree. Neither is a publication approval, and neither replaces the tarball: the tarball stays the dependency-based reference layout.
 
-Published distribution package artifacts (2026-10-30):
-
-| Format | File | Size | SHA-256 pin |
-|---|---|---:|---|
-| Arch | `mikai-0.1.0-1-x86_64.pkg.tar.zst` | 42.6 MB (42,593,993 B) | `3f804f11e469` |
-| Debian | `mikai_0.1.0_amd64.deb` | 65.7 MB (65,658,032 B) | `9b2e31f58f45` |
-
-Full artifact digests are in the release's `release-artifacts/SHA256SUMS`. These are the published 2026-10-30 artifacts; package recipes describe how to build new outputs and do not imply their hashes or sizes will match these.
+Published Arch and Debian package checksums are available in each release's `SHA256SUMS`; locally rebuilt packages have their own checksums.
 
 **Arch** builds from a git-exported tarball, not from a built tree, so the package and its revision cannot drift apart.
 

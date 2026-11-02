@@ -57,7 +57,11 @@ On-video controls paint in the OpenGL pass while retaining their existing widget
 
 `hwdec=auto-safe` requests a safe hardware decode path; it is not a universal zero-copy guarantee. GPU transfers, drivers, codecs, decode format and optional filters determine actual resource use. See Qt's [QOpenGLWidget](https://doc.qt.io/qt-6/qopenglwidget.html) and mpv's [render API](https://github.com/mpv-player/mpv/blob/master/include/mpv/render.h) documentation.
 
-Keyboard and skip-button navigation sends asynchronous `relative+exact` seeks to mpv; the timeline and resume workflow retain absolute targets. Explicit precision preserves the old absolute seek accuracy: mpv's default relative seek is keyframe-oriented, unlike its default absolute seek. The UI may show an optimistic position, but it cannot clamp or derive a backend-relative step from a delayed progress observation. Both seek kinds emit the same argument-free intent edge so Compare invalidates a pending capture before the resulting position update arrives.
+Keyboard navigation and the **+85** control send asynchronous `relative+exact` seeks to mpv; the timeline, resume workflow and MoonAnime segment-skip buttons use absolute targets. Explicit precision preserves the old absolute seek accuracy: mpv's default relative seek is keyframe-oriented, unlike its default absolute seek. The UI may show an optimistic position, but it cannot clamp or derive a backend-relative step from a delayed progress observation. Both seek kinds emit the same argument-free intent edge so Compare invalidates a pending capture before the resulting position update arrives.
+
+MoonAnime skip metadata is fetched on the stream worker for the selected episode and provider. The title-page session discards stale responses after a source change; valid ranges drive both timeline bands and individually actionable skip buttons, including overlapping segments.
+
+Timeline hover previews use a separate, lazily created libmpv core on a worker thread, not the active playback core. Requests are coalesced and stale results are discarded when the pointer or source changes. Decoding requires a seekable source; the preview is not a capture of the active player's processing pipeline.
 
 ### Comparative player-source review
 

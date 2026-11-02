@@ -12,13 +12,11 @@ This document records the source/artifact evidence required to accompany release
 
 | Artifact | Size | SHA-256 pin | Full-digest location |
 |---|---:|---|---|
-| `release-artifacts/linux-prepush-review/mikai-0.1.0-linux-x86_64.tar.gz` | 74.5 MB (74,538,064 B) | `2b54f328aab6` | Full digest ledger below; artifact checksum sidecar |
 | `release-artifacts/corresponding-source/qt-everywhere-src-6.12.0.tar.xz` | 443.4 MB (443,394,020 B) | `98ff4f44bac6` | Full digest ledger below; `corresponding-source/SHA256SUMS` |
 
-- The latest staged product includes the updated Linux legal notices, and its checksum sidecar was written.
-- The profile is Ubuntu 24.04 / glibc 2.39; its `VERSION` identifies Release, GNU 13.3.0, Qt 6.12.0 deployed, and bundled mpv.
-- `SHA256SUMS` within the tree hashes the staged regular payload files.
-- This is build/package identity and inventory evidence, not a runtime-QA result or complete redistribution clearance.
+- A reviewed Linux staging tree included the updated legal notices and a checksum sidecar.
+- That profile used Ubuntu 24.04 / glibc 2.39; its `VERSION` identified Release, GNU 13.3.0, deployed Qt 6.12.0, and bundled mpv.
+- Its `SHA256SUMS` covered the staged regular payload files. This is build/package identity and inventory evidence, not a runtime-QA result or complete redistribution clearance.
 
 - The staged Qt 6.12.0 runtime consists of deployed Qt shared modules, plugins, translations and ICU 73.2; module attributions and Qt license texts are included under `share/licenses/mikai/third-party/`.
 - The official source archive matches the official upstream checksum.
@@ -151,7 +149,6 @@ Full digests and commit IDs corresponding to the pins above. SHA-256 values are 
 
 | Artifact / identifier | Full SHA-256 digest or commit ID |
 |---|---|
-| Linux staged product archive | `2b54f328aab67c9cb3a710314bfe3dcb754948db91702861d5becfb66ad85eca` |
 | Qt 6.12.0 source archive | `98ff4f44bac6ec3e1e62ee2a4316ae0e3d15badb015d753cc0268a20db52f165` |
 | Current Linux mpv source commit | `c493f1c7e10a6b2301653596e7deeb91295d3148` |
 | Current Linux shipped archive | `6796d922cfd3ffb9bcd8948f77c609a4055ac343a9898f2433d2aa4b0eb6a17d` |
