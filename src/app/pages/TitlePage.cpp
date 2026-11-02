@@ -3506,11 +3506,20 @@ void TitlePage::probeReleaseQualities() {
     }
 }
 
+int TitlePage::sessionProviderRank(const QString& provider) const {
+    // A click is the viewer's answer for this title: after one, the other
+    // sources only keep their payload order instead of Moon jumping back in
+    // front of it. Without a click the configured preference (Moon) decides.
+    if (!chosenProvider_.isEmpty()) {
+        return labels::providerKey(provider) == labels::providerKey(chosenProvider_) ? 0 : 1;
+    }
+    return labels::preferredProviderRank(provider, labels::preferredProvider());
+}
+
 QString TitlePage::firstEmbed(const backend::Release& release) const {
     // The programmatic paths resolve a release through this one embed, so a
     // release that ships several sources has to answer with the preferred one
     // instead of whichever source the payload happened to list first.
-    const QString preferred = labels::preferredProvider();
     int bestRank = 4;
     QString best;
     for (const backend::Episode& episode : release.episodes) {
@@ -3518,7 +3527,7 @@ QString TitlePage::firstEmbed(const backend::Release& release) const {
             if (source.embed_url.isEmpty()) {
                 continue;
             }
-            const int rank = labels::preferredProviderRank(labels::providerFor(source), preferred);
+            const int rank = sessionProviderRank(labels::providerFor(source));
             if (best.isEmpty() || rank < bestRank) {
                 best = source.embed_url;
                 bestRank = rank;
@@ -3585,16 +3594,15 @@ QVector<QVariantMap> TitlePage::episodeVariants(const QString& number) const {
             }
         }
     }
-    // The player's source list leads with the preferred source, so picking a
-    // source from it starts where the page would have; the rest keep their
-    // release/provider order.
-    const QString preferred = labels::preferredProvider();
+    // The player's source list leads with the source this page would play, so
+    // picking one from it starts where the page would have; the rest keep their
+    // release/provider order, and a viewer's tab choice leads over the default.
     std::stable_sort(variants.begin(), variants.end(),
-                     [&preferred](const QVariantMap& left, const QVariantMap& right) {
-                         return labels::preferredProviderRank(
-                                    left.value(QStringLiteral("provider")).toString(), preferred) <
-                                labels::preferredProviderRank(
-                                    right.value(QStringLiteral("provider")).toString(), preferred);
+                     [this](const QVariantMap& left, const QVariantMap& right) {
+                         return sessionProviderRank(
+                                    left.value(QStringLiteral("provider")).toString()) <
+                                sessionProviderRank(
+                                    right.value(QStringLiteral("provider")).toString());
                      });
     return variants;
 }
