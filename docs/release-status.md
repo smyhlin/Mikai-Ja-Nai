@@ -12,6 +12,39 @@ Published packages, release-specific changes and checksums are available on the 
 
 HDR dark-scene instability and periodic frame substitution (KB-29 and KB-30) remain under measurement. Rendering fixes and bounded tests do not establish that every black flash is resolved; see [known bugs](../known_bugs.md). A historical Linux stock-runtime hour run ended with black, frozen output; its cause was not established.
 
+## Presentation baseline (instrumented, numbers pending)
+
+The presentation path is instrumented for a recorded before/after baseline of
+the R13/R14 symptoms (black flicker on in-window switches and during paused
+playback, slow alt-tab). `MIKAI_UI_PROFILE=1` enables the counters and the
+`[ui-profile]` stderr lines; `--frame-timing-log` now forces the same counters
+and adds paint delay, skip reason, mpv `frame-drop-count` and
+`vo-delayed-frame-count`, engine pause hold, pacing disarms and chrome dirty
+requests to each paint line. The fullscreen stability probe gained
+`--focus-switch` and `--baseline` modes; both are developer tooling, are run
+through `mikai_test_launcher` in an owned disposable tree, and write JSONL rows
+that name an unmeasured value `"unavailable"` rather than zero.
+
+The five baseline numbers below are **not yet measured on the integrated
+instrumentation branch**. They are the before-side of the GOAL-E/GOAL-F
+acceptance criteria and must be recorded from `baseline.jsonl` before those
+fixes land:
+
+| Metric | Row / key | Value |
+|---|---|---|
+| Pacing disarms in a 30 s hover storm over paused video | `hoverStorm.pacingDisarms` | pending |
+| Activation-to-first-present p95 (alt-tab away/back ×10) | `baselineResult.activationToFirstPresentP95Ms` | pending |
+| Black samples across 20 `loadfile` transitions | `baselineResult.blackSamplesLoadfile20` | pending |
+| Surface-geometry writes per fullscreen transition | `baselineResult.surfaceGeometryWritesPerFullscreenTransition` | pending |
+| `ChromeList::paint` duration on frame paints | `baselineResult.chromePaintMeanMicros` | pending |
+
+A run whose `profileCountersEnabled` is false, or whose activation cycles are
+reported in `foregroundLostCycles` / `hoverStormForegroundLostTicks`, does not
+produce these numbers; it records interference instead. The probe invocation,
+fixture options and extraction contract are in
+[the GOAL-00 report](ai/reports/GOAL-00.md). Until the table is filled, no claim
+is made that the instrumentation has measured a fix.
+
 ## Recorded verification
 
 These observations apply to the identified runs, not automatically to later builds or every machine:
