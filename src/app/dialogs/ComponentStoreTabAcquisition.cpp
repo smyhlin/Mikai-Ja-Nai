@@ -791,7 +791,7 @@ void ComponentStoreTab::startAcquisitionVerification() {
                                  .downloaded = qMax(modelInstalledCount(),
                                                     downloadedModelItemCount()),
                                  .verified = 0,
-                                 .total = spatialAssetCatalog().size()});
+                                 .total = static_cast<int>(spatialAssetCatalog().size())});
     } else {
         applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::Busy,
                                             .busy = StatusReason::Busy::Verification});
@@ -882,18 +882,16 @@ void ComponentStoreTab::startAcquisitionVerification() {
                                 StatusReason{.kind = StatusReason::Kind::InventoryCounts,
                                              .verified = modelVerifiedCount(),
                                              .installed = modelInstalledCount(),
-                                             .total = spatialAssetCatalog().size()});
+                                             .total = static_cast<int>(spatialAssetCatalog().size())});
                 } else {
                     applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::AllVerified});
                 }
             } else if (spatialSelected) {
-                // The count vocabulary stays truthful: what is installed, then
-                // the named failures - never a generic orphan sentence.
                 applyStatus(QStringLiteral("native.components.digest"),
                             StatusReason{.kind = StatusReason::Kind::FailureCounts,
                                          .causes = failures,
                                          .installed = modelInstalledCount(),
-                                         .total = spatialAssetCatalog().size()});
+                                         .total = static_cast<int>(spatialAssetCatalog().size())});
             } else {
                 applyStatus(QStringLiteral("native.components.digest"),
                             failures.join(QStringLiteral("; ")));

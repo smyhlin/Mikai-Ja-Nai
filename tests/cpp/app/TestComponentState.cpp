@@ -19,10 +19,10 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
-#include <QtCore/QLabel>
 #include <QtCore/qscopeguard.h>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QComboBox>
+#include <QtWidgets/QLabel>
 #include <QtWidgets/QProgressBar>
 #include <QtWidgets/QPushButton>
 
