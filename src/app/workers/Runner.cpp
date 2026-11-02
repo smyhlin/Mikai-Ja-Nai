@@ -82,6 +82,11 @@ struct Shared {
 
     /// Pool tasks still outstanding, under `mutex`.
     int pending = 0;
+    /// Tasks whose own reference to this state has not been handed back yet,
+    /// under `mutex`. A task keeps this count until its callable and delivery
+    /// captures are destroyed, because those destructors can block on the
+    /// worker: the slot being back is not proof the runnable is retired.
+    int liveTasks = 0;
     /// True once the Runner released its reference, or shutdownAll drained it.
     /// A task that finishes afterwards must not retire the pools from its own
     /// pool thread.
@@ -92,14 +97,6 @@ struct Shared {
     /// The gate, relaxed: every read is followed by a check the owner's own
     /// GUI-only guard repeats on the GUI thread, so ordering is not load-bearing.
     bool suppressed() const { return cancelled.load(std::memory_order_relaxed); }
-
-    /// True while a pool task may still be in a pool or on its way through one.
-    /// A caller that holds the only other reference uses this to decide whether
-    /// retiring the pools can happen on the thread it is on.
-    bool hasWork() const {
-        const std::lock_guard<std::mutex> guard(mutex);
-        return pending > 0;
-    }
 };
 
 std::shared_ptr<Shared> makeShared() {
@@ -118,14 +115,12 @@ std::shared_ptr<Shared> makeShared() {
     return shared;
 }
 
-/// Gives one task's slot back and reports whether the task's own reference must
-/// not be released on the calling thread.
-bool noteFinished(const std::shared_ptr<Shared>& shared) {
+/// Gives one task's slot back.
+void noteFinished(const std::shared_ptr<Shared>& shared) {
     const std::lock_guard<std::mutex> guard(shared->mutex);
     if (--shared->pending == 0) {
         shared->idle.notify_all();
     }
-    return shared->abandoned;
 }
 
 /// Hands `keeper` to the GUI event queue to be released. Retiring a pool is a
@@ -195,10 +190,14 @@ public:
         // but it still has to give its slot back. A task whose run() already
         // gave its slot back must not give it back twice.
         if (!settled_) {
-            if (noteFinished(shared_)) {
-                releaseOnGui(std::move(shared_));
-            }
+            noteFinished(shared_);
         }
+        // Captures go before the shared reference: a callable's destructor can
+        // block, and until it returns the owner must still see a live task
+        // rather than one it may retire the pools under.
+        work_ = Runner::Work();
+        delivery_.reset();
+        releaseShared();
     }
 
     void run() override {
@@ -260,14 +259,29 @@ public:
                 }
             },
             Qt::QueuedConnection);
-        if (noteFinished(shared_)) {
-            // The Runner is gone, so this task's reference cannot retire the
-            // pools from its own pool thread.
-            releaseOnGui(std::move(shared_));
-        }
+        noteFinished(shared_);
     }
 
 private:
+    /// Hands this task's reference back, after its captures are gone. The owner
+    /// may already have released its own; then this worker must not be the one
+    /// that destroys the pools, because ~QThreadPool waits for its own thread.
+    void releaseShared() {
+        bool defer = false;
+        {
+            const std::lock_guard<std::mutex> guard(shared_->mutex);
+            if (--shared_->liveTasks == 0) {
+                shared_->idle.notify_all();
+            }
+            defer = shared_->abandoned && shared_->liveTasks == 0;
+        }
+        if (defer) {
+            releaseOnGui(std::move(shared_));
+        } else {
+            shared_.reset();
+        }
+    }
+
     std::shared_ptr<Shared> shared_;
     Runner::Work work_;
     std::shared_ptr<Delivery> delivery_;
@@ -301,17 +315,21 @@ Runner::~Runner() {
     // instead of parking for a whole quota window, and so a completion queued
     // behind this destructor is dropped rather than delivered.
     abandon(impl_->shared);
+    bool outstanding = false;
     {
-        // Recorded before the reference is dropped, so whatever finishes last
-        // knows it cannot retire the pools from its own thread.
+        // Recorded together with the check: a task cannot hand its reference
+        // back between the two, so an empty `pending` is never mistaken for
+        // "no runnable still retiring on a pool thread".
         const std::lock_guard<std::mutex> guard(impl_->shared->mutex);
         impl_->shared->abandoned = true;
+        outstanding = impl_->shared->pending > 0 || impl_->shared->liveTasks > 0;
     }
-    if (impl_->shared->hasWork()) {
+    if (outstanding) {
         // Work is still unwinding, so retiring the pools here would wait for it.
-        // The GUI event queue does that once the last task has finished. The
-        // reference is still impl_'s here: dropping it before this check would
-        // leave the state alive with no holder that could defer it.
+        // The GUI event queue does that once the last task has handed its
+        // reference over. The reference is still impl_'s here: dropping it
+        // before this check would leave the state alive with no holder that
+        // could defer it.
         releaseOnGui(impl_->shared);
     }
     // Dropped last. Nothing after this reads impl_, and no thread waits on it:
@@ -384,7 +402,9 @@ void Runner::shutdownAll(std::function<void()> finished) {
         for (const std::shared_ptr<Shared>& shared : live) {
             std::unique_lock<std::mutex> guard(shared->mutex);
             shared->abandoned = true;
-            shared->idle.wait(guard, [&shared] { return shared->pending == 0; });
+            shared->idle.wait(guard, [&shared] {
+                return shared->pending == 0 && shared->liveTasks == 0;
+            });
         }
         // Retiring a pool is a QObject destruction, so it waits for the GUI
         // thread - as do the Runners' own pending releases.
@@ -411,6 +431,7 @@ void Runner::start(QThreadPool* pool, Work work, OnOk onOk, OnErr onErr) {
     {
         const std::lock_guard<std::mutex> guard(shared->mutex);
         ++shared->pending;
+        ++shared->liveTasks;
     }
     pool->start(new Task(shared, std::move(work), std::move(delivery)));
 }
