@@ -80,22 +80,33 @@ QString retainedContents(const QString& base, bool advertised) {
     return result + QStringLiteral("X-Mikai-DefaultRegistration=true\n");
 }
 
+// Early retained entries omitted MimeType and NoDisplay but still carried the
+// marker. Only this exact legacy-named serialization is owned; the current
+// generation always writes NoDisplay for hidden candidates.
+QString legacyHiddenContents(const QString& legacyBase) {
+    QString result = legacyBase;
+    result.remove(QStringLiteral("MimeType=video/mp4;video/x-matroska;video/webm;video/quicktime;video/x-msvideo;video/mpeg;video/ogg;\n"));
+    return result + QStringLiteral("X-Mikai-DefaultRegistration=true\n");
+}
+
+enum class ManagedEntry { Foreign, Ordinary, Retained, Hidden };
+
 // Current and legacy generated entries are owned only when their complete
 // contents are canonical and their executable is current or no longer exists.
-bool canonicalManagedEntry(Entry entry, const QByteArray& bytes, bool* retained) {
+ManagedEntry managedEntry(Entry entry, const QByteArray& bytes) {
     const QByteArray key("\nX-Mikai-Executable=");
     const qsizetype start = bytes.indexOf(key);
-    if (start < 0) return false;
+    if (start < 0) return ManagedEntry::Foreign;
     const qsizetype valueStart = start + key.size();
     const qsizetype end = bytes.indexOf('\n', valueStart);
-    if (end < 0) return false;
+    if (end < 0) return ManagedEntry::Foreign;
     const QByteArray encoded = bytes.mid(valueStart, end - valueStart);
     const QByteArray decoded = QByteArray::fromBase64(encoded);
-    if (decoded.isEmpty() || decoded.toBase64() != encoded) return false;
+    if (decoded.isEmpty() || decoded.toBase64() != encoded) return ManagedEntry::Foreign;
     const QString executable = QString::fromUtf8(decoded);
-    if (executable.toUtf8() != decoded) return false;
+    if (executable.toUtf8() != decoded) return ManagedEntry::Foreign;
     const QString currentBase = desktopContents(entry, executable);
-    if (currentBase.isEmpty()) return false;
+    if (currentBase.isEmpty()) return ManagedEntry::Foreign;
     QString legacyBase = currentBase;
     legacyBase.replace(QStringLiteral("Name=Mikai Ja Nai\n"),
                        QStringLiteral("Name=Mikai\n"));
@@ -103,32 +114,28 @@ bool canonicalManagedEntry(Entry entry, const QByteArray& bytes, bool* retained)
     struct stat status{};
     const QByteArray oldPath = QFile::encodeName(executable);
     if (::lstat(oldPath.constData(), &status) != 0) {
-        if (errno != ENOENT) return false;
+        if (errno != ENOENT) return ManagedEntry::Foreign;
     } else if (QFileInfo(executable).canonicalFilePath() !=
                QFileInfo(QCoreApplication::applicationFilePath()).canonicalFilePath()) {
-        return false;
+        return ManagedEntry::Foreign;
     }
 #else
     const QFileInfo oldExecutable(executable);
     if (oldExecutable.exists() || oldExecutable.isSymLink()) {
         if (oldExecutable.canonicalFilePath() !=
             QFileInfo(QCoreApplication::applicationFilePath()).canonicalFilePath())
-            return false;
+            return ManagedEntry::Foreign;
     }
 #endif
     for (const QString& base : {currentBase, legacyBase}) {
-        if (bytes == base.toUtf8()) {
-            *retained = false;
-            return true;
-        }
-        if (entry == Entry::VideoPlayer &&
-            (bytes == retainedContents(base, true).toUtf8() ||
-             bytes == retainedContents(base, false).toUtf8())) {
-            *retained = true;
-            return true;
-        }
+        if (bytes == base.toUtf8()) return ManagedEntry::Ordinary;
+        if (entry != Entry::VideoPlayer) continue;
+        if (bytes == retainedContents(base, true).toUtf8()) return ManagedEntry::Retained;
+        if (bytes == retainedContents(base, false).toUtf8()) return ManagedEntry::Hidden;
     }
-    return false;
+    if (entry == Entry::VideoPlayer &&
+        bytes == legacyHiddenContents(legacyBase).toUtf8()) return ManagedEntry::Hidden;
+    return ManagedEntry::Foreign;
 }
 
 bool packagedEntry(const QByteArray& bytes) {
@@ -171,11 +178,12 @@ bool change(Entry entry, Action action, QString* error) {
             if (action != Action::Disable) return true;
             return fail(error, QCoreApplication::translate("XdgDesktopIntegration", "This entry belongs to the installed package and cannot be disabled here"), path);
         }
-        bool hasRetention = entry == Entry::VideoPlayer && (existing == retained || existing == hidden);
-        const bool managed = existing != ordinary && !hasRetention &&
-            canonicalManagedEntry(entry, existing, &hasRetention);
-        if (existing != ordinary && !hasRetention && !managed)
+        const ManagedEntry state = existing == ordinary
+            ? ManagedEntry::Ordinary
+            : managedEntry(entry, existing);
+        if (existing != ordinary && state == ManagedEntry::Foreign)
             return fail(error, QCoreApplication::translate("XdgDesktopIntegration", "An entry not managed by this installation was left unchanged"), path);
+        const bool hasRetention = state == ManagedEntry::Retained || state == ManagedEntry::Hidden;
         if (action == Action::Disable && !hasRetention) {
             if (!QFile::remove(path)) return fail(error, QCoreApplication::translate("XdgDesktopIntegration", "Could not remove the managed entry"), path);
             refreshMimeCache(entry, path);
@@ -221,11 +229,9 @@ bool enabled(Entry entry) {
     const QString expected = desktopContents(entry, QCoreApplication::applicationFilePath());
     if (expected.isEmpty() || !file.open(QIODevice::ReadOnly)) return false;
     const QByteArray bytes = file.readAll();
-    bool retained = false;
-    return bytes == expected.toUtf8() ||
-        (entry == Entry::VideoPlayer &&
-         (bytes == retainedContents(expected, true).toUtf8() || packagedEntry(bytes))) ||
-        canonicalManagedEntry(entry, bytes, &retained);
+    if (entry == Entry::VideoPlayer && packagedEntry(bytes)) return true;
+    const ManagedEntry state = managedEntry(entry, bytes);
+    return state == ManagedEntry::Ordinary || state == ManagedEntry::Retained;
 }
 
 bool setEnabled(Entry entry, bool enable, QString* error) {
