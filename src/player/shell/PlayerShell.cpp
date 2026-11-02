@@ -2659,7 +2659,8 @@ void PlayerShell::paintChrome(QPainter& painter, const QRect& clip) {
 void PlayerShell::paintEvent(QPaintEvent* event) {
     if (profileEventWindow_.isNull() && mikai::gui::uiprofile::enabled())
         profileInstallWindowFilter();
-    profileRecordActivationPaint(mikai::gui::uiprofile::nowNs());
+    if (profileActivationPending_)
+        profileRecordActivationPaint(mikai::gui::uiprofile::nowNs());
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
