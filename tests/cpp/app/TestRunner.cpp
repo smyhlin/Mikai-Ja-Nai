@@ -24,6 +24,7 @@
 #include <functional>
 #include <memory>
 #include <stdexcept>
+#include <thread>
 
 using mikai::app::Runner;
 
@@ -166,6 +167,33 @@ Runner::OnOk okDelivery(Ledger* ledger) {
 Runner::OnErr errDelivery(Ledger* ledger) {
   return [ledger](const backend::Failure&) { ++ledger->failures; };
 }
+
+// ── probe state for the retirement cases ──────────────────────────────────
+//
+// Those cases delete their Runner from inside a delivery, so on a failed
+// assertion a pool worker and queued GUI work can outlive the case's stack.
+// Everything their callbacks touch therefore lives here, on the heap, and the
+// scope guard owns whatever a failed case would leak or leave parked.
+struct RunnerLifetimeProbeState {
+  Gate gate;
+  std::atomic<Runner*> runner{nullptr};
+  std::atomic<QThread*> workerThread{nullptr};
+  std::atomic_bool workerFinished{false};
+  std::atomic_bool captureEntered{false};
+  std::atomic_bool continuationRan{false};
+  std::atomic_bool binderReleased{false};
+  std::atomic_int deliveries{0};
+};
+
+struct RunnerLifetimeProbeScope {
+  std::shared_ptr<RunnerLifetimeProbeState> state;
+
+  ~RunnerLifetimeProbeScope() {
+    if (!state) return;
+    delete state->runner.exchange(nullptr);
+    state->gate.release();
+  }
+};
 
 // ── the post() contract under test ─────────────────────────────────────────
 //
@@ -850,67 +878,112 @@ void TestRunner::workCancelledBeforeShutdownNeverDelivers() {
 // would be parked waiting for itself.
 void TestRunner::completedWorkDoesNotRetireItsPoolsOnTheWorkerThatRanIt() {
   struct CaptureHold {
-    CaptureHold(Gate* armedGate, std::atomic_bool* enteredFlag)
-        : gate(armedGate), entered(enteredFlag) {}
-    Gate* gate;
-    std::atomic_bool* entered;
+    explicit CaptureHold(std::shared_ptr<RunnerLifetimeProbeState> observed)
+        : observed_(std::move(observed)) {}
     ~CaptureHold() {
-      entered->store(true);
-      if (gate != nullptr) gate->waitUntilReleased();
+      observed_->captureEntered.store(true);
+      observed_->gate.waitUntilReleased();
     }
+    std::shared_ptr<RunnerLifetimeProbeState> observed_;
   };
 
-  Gate gate;
-  struct GateRelease {
-    Gate& gate;
-    ~GateRelease() { gate.release(); }
-  } releaseGate{gate};
+  auto probe = std::make_shared<RunnerLifetimeProbeState>();
+  RunnerLifetimeProbeScope scope{probe};
+  probe->runner.store(new Runner());
+  Runner* const runner = probe->runner.load();
 
-  std::atomic_bool captureEntered{false};
-  std::atomic_bool continuationRan{false};
-  std::atomic_bool workerFinished{false};
-  std::atomic_int deliveries{0};
-  std::atomic<QThread*> workerThread{nullptr};
-
-  Runner* runner = new Runner();
   runner->run(
-      [capture = std::make_shared<CaptureHold>(&gate, &captureEntered),
-       &workerThread]() -> QVariant {
-        workerThread.store(QThread::currentThread());
+      [observed = probe,
+       capture = std::make_shared<CaptureHold>(probe)]() -> QVariant {
+        Q_UNUSED(capture);
+        observed->workerThread.store(QThread::currentThread());
         return QVariant::fromValue(1);
       },
-      [runner, &deliveries, &captureEntered, &continuationRan, &workerFinished,
-       &workerThread, &gate](const QVariant&) {
-        ++deliveries;
+      [probe](const QVariant&) {
+        ++probe->deliveries;
         // The slot is already back and the worker is inside the runnable's own
         // destruction, so the owner deletion below lands exactly when that
         // reference is the only thing keeping the pools alive.
-        spinUntil([&captureEntered] { return captureEntered.load(); }, kShortBudgetMs);
-        QThread* worker = workerThread.load();
+        spinUntil([probe] { return probe->captureEntered.load(); }, kShortBudgetMs);
+        QThread* worker = probe->workerThread.load();
         if (worker != nullptr) {
           QObject::connect(worker, &QThread::finished, worker,
-                           [&workerFinished] { workerFinished.store(true); },
+                           [probe] { probe->workerFinished.store(true); },
                            Qt::DirectConnection);
         }
-        delete runner;
+        delete probe->runner.exchange(nullptr);
         // Queued at zero delay: the gate can only lift after this callback - and
         // the delivery it runs in - has unwound on the GUI thread.
-        QTimer::singleShot(0, [&gate, &continuationRan] {
-          continuationRan.store(true);
-          gate.release();
+        QTimer::singleShot(0, [probe] {
+          probe->continuationRan.store(true);
+          probe->gate.release();
         });
       },
-      [&deliveries](const backend::Failure&) { ++deliveries; });
+      [probe](const backend::Failure&) { ++probe->deliveries; });
 
-  QVERIFY2(spinUntil([&deliveries] { return deliveries.load() == 1; }, kBudgetMs),
+  QVERIFY2(spinUntil([probe] { return probe->deliveries.load() == 1; }, kBudgetMs),
            "the completed work delivered its result");
-  QCOMPARE(deliveries.load(), 1);
-  QVERIFY2(captureEntered.load(), "the callable's capture was destroyed on the worker");
-  QVERIFY2(spinUntil([&continuationRan] { return continuationRan.load(); }, kShortBudgetMs),
+  QCOMPARE(probe->deliveries.load(), 1);
+  QVERIFY2(probe->captureEntered.load(),
+           "the callable's capture was destroyed on the worker");
+  QVERIFY2(spinUntil([probe] { return probe->continuationRan.load(); }, kShortBudgetMs),
            "the GUI continuation queued behind the callback was reached");
-  QVERIFY2(spinUntil([&workerFinished] { return workerFinished.load(); }, kShortBudgetMs),
+  QVERIFY2(spinUntil([probe] { return probe->workerFinished.load(); }, kShortBudgetMs),
            "the worker that ran completed work retired inside the bound instead of "
            "being the reference that destroyed its own pool");
+}
+
+// ── a retained dispatch binder must not own the completed pool ─────────────
+//
+// The public binder contract lets a worker keep and invoke a dispatch closure
+// off the GUI thread. Holding one after its owner is gone must not keep the
+// pools alive until some later non-GUI thread happens to release it.
+void TestRunner::retainedDispatchDoesNotKeepACompletedPoolAlive() {
+  auto probe = std::make_shared<RunnerLifetimeProbeState>();
+  RunnerLifetimeProbeScope scope{probe};
+
+  auto* runner = new Runner();
+  probe->runner.store(runner);
+  const Runner::GuiDispatch retained = runner->post();
+
+  runner->run(
+      [retained, probe]() -> QVariant {
+        probe->workerThread.store(QThread::currentThread());
+        // The retained binder's last copy is released on a non-GUI thread after
+        // the owner and this task are gone, which is the shape the public
+        // binder contract promises is safe.
+        std::thread releaser([retained, probe]() mutable {
+          probe->gate.waitUntilReleased();
+          retained = Runner::GuiDispatch();
+          probe->binderReleased.store(true);
+        });
+        releaser.detach();
+        return QVariant::fromValue(1);
+      },
+      [probe](const QVariant&) {
+        ++probe->deliveries;
+        QThread* worker = probe->workerThread.load();
+        if (worker != nullptr) {
+          QObject::connect(worker, &QThread::finished, worker,
+                           [probe] { probe->workerFinished.store(true); },
+                           Qt::DirectConnection);
+        }
+        delete probe->runner.exchange(nullptr);
+      },
+      [probe](const backend::Failure&) { ++probe->deliveries; });
+
+  QVERIFY2(spinUntil([probe] { return probe->deliveries.load() == 1; }, kBudgetMs),
+           "the retained dispatch's owner delivered its work");
+  // Observed while the binder is still retained: the pools must already be
+  // retired, because nothing off the GUI thread may own their last reference.
+  const bool retiredWhileRetained =
+      spinUntil([probe] { return probe->workerFinished.load(); }, kShortBudgetMs);
+  probe->gate.release();
+  QVERIFY2(spinUntil([probe] { return probe->binderReleased.load(); }, kShortBudgetMs),
+           "the off-GUI holder released the retained binder");
+  QVERIFY2(retiredWhileRetained,
+           "a dispatch binder retained off the GUI thread must not keep a completed "
+           "pool alive after its owner was deleted");
 }
 
 // ── the suite entry point the shared runner registers ──────────────────────
