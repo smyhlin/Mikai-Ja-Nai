@@ -454,6 +454,9 @@ protected:
     /// layout invalidation its own margin/axis changes post.
     bool applyingLayout_ = false;
     QSize coverAppliedSize_;
+    /// The device ratio the cover frame was painted at; a screen change
+    /// repaints it just like a size change does.
+    qreal coverAppliedDpr_ = 0.0;
 
     CoverLabel* cover_ = nullptr;
     QLabel* heading_ = nullptr;

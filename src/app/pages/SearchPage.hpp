@@ -297,6 +297,11 @@ private:
     void openItem(QListWidgetItem* item);
     void resultsContextMenu(const QPoint& position);
     void animeCardMenu(const QString& ref, const QPoint& globalPos);
+    /// The rounded home-poster frame for `pixmap` at the page's device ratio.
+    QPixmap roundedPoster(const QPixmap& pixmap);
+    /// Drops every poster raster and frame decoded for another ratio and asks
+    /// again for the posters the page is still showing.
+    void refreshArtwork();
     void requestThumb(const QString& url);
     void applyThumb(const QString& url, QImage image);
     void flushThumbs();
@@ -347,6 +352,8 @@ private:
 
     QSet<QString> thumbsInFlight_;
     QHash<QString, QImage> pendingThumbs_;
+    /// The device ratio the poster rasters in `icons_` were decoded at.
+    qreal artworkDpr_ = 0.0;
     QHash<QString, QPixmap> icons_;
     /// Rounded card pixmaps per poster URL. Several cards share one feed
     /// poster and one box, so the scale-crop-clip runs once per URL.
