@@ -2472,6 +2472,20 @@ bool PlayerShell::event(QEvent* event) {
     return QWidget::event(event);
 }
 
+void PlayerShell::profileRecordActivationPaint(qint64 paintEntryNs) {
+    if (!mikai::gui::uiprofile::enabled() || !profileActivationPending_) return;
+    // A paint that began before the activation cannot answer for it.
+    if (paintEntryNs <= 0 || paintEntryNs < profileActivationNs_) return;
+    profileActivationPending_ = false;
+    const qint64 latencyMs = (paintEntryNs - profileActivationNs_) / 1000000;
+    mikai::gui::uiprofile::noteActivationToPaint(latencyMs);
+    mikai::gui::uiprofile::log(
+        "shell.activationToPaint",
+        QStringLiteral("ms=%1 applicationState=%2")
+            .arg(latencyMs)
+            .arg(static_cast<int>(QGuiApplication::applicationState())));
+}
+
 void PlayerShell::profileActivationChanged(bool active) {
     if (!mikai::gui::uiprofile::enabled() || active == profileLastActive_) return;
     profileLastActive_ = active;
@@ -2603,6 +2617,11 @@ void PlayerShell::paintSurfaceOverlay(QPainter* painter) {
     painter->translate(-surface_->x(), -surface_->y());
     paintChrome(*painter, QRect(QPoint(0, 0), size()));
     painter->restore();
+    if (surface_ != nullptr && profileActivationPending_) {
+        // Fullscreen paints through the surface, not the shell's raster path:
+        // attribute the activation to the paint entry that actually started.
+        profileRecordActivationPaint(surface_->uiProfileCounters().lastPaintEntryNs);
+    }
     if (mikai::gui::uiprofile::enabled()) {
         mikai::gui::uiprofile::log(
             "shell.paintOverlay",
@@ -2640,12 +2659,7 @@ void PlayerShell::paintChrome(QPainter& painter, const QRect& clip) {
 void PlayerShell::paintEvent(QPaintEvent* event) {
     if (profileEventWindow_.isNull() && mikai::gui::uiprofile::enabled())
         profileInstallWindowFilter();
-    // "First paint" means the first paint event, so its clock stops at entry,
-    // before gradient and chrome work.
-    if (profileActivationPending_) {
-        profileActivationToPaintEntryMs_ =
-            mikai::gui::uiprofile::elapsedMs(profileActivationNs_);
-    }
+    profileRecordActivationPaint(mikai::gui::uiprofile::nowNs());
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
@@ -2673,19 +2687,6 @@ void PlayerShell::paintEvent(QPaintEvent* event) {
                 .arg(gradientUs)
                 .arg(chromeTimer.micros())
                 .arg(static_cast<int>(fullscreen_)));
-    }
-    if (profileActivationPending_ && profileActivationToPaintEntryMs_ >= 0) {
-        profileActivationPending_ = false;
-        const qint64 activationMs = profileActivationToPaintEntryMs_;
-        profileActivationToPaintEntryMs_ = -1;
-        mikai::gui::uiprofile::noteActivationToPaint(activationMs);
-        if (mikai::gui::uiprofile::enabled()) {
-            mikai::gui::uiprofile::log(
-                "shell.activationToPaint",
-                QStringLiteral("ms=%1 applicationState=%2")
-                    .arg(activationMs)
-                    .arg(static_cast<int>(QGuiApplication::applicationState())));
-        }
     }
 }
 

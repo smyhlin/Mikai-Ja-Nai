@@ -381,6 +381,8 @@ private:
     /// MIKAI_UI_PROFILE: records an activation transition once, arming the
     /// activation-to-first-paint clock on activation. No-op when profiling is off.
     void profileActivationChanged(bool active);
+    /// Consumes the armed activation once, using the real paint entry timestamp.
+    void profileRecordActivationPaint(qint64 paintEntryNs);
     /// This shell is a child widget, so Qt delivers WindowActivate/deactivate to
     /// the top-level dialog, not here. A filter on that QWindow forwards them.
     void profileInstallWindowFilter();
@@ -496,7 +498,6 @@ private:
     // MIKAI_UI_PROFILE: the activation clock and the last active state observed.
     // Unused (and unwritten) when profiling is off.
     qint64 profileActivationNs_ = 0;
-    qint64 profileActivationToPaintEntryMs_ = -1;
     bool profileActivationPending_ = false;
     bool profileLastActive_ = false;
     QPointer<QWindow> profileEventWindow_;

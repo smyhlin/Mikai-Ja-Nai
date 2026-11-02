@@ -488,6 +488,10 @@ public:
         /// schedulePacedPaint() -> paintGL() delay of the latest paced paint;
         /// -1 when the latest paint was not released by the pacing timer.
         qint64 lastPaintDelayMs = -1;
+        /// Steady-clock ns of the latest paintGL() entry; 0 when counters are off.
+        /// Read-only, so a consumer can attribute an activation to the paint that
+        /// actually started, not to the moment it noticed one.
+        qint64 lastPaintEntryNs = 0;
     };
     UiProfileCounters uiProfileCounters() const;
 
@@ -1060,6 +1064,7 @@ private:
     quint64 profilePaintCalls_ = 0;
     quint64 profilePacingDisarms_ = 0;
     qint64 profileLastPaintDelayMs_ = -1;
+    qint64 profileLastPaintEntryNs_ = 0;
     /// Steady-clock ns when schedulePacedPaint() armed pacingTimer_; 0 when the
     /// latest paint was not released by that timer.
     qint64 profilePacingArmedAtNs_ = 0;

@@ -1489,6 +1489,7 @@ void VideoSurface::paintGL() {
         profilePaint ? mikai::gui::uiprofile::nowNs() : 0;
     if (profilePaint) {
         ++profilePaintCalls_;
+        profileLastPaintEntryNs_ = profilePaintStartNs;
         // Only an ACTIVE timer can be disarmed by this paint; a timer that
         // already fired is a paced paint, not a disarm.
         if (pacingActiveAtEntry && !framePending_) ++profilePacingDisarms_;
@@ -2725,6 +2726,7 @@ VideoSurface::UiProfileCounters VideoSurface::uiProfileCounters() const {
     counters.paintCalls = profilePaintCalls_;
     counters.pacingDisarms = profilePacingDisarms_;
     counters.lastPaintDelayMs = profileLastPaintDelayMs_;
+    counters.lastPaintEntryNs = profileLastPaintEntryNs_;
     return counters;
 }
 
