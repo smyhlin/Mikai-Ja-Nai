@@ -263,19 +263,20 @@ private:
     /// may already have released its own; then this worker must not be the one
     /// that destroys the pools, because ~QThreadPool waits for its own thread.
     void releaseShared() {
-        bool defer = false;
         {
             const std::lock_guard<std::mutex> guard(shared_->mutex);
             if (--shared_->liveTasks == 0) {
                 shared_->idle.notify_all();
             }
-            defer = shared_->abandoned && shared_->liveTasks == 0;
+            // Reset under this lock: `abandoned` false means the owner keeps a
+            // reference, and `liveTasks` > 0 means another task does. Anything
+            // else could otherwise destroy the pools on this worker.
+            if (!(shared_->abandoned && shared_->liveTasks == 0)) {
+                shared_.reset();
+                return;
+            }
         }
-        if (defer) {
-            releaseOnGui(std::move(shared_));
-        } else {
-            shared_.reset();
-        }
+        releaseOnGui(std::move(shared_));
     }
 
     std::shared_ptr<Shared> shared_;
