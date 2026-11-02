@@ -256,8 +256,10 @@ void TestNativeComponents::componentProgressSeparatesCardsAndAggregatesSpatialGr
 
     tab.setParent(&reparentedHost);
     QApplication::processEvents();
-    QCOMPARE(runtimeBar->value(), 100);
-    QCOMPARE(kernelsBar->value(), 100);
+    // Terminal items without a confirming inventory stay at zero after the
+    // relayout, exactly as they did before it.
+    QCOMPARE(runtimeBar->value(), 0);
+    QCOMPARE(kernelsBar->value(), 0);
     QCOMPARE(spatialBar->value(),
              static_cast<int>(aggregateReceived * 100 / aggregateTotal));
 
