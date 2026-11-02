@@ -33,7 +33,7 @@ fixes land:
 | Metric | Row / key | Value |
 |---|---|---|
 | Pacing disarms in a 30 s hover storm over paused video | `hoverStorm.pacingDisarms` | pending |
-| Activation-to-first-present p95 (alt-tab away/back ×10) | `baselineResult.activationToFirstPresentP95Ms` | pending |
+| Activation-to-first-swap p95 (alt-tab away/back ×10; activation → next `frameSwapped`, a swap-completion latency, not physical scanout) | `baselineResult.activationToFirstSwapP95Ms` | pending |
 | Black samples across 20 `loadfile` transitions | `baselineResult.blackSamplesLoadfile20` | pending |
 | Surface-geometry writes per fullscreen transition | `baselineResult.surfaceGeometryWritesPerFullscreenTransition` | pending |
 | `ChromeList::paint` duration on frame paints | `baselineResult.chromePaintMeanMicros` | pending |

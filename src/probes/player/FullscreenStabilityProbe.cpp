@@ -180,11 +180,16 @@ private:
 };
 
 #ifdef Q_OS_WIN
-std::optional<quint64> dwmFramesPresented() {
+/// DWM's cumulative count of composition frames it has displayed. This is a
+/// composition-side frame count, not a scanout timestamp and not a "first
+/// present" clock: `cFramesDisplayed` is the documented cumulative total, while
+/// `cRefreshesPresented` counts present operations (a different quantity) and
+/// no DWM field reports physical presentation.
+std::optional<quint64> dwmCompositionFramesDisplayed() {
     DWM_TIMING_INFO timing{};
     timing.cbSize = sizeof(timing);
     if (FAILED(DwmGetCompositionTimingInfo(nullptr, &timing))) return std::nullopt;
-    return static_cast<quint64>(timing.cFramesPresented);
+    return static_cast<quint64>(timing.cFramesDisplayed);
 }
 
 QJsonObject presentationMode() {
@@ -252,7 +257,7 @@ bool forceForegroundNow(QWidget* window) {
     return GetForegroundWindow() == target;
 }
 #else
-std::optional<quint64> dwmFramesPresented() { return std::nullopt; }
+std::optional<quint64> dwmCompositionFramesDisplayed() { return std::nullopt; }
 
 QJsonObject presentationMode() {
     return QJsonObject{{"directFlip", "unsupported"},
@@ -369,6 +374,8 @@ struct ActivationRun {
     quint64 initializeGlCalls = 0;
     quint64 dwmFrames = 0;
     bool dwmMeasured = false;
+    /// Owned activation -> the next `frameSwapped` emission (swap completion),
+    /// not a physical-present timestamp; JSON labels say so.
     QVector<qint64> activationToPaintMs;
 };
 
@@ -382,7 +389,7 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
         const quint64 attachBefore =
             mikai::gui::uiprofile::snapshot().threadInputAttaches;
         const auto countersBefore = surface->uiProfileCounters();
-        const std::optional<quint64> dwmBefore = dwmFramesPresented();
+        const std::optional<quint64> dwmBefore = dwmCompositionFramesDisplayed();
 
         const bool awayOwned = forceForegroundNow(helper);
         spinFor(650);
@@ -464,7 +471,7 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
             countersAfter.contextGeneration - countersBefore.contextGeneration;
         run.initializeGlCalls +=
             countersAfter.initializeGlCalls - countersBefore.initializeGlCalls;
-        const std::optional<quint64> dwmAfter = dwmFramesPresented();
+        const std::optional<quint64> dwmAfter = dwmCompositionFramesDisplayed();
         const bool dwmDeltaMeasured = dwmBefore.has_value() && dwmAfter.has_value();
         const quint64 dwmDelta = dwmDeltaMeasured ? *dwmAfter - *dwmBefore : 0;
         if (dwmDeltaMeasured) {
@@ -475,7 +482,7 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
             {"event", "focusSwitchBack"},
             {"phase", phase},
             {"cycle", cycle},
-            {"activationToPaintMs", activationToPaintMs},
+            {"activationToFirstSwapMs", activationToPaintMs},
             {"paintObserved", paintSeen},
             {"foregroundOwned", foregroundOwned},
             {"foregroundProcess", foregroundProcessImage()},
@@ -487,7 +494,7 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
              static_cast<qint64>(countersAfter.contextGeneration)},
             {"initializeGlCalls", static_cast<qint64>(countersAfter.initializeGlCalls)},
             {"pacingDisarms", static_cast<qint64>(countersAfter.pacingDisarms)},
-            {"dwmFramesPresentedDelta",
+            {"dwmCompositionFramesDisplayedDelta",
              dwmDeltaMeasured ? QJsonValue(static_cast<qint64>(dwmDelta))
                               : QJsonValue(QStringLiteral("unavailable"))},
             {"applicationState", static_cast<int>(QGuiApplication::applicationState())},
@@ -511,18 +518,21 @@ QJsonObject activationSummary(const ActivationRun& run) {
         {"cyclesWithoutPaint", run.cycles - run.paints},
         {"foregroundLostCycles", run.foregroundLostCycles},
         {"cyclesValid", run.cycles - run.foregroundLostCycles},
-        {"activationToPaintP50Ms",
+        {"activationToFirstSwapP50Ms",
          run.activationToPaintMs.isEmpty() ? QJsonValue(QStringLiteral("unavailable"))
                                            : QJsonValue(p50)},
-        {"activationToPaintP95Ms",
+        {"activationToFirstSwapP95Ms",
          run.activationToPaintMs.isEmpty() ? QJsonValue(QStringLiteral("unavailable"))
                                            : QJsonValue(p95)},
-        {"activationToPaintMaxMs",
+        {"activationToFirstSwapMaxMs",
          maximum < 0 ? QJsonValue(QStringLiteral("unavailable")) : QJsonValue(maximum)},
+        {"latencyDefinition",
+         "activation (owned foreground) to the next QOpenGLWidget::frameSwapped; this "
+         "is a swap-completion latency, not a physical scanout/present timestamp"},
         {"attachCallsDuringAway", static_cast<qint64>(run.attachCalls)},
         {"contextGenerationChanges", static_cast<qint64>(run.contextGenerationChanges)},
         {"initializeGlCalls", static_cast<qint64>(run.initializeGlCalls)},
-        {"dwmFramesPresented",
+        {"dwmCompositionFramesDisplayed",
          run.dwmMeasured ? QJsonValue(static_cast<qint64>(run.dwmFrames))
                          : QJsonValue(QStringLiteral("unavailable"))},
         {"blackSamples", run.blackSamples},
@@ -626,10 +636,10 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
                        {"fixtureSampled", !fixture.isNull()},
                        {"knownBrightFixture", knownBright},
                        {"attachCallsBeforePhaseReset", static_cast<qint64>(setupAttaches)},
-                       {"activationToPaintP95Ms",
+                       {"activationToFirstSwapP95Ms",
                         allMs.isEmpty() ? QJsonValue(QStringLiteral("unavailable"))
                                         : QJsonValue(percentileMs(allMs, 0.95))},
-                       {"activationToPaintSamples", static_cast<int>(allMs.size())},
+                       {"activationToFirstSwapSamples", static_cast<int>(allMs.size())},
                        {"blackSamples", blackSamples},
                        {"blackSamplesMeasured", blackMeasured},
                        {"foregroundLostCycles", foregroundLost},
@@ -812,13 +822,16 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         {"fixtureSampled", !fixture.isNull()},
         {"knownBrightFixture", knownBright},
         {"pacingDisarmsHoverStorm", pacingDisarms},
-        {"activationToFirstPresentP95Ms",
+        {"activationToFirstSwapP95Ms",
          activationMeasured ? QJsonValue(p95) : QJsonValue(QStringLiteral("unavailable"))},
-        {"activationToFirstPresentSamples",
+        {"activationToFirstSwapSamples",
          static_cast<int>(activation.activationToPaintMs.size())},
-        {"activationToFirstPresentMaxMs",
+        {"activationToFirstSwapMaxMs",
          maxActivation < 0 ? QJsonValue(QStringLiteral("unavailable"))
                            : QJsonValue(maxActivation)},
+        {"latencyDefinition",
+         "activation (owned foreground) to the next QOpenGLWidget::frameSwapped; this "
+         "is a swap-completion latency, not a physical scanout/present timestamp"},
         {"blackSamplesLoadfile20", blackMeasured ? QJsonValue(loadBlack)
                                                  : QJsonValue(QStringLiteral("unavailable"))},
         {"loadfileSamplesMeasured", loadSampled},
