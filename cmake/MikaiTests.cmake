@@ -327,6 +327,7 @@ if(MIKAI_BUILD_PROBES)
     TestNativeBuilder
     TestNativePreparationReferences
     TestNativeComponents
+    TestComponentState
     TestNativeStoredModels
     TestNativePreparedPlan
     TestNativePlaybackController

@@ -455,8 +455,14 @@ void TestNativeComponents::upscalingPackReviewsAndQueuesMissingGraphs() {
     QVERIFY(!cancel->isEnabled());
 
     apply->click();
-    QCOMPARE(tab.statusKey(), QStringLiteral("native.components.noClient"));
-    QCOMPARE(status->accessibleDescription(), QStringLiteral("failure"));
+    // Apply re-checks the selection on the worker before it can refuse, so the
+    // click first publishes the muted "checking" line. The refusal is the state
+    // the surface settles on, so wait for that delivery instead of reading the
+    // transient line.
+    QTRY_COMPARE_WITH_TIMEOUT(tab.statusKey(), QStringLiteral("native.components.noClient"), 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(status->accessibleDescription(), QStringLiteral("failure"), 5000);
+    QVERIFY(!status->text().isEmpty());
+    QCOMPARE(status->text(), tab.statusReason());
     QVERIFY(pack->isChecked());
 }
 
