@@ -3,6 +3,8 @@
 // Observation only: verdicts force no paint, samples are paint-level readbacks
 // of the surface's own framebuffer (not proof of scanned-out pixels), and the
 // six judged regions are off-centre so a bright opening placeholder cannot pass.
+// A bounded resize stage then reports how many times 200 resizes of the steady
+// picture re-query the render target's attachment format.
 //
 // Usage:
 //   LoadTransitionProbe <video-file> --output-dir <absolute dir>
@@ -976,6 +978,51 @@ int run(int argc, char** argv) {
                         QJsonObject{{"moves", hoverMoves},
                                     {"chromeOnly", passObject(chromeOnly)},
                                     {"videoFrame", passObject(videoFrame)}});
+    }
+
+    // ── format probe: a resize must not re-query the render target ──────────
+    //
+    // The attachment format belongs to the context and the surface format, not
+    // to the size, so 200 resizes of the steady picture should cost no more than
+    // the one probe a fresh target needs. A fullscreen window ignores resize(),
+    // so the stage leaves fullscreen for the sweep and restores it after.
+    {
+        dialog->showNormal();
+        pump(250);
+        const QSize base = dialog->size();
+        // These counters describe this stage only; the earlier stages keep
+        // their own numbers.
+        mikai::gui::uiprofile::resetCounters();
+        for (int index = 0; index < 200; ++index) {
+            const bool wider = index % 2 == 0;
+            dialog->resize(wider ? std::max(320, base.width() - 96) : base.width() - 32,
+                           wider ? std::max(200, base.height() - 72) : base.height() - 24);
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
+        }
+        pump(400);
+        const auto counters = mikai::gui::uiprofile::snapshot();
+        metric(QStringLiteral("format probe: resizes=200 base=%1x%2 probes=%3 "
+                              "format_resets=%4")
+                   .arg(base.width())
+                   .arg(base.height())
+                   .arg(counters.renderTargetProbes)
+                   .arg(counters.renderTargetFormatResets));
+        check(counters.renderTargetProbes <= 2,
+              QStringLiteral("200 resizes re-probe the render target at most twice "
+                             "(probes=%1)")
+                  .arg(counters.renderTargetProbes));
+        evidence.insert(QStringLiteral("formatProbe"),
+                        QJsonObject{{"resizes", 200},
+                                    {"baseWidth", base.width()},
+                                    {"baseHeight", base.height()},
+                                    {"renderTargetProbes", static_cast<qint64>(
+                                                               counters.renderTargetProbes)},
+                                    {"renderTargetFormatResets",
+                                     static_cast<qint64>(counters.renderTargetFormatResets)}});
+        dialog->showFullScreen();
+        pump(300);
+        waitFor([surface] { return surface->hasVisibleOutputFrame(); }, 5000);
+        pump(200);
     }
 
     // ── the load transition itself ──────────────────────────────────────────

@@ -52,6 +52,12 @@ constexpr int kRestoreSettleMaxAttempts = 5;
 // so a manifest can never hang the GUI thread on a core that stopped answering.
 constexpr int kProbeReadTimeoutMs = 250;
 
+// A recreated context gets 50 ms x 12 - two thirds of a second - of forced
+// paints to prove the live core still delivers output before the source is
+// reloaded. Beating 60 Hz, this is long enough for a frame to arrive and short
+// enough not to read as a stall.
+constexpr int kContextReattachTicks = 12;
+
 constexpr int kUnpaintableGraceTicks = 2;
 // Bounded re-check of an unpaintable widget: about one 60 Hz frame, so a grace
 // that became paintable again is not left waiting for a callback mpv may never
@@ -59,6 +65,32 @@ constexpr int kUnpaintableGraceTicks = 2;
 constexpr int kUnpaintableRetryMs = 16;
 constexpr double kMinRenderLeadMs = 0.25;
 constexpr double kMaxRenderLeadMs = 8.0;
+
+// Integer GL tokens this file needs that the GL 1.1 headers do not define. They
+// are values, not an extension check: each readback below is only used for the
+// format the target was probed at, which the driver already supports because it
+// created that attachment.
+constexpr GLenum kGlRgba = 0x1908;
+constexpr GLenum kGlUnsignedByte = 0x1401;
+constexpr GLenum kGlUnsignedShort = 0x1403;
+constexpr GLenum kGlHalfFloat = 0x140B;                    // GL 3.0
+constexpr GLenum kGlUnsignedInt2101010Rev = 0x8368;        // GL 3.3
+constexpr GLenum kGlPackAlignment = 0x0D05;
+constexpr GLenum kGlReadFramebuffer = 0x8CA8;
+constexpr GLenum kGlColorAttachmentObjectType = 0x8CD0;
+constexpr GLenum kGlColorAttachmentObjectName = 0x8CD1;
+constexpr GLenum kGlTextureObject = 0x1702;
+constexpr GLenum kGlRenderbufferObject = 0x8D41;
+constexpr GLenum kGlTextureInternalFormat = 0x1003;
+constexpr GLenum kGlRenderbufferInternalFormat = 0x8D44;
+
+// A defined backdrop for a surface with nothing to show. Deliberately the same
+// tone the opening placeholder uses, because both say "this is a stage, not a
+// frame" rather than the bare black a failed clear leaves behind.
+const QColor& videoBackdrop() {
+    static const QColor colour(9, 10, 14);
+    return colour;
+}
 
 /// Monotonic nanoseconds for local duration measurements only. MPV target_time
 /// comparisons use mpv_get_time_us(), because it is a distinct clock domain.
@@ -554,6 +586,20 @@ VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
         ++placeholderPhase_;
         update();
     });
+    // A recreated context asks the live core whether it still delivers output.
+    // The budget is time, not a paint count: Qt may coalesce these updates into
+    // one paint, and what the attempt needs is a bounded window in which a frame
+    // could have arrived.
+    reattachTimer_.setSingleShot(false);
+    reattachTimer_.setInterval(50);
+    connect(&reattachTimer_, &QTimer::timeout, this, [this] {
+        if (!reattachPending_) return;
+        if (--reattachTicksLeft_ <= 0) {
+            finishContextReattach();
+            return;
+        }
+        if (paintCanHappen()) update();
+    });
     // Keep a replayable snapshot ahead of external listeners: a dialog that
     // reconnects after missing the original signal can synchronize from these
     // typed getters without dynamic properties or a second event source.
@@ -630,7 +676,12 @@ void VideoSurface::setEngineFrameHold(bool active) {
         engineFrameHoldActive_ = true;
         engineFrameHoldAwaitingOutput_ = false;
         // Capture before the filter changes; ordinary playback must not copy every frame.
-        if (!engineFrameHoldFbo_) captureEngineFrameHold();
+        if (!engineFrameHoldFbo_) {
+            // A filter change keeps the epoch, so any real frame may release this
+            // one. A snapshot already awaiting a load keeps its epoch gate.
+            engineFrameHoldRequiresNewEpoch_ = false;
+            captureEngineFrameHold();
+        }
         update();
         return;
     }
@@ -641,12 +692,6 @@ void VideoSurface::setEngineFrameHold(bool active) {
     // renderer state directly; otherwise the first successful new output frame
     // is the only event that replaces the held image.
     update();
-}
-
-void VideoSurface::captureRetainedPicture() {
-    if (engineFrameHoldFbo_ || engineFrameHoldActive_ || !hasVisibleOutputFrame_) return;
-    if (!isVisible()) return;
-    captureEngineFrameHold();
 }
 
 void VideoSurface::holdPictureAcrossLoad() {
@@ -660,6 +705,10 @@ void VideoSurface::holdPictureAcrossLoad() {
         // source produces a frame of its own epoch, and then releases the GPU
         // storage. `active` would keep it up over a picture that has arrived.
         engineFrameHoldAwaitingOutput_ = true;
+        // The outgoing source can still hand out one more real frame after this
+        // capture and before the load lands, and that frame is not the picture
+        // the viewer is waiting for. Only a later epoch releases the hold.
+        engineFrameHoldRequiresNewEpoch_ = true;
         update();
         return;
     }
@@ -669,12 +718,32 @@ void VideoSurface::holdPictureAcrossLoad() {
 void VideoSurface::invalidateEngineFrameHold() {
     engineFrameHoldActive_ = false;
     engineFrameHoldAwaitingOutput_ = false;
+    engineFrameHoldRequiresNewEpoch_ = false;
     hasVisibleOutputFrame_ = false;
+    // The teardown picture belongs to the same boundary: an intentional clear,
+    // a close or a new source retires it with the hold.
+    teardownPicture_ = QImage();
+    teardownPictureFormat_ = 0;
     if (!engineFrameHoldFbo_) return;
     QOpenGLContext* previous = nullptr;
     const bool current = makeRenderContextCurrent(&previous);
     engineFrameHoldFbo_.reset();
     if (current) releaseRenderContextCurrent(previous);
+}
+
+qint64 VideoSurface::retainedPictureBytes() const {
+    qint64 bytes = teardownPicture_.sizeInBytes();
+    if (engineFrameHoldFbo_ && engineFrameHoldFbo_->isValid()) {
+        // The snapshot is stored at the target's own precision, so its per-pixel
+        // cost follows the probed format, not a fixed RGBA8 assumption.
+        const int perPixel =
+            renderInternalFormat_ == kGlInternalFormatRgba16F ||
+                    renderInternalFormat_ == kGlInternalFormatRgba16
+                ? 8
+                : 4;
+        bytes += qint64(engineFrameHoldFbo_->width()) * engineFrameHoldFbo_->height() * perPixel;
+    }
+    return bytes;
 }
 
 bool VideoSurface::captureEngineFrameHold() {
@@ -687,9 +756,16 @@ bool VideoSurface::captureEngineFrameHold() {
         releaseRenderContextCurrent(previous);
         return false;
     }
+    // The snapshot is a copy of the widget's own target, so it takes that
+    // target's probed format and per-channel depth: an 8-bit copy of a 10-bit or
+    // float target would quantize the picture the hold exists to preserve. RGBA8
+    // is only the fallback for a target whose format could not be read.
+    const bool probed = renderFormatProbed_ && renderInternalFormat_ != 0;
+    const int snapshotFormat = probed ? renderInternalFormat_ : kGlInternalFormatRgba8;
+    const int snapshotDepth = probed ? renderDepthBitsPerChannel_ : 0;
     QOpenGLFramebufferObjectFormat snapshotFboFormat;
     snapshotFboFormat.setAttachment(QOpenGLFramebufferObject::NoAttachment);
-    snapshotFboFormat.setInternalTextureFormat(kGlInternalFormatRgba8);
+    snapshotFboFormat.setInternalTextureFormat(snapshotFormat);
     auto snapshot = std::make_unique<QOpenGLFramebufferObject>(size, snapshotFboFormat);
     QOpenGLFunctions* gl = context_->functions();
     bool frameConsumed = false;
@@ -710,16 +786,11 @@ bool VideoSurface::captureEngineFrameHold() {
             // Copying the widget FBO would retain HUD pixels.
             const uint64_t updateFlags = render_->update();
             frameConsumed = framePending_ || (updateFlags & MPV_RENDER_UPDATE_FRAME) != 0;
-            const int snapshotFormat =
-                static_cast<int>(snapshot->format().internalTextureFormat());
-            GLint snapshotDepth = 0;
-            if (QOpenGLExtraFunctions* extra = context_->extraFunctions()) {
-                extra->glGetFramebufferAttachmentParameteriv(
-                    GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 0x8212, &snapshotDepth);
-            }
+            // The same format and depth the widget target gets, so mpv dithers
+            // for the precision this snapshot really stores.
             const int result =
                 render_->render(snapshot->handle(), size.width(), size.height(),
-                                snapshotFormat, snapshotDepth > 0 ? snapshotDepth : 0);
+                                snapshotFormat, snapshotDepth);
             captured = result >= 0;
         }
         if (QOpenGLExtraFunctions* extra = context_->extraFunctions()) {
@@ -739,6 +810,7 @@ bool VideoSurface::captureEngineFrameHold() {
     }
 
     engineFrameHoldFbo_ = std::move(snapshot);
+    engineFrameHoldEpoch_ = mpv_ != nullptr ? mpv_->sourceEpoch() : 0;
     framePending_ = false;
     // Capturing can consume an update, but it is not an on-screen presentation.
     if (frameConsumed || videoFramePainted_) {
@@ -760,12 +832,149 @@ bool VideoSurface::drawEngineFrameHold(unsigned int target, int width, int heigh
     GLint previousDraw = 0;
     gl->glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousRead);
     gl->glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousDraw);
+    // A filtered blit between a fixed-point and a floating-point buffer is not
+    // defined by GL, so the snapshot and the target are compared instead of
+    // assuming they match: they only differ on a target whose format is unknown.
+    const GLenum filter =
+        static_cast<int>(engineFrameHoldFbo_->format().internalTextureFormat()) ==
+                renderInternalFormat_
+            ? GL_LINEAR
+            : GL_NEAREST;
     gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, engineFrameHoldFbo_->handle());
     gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
     gl->glBlitFramebuffer(0, 0, engineFrameHoldFbo_->width(), engineFrameHoldFbo_->height(),
-                          0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+                          0, 0, width, height, GL_COLOR_BUFFER_BIT, filter);
     gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousRead));
     gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDraw));
+    return true;
+}
+
+bool VideoSurface::captureTeardownPicture() {
+    if (destroying_ || context_ == nullptr) return false;
+    QOpenGLExtraFunctions* gl = context_->extraFunctions();
+    if (gl == nullptr) return false;
+    const bool haveHold = engineFrameHoldFbo_ && engineFrameHoldFbo_->isValid();
+    if (!haveHold && !hasVisibleOutputFrame_) return false;
+    // The hold is already the video-only copy; the widget target is only read
+    // when there is nothing else, because it also carries whatever chrome a
+    // previous pass left in it.
+    const GLuint source =
+        haveHold ? engineFrameHoldFbo_->handle()
+                 : static_cast<GLuint>(defaultFramebufferObject());
+    QSize size = haveHold ? engineFrameHoldFbo_->size()
+                          : QSize(std::max(1, qRound(width() * devicePixelRatioF())),
+                                  std::max(1, qRound(height() * devicePixelRatioF())));
+    if (size.isEmpty()) return false;
+
+    GLint previousRead = 0;
+    GLint previousDraw = 0;
+    gl->glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousRead);
+    gl->glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousDraw);
+    gl->glBindFramebuffer(kGlReadFramebuffer, source);
+    // Read the attachment's own format instead of assuming one: a float or
+    // 10-bit target read as 8-bit bytes would be the quantization this exists to
+    // avoid.
+    GLint objectType = 0;
+    GLint objectName = 0;
+    GLint internalFormat = 0;
+    gl->glGetFramebufferAttachmentParameteriv(kGlReadFramebuffer, GL_COLOR_ATTACHMENT0,
+                                              kGlColorAttachmentObjectType, &objectType);
+    gl->glGetFramebufferAttachmentParameteriv(kGlReadFramebuffer, GL_COLOR_ATTACHMENT0,
+                                              kGlColorAttachmentObjectName, &objectName);
+    if (objectType == static_cast<GLint>(kGlTextureObject)) {
+        GLint previousTexture = 0;
+        gl->glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
+        gl->glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(objectName));
+        gl->glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, kGlTextureInternalFormat, &internalFormat);
+        gl->glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture));
+    } else if (objectType == static_cast<GLint>(kGlRenderbufferObject)) {
+        GLint previousRenderbuffer = 0;
+        gl->glGetIntegerv(0x8CA7, &previousRenderbuffer);
+        gl->glBindRenderbuffer(GL_RENDERBUFFER, static_cast<GLuint>(objectName));
+        gl->glGetRenderbufferParameteriv(GL_RENDERBUFFER, kGlRenderbufferInternalFormat,
+                                         &internalFormat);
+        gl->glBindRenderbuffer(GL_RENDERBUFFER, static_cast<GLuint>(previousRenderbuffer));
+    }
+
+    GLenum readType = kGlUnsignedByte;
+    QImage::Format imageFormat = QImage::Format_RGBA8888;
+    switch (internalFormat) {
+        case kGlInternalFormatRgba16F:
+            // Half floats are copied as half floats; the buffer QImage allocates
+            // is the same four-channel half layout glReadPixels writes.
+            readType = kGlHalfFloat;
+            imageFormat = QImage::Format_RGBA16FPx4;
+            break;
+        case kGlInternalFormatRgba16:
+            readType = kGlUnsignedShort;
+            imageFormat = QImage::Format_RGBA64;
+            break;
+        case kGlInternalFormatRgb10A2:
+            // The packed 10:10:10:2 words stay packed: widening them to 16 bits
+            // per channel would be a second conversion of the same values.
+            readType = kGlUnsignedInt2101010Rev;
+            imageFormat = QImage::Format_A2BGR30_Premultiplied;
+            break;
+        default:
+            // Only a target whose attachment format could not be named at all
+            // falls here, and that is said in the log rather than assumed.
+            break;
+    }
+
+    QImage picture(size, imageFormat);
+    if (picture.isNull()) {
+        gl->glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(defaultFramebufferObject()));
+        return false;
+    }
+    GLint previousPack = 4;
+    gl->glGetIntegerv(kGlPackAlignment, &previousPack);
+    gl->glPixelStorei(kGlPackAlignment, 1);
+    gl->glReadPixels(0, 0, size.width(), size.height(), kGlRgba, readType, picture.bits());
+    gl->glPixelStorei(kGlPackAlignment, static_cast<GLint>(previousPack));
+    gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousRead));
+    gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDraw));
+
+    // GL hands back rows bottom-first; a QImage is stored top-first.
+    teardownPicture_ = picture.flipped(Qt::Vertical);
+    teardownPictureFormat_ = internalFormat;
+    mikai::gui::uiprofile::noteTeardownPictureCaptured();
+    if (mikai::gui::uiprofile::enabled()) {
+        mikai::gui::uiprofile::log(
+            "surface.teardownPicture",
+            QStringLiteral("size=%1x%2 internal_format=%3 bytes=%4")
+                .arg(size.width())
+                .arg(size.height())
+                .arg(teardownPictureFormat_, 0, 16)
+                .arg(teardownPicture_.sizeInBytes()));
+    }
+    return true;
+}
+
+bool VideoSurface::drawRetainedPicture(QPainter& painter, unsigned int target, int width,
+                                       int height) {
+    // Raw GL inside a section of its own: the caller may have handed over an
+    // ordinary painter, and a blit needs Qt's paint engine out of the way.
+    if (engineFrameHoldFbo_ && engineFrameHoldFbo_->isValid()) {
+        painter.beginNativePainting();
+        const bool blitted = drawEngineFrameHold(target, width, height);
+        painter.endNativePainting();
+        if (blitted) return true;
+    }
+    return paintTeardownPicture(painter);
+}
+
+bool VideoSurface::paintTeardownPicture(QPainter& painter) {
+    if (teardownPicture_.isNull()) return false;
+    // The readback is the finished frame, letterbox bars included, so it is
+    // fitted by its own aspect rather than stretched over the whole widget.
+    const QRectF area(rect());
+    const double scale = std::min(area.width() / teardownPicture_.width(),
+                                  area.height() / teardownPicture_.height());
+    if (!(scale > 0.0)) return false;
+    const QSizeF fitted(teardownPicture_.width() * scale, teardownPicture_.height() * scale);
+    const QRectF box(area.center().x() - fitted.width() / 2.0,
+                     area.center().y() - fitted.height() / 2.0, fitted.width(), fitted.height());
+    painter.drawImage(box, teardownPicture_);
     return true;
 }
 
@@ -787,6 +996,9 @@ VideoSurface::~VideoSurface() {
     // and with THIS widget's context current: freeing it releases GL objects.
     // QOpenGLContext::aboutToBeDestroyed normally does this, and this is the
     // fallback for a widget destroyed without its context ever being torn down.
+    // A widget that is going away retains nothing, so the teardown readback -
+    // a device-sized copy nobody could ever see - is skipped by this flag.
+    destroying_ = true;
     releaseRenderContext();
     if (mpv_) {
         // Unobserve for real before the core goes, so mpv is not still
@@ -813,6 +1025,10 @@ bool VideoSurface::open(const QString& url, quint64 mediaToken) {
     // retires every reply and every claim the outgoing source owned: the hold is
     // a picture, not state. An empty URL is the intentional clear, so nothing is
     // kept for it.
+    // A load asked for now owns the picture; a reattach attempt for the outgoing
+    // one would race it with a second loadfile.
+    reattachPending_ = false;
+    reattachTimer_.stop();
     if (url.isEmpty()) {
         invalidateEngineFrameHold();
     } else {
@@ -1032,6 +1248,10 @@ void VideoSurface::close() {
         }
         timingLogBuffer_.resize(0);
     }
+    // A closed source is not reattached to: the attempt belongs to the picture
+    // this close is taking away.
+    reattachPending_ = false;
+    reattachTimer_.stop();
     // A later GL recreation may restore only an open source, never a stopped
     pacingTimer_.stop();
     clearPacingProfile();
@@ -1414,7 +1634,7 @@ void VideoSurface::paintOpeningPlaceholder(QPainter& painter) {
     // A backdrop, not a frame. Defined enough that the window cannot be mistaken
     // for a failed black rectangle, neutral enough that the dialog's own words
     // stay the thing being read.
-    painter.fillRect(rect(), QColor(9, 10, 14));
+    painter.fillRect(rect(), videoBackdrop());
     const QPointF centre(width() / 2.0, height() / 2.0);
     const double radius = std::max(10.0, std::min(width(), height()) * 0.035);
     const QRectF ring(centre.x() - radius, centre.y() - radius, radius * 2.0, radius * 2.0);
@@ -1475,21 +1695,12 @@ void VideoSurface::initializeGL() {
         // has never been drawn into.
         forceRender_ = true;
         if (recreated && !pendingOpen_ && !url_.isEmpty()) {
-            // Freeing the old render context disabled the core's video track
-            // (vo_libmpv kills the VO and errors the track), so a source that was
-            // already loaded has to be handed back to it, at the position the
-            // viewer left. The old chain died with that video, so the native
-            // binding is dropped with it rather than claiming a filter that is
-            // no longer in the core.
-            animeJanaiFilterBound_ = false;
-            nativeFilterBound_ = false;
-            MediaTrackSelection selection = mediaTrackSelection();
-            if (pendingMediaTrackSelection_.audio.has_value())
-                selection.audio = pendingMediaTrackSelection_.audio;
-            if (pendingMediaTrackSelection_.subtitle.has_value())
-                selection.subtitle = pendingMediaTrackSelection_.subtitle;
-            setNextMediaTrackSelection(selection);
-            startPendingUrl(observedPosition_);
+            // A new render context attaches as a new video output while mpv keeps
+            // the file loaded, so the core is asked first: force a render and let
+            // a bounded window of paints say whether it still delivers output.
+            // Only a core that reports nothing, or says it has nothing loaded, is
+            // handed the file again - see finishContextReattach().
+            beginContextReattach();
         }
         if (pendingOpen_) startPendingUrl();
         // The load must precede the pause reassertion; reversing the order lets
@@ -1512,6 +1723,42 @@ void VideoSurface::initializeGL() {
                     static_cast<qulonglong>(reinterpret_cast<quintptr>(context_)), 0, 16))
                 .arg(elapsedUs));
     }
+}
+
+void VideoSurface::beginContextReattach() {
+    // mpv says it has no file loaded: there is no picture to wait for, so the
+    // load is the only path back and it is taken once, right here.
+    if (mpv_ == nullptr || observedIdle_) {
+        finishContextReattach();
+        return;
+    }
+    reattachPending_ = true;
+    reattachTicksLeft_ = kContextReattachTicks;
+    reattachTimer_.start();
+    forceRender_ = true;
+    update();
+}
+
+void VideoSurface::finishContextReattach() {
+    reattachTimer_.stop();
+    reattachPending_ = false;
+    reattachTicksLeft_ = 0;
+    if (mpv_ == nullptr || url_.isEmpty() || pendingOpen_) return;
+    // The old video output died with its render context, so the filter it carried
+    // is no longer in the core: the reload is what rebuilds it, and the native
+    // binding must not claim a chain that went with that output.
+    animeJanaiFilterBound_ = false;
+    nativeFilterBound_ = false;
+    MediaTrackSelection selection = mediaTrackSelection();
+    if (pendingMediaTrackSelection_.audio.has_value())
+        selection.audio = pendingMediaTrackSelection_.audio;
+    if (pendingMediaTrackSelection_.subtitle.has_value())
+        selection.subtitle = pendingMediaTrackSelection_.subtitle;
+    setNextMediaTrackSelection(selection);
+    // The position the viewer left and the pause intent they set both survive:
+    // the load resumes where the picture was, and initializeGL reasserts the
+    // pause afterwards because a loadfile resets the core's own pause write.
+    startPendingUrl(observedPosition_);
 }
 
 void VideoSurface::createRenderContext() {
@@ -1547,12 +1794,15 @@ void VideoSurface::createRenderContext() {
 
 void VideoSurface::resizeGL(int width, int height) {
     QOpenGLWidget::resizeGL(width, height);
-    // Qt hands QOpenGLWidget a freshly allocated framebuffer on a resize, so
-    // whatever the last paint drew into the old one is gone - and its attachment
-    // is a different object that has to be probed again before mpv is told what
-    // to render into. The next paint has to render even though no frame has been
-    // decoded since.
-    resetRenderTargetFormat();
+    // A resize gets a freshly allocated framebuffer, so whatever the last paint
+    // drew into the old one is gone and the next paint has to render even though
+    // no frame has been decoded since.
+    //
+    // The attachment FORMAT is deliberately not re-probed here: it is a property
+    // of the context and the surface format, not of the size, and Qt reallocates
+    // a new color attachment with that same format. Probing again would put a
+    // synchronous format query in the resize path for an answer already known -
+    // resetRenderTargetFormat() is for context creation and release only.
     forceRender_ = true;
     if (contextReady_) render_->update();
     // Ask for that paint rather than hoping Qt repaints on its own: the fresh
@@ -1612,15 +1862,24 @@ void VideoSurface::paintGL() {
     if (!contextReady_ || !render_) {
         // No engine, so there is no frame to render - but NoPartialUpdate leaves
         // whatever is in this buffer visible, so this pass always defines every
-        // pixel. While a source is opening the defined pixels are the opening
-        // placeholder; defined black is reserved for a surface that is idle and
-        // has nothing to wait for. The overlay belongs to the widget rather than
-        // to the core and is painted over either.
+        // pixel. The order is the retainer, then the opening placeholder, then
+        // the surface's own backdrop: a picture this surface already holds says
+        // more than a wait indicator, and neither is ever replaced by bare black.
+        // The overlay belongs to the widget rather than to the core and is
+        // painted over all of them.
         QPainter unrendered(this);
-        if (opening_) {
-            paintOpeningPlaceholder(unrendered);
-        } else {
-            unrendered.fillRect(rect(), Qt::black);
+        const QSize retainedSize = QSize(width(), height()) * devicePixelRatioF();
+        const bool retained =
+            drawRetainedPicture(unrendered,
+                                static_cast<unsigned int>(defaultFramebufferObject()),
+                                std::max(1, retainedSize.width()),
+                                std::max(1, retainedSize.height()));
+        if (!retained) {
+            if (opening_) {
+                paintOpeningPlaceholder(unrendered);
+            } else {
+                unrendered.fillRect(rect(), videoBackdrop());
+            }
         }
         if (!overlaySuppressed_) emit paintOverlay(&unrendered);
         if (profilePaint) {
@@ -1647,7 +1906,14 @@ void VideoSurface::paintGL() {
     bool freshOutputFrame = false;
     if (engineFrameHoldAwaitingOutput_) {
         mpv_render_frame_info frameInfo{};
-        freshOutputFrame = render_->nextFrameInfo(frameInfo) && isRealNewFrame(frameInfo);
+        const bool realFrame = render_->nextFrameInfo(frameInfo) && isRealNewFrame(frameInfo);
+        // A hold taken across a source change belongs to the OUTGOING epoch, and
+        // that source can hand out one more real frame before the load lands. The
+        // load bumps the epoch, so only a later one proves the new source
+        // delivered; container frame info carries no epoch of its own.
+        const bool epochAdvanced = !engineFrameHoldRequiresNewEpoch_ || mpv_ == nullptr ||
+                                   mpv_->sourceEpoch() != engineFrameHoldEpoch_;
+        freshOutputFrame = realFrame && epochAdvanced;
     }
     // forceRender_ covers the framebuffer Qt hands back empty: a resize or a
     // re-show wipes the picture, and with a paused core no new frame is coming.
@@ -1752,11 +2018,22 @@ void VideoSurface::paintGL() {
     }
     lastRenderedFboSize_ = deviceSize;
     hasRenderedFrame_ = hasRenderedFrame_ || renderResult == 0;
-    if (renderResult < 0 && engineFrameHoldFbo_ &&
-        (engineFrameHoldActive_ || engineFrameHoldAwaitingOutput_)) {
-        painter.beginNativePainting();
-        drawEngineFrameHold(target, targetWidth, targetHeight);
-        painter.endNativePainting();
+    if (renderResult < 0) {
+        // The retained picture stands in for the frame the renderer could not
+        // produce, so a reported failure is never also a black clear.
+        drawRetainedPicture(painter, target, targetWidth, targetHeight);
+    }
+    // A context that has not received anything from the core yet was just
+    // cleared to black. The picture read back from the lost context stands in
+    // there, exactly as the hold does for a load, until the core delivers.
+    if (renderResult == 0 && !retainedPictureVisible && !newOutputFrame && !framePending_) {
+        paintTeardownPicture(painter);
+    }
+    if (reattachPending_ && renderResult == 0 && newOutputFrame) {
+        // The live core delivered output on its own after the context came back:
+        // the source never had to be reloaded.
+        reattachPending_ = false;
+        reattachTimer_.stop();
     }
     if (renderResult == 0 && freshOutputFrame && !retainedPictureVisible) {
         hasVisibleOutputFrame_ = true;
@@ -1764,9 +2041,13 @@ void VideoSurface::paintGL() {
         // over, and the placeholder must give way to the picture.
         setOpening(false);
         engineFrameHoldAwaitingOutput_ = false;
+        engineFrameHoldRequiresNewEpoch_ = false;
         // The fresh output has replaced the transition snapshot. Release its
         // GPU storage now; normal playback retains no extra video framebuffer.
         engineFrameHoldFbo_.reset();
+        // The teardown readback has done its job for the same reason.
+        teardownPicture_ = QImage();
+        teardownPictureFormat_ = 0;
     }
     if (renderResult == 0 && freshOutputFrame && !retainedPictureVisible &&
         animeJanaiPlan_.enabled && animeJanaiPlan_.available &&
@@ -1780,22 +2061,32 @@ void VideoSurface::paintGL() {
         hasVisibleOutputFrame_ = true;
         setOpening(false);
         ++diagnostics_.renderedOutputFrames;
+        // A real frame is on screen again, so the picture read back for the lost
+        // context has done its job and its device-sized copy goes.
+        teardownPicture_ = QImage();
+        teardownPictureFormat_ = 0;
     }
     if (renderResult < 0) {
-        // The buffer holds the defined black rather than that frame, so a report
-        // for it would name a presentation that is no longer on screen.
+        // The buffer holds the retained picture rather than that frame, so a
+        // report for it would name a presentation that is no longer on screen.
         videoFramePainted_ = false;
-        if (mpv_ != nullptr) {
+        // One report per streak: a renderer that fails on every paint would
+        // otherwise repeat the same message for every frame it was asked for.
+        if (!renderFailureStreak_ && mpv_ != nullptr) {
+            renderFailureStreak_ = true;
             const QString message =
                 tr("Video render failed (mpv: %1)")
                     .arg(QString::fromStdString(mpv_->describeError(renderResult)));
             QMetaObject::invokeMethod(this, [this, message] { emit errorOccurred(message); },
                                       Qt::QueuedConnection);
         }
-    } else if (presentedFrame) {
-        // Only ever set: a UI-only repaint must not throw away the report the
-        // frame before it is still owed.
-        videoFramePainted_ = true;
+    } else {
+        renderFailureStreak_ = false;
+        if (presentedFrame) {
+            // Only ever set: a UI-only repaint must not throw away the report
+            // the frame before it is still owed.
+            videoFramePainted_ = true;
+        }
     }
     framePending_ = false;
     forceRender_ = false;
@@ -2082,9 +2373,10 @@ void VideoSurface::onPacingTick() {
 }
 
 void VideoSurface::resetRenderTargetFormat() {
-    // Never called per paint: the queries below cost a round trip, and their
-    // answer describes one target - so a new context, a released one or a resized
-    // framebuffer makes it unknown again rather than merely stale.
+    // Never called per paint or per resize: the queries below cost a round trip,
+    // and their answer describes one target - so a new context or a released one
+    // makes it unknown again rather than merely stale.
+    mikai::gui::uiprofile::noteRenderTargetFormatReset();
     renderFormatProbed_ = false;
     renderInternalFormat_ = 0;
     renderDepthBitsPerChannel_ = 0;
@@ -2100,6 +2392,7 @@ void VideoSurface::probeFboColorDepth() {
     context_->functions()->glBindFramebuffer(
         GL_FRAMEBUFFER, static_cast<GLuint>(defaultFramebufferObject()));
     renderFormatProbed_ = true;
+    mikai::gui::uiprofile::noteRenderTargetProbe();
     // Discover the attached object's actual sized format. Component bit counts
     // are not enough to distinguish e.g. packed normalized and float formats.
     constexpr GLenum kAttachmentObjectType = 0x8CD0;
@@ -2432,6 +2725,10 @@ void VideoSurface::releaseRenderContext() {
     }
     QOpenGLContext* previous = nullptr;
     const bool current = makeRenderContextCurrent(&previous);
+    // One last picture out of the context before it goes: read back here, at the
+    // target's own precision, so a context loss shows the frame that was on
+    // screen instead of a backdrop. One copy per context, never per paint.
+    if (current) captureTeardownPicture();
     if (current) engineFrameHoldFbo_.reset();
     if (current) {
         // The render context's destructor detaches mpv's update callback before

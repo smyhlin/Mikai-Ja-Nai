@@ -332,6 +332,10 @@ public:
     /// Whether a captured snapshot exists that a paint would present instead of
     /// a new frame. The hold's own state, never a claim about what is on screen.
     bool hasRetainedPicture() const { return engineFrameHoldFbo_ != nullptr; }
+    /// Bytes of off-screen pictures this surface retains right now, at their own
+    /// precision: the transition hold framebuffer plus the teardown readback.
+    /// Diagnostics only - it says nothing about what is on screen.
+    qint64 retainedPictureBytes() const;
     /// A source is open and no frame of it has been presented yet. False before a
     /// load, false once the picture is really on screen, and false after an error
     /// or a close - a window must never claim to be opening something it is not.
@@ -934,13 +938,22 @@ private:
     /// Advances the render state on demand, for a caller that knows the core
     /// changed something (a shader chain swap) and needs a repaint of it.
     void refreshRenderState();
-    /// Releases a retained picture without letting it cross a source boundary.
+    /// Releases every retained picture without letting one cross a source
+    /// boundary, an intentional clear, or a close.
     void invalidateEngineFrameHold();
-    /// Captures the picture on screen into the hold, when there is one and none
-    /// is held. Called at safe points only - pause, losing the application and
-    /// render-context teardown - never per frame: the snapshot is a device-sized
-    /// framebuffer.
-    void captureRetainedPicture();
+    /// Reads the picture on screen out of the GL context before it is destroyed,
+    /// at the target's own precision, so a context loss shows that picture
+    /// instead of a backdrop. Called once per context, from releaseRenderContext.
+    bool captureTeardownPicture();
+    /// Puts the retained picture on screen for a pass that cannot render: the
+    /// GPU hold first, else the teardown readback. False when neither exists.
+    bool drawRetainedPicture(QPainter& painter, unsigned int target, int width, int height);
+    /// Draws only the teardown readback, letterboxed. False when none is held.
+    bool paintTeardownPicture(QPainter& painter);
+    /// Asks a recreated render context, over a bounded number of paints, whether
+    /// the live core still delivers output; a reload happens only when it does.
+    void beginContextReattach();
+    void finishContextReattach();
     /// Keeps the picture the viewer is looking at across a source change. The
     /// snapshot is a visual cache: the caller still retires every claim the
     /// outgoing source owned, and the first real output of the new one is what
@@ -1218,6 +1231,25 @@ private:
     bool engineFrameHoldActive_ = false;
     bool engineFrameHoldAwaitingOutput_ = false;
     std::unique_ptr<QOpenGLFramebufferObject> engineFrameHoldFbo_;
+    /// Core epoch the snapshot was taken from. A hold taken across a source
+    /// change is released only by a real frame of a LATER epoch: the outgoing
+    /// source can still hand out one more real frame before the load lands.
+    uint64_t engineFrameHoldEpoch_ = 0;
+    bool engineFrameHoldRequiresNewEpoch_ = false;
+    /// The last picture read back before a context was released, kept at the
+    /// precision it was read at (half-float, 10-bit packed or 16-bit).
+    QImage teardownPicture_;
+    int teardownPictureFormat_ = 0;
+    /// One error report per streak of failed renders, never one per paint.
+    bool renderFailureStreak_ = false;
+    /// True while a recreated context is being asked whether the live core still
+    /// delivers output for the current file.
+    bool reattachPending_ = false;
+    int reattachTicksLeft_ = 0;
+    QTimer reattachTimer_;
+    /// Set by the destructor: a picture read back for a widget that is going
+    /// away would only cost a device-sized copy nobody can ever see.
+    bool destroying_ = false;
     QSize lastRenderedFboSize_;
     bool playing_ = false;
     double position_ = 0.0;
