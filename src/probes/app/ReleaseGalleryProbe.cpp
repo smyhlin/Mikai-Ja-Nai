@@ -852,6 +852,100 @@ private:
                                 qBound(0, qRound(y * scale), image.height() - 1));
     }
 
+    struct TimelineSample {
+        QColor pixel;
+        int longestRun = -1;
+        int span = 0;
+        int startOffset = -1;
+        double fraction = 0.0;
+        QRect barInShell;
+        QRect barInSurface;
+        QRect surfaceRect;
+        QSize frameSize;
+        qreal dpr = 1.0;
+        QString device;
+        QString note;
+        bool visible = false;
+    };
+
+    /// The played run along the bar's own row, read from whichever device paints
+    /// it: the surface's framebuffer where the bar overlaps the picture, the
+    /// shell's raster where it does not. The bar is not a child of the surface,
+    /// so its position goes through the screen rather than mapTo().
+    TimelineSample sampleTimeline(const QColor& expected) {
+        TimelineSample sample;
+        if (scrub_ == nullptr || shell_ == nullptr || surface_ == nullptr) {
+            sample.note = QStringLiteral("no scrub bar, shell or surface");
+            return sample;
+        }
+        shell_->wake();  // the HUD auto-hides on its own timer
+        QTest::qWait(60);
+        sample.visible = scrub_->isVisible();
+        if (!sample.visible) {
+            sample.note = QStringLiteral("the timeline is hidden after wake()");
+            return sample;
+        }
+        scrub_->setValueSilent(0.5);
+        sample.fraction = scrub_->value();
+        sample.barInShell = QRect(scrub_->mapTo(shell_.data(), QPoint(0, 0)), scrub_->size());
+        sample.barInSurface =
+            QRect(surface_->mapFromGlobal(scrub_->mapToGlobal(QPoint(0, 0))), scrub_->size());
+        sample.surfaceRect = surface_->rect();
+        sample.dpr = surface_->devicePixelRatioF();
+
+        constexpr int kGapTolerance = 2;  // thumb edge, antialiasing
+        const auto scan = [&](const QImage& frame, const QRect& row, qreal scale) {
+            if (frame.isNull() || row.width() <= 4) return;
+            const int y = qRound((row.y() + row.height() / 2.0) * scale);
+            const int from = qRound(row.x() * scale);
+            const int to = qRound((row.x() + row.width()) * scale) - 1;
+            if (y < 0 || y >= frame.height() || from < 0 || to >= frame.width() || to <= from) {
+                return;
+            }
+            sample.span = to - from + 1;
+            int run = 0;
+            int runStart = -1;
+            int sinceMatch = 0;
+            for (int x = from; x <= to; ++x) {
+                const QColor pixel = frame.pixelColor(x, y);
+                if (nearColor(pixel, expected, 10)) {
+                    if (run == 0) runStart = x;
+                    run += sinceMatch + 1;
+                    sinceMatch = 0;
+                    if (run > sample.longestRun) {
+                        sample.longestRun = run;
+                        sample.startOffset = runStart - from;
+                        sample.pixel = pixel;
+                    }
+                    continue;
+                }
+                ++sinceMatch;
+                if (sinceMatch > kGapTolerance) {
+                    run = 0;
+                    runStart = -1;
+                    sinceMatch = 0;
+                }
+            }
+        };
+
+        if (sample.barInSurface.width() > 8 && surface_->rect().contains(sample.barInSurface)) {
+            sample.device = QStringLiteral("surface");
+            const QImage frame = surface_->grabFramebuffer();
+            sample.frameSize = frame.size();
+            if (!frame.isNull()) {
+                scan(frame, sample.barInSurface,
+                     static_cast<qreal>(frame.width()) / qMax(1, surface_->width()));
+            }
+            return sample;
+        }
+
+        sample.device = QStringLiteral("shell");
+        const Pixels shellPixels = pixelsOf(shell_.data());
+        sample.frameSize = shellPixels.image.size();
+        scan(shellPixels.image, sample.barInShell, shellPixels.scale);
+        return sample;
+    }
+
     static int countNear(const QImage& image, const QColor& color, int tolerance = 10) {
         int count = 0;
         for (int y = 0; y < image.height(); ++y) {
@@ -1392,7 +1486,10 @@ private:
                 }
 
                 // Hover is the contract; the wash alpha is not, so only a
-                // "painted at all" floor is asserted.
+                // "painted at all" floor is asserted. The strip that carries the
+                // chip only exists for a source with a playlist, so a direct file
+                // hides it by design: the rendered chip is measured either way.
+                if (shell_ != nullptr) shell_->wake();
                 if (chip_ != nullptr) {
                     // A forced under-mouse flag does not survive an event turn
                     // here, so the state goes to the widget's own style.
@@ -1408,90 +1505,49 @@ private:
                               .arg(nameColor(expected)));
                 }
 
-                // The bar is adopted chrome: its paintEvent draws nothing once
-                // the surface owns it, so the row is read from the surface's
-                // framebuffer. The played segment is the longest continuous run
-                // of the chosen accent along that row - a single stray pixel of a
-                // moving picture is not a segment, so the run has to cover a real
-                // share of the bar and start where the groove starts.
-                QColor timelinePixel;
-                int timelineRunLongest = -1;   // negative: the row was not on the surface
-                int timelineBarSpanPixels = 0;
-                int timelineRunStartOffset = -1;
-                double playedFraction = 0.0;
-                QRect timelineBarRect;
-                if (scrub_ != nullptr && surface_ != nullptr && scrub_->isVisible() &&
-                    surface_->width() > 8 && scrub_->height() > 2) {
-                    scrub_->setValueSilent(0.5);
-                    playedFraction = scrub_->value();
-                    timelineBarRect = QRect(scrub_->mapTo(surface_.data(), QPoint(0, 0)),
-                                            scrub_->size());
-                    const QRect visible = timelineBarRect.intersected(surface_->rect());
-                    const QImage frame = surface_->grabFramebuffer();
-                    if (!frame.isNull() && frame.width() > 0 && visible.width() > 8) {
-                        const qreal ratio = static_cast<qreal>(frame.width()) /
-                                            static_cast<qreal>(surface_->width());
-                        // The row is the bar's own, not an edge: off-surface means
-                        // the chrome is not where the bar thinks it is.
-                        const int y = qRound((visible.y() + visible.height() / 2.0) * ratio);
-                        const int from = qRound(visible.x() * ratio);
-                        const int to = qRound((visible.x() + visible.width()) * ratio) - 1;
-                        if (y >= 0 && y < frame.height() && from >= 0 && to < frame.width()) {
-                            timelineBarSpanPixels = to - from + 1;
-                            constexpr int kGapTolerance = 2;  // thumb edge, antialiasing
-                            int run = 0;
-                            int runStart = -1;
-                            int sinceMatch = 0;
-                            for (int x = from; x <= to; ++x) {
-                                const QColor pixel = frame.pixelColor(x, y);
-                                if (nearColor(pixel, expected, 10)) {
-                                    if (run == 0) runStart = x;
-                                    run += sinceMatch + 1;
-                                    sinceMatch = 0;
-                                    if (run > timelineRunLongest) {
-                                        timelineRunLongest = run;
-                                        timelineRunStartOffset = runStart - from;
-                                        timelinePixel = pixel;
-                                    }
-                                    continue;
-                                }
-                                ++sinceMatch;
-                                if (sinceMatch > kGapTolerance) {
-                                    run = 0;
-                                    runStart = -1;
-                                    sinceMatch = 0;
-                                }
-                            }
-                        }
-                    }
-                }
-                row.insert(QStringLiteral("timelinePlayed"), nameColor(timelinePixel));
+                // The played segment: the longest continuous run of the chosen
+                // accent along the bar's own row, read from the device that
+                // paints it. A stray picture pixel is not a segment.
+                const TimelineSample timeline = sampleTimeline(expected);
+                row.insert(QStringLiteral("timelinePlayed"), nameColor(timeline.pixel));
+                row.insert(QStringLiteral("timelineDevice"), timeline.device);
+                row.insert(QStringLiteral("timelineVisible"), timeline.visible);
                 row.insert(QStringLiteral("timelineBarRect"),
-                           QJsonArray{timelineBarRect.x(), timelineBarRect.y(),
-                                      timelineBarRect.width(), timelineBarRect.height()});
-                row.insert(QStringLiteral("timelineBarSpanPixels"), timelineBarSpanPixels);
-                row.insert(QStringLiteral("timelineRunLongest"), timelineRunLongest);
-                row.insert(QStringLiteral("timelineRunStartOffset"), timelineRunStartOffset);
-                row.insert(QStringLiteral("timelinePlayedFraction"), playedFraction);
-                // Half the bar is played at the silent value, so a real segment
-                // covers well over a third of the span; the groove's margin is a
-                // few pixels, so the run starts inside the first tenth.
-                const int requiredRun = qMax(8, qRound(timelineBarSpanPixels * 0.3));
-                const int allowedOffset = qMax(4, qRound(timelineBarSpanPixels * 0.1));
+                           QJsonArray{timeline.barInShell.x(), timeline.barInShell.y(),
+                                      timeline.barInShell.width(), timeline.barInShell.height()});
+                row.insert(QStringLiteral("timelineBarOnSurface"),
+                           QJsonArray{timeline.barInSurface.x(), timeline.barInSurface.y(),
+                                      timeline.barInSurface.width(), timeline.barInSurface.height()});
+                row.insert(QStringLiteral("timelineSurfaceRect"),
+                           QJsonArray{timeline.surfaceRect.x(), timeline.surfaceRect.y(),
+                                      timeline.surfaceRect.width(), timeline.surfaceRect.height()});
+                row.insert(QStringLiteral("timelineFrameSize"),
+                           QJsonArray{timeline.frameSize.width(), timeline.frameSize.height()});
+                row.insert(QStringLiteral("timelineDpr"), timeline.dpr);
+                row.insert(QStringLiteral("timelineBarSpanPixels"), timeline.span);
+                row.insert(QStringLiteral("timelineRunLongest"), timeline.longestRun);
+                row.insert(QStringLiteral("timelineRunStartOffset"), timeline.startOffset);
+                row.insert(QStringLiteral("timelinePlayedFraction"), timeline.fraction);
+                if (!timeline.note.isEmpty()) row.insert(QStringLiteral("timelineNote"), timeline.note);
+                const int requiredRun = qMax(8, qRound(timeline.span * 0.3));
+                const int allowedOffset = qMax(4, qRound(timeline.span * 0.1));
                 check(QStringLiteral("%1/timeline-played-live").arg(variant),
-                      timelineRunLongest >= requiredRun &&
-                          timelineRunStartOffset >= 0 &&
-                          timelineRunStartOffset <= allowedOffset &&
-                          nearColor(timelinePixel, expected, 10),
-                      QStringLiteral("longest run %1 px of %2 (need %3), starts %4 px in "
-                                     "(allow %5), colour %6, chosen %7")
-                          .arg(timelineRunLongest)
-                          .arg(timelineBarSpanPixels)
+                      timeline.visible && timeline.longestRun >= requiredRun &&
+                          timeline.startOffset >= 0 && timeline.startOffset <= allowedOffset &&
+                          nearColor(timeline.pixel, expected, 10),
+                      QStringLiteral("on %1: visible %2, longest run %3 px of %4 (need %5), "
+                                     "starts %6 px in (allow %7), colour %8, chosen %9%10")
+                          .arg(timeline.device)
+                          .arg(timeline.visible)
+                          .arg(timeline.longestRun)
+                          .arg(timeline.span)
                           .arg(requiredRun)
-                          .arg(timelineRunStartOffset)
+                          .arg(timeline.startOffset)
                           .arg(allowedOffset)
-                          .arg(nameColor(timelinePixel))
-                          .arg(nameColor(expected)));
+                          .arg(nameColor(timeline.pixel))
+                          .arg(nameColor(expected))
+                          .arg(timeline.note.isEmpty() ? QString()
+                                                       : QStringLiteral(" - ") + timeline.note));
 
                 // Compare chrome, while the same window stays open across the
                 // sweep: seat A and the selector border carry the accent, seat B
@@ -1546,6 +1602,8 @@ private:
                                     {QStringLiteral("presentationOnly"), true},
                                     {QStringLiteral("syntheticState"), QStringLiteral("stage data only; no builder process, no engine")},
                                     {QStringLiteral("inferenceProven"), false}});
+                if (shell_ != nullptr) shell_->wake();
+                QTest::qWait(40);
                 capture(player_.get(), QStringLiteral("accent-%1-player").arg(variant),
                         QJsonObject{{QStringLiteral("surface"), QStringLiteral("player window and timeline")},
                                     {QStringLiteral("accent"), nameColor(expected)},
