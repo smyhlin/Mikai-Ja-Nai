@@ -7,7 +7,6 @@
 
 #include <QAbstractButton>
 #include <QApplication>
-#include <QFontMetrics>
 #include <QPalette>
 #include <QSizePolicy>
 #include <QStyle>
@@ -1366,19 +1365,16 @@ int equalizedWidth(std::span<QAbstractButton* const> buttons, int minimum) {
     qreal ratio = 1.0;
     for (QAbstractButton* button : buttons) {
         if (button == nullptr) continue;
-        // A stylesheet font reaches the widget only at polish, so measuring
-        // before it reads the ambient font and understates the row.
+        // A stylesheet font and box model reach the widget only at polish, so
+        // measuring before it reads the ambient font and understates the row.
         button->ensurePolished();
         ratio = button->devicePixelRatioF();
-        const QFontMetrics metrics(button->font());
-        int need = metrics.horizontalAdvance(button->text());
-        if (!button->icon().isNull()) {
-            need += button->iconSize().width() + kIconTextGap;
-        }
-        // The sheet's inset pair plus the 1 px boundary on each side; the wider
-        // pair covers a primary and a secondary in the same row.
-        need += 2 * (kControlInsetHPrimary + 1);
-        width = qMax(width, need);
+        // The hint is the width the style paints this control's label and icon
+        // at: it carries the role's inset pair, the icon box and the frame, and
+        // it rounds each of them for the device. Rebuilding that sum from the
+        // font advance alone lands up to a pixel under it, and the control that
+        // then paints widest in the row breaks the equality the row asked for.
+        width = qMax(width, button->sizeHint().width());
     }
     // Even in device pixels: the group shares one window, so the narrowest
     // logical width whose device width is even is the answer at 1.25 and 1.5
