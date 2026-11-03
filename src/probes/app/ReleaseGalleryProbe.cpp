@@ -19,6 +19,7 @@
 #include <QLocale>
 #include <QPainter>
 #include <QPlainTextEdit>
+#include <QPalette>
 #include <QPixmap>
 #include <QPointer>
 #include <QProgressBar>
@@ -57,6 +58,7 @@
 #include "workers/Runner.hpp"
 #include "CompareWindow.hpp"
 #include "MediaInformationDialog.hpp"
+#include "PipFloat.hpp"
 #include "PlayerDialog.hpp"
 #include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
@@ -69,6 +71,7 @@ using mikai::app::MainWindow;
 using mikai::app::theme::Appearance;
 using mplayer::shell::CompareWindow;
 using mplayer::shell::MediaInformationDialog;
+using mplayer::shell::PipFloat;
 using mplayer::shell::PlayerDialog;
 using mplayer::shell::PlayerShell;
 using mplayer::shell::ProcessingOverlay;
@@ -782,6 +785,7 @@ public:
         modalGuard.start(200);
         if (!buildSurfaces()) return finish(false);
         if (!sweepAccents()) return finish(false);
+        if (!sweepPip()) return finish(false);
         measureLanguages();
         return finish(failed_ == 0);
     }
@@ -887,7 +891,9 @@ private:
             return false;
         }
         extra.insert(QStringLiteral("file"), name + QStringLiteral(".png"));
-        extra.insert(QStringLiteral("sha256"), sha256(path));
+        // No per-capture digest: hashing a PNG on the GUI thread while the
+        // windows are live is a stall, and the artifacts can be hashed after
+        // the probe has shut down.
         extra.insert(QStringLiteral("widgetClass"),
                      QString::fromLatin1(widget->metaObject()->className()));
         extra.insert(QStringLiteral("widgetObjectName"), widget->objectName());
@@ -982,6 +988,17 @@ private:
         settings_ = std::make_unique<mikai::app::SettingsDialog>(offlineClient_, localRunner_);
         place(settings_.get(), kWidth, kHeight);
         settings_->show();
+        // The appearance page carries the accent chips - the one self-painted
+        // control a generic button box model can inflate. Measure the real chips
+        // at the window width and at the compact one before the benchmark page
+        // replaces them, then continue with the benchmark capture.
+        settings_->showPage(QStringLiteral("customization/appearance"));
+        QTest::qWait(180);
+        if (!measureAccentSwatches(QStringLiteral("wide"))) return false;
+        place(settings_.get(), 580, kHeight);
+        QTest::qWait(180);
+        if (!measureAccentSwatches(QStringLiteral("compact"))) return false;
+        place(settings_.get(), kWidth, kHeight);
         settings_->showPage(QStringLiteral("benchmark"));
         benchmarkProgress_ = settings_->findChild<QProgressBar*>(QStringLiteral("benchmarkProgress"));
         if (benchmarkProgress_ != nullptr) {
@@ -1053,6 +1070,20 @@ private:
         check(QStringLiteral("timeline-real"), scrub_ != nullptr && scrub_->isVisible(),
               QStringLiteral("the player exposes its scrub bar"));
 
+        // The chrome chips read the accent token through their own stylesheet.
+        chip_ = player_->findChild<QPushButton*>(QStringLiteral("playerSeriesToggle"));
+        check(QStringLiteral("player-chip-real"), chip_ != nullptr && chip_->isVisible(),
+              QStringLiteral("the player exposes its episode chip"));
+
+        // The media inspector is opened for the whole sweep: its selected-row
+        // palette has to follow the token while the window stays open.
+        player_->openMediaInformation();
+        mediaInfo_ = player_->findChild<MediaInformationDialog*>();
+        if (!waitFor([this] { return mediaInfo_ != nullptr && mediaInfo_->isVisible(); }, 6000,
+                     QStringLiteral("media-information-real"))) {
+            return false;
+        }
+
         // The real Compare window. It renders only the built-in shader
         // candidates; if the catalogue's selection would be an AI model, the
         // window is never shown and no engine is touched.
@@ -1089,6 +1120,47 @@ private:
         }
         dismissForeignModals();
         return true;
+    }
+
+    /// Every real accent chip on the appearance page, at whatever width the
+    /// settings dialog currently has: exactly one metric in both directions and
+    /// a closed minimum/maximum interval, so a stylesheet cannot inflate the
+    /// body past the caller's fixed size.
+    bool measureAccentSwatches(const QString& stage) {
+        const QList<QPushButton*> swatches =
+            settings_->findChildren<QPushButton*>(QStringLiteral("accentSwatch"));
+        const int size = mikai::app::theme::kSettingsSwatchSize;
+        int exact = 0;
+        QJsonArray rows;
+        for (QPushButton* swatch : swatches) {
+            const bool closed = swatch->minimumSize().width() <= swatch->maximumSize().width() &&
+                                swatch->minimumSize().height() <= swatch->maximumSize().height();
+            const bool fixed = swatch->width() == size && swatch->height() == size;
+            if (closed && fixed) ++exact;
+            rows.append(QJsonObject{
+                {QStringLiteral("size"), QJsonArray{swatch->width(), swatch->height()}},
+                {QStringLiteral("minimumSize"),
+                 QJsonArray{swatch->minimumSize().width(), swatch->minimumSize().height()}},
+                {QStringLiteral("maximumSize"),
+                 QJsonArray{swatch->maximumSize().width(), swatch->maximumSize().height()}},
+                {QStringLiteral("closedInterval"), closed},
+                {QStringLiteral("fullyVisible"),
+                 swatch->isVisible() && swatch->visibleRegion().contains(swatch->rect())}});
+        }
+        evidence_.insert(QStringLiteral("accentSwatches/") + stage, rows);
+        check(QStringLiteral("appearance-swatch/%1").arg(stage),
+              !swatches.isEmpty() && exact == swatches.size(),
+              QStringLiteral("%1 of %2 chips are exactly %3x%3 with a closed size interval")
+                  .arg(exact)
+                  .arg(swatches.size())
+                  .arg(size));
+        if (!swatches.isEmpty()) {
+            capture(swatches.first(), QStringLiteral("accent-swatch-%1").arg(stage),
+                    QJsonObject{{QStringLiteral("surface"), QStringLiteral("appearance accent chip")},
+                                {QStringLiteral("expectedSize"), size},
+                                {QStringLiteral("inferenceProven"), false}});
+        }
+        return !swatches.isEmpty() && exact == swatches.size();
     }
 
     QJsonObject widgetMetrics(QWidget* widget) const {
@@ -1244,6 +1316,43 @@ private:
                       QStringLiteral("painted %1, chosen %2 (window stayed open)")
                           .arg(nameColor(overlayPixel), nameColor(expected)));
 
+                // The media inspector has been open since before the first
+                // switch; its selection palette is the accent token.
+                if (mediaInfo_ != nullptr && mediaInfo_->isVisible()) {
+                    const QColor highlight = mediaInfo_->palette().color(QPalette::Highlight);
+                    row.insert(QStringLiteral("mediaInformationHighlight"), nameColor(highlight));
+                    check(QStringLiteral("%1/media-information-live").arg(variant),
+                          nearColor(highlight, expected, 4),
+                          QStringLiteral("palette highlight %1, chosen %2 (window stayed open)")
+                              .arg(nameColor(highlight), nameColor(expected)));
+                } else {
+                    check(QStringLiteral("%1/media-information-live").arg(variant), false,
+                          QStringLiteral("the media inspector is not open"));
+                }
+
+                // A chrome chip is neutral at rest and takes the accent on
+                // hover. The pointer cannot be parked on it, so the hover state
+                // is put on the widget immediately before it paints - the same
+                // resolution the paint event performs.
+                if (chip_ != nullptr) {
+                    chip_->setAttribute(Qt::WA_UnderMouse, true);
+                    chip_->style()->unpolish(chip_);
+                    chip_->style()->polish(chip_);
+                    const QColor border = pixelsOf(chip_).at(chip_->width() / 2, 0);
+                    row.insert(QStringLiteral("playerChipHover"), nameColor(border));
+                    row.insert(QStringLiteral("playerChipUnderMouse"), chip_->underMouse());
+                    check(QStringLiteral("%1/player-chip-live").arg(variant),
+                          chip_->underMouse() && nearColor(border, expected, 8) &&
+                              border.alpha() >= 120,
+                          QStringLiteral("hover border %1 a%2, chosen %3")
+                              .arg(nameColor(border))
+                              .arg(border.alpha())
+                              .arg(nameColor(expected)));
+                    chip_->setAttribute(Qt::WA_UnderMouse, false);
+                    chip_->style()->unpolish(chip_);
+                    chip_->style()->polish(chip_);
+                }
+
                 // The player timeline is painted into the real player window at
                 // the scrub bar's mapped position.
                 QColor timelinePixel;
@@ -1331,6 +1440,90 @@ private:
             {QStringLiteral("compare"), compare_ != nullptr && compare_->isVisible()},
             {QStringLiteral("preparationOverlay"), overlay_ != nullptr && overlay_->isVisible()},
             {QStringLiteral("player"), player_ != nullptr && player_->isVisible()}});
+        return true;
+    }
+
+    /// The picture-in-picture float, opened on its own and kept open across two
+    /// accent changes. It carries no stream: only the chrome it paints is
+    /// measured, so no second mpv core and no model is created (presentation
+    /// only). The player is closed first because two live QOpenGLWidgets on one
+    /// screen is the pattern the shipped player deliberately pools around.
+    bool sweepPip() {
+        if (player_ != nullptr) {
+            player_->close();
+            player_ = nullptr;
+            QTest::qWait(250);
+        }
+        auto float_ = std::make_unique<PipFloat>();
+        place(float_.get(), 520, 300);
+        float_->show();
+        QTest::qWait(220);
+        auto* scrub = float_->findChild<QSlider*>(QStringLiteral("pipScrub"));
+        if (scrub == nullptr) {
+            check(QStringLiteral("pip-timeline"), false,
+                  QStringLiteral("the float exposes no timeline slider"));
+            return false;
+        }
+        scrub->setRange(0, 100);
+        scrub->setValue(50);
+        float_->setTime(50.0, 100.0);
+        QTest::qWait(140);
+
+        // The played run starts at the groove's left edge and ends at the
+        // handle; at 50 percent its midpoint is a quarter of the span in.
+        const QRect groove = scrub->geometry();
+        const double span = std::max(1.0, static_cast<double>(groove.width()) - 12.0);
+        const double playedMid = groove.x() + (6.0 + 0.5 * span) / 2.0;
+        const int sampleY = groove.y() + groove.height() / 2;
+
+        struct Variant {
+            const char* stage;
+            const char* accent;
+        };
+        const QVector<Variant> variants = {{"default", "#bdacff"}, {"warm", "#f27bb0"}};
+        for (const Variant& variant : variants) {
+            Appearance appearance;
+            appearance.accent = QString::fromLatin1(variant.accent);
+            applyLook(appearance);
+            // The float repaints from accentNotifier(); the pointer move is the
+            // production reveal path for the chrome, not the colour source.
+            QTest::mouseMove(float_.get(), QPoint(float_->width() / 2, float_->height() / 2));
+            QTest::qWait(140);
+            const QImage frame = float_->videoSurface()->grabFramebuffer();
+            // Derive the ratio from the pixels themselves: the returned image's
+            // devicePixelRatio tells the same thing only when the platform sets
+            // it, and the framebuffer is always in device pixels.
+            const int surfaceWidth = float_->videoSurface()->width();
+            const qreal ratio =
+                surfaceWidth > 0 && frame.width() > 0
+                    ? static_cast<qreal>(frame.width()) / static_cast<qreal>(surfaceWidth)
+                    : 1.0;
+            const QPoint local = float_->videoSurface()->mapFrom(
+                float_.get(), QPoint(qRound(playedMid), sampleY));
+            const QColor pixel =
+                frame.pixelColor(qRound(local.x() * ratio), qRound(local.y() * ratio));
+            const QColor expected = mikai::app::theme::accentColor(appearance);
+            evidence_.insert(QStringLiteral("pipTimeline/") + QString::fromLatin1(variant.stage),
+                             QJsonObject{{QStringLiteral("playedPixel"), nameColor(pixel)},
+                                         {QStringLiteral("accent"), nameColor(expected)}});
+            check(QStringLiteral("pip-timeline-live/%1").arg(QString::fromLatin1(variant.stage)),
+                  !frame.isNull() && nearColor(pixel, expected, 8),
+                  QStringLiteral("played pixel %1, chosen %2 (the float stayed open)")
+                      .arg(nameColor(pixel), nameColor(expected)));
+            capture(float_.get(),
+                    QStringLiteral("accent-pip-%1").arg(QString::fromLatin1(variant.stage)),
+                    QJsonObject{
+                        {QStringLiteral("surface"),
+                         QStringLiteral("picture-in-picture float chrome")},
+                        {QStringLiteral("accent"), nameColor(expected)},
+                        {QStringLiteral("presentationOnly"), true},
+                        {QStringLiteral("syntheticState"),
+                         QStringLiteral("bare float: no stream and no second mpv core; only the painted timeline is measured")},
+                        {QStringLiteral("inferenceProven"), false}});
+        }
+        float_->hide();
+        // Leave the geometry pass on the shipped appearance.
+        applyLook(Appearance{});
         return true;
     }
 
@@ -1450,6 +1643,8 @@ private:
         overlayProgress_ = nullptr;
         overlay_.reset();
         compare_.reset();
+        mediaInfo_ = nullptr;
+        chip_ = nullptr;
         titleWatch_ = nullptr;
         titlePage_.reset();
         settings_.reset();
@@ -1530,6 +1725,8 @@ private:
     QPointer<PlayerShell> shell_;
     QPointer<mplayer::VideoSurface> surface_;
     QPointer<mplayer::shell::ScrubBar> scrub_;
+    QPointer<QPushButton> chip_;
+    QPointer<MediaInformationDialog> mediaInfo_;
     std::unique_ptr<CompareWindow> compare_;
     QJsonObject evidence_;
     QJsonArray checks_;
