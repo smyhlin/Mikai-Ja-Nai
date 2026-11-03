@@ -2324,7 +2324,7 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
             [&] { return !dialog->isMinimized() && dialog->isVisible(); }, 3000);
         if (!restored) {
             dialog->showNormal();
-            spinFor(200);
+            pumpFor(200);
             dialog->showFullScreen();
             restored = pumpUntil(
                 [&] { return !dialog->isMinimized() && dialog->isVisible(); }, 3000);
@@ -2490,6 +2490,11 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         8000);
     mplayer::VideoSurface* pipOwner = activePlaybackSurface(dialog, surface);
     pumpFor(400);
+    // The float's picture is an FBO crop, so its reference is an FBO crop of the
+    // same float: comparing it against the main window's desktop luma would mix
+    // crop kinds and regions and could fail a valid picture.
+    const double pipFboReference =
+        pipOwner != nullptr ? meanLuma(readComposedCrop(pipOwner)) : -1.0;
     const double pipPositionAtStart = pipOwner != nullptr ? pipOwner->position() : -1.0;
     // The float's own core starts at the main position and has to keep playing;
     // a fixed sleep would turn a slow first decode into a false "no motion".
@@ -2513,7 +2518,7 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         },
         2500);
     const bool pipAdvance = pipAdvanced && pipPositionAtEnd > pipPositionAtStart;
-    const bool pipPicturePresent = picturePresent(pipPicture, pipReferenceLuma);
+    const bool pipPicturePresent = picturePresent(pipPicture, pipFboReference);
     const bool pipVerified = pipSurfaceReady && pipOwner != nullptr && pipOwner != surface &&
                              pipPicturePresent && pipAdvance && mainSurfaceBack &&
                              pictureAfterPip && dialog->isFullScreen() &&
@@ -2557,7 +2562,8 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                        {"pipPictureBlack", pipPicture.isNull() ? QJsonValue(QStringLiteral("unmeasured"))
                                                               : QJsonValue(isBlack(pipPicture))},
                        {"pipPicturePresent", pipPicturePresent},
-                       {"pipReferenceLuma", pipReferenceLuma},
+                       {"pipFboReferenceLuma", pipFboReference},
+                       {"pipDesktopReferenceLuma", pipReferenceLuma},
                        {"pipPositionBeforeExit", pipPositionBefore},
                        {"mainSurfaceBack", mainSurfaceBack},
                        {"pictureAfterPip", pictureAfterPip},
@@ -2806,9 +2812,11 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
          "are counted by reason and never judged for black"},
         {"samplingCadenceScope",
          "pumped through the away/back helper as well: its fixed settles, its foreground "
-         "retries and its activation-latency poll all tick the same ~32 ms sampler, so the "
-         "monitored exposed window is represented continuously. The only window outside the "
-         "pump is the explicit pre-run calibration, which is not counted as monitored time"},
+         "retries and its activation-latency poll all tick the same ~32 ms sampler, and the "
+         "minimize-restore fallback spin does too. The monitored window is NOT represented "
+         "without gaps: the pre-run calibration, the separate-process peer warm-up and the "
+         "post-action foreground-retry spins are outside the pump and are named in "
+         "unsampledWindows"},
         {"samplingCadenceGroups", QJsonArray{QStringLiteral("chrome"),
                                              QStringLiteral("seams"),
                                              QStringLiteral("minimize"),
@@ -2817,6 +2825,7 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                                              QStringLiteral("idle")}},
         {"unsampledWindows",
          QJsonArray{QStringLiteral("pre-run-calibration"),
+                    QStringLiteral("peer-warmup"),
                     QStringLiteral("post-action-foreground-retry-spins")}},
         {"samplingLatencyNote",
          "inside the away/back poll the sampler tick sets the poll granularity (~32 ms "
