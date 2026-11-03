@@ -2045,7 +2045,14 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         sampler.tick(runClock.elapsed());
         maybeSummary();
         const qint64 spent = cadence.elapsed();
-        if (spent < 32) spinFor(static_cast<int>(32 - spent));
+        if (spent < 32) {
+            spinFor(static_cast<int>(32 - spent));
+        } else {
+            // A slow grab already spent the cadence. Not returning to the loop
+            // here stacks those grabs into one heartbeat gap, which is the
+            // probe's own backlog rather than an application stall.
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
+        }
     };
     const auto pumpFor = [&](int milliseconds) {
         QElapsedTimer slice;
