@@ -366,6 +366,8 @@ void VideoSurface::ensureEngine() {
     }
     // The default belongs to the core that answered it, and this is a new one.
     downscaleDefault_.reset();
+    downscaleDefaultError_.reset();
+    downscaleWasExplicit_ = false;
     mpv_ = std::make_unique<MpvHandle>(options);
     mpvApiVersion_ = MpvHandle::apiVersion();
     applyHdrPolicyToEngine();
@@ -3072,17 +3074,22 @@ void VideoSurface::setVideoScaleMode(VideoScaleMode mode) {
 
 int VideoSurface::videoScalePolicyRevision() { return g_videoScalePolicyRevision; }
 
-std::string VideoSurface::downscaleDefaultForCore() {
-    if (downscaleDefault_.has_value()) return *downscaleDefault_;
-    if (mpv_ == nullptr) return {};
+std::optional<std::string> VideoSurface::downscaleDefaultForCore() {
+    if (downscaleDefault_.has_value()) return downscaleDefault_;
+    // A failure is remembered: a second read cannot succeed where the first
+    // failed, and the pump must never take the core lock to find that out.
+    if (downscaleDefaultError_.has_value()) return std::nullopt;
+    if (mpv_ == nullptr) {
+        downscaleDefaultError_ = std::string("the core is not initialized");
+        return std::nullopt;
+    }
     try {
         downscaleDefault_ = mpv_->getString("option-info/dscale/default-value");
-    } catch (const MpvError&) {
-        // Nothing cached: Auto then leaves mpv's own default untouched, which is
-        // what Auto means. A guessed id is the one thing it must not become.
-        return {};
+    } catch (const MpvError& error) {
+        downscaleDefaultError_ = error.what();
+        return std::nullopt;
     }
-    return *downscaleDefault_;
+    return downscaleDefault_;
 }
 
 void VideoSurface::applyVideoScaleToEngine(bool queryCoreDefault) {
@@ -3095,24 +3102,51 @@ void VideoSurface::applyVideoScaleToEngine(bool queryCoreDefault) {
         policy.mode = VideoScaleMode::Fit;
         policy.zoomPercent = 0;
     }
-    // Without a query the cached answer is all there is; an empty one leaves
-    // Auto as mpv's own value instead of blocking the pump on the core lock.
+    // The core's own default is read once, at creation and whatever the saved
+    // policy says, so a later switch back to Auto can restore a real id. Only
+    // creation may take the core lock for that read; the pump uses the cache.
     std::string downscaleDefault;
-    if (policy.downscale.isEmpty()) {
-        if (queryCoreDefault) {
-            downscaleDefault = downscaleDefaultForCore();
-        } else if (downscaleDefault_.has_value()) {
-            downscaleDefault = *downscaleDefault_;
+    if (queryCoreDefault) {
+        if (const auto resolved = downscaleDefaultForCore(); resolved.has_value()) {
+            downscaleDefault = *resolved;
         }
+    } else if (downscaleDefault_.has_value()) {
+        downscaleDefault = *downscaleDefault_;
+    }
+    if (policy.downscale.isEmpty() && downscaleDefault.empty() && downscaleWasExplicit_) {
+        // The engine still holds the explicit id this surface wrote and its real
+        // default is unreadable: no id may be guessed and the literal "auto" is
+        // refused, so the failure is named instead of leaving the substitute in
+        // place unspoken.
+        emit displayScalingRefused(
+            tr("dscale: the core's default downscaler could not be read (%1). The previous "
+               "downscaler stays in effect; choose one explicitly or reopen the player.")
+                .arg(QString::fromStdString(
+                    downscaleDefaultError_.value_or("no default value reported"))));
     }
     for (const VideoScaleOption& option : videoScaleOptions(policy, downscaleDefault)) {
-        // Reported rather than tolerated: a runtime that refuses an option must
-        // name it, because silently keeping the previous value is a substituted
-        // mode the viewer never chose.
-        issueCoreCommand({"set", option.name, option.value}, option.name.c_str(),
-                         /*reportRefusal=*/true);
+        // Issued here rather than through issueCoreCommand: that helper reports a
+        // refusal through errorOccurred, which the player treats as a failed
+        // source and answers with a re-extraction. A scaler id the runtime does
+        // not know must name itself without claiming the stream failed.
+        const std::string name = option.name;
+        mpv_->commandAsync({"set", name, option.value}, [this, name](const AsyncReply& reply) {
+            if (mpv_ == nullptr || reply.ok()) return;
+            const QString reason = QString::fromStdString(mpv_->describeError(reply.error));
+            qWarning("VideoSurface: %s refused (%s)", name.c_str(), qUtf8Printable(reason));
+            emit displayScalingRefused(
+                tr("%1: %2").arg(QString::fromStdString(name), reason));
+        });
     }
-    emit videoScaleApplied();
+    // What the engine now holds, not what was asked for: an explicit id written
+    // here, a restored default, or - when Auto could not be produced - whatever
+    // was there before, which stays named as explicit.
+    if (!policy.downscale.isEmpty()) {
+        downscaleWasExplicit_ = true;
+    } else if (!downscaleDefault.empty()) {
+        downscaleWasExplicit_ = false;
+    }
+    emit videoScaleStateChanged();
 }
 
 std::optional<VideoScaleFitLock> VideoSurface::acquireVideoScaleFitLock() {

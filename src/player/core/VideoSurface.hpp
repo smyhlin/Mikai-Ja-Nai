@@ -665,11 +665,19 @@ signals:
     void videoMetadataChanged(const mplayer::VideoSurface::VideoMetadata& metadata);
     /// Notice emitted when a shader chain is gated by source transfer metadata.
     void anime4kGated(const QString& notice);
-    /// The display scaling this surface's engine now holds changed - a new
-    /// policy revision was adopted, or a Compare fit hold started/ended. The
-    /// picture area a Fill or Stretch mode needs is the layout's business, so
-    /// the shell re-runs it from here rather than polling the policy.
-    void videoScaleApplied();
+    /// The surface's display scaling state changed: a new policy revision was
+    /// adopted, or a Compare fit hold started/ended. It is not a success claim -
+    /// an option the core refused is named through errorOccurred, and a refused
+    /// downscale can leave the engine's previous value in place. The picture area
+    /// a Fill or Stretch mode needs is the layout's business, so the shell
+    /// re-runs it from here rather than polling the policy.
+    void videoScaleStateChanged();
+    /// A display-scaling request the core did not take - a refused scaler id, or
+    /// an Auto downscale whose default could not be read. Deliberately NOT
+    /// errorOccurred: that path marks the source as failed and re-extracts the
+    /// stream, and a display option is not a media failure. The message is the
+    /// viewer's copy for a banner or a toast.
+    void displayScalingRefused(const QString& reason);
     /// A seek intent can precede, or never change, the observed position.
     /// Carries no target: the request may have been absolute or relative, and a
     /// consumer's only safe reading is that a captured frame is now stale.
@@ -1160,8 +1168,9 @@ private:
     /// read and must never happen from the state pump.
     void applyVideoScaleToEngine(bool queryCoreDefault = false);
     /// The core's own dscale default, queried once the core is initialized: an
-    /// Auto downscale must restore a real id, and "auto" is refused.
-    std::string downscaleDefaultForCore();
+    /// Auto downscale must restore a real id, and "auto" is refused. Empty when
+    /// the read failed; the reason is kept so a live mode change can name it.
+    std::optional<std::string> downscaleDefaultForCore();
 
     // Held so the render context can be freed with it current at teardown.
     QOpenGLContext* context_ = nullptr;
@@ -1474,9 +1483,13 @@ private:
     int appliedAnimeJanaiOverrideRevision_ = 0;
     friend class VideoScaleFitLock;
     int appliedVideoScaleRevision_ = 0;
-    /// Empty until the core answered; a core that never answers leaves Auto as
-    /// "mpv keeps its own default", which is what Auto means anyway.
+    /// Empty until the core answered; a failed read is kept so a live mode change
+    /// names that failure instead of blocking the pump on the core lock.
     std::optional<std::string> downscaleDefault_;
+    std::optional<std::string> downscaleDefaultError_;
+    /// Whether this surface has written an explicit dscale to the engine. Only
+    /// then can an Auto request leave a wrong value behind.
+    bool downscaleWasExplicit_ = false;
     bool compareFitActive_ = false;
     SourceColorProfile sourceColorProfile_;
     VideoMetadata videoMetadata_;

@@ -547,8 +547,14 @@ void PlayerShell::buildSurface() {
     connect(surface_, &QOpenGLWidget::frameSwapped, this, &PlayerShell::schedulePreviewPrewarm);
     // Fill and Stretch need the whole picture area, so the canvas is a function
     // of the adopted display policy: the surface applies it on its pump and the
-    // shell re-lays out from that, never from a poll of its own.
-    connect(surface_, &VideoSurface::videoScaleApplied, this, [this] { layoutChrome(); });
+    // shell re-lays out from that, never from a poll of its own. A refused
+    // option is named by the surface's own error path, not by this signal.
+    connect(surface_, &VideoSurface::videoScaleStateChanged, this, [this] { layoutChrome(); });
+    // A display option the core refused is shown, never swallowed: the stream is
+    // fine, so it must not reach the engine-error path that retries the source.
+    connect(surface_, &VideoSurface::displayScalingRefused, this, [this](const QString& reason) {
+        if (toast_ != nullptr) toast_->flash(reason);
+    });
 }
 
 void PlayerShell::notePreviewActivity() {
