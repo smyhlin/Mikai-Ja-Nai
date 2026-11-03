@@ -131,9 +131,11 @@ public:
     /// the part of the window the other cannot.
     ///
     /// Each control is rasterised into its own device-pixel pixmap and reused
-    /// until its own state changes. Painting them straight into the GL device
-    /// re-rasterised every glyph and stroked button on every video frame, and
-    /// the GL paint engine has no multisampling - which is why the overlay
+    /// until its own state changes; a changed control is re-rendered into the
+    /// pixmap it already owns while its device size holds, so a state change is
+    /// a repaint and not an allocation. Painting them straight into the GL
+    /// device re-rasterised every glyph and stroked button on every video frame,
+    /// and the GL paint engine has no multisampling - which is why the overlay
     /// glyphs were the jagged ones. One image per control, not one for the
     /// union of their rects: the chrome sits in the corners of a 4K window, and
     /// a union-sized buffer would be a full-frame allocation per paint.
@@ -142,13 +144,14 @@ public:
     /// is then a single drawPixmap with no state change of its own.
     void paint(QPainter& painter, QWidget* root, const QRect& clip);
 
-    /// Drops one control's cached pixels: its own state changed. Returns the box
-    /// it was last blitted into, in `root` coordinates (empty if it was never
+    /// Marks one control's cached pixels stale: its own state changed, and the
+    /// next paint renders it again into the buffer it already holds. Returns the
+    /// box it was last blitted into, in `root` coordinates (empty if it was never
     /// painted), because an adopted control is translucent and Qt does not
     /// repaint the area one vacates - the host has to ask for those pixels.
     QRect invalidate(const QWidget* widget);
-    /// Drops every cached control: a font, palette, language, accent or
-    /// device-pixel-ratio change can alter any of them.
+    /// Marks every cached control stale: a font, palette, language, accent or
+    /// device-pixel-ratio change can alter any of them. Buffers are kept.
     void invalidateAll();
 
 private:
@@ -163,7 +166,9 @@ private:
     };
 
     void addSubtree(QWidget* root, QObject* watcher);
+    /// Frees one control's buffer: it is gone, or it is over the budget.
     void dropCache(Entry& entry);
+    void markStale(Entry& entry);
 
     QVector<Entry> entries_;
     /// Bumped by invalidateAll(), so every entry is stale without walking them.

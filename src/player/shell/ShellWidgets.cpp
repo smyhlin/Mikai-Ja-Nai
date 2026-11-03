@@ -265,14 +265,20 @@ void chromeRepaintEvent(ChromeHost* host, QObject* watched, QEvent* event) {
 }
 
 void ChromeList::dropCache(Entry& entry) {
-    if (!entry.valid) {
+    entry.valid = false;
+    entry.stamp = 0;
+    if (entry.cache.isNull()) {
         return;
     }
     cachedBytes_ -= qint64(entry.cache.width()) * qint64(entry.cache.height()) * 4;
     entry.cache = QPixmap();
-    entry.valid = false;
-    entry.stamp = 0;
     mikai::gui::uiprofile::noteChromeCacheHeld(cachedBytes_);
+}
+
+void ChromeList::markStale(Entry& entry) {
+    // The buffer stays: a control whose own state changed is a repaint, and the
+    // next paint renders it into the pixmap this entry already owns.
+    entry.valid = false;
 }
 
 QRect ChromeList::invalidate(const QWidget* widget) {
@@ -282,14 +288,15 @@ QRect ChromeList::invalidate(const QWidget* widget) {
         // The box is paint history, not cache validity: a control painted
         // directly (budget fallback) still leaves pixels behind when it moves.
         vacated = entry.box;
-        dropCache(entry);
+        markStale(entry);
     }
     return vacated;
 }
 
 void ChromeList::invalidateAll() {
+    // Every control keeps its buffer and its box; the new generation is what
+    // says that none of those pixels may be reused.
     ++generation_;
-    for (Entry& entry : entries_) dropCache(entry);
 }
 
 void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
@@ -364,15 +371,26 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
             const QSize deviceSize(static_cast<int>(std::ceil(box.width() * ratio)),
                                    static_cast<int>(std::ceil(box.height() * ratio)));
             const qint64 bytes = qint64(deviceSize.width()) * deviceSize.height() * 4;
-            const qint64 held = entry.valid ? qint64(entry.cache.width()) *
-                                                  qint64(entry.cache.height()) * 4
-                                            : 0;
+            // What this entry already holds, valid or merely stale: a stale
+            // buffer is still memory the budget accounts for.
+            const qint64 held = entry.cache.isNull()
+                                    ? 0
+                                    : qint64(entry.cache.width()) *
+                                          qint64(entry.cache.height()) * 4;
             if (!deviceSize.isEmpty() && cachedBytes_ - held + bytes <= kChromeCacheBudgetBytes) {
-                QPixmap buffer(deviceSize);
-                buffer.setDevicePixelRatio(ratio);
-                buffer.fill(Qt::transparent);
+                // A dirty entry is a repaint, not an eviction: render into the
+                // pixmap it already owns when the device size is unchanged, so a
+                // state change is not a fresh device-pixel allocation per miss.
+                // QPainter detaches it, so the key still changes: no stale blit.
+                if (held != bytes) {
+                    dropCache(entry);
+                    entry.cache = QPixmap(deviceSize);
+                    cachedBytes_ += bytes;
+                }
+                entry.cache.setDevicePixelRatio(ratio);
+                entry.cache.fill(Qt::transparent);
                 {
-                    QPainter cachePainter(&buffer);
+                    QPainter cachePainter(&entry.cache);
                     // Raster coverage is the antialiasing the GL device lacks.
                     cachePainter.setRenderHint(QPainter::Antialiasing, true);
                     cachePainter.setRenderHint(QPainter::TextAntialiasing, true);
@@ -390,10 +408,10 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                 if (counted) {
                     mikai::gui::uiprofile::noteChromeCacheMiss(missReason);
                 }
-                cachedBytes_ += bytes - held;
+                // The buffer's bytes are accounted where it is allocated or
+                // reused above, so a reused buffer adds nothing here.
                 mikai::gui::uiprofile::noteChromeCacheRender();
                 mikai::gui::uiprofile::noteChromeCacheHeld(cachedBytes_);
-                entry.cache = buffer;
                 entry.box = box;
                 entry.devicePixelRatio = ratio;
                 entry.stamp = generation_;
