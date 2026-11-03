@@ -49,6 +49,8 @@
 #include "pages/SearchPage.hpp"
 #include "pages/TitlePage.hpp"
 #include "state/AppearanceStore.hpp"
+#include "state/QualityCache.hpp"
+#include "theme/Metrics.hpp"
 #include "theme/Theme.hpp"
 #include "widgets/PageGlow.hpp"
 #include "widgets/TitleCard.hpp"
