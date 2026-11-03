@@ -800,6 +800,15 @@ struct NativeWindowIdentity {
     bool windowAlive = false;
     bool topmost = false;
     bool observable = false;
+    /// A native child cannot carry WS_EX_TOPMOST, so its band never follows a pin.
+    bool nativeChild = false;
+    /// The owner's band matters: Windows keeps an owned window above its owner,
+    /// so a topmost owner dominates the stack even when this window is not
+    /// topmost.
+    quintptr ownerWindowId = 0;
+    bool ownerAlive = false;
+    bool ownerTopmost = false;
+    QString ownerClass;
 };
 
 NativeWindowIdentity nativeWindowIdentity(QWidget* widget) {
@@ -811,8 +820,22 @@ NativeWindowIdentity nativeWindowIdentity(QWidget* widget) {
     const HWND hwnd = reinterpret_cast<HWND>(wid);
     identity.observable = hwnd != nullptr;
     identity.windowAlive = hwnd != nullptr && IsWindow(hwnd) != FALSE;
-    identity.topmost = identity.windowAlive &&
-                       (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
+    if (identity.windowAlive) {
+        identity.topmost = (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
+        identity.nativeChild = (GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_CHILD) != 0;
+        const HWND owner = GetWindow(hwnd, GW_OWNER);
+        identity.ownerWindowId = reinterpret_cast<quintptr>(owner);
+        identity.ownerAlive = owner != nullptr && IsWindow(owner) != FALSE;
+        identity.ownerTopmost =
+            identity.ownerAlive && (GetWindowLongPtrW(owner, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
+        if (identity.ownerAlive) {
+            wchar_t name[128] = {};
+            const int length = GetClassNameW(owner, name, int(sizeof(name) / sizeof(name[0])));
+            if (length > 0) {
+                identity.ownerClass = QString::fromWCharArray(name, length);
+            }
+        }
+    }
 #endif
     return identity;
 }
@@ -828,6 +851,11 @@ struct PinContinuitySample {
     quintptr playerWindowId = 0;
     bool topmost = false;
     bool topmostObservable = false;
+    bool nativeChild = false;
+    quintptr ownerWindowId = 0;
+    bool ownerAlive = false;
+    bool ownerTopmost = false;
+    QString ownerClass;
     quint64 contextGeneration = 0;
     quint64 sourceEpoch = 0;
     bool pinned = false;
@@ -1400,6 +1428,11 @@ int main(int argc, char** argv) {
             sample.playerAlive = playerIdentity.windowAlive;
             sample.topmost = compareIdentity.topmost;
             sample.topmostObservable = compareIdentity.observable;
+            sample.nativeChild = compareIdentity.nativeChild;
+            sample.ownerWindowId = compareIdentity.ownerWindowId;
+            sample.ownerAlive = compareIdentity.ownerAlive;
+            sample.ownerTopmost = compareIdentity.ownerTopmost;
+            sample.ownerClass = compareIdentity.ownerClass;
             sample.contextGeneration = surface->renderContextGeneration();
             sample.sourceEpoch = surface->sourceEpoch();
             sample.pinned = compare->isPinned();
@@ -1450,6 +1483,7 @@ int main(int argc, char** argv) {
             bool paneLit = true;
             bool playerLit = true;
             bool bandHonest = true;
+            QString bandBreak;
             quint64 recreated = 0;
             quint64 contextResets = 0;
             for (const PinContinuitySample& sample : pinSamples) {
@@ -1476,12 +1510,38 @@ int main(int argc, char** argv) {
                                  static_cast<unsigned long long>(base.contextGeneration));
                 }
                 epochStable &= sample.sourceEpoch == base.sourceEpoch;
-                if (sample.pinned != sample.expectedPinned ||
-                    sample.fullscreen != base.fullscreen) {
+                std::fprintf(stderr,
+                             "DIAG pin-continuity %s %s: pin=%d exp=%d topmost=%d "
+                             "fullscreen=%d child=%d owner=%llu ownerAlive=%d "
+                             "ownerTopmost=%d ownerClass=%s\n",
+                             label, sample.phase, sample.pinned ? 1 : 0,
+                             sample.expectedPinned ? 1 : 0, sample.topmost ? 1 : 0,
+                             sample.fullscreen ? 1 : 0, sample.nativeChild ? 1 : 0,
+                             static_cast<unsigned long long>(sample.ownerWindowId),
+                             sample.ownerAlive ? 1 : 0, sample.ownerTopmost ? 1 : 0,
+                             qPrintable(sample.ownerClass.isEmpty()
+                                            ? QStringLiteral("(none)")
+                                            : sample.ownerClass));
+                const bool bandMismatch =
+                    sample.pinned != sample.expectedPinned ||
+                    sample.fullscreen != base.fullscreen ||
+                    (sample.topmostObservable &&
+                     sample.topmost != sample.expectedPinned);
+                if (bandMismatch) {
+                    if (bandHonest) {
+                        bandBreak =
+                            QStringLiteral("%1 pin=%2 exp=%3 topmost=%4 fullscreen=%5 "
+                                           "baseFullscreen=%6 child=%7 ownerTopmost=%8")
+                                .arg(QString::fromLatin1(sample.phase))
+                                .arg(sample.pinned ? 1 : 0)
+                                .arg(sample.expectedPinned ? 1 : 0)
+                                .arg(sample.topmost ? 1 : 0)
+                                .arg(sample.fullscreen ? 1 : 0)
+                                .arg(base.fullscreen ? 1 : 0)
+                                .arg(sample.nativeChild ? 1 : 0)
+                                .arg(sample.ownerTopmost ? 1 : 0);
+                    }
                     bandHonest = false;
-                }
-                if (sample.topmostObservable) {
-                    bandHonest &= sample.topmost == sample.expectedPinned;
                 }
                 holdStable &= sample.held && !sample.playing &&
                               sample.frozenFrame == base.frozenFrame &&
@@ -1533,9 +1593,11 @@ int main(int argc, char** argv) {
                                             "the pin never resets the player's render context")));
             check(epochStable,
                   qPrintable(prefix + QStringLiteral("the pin never replaces the source epoch")));
-            check(bandHonest,
-                  qPrintable(prefix + QStringLiteral(
-                                            "native topmost band, pin and fullscreen state agree")));
+            const QString bandMessage =
+                bandHonest
+                    ? QStringLiteral("native topmost band, pin and fullscreen state agree")
+                    : QStringLiteral("native topmost band/pin/fullscreen disagree: ") + bandBreak;
+            check(bandHonest, qPrintable(prefix + bandMessage));
             check(holdStable,
                   qPrintable(prefix + QStringLiteral(
                                             "the held frame, timestamp and pause survive every toggle")));
