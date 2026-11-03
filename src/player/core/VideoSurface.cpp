@@ -2034,10 +2034,20 @@ void VideoSurface::paintGL() {
     if (!renderFormatProbed_) probeFboColorDepth();
 
     int renderResult = 0;
+    // A pass is three costs, and a class p95 that cannot name them blames the
+    // wrong one: mpv's render, the retained/teardown picture, and the chrome.
+    const bool phaseTimed = mikai::gui::uiprofile::countersEnabled();
+    qint64 retentionMicros = 0;
+    qint64 engineMicros = 0;
+    qint64 phaseMark = phaseTimed ? mikai::gui::uiprofile::nowNs() : 0;
     // Named so the pass classification below can say whether the picture on
     // screen came from the held snapshot or from mpv's current output.
     const bool heldPictureDrawn =
         retainedPictureVisible && drawEngineFrameHold(target, targetWidth, targetHeight);
+    if (phaseTimed) {
+        retentionMicros += (mikai::gui::uiprofile::nowNs() - phaseMark) / 1000;
+        phaseMark = mikai::gui::uiprofile::nowNs();
+    }
     if (heldPictureDrawn) {
         if (newOutputFrame) {
             renderResult = render_->skipRendering();
@@ -2047,6 +2057,9 @@ void VideoSurface::paintGL() {
         renderResult = render_->render(static_cast<int>(target), targetWidth, targetHeight,
                                        renderInternalFormat_, renderDepthBitsPerChannel_);
         presentedFrame = haveFrame;
+    }
+    if (phaseTimed) {
+        engineMicros += (mikai::gui::uiprofile::nowNs() - phaseMark) / 1000;
     }
     if (QOpenGLExtraFunctions* extra = glContext->extraFunctions()) {
         extra->glBindVertexArray(0);
@@ -2163,7 +2176,10 @@ void VideoSurface::paintGL() {
 
     // No self-update here: mpv's own update callback is what asks for the next
     // paint, so scheduling one from paintGL would only spin on a paused core.
+    qint64 overlayMicros = 0;
+    phaseMark = phaseTimed ? mikai::gui::uiprofile::nowNs() : 0;
     if (!overlaySuppressed_) emit paintOverlay(&painter);
+    if (phaseTimed) overlayMicros = (mikai::gui::uiprofile::nowNs() - phaseMark) / 1000;
     if (profilePaint) {
         // What this pass cost, classified by what it actually put on screen: the
         // chrome-repaint p95 GOAL-F needs is the pattern below, not a mean.
@@ -2172,8 +2188,14 @@ void VideoSurface::paintGL() {
                              : (renderResult == 0 && presentedFrame && newOutputFrame)
                                    ? mikai::gui::uiprofile::kPaintVideoFrame
                                    : mikai::gui::uiprofile::kPaintChromeOnly;
-        mikai::gui::uiprofile::recordPaintPass(
-            pass, (mikai::gui::uiprofile::nowNs() - profilePaintStartNs) / 1000);
+        const qint64 totalMicros =
+            (mikai::gui::uiprofile::nowNs() - profilePaintStartNs) / 1000;
+        mikai::gui::uiprofile::recordPaintPass(pass, totalMicros);
+        mikai::gui::uiprofile::notePaintPhase(
+            0, engineMicros,
+            totalMicros - engineMicros - retentionMicros - overlayMicros);
+        mikai::gui::uiprofile::notePaintPhase(1, retentionMicros, 0);
+        mikai::gui::uiprofile::notePaintPhase(2, overlayMicros, 0);
     }
     if (mikai::gui::uiprofile::enabled()) {
         const qint64 elapsedUs =

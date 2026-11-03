@@ -122,6 +122,15 @@ inline std::atomic<quint64> g_chromeCacheMissGeometry{0};
 inline std::atomic<quint64> g_chromeCacheMissRatio{0};
 inline std::atomic<quint64> g_chromeCacheMissGeneration{0};
 inline std::atomic<quint64> g_chromeCacheMissBudget{0};
+/// A paintGL pass is one number in the paint-pass ring, but it is three different
+/// costs: mpv's render into the target, the held-picture or teardown-picture
+/// blit, and the chrome overlay. Blaming one of them for a class p95 without
+/// splitting them is how a cache gets accused of a copy. Phases are
+/// kPaintPhaseEngine, kPaintPhaseRetention, kPaintPhaseOverlay.
+inline std::atomic<quint64> g_paintPhaseEngineMicros{0};
+inline std::atomic<quint64> g_paintPhaseRetentionMicros{0};
+inline std::atomic<quint64> g_paintPhaseOverlayMicros{0};
+inline std::atomic<quint64> g_paintPhaseMargins{0};
 /// Occupancy of the ChromeList that published LAST, not a process total. Each
 /// list has its own 8 MiB budget, and the shipping player plus the pooled float
 /// can both hold a cache at once (up to 16 MiB), so this is one list's number and
@@ -170,6 +179,24 @@ inline void noteRenderTargetFormatReset() {
 inline void noteChromeCacheRender() {
     if (!countersEnabled()) return;
     g_chromeCacheRenders.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline void notePaintPhase(int phase, qint64 micros, qint64 marginMicros) {
+    if (!countersEnabled()) return;
+    const quint64 value = static_cast<quint64>(std::max<qint64>(micros, 0));
+    switch (phase) {
+        case 0:
+            g_paintPhaseEngineMicros.fetch_add(value, std::memory_order_relaxed);
+            break;
+        case 1:
+            g_paintPhaseRetentionMicros.fetch_add(value, std::memory_order_relaxed);
+            break;
+        default:
+            g_paintPhaseOverlayMicros.fetch_add(value, std::memory_order_relaxed);
+            break;
+    }
+    g_paintPhaseMargins.fetch_add(static_cast<quint64>(std::max<qint64>(marginMicros, 0)),
+                                  std::memory_order_relaxed);
 }
 
 inline void noteChromeCacheBlit(qint64 micros) {
@@ -348,6 +375,10 @@ struct Snapshot {
     quint64 chromeCacheMissRatio = 0;
     quint64 chromeCacheMissGeneration = 0;
     quint64 chromeCacheMissBudget = 0;
+    quint64 paintPhaseEngineMicros = 0;
+    quint64 paintPhaseRetentionMicros = 0;
+    quint64 paintPhaseOverlayMicros = 0;
+    quint64 paintPhaseMargins = 0;
     quint64 awayStackingStops = 0;
     quint64 raiseRetriesAborted = 0;
     quint64 teardownPicturesCaptured = 0;
@@ -381,6 +412,10 @@ inline Snapshot snapshot() {
     out.chromeCacheMissRatio = g_chromeCacheMissRatio.load(std::memory_order_relaxed);
     out.chromeCacheMissGeneration = g_chromeCacheMissGeneration.load(std::memory_order_relaxed);
     out.chromeCacheMissBudget = g_chromeCacheMissBudget.load(std::memory_order_relaxed);
+    out.paintPhaseEngineMicros = g_paintPhaseEngineMicros.load(std::memory_order_relaxed);
+    out.paintPhaseRetentionMicros = g_paintPhaseRetentionMicros.load(std::memory_order_relaxed);
+    out.paintPhaseOverlayMicros = g_paintPhaseOverlayMicros.load(std::memory_order_relaxed);
+    out.paintPhaseMargins = g_paintPhaseMargins.load(std::memory_order_relaxed);
     out.awayStackingStops = g_awayStackingStops.load(std::memory_order_relaxed);
     out.raiseRetriesAborted = g_raiseRetriesAborted.load(std::memory_order_relaxed);
     out.teardownPicturesCaptured = g_teardownPicturesCaptured.load(std::memory_order_relaxed);
@@ -413,6 +448,10 @@ inline void resetCounters() {
     g_chromeCacheMissRatio.store(0, std::memory_order_relaxed);
     g_chromeCacheMissGeneration.store(0, std::memory_order_relaxed);
     g_chromeCacheMissBudget.store(0, std::memory_order_relaxed);
+    g_paintPhaseEngineMicros.store(0, std::memory_order_relaxed);
+    g_paintPhaseRetentionMicros.store(0, std::memory_order_relaxed);
+    g_paintPhaseOverlayMicros.store(0, std::memory_order_relaxed);
+    g_paintPhaseMargins.store(0, std::memory_order_relaxed);
     g_awayStackingStops.store(0, std::memory_order_relaxed);
     g_raiseRetriesAborted.store(0, std::memory_order_relaxed);
     g_teardownPicturesCaptured.store(0, std::memory_order_relaxed);
