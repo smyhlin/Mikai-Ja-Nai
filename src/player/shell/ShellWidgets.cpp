@@ -261,8 +261,8 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) cons
         ++painted;
     }
     if (timer.measured()) {
-        // No cache exists until T-E7; a hit/miss number would be invented.
-        mikai::gui::uiprofile::noteChromePaint(painted, timer.micros());
+        // No cache exists until T-E7, so the cached count is the truthful zero.
+        mikai::gui::uiprofile::noteChromePaint(painted, 0, timer.micros());
         if (mikai::gui::uiprofile::enabled()) {
             mikai::gui::uiprofile::log(
                 "chrome.list.paint",
