@@ -73,7 +73,15 @@ mikai_add_probe(hdr_playback_probe src/probes/player/HdrPlaybackProbe.cpp
   GUI_EXECUTABLE DEPLOY_SHADERS)
 mikai_add_probe(animejanai_probe src/probes/player/AnimeJanaiProbe.cpp
   LINKS mikai_player Qt6::Widgets Qt6::Test
+  EXTRA_SOURCES src/probes/shared/ForegroundPeer.cpp
   DEPLOY_SHADERS)
+if(TARGET mikai_app)
+  # --focus-during-build measures the shipping raise policy's AttachThreadInput
+  # calls during the real engine build, exactly as fullscreen_stability_probe
+  # does for its focus mode; without it the counter would be structurally zero.
+  target_link_libraries(animejanai_probe PRIVATE mikai_app)
+  target_compile_definitions(animejanai_probe PRIVATE MIKAI_PROBE_HAS_APP=1)
+endif()
 mikai_add_probe(headless_pixel_probe src/probes/player/HeadlessPixelProbe.cpp
   LINKS mikai_player Qt6::Core Qt6::Gui Qt6::OpenGL
   DEPLOY_SHADERS)
