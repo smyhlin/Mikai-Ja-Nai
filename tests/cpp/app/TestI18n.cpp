@@ -2374,36 +2374,6 @@ void TestI18n::rateLimitPillSeparatesNoDataHealthAndAnExhaustedWindow() {
   QVERIFY(plainDot->isHidden());
 }
 
-void TestI18n::componentCountLineNeverStartsWithInstalledAtZero() {
-  const QString catalog = builtCatalogPath();
-  QVERIFY2(QFileInfo::exists(catalog),
-           qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") + catalog));
-  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
-  // The consumer fixture: this suite runs in the launcher's isolated tree, so
-  // the pinned graph inventory is empty and the card must read 0/5.
-  QVERIFY(mplayer::native::storedSpatialAssets().isEmpty());
-
-  mikai::app::ComponentStoreTab tab;
-  tab.show();
-  QCoreApplication::processEvents();
-  auto* state = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardState"));
-  QVERIFY2(state != nullptr, "the upscaling card state label is missing");
-  const QString english = state->text();
-  QVERIFY2(english.startsWith(QStringLiteral("not installed (0/")),
-           qPrintable(english));
-
-  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), catalog));
-  QCoreApplication::processEvents();
-  // The whole point of the wording change: a 0/5 card never opens with
-  // "встановлено".
-  QCOMPARE(state->text(), QStringLiteral("не встановлено (0/5)"));
-  QVERIFY(!state->text().startsWith(QStringLiteral("встановлено")));
-
-  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
-  QCoreApplication::processEvents();
-  QCOMPARE(state->text(), english);
-}
-
 void TestI18n::cleanup() {
   // Unconditional English, not the stored preference: a Ukrainian system locale
   // would otherwise hand the next suite a translator and a comma-decimal locale

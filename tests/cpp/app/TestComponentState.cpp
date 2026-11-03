@@ -345,8 +345,10 @@ void TestComponentState::staleModelItemIsClearedWhenUnrelatedModelsRemain() {
     QVERIFY(progressStatus->isHidden());
     QVERIFY(!progressStatus->text().contains(QStringLiteral("Installed: ")));
     QVERIFY(cardBar->isHidden());
-    QVERIFY2(cardState->text().startsWith(QStringLiteral("4/5 installed")),
-             qPrintable(cardState->text()));
+    auto* cardCounts = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardCount"));
+    QVERIFY(cardCounts != nullptr);
+    QVERIFY2(cardCounts->text().startsWith(QStringLiteral("4/5 installed")),
+             qPrintable(cardCounts->text()));
     runner.waitForDone(5000);
 }
 
