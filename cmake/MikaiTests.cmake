@@ -385,6 +385,13 @@ if(MIKAI_BUILD_PROBES)
       LABELS "mikai_tests_suite"
     )
   endforeach()
+  # The icon suite traces paint commands from a real window, and a window only
+  # carries a fractional ratio under a fractional screen: the platform plugins
+  # report 1.0 without this override. The case skips with that reason when the
+  # aggregate blob entry, which carries no environment of its own, runs it.
+  set_tests_properties(mikai_tests_TestThemeIcons PROPERTIES
+    ENVIRONMENT "QT_SCALE_FACTOR=1.25"
+  )
   add_dependencies(mikai_tests mikai_bundle)
   set(_mikai_bundle_cli_args
     -DBUNDLE_TOOL=$<TARGET_FILE:mikai_bundle>

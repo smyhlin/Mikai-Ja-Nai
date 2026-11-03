@@ -18,4 +18,5 @@ class TestThemeIcons : public QObject {
   void artworkFrameIsAllocatedAtTheDeviceSize();
   void shellGlyphJoinsAreRound();
   void shellAtmosBadgeStaysInsideItsBox();
+  void nativeWindowPaintStaysAffineAtFractionalDpr();
 };

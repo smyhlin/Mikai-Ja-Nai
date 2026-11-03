@@ -9,16 +9,23 @@
 #include "widgets/ToggleSwitch.hpp"
 
 #include <player/shell/ShellTheme.hpp>
+#include <player/shell/ShellWidgets.hpp>
 
 #include <QApplication>
 #include <QColor>
 #include <QImage>
 #include <QPainter>
+#include <QPaintDevice>
+#include <QPaintEngine>
 #include <QPair>
 #include <QPalette>
 #include <QPixmap>
 #include <QRect>
 #include <QRegion>
+#include <QStringList>
+#include <QTransform>
+#include <QVector>
+#include <QWindow>
 #include <QtMath>
 
 #include <cmath>
@@ -171,6 +178,107 @@ QRect colorBounds(const QImage& image, const QColor& color) {
   if (right < left || bottom < top) return {};
   return QRect(QPoint(left, top), QPoint(right, bottom));
 }
+
+/// Records what a widget's own paint code sends to a painter, without drawing it.
+/// QPainter resolves QPaintDevice::redirected() before it ever asks for a paint
+/// engine, and QWidget::render(QPaintDevice*) points that redirect at the target,
+/// so a widget's real QPainter commands and transform updates land here.
+class TraceEngine : public QPaintEngine {
+ public:
+  bool begin(QPaintDevice*) override { return true; }
+  bool end() override { return true; }
+
+  void updateState(const QPaintEngineState& state) override {
+    if (!(state.state() & QPaintEngine::DirtyTransform)) return;
+    ++transformUpdates_;
+    const QTransform transform = state.transform();
+    if (transform.type() > worstType_) worstType_ = transform.type();
+    if (!qFuzzyCompare(transform.m33(), qreal(1.0))) unitM33_ = false;
+  }
+
+  void drawRects(const QRectF*, int) override { record(QStringLiteral("rects")); }
+  void drawEllipse(const QRectF&) override { record(QStringLiteral("ellipse")); }
+  void drawPath(const QPainterPath&) override { record(QStringLiteral("path")); }
+  void drawPolygon(const QPointF*, int, PolygonDrawMode) override {
+    record(QStringLiteral("polygon"));
+  }
+  void drawPixmap(const QRectF&, const QPixmap&, const QRectF&) override {
+    record(QStringLiteral("pixmap"));
+  }
+  void drawImage(const QRectF&, const QImage&, const QRectF&, Qt::ImageConversionFlags) override {
+    record(QStringLiteral("image"));
+  }
+
+  Type type() const override { return QPaintEngine::User; }
+
+  void reset() {
+    commands_ = 0;
+    transformUpdates_ = 0;
+    worstType_ = QTransform::TxNone;
+    unitM33_ = true;
+    kinds_.clear();
+  }
+  int commands() const { return commands_; }
+  int transformUpdates() const { return transformUpdates_; }
+  QTransform::TransformationType worstType() const { return worstType_; }
+  bool unitM33() const { return unitM33_; }
+  bool saw(const QString& kind) const { return kinds_.contains(kind); }
+
+ private:
+  void record(const QString& kind) {
+    ++commands_;
+    if (!kinds_.contains(kind)) kinds_.append(kind);
+  }
+
+  int commands_ = 0;
+  int transformUpdates_ = 0;
+  QTransform::TransformationType worstType_ = QTransform::TxNone;
+  bool unitM33_ = true;
+  QStringList kinds_;
+};
+
+/// A paint device with the widget's own ratio, so the engine sees the transform
+/// a real backing store would carry.
+class TraceDevice : public QPaintDevice {
+ public:
+  TraceDevice(const QSize& size, qreal ratio) : size_(size), ratio_(ratio > 0.0 ? ratio : 1.0) {}
+
+  QPaintEngine* paintEngine() const override { return &engine_; }
+  TraceEngine& engine() { return engine_; }
+
+  int metric(PaintDeviceMetric metricId) const override {
+    switch (metricId) {
+      case PdmWidth:
+        return size_.width();
+      case PdmHeight:
+        return size_.height();
+      case PdmWidthMM:
+        return size_.width();
+      case PdmHeightMM:
+        return size_.height();
+      case PdmNumColors:
+        return 0;
+      case PdmDepth:
+        return 32;
+      case PdmDpiX:
+      case PdmDpiY:
+      case PdmPhysicalDpiX:
+      case PdmPhysicalDpiY:
+        return 96;
+      case PdmDevicePixelRatio:
+        return qMax(1, int(ratio_));
+      case PdmDevicePixelRatioScaled:
+        return qRound(ratio_ * QPaintDevice::devicePixelRatioFScale());
+      default:
+        return 0;
+    }
+  }
+
+ private:
+  QSize size_;
+  qreal ratio_;
+  mutable TraceEngine engine_;
+};
 
 bool containsColorAtAlpha(const QPixmap& pixmap, const QColor& color) {
   const QImage image = pixmap.toImage();
@@ -413,25 +521,28 @@ void TestThemeIcons::toggleAndSwatchPaintOnceAtEveryRatio() {
       QVERIFY2(alphaAt(chip, chip.width() - 1, y) == 0,
                qPrintable(QStringLiteral("swatch clipped on the right at %1").arg(ratio)));
     }
+    // SwatchButton paints the body as the widget inset by 3 logical pixels with a
+    // 1 px border centred on it, so the chip's silhouette is (size - 6) + 1
+    // logical pixels across and its leftmost ink sits at 3 - 0.5. Both numbers
+    // are read off the painted output: a second scale would move the edge in and
+    // overshoot the widget instead.
     const QRect chipInk = inkBounds(chip);
     QVERIFY2(chipInk.isValid(), "the swatch was not painted");
-    QVERIFY2(qAbs(chipInk.left() - 3.0 * ratio) <= 2.0,
-             qPrintable(QStringLiteral("swatch body starts at %1 instead of %2")
+    const qreal silhouette = (mikai::app::theme::kSettingsSwatchSize - 6.0 + 1.0) * ratio;
+    QVERIFY2(qAbs(chipInk.width() - silhouette) <= 2.0,
+             qPrintable(QStringLiteral("swatch spans %1 px at %2, body plus border is %3")
+                            .arg(chipInk.width())
+                            .arg(ratio)
+                            .arg(silhouette)));
+    QVERIFY2(qAbs(chipInk.height() - silhouette) <= 2.0,
+             qPrintable(QStringLiteral("swatch is %1 px tall at %2, body plus border is %3")
+                            .arg(chipInk.height())
+                            .arg(ratio)
+                            .arg(silhouette)));
+    QVERIFY2(qAbs(chipInk.left() - 2.5 * ratio) <= 1.5,
+             qPrintable(QStringLiteral("swatch starts at %1 instead of %2")
                             .arg(chipInk.left())
-                            .arg(3.0 * ratio)));
-    // The body is the widget inset by 3 logical pixels on every side, so its
-    // fill is a logical square that must sit inside the chip at this ratio.
-    const QRect body = colorBounds(chip, QColor(200, 40, 90));
-    QVERIFY2(body.isValid(), "the swatch body was not painted");
-    const qreal bodySide = mikai::app::theme::kSettingsSwatchSize - 6.0;
-    QVERIFY2(qAbs(body.width() - bodySide * ratio) <= 3.0,
-             qPrintable(QStringLiteral("swatch body spans %1 px at %2")
-                            .arg(body.width())
-                            .arg(ratio)));
-    QVERIFY2(qAbs(body.left() - 3.0 * ratio) <= 2.0,
-             qPrintable(QStringLiteral("swatch fill starts at %1 instead of %2")
-                            .arg(body.left())
-                            .arg(3.0 * ratio)));
+                            .arg(2.5 * ratio)));
   }
 }
 
@@ -593,4 +704,73 @@ void TestThemeIcons::defaultGlyphTracksPaletteChanges() {
   const QPixmap secondRender = mikai::app::theme::gearIcon(21).pixmap(QSize(21, 21));
   QVERIFY(containsColor(secondRender, second));
   QVERIFY(!containsColor(secondRender, first));
+}
+
+void TestThemeIcons::nativeWindowPaintStaysAffineAtFractionalDpr() {
+  // The removed double-DPR blocks only ran when the widget had its own window
+  // handle, and they multiplied the painter's world transform by that window's
+  // ratio - scaling all nine entries, m33 included, which makes the transform
+  // projective. A shown top-level widget is the only way to reach that state,
+  // and painting it into a tracing device shows what it really emits.
+  mikai::app::ToggleSwitch toggle;
+  toggle.show();
+  mikai::app::SwatchButton swatch(QColor(200, 40, 90));
+  swatch.setFixedSize(mikai::app::theme::kSettingsSwatchSize,
+                      mikai::app::theme::kSettingsSwatchSize);
+  swatch.show();
+  mplayer::shell::Panel panel(mplayer::shell::dock(), 10.0, mplayer::shell::w15());
+  panel.resize(160, 48);
+  panel.show();
+  QCoreApplication::processEvents();
+
+  const QVector<QPair<QString, QWidget*>> targets = {
+      {QStringLiteral("ToggleSwitch"), &toggle},
+      {QStringLiteral("SwatchButton"), &swatch},
+      {QStringLiteral("Panel"), &panel},
+  };
+
+  QWindow* handle = toggle.windowHandle();
+  if (handle == nullptr) {
+    QSKIP("no native window handle: the removed block could not have run either");
+  }
+  // The block multiplied by the window's ratio, so a 1.0 window cannot show it.
+  const qreal ratio = handle->devicePixelRatio();
+  if (ratio <= 1.0) {
+    QSKIP("window ratio is 1.0: the TestThemeIcons CTest environment sets "
+          "QT_SCALE_FACTOR=1.25; run this suite standalone to reach it");
+  }
+
+  for (const QPair<QString, QWidget*>& target : targets) {
+    QWidget* widget = target.second;
+    // A paint device with the widget's own ratio, the way its backing store has.
+    TraceDevice device(QSize(widget->width() * 2, widget->height() * 2), ratio);
+    widget->render(&device, QPoint(), QRegion(), QWidget::DrawChildren);
+    const TraceEngine& trace = device.engine();
+
+    QVERIFY2(widget->windowHandle() != nullptr,
+             qPrintable(QStringLiteral("%1 is not a shown native window").arg(target.first)));
+    QVERIFY2(trace.commands() > 0,
+             qPrintable(QStringLiteral("%1 emitted no paint commands").arg(target.first)));
+    // The painter state is flushed before the first command, so a transform was
+    // really observed. A DPR-multiplied world transform shows up as TxProject.
+    QVERIFY2(trace.transformUpdates() > 0,
+             qPrintable(QStringLiteral("%1 emitted no transform update").arg(target.first)));
+    QVERIFY2(trace.worstType() < QTransform::TxProject,
+             qPrintable(QStringLiteral("%1 painted through a projective transform at %2")
+                            .arg(target.first)
+                            .arg(ratio)));
+    QVERIFY2(trace.unitM33(),
+             qPrintable(QStringLiteral("%1 scaled the matrix' m33 at %2")
+                            .arg(target.first)
+                            .arg(ratio)));
+    if (target.first == QStringLiteral("ToggleSwitch")) {
+      // The track is a rounded rect and the knob an ellipse.
+      QVERIFY2(trace.saw(QStringLiteral("ellipse")), "the toggle painted no ellipse");
+      QVERIFY2(trace.saw(QStringLiteral("path")) || trace.saw(QStringLiteral("rects")),
+               "the toggle painted no track");
+    } else {
+      QVERIFY2(trace.saw(QStringLiteral("path")) || trace.saw(QStringLiteral("rects")),
+               qPrintable(QStringLiteral("%1 painted no rounded rect").arg(target.first)));
+    }
+  }
 }
