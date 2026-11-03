@@ -143,6 +143,28 @@ inline bool endsWithNoCase(const wchar_t* text, const wchar_t* suffix) {
            _wcsicmp(text + textLength - suffixLength, suffix) == 0;
 }
 
+/// Win32 resolves these basenames to devices even with an extension
+/// (`NUL.log`, `COM1.txt`); CREATE_NEW does not make them ordinary files.
+inline bool isReservedDeviceBasename(const wchar_t* fileName) {
+    if (fileName == nullptr) return false;
+    wchar_t stem[16];
+    size_t used = 0;
+    while (fileName[used] != 0 && fileName[used] != L'.' && used + 1 < 16) {
+        stem[used] = fileName[used];
+        ++used;
+    }
+    stem[used] = 0;
+    static const wchar_t* const kReserved[] = {
+        L"CON",  L"PRN",  L"AUX",  L"NUL",  L"CONIN$", L"CONOUT$",
+        L"COM1", L"COM2", L"COM3", L"COM4", L"COM5",   L"COM6",
+        L"COM7", L"COM8", L"COM9", L"LPT1", L"LPT2",   L"LPT3",
+        L"LPT4", L"LPT5", L"LPT6", L"LPT7", L"LPT8",   L"LPT9"};
+    for (const wchar_t* reserved : kReserved) {
+        if (_wcsicmp(stem, reserved) == 0) return true;
+    }
+    return false;
+}
+
 inline bool isTraceTarget(const wchar_t* path) {
     const wchar_t* base = fileNamePart(path);
     return _wcsicmp(base, kLevelFile) == 0 || _wcsnicmp(base, kLevelTempPrefix, 21) == 0;
@@ -196,6 +218,10 @@ inline bool tracePathAllowed(const wchar_t* path, wchar_t* normalized, size_t ca
     const wchar_t* filePart = fileNamePart(normalized);
     if (!endsWithNoCase(filePart, L".log")) {
         setInstallError(L"output file name must end with .log");
+        return false;
+    }
+    if (isReservedDeviceBasename(filePart)) {
+        setInstallError(L"output may not name a reserved Win32 device");
         return false;
     }
     if (isTraceTarget(normalized)) {
