@@ -1984,10 +1984,23 @@ template <typename T>
 struct HasPreviewStats<T, std::void_t<decltype(std::declval<const T&>().previewStats())>>
     : std::true_type {};
 
-/// Decoder work the card reports, or -1/-1 when this build has no counters.
+/// Whether the reported stats carry the accepted-seek counter. A run against a
+/// tree that predates it must still build, so the field is detected rather than
+/// assumed.
+template <typename T, typename = void>
+struct HasPreviewSeeks : std::false_type {};
+template <typename T>
+struct HasPreviewSeeks<T, std::void_t<decltype(std::declval<const T&>().seeks)>>
+    : std::true_type {};
+
+/// Decoder work the card reports, or -1 for every field when this build has no
+/// counters. Requests, cache hits and accepted seeks are separate numbers: a
+/// request is not a seek, and a seek is the only one that costs a decode.
 struct PreviewCounters {
     qint64 cacheHits = -1;
     qint64 workerRequests = -1;
+    qint64 seeks = -1;
+    qint64 lastHitLatencyUs = -1;
 };
 
 template <typename Card>
@@ -1995,8 +2008,14 @@ PreviewCounters previewCounters(const Card* card) {
     if constexpr (HasPreviewStats<Card>::value) {
         if (card != nullptr) {
             const auto stats = card->previewStats();
-            return PreviewCounters{static_cast<qint64>(stats.cacheHits),
-                                   static_cast<qint64>(stats.workerRequests)};
+            PreviewCounters counters;
+            counters.cacheHits = static_cast<qint64>(stats.cacheHits);
+            counters.workerRequests = static_cast<qint64>(stats.workerRequests);
+            if constexpr (HasPreviewSeeks<std::decay_t<decltype(stats)>>::value) {
+                counters.seeks = static_cast<qint64>(stats.seeks);
+                counters.lastHitLatencyUs = stats.lastHitLatencyUs;
+            }
+            return counters;
         }
     }
     return PreviewCounters{};
@@ -2309,36 +2328,47 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
             (pass == 0 ? firstPass : secondPass).append(static_cast<double>(took));
         }
         const PreviewCounters passEnd = previewCounters(card);
-        if (pass == 0) {
-            firstPassCounters = PreviewCounters{passEnd.cacheHits - passStart.cacheHits,
-                                                passEnd.workerRequests - passStart.workerRequests};
-        } else {
-            secondPassCounters = PreviewCounters{passEnd.cacheHits - passStart.cacheHits,
-                                                 passEnd.workerRequests - passStart.workerRequests};
-        }
+        PreviewCounters delta;
+        delta.cacheHits = passEnd.cacheHits >= 0 ? passEnd.cacheHits - passStart.cacheHits : -1;
+        delta.workerRequests =
+            passEnd.workerRequests >= 0 ? passEnd.workerRequests - passStart.workerRequests : -1;
+        delta.seeks = passEnd.seeks >= 0 ? passEnd.seeks - passStart.seeks : -1;
+        delta.lastHitLatencyUs = passEnd.lastHitLatencyUs;
+        (pass == 0 ? firstPassCounters : secondPassCounters) = delta;
     }
     const PreviewCounters& sweepSecondPass = secondPassCounters;
     evidence.insert(QStringLiteral("sweepFirstCacheHits"),
                     static_cast<double>(firstPassCounters.cacheHits));
     evidence.insert(QStringLiteral("sweepFirstWorkerRequests"),
                     static_cast<double>(firstPassCounters.workerRequests));
+    evidence.insert(QStringLiteral("sweepFirstSeeks"),
+                    static_cast<double>(firstPassCounters.seeks));
     evidence.insert(QStringLiteral("sweepSecondCacheHits"),
                     static_cast<double>(sweepSecondPass.cacheHits));
     evidence.insert(QStringLiteral("sweepSecondWorkerRequests"),
                     static_cast<double>(sweepSecondPass.workerRequests));
-    // Worker requests are not seeks: the decoder crosses a far jump with a
-    // keyframe seek and refines it with one exact seek, and a near jump with one
-    // exact seek. This probe reports what the product counts; it never derives a
-    // seek number from a request number.
+    evidence.insert(QStringLiteral("sweepSecondSeeks"),
+                    static_cast<double>(sweepSecondPass.seeks));
+    evidence.insert(QStringLiteral("sweepSecondHitLatencyUs"),
+                    static_cast<double>(sweepSecondPass.lastHitLatencyUs));
+    // Accepted seeks are what a repeated sweep must not spend: a far jump is a
+    // keyframe seek refined by one exact seek, a near jump one exact seek, and a
+    // request is neither. Worker requests stay reported as a diagnostic, because
+    // a request answered from the store still names the path it avoided.
     evidence.insert(QStringLiteral("sweepSeekPolicy"),
                     QStringLiteral("far jump: absolute+keyframes then absolute+exact; near jump: "
                                    "absolute+exact"));
-    if (sweepSecondPass.workerRequests >= 0) {
-        check(sweepSecondPass.workerRequests == 0,
-              "the repeated sweep asked the decoder for nothing at all");
-        check(sweepSecondPass.cacheHits * 10 >=
-                  static_cast<qint64>(secondPass.size()) * 8,
+    if (sweepSecondPass.seeks >= 0) {
+        check(sweepSecondPass.seeks <= 2,
+              "the repeated sweep accepted at most two real seeks");
+    }
+    if (sweepSecondPass.cacheHits >= 0) {
+        check(sweepSecondPass.cacheHits * 10 >= static_cast<qint64>(secondPass.size()) * 8,
               "the store answered at least 80 % of the repeated sweep");
+    }
+    if (sweepSecondPass.lastHitLatencyUs >= 0) {
+        check(sweepSecondPass.lastHitLatencyUs < 5000,
+              "a stored answer is a lookup and a signal, not a decode");
     }
     int fastHits = 0;
     for (double took : secondPass) {
@@ -2408,13 +2438,22 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
                         static_cast<double>(slowCounters.cacheHits));
         evidence.insert(QStringLiteral("slowPreviewWorkerRequests"),
                         static_cast<double>(slowCounters.workerRequests));
-        std::fprintf(stderr, "     slow preview: explained=%d at_ms=%lld hits=%lld workers=%lld\n",
+        evidence.insert(QStringLiteral("slowPreviewSeeks"),
+                        static_cast<double>(slowCounters.seeks));
+        std::fprintf(stderr,
+                     "     slow preview: explained=%d at_ms=%lld hits=%lld workers=%lld seeks=%lld\n",
                      int(explained), static_cast<long long>(explainedMs),
                      static_cast<long long>(slowCounters.cacheHits),
-                     static_cast<long long>(slowCounters.workerRequests));
+                     static_cast<long long>(slowCounters.workerRequests),
+                     static_cast<long long>(slowCounters.seeks));
         check(explained,
               "a preview of a source that has not answered yet says what it is waiting for");
-        if (slowCounters.workerRequests >= 0) {
+        // The accepted seek is what proves a decode was really paid for; a
+        // request only says the card asked, and the store can answer without one.
+        if (slowCounters.seeks >= 0) {
+            check(slowCounters.seeks > 0 && slowCounters.cacheHits == 0,
+                  "the explanation belongs to a real decode, not to a stored frame");
+        } else if (slowCounters.workerRequests >= 0) {
             check(slowCounters.workerRequests > 0 && slowCounters.cacheHits == 0,
                   "the explanation belongs to a real decode, not to a stored frame");
         }
@@ -2429,7 +2468,15 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
         dialogGuard->close();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
+    // One clock for the whole observation. The origin reports its first reply
+    // from its own construction, so it is constructed after this clock starts and
+    // its offset is recorded once; every number below - the window appearing, the
+    // first visible opening state, the first byte, the first frame - is then on
+    // this one origin and can be compared.
+    QElapsedTimer openClock;
+    openClock.start();
     DelayedHttpSource origin;
+    const qint64 originStartMs = openClock.elapsed();
     check(origin.serve(url), "the loopback origin serves the motion fixture");
     const QString slowUrl = origin.url();
     check(!slowUrl.isEmpty() && origin.connections() == 0,
@@ -2438,11 +2485,7 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
     auto* slowDialog = new PlayerDialog(QStringLiteral("probe opening"), slowUrl,
                                         QList<QualityEntry>{{720, slowUrl}}, 720, host);
     QPointer<PlayerDialog> slowGuard(slowDialog);
-    const QElapsedTimer openClock = [&] {
-        QElapsedTimer timer;
-        timer.start();
-        return timer;
-    }();
+    const qint64 windowCreatedMs = openClock.elapsed();
     slowDialog->startPlayer();
     slowDialog->showFullScreen();
     QCoreApplication::processEvents();
@@ -2482,7 +2525,11 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
         }
     }
     const bool capturedWhileWithheld = origin.replyAtMs() < 0;
-    const qint64 replyAtMs = origin.replyAtMs();
+    const qint64 originReplyAtMs = origin.replyAtMs();
+    // The origin's own number moved onto this run's clock once, so no comparison
+    // below is between two unrelated origins.
+    const qint64 replyAtOpenClockMs =
+        originReplyAtMs < 0 ? -1 : originStartMs + originReplyAtMs;
 
     // The crop somebody will look at, taken while the wait is real. The full
     // window is saved too, but the crop is the evidence that the waiting state
@@ -2504,14 +2551,23 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
     evidence.insert(QStringLiteral("openingText"), openingText);
     evidence.insert(QStringLiteral("openingWhileWithheld"), capturedWhileWithheld);
     evidence.insert(QStringLiteral("openingSeenWhileWithheld"), openingSeenWhileWithheld);
-    evidence.insert(QStringLiteral("originReplyAtMs"), static_cast<double>(replyAtMs));
+    // The two clocks, and the one number they make: `originReplyAtMs` is the
+    // origin's own count from its construction, `originStartMs` is where that
+    // construction fell on this run's clock, and `openingReplyMs` is the first
+    // response byte on the same clock as every other latency in this receipt.
+    evidence.insert(QStringLiteral("originReplyAtMs"), static_cast<double>(originReplyAtMs));
+    evidence.insert(QStringLiteral("originStartMs"), static_cast<double>(originStartMs));
+    evidence.insert(QStringLiteral("openingWindowCreatedMs"), static_cast<double>(windowCreatedMs));
+    evidence.insert(QStringLiteral("openingReplyMs"), static_cast<double>(replyAtOpenClockMs));
     evidence.insert(QStringLiteral("openingBrightPixels"), brightWhileWaiting);
     std::fprintf(stderr,
                  "     opening: present=%d visible_while_withheld=%d first_seen_ms=%lld "
-                 "withheld=%d reply_ms=%lld bright=%d text='%s'\n",
+                 "withheld=%d window_ms=%lld reply_ms=%lld bright=%d text='%s'\n",
                  int(openingPresent), int(openingSeenWhileWithheld),
                  static_cast<long long>(openingVisibleMs), int(capturedWhileWithheld),
-                 static_cast<long long>(replyAtMs), brightWhileWaiting, qPrintable(openingText));
+                 static_cast<long long>(windowCreatedMs),
+                 static_cast<long long>(replyAtOpenClockMs), brightWhileWaiting,
+                 qPrintable(openingText));
     check(withheld, "the delayed origin received the request before answering it");
     check(capturedWhileWithheld,
           "the opening state was captured while the origin still withheld the body");
@@ -2533,11 +2589,13 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
     evidence.insert(QStringLiteral("firstFrameMs"), static_cast<double>(firstFrameMs));
     std::fprintf(stderr, "     opening: first_frame_ms=%lld connections=%d reply_ms=%lld\n",
                  static_cast<long long>(firstFrameMs), origin.connections(),
-                 static_cast<long long>(replyAtMs));
+                 static_cast<long long>(replyAtOpenClockMs));
     check(origin.connections() > 0, "the delayed origin was actually asked for the stream");
-    check(firstFrameMs > 500, "the delayed source really made the window wait");
-    if (openingVisibleMs >= 0 && replyAtMs >= 0) {
-        check(openingVisibleMs < replyAtMs,
+    // Both numbers are on the run's own clock now, so this is the claim it looks
+    // like: the picture arrived after the byte that had to be decoded first.
+    check(firstFrameMs > replyAtOpenClockMs, "the delayed source really made the window wait");
+    if (openingVisibleMs >= 0 && replyAtOpenClockMs >= 0) {
+        check(openingVisibleMs < replyAtOpenClockMs,
               "the opening state appeared before the source sent its first response byte");
         evidence.insert(QStringLiteral("openingBeforeFirstResponse"), true);
     } else {
