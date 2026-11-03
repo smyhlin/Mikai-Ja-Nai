@@ -67,7 +67,6 @@
 #include <future>
 #include <memory>
 #include <cstdio>
-#include <string>
 
 #include "I18n.hpp"
 #include "backend/MikaiClient.hpp"
@@ -91,8 +90,6 @@
 #include "native/components/NativeComponentProvisioning.hpp"
 #include "state/NativeComponentProvisioner.hpp"
 #include "workers/Runner.hpp"
-// TEMPORARY DIAGNOSTIC SCAFFOLD - DELETE AFTER ATTRIBUTION.
-#include "NativeFileTraceProbe.hpp"
 
 using mikai::app::Runner;
 using mikai::app::SettingsDialog;
@@ -4069,42 +4066,12 @@ int main(int argc, char** argv) {
         QStringLiteral("Capture the real Settings Components label twice: normal child "
                        "attributes and WA_TranslucentBackground."));
     parser.addOption(textRasterOnlyOption);
-    QCommandLineOption nativeFileTraceOption(
-        QStringLiteral("native-file-trace"),
-        QStringLiteral("TEMPORARY diagnostic scaffold: trace this process's Win32 "
-                       "CreateFileW/CloseHandle/SetFileInformationByHandle/"
-                       "SetFileAttributesW calls for the external model registry into an "
-                       "absolute output file."),
-        QStringLiteral("path"));
-    parser.addOption(nativeFileTraceOption);
     parser.process(app);
     const bool installRuntime = parser.isSet(installRuntimeOption);
     const bool componentProgressOnly = parser.isSet(componentProgressOnlyOption);
     const bool hdrSettingsOnly = parser.isSet(hdrSettingsOnlyOption);
     const bool spatialAcquisitionOnly = parser.isSet(spatialAcquisitionOnlyOption);
     const bool textRasterOnly = parser.isSet(textRasterOnlyOption);
-    // Temporary user-mode attribution. It is armed after the isolation gate and
-    // argument parsing, and before any app-owned registry publication, so the
-    // trace covers the whole run without changing a single application result.
-    {
-        const QString tracePath = parser.value(nativeFileTraceOption);
-        if (!tracePath.isEmpty()) {
-            const std::wstring tracePathWide = tracePath.toStdWString();
-            const bool installed =
-                mikai::probes::native_trace::install(tracePathWide.c_str());
-            std::fprintf(stderr, "[native_settings_probe] native file trace %s: %s (%s)\n",
-                         installed ? "installed" : "FAILED to install",
-                         qPrintable(tracePath),
-                         installed ? "coverage complete"
-                                   : qPrintable(QString::fromWCharArray(
-                                         mikai::probes::native_trace::lastError())));
-            if (!installed) {
-                // A requested trace that cannot be trusted must not consume the
-                // one diagnostic run with partial hooks or a partial log.
-                return 3;
-            }
-        }
-    }
     QCoreApplication::setOrganizationName(QStringLiteral("MikaiNativeSettingsProbe"));
     QCoreApplication::setApplicationName(QStringLiteral("NativeSettingsProbe"));
 
