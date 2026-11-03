@@ -715,6 +715,10 @@ void PlayerDialog::connectEngine() {
     connect(surface_, &VideoSurface::displayAspectRatioChanged, shell_,
             &PlayerShell::setAspectRatio);
     connect(surface_, &VideoSurface::streamStatsChanged, shell_, &PlayerShell::setStreamStats);
+    // A physical pause held by engine work is explained in the chrome: the
+    // picture is frozen for a reason, and the reason is not the viewer's.
+    connect(surface_, &VideoSurface::enginePauseHoldChanged, shell_,
+            &PlayerShell::setEnginePauseHold);
     // The filter's own status arrives from the surface's reader, which is the
     // only thing that may report a chain as running. The held inputs and the HUD
     // follow it; nothing is synthesised from the request.
@@ -2413,9 +2417,26 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
     // GL contexts are still alive, and only then are the streams closed. The
     // settle spins the event loop, so the dialog is guarded weakly across it.
     QPointer<PlayerDialog> self(this);
+    // A settle that outlives a third of a second is long enough for the window to
+    // look frozen, so it says what it is doing while it waits. The settle spins
+    // the dialog's own event loop, which is what makes this timer fire inside it;
+    // it is stopped on every path below, before the dialog can act on the result.
+    QTimer finishingNotice;
+    finishingNotice.setSingleShot(true);
+    finishingNotice.setInterval(300);
+    QObject::connect(&finishingNotice, &QTimer::timeout, this, [this, self] {
+        if (self.isNull() || processingOverlay_ == nullptr) return;
+        // A build window that is already up is retitled in its detail line only:
+        // its title, its stage and its own cancel still belong to the build that
+        // is running, and a refused close has to leave them intact.
+        processingOverlay_->setStage(-1, 0, QString(), tr("Finishing enhancement…"));
+    });
+    finishingNotice.start();
     const bool parkedSettled = settleParkedNative();
+    finishingNotice.stop();
     if (self.isNull()) return;
     const bool coreSettled = surface_ == nullptr || surface_->settleNativeForTeardown();
+    finishingNotice.stop();
     if (self.isNull()) return;
     if (!parkedSettled || !coreSettled) {
         // Nothing is torn down: both cores and their render contexts stay alive so
