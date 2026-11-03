@@ -1032,6 +1032,37 @@ void saveEvidenceJson(const QJsonObject& evidence) {
     file.close();
 }
 
+/// What the window actually is, for a run whose scale factor was requested
+/// externally. A requested 1.25 that the platform did not honour is not a
+/// measurement, so the ratio and both geometries are read from the window itself
+/// and written down beside the verdict.
+QJsonObject windowGeometryFacts(QWidget* widget) {
+    QJsonObject facts;
+    if (widget == nullptr) {
+        facts.insert(QStringLiteral("present"), false);
+        return facts;
+    }
+    const qreal dpr = widget->devicePixelRatioF();
+    const QSize logical = widget->size();
+    facts.insert(QStringLiteral("present"), true);
+    facts.insert(QStringLiteral("devicePixelRatio"), dpr);
+    facts.insert(QStringLiteral("logicalWidth"), logical.width());
+    facts.insert(QStringLiteral("logicalHeight"), logical.height());
+    facts.insert(QStringLiteral("pixelWidth"), qRound(logical.width() * dpr));
+    facts.insert(QStringLiteral("pixelHeight"), qRound(logical.height() * dpr));
+    // The position is the window's place on the desktop, which a fullscreen
+    // presentation only sometimes puts at the origin.
+    const QPoint origin = widget->mapToGlobal(QPoint(0, 0));
+    facts.insert(QStringLiteral("globalX"), origin.x());
+    facts.insert(QStringLiteral("globalY"), origin.y());
+    if (QScreen* screen = widget->screen()) {
+        facts.insert(QStringLiteral("screenDevicePixelRatio"), screen->devicePixelRatio());
+        facts.insert(QStringLiteral("screenLogicalWidth"), screen->geometry().width());
+        facts.insert(QStringLiteral("screenLogicalHeight"), screen->geometry().height());
+    }
+    return facts;
+}
+
 bool saveShot(QWidget* widget, const QString& name, QJsonArray* screenshots) {
     if (widget == nullptr) return false;
     const bool saved = widget->grab().save(artifactPath(name));
@@ -2093,6 +2124,23 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
         return 1;
     }
 
+    // What this run is actually looking at. A requested scale factor is not an
+    // observation: the ratio, the logical and the pixel geometry are read from
+    // the real window and the real surface.
+    evidence.insert(QStringLiteral("requestedScaleFactor"),
+                    qEnvironmentVariable("QT_SCALE_FACTOR"));
+    evidence.insert(QStringLiteral("window"), windowGeometryFacts(dialog));
+    evidence.insert(QStringLiteral("surface"), windowGeometryFacts(surface));
+    evidence.insert(QStringLiteral("appDevicePixelRatio"), qApp->devicePixelRatio());
+    std::fprintf(stderr,
+                 "     geometry: window logical=%dx%d dpr=%.3f pixels=%dx%d screen_dpr=%.3f "
+                 "surface logical=%dx%d dpr=%.3f\n",
+                 dialog->width(), dialog->height(), dialog->devicePixelRatioF(),
+                 qRound(dialog->width() * dialog->devicePixelRatioF()),
+                 qRound(dialog->height() * dialog->devicePixelRatioF()),
+                 dialog->screen() != nullptr ? dialog->screen()->devicePixelRatio() : -1.0,
+                 surface->width(), surface->height(), surface->devicePixelRatioF());
+
     const QElapsedTimer sessionClock = [] {
         QElapsedTimer timer;
         timer.start();
@@ -2330,6 +2378,7 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
     QCoreApplication::processEvents();
     auto* slowBar = slowShell->findChild<ScrubBar*>(QStringLiteral("playerScrubBar"));
     auto* slowCard = slowShell->findChild<HoverPreview*>(QStringLiteral("playerHoverPreview"));
+    evidence.insert(QStringLiteral("previewShell"), windowGeometryFacts(slowShell));
     check(slowBar != nullptr && slowCard != nullptr,
           "the slow-preview shell has a timeline and a card");
     if (slowBar != nullptr && slowCard != nullptr) {
@@ -2399,6 +2448,10 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
     QCoreApplication::processEvents();
     auto* opening = slowDialog->findChild<QWidget*>(QStringLiteral("playerOpeningOverlay"));
     auto* slowSurface = slowDialog->findChild<VideoSurface*>();
+    evidence.insert(QStringLiteral("openingWindow"), windowGeometryFacts(slowDialog));
+    evidence.insert(QStringLiteral("openingSurface"), windowGeometryFacts(slowSurface));
+    std::fprintf(stderr, "     opening geometry: logical=%dx%d dpr=%.3f\n", slowDialog->width(),
+                 slowDialog->height(), slowDialog->devicePixelRatioF());
     // The widget itself, first. An absent overlay is a failure at this instant,
     // not after a timeout that only lengthens the log and invents a latency for
     // something the window never had.
