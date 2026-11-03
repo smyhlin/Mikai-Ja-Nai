@@ -21,6 +21,8 @@
 #include <QPlainTextEdit>
 #include <QStyle>
 #include <QStyleOptionButton>
+#include <QUrl>
+#include <QVariantMap>
 #include <QPalette>
 #include <QPixmap>
 #include <QPointer>
@@ -851,6 +853,18 @@ private:
         return image.pixelColor(qBound(0, qRound(x * scale), image.width() - 1),
                                 qBound(0, qRound(y * scale), image.height() - 1));
     }
+
+    /// The dialog's host side, serving nothing but the project's own clip: the
+    /// fixture playlist names two episodes of it, which is what makes the
+    /// feature strip - and the chip in it - genuinely visible.
+    struct FixtureHost final : mplayer::shell::PlayerHost {
+        void requestVariant(const QString&, const QString&) override {}
+        void requestEpisode(int) override {}
+        void requestTrackProbe(const QString&) override {}
+        void requestCopyStreamUrl() override {}
+        void playerClosed() override {}
+        void playbackFailed() override {}
+    };
 
     struct TimelineSample {
         QColor pixel;
@@ -1811,6 +1825,68 @@ private:
                         {QStringLiteral("inferenceProven"), false}});
         }
         float_->hide();
+        float_.reset();
+        // The strip that carries the chip only exists for a source with a
+        // playlist, and a direct file has none. Two labels over the project's own
+        // clip are a fixture, not a catalogue claim: the real visibility contract
+        // is then exercised instead of a hidden widget's sheet.
+        FixtureHost fixtureHost;
+        {
+            // Owned here, not by close(): WA_DeleteOnClose only reacts to
+            // close(), and the host below must outlive the dialog.
+            auto* chipPlayer = new PlayerDialog(
+                QStringLiteral("Episode fixture"), QUrl::fromLocalFile(demo_).toString(), {}, 0,
+                &fixtureHost, nullptr);
+            chipPlayer->setPlaylist(
+                {QVariantMap{{QStringLiteral("label"), QStringLiteral("Episode 1")}},
+                 QVariantMap{{QStringLiteral("label"), QStringLiteral("Episode 2")}}},
+                0);
+            chipPlayer->show();
+            QTest::qWait(400);
+            auto* chipShell = chipPlayer->findChild<PlayerShell*>();
+            auto* chip = chipPlayer->findChild<QPushButton*>(QStringLiteral("playerSeriesToggle"));
+            const QVector<QPair<QString, QString>> looks = {
+                {QStringLiteral("dark"), QStringLiteral("#bdacff")},
+                {QStringLiteral("light"), QStringLiteral("#f0a35e")}};
+            for (const auto& look : looks) {
+                Appearance appearance;
+                appearance.accent = look.second;
+                appearance.siteTheme = look.first == QStringLiteral("light")
+                                           ? mikai::app::theme::SiteTheme::Light
+                                           : mikai::app::theme::SiteTheme::Dark;
+                applyLook(appearance);
+                if (chipShell != nullptr) chipShell->wake();
+                QTest::qWait(120);
+                const QColor expected = mikai::app::theme::accentColor(appearance);
+                const bool visible = chip != nullptr && chip->isVisible();
+                const QColor hover = chip != nullptr
+                                         ? pixelOfState(*chip, true, chip->width() / 2, 0)
+                                         : QColor();
+                evidence_.insert(QStringLiteral("visibleChip/") + look.first,
+                                 QJsonObject{{QStringLiteral("visible"), visible},
+                                             {QStringLiteral("hoverBoundary"), nameColor(hover)},
+                                             {QStringLiteral("accent"), nameColor(expected)}});
+                check(QStringLiteral("visible-chip/%1").arg(look.first),
+                      visible && hover.alpha() >= 24 && nearColor(hover, expected, 8),
+                      QStringLiteral("visible %1, hover boundary %2 a%3, chosen %4")
+                          .arg(visible)
+                          .arg(nameColor(hover))
+                          .arg(hover.alpha())
+                          .arg(nameColor(expected)));
+                if (chip != nullptr) {
+                    capture(chip, QStringLiteral("visible-chip-%1").arg(look.first),
+                            QJsonObject{
+                                {QStringLiteral("surface"),
+                                 QStringLiteral("feature strip chip, playlist fixture")},
+                                {QStringLiteral("accent"), nameColor(expected)},
+                                {QStringLiteral("presentationOnly"), true},
+                                {QStringLiteral("syntheticState"),
+                                 QStringLiteral("two-episode fixture over the project-owned clip; no catalogue, service or inference")},
+                                {QStringLiteral("inferenceProven"), false}});
+                }
+            }
+            delete chipPlayer;
+        }
         // Leave the geometry pass on the shipped appearance.
         applyLook(Appearance{});
         return true;
