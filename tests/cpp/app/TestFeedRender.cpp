@@ -1607,9 +1607,20 @@ void TestFeedRender::titlePagePrioritizesPlaybackAndAnchorsWithoutChangingSelect
   QTRY_VERIFY_WITH_TIMEOUT(!page.findChild<QWidget*>(QStringLiteral("titleRelated"))->isVisible(),
                            5000);
   QScrollBar* scroll = overview->verticalScrollBar();
+  // Collapsing the related row can leave this 1080x760 page with nothing to
+  // scroll. The arrival must not move a position the viewer set, so create
+  // that position instead of assuming this height still overflows.
+  while (scroll->maximum() < 96 && page.height() > 420) {
+    page.resize(page.width(), page.height() - 40);
+    QCoreApplication::processEvents();
+  }
   scroll->setValue(qMin(96, scroll->maximum()));
   const int scrollBeforeArrival = scroll->value();
-  QVERIFY(scrollBeforeArrival > 0);
+  QVERIFY2(scrollBeforeArrival > 0,
+           qPrintable(QStringLiteral("overview maximum=%1 page=%2x%3")
+                          .arg(scroll->maximum())
+                          .arg(page.width())
+                          .arg(page.height())));
   QTRY_VERIFY_WITH_TIMEOUT(page.findChildren<QPushButton*>(
                                QStringLiteral("animeCard")).size() >= 3,
                            10000);
