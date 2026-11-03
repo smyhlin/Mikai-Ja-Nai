@@ -2515,9 +2515,9 @@ void exerciseComponents(SettingsDialog& dialog, QSize requestedSize, const QStri
           "the Components surface screenshot was saved");
 }
 
-void exerciseComponentProgress(SettingsDialog& dialog, QSize requestedSize,
-                               const QString& language,
-                               mikai::app::NativeComponentProvisioner& provisioner) {
+QJsonObject exerciseComponentProgress(SettingsDialog& dialog, QSize requestedSize,
+                                      const QString& language,
+                                      mikai::app::NativeComponentProvisioner& provisioner) {
     using mplayer::native::ComponentProvisionProgress;
     using mplayer::native::ComponentProvisionStage;
 
@@ -2530,7 +2530,7 @@ void exerciseComponentProgress(SettingsDialog& dialog, QSize requestedSize,
     auto* componentTab = dialog.findChild<mikai::app::ComponentStoreTab*>();
     check(componentTab != nullptr && componentTab->isVisibleTo(&dialog),
           "the real Components page is visible for synthetic progress presentation");
-    if (componentTab == nullptr) return;
+    if (componentTab == nullptr) return {};
     componentTab->setComponentProvisioner(&provisioner);
     componentTab->refresh();
     check(waitForUi([componentTab] {
@@ -2548,20 +2548,47 @@ void exerciseComponentProgress(SettingsDialog& dialog, QSize requestedSize,
         QString cardId;
         qint64 received;
         qint64 total;
-        int expectedPercent;
-        ComponentProvisionStage stage;
+        /// Negative when the transfer advertises no measured total.
+        int downloadedPercent;
+        ComponentProvisionStage phaseStage;
+        qint64 phaseReceived;
+        qint64 phaseTotal;
+        /// Negative when the phase must render indeterminate.
+        int phasePercent;
+        const char* phaseKind;
     };
     QVector<Presentation> presentations{
         {QStringLiteral("trt-runtime"), QStringLiteral("tensorRtRuntimeCard"), 32, 128, 25,
-         ComponentProvisionStage::Verifying},
+         ComponentProvisionStage::Verifying, 32, 128, -1, "verifying"},
         {QStringLiteral("trt-sm75"), QStringLiteral("tensorRtKernelsCard"), 18, 90, 20,
-         ComponentProvisionStage::Extracting},
-        {QStringLiteral("rife-3.7.0"), QStringLiteral("rifeModelsCard"), 210, 700, 30,
-         ComponentProvisionStage::Verifying}};
+         ComponentProvisionStage::Extracting, 18, 90, 20, "known-size"},
+        // No advertised total: the consumer has no honest fraction, so the only
+        // truthful rendering is indeterminate rather than an invented number.
+        {QStringLiteral("rife-3.7.0"), QStringLiteral("rifeModelsCard"), 0, 0, -1,
+         ComponentProvisionStage::Extracting, 0, 0, -1, "unknown-size"}};
     if (!spatialId.isEmpty()) {
         presentations.append({spatialId, QStringLiteral("animeJanaiModelsCard"), 60, 200, 30,
-                              ComponentProvisionStage::Extracting});
+                              ComponentProvisionStage::Extracting, 60, 200, 30,
+                              "known-size"});
     }
+
+    QJsonObject record;
+    record.insert(QStringLiteral("languageRequested"), language);
+    record.insert(QStringLiteral("languageActive"), mikai::app::activeInterfaceLanguage());
+    record.insert(QStringLiteral("width"), requestedSize.width());
+    QJsonArray cards;
+
+    const auto progressBar = [componentTab](const Presentation& item) {
+        return componentTab->findChild<QProgressBar*>(
+            item.cardId + QStringLiteral("Progress"));
+    };
+    const auto progressLabel = [componentTab](const Presentation& item) {
+        return componentTab->findChild<QLabel*>(
+            item.cardId + QStringLiteral("ProgressStatus"));
+    };
+    const auto indeterminate = [](QProgressBar* bar) {
+        return bar != nullptr && bar->minimum() == 0 && bar->maximum() == 0;
+    };
 
     // Interleave card events as independent active acquisitions. These are
     // deliberately synthetic UI-only events; no acquisition API is invoked.
@@ -2570,39 +2597,101 @@ void exerciseComponentProgress(SettingsDialog& dialog, QSize requestedSize,
             item.pack, item.received, item.total, ComponentProvisionStage::Downloading};
         Q_EMIT provisioner.progress(event);
     }
+    QApplication::processEvents();
+
+    QVector<int> downloadedPercents;
+    QVector<QString> downloadedTexts;
     for (const Presentation& item : presentations) {
-        const qint64 total = item.pack == QLatin1String("trt-runtime") ? 0 : item.total;
-        const ComponentProvisionProgress event{item.pack, item.received, total, item.stage};
+        QProgressBar* bar = progressBar(item);
+        QLabel* status = progressLabel(item);
+        check(bar != nullptr && bar->isVisibleTo(componentTab),
+              "each independently active card exposes its progress bar");
+        check(status != nullptr && status->isVisibleTo(componentTab) &&
+                  !status->text().isEmpty(),
+              "each independently active card exposes a transfer status line");
+        if (item.downloadedPercent < 0) {
+            check(indeterminate(bar),
+                  "an active transfer with no measured total renders indeterminate");
+        } else {
+            check(bar != nullptr && bar->minimum() == 0 && bar->maximum() == 100 &&
+                      bar->value() == item.downloadedPercent,
+                  "an active known-size transfer reports its own byte fraction");
+        }
+        check(bar != nullptr && bar->value() < 100,
+              "an active transfer never reports a terminal 100%");
+        downloadedPercents.append(indeterminate(bar) ? -1
+                                                      : (bar != nullptr ? bar->value() : -1));
+        downloadedTexts.append(status != nullptr ? status->text() : QString());
+    }
+
+    // A phase change must not reuse the finished transfer's number when the
+    // phase is verifying or carries no measured total, and it must not disturb
+    // any sibling card's independent fraction.
+    for (const Presentation& item : presentations) {
+        const ComponentProvisionProgress event{item.pack, item.phaseReceived,
+                                              item.phaseTotal, item.phaseStage};
         Q_EMIT provisioner.progress(event);
     }
     QApplication::processEvents();
 
-    for (const Presentation& item : presentations) {
-        QProgressBar* bar = componentTab->findChild<QProgressBar*>(
-            item.cardId + QStringLiteral("Progress"));
-        QLabel* status = componentTab->findChild<QLabel*>(
-            item.cardId + QStringLiteral("ProgressStatus"));
-        check(bar != nullptr && bar->isVisibleTo(componentTab),
-              "each independently active card exposes its progress bar");
-        check(status != nullptr && status->isVisibleTo(componentTab) && !status->text().isEmpty(),
-              "each independently active card exposes its phase status");
-        check(bar != nullptr && bar->minimum() == 0 && bar->maximum() == 100 &&
-                  bar->value() == item.expectedPercent,
-              "phase transitions preserve each card's own transferred-byte fraction");
-        if (status != nullptr) {
-            const QString stageLabel =
-                item.stage == ComponentProvisionStage::Verifying
-                    ? QCoreApplication::translate("mikai::app::ComponentStoreTab", "Verifying")
-                    : QCoreApplication::translate("mikai::app::ComponentStoreTab", "Extracting");
-            check(status->text().contains(stageLabel),
-                  "phase status replaces the downloaded-byte display");
+    bool sawIndeterminate = false;
+    bool sawKnownFraction = false;
+    bool siblingsUndisturbed = true;
+    for (int index = 0; index < presentations.size(); ++index) {
+        const Presentation& item = presentations.at(index);
+        QProgressBar* bar = progressBar(item);
+        QLabel* status = progressLabel(item);
+        const bool phaseIndeterminate = indeterminate(bar);
+        const QString phaseText = status != nullptr ? status->text() : QString();
+        if (item.phasePercent < 0) {
+            sawIndeterminate = true;
+            check(phaseIndeterminate,
+                  "a verifying or unknown-size phase renders indeterminate");
+        } else {
+            sawKnownFraction = true;
+            check(bar != nullptr && bar->minimum() == 0 && bar->maximum() == 100 &&
+                      bar->value() == item.phasePercent,
+                  "a known-size phase keeps that card's own byte fraction");
+            if (downloadedPercents.value(index) != (bar != nullptr ? bar->value() : -1)) {
+                siblingsUndisturbed = false;
+            }
         }
-        QWidget* card = componentTab->findChild<QWidget*>(
+        check(bar != nullptr && bar->value() < 100,
+              "no phase reports a terminal 100% before the store confirms it");
+        // The wording is whatever the live language renders: this asserts the
+        // line changed, and records the translated text instead of matching an
+        // English literal.
+        check(!phaseText.isEmpty() && phaseText != downloadedTexts.value(index),
+              "the phase line replaces the transferred-byte display");
+
+        QJsonObject card;
+        card.insert(QStringLiteral("card"), item.cardId);
+        card.insert(QStringLiteral("phaseKind"), QString::fromLatin1(item.phaseKind));
+        card.insert(QStringLiteral("downloadingExpectedPercent"),
+                    item.downloadedPercent < 0 ? QJsonValue(QJsonValue::Null)
+                                               : QJsonValue(item.downloadedPercent));
+        card.insert(QStringLiteral("downloadingIndeterminate"),
+                    downloadedPercents.value(index) < 0);
+        card.insert(QStringLiteral("downloadingValue"), downloadedPercents.value(index));
+        card.insert(QStringLiteral("downloadingText"), downloadedTexts.value(index));
+        card.insert(QStringLiteral("phaseExpectedPercent"),
+                    item.phasePercent < 0 ? QJsonValue(QJsonValue::Null)
+                                          : QJsonValue(item.phasePercent));
+        card.insert(QStringLiteral("phaseIndeterminate"), phaseIndeterminate);
+        card.insert(QStringLiteral("phaseValue"), bar != nullptr ? bar->value() : -1);
+        card.insert(QStringLiteral("phaseText"), phaseText);
+        cards.append(card);
+
+        QWidget* cardWidget = componentTab->findChild<QWidget*>(
             item.cardId + QStringLiteral("Progress"));
-        if (card != nullptr) mikai::probes::revealWidget(card);
+        if (cardWidget != nullptr) mikai::probes::revealWidget(cardWidget);
         check(mikai::probes::dialogActionsFit(dialog, requestedSize),
               "Save and Cancel remain visible in the Components layout");
     }
+    check(sawIndeterminate && sawKnownFraction,
+          "the synthetic run covers indeterminate and known-size phases");
+    check(siblingsUndisturbed,
+          "a sibling card's phase never rewrites an independent known fraction");
 
     dialog.hide();
     QApplication::processEvents();
@@ -2611,10 +2700,15 @@ void exerciseComponentProgress(SettingsDialog& dialog, QSize requestedSize,
     check(waitForUi([&dialog] { return dialog.isVisible(); }, 2000),
           "Settings can hide and reopen with active synthetic presentation");
     for (const Presentation& item : presentations) {
-        QProgressBar* bar = componentTab->findChild<QProgressBar*>(
-            item.cardId + QStringLiteral("Progress"));
-        check(bar != nullptr && bar->value() == item.expectedPercent,
-              "per-card synthetic presentation is retained after hide and reopen");
+        QProgressBar* bar = progressBar(item);
+        if (item.phasePercent < 0) {
+            check(indeterminate(bar),
+                  "an indeterminate phase stays indeterminate after hide and reopen");
+        } else {
+            check(bar != nullptr && bar->minimum() == 0 && bar->maximum() == 100 &&
+                      bar->value() == item.phasePercent,
+                  "a known byte fraction is retained after hide and reopen");
+        }
     }
 
     const QString suffix =
@@ -2625,8 +2719,11 @@ void exerciseComponentProgress(SettingsDialog& dialog, QSize requestedSize,
         QStringLiteral("native-component-progress-%1-%2.png").arg(language, suffix);
     check(dialog.grab().save(screenshot),
           "synthetic component-progress presentation screenshot was saved");
+    record.insert(QStringLiteral("cards"), cards);
+    record.insert(QStringLiteral("screenshot"), screenshot);
     dialog.reject();
     QApplication::processEvents();
+    return record;
 }
 
 // The real spatial acquisition is a live network scenario: the probe drives the
@@ -3441,12 +3538,13 @@ int main(int argc, char** argv) {
                             mikai::app::theme::kSettingsDialogDefaultHeight);
         const QSize wide(mikai::app::theme::kSettingsDialogDefaultWidth,
                          mikai::app::theme::kSettingsDialogDefaultHeight);
+        QJsonArray runs;
         for (const QString& language : {QStringLiteral("en"), QStringLiteral("uk")}) {
             check(mikai::app::applyInterfaceLanguage(language, catalog),
                   "the requested Components presentation language was installed");
             for (const QSize size : {compact, wide}) {
                 SettingsDialog dialog(client, runner);
-                exerciseComponentProgress(dialog, size, language, provisioner);
+                runs.append(exerciseComponentProgress(dialog, size, language, provisioner));
             }
         }
 
@@ -3457,6 +3555,7 @@ int main(int argc, char** argv) {
         evidence.insert(QStringLiteral("syntheticProgressPresentation"), true);
         evidence.insert(QStringLiteral("acquisitionProof"), false);
         evidence.insert(QStringLiteral("inferenceProof"), false);
+        evidence.insert(QStringLiteral("runs"), runs);
         evidence.insert(QStringLiteral("passed"), failures == 0);
         evidence.insert(QStringLiteral("checks"), checks);
         evidence.insert(QStringLiteral("failures"), failures);
