@@ -50,6 +50,11 @@ QComboBox* makeChoice(QWidget* parent, const QString& name) {
     auto* combo = new QComboBox(parent);
     combo->setObjectName(name);
     combo->setMinimumHeight(theme::kSettingsControlSize);
+    // A closed field reserves its widest entry by default, which is a page floor
+    // in every language; the compact length keeps the row and the popup still
+    // shows every entry in full.
+    combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    combo->setMinimumContentsLength(theme::kSettingsCompactChoiceLengthChars);
     return combo;
 }
 

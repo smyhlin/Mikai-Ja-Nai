@@ -84,7 +84,13 @@ inline void yieldCaptionWidth(QLabel* label) {
 /// keep reading it.
 class WrappingCheckBox final : public QCheckBox {
  public:
-    using QCheckBox::QCheckBox;
+    explicit WrappingCheckBox(QWidget* parent = nullptr) : QCheckBox(parent) {
+        // A layout asks qSmartMinSize first, and a policy without the shrink
+        // flag is answered with max(sizeHint, minimumSizeHint) - the whole
+        // one-line caption - before minimumSizeHint is ever consulted. Only a
+        // shrinkable policy lets the wrapped minimum below stand.
+        setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    }
 
     QSize minimumSizeHint() const override {
         const QSize base = QCheckBox::sizeHint();
