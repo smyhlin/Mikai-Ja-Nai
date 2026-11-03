@@ -2055,6 +2055,9 @@ void AnimeJanaiManagerPanel::retranslateUi() {
            "ANIMEJANAI -> Spatial models menu, Compare window, Benchmark tab, and custom profile chains."));
     customModelsTable_->setHorizontalHeaderLabels(
         {tr("Model"), tr("Architecture"), tr("Scale"), tr("Size"), tr("Status")});
+    // The table is an inventory, not a loose surface: assistive technology names
+    // it with the heading the sighted reader sees above it.
+    customModelsTable_->setAccessibleName(modelsHeading_->text());
     importModelButton_->setText(tr("Import .onnx Model…"));
     removeModelButton_->setText(tr("Remove Selected"));
     openModelsDirButton_->setText(tr("Open Models Folder"));
