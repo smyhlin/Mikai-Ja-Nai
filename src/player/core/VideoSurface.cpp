@@ -345,7 +345,15 @@ void VideoSurface::ensureEngine() {
             if (pending != pendingLoadTokens_.end()) {
                 const LoadIdentity load = pending->second;
                 pendingLoadTokens_.erase(pending);
-                if (event->error >= 0 && event->data != nullptr) {
+                if (event->error < 0) {
+                    // A refused load never reports FILE_LOADED, so the gate it
+                    // armed is dropped here - but only for the load still current:
+                    // a refusal for a superseded submission says nothing about the
+                    // one that replaced it.
+                    if (load.epoch == mpv_->sourceEpoch()) {
+                        engineFrameHoldNeedsLoadLanding_ = false;
+                    }
+                } else if (event->data != nullptr) {
                     if (const auto entryId = playlistEntryIdFromCommand(
                             *static_cast<const mpv_event_command*>(event->data))) {
                         // Replacements retire older entries; playlist ids only increase.
@@ -355,13 +363,14 @@ void VideoSurface::ensureEngine() {
                         if (havePlaylistEntryId_ && currentPlaylistEntryId_ == *entryId) {
                             entryMediaToken_ = load.token;
                             entrySourceEpoch_ = load.epoch;
-                            // FILE_LOADED usually precedes this reply, so the
-                            // landing is latched here as well: the event arrived
-                            // while the entry was still unnamed, and a hold that
-                            // waited for `entryMediaToken_` would otherwise never
-                            // see its load land.
+                            // The identity of a load is the playlist entry this
+                            // reply names plus the epoch it was issued under: an
+                            // episode token is reused across quality and variant
+                            // swaps, so it cannot tell two loads apart. FILE_LOADED
+                            // can precede this reply, which is why the landing is
+                            // also latched here.
                             if (engineFrameHoldNeedsLoadLanding_ &&
-                                (mediaToken_ == 0 || mediaToken_ == load.token)) {
+                                load.epoch == mpv_->sourceEpoch()) {
                                 engineFrameHoldLandingSeen_ = true;
                             }
                             if (entryLoadReported_ && load.epoch == mpv_->sourceEpoch()) {
@@ -407,21 +416,15 @@ void VideoSurface::ensureEngine() {
             // says the file is loaded.
             if (!entryLoadReported_) {
                 entryLoadReported_ = true;
-                // The landing is latched BEFORE the naming guard: FILE_LOADED
-                // routinely arrives before the command reply that tells this
-                // surface which entry it was, so at this instant the entry is
-                // unnamed (epoch and token both zero). Waiting for a match there
-                // would leave the hold gated forever; and an event this soon
-                // after our own submission is the file we submitted, because the
-                // outgoing source was loaded long ago.
-                if (engineFrameHoldNeedsLoadLanding_ &&
-                    (entrySourceEpoch_ == 0 || mediaToken_ == 0 ||
-                     mediaToken_ == entryMediaToken_)) {
-                    engineFrameHoldLandingSeen_ = true;
-                }
-                if (entrySourceEpoch_ == mpv_->sourceEpoch()) {
+                // Only an entry the reply has identified, on the epoch that is
+                // current now, proves this surface's load landed. An unnamed
+                // event is not evidence: the stale-event guard below exists
+                // precisely because a FILE_LOADED for a superseded source can
+                // arrive after a replacement was submitted.
+                if (entrySourceEpoch_ != 0 && entrySourceEpoch_ == mpv_->sourceEpoch()) {
                     mediaTracksLoaded_ = true;
                     mediaTracksDirty_ = true;
+                    if (engineFrameHoldNeedsLoadLanding_) engineFrameHoldLandingSeen_ = true;
                     emit mediaLoaded(entryMediaToken_);
                 }
             }
@@ -1262,11 +1265,11 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
     load.push_back(std::move(options));
     issueCoreCommand(std::move(load), "loadfile", /*reportRefusal=*/true, mediaToken_);
     // Every submission re-arms the landing gate on whatever picture is being
-    // held. A rapid second load reuses the previous hold, and a gate that was
-    // already satisfied by the first load's landing would let the outgoing
-    // source's last in-flight frame clear this one. An engine freeze keeps its
-    // hold regardless: it is not waiting for a load.
-    if (engineFrameHoldFbo_ && !engineFrameHoldActive_) {
+    // held - freeze included, because a freeze also owns the load that follows.
+    // A rapid second load reuses the previous hold, and a gate already satisfied
+    // by the first load's landing would let the outgoing source's last in-flight
+    // frame clear this one.
+    if (engineFrameHoldFbo_) {
         engineFrameHoldNeedsLoadLanding_ = true;
         engineFrameHoldLandingSeen_ = false;
     }
@@ -1555,6 +1558,11 @@ void VideoSurface::issueCoreCommand(std::vector<std::string> args, const char* w
             // diagnostic a refusal of a seek before load or a stop has.
             qWarning("VideoSurface: %s refused (%s)", label.c_str(), qUtf8Printable(reason));
         });
+    if (!request.valid() && mediaToken.has_value() && epoch == mpv_->sourceEpoch()) {
+        // A command the transport refused will never report FILE_LOADED, so the
+        // gate the submission armed is dropped - for the current load only.
+        engineFrameHoldNeedsLoadLanding_ = false;
+    }
     if (request.valid() && mediaToken.has_value()) {
         // Keyed by the reply's own userdata, so the sink can read the entry this
         // exact command created even when the transport drops the callback
