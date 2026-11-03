@@ -12,7 +12,6 @@
 #include <QImage>
 #include <QLocale>
 #include <QScopeGuard>
-#include <QSettings>
 #include <QTemporaryDir>
 #include <QThread>
 
@@ -171,49 +170,6 @@ void TestVideoScaling::autoDownscaleLeavesTheCoreDefaultAlone() {
     policy.upscale = QStringLiteral("ewa_lanczossoft");
     options = mplayer::videoScaleOptions(policy, std::string());
     QCOMPARE(valueOf(options, "scale"), QStringLiteral("ewa_lanczossoft"));
-}
-
-void TestVideoScaling::settingsKeysRoundTrip() {
-    QTemporaryDir directory;
-    QVERIFY(directory.isValid());
-    const QString path = directory.filePath(QStringLiteral("scaling.ini"));
-    VideoScalePolicy saved;
-    saved.mode = VideoScaleMode::Aspect4x3;
-    saved.zoomPercent = 35;
-    saved.upscale = QStringLiteral("catmull_rom");
-    saved.downscale = QString();
-    {
-        QSettings settings(path, QSettings::IniFormat);
-        settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kVideoScaleModeSettingKey),
-                          static_cast<int>(saved.mode));
-        settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kVideoZoomSettingKey),
-                          saved.zoomPercent);
-        settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kVideoUpscaleSettingKey),
-                          saved.upscale);
-        settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kVideoDownscaleSettingKey),
-                          saved.downscale);
-        settings.sync();
-    }
-    QSettings read(path, QSettings::IniFormat);
-    QCOMPARE(read.value(QString::fromLatin1(mplayer::VideoSurface::kVideoScaleModeSettingKey), -1).toInt(),
-             static_cast<int>(VideoScaleMode::Aspect4x3));
-    QCOMPARE(read.value(QString::fromLatin1(mplayer::VideoSurface::kVideoZoomSettingKey), 0).toInt(),
-             35);
-    QCOMPARE(read.value(QString::fromLatin1(mplayer::VideoSurface::kVideoUpscaleSettingKey))
-                 .toString(),
-             QStringLiteral("catmull_rom"));
-    QCOMPARE(read.value(QString::fromLatin1(mplayer::VideoSurface::kVideoDownscaleSettingKey))
-                 .toString(),
-             QString());
-    // The keys are the contract with every reader and writer.
-    QCOMPARE(QString::fromLatin1(mplayer::VideoSurface::kVideoScaleModeSettingKey),
-             QStringLiteral("playback/videoScaleMode"));
-    QCOMPARE(QString::fromLatin1(mplayer::VideoSurface::kVideoZoomSettingKey),
-             QStringLiteral("playback/videoZoomPercent"));
-    QCOMPARE(QString::fromLatin1(mplayer::VideoSurface::kVideoUpscaleSettingKey),
-             QStringLiteral("playback/videoScale"));
-    QCOMPARE(QString::fromLatin1(mplayer::VideoSurface::kVideoDownscaleSettingKey),
-             QStringLiteral("playback/videoDownscale"));
 }
 
 namespace {

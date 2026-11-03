@@ -2679,9 +2679,7 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         finalOwner != nullptr ? readComposedCrop(finalOwner) : QImage();
     const double motionPositionFirst = surface->position();
     const quint64 motionFramesFirst = surface->playbackDiagnostics().renderedOutputFrames;
-    // 260 ms can land between two presents of a 24 fps source. Wait until the
-    // core has actually presented another frame, then compare. A frozen picture
-    // still fails.
+    // Elapsed time alone does not establish that a new output frame arrived.
     pumpUntil([&] {
         return surface->playbackDiagnostics().renderedOutputFrames > motionFramesFirst;
     }, 1000);
