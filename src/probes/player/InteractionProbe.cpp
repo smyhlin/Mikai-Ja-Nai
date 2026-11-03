@@ -25,8 +25,10 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QEventLoop>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QHostAddress>
 #include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -43,6 +45,8 @@
 #include <QPushButton>
 #include <QScreen>
 #include <QSettings>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QTranslator>
@@ -57,6 +61,7 @@
 #include <optional>
 
 #include "CompareWindow.hpp"
+#include "HoverPreview.hpp"
 #include "PlayerDialog.hpp"
 #include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
@@ -1826,21 +1831,563 @@ int runLanguageSmoke(const QString& url, PlayerHost* host) {
     return failures == 0 ? 0 : 1;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  hover / loading case
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// A loopback HTTP origin that answers slowly on purpose.
+///
+/// The only way to observe a real "opening" state is a source that takes a
+/// while to produce its first byte, and the public internet is not a dependency
+/// a probe may take. This serves one file from disk over 127.0.0.1 after a
+/// fixed delay: bounded, local, and honest about what it is - network latency
+/// on a real socket. Nothing here reaches into the player; the player sees an
+/// ordinary http URL.
+class DelayedHttpSource : public QObject {
+public:
+    explicit DelayedHttpSource(QObject* parent = nullptr) : QObject(parent) {
+        if (!server_.listen(QHostAddress::LocalHost, 0)) return;
+        connect(&server_, &QTcpServer::newConnection, this, [this] { acceptPending(); });
+    }
+
+    bool serve(const QString& path) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) return false;
+        payload_ = file.readAll();
+        return !payload_.isEmpty();
+    }
+
+    QString url(const QString& name = QStringLiteral("clip.mp4")) const {
+        if (!server_.isListening()) return QString();
+        return QStringLiteral("http://127.0.0.1:%1/%2").arg(server_.serverPort()).arg(name);
+    }
+
+    int connections() const { return connections_; }
+
+private:
+    void acceptPending() {
+        while (QTcpSocket* socket = server_.nextPendingConnection()) {
+            ++connections_;
+            auto* buffer = std::make_shared<QByteArray>();
+            connect(socket, &QTcpSocket::readyRead, this, [this, socket, buffer] {
+                buffer->append(socket->readAll());
+                if (buffer->indexOf("\r\n\r\n") < 0) return;
+                const QByteArray head = buffer->left(buffer->indexOf("\r\n\r\n"));
+                startResponse(socket, head);
+            });
+            connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+        }
+    }
+
+    void startResponse(QTcpSocket* socket, const QByteArray& head) {
+        // A demuxer probes with Range; answering 200 to one is a stream it
+        // cannot seek, which is a different open path than the one measured.
+        qint64 offset = 0;
+        const int rangeAt = head.toLower().indexOf("range:");
+        if (rangeAt >= 0) {
+            const int equals = head.indexOf('=', rangeAt);
+            const int dash = head.indexOf('-', equals + 1);
+            if (equals > 0 && dash > equals) {
+                offset = head.mid(equals + 1, dash - equals - 1).trimmed().toLongLong();
+            }
+        }
+        offset = std::clamp<qint64>(offset, 0, payload_.size());
+        const qint64 total = payload_.size();
+        const QByteArray body = payload_.mid(static_cast<int>(offset));
+        QTimer::singleShot(delayMs_, socket, [socket, offset, total, body] {
+            if (socket->state() != QAbstractSocket::ConnectedState) return;
+            QByteArray response;
+            response += offset > 0 ? "HTTP/1.1 206 Partial Content\r\n"
+                                   : "HTTP/1.1 200 OK\r\n";
+            response += "Content-Type: video/mp4\r\nAccept-Ranges: bytes\r\n";
+            response += "Content-Length: " + QByteArray::number(body.size()) + "\r\n";
+            if (offset > 0) {
+                response += "Content-Range: bytes " + QByteArray::number(offset) + "-" +
+                            QByteArray::number(total - 1) + "/" + QByteArray::number(total) +
+                            "\r\n";
+            }
+            response += "Connection: close\r\n\r\n";
+            socket->write(response);
+            socket->write(body);
+            socket->disconnectFromHost();
+        });
+    }
+
+    QTcpServer server_;
+    QByteArray payload_;
+    int delayMs_ = 2400;
+    int connections_ = 0;
+};
+
+/// What the card says about itself at one instant.
+struct HoverCardFacts {
+    bool visible = false;
+    bool frame = false;
+    bool settled = false;
+    QString status;
+    QRect geometry;
+};
+
+HoverCardFacts readCard(HoverPreview* card) {
+    HoverCardFacts facts;
+    if (card == nullptr) return facts;
+    facts.visible = card->isVisible();
+    facts.frame = card->hasFrame();
+    facts.status = card->statusText();
+    // "Settled" is the frame of the instant the pointer is on: a kept older
+    // frame is explicitly marked, and a card that never marks one is only
+    // settled when it actually holds a frame. Same predicate before and after
+    // the fix, so a latency number means the same thing in both runs.
+    facts.settled = facts.frame && facts.status.isEmpty();
+    facts.geometry = card->geometry();
+    return facts;
+}
+
+/// Puts the real pointer at `local` of `target` and then delivers the move the
+/// widget would have received.
+///
+/// The real move is what gives the widget underMouse(); the synthetic one is
+/// what makes the reading deterministic, because a probe must not depend on
+/// whether the window manager coalesced a redraw of the cursor position.
+bool aimPointerAt(QWidget* target, const QPoint& local) {
+    if (target == nullptr) return false;
+    const QPoint global = target->mapToGlobal(local);
+    QCursor::setPos(global);
+    QCoreApplication::processEvents();
+    QMouseEvent enter(QEvent::Enter, QPointF(local), QPointF(global), Qt::NoButton, Qt::NoButton,
+                      Qt::NoModifier);
+    QApplication::sendEvent(target, &enter);
+    QMouseEvent move(QEvent::MouseMove, QPointF(local), QPointF(global), Qt::NoButton, Qt::NoButton,
+                     Qt::NoModifier);
+    QApplication::sendEvent(target, &move);
+    QCoreApplication::processEvents();
+    return true;
+}
+
+/// The x inside `bar` that stands for `fraction` of its track. The track's own
+/// margin is private, so this stays inside the widget's own width and never
+/// claims a precision the probe does not have.
+int trackPointFor(const QWidget* bar, double fraction) {
+    if (bar == nullptr) return 0;
+    const int pad = std::max(6, bar->width() / 40);
+    const int left = pad;
+    const int right = std::max(left + 1, bar->width() - pad);
+    return left + qRound(std::clamp(fraction, 0.0, 1.0) * (right - left));
+}
+
+/// How many pixels in the middle third of `image` are brighter than a card
+/// background: the difference between "a window said something" and "a window
+/// stayed a dark rectangle".
+int brightPixelsInTheCentre(const QImage& image, int threshold = 60) {
+    if (image.isNull()) return 0;
+    const QImage rgb = image.convertToFormat(QImage::Format_RGB888);
+    const QRect area(rgb.width() / 3, rgb.height() / 3, rgb.width() / 3, rgb.height() / 3);
+    int bright = 0;
+    for (int y = area.top(); y < area.bottom(); y += 2) {
+        for (int x = area.left(); x < area.right(); x += 2) {
+            const QRgb pixel = rgb.pixel(x, y);
+            const int luma = (qRed(pixel) * 299 + qGreen(pixel) * 587 + qBlue(pixel) * 114) / 1000;
+            if (luma > threshold) ++bright;
+        }
+    }
+    return bright;
+}
+
+/// Waits for the card to settle on the instant under the pointer, and answers
+/// how long that took. The budget is generous on purpose: a run against the
+/// unfixed build has to report a real duration instead of a timeout.
+qint64 settleCard(HoverPreview* card, int budgetMs) {
+    const QElapsedTimer clock = [] {
+        QElapsedTimer timer;
+        timer.start();
+        return timer;
+    }();
+    for (int waited = 0; waited < budgetMs; waited += 5) {
+        if (readCard(card).settled) return clock.elapsed();
+        QCoreApplication::processEvents();
+        QThread::msleep(5);
+    }
+    return clock.elapsed();
+}
+
+int runHoverMotion(const QString& url, PlayerHost* host) {
+    QJsonObject evidence;
+    QJsonArray screenshots;
+    evidence.insert(QStringLiteral("probe"), QStringLiteral("interaction_probe"));
+    evidence.insert(QStringLiteral("case"), QStringLiteral("hover-motion"));
+    evidence.insert(QStringLiteral("media"), url);
+    std::fprintf(stderr, "case: hover-motion media=%s\n", qPrintable(url));
+
+    const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};
+    auto* dialog = new PlayerDialog(QStringLiteral("probe hover motion"), url, qualities, 720,
+                                    host);
+    QPointer<PlayerDialog> dialogGuard(dialog);
+    dialog->startPlayer();
+    dialog->showFullScreen();
+
+    auto* shell = dialog->findChild<PlayerShell*>();
+    auto* surface = dialog->findChild<VideoSurface*>();
+    auto* bar = dialog->findChild<ScrubBar*>(QStringLiteral("playerScrubBar"));
+    auto* card = dialog->findChild<HoverPreview*>(QStringLiteral("playerHoverPreview"));
+    auto* dock = dialog->findChild<QWidget*>(QStringLiteral("playerDock"));
+    check(shell != nullptr && surface != nullptr && bar != nullptr && card != nullptr,
+          "the hover case built a real player with its timeline and hover card");
+    if (shell == nullptr || surface == nullptr || bar == nullptr || card == nullptr) {
+        evidence.insert(QStringLiteral("passed"), false);
+        evidence.insert(QStringLiteral("checks"), checks);
+        evidence.insert(QStringLiteral("failures"), failures);
+        saveEvidenceJson(evidence);
+        std::fprintf(stderr, "RESULT: FAIL (%d)\n", failures);
+        return 1;
+    }
+
+    const QElapsedTimer sessionClock = [] {
+        QElapsedTimer timer;
+        timer.start();
+        return timer;
+    }();
+    const bool opened = waitFor(
+        [surface] { return surface->hasVideo() && surface->duration() > 0.0; }, 20000);
+    check(opened, "the motion fixture opened");
+    if (!opened) {
+        dialog->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        evidence.insert(QStringLiteral("passed"), false);
+        evidence.insert(QStringLiteral("checks"), checks);
+        evidence.insert(QStringLiteral("failures"), failures);
+        saveEvidenceJson(evidence);
+        std::fprintf(stderr, "RESULT: FAIL (%d)\n", failures);
+        return 1;
+    }
+    const double duration = surface->duration();
+    evidence.insert(QStringLiteral("duration"), duration);
+    waitFor([surface] { return surface->isPlaying(); }, 5000);
+
+    // ── first hover after playback started ────────────────────────────────
+    QCoreApplication::processEvents();
+    QThread::msleep(2000);
+    aimPointerAt(bar, QPoint(trackPointFor(bar, 0.35), bar->height() / 2));
+    const qint64 firstHoverMs = settleCard(card, 6000);
+    evidence.insert(QStringLiteral("firstHoverMs"), static_cast<double>(firstHoverMs));
+    std::fprintf(stderr, "     first hover: settled=%d frame=%d status=%s ms=%lld\n",
+                 int(readCard(card).settled), int(readCard(card).frame),
+                 qPrintable(readCard(card).status), static_cast<long long>(firstHoverMs));
+    check(readCard(card).visible, "the hover card appears while the pointer rests on the timeline");
+    check(firstHoverMs <= 700,
+          "the first hover on a playing source settles a frame within 700 ms");
+    check(readCard(card).frame, "the first hover carries a decoded frame");
+
+    // ── a parked pointer for longer than the auto-hide timeout ────────────
+    int parkedSamples = 0;
+    int parkedCardVisible = 0;
+    int parkedHudVisible = 0;
+    int parkedFrame = 0;
+    for (int waited = 0; waited < 12000; waited += 250) {
+        QCoreApplication::processEvents();
+        QThread::msleep(250);
+        const HoverCardFacts facts = readCard(card);
+        ++parkedSamples;
+        if (facts.visible) ++parkedCardVisible;
+        if (facts.frame) ++parkedFrame;
+        // The state name is the shell's own verdict on the HUD; the dock's own
+        // visibility is checked when the dock can be named, which the unfixed
+        // tree cannot do - a missing name must not turn into a skipped case.
+        const bool hudUp = shell->stateName() != QLatin1String("FULLSCREEN_AUTO_HIDDEN") &&
+                           (dock == nullptr || dock->isVisible());
+        if (hudUp) ++parkedHudVisible;
+    }
+    evidence.insert(QStringLiteral("parkedSamples"), parkedSamples);
+    evidence.insert(QStringLiteral("parkedCardVisible"), parkedCardVisible);
+    evidence.insert(QStringLiteral("parkedHudVisible"), parkedHudVisible);
+    evidence.insert(QStringLiteral("parkedFrame"), parkedFrame);
+    std::fprintf(stderr, "     parked 12 s: samples=%d card=%d hud=%d frame=%d\n", parkedSamples,
+                 parkedCardVisible, parkedHudVisible, parkedFrame);
+    saveShot(dialog, QStringLiteral("hover-motion-parked-hud.png"), &screenshots);
+    saveShot(card, QStringLiteral("hover-motion-parked-card.png"), &screenshots);
+
+    check(parkedCardVisible == parkedSamples,
+          "the hover card stays visible for every sample of a pointer parked 12 s on the timeline");
+    check(parkedHudVisible == parkedSamples,
+          "the dock stays up for every sample of a pointer parked 12 s on the timeline");
+    check(parkedFrame > parkedSamples * 9 / 10,
+          "the parked card holds a decoded frame for the whole park");
+
+    // ── movement along the timeline ───────────────────────────────────────
+    bool followed = true;
+    bool stayedVisible = true;
+    for (int step = 0; step <= 6; ++step) {
+        const double fraction = 0.12 + 0.12 * step;
+        const int x = trackPointFor(bar, fraction);
+        aimPointerAt(bar, QPoint(x, bar->height() / 2));
+        settleCard(card, 1200);
+        const HoverCardFacts facts = readCard(card);
+        if (!facts.visible || shell->stateName() == QLatin1String("FULLSCREEN_AUTO_HIDDEN")) {
+            stayedVisible = false;
+        }
+        const int expected = bar->mapTo(card->parentWidget(), QPoint(x, 0)).x();
+        if (std::abs(facts.geometry.center().x() - expected) > 24) followed = false;
+    }
+    check(stayedVisible, "moving along the timeline never dismisses the card or the HUD");
+    check(followed, "the card follows the pointer across the timeline");
+
+    // ── bar to card, inside the grace window ──────────────────────────────
+    aimPointerAt(bar, QPoint(trackPointFor(bar, 0.5), bar->height() / 2));
+    settleCard(card, 4000);
+    const QPoint cardCentre = card->mapToGlobal(card->rect().center());
+    QCursor::setPos(cardCentre);
+    // The real move leaves the bar; the bar's own leave is delivered here so the
+    // grace timer starts at a known instant rather than at the platform's.
+    QEvent leave(QEvent::Leave);
+    QApplication::sendEvent(bar, &leave);
+    QCoreApplication::processEvents();
+    bool keptAcrossGrace = true;
+    for (int waited = 0; waited < 500; waited += 50) {
+        QCoreApplication::processEvents();
+        QThread::msleep(50);
+        if (!readCard(card).visible) keptAcrossGrace = false;
+    }
+    check(keptAcrossGrace,
+          "a pointer that moves from the bar onto the card keeps the card open");
+
+    // ── a true leave ──────────────────────────────────────────────────────
+    QCursor::setPos(QPoint(4, 4));
+    QCoreApplication::processEvents();
+    QEvent leaveAgain(QEvent::Leave);
+    QApplication::sendEvent(bar, &leaveAgain);
+    const QElapsedTimer leaveClock = [] {
+        QElapsedTimer timer;
+        timer.start();
+        return timer;
+    }();
+    bool dismissed = false;
+    qint64 dismissMs = -1;
+    qint64 hudHiddenMs = -1;
+    while (leaveClock.elapsed() < 6000) {
+        QCoreApplication::processEvents();
+        QThread::msleep(20);
+        if (!dismissed && !readCard(card).visible) {
+            dismissed = true;
+            dismissMs = leaveClock.elapsed();
+        }
+        if (shell->stateName() == QLatin1String("FULLSCREEN_AUTO_HIDDEN")) {
+            hudHiddenMs = leaveClock.elapsed();
+            break;
+        }
+    }
+    evidence.insert(QStringLiteral("cardDismissMs"), static_cast<double>(dismissMs));
+    check(dismissed, "the card is dismissed after the pointer truly leaves the timeline");
+    evidence.insert(QStringLiteral("hudAutoHiddenMs"), static_cast<double>(hudHiddenMs));
+    std::fprintf(stderr, "     leave: card_dismiss_ms=%lld hud_hidden_ms=%lld\n",
+                 static_cast<long long>(dismissMs), static_cast<long long>(hudHiddenMs));
+    check(hudHiddenMs >= 2000 && hudHiddenMs <= 5000,
+          "the HUD auto-hides about 2.5 s after the pointer truly leaves");
+
+    // ── two sweeps: the second one must not decode again ──────────────────
+    // The HUD is auto-hidden by now; a real pointer move back into the window
+    // is what a viewer does next, so the sweep starts from a revealed HUD.
+    QCursor::setPos(shell->mapToGlobal(shell->rect().center()));
+    QCoreApplication::processEvents();
+    QThread::msleep(400);
+    constexpr int kSweepInstants = 10;
+    QVector<double> firstPass;
+    QVector<double> secondPass;
+    for (int pass = 0; pass < 2; ++pass) {
+        for (int index = 0; index < kSweepInstants; ++index) {
+            // The second pass walks the same instants in reverse, which is the
+            // worst order for a recency list that is not doing its job.
+            const int spot = pass == 0 ? index : kSweepInstants - 1 - index;
+            const double fraction = 0.06 + 0.085 * spot;
+            aimPointerAt(bar, QPoint(trackPointFor(bar, fraction), bar->height() / 2));
+            const qint64 took = settleCard(card, 2500);
+            (pass == 0 ? firstPass : secondPass).append(static_cast<double>(took));
+        }
+    }
+    int fastHits = 0;
+    for (double took : secondPass) {
+        if (took < 5.0) ++fastHits;
+    }
+    const auto asList = [](const QVector<double>& values) {
+        QVariantList list;
+        for (double value : values) list.append(value);
+        return list;
+    };
+    evidence.insert(QStringLiteral("sweepFirstMs"),
+                    QJsonArray::fromVariantList(asList(firstPass)));
+    evidence.insert(QStringLiteral("sweepSecondMs"),
+                    QJsonArray::fromVariantList(asList(secondPass)));
+    evidence.insert(QStringLiteral("sweepFastHits"), fastHits);
+    std::fprintf(stderr, "     sweep: first_n=%d second_n=%d second_fast=%d\n",
+                 static_cast<int>(firstPass.size()), static_cast<int>(secondPass.size()),
+                 fastHits);
+    check(fastHits * 100 >= secondPass.size() * 80,
+          "at least 80 % of a repeated sweep is served without a new decode");
+
+    // ── a slow preview source explains itself ────────────────────────────
+    //
+    // A real shell with a real timeline, whose source is the slow loopback
+    // origin: the card has to load it through the preview decoder even though
+    // the player itself never opened it. Only the shell's public surface is
+    // used here, so this block compiles against the unfixed tree.
+    DelayedHttpSource slow;
+    check(slow.serve(url), "the loopback source serves the motion fixture");
+    QWidget slowHost;
+    slowHost.resize(1100, 680);
+    auto* slowShell = new PlayerShell(&slowHost);
+    slowShell->resize(slowHost.size());
+    slowShell->setMedia(slow.url());
+    slowShell->setDuration(std::max(60.0, duration));
+    slowHost.show();
+    QCoreApplication::processEvents();
+    auto* slowBar = slowShell->findChild<ScrubBar*>(QStringLiteral("playerScrubBar"));
+    auto* slowCard = slowShell->findChild<HoverPreview*>(QStringLiteral("playerHoverPreview"));
+    check(slowBar != nullptr && slowCard != nullptr,
+          "the slow-preview shell has a timeline and a card");
+    if (slowBar != nullptr && slowCard != nullptr) {
+        aimPointerAt(slowBar, QPoint(trackPointFor(slowBar, 0.5), slowBar->height() / 2));
+        bool explained = false;
+        qint64 explainedMs = -1;
+        const QElapsedTimer explainClock = [&] {
+            QElapsedTimer timer;
+            timer.start();
+            return timer;
+        }();
+        while (explainClock.elapsed() < 2000) {
+            QCoreApplication::processEvents();
+            QThread::msleep(10);
+            const HoverCardFacts facts = readCard(slowCard);
+            if (facts.visible && !facts.settled && !facts.status.isEmpty()) {
+                explained = true;
+                explainedMs = explainClock.elapsed();
+                break;
+            }
+            if (facts.settled) break;
+        }
+        evidence.insert(QStringLiteral("slowPreviewExplainedMs"),
+                        static_cast<double>(explainedMs));
+        check(explained,
+              "a preview of a source that has not answered yet says what it is waiting for");
+        saveShot(slowCard, QStringLiteral("hover-motion-loading-card.png"), &screenshots);
+    }
+    // The shell's own destructor releases the card's decoder without waiting.
+    delete slowShell;
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+    // ── the window before the picture: an honest opening state ────────────
+    if (!dialogGuard.isNull()) {
+        dialogGuard->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+    DelayedHttpSource origin;
+    check(origin.serve(url), "the loopback origin serves the motion fixture");
+    const QString slowUrl = origin.url();
+    check(!slowUrl.isEmpty() && origin.connections() == 0,
+          "the loopback origin listens without having answered anything yet");
+
+    auto* slowDialog = new PlayerDialog(QStringLiteral("probe opening"), slowUrl,
+                                        QList<QualityEntry>{{720, slowUrl}}, 720, host);
+    QPointer<PlayerDialog> slowGuard(slowDialog);
+    const QElapsedTimer openClock = [&] {
+        QElapsedTimer timer;
+        timer.start();
+        return timer;
+    }();
+    slowDialog->startPlayer();
+    slowDialog->showFullScreen();
+    QCoreApplication::processEvents();
+    auto* opening = slowDialog->findChild<QWidget*>(QStringLiteral("playerOpeningOverlay"));
+    auto* slowSurface = slowDialog->findChild<VideoSurface*>();
+    bool openingSeen = false;
+    QString openingText;
+    const qint64 openingVisibleMs = openClock.elapsed();
+    for (int waited = 0; waited < 3000; waited += 20) {
+        QCoreApplication::processEvents();
+        QThread::msleep(20);
+        if (opening != nullptr && opening->isVisible()) {
+            openingSeen = true;
+            openingText = opening->property("openingText").toString();
+            break;
+        }
+    }
+    evidence.insert(QStringLiteral("openingVisibleMs"), static_cast<double>(openingVisibleMs));
+    evidence.insert(QStringLiteral("openingText"), openingText);
+    std::fprintf(stderr, "     opening: overlay=%d text='%s' first_seen_ms=%lld\n",
+                 int(openingSeen), qPrintable(openingText),
+                 static_cast<long long>(openingVisibleMs));
+    check(openingSeen,
+          "the opening state is visible within one frame of the player window appearing");
+    check(!openingText.isEmpty(), "the opening state names what the window is waiting for");
+    saveShot(slowDialog, QStringLiteral("hover-motion-opening.png"), &screenshots);
+
+    const QImage openingPicture = slowDialog->grab().toImage();
+    const int brightWhileOpening = brightPixelsInTheCentre(openingPicture);
+    evidence.insert(QStringLiteral("openingBrightPixels"), brightWhileOpening);
+    check(brightWhileOpening > 200,
+          "the window is not a bare dark rectangle while the stream opens");
+
+    qint64 firstFrameMs = -1;
+    for (int waited = 0; waited < 20000; waited += 20) {
+        QCoreApplication::processEvents();
+        QThread::msleep(20);
+        if (slowSurface != nullptr && slowSurface->hasVisibleOutputFrame()) {
+            firstFrameMs = openClock.elapsed();
+            break;
+        }
+    }
+    evidence.insert(QStringLiteral("firstFrameMs"), static_cast<double>(firstFrameMs));
+    check(origin.connections() > 0, "the delayed origin was actually asked for the stream");
+    check(firstFrameMs > 500, "the delayed source really made the window wait");
+    bool retracted = false;
+    for (int waited = 0; waited < 3000; waited += 20) {
+        QCoreApplication::processEvents();
+        QThread::msleep(20);
+        if (opening == nullptr || !opening->isVisible()) {
+            retracted = true;
+            break;
+        }
+    }
+    check(retracted, "the opening state retracts once the first frame is on screen");
+    std::fprintf(stderr, "     opening: first_frame_ms=%lld connections=%d\n",
+                 static_cast<long long>(firstFrameMs), origin.connections());
+
+    if (!slowGuard.isNull()) {
+        slowGuard->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+
+    evidence.insert(QStringLiteral("screenshots"), screenshots);
+    evidence.insert(QStringLiteral("elapsedMs"), static_cast<double>(sessionClock.elapsed()));
+    evidence.insert(QStringLiteral("passed"), failures == 0);
+    evidence.insert(QStringLiteral("checks"), checks);
+    evidence.insert(QStringLiteral("failures"), failures);
+    QFile out(QStringLiteral("interaction-hover-motion-evidence.json"));
+    if (out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        out.write(QJsonDocument(evidence).toJson(QJsonDocument::Indented));
+        out.close();
+    } else {
+        check(false, "the hover-motion evidence JSON was written");
+    }
+    std::fprintf(stderr, "RESULT: %s\n", failures == 0 ? "PASS" : "FAIL");
+    return failures == 0 ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
-    // Two ways in: the full interaction walk (the historical argument), and a
-    // narrowly named live-language case. The second exists because proving the
-    // language contract does not need the quality reloads, pixel comparisons,
-    // PiP ownership ladder or Esc walk - and a smoke that spends a minute on
-    // them is a smoke nobody runs before touching a translation.
+    // Three ways in: the full interaction walk (the historical argument), a
+    // narrowly named live-language case, and the focused hover/loading case.
+    // Each narrow case exists because proving its contract does not need the
+    // quality reloads, pixel comparisons, PiP ownership ladder or Esc walk -
+    // and a smoke that spends a minute on them is a smoke nobody runs.
     QString videoArgument;
     bool languageSmoke = false;
+    bool hoverMotion = false;
     for (int index = 1; index < argc; ++index) {
         const QString argument = QString::fromLocal8Bit(argv[index]);
         if (argument == QLatin1String("--language-smoke")) {
             languageSmoke = true;
+        } else if (argument == QLatin1String("--hover-motion")) {
+            hoverMotion = true;
         } else if (videoArgument.isEmpty()) {
             videoArgument = argument;
         }
@@ -1848,7 +2395,7 @@ int main(int argc, char** argv) {
     if (videoArgument.isEmpty() || !QFileInfo::exists(videoArgument)) {
         std::fprintf(stderr,
                      "Usage: InteractionProbe <known-duration-video-file> "
-                     "[--language-smoke]\n");
+                     "[--language-smoke | --hover-motion]\n");
         return 3;
     }
     // The last stage closes the last window, and Qt quits the loop when that
@@ -1878,6 +2425,9 @@ int main(int argc, char** argv) {
     const QString url = QFileInfo(videoArgument).absoluteFilePath();
     if (languageSmoke) {
         return runLanguageSmoke(url, &host);
+    }
+    if (hoverMotion) {
+        return runHoverMotion(url, &host);
     }
     const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};
 
