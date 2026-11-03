@@ -109,17 +109,44 @@ public:
     /// translated so that `root`'s top-left is its origin. `clip` bounds the
     /// work: the surface's paintGL and the shell's own paintEvent each cover
     /// the part of the window the other cannot.
-    void paint(QPainter& painter, QWidget* root, const QRect& clip) const;
+    ///
+    /// Each control is rasterised into its own device-pixel pixmap and reused
+    /// until its own state changes. Painting them straight into the GL device
+    /// re-rasterised every glyph and stroked button on every video frame, and
+    /// the GL paint engine has no multisampling - which is why the overlay
+    /// glyphs were the jagged ones. One image per control, not one for the
+    /// union of their rects: the chrome sits in the corners of a 4K window, and
+    /// a union-sized buffer would be a full-frame allocation per paint.
+    void paint(QPainter& painter, QWidget* root, const QRect& clip);
+
+    /// Drops one control's cached pixels: its own state changed.
+    void invalidate(const QWidget* widget);
+    /// Drops every cached control: a font, palette, language, accent or
+    /// device-pixel-ratio change can alter any of them.
+    void invalidateAll();
+
+    /// Device pixels the caches hold, so a probe can report the cost instead of
+    /// asserting it is small.
+    qint64 cachedBytes() const { return cachedBytes_; }
 
 private:
     struct Entry {
         QWidget* widget = nullptr;
         ChromePaint* painted = nullptr;
+        QPixmap cache;
+        QRect box;
+        qreal devicePixelRatio = 0.0;
+        quint64 stamp = 0;
+        bool valid = false;
     };
 
     void addSubtree(QWidget* root, QObject* watcher);
+    void dropCache(Entry& entry);
 
     QVector<Entry> entries_;
+    /// Bumped by invalidateAll(), so every entry is stale without walking them.
+    quint64 generation_ = 0;
+    qint64 cachedBytes_ = 0;
 };
 
 /// Routes an adopted widget's notifications to the surface. Called first in

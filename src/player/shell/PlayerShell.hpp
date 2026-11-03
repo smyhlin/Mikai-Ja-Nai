@@ -524,6 +524,11 @@ private:
     /// Whether a corner mask is currently installed on the surface. Tracked
     /// rather than read back from QWidget::mask(), which returns by value.
     bool hasMask_ = false;
+    /// The shape the installed mask describes, in the surface's LOCAL
+    /// coordinates. Re-applying an unchanged region on every input event is a
+    /// backing-store change for no new pixels, so the shape is what is compared.
+    QRect maskRect_;
+    int maskRadius_ = 0;
 
     // canvas / fsm
     bool fullscreen_ = false;

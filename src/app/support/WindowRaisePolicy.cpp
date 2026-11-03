@@ -93,10 +93,16 @@ void requestForeground(QPointer<QWidget> window, int attempt) {
                       !QCoreApplication::closingDown() && attempt < kRaiseAttempts;
     if (!live) return;
     if (attempt > 0) {
-        if (QWidget* active = QApplication::activeWindow();
-            active != nullptr && active->window() != window) {
-            return;
-        }
+        // A retry is for a window that lost a foreground race we are still in.
+        // Once another application owns the foreground - or this one owns no
+        // window at all, which is what a switch away looks like before the next
+        // window activates - the race is over, and attaching to the other
+        // process's input thread here would fight the switch the viewer is
+        // performing. The launch case is served by attempt 0, which is not
+        // gated: that window did appear behind the shell and still needs raising.
+        if (QGuiApplication::applicationState() != Qt::ApplicationActive) return;
+        QWidget* active = QApplication::activeWindow();
+        if (active == nullptr || active->window() != window) return;
     }
 
     window->raise();

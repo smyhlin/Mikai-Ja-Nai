@@ -1037,18 +1037,31 @@ void PlayerShell::applyState() {
 
 
     // QOpenGLWidget ignores stylesheets, so corner rounding is a real mask.
+    //
+    // setMask() takes the widget's LOCAL coordinates; surface_->geometry() is in
+    // this shell's. A path built from the parent rect therefore clipped the
+    // surface wherever the shell's own layout displaced it. The shape is also
+    // compared before it is applied: applyState() runs on every input event, and
+    // re-setting an identical 1-bit region churns the widget's backing store.
     const int radius = (rounded_ && !fullscreen_ && frameless_) ? 12 : 0;
+    const QRect maskShape(QPoint(0, 0), surface_->size());
     if (radius > 0) {
-        QPainterPath path;
-        path.addRoundedRect(QRectF(surface_->geometry()), radius, radius);
-        mikai::gui::uiprofile::noteSetMask();
-        surface_->setMask(QRegion(path.toFillPolygon().toPolygon()));
-        hasMask_ = true;
+        if (!hasMask_ || maskRect_ != maskShape || maskRadius_ != radius) {
+            QPainterPath path;
+            path.addRoundedRect(QRectF(maskShape), radius, radius);
+            mikai::gui::uiprofile::noteSetMask();
+            surface_->setMask(QRegion(path.toFillPolygon().toPolygon()));
+            hasMask_ = true;
+            maskRect_ = maskShape;
+            maskRadius_ = radius;
+        }
     } else if (hasMask_) {
         // Tracked rather than asked of the widget: QWidget::mask() hands back a
         // QRegion by value, and this branch runs on every input event.
         surface_->clearMask();
         hasMask_ = false;
+        maskRect_ = QRect();
+        maskRadius_ = 0;
     }
 
     if (name != lastState_) {
@@ -1198,6 +1211,13 @@ void PlayerShell::layoutChrome() {
     const int w = width();
     const int h = height();
 
+    // The title bar's reserved strip is an input to the fitted canvas, so it is
+    // resolved before the canvas is sized. Updating it afterwards sized the
+    // surface against the previous mode's offset and resized it again on the
+    // next pass - two framebuffer allocations per fullscreen transition.
+    constexpr int kTitleBarHeight = 36;
+    titleBarOffset_ = (fullscreen_ || !frameless_) ? 0 : kTitleBarHeight;
+
     // ── canvas ────────────────────────────────────────────────────
     const QSize fit = fitted();
     const int sw = fit.width();
@@ -1236,10 +1256,7 @@ void PlayerShell::layoutChrome() {
 
     // ── title bar (windowed mode) ──────────────────────────────────
     if (titleBar_ != nullptr) {
-        const int barHeight = 36;
-        titleBar_->setGeometry(0, 0, w, barHeight);
-        // No painted bar means no reserved strip.
-        titleBarOffset_ = (fullscreen_ || !frameless_) ? 0 : barHeight;
+        titleBar_->setGeometry(0, 0, w, kTitleBarHeight);
     }
 
     // ── flank chevrons ─────────────────────────────────────────────
@@ -2688,6 +2705,9 @@ void PlayerShell::chromeDirty(QWidget* widget, const QRect& rect) {
     if (widget == nullptr || surface_ == nullptr) {
         return;
     }
+    // Exactly this control's cached pixels are stale; the rest of the overlay is
+    // still what it last drew.
+    chrome_.invalidate(widget);
     const QRect local = rect.isNull() ? widget->rect() : rect;
     const QRect dirty(widget->mapTo(this, local.topLeft()), local.size());
     const QRect picture = surface_->geometry();
@@ -2712,6 +2732,7 @@ void PlayerShell::chromeDirty(QWidget* widget, const QRect& rect) {
 void PlayerShell::chromeDirtyAll() {
     // A move or a resize leaves stale pixels where the widget was, and no
     // widget-shaped rect describes those.
+    chrome_.invalidateAll();
     if (surface_ != nullptr) {
         surface_->update();
     }
@@ -2726,11 +2747,16 @@ void PlayerShell::paintSurfaceOverlay(QPainter* painter) {
     const mikai::gui::uiprofile::ScopedTimer timer;
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
+    // The cached controls are blitted at their own device resolution, so the
+    // hint has nothing to resample - it is here so a fractional ratio cannot
+    // fall back to nearest-neighbour and split a glyph.
+    painter->setRenderHint(QPainter::SmoothPixmapTransform);
     // The painter is in the surface's coordinates and the chrome is laid out in
     // the shell's, of which the surface is a child at a known offset. The clip
-    // is the whole shell: the picture is already the edge of this device.
+    // is the picture, not the shell: this device can only carry the part of the
+    // chrome that stands over it, and the raster half paints the rest.
     painter->translate(-surface_->x(), -surface_->y());
-    paintChrome(*painter, QRect(QPoint(0, 0), size()));
+    paintChrome(*painter, surface_->geometry());
     painter->restore();
     if (surface_ != nullptr && profileActivationPending_) {
         // Fullscreen paints through the surface, not the shell's raster path:

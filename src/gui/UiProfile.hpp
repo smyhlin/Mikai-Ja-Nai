@@ -102,6 +102,21 @@ inline std::atomic<qint64> g_chromePaintLastMicros{-1};
 inline std::atomic<quint64> g_chromePaintMicrosTotal{0};
 inline std::atomic<qint64> g_chromePaintMicrosMax{-1};
 inline std::atomic<qint64> g_lastActivationToPaintMs{-1};
+/// GOAL-E counters. Each answers one criterion that would otherwise be a claim:
+/// the render-target probe budget across a resize storm, the chrome raster
+/// cache's renders and held bytes, the stacking poll's stops while another
+/// application is foreground, aborted raise retries, teardown pictures kept,
+/// the player background's rebuilds, and how many widgets one TitlePage
+/// repolish pass touched.
+inline std::atomic<quint64> g_renderTargetProbes{0};
+inline std::atomic<quint64> g_renderTargetFormatResets{0};
+inline std::atomic<quint64> g_chromeCacheRenders{0};
+inline std::atomic<quint64> g_chromeCacheBytes{0};
+inline std::atomic<quint64> g_awayStackingStops{0};
+inline std::atomic<quint64> g_raiseRetriesAborted{0};
+inline std::atomic<quint64> g_teardownPicturesCaptured{0};
+inline std::atomic<quint64> g_backgroundRenders{0};
+inline std::atomic<quint64> g_titleRepolishWidgets{0};
 
 inline void noteChromeDirtyRequest() {
     if (!countersEnabled()) return;
@@ -121,6 +136,52 @@ inline void noteSetMask() {
 inline void noteLayoutGeometryWrite() {
     if (!countersEnabled()) return;
     g_layoutGeometryWrites.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline void noteRenderTargetProbe() {
+    if (!countersEnabled()) return;
+    g_renderTargetProbes.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline void noteRenderTargetFormatReset() {
+    if (!countersEnabled()) return;
+    g_renderTargetFormatResets.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline void noteChromeCacheRender(qint64 bytes) {
+    if (!countersEnabled()) return;
+    g_chromeCacheRenders.fetch_add(1, std::memory_order_relaxed);
+    if (bytes > 0) {
+        g_chromeCacheBytes.store(static_cast<quint64>(bytes), std::memory_order_relaxed);
+    }
+}
+
+inline void noteAwayStackingStop() {
+    if (!countersEnabled()) return;
+    g_awayStackingStops.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline void noteRaiseRetryAborted() {
+    if (!countersEnabled()) return;
+    g_raiseRetriesAborted.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline void noteTeardownPictureCaptured() {
+    if (!countersEnabled()) return;
+    g_teardownPicturesCaptured.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline void noteBackgroundRender() {
+    if (!countersEnabled()) return;
+    g_backgroundRenders.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline void noteTitleRepolishWidgets(int widgets) {
+    if (!countersEnabled()) return;
+    if (widgets > 0) {
+        g_titleRepolishWidgets.fetch_add(static_cast<quint64>(widgets),
+                                        std::memory_order_relaxed);
+    }
 }
 
 inline void noteThreadInputAttach() {
@@ -226,6 +287,15 @@ struct Snapshot {
     quint64 chromePaintEntries = 0;
     quint64 chromePaintCached = 0;
     quint64 chromePaintMicrosTotal = 0;
+    quint64 renderTargetProbes = 0;
+    quint64 renderTargetFormatResets = 0;
+    quint64 chromeCacheRenders = 0;
+    quint64 chromeCacheBytes = 0;
+    quint64 awayStackingStops = 0;
+    quint64 raiseRetriesAborted = 0;
+    quint64 teardownPicturesCaptured = 0;
+    quint64 backgroundRenders = 0;
+    quint64 titleRepolishWidgets = 0;
     qint64 chromePaintMicrosMax = -1;
     qint64 chromePaintLastMicros = -1;
     qint64 lastActivationToPaintMs = -1;
@@ -243,6 +313,15 @@ inline Snapshot snapshot() {
     out.chromePaintEntries = g_chromePaintEntries.load(std::memory_order_relaxed);
     out.chromePaintCached = g_chromePaintCached.load(std::memory_order_relaxed);
     out.chromePaintMicrosTotal = g_chromePaintMicrosTotal.load(std::memory_order_relaxed);
+    out.renderTargetProbes = g_renderTargetProbes.load(std::memory_order_relaxed);
+    out.renderTargetFormatResets = g_renderTargetFormatResets.load(std::memory_order_relaxed);
+    out.chromeCacheRenders = g_chromeCacheRenders.load(std::memory_order_relaxed);
+    out.chromeCacheBytes = g_chromeCacheBytes.load(std::memory_order_relaxed);
+    out.awayStackingStops = g_awayStackingStops.load(std::memory_order_relaxed);
+    out.raiseRetriesAborted = g_raiseRetriesAborted.load(std::memory_order_relaxed);
+    out.teardownPicturesCaptured = g_teardownPicturesCaptured.load(std::memory_order_relaxed);
+    out.backgroundRenders = g_backgroundRenders.load(std::memory_order_relaxed);
+    out.titleRepolishWidgets = g_titleRepolishWidgets.load(std::memory_order_relaxed);
     out.chromePaintMicrosMax = g_chromePaintMicrosMax.load(std::memory_order_relaxed);
     out.chromePaintLastMicros = g_chromePaintLastMicros.load(std::memory_order_relaxed);
     out.lastActivationToPaintMs = g_lastActivationToPaintMs.load(std::memory_order_relaxed);
@@ -259,6 +338,15 @@ inline void resetCounters() {
     g_chromePaintEntries.store(0, std::memory_order_relaxed);
     g_chromePaintCached.store(0, std::memory_order_relaxed);
     g_chromePaintMicrosTotal.store(0, std::memory_order_relaxed);
+    g_renderTargetProbes.store(0, std::memory_order_relaxed);
+    g_renderTargetFormatResets.store(0, std::memory_order_relaxed);
+    g_chromeCacheRenders.store(0, std::memory_order_relaxed);
+    g_chromeCacheBytes.store(0, std::memory_order_relaxed);
+    g_awayStackingStops.store(0, std::memory_order_relaxed);
+    g_raiseRetriesAborted.store(0, std::memory_order_relaxed);
+    g_teardownPicturesCaptured.store(0, std::memory_order_relaxed);
+    g_backgroundRenders.store(0, std::memory_order_relaxed);
+    g_titleRepolishWidgets.store(0, std::memory_order_relaxed);
     g_chromePaintMicrosMax.store(-1, std::memory_order_relaxed);
     g_chromePaintLastMicros.store(-1, std::memory_order_relaxed);
     g_lastActivationToPaintMs.store(-1, std::memory_order_relaxed);

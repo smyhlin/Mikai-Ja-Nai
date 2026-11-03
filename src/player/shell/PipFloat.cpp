@@ -401,6 +401,7 @@ void PipFloat::chromeDirty(QWidget* widget, const QRect& rect) {
     if (widget == nullptr || surface_ == nullptr) {
         return;
     }
+    chrome_.invalidate(widget);
     const QRect box(rect.isNull() ? widget->rect() : rect);
     const QRect region(QRect(widget->mapTo(this, box.topLeft()), box.size())
                            .intersected(surface_->geometry()));
@@ -414,6 +415,7 @@ void PipFloat::chromeDirty(QWidget* widget, const QRect& rect) {
 }
 
 void PipFloat::chromeDirtyAll() {
+    chrome_.invalidateAll();
     if (surface_ == nullptr) {
         return;
     }
@@ -427,8 +429,12 @@ void PipFloat::paintSurfaceOverlay(QPainter* painter) {
     }
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing, true);
+    // The cached controls are blitted at their own device resolution; the hint
+    // keeps a fractional ratio from splitting a glyph instead of blending it.
+    painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
     // The fade is the painter's: one alpha over the chrome, where an opacity
     // effect re-composited an offscreen buffer of the overlay on every change.
+    // The cached images are composited under that alpha, not baked into it.
     painter->setOpacity(overlayOpacity_);
     chrome_.paint(*painter, this, rect());
     // The timeline is not a widget - the scrub slider under it is an input

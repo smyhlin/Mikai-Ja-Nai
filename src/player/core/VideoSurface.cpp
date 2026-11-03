@@ -643,6 +643,29 @@ void VideoSurface::setEngineFrameHold(bool active) {
     update();
 }
 
+void VideoSurface::captureRetainedPicture() {
+    if (engineFrameHoldFbo_ || engineFrameHoldActive_ || !hasVisibleOutputFrame_) return;
+    if (!isVisible()) return;
+    captureEngineFrameHold();
+}
+
+void VideoSurface::holdPictureAcrossLoad() {
+    if (engineFrameHoldActive_) return;              // a freeze transition owns it
+    if (engineFrameHoldFbo_ && engineFrameHoldAwaitingOutput_) {
+        update();
+        return;
+    }
+    if (hasVisibleOutputFrame_ && captureEngineFrameHold()) {
+        // Awaiting, not active: the held picture stands in only until the new
+        // source produces a frame of its own epoch, and then releases the GPU
+        // storage. `active` would keep it up over a picture that has arrived.
+        engineFrameHoldAwaitingOutput_ = true;
+        update();
+        return;
+    }
+    invalidateEngineFrameHold();
+}
+
 void VideoSurface::invalidateEngineFrameHold() {
     engineFrameHoldActive_ = false;
     engineFrameHoldAwaitingOutput_ = false;
@@ -785,7 +808,16 @@ VideoSurface::~VideoSurface() {
 }
 
 bool VideoSurface::open(const QString& url, quint64 mediaToken) {
-    invalidateEngineFrameHold();
+    // A new source replaces what is playing, and the viewer keeps looking at the
+    // outgoing picture while the new one loads (T-E1). The epoch below still
+    // retires every reply and every claim the outgoing source owned: the hold is
+    // a picture, not state. An empty URL is the intentional clear, so nothing is
+    // kept for it.
+    if (url.isEmpty()) {
+        invalidateEngineFrameHold();
+    } else {
+        holdPictureAcrossLoad();
+    }
     pendingMediaTrackSelection_ = {};
     resetMediaTracks();
     discardEnginePause();
@@ -907,8 +939,10 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
     pacingMeasurePending_ = false;
     framePending_ = false;
     if (url_.isEmpty() || mpv_ == nullptr) {
-        // There is nothing left to wait for.
+        // There is nothing left to wait for, and no new source will replace the
+        // picture a hold would be standing in for.
         setOpening(false);
+        invalidateEngineFrameHold();
         animeJanaiSourceRequested_ = false;
         return false;
     }
@@ -919,7 +953,7 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
         emit errorOccurred(QString::fromUtf8(e.what()));
         return false;
     }
-    invalidateEngineFrameHold();
+    holdPictureAcrossLoad();
     // The source ends HERE, before the load is issued: the epoch is what retires
     // a reply for the source being replaced, and a command queued behind this
     // one must already be reading the new epoch when its reply lands.

@@ -217,12 +217,17 @@ signals:
     void cancelRequested();
 
 protected:
+    bool event(QEvent* event) override;
     void changeEvent(QEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
 
 private:
     void maintainTopmost();
+    /// Starts or stops the stacking poll to match whether this application is
+    /// the foreground one. Reasserting a tool window from the background is a
+    /// 250 ms fight with the switch the viewer is performing.
+    void syncStackingTimer();
 
     /// What the window is showing, never a copy of the words showing it: a
     /// language switch restates the chrome from this and leaves the run alone.

@@ -810,10 +810,7 @@ void ProcessingOverlay::changeEvent(QEvent* event) {
 void ProcessingOverlay::showEvent(QShowEvent* event) {
     QFrame::showEvent(event);
     if (run_ == Run::Idle) return;
-    if (stackingTimer_ != nullptr) {
-        maintainTopmost();
-        stackingTimer_->start();
-    }
+    syncStackingTimer();
 }
 
 void ProcessingOverlay::hideEvent(QHideEvent* event) {
@@ -821,8 +818,43 @@ void ProcessingOverlay::hideEvent(QHideEvent* event) {
     QFrame::hideEvent(event);
 }
 
+bool ProcessingOverlay::event(QEvent* event) {
+    switch (event->type()) {
+        // The poll exists to keep a tool window above the player. While another
+        // application is foreground it can only push against that switch, so the
+        // application's own activation state is what turns it on and off.
+        case QEvent::ApplicationActivate:
+        case QEvent::ApplicationDeactivate:
+        case QEvent::ApplicationStateChange:
+        case QEvent::WindowActivate:
+        case QEvent::WindowDeactivate:
+            syncStackingTimer();
+            break;
+        default:
+            break;
+    }
+    return QFrame::event(event);
+}
+
+void ProcessingOverlay::syncStackingTimer() {
+    if (stackingTimer_ == nullptr) return;
+    const bool foreground = QGuiApplication::applicationState() == Qt::ApplicationActive;
+    if (isVisible() && run_ != Run::Idle && foreground) {
+        maintainTopmost();
+        if (!stackingTimer_->isActive()) stackingTimer_->start();
+        return;
+    }
+    if (stackingTimer_->isActive()) stackingTimer_->stop();
+}
+
 void ProcessingOverlay::maintainTopmost() {
     if (!isVisible()) {
+        if (stackingTimer_ != nullptr) stackingTimer_->stop();
+        return;
+    }
+    // A background application has nothing to reassert: the window the viewer
+    // switched to is the one that must stay above this tool.
+    if (QGuiApplication::applicationState() != Qt::ApplicationActive) {
         if (stackingTimer_ != nullptr) stackingTimer_->stop();
         return;
     }

@@ -936,6 +936,16 @@ private:
     void refreshRenderState();
     /// Releases a retained picture without letting it cross a source boundary.
     void invalidateEngineFrameHold();
+    /// Captures the picture on screen into the hold, when there is one and none
+    /// is held. Called at safe points only - pause, losing the application and
+    /// render-context teardown - never per frame: the snapshot is a device-sized
+    /// framebuffer.
+    void captureRetainedPicture();
+    /// Keeps the picture the viewer is looking at across a source change. The
+    /// snapshot is a visual cache: the caller still retires every claim the
+    /// outgoing source owned, and the first real output of the new one is what
+    /// takes it off screen.
+    void holdPictureAcrossLoad();
     /// Captures the current video-only output into a bounded GPU framebuffer
     /// once at transition-hold acquisition, never during ordinary playback.
     bool captureEngineFrameHold();

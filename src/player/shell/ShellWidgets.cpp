@@ -24,6 +24,21 @@ namespace mplayer {
 namespace shell {
 namespace {
 
+/// Device pixels the chrome raster cache may hold. Every control carries its own
+/// image, so this is a ceiling on the overlay as a whole rather than on one
+/// frame's allocation: past it the remaining controls keep painting directly
+/// instead of the cache growing to the size of the window.
+constexpr qint64 kChromeCacheBudgetBytes = 8 * 1024 * 1024;
+
+/// The cache is an optimisation, so it has a rollback that does not need a
+/// rebuild: a driver or a paint path that disagrees with it can be isolated by
+/// launching with MIKAI_CHROME_CACHE=0.
+bool chromeCacheEnabled() {
+    static const bool enabled =
+        qEnvironmentVariable("MIKAI_CHROME_CACHE") != QLatin1String("0");
+    return enabled;
+}
+
 /// `rgba(r,g,b,a)` for a colour, so a stylesheet fragment is built from the
 /// same tokens the paint routines use.
 QString rgba(const QColor& color) {
@@ -147,6 +162,7 @@ void chromeUpdate(QWidget* widget, const QRect& rect) {
 
 void ChromeList::adopt(QWidget* root, QObject* watcher) {
     entries_.clear();
+    cachedBytes_ = 0;
     addSubtree(root, watcher);
 }
 
@@ -226,15 +242,42 @@ void chromeRepaintEvent(ChromeHost* host, QObject* watched, QEvent* event) {
     }
 }
 
-void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) const {
+void ChromeList::dropCache(Entry& entry) {
+    if (!entry.valid) {
+        return;
+    }
+    cachedBytes_ -= qint64(entry.cache.width()) * qint64(entry.cache.height()) * 4;
+    entry.cache = QPixmap();
+    entry.valid = false;
+    entry.stamp = 0;
+}
+
+void ChromeList::invalidate(const QWidget* widget) {
+    for (Entry& entry : entries_) {
+        if (entry.widget == widget) dropCache(entry);
+    }
+}
+
+void ChromeList::invalidateAll() {
+    ++generation_;
+    for (Entry& entry : entries_) dropCache(entry);
+}
+
+void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
     if (root == nullptr) {
         return;
     }
     const mikai::gui::uiprofile::ScopedTimer timer;
+    // The blit is a straight copy when the cache was rendered at this ratio, so
+    // a mismatch is stale pixels, not something to rescale.
+    const qreal ratio =
+        painter.device() != nullptr ? painter.device()->devicePixelRatio() : qreal(1.0);
     quint64 painted = 0;
-    for (const Entry& entry : entries_) {
+    quint64 cached = 0;
+    for (Entry& entry : entries_) {
         QWidget* widget = entry.widget;
         if (widget == nullptr || !widget->isVisible()) {
+            dropCache(entry);
             continue;
         }
         // Recomputed rather than cached: a control that moved keeps its slot in
@@ -253,6 +296,51 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) cons
         if (box.isEmpty() || !box.intersects(clip)) {
             continue;
         }
+        const bool reusable = chromeCacheEnabled() && entry.valid && entry.box == box &&
+                              entry.devicePixelRatio == ratio && entry.stamp == generation_;
+        if (reusable) {
+            painter.drawPixmap(box.topLeft(), entry.cache);
+            ++painted;
+            ++cached;
+            continue;
+        }
+        if (chromeCacheEnabled()) {
+            const QSize deviceSize(static_cast<int>(std::ceil(box.width() * ratio)),
+                                   static_cast<int>(std::ceil(box.height() * ratio)));
+            const qint64 bytes = qint64(deviceSize.width()) * deviceSize.height() * 4;
+            const qint64 held = entry.valid ? qint64(entry.cache.width()) *
+                                                  qint64(entry.cache.height()) * 4
+                                            : 0;
+            if (!deviceSize.isEmpty() && cachedBytes_ - held + bytes <= kChromeCacheBudgetBytes) {
+                QPixmap buffer(deviceSize);
+                buffer.setDevicePixelRatio(ratio);
+                buffer.fill(Qt::transparent);
+                {
+                    QPainter cachePainter(&buffer);
+                    // The raster engine's 256-level coverage is the point: the GL
+                    // device has samples()==0, so this is what makes overlay
+                    // glyphs antialiased at all.
+                    cachePainter.setRenderHint(QPainter::Antialiasing, true);
+                    cachePainter.setRenderHint(QPainter::TextAntialiasing, true);
+                    cachePainter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+                    cachePainter.translate(at - box.topLeft());
+                    cachePainter.setClipRect(box.translated(-at), Qt::IntersectClip);
+                    entry.painted->paintChrome(cachePainter);
+                }
+                cachedBytes_ += bytes - held;
+                entry.cache = buffer;
+                entry.box = box;
+                entry.devicePixelRatio = ratio;
+                entry.stamp = generation_;
+                entry.valid = true;
+                painter.drawPixmap(box.topLeft(), entry.cache);
+                ++painted;
+                ++cached;
+                continue;
+            }
+            dropCache(entry);
+        }
+        // Over the memory budget, or caching switched off: pay the rasterisation.
         painter.save();
         painter.translate(at);
         painter.setClipRect(box.translated(-at), Qt::IntersectClip);
@@ -261,14 +349,15 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) cons
         ++painted;
     }
     if (timer.measured()) {
-        // No cache exists until T-E7, so the cached count is the truthful zero.
-        mikai::gui::uiprofile::noteChromePaint(painted, 0, timer.micros());
+        mikai::gui::uiprofile::noteChromePaint(painted, cached, timer.micros());
         if (mikai::gui::uiprofile::enabled()) {
             mikai::gui::uiprofile::log(
                 "chrome.list.paint",
-                QStringLiteral("entries=%1 painted=%2 elapsed_us=%3 cache=unavailable")
+                QStringLiteral("entries=%1 painted=%2 cached=%3 bytes=%4 elapsed_us=%5")
                     .arg(static_cast<qulonglong>(entries_.size()))
                     .arg(painted)
+                    .arg(cached)
+                    .arg(cachedBytes_)
                     .arg(timer.micros()));
         }
     }
