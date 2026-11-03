@@ -541,6 +541,94 @@ int sweepChrome(QWidget* first, QWidget* second, QWidget* scrub, int durationMs)
     return moves;
 }
 
+// ── retention across a real context recreation ───────────────────────────
+
+/// Moves the surface onto another owned window and back, which is what makes Qt
+/// destroy and recreate its context for real (the documented route - no signal
+/// is mocked and no private method is called). Then it asks the question the
+/// retention exists for: is the picture still on screen, and is the source still
+/// paused where the viewer left it.
+/// Answers 0 measured, 1 failed, 3 unobservable.
+int runContextLoss(PlayerDialog* dialog, VideoSurface* surface, const Baseline& baseline) {
+    if (dialog == nullptr || surface == nullptr) return 3;
+    surface->setPaused(true);
+    if (!waitFor([surface] { return !surface->isPlaying(); }, 4000)) return 3;
+    pump(320);
+    const PictureRead before =
+        readPicture(surface, baseline.device, baseline.videoWidth, baseline.videoHeight);
+    noteObserverRead(before.micros);
+    const quint64 generationBefore = surface->renderContextGeneration();
+    const double positionBefore = surface->position();
+    const auto corePaused = [surface] {
+        const auto pause = surface->probeMpvProperty(QStringLiteral("pause"),
+                                                     ProbePropertyKind::Flag);
+        return pause.has_value() && pause->kind == ProbePropertyValue::Kind::Flag && pause->flag;
+    };
+    const bool pausedBefore = corePaused();
+
+    QWidget* shell = surface->parentWidget();
+    QWidget host;
+    host.setWindowFlags(Qt::Tool | Qt::FramelessWindowHint);
+    host.setAttribute(Qt::WA_ShowWithoutActivating);
+    host.resize(dialog->size());
+    host.show();
+    pump(160);
+    surface->setParent(&host);
+    surface->show();
+    pump(500);
+    const quint64 generationAway = surface->renderContextGeneration();
+    if (shell != nullptr) {
+        surface->setParent(shell);
+        surface->show();
+    }
+    // A reparent is a layout change: ask the dialog for its size again so the
+    // shell re-places the surface instead of leaving it at the host's rect.
+    dialog->resize(dialog->size());
+    pump(700);
+    const quint64 generationBack = surface->renderContextGeneration();
+    const PictureRead after =
+        readPicture(surface, baseline.device, baseline.videoWidth, baseline.videoHeight);
+    noteObserverRead(after.micros);
+    const bool retained = surface->retainedPictureBytes() > 0;
+    const bool pausedAfter = corePaused();
+    const double positionAfter = surface->position();
+
+    metric(QStringLiteral("context recreation: generation=%1->%2->%3 retained_bytes=%4 "
+                          "paused=%5->%6 position=%7->%8 framebuffer_picture=%9->%10")
+               .arg(static_cast<qulonglong>(generationBefore))
+               .arg(static_cast<qulonglong>(generationAway))
+               .arg(static_cast<qulonglong>(generationBack))
+               .arg(surface->retainedPictureBytes())
+               .arg(int(pausedBefore))
+               .arg(int(pausedAfter))
+               .arg(positionBefore, 0, 'f', 3)
+               .arg(positionAfter, 0, 'f', 3)
+               .arg(int(baseline.present(before)))
+               .arg(int(baseline.present(after))));
+    if (generationBack == generationBefore) {
+        metric(QStringLiteral("context recreation: the context was never recreated, so the "
+                              "retention claim is unobservable in this environment"));
+        return 3;
+    }
+    int failures = 0;
+    if (!pausedAfter) {
+        metric(QStringLiteral("context recreation: the source is playing after the recreation, "
+                              "but the viewer had paused it"));
+        ++failures;
+    }
+    if (pausedBefore && positionAfter + 1.5 < positionBefore) {
+        metric(QStringLiteral("context recreation: the position moved backwards across the "
+                              "recreation"));
+        ++failures;
+    }
+    if (!retained && !baseline.present(after)) {
+        metric(QStringLiteral("context recreation: neither a retained picture nor a framebuffer "
+                              "picture survived the recreation"));
+        ++failures;
+    }
+    return failures == 0 ? 0 : 1;
+}
+
 // ── one measured load transition ─────────────────────────────────────────
 
 struct GapSample {
@@ -744,6 +832,7 @@ int run(int argc, char** argv) {
     // is a sample of one interaction, not a distribution.
     int hoverSeconds = 30;
     bool motion = true;
+    bool contextLoss = false;
     for (int index = 1; index < argc; ++index) {
         const QString argument = QString::fromLocal8Bit(argv[index]);
         if (argument == QLatin1String("--output-dir") && index + 1 < argc) {
@@ -756,6 +845,8 @@ int run(int argc, char** argv) {
             hoverSeconds = std::max(1, QString::fromLocal8Bit(argv[++index]).toInt());
         } else if (argument == QLatin1String("--no-motion")) {
             motion = false;
+        } else if (argument == QLatin1String("--context-loss")) {
+            contextLoss = true;
         } else if (argument.startsWith(QLatin1String("--"))) {
             std::fprintf(stderr, "FAIL unknown option %s\n", qPrintable(argument));
             return 3;
@@ -767,7 +858,7 @@ int run(int argc, char** argv) {
         std::fprintf(stderr,
                      "Usage: LoadTransitionProbe <known-duration-video-file> --output-dir "
                      "<absolute dir> [--delay-ms N] [--cycles N] [--hover-seconds N] "
-                     "[--no-motion]\n");
+                     "[--no-motion] [--context-loss]\n");
         return 3;
     }
     // One clock for the whole run: every timestamp in the evidence is elapsed
@@ -1023,6 +1114,18 @@ int run(int argc, char** argv) {
         pump(300);
         waitFor([surface] { return surface->hasVisibleOutputFrame(); }, 5000);
         pump(200);
+    }
+
+    // ── retention across a real context recreation ──────────────────────────
+    if (contextLoss) {
+        const int result = runContextLoss(dialog, surface, baseline);
+        // 0 measured, 1 failed, 3 unobservable. Unobservable is not a pass: the
+        // environment could not recreate the context, so nothing supports the
+        // retention claim.
+        check(result == 0,
+              QStringLiteral("a paused picture and its pause intent survive a real context "
+                             "recreation (result=%1)")
+                  .arg(result));
     }
 
     // ── the load transition itself ──────────────────────────────────────────
