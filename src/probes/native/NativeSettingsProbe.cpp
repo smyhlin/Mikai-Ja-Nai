@@ -38,6 +38,8 @@
 #include <QPushButton>
 #include <QPalette>
 #include <QPixmap>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QProgressBar>
 #include <QRegion>
 #include <QScreen>
@@ -66,6 +68,7 @@
 #include <functional>
 #include <future>
 #include <memory>
+#include <vector>
 #include <cstdio>
 
 #include "I18n.hpp"
@@ -4021,6 +4024,437 @@ QJsonObject textRasterScenario(mikai::backend::MikaiClient& client, Runner& runn
     return evidence;
 }
 
+// ---------------------------------------------------------------------------
+// Video scaling persistence (GOAL-H2)
+//
+// The goal's missing proof is the ordinary user path: edit the General card,
+// Cancel, edit again, Save, and see the same policy come back in a freshly
+// constructed dialog and in a fresh process. The scenario therefore drives the
+// real controls and the real Save/Cancel actions of SettingsDialog; it never
+// writes a scale key itself. What it asserts afterwards is what the application
+// owns: the production store reader `videoScalePolicyFromSettings()` (the one
+// `main.cpp` and a refreshed player use), the process-wide policy Save
+// publishes, and the mpv option set built from it.
+// ---------------------------------------------------------------------------
+
+struct VideoScaleControls {
+    QComboBox* mode = nullptr;
+    QSpinBox* zoom = nullptr;
+    QComboBox* upscale = nullptr;
+    QComboBox* downscale = nullptr;
+    QWidget* card = nullptr;
+};
+
+VideoScaleControls videoScaleControls(SettingsDialog& dialog) {
+    VideoScaleControls controls;
+    controls.mode = dialog.findChild<QComboBox*>(QStringLiteral("videoScaleModeCombo"));
+    controls.zoom = dialog.findChild<QSpinBox*>(QStringLiteral("videoZoomSpin"));
+    controls.upscale = dialog.findChild<QComboBox*>(QStringLiteral("videoUpscalerCombo"));
+    controls.downscale = dialog.findChild<QComboBox*>(QStringLiteral("videoDownscalerCombo"));
+    controls.card = controls.mode != nullptr ? controls.mode->parentWidget() : nullptr;
+    return controls;
+}
+
+bool videoScaleControlsPresent(const VideoScaleControls& controls) {
+    return controls.mode != nullptr && controls.zoom != nullptr &&
+           controls.upscale != nullptr && controls.downscale != nullptr &&
+           controls.card != nullptr && controls.zoom->parentWidget() == controls.card &&
+           controls.upscale->parentWidget() == controls.card &&
+           controls.downscale->parentWidget() == controls.card;
+}
+
+mplayer::VideoScalePolicy videoScalePolicyOfControls(const VideoScaleControls& controls) {
+    mplayer::VideoScalePolicy policy;
+    policy.mode =
+        static_cast<mplayer::VideoScaleMode>(controls.mode->currentData().toInt());
+    policy.zoomPercent = controls.zoom->value();
+    policy.upscale = controls.upscale->currentData().toString();
+    policy.downscale = controls.downscale->currentData().toString();
+    return policy;
+}
+
+/// Selects the option each control offers for the policy's field. Returns false
+/// when a control does not offer the id, which is a real failure of the card's
+/// catalogue rather than something to coerce.
+bool videoScaleSetControls(const VideoScaleControls& controls,
+                           const mplayer::VideoScalePolicy& policy) {
+    const int modeIndex = controls.mode->findData(static_cast<int>(policy.mode));
+    const int upscaleIndex = controls.upscale->findData(policy.upscale);
+    const int downscaleIndex = controls.downscale->findData(policy.downscale);
+    if (modeIndex < 0 || upscaleIndex < 0 || downscaleIndex < 0) return false;
+    controls.mode->setCurrentIndex(modeIndex);
+    controls.zoom->setValue(policy.zoomPercent);
+    controls.upscale->setCurrentIndex(upscaleIndex);
+    controls.downscale->setCurrentIndex(downscaleIndex);
+    QApplication::processEvents();
+    return true;
+}
+
+QJsonObject videoScalePolicyJson(const mplayer::VideoScalePolicy& policy) {
+    QJsonObject object;
+    object.insert(QStringLiteral("mode"), static_cast<int>(policy.mode));
+    object.insert(QStringLiteral("modeLabel"), mplayer::videoScaleModeLabel(policy.mode));
+    object.insert(QStringLiteral("zoomPercent"), policy.zoomPercent);
+    object.insert(QStringLiteral("upscale"), policy.upscale);
+    object.insert(QStringLiteral("downscale"), policy.downscale);
+    return object;
+}
+
+QJsonArray videoScaleOptionsJson(const mplayer::VideoScalePolicy& policy,
+                                 const std::string& downscaleDefault) {
+    QJsonArray array;
+    for (const mplayer::VideoScaleOption& option :
+         mplayer::videoScaleOptions(policy, downscaleDefault)) {
+        QJsonObject item;
+        item.insert(QStringLiteral("name"), QString::fromStdString(option.name));
+        item.insert(QStringLiteral("value"), QString::fromStdString(option.value));
+        array.append(item);
+    }
+    return array;
+}
+
+QString videoScaleOptionValue(const std::vector<mplayer::VideoScaleOption>& options,
+                              const char* name) {
+    for (const mplayer::VideoScaleOption& option : options) {
+        if (option.name == name) return QString::fromStdString(option.value);
+    }
+    return QString();
+}
+
+/// Fails, per field, when a differently constructed dialog does not show the
+/// expected policy. Each field is separate so a report names the one that
+/// drifted instead of only saying "the policy differs".
+void checkVideoScaleControls(const VideoScaleControls& controls,
+                             const mplayer::VideoScalePolicy& expected,
+                             const char* what) {
+    const mplayer::VideoScalePolicy shown = videoScalePolicyOfControls(controls);
+    check(shown.mode == expected.mode, what);
+    check(shown.zoomPercent == expected.zoomPercent, what);
+    check(shown.upscale == expected.upscale, what);
+    check(shown.downscale == expected.downscale, what);
+}
+
+QJsonObject videoScalingPersistenceScenario(mikai::backend::MikaiClient& client, Runner& runner,
+                                            const QString& storeDir, const QString& selfPath,
+                                            bool& restartVerified) {
+    using mplayer::VideoScaleMode;
+    using mplayer::VideoScalePolicy;
+    using mplayer::VideoSurface;
+
+    restartVerified = false;
+    QJsonObject evidence;
+    evidence.insert(QStringLiteral("scenario"), QStringLiteral("video_scaling_persistence"));
+    evidence.insert(QStringLiteral("store"), QDir::cleanPath(storeDir));
+    evidence.insert(QStringLiteral("platform"), QGuiApplication::platformName());
+
+    const VideoScalePolicy defaults;
+    // The store is this run's own empty temporary directory, but the process may
+    // already have run other scenarios: normalise the static so "Cancel changed
+    // nothing" is measured against a known value rather than an inherited one.
+    VideoSurface::setVideoScalePolicy(defaults);
+    QApplication::processEvents();
+
+    check(mplayer::videoScalePolicyFromSettings() == defaults,
+          "the empty isolated store reads the documented default display policy");
+    check(VideoSurface::videoScalePolicy() == defaults,
+          "the process-wide display policy starts at that same default");
+
+    VideoScalePolicy edited;
+    edited.mode = VideoScaleMode::Fill;
+    edited.zoomPercent = 25;
+    edited.upscale = QStringLiteral("bicubic");
+    edited.downscale = QStringLiteral("catmull_rom");
+
+    // --- Cancel must write nothing and publish nothing -----------------------
+    {
+        SettingsDialog dialog(client, runner);
+        const VideoScaleControls controls = videoScaleControls(dialog);
+        check(videoScaleControlsPresent(controls),
+              "the actual General page exposes all four video scaling controls on one card");
+        if (!videoScaleControlsPresent(controls)) {
+            evidence.insert(QStringLiteral("controlsPresent"), false);
+            dialog.reject();
+            QApplication::processEvents();
+            return evidence;
+        }
+        evidence.insert(QStringLiteral("controlsPresent"), true);
+        // The dialog is never shown: no activation, no global focus, no window
+        // on the user's desktop. Every action below is a real widget action.
+        check(!dialog.isVisible(),
+              "the scaling smoke drives a hidden dialog: no activation or global focus");
+        checkVideoScaleControls(controls, defaults,
+                                "a freshly opened dialog shows the stored default policy");
+        check(controls.zoom->isEnabled(),
+              "the zoom control is usable in the default Fit mode");
+        check(videoScaleSetControls(controls, edited),
+              "the real controls offer Fill, 25% and the bicubic/catmull-rom scalers");
+        check(videoScalePolicyOfControls(controls) == edited,
+              "the controls hold the edited policy before Cancel");
+
+        QPushButton* cancel = rejectButton(dialog.findChild<QDialogButtonBox*>());
+        check(cancel != nullptr, "the actual General page exposes its real Cancel action");
+        if (cancel != nullptr) cancel->click();
+        QApplication::processEvents();
+        check(dialog.result() == static_cast<int>(QDialog::Rejected),
+              "the real Cancel action closed the dialog without accepting");
+        check(VideoSurface::videoScalePolicy() == defaults,
+              "Cancel publishes no edited display policy to the live process");
+        check(mplayer::videoScalePolicyFromSettings() == defaults,
+              "Cancel leaves every scale field at its stored default");
+        evidence.insert(QStringLiteral("editedBeforeCancel"), videoScalePolicyJson(edited));
+        dialog.reject();
+        QApplication::processEvents();
+    }
+
+    // --- Save writes the complete policy; the live static adopts it ----------
+    {
+        SettingsDialog dialog(client, runner);
+        const VideoScaleControls controls = videoScaleControls(dialog);
+        check(videoScaleControlsPresent(controls),
+              "the second dialog exposes the same four scaling controls");
+        if (!videoScaleControlsPresent(controls)) {
+            evidence.insert(QStringLiteral("secondDialogControlsPresent"), false);
+            dialog.reject();
+            QApplication::processEvents();
+            return evidence;
+        }
+        checkVideoScaleControls(controls, defaults,
+                                "a dialog reopened after Cancel still shows the stored default policy");
+        check(videoScaleSetControls(controls, edited),
+              "the saved policy can be entered through the real controls");
+        check(VideoSurface::videoScalePolicy() == defaults,
+              "editing the controls publishes nothing before Save");
+
+        // The seeded foreign store says uk while this probe process runs the
+        // language its own startup installed. Save commits the interface
+        // language before it reaches the scaling block, so the real selector is
+        // aligned to what the process actually speaks: a probe without a
+        // Ukrainian catalog must not fail on a catalog it never installed. This
+        // touches no scale field and no control under test.
+        if (auto* language = dialog.findChild<QComboBox*>(QStringLiteral("uiLanguageCombo"))) {
+            const int installed =
+                language->findData(mikai::app::activeInterfaceLanguage());
+            if (installed >= 0) {
+                language->setCurrentIndex(installed);
+                QApplication::processEvents();
+            }
+        }
+
+        QPushButton* save = acceptButton(dialog.findChild<QDialogButtonBox*>());
+        check(save != nullptr, "the actual General page exposes its real Save action");
+        if (save != nullptr) save->click();
+        QApplication::processEvents();
+        check(dialog.result() == static_cast<int>(QDialog::Accepted),
+              "the real Save action accepted the dialog");
+        if (dialog.result() != static_cast<int>(QDialog::Accepted)) {
+            for (QLabel* label : dialog.findChildren<QLabel*>()) {
+                if (!label->isVisibleTo(&dialog) || label->text().isEmpty()) continue;
+                std::fprintf(stderr, "settings label: %s\n", qPrintable(label->text()));
+            }
+        }
+
+        const VideoScalePolicy stored = mplayer::videoScalePolicyFromSettings();
+        check(stored.mode == edited.mode,
+              "Save stored the selected display mode");
+        check(stored.zoomPercent == edited.zoomPercent,
+              "Save stored the selected zoom percentage");
+        check(stored.upscale == edited.upscale,
+              "Save stored the selected upscaler");
+        check(stored.downscale == edited.downscale,
+              "Save stored the selected downscaler");
+        check(stored == edited,
+              "the production reader returns the complete saved policy");
+        check(VideoSurface::videoScalePolicy() == edited,
+              "Save publishes the expected complete policy to the live process");
+
+        // The consumer-visible effect: the saved policy owns all seven options.
+        const std::vector<mplayer::VideoScaleOption> options =
+            mplayer::videoScaleOptions(stored, {});
+        check(videoScaleOptionValue(options, "keepaspect") == QStringLiteral("yes"),
+              "the saved Fill policy keeps aspect");
+        check(videoScaleOptionValue(options, "panscan") == QStringLiteral("1.000000"),
+              "the saved Fill policy crops to fill");
+        check(videoScaleOptionValue(options, "video-aspect-override") == QStringLiteral("no"),
+              "the saved policy clears any aspect override");
+        check(videoScaleOptionValue(options, "video-unscaled") == QStringLiteral("no"),
+              "the saved policy does not request unscaled output");
+        check(videoScaleOptionValue(options, "video-zoom") == QStringLiteral("0.321928"),
+              "the saved 25% zoom reaches mpv as log2(1.25)");
+        check(videoScaleOptionValue(options, "scale") == QStringLiteral("bicubic"),
+              "the saved upscaler reaches mpv's scale option");
+        check(videoScaleOptionValue(options, "dscale") == QStringLiteral("catmull_rom"),
+              "the saved downscaler reaches mpv's dscale option");
+        evidence.insert(QStringLiteral("saved"), videoScalePolicyJson(stored));
+        evidence.insert(QStringLiteral("savedOptions"), videoScaleOptionsJson(stored, {}));
+        evidence.insert(QStringLiteral("livePolicy"),
+                        videoScalePolicyJson(VideoSurface::videoScalePolicy()));
+        dialog.reject();
+        QApplication::processEvents();
+    }
+
+    // --- A fresh dialog in this process restores the controls ----------------
+    {
+        SettingsDialog dialog(client, runner);
+        const VideoScaleControls controls = videoScaleControls(dialog);
+        const bool present = videoScaleControlsPresent(controls);
+        check(present, "a dialog reopened after Save exposes the four scaling controls");
+        if (present) {
+            checkVideoScaleControls(controls, edited,
+                                    "the reopened dialog restores the saved policy");
+            check(controls.zoom->isEnabled(),
+                  "the restored Fill mode keeps the zoom control usable");
+            evidence.insert(QStringLiteral("reopened"),
+                            videoScalePolicyJson(videoScalePolicyOfControls(controls)));
+        }
+        check(!dialog.isVisible(), "the reopened dialog stayed hidden and unactivated");
+        dialog.reject();
+        QApplication::processEvents();
+    }
+
+    // --- A fresh process reads the same store --------------------------------
+    // This is a real process boundary for the settings store and the production
+    // reader. It is not the application's player bootstrap: no player is
+    // created, so the surface-level startup path remains a separate gate.
+    {
+        QSettings flush;
+        flush.sync();
+    }
+    const QString expectation = QStringLiteral("%1,%2,%3,%4")
+                                    .arg(static_cast<int>(edited.mode))
+                                    .arg(edited.zoomPercent)
+                                    .arg(edited.upscale, edited.downscale);
+    const QString restartEvidencePath =
+        QDir(storeDir).filePath(QStringLiteral("video-scaling-restart-evidence.json"));
+    QFile::remove(restartEvidencePath);
+
+    QProcess child;
+    child.setProcessChannelMode(QProcess::MergedChannels);
+    child.setProgram(selfPath);
+    child.setWorkingDirectory(storeDir);
+    child.setArguments({QStringLiteral("--video-scaling-smoke-read"),
+                        QStringLiteral("--video-scaling-store"), storeDir,
+                        QStringLiteral("--video-scaling-expect"), expectation,
+                        QStringLiteral("--video-scaling-evidence"), restartEvidencePath});
+    child.start();
+    const bool childStarted = child.waitForStarted(30000);
+    check(childStarted, "a fresh process was started from the same probe executable");
+    bool childFinished = false;
+    int childExit = -1;
+    QByteArray childOutput;
+    if (childStarted) {
+        childFinished = child.waitForFinished(120000);
+        if (!childFinished) child.kill();
+        childOutput = child.readAllStandardOutput();
+        childExit = child.exitCode();
+    }
+    QJsonObject childEvidence;
+    {
+        QFile file(restartEvidencePath);
+        if (file.open(QIODevice::ReadOnly)) {
+            childEvidence = QJsonDocument::fromJson(file.readAll()).object();
+        }
+    }
+    const bool childPassed = childEvidence.value(QStringLiteral("passed")).toBool();
+    check(childFinished && childExit == 0,
+          "the fresh process exited accepting the policy it read from the store",
+          QString::fromLocal8Bit(childOutput.right(2000)));
+    check(!childEvidence.isEmpty(),
+          "the fresh process wrote its own restart evidence");
+    check(childPassed,
+          "the fresh process accepted the saved policy through the production reader");
+    evidence.insert(QStringLiteral("restart"), childEvidence);
+    evidence.insert(QStringLiteral("restartExitCode"), childExit);
+    evidence.insert(QStringLiteral("restartOutput"),
+                    QString::fromLocal8Bit(childOutput.right(4000)));
+    restartVerified = childFinished && childExit == 0 && childPassed;
+    evidence.insert(QStringLiteral("restartVerified"), restartVerified);
+    return evidence;
+}
+
+QJsonObject videoScalingRestartRead(mikai::backend::MikaiClient& client, Runner& runner,
+                                    const QString& storeDir, const QString& expectation,
+                                    const QString& evidencePath) {
+    using mplayer::VideoScaleMode;
+    using mplayer::VideoScalePolicy;
+    using mplayer::VideoSurface;
+
+    QJsonObject evidence;
+    evidence.insert(QStringLiteral("scenario"), QStringLiteral("video_scaling_restart_read"));
+    evidence.insert(QStringLiteral("store"), QDir::cleanPath(storeDir));
+    evidence.insert(QStringLiteral("platform"), QGuiApplication::platformName());
+
+    const QStringList fields = expectation.split(QLatin1Char(','));
+    bool expectationValid = fields.size() == 4;
+    VideoScalePolicy expected;
+    if (expectationValid) {
+        bool modeOk = false;
+        bool zoomOk = false;
+        const int mode = fields.at(0).toInt(&modeOk);
+        const int zoom = fields.at(1).toInt(&zoomOk);
+        expectationValid =
+            modeOk && zoomOk && mode >= static_cast<int>(VideoScaleMode::Fit) &&
+            mode <= static_cast<int>(VideoScaleMode::Original) && zoom >= -50 && zoom <= 100;
+        if (expectationValid) {
+            expected.mode = static_cast<VideoScaleMode>(mode);
+            expected.zoomPercent = zoom;
+            expected.upscale = fields.at(2);
+            expected.downscale = fields.at(3);
+        }
+    }
+    check(expectationValid,
+          "the restart expectation names a valid mode, zoom and scaler pair");
+    evidence.insert(QStringLiteral("expected"), videoScalePolicyJson(expected));
+
+    check(VideoSurface::videoScalePolicy() == VideoScalePolicy{},
+          "a fresh process starts at the default policy before any store read");
+    const VideoScalePolicy read = mplayer::videoScalePolicyFromSettings();
+    check(read.mode == expected.mode,
+          "the fresh process reads the saved display mode from the store");
+    check(read.zoomPercent == expected.zoomPercent,
+          "the fresh process reads the saved zoom percentage from the store");
+    check(read.upscale == expected.upscale,
+          "the fresh process reads the saved upscaler from the store");
+    check(read.downscale == expected.downscale,
+          "the fresh process reads the saved downscaler from the store");
+    check(read == expected,
+          "the fresh process reads the complete saved policy from the store");
+    evidence.insert(QStringLiteral("read"), videoScalePolicyJson(read));
+
+    {
+        SettingsDialog dialog(client, runner);
+        const VideoScaleControls controls = videoScaleControls(dialog);
+        const bool present = videoScaleControlsPresent(controls);
+        check(present,
+              "the fresh process's General page exposes the four scaling controls");
+        if (present) {
+            checkVideoScaleControls(controls, expected,
+                                    "the fresh process's General page restores the saved policy");
+            evidence.insert(QStringLiteral("restored"),
+                            videoScalePolicyJson(videoScalePolicyOfControls(controls)));
+        }
+        check(!dialog.isVisible(),
+              "the restart dialog stayed hidden: no activation or global focus");
+        dialog.reject();
+        QApplication::processEvents();
+    }
+
+    const bool passed = failures == 0;
+    evidence.insert(QStringLiteral("passed"), passed);
+    evidence.insert(QStringLiteral("checks"), checks);
+    evidence.insert(QStringLiteral("failures"), failures);
+    bool written = false;
+    if (!evidencePath.isEmpty()) {
+        QFile file(evidencePath);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            const QByteArray payload = QJsonDocument(evidence).toJson(QJsonDocument::Indented);
+            written = file.write(payload) == payload.size();
+            file.close();
+        }
+    }
+    check(written, "the restart read wrote its evidence file");
+    return evidence;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -4066,26 +4500,67 @@ int main(int argc, char** argv) {
         QStringLiteral("Capture the real Settings Components label twice: normal child "
                        "attributes and WA_TranslucentBackground."));
     parser.addOption(textRasterOnlyOption);
+    QCommandLineOption videoScalingSmokeOption(
+        QStringLiteral("video-scaling-smoke"),
+        QStringLiteral("Run only the actual General video scaling Save/Cancel/reopen "
+                       "persistence scenario, including a fresh-process store read."));
+    parser.addOption(videoScalingSmokeOption);
+    QCommandLineOption videoScalingSmokeReadOption(
+        QStringLiteral("video-scaling-smoke-read"),
+        QStringLiteral("Read the store a --video-scaling-smoke run saved, in a fresh "
+                       "process, through the production settings reader."));
+    parser.addOption(videoScalingSmokeReadOption);
+    QCommandLineOption videoScalingStoreOption(
+        QStringLiteral("video-scaling-store"),
+        QStringLiteral("Settings store directory the fresh-process read uses."),
+        QStringLiteral("directory"));
+    parser.addOption(videoScalingStoreOption);
+    QCommandLineOption videoScalingExpectOption(
+        QStringLiteral("video-scaling-expect"),
+        QStringLiteral("Policy the fresh process must read: mode,zoom,upscale,downscale."),
+        QStringLiteral("spec"));
+    parser.addOption(videoScalingExpectOption);
+    QCommandLineOption videoScalingEvidenceOption(
+        QStringLiteral("video-scaling-evidence"),
+        QStringLiteral("File the fresh-process read writes its evidence to."),
+        QStringLiteral("path"));
+    parser.addOption(videoScalingEvidenceOption);
     parser.process(app);
     const bool installRuntime = parser.isSet(installRuntimeOption);
     const bool componentProgressOnly = parser.isSet(componentProgressOnlyOption);
     const bool hdrSettingsOnly = parser.isSet(hdrSettingsOnlyOption);
     const bool spatialAcquisitionOnly = parser.isSet(spatialAcquisitionOnlyOption);
     const bool textRasterOnly = parser.isSet(textRasterOnlyOption);
+    const bool videoScalingSmoke = parser.isSet(videoScalingSmokeOption);
+    const bool videoScalingSmokeRead = parser.isSet(videoScalingSmokeReadOption);
     QCoreApplication::setOrganizationName(QStringLiteral("MikaiNativeSettingsProbe"));
     QCoreApplication::setApplicationName(QStringLiteral("NativeSettingsProbe"));
 
+    // The writer run owns a fresh settings directory; the restart read is handed
+    // the directory the writer saved into and opens exactly that surface, which
+    // is the process boundary the persistence claim rests on.
     QTemporaryDir settingsDir;
-    if (!settingsDir.isValid()) {
-        std::fprintf(stderr, "FAIL cannot create an isolated settings directory\n");
-        return 1;
+    QString settingsRoot;
+    if (videoScalingSmokeRead) {
+        settingsRoot = QDir::cleanPath(parser.value(videoScalingStoreOption));
+        if (settingsRoot.isEmpty() || !QFileInfo(settingsRoot).isDir()) {
+            std::fprintf(stderr,
+                         "FAIL the restart read needs an existing settings store directory\n");
+            return 2;
+        }
+    } else {
+        if (!settingsDir.isValid()) {
+            std::fprintf(stderr, "FAIL cannot create an isolated settings directory\n");
+            return 1;
+        }
+        settingsRoot = settingsDir.path();
     }
     QSettings::setDefaultFormat(QSettings::IniFormat);
-    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
-    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsRoot);
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsRoot);
 
     const QString recipeId = QStringLiteral("janai.unknown.v9");
-    {
+    if (!videoScalingSmokeRead) {
         QSettings settings;
         // Foreign settings a native save must not disturb.
         settings.setValue(QStringLiteral("player/presetShortcuts/hd2x"), QStringLiteral("Ctrl+1"));
@@ -4132,6 +4607,47 @@ int main(int argc, char** argv) {
 
     mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
     Runner runner;
+
+    if (videoScalingSmokeRead) {
+        const QJsonObject evidence = videoScalingRestartRead(
+            client, runner, settingsRoot, parser.value(videoScalingExpectOption),
+            parser.value(videoScalingEvidenceOption));
+        const bool passed =
+            failures == 0 && evidence.value(QStringLiteral("passed")).toBool();
+        std::fprintf(stderr,
+                     "[native_settings_probe video-scaling-smoke-read] %s (%d checks, "
+                     "%d failures)\n",
+                     passed ? "PASS" : "FAIL", checks, failures);
+        return passed ? 0 : 1;
+    }
+
+    if (videoScalingSmoke) {
+        bool restartVerified = false;
+        QJsonObject evidence = videoScalingPersistenceScenario(
+            client, runner, settingsRoot, QCoreApplication::applicationFilePath(),
+            restartVerified);
+        const bool passed = failures == 0 && restartVerified;
+        evidence.insert(QStringLiteral("probe"), QStringLiteral("native_settings_probe"));
+        evidence.insert(QStringLiteral("passed"), passed);
+        evidence.insert(QStringLiteral("checks"), checks);
+        evidence.insert(QStringLiteral("failures"), failures);
+        QFile evidenceFile(QStringLiteral("native-video-scaling-persistence-evidence.json"));
+        bool evidenceWritten = false;
+        if (evidenceFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            const QByteArray payload = QJsonDocument(evidence).toJson(QJsonDocument::Indented);
+            evidenceWritten = evidenceFile.write(payload) == payload.size();
+            evidenceFile.close();
+        }
+        if (!evidenceWritten) {
+            std::fprintf(stderr, "FAIL the video scaling persistence evidence was written\n");
+        }
+        std::fprintf(stderr,
+                     "[native_settings_probe video-scaling-smoke] %s (%d checks, %d failures) "
+                     "restart=%d evidence=%d\n",
+                     passed ? "PASS" : "FAIL", checks, failures, restartVerified ? 1 : 0,
+                     evidenceWritten ? 1 : 0);
+        return passed && evidenceWritten ? 0 : 1;
+    }
 
     if (textRasterOnly) {
         bool comparable = false;

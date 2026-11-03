@@ -311,26 +311,11 @@ int main(int argc, char** argv) {
             settings.value(
                 QString::fromLatin1(mplayer::VideoSurface::kAnimeJanaiHdrOverrideSettingKey),
                 false).toBool());
-        // The display scaling is read here for the same reason: the first
-        // engine must be created in the mode the viewer saved, not default to
-        // Fit and jump once a surface pumps.
-        mplayer::VideoScalePolicy scalePolicy;
-        const int storedMode = settings.value(
-            QString::fromLatin1(mplayer::VideoSurface::kVideoScaleModeSettingKey),
-            static_cast<int>(mplayer::VideoScaleMode::Fit)).toInt();
-        if (storedMode >= static_cast<int>(mplayer::VideoScaleMode::Fit) &&
-            storedMode <= static_cast<int>(mplayer::VideoScaleMode::Original)) {
-            scalePolicy.mode = static_cast<mplayer::VideoScaleMode>(storedMode);
-        }
-        scalePolicy.zoomPercent = settings.value(
-            QString::fromLatin1(mplayer::VideoSurface::kVideoZoomSettingKey), 0).toInt();
-        scalePolicy.upscale = settings.value(
-            QString::fromLatin1(mplayer::VideoSurface::kVideoUpscaleSettingKey),
-            QStringLiteral("lanczos")).toString();
-        scalePolicy.downscale = settings.value(
-            QString::fromLatin1(mplayer::VideoSurface::kVideoDownscaleSettingKey),
-            QString()).toString();
-        mplayer::VideoSurface::setVideoScalePolicy(scalePolicy);
+        // The display scaling is read through the same production reader every
+        // other consumer uses: the first engine must be created in the mode the
+        // viewer saved, not default to Fit and jump once a surface pumps.
+        mplayer::VideoSurface::setVideoScalePolicy(
+            mplayer::videoScalePolicyFromSettings());
     }
     if (!launch.frameTimingLog.isEmpty()) {
         mplayer::VideoSurface::setFrameTimingLogPath(launch.frameTimingLog);

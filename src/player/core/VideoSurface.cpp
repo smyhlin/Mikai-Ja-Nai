@@ -16,6 +16,7 @@
 #include <QPainter>
 #include <QRegularExpression>
 #include <QScopedValueRollback>
+#include <QSettings>
 #include <QThread>
 #include <QTimer>
 #include <QUrl>
@@ -311,6 +312,29 @@ QString videoScaleModeLabel(VideoScaleMode mode) {
             return QCoreApplication::translate("mplayer::videoscale", "Original size (1:1)");
     }
     return {};
+}
+
+VideoScalePolicy videoScalePolicyFromSettings() {
+    // The stored preference, read once per consumer instead of a copy per
+    // caller. Installing the static stays the caller's step, because startup
+    // and a store-refresh reach the same value at different moments.
+    QSettings settings;
+    VideoScalePolicy policy;
+    const int storedMode = settings.value(
+        QString::fromLatin1(VideoSurface::kVideoScaleModeSettingKey),
+        static_cast<int>(VideoScaleMode::Fit)).toInt();
+    if (storedMode >= static_cast<int>(VideoScaleMode::Fit) &&
+        storedMode <= static_cast<int>(VideoScaleMode::Original)) {
+        policy.mode = static_cast<VideoScaleMode>(storedMode);
+    }
+    policy.zoomPercent =
+        settings.value(QString::fromLatin1(VideoSurface::kVideoZoomSettingKey), 0).toInt();
+    policy.upscale = settings.value(
+        QString::fromLatin1(VideoSurface::kVideoUpscaleSettingKey),
+        QStringLiteral("lanczos")).toString();
+    policy.downscale = settings.value(
+        QString::fromLatin1(VideoSurface::kVideoDownscaleSettingKey), QString()).toString();
+    return policy;
 }
 
 bool VideoSurface::hdrRenderingFixesEnabled() {

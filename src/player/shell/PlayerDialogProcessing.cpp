@@ -113,26 +113,7 @@ void PlayerDialog::refreshStoredSettings() {
     // The display scaling is process-wide, so a saved change is already in the
     // statics; reading the store here keeps a player refreshed from a store
     // edited elsewhere in step, and the setter re-applies only a real change.
-    {
-        QSettings scaleSettings;
-        VideoScalePolicy scalePolicy;
-        const int storedMode = scaleSettings.value(
-            QString::fromLatin1(VideoSurface::kVideoScaleModeSettingKey),
-            static_cast<int>(VideoScaleMode::Fit)).toInt();
-        if (storedMode >= static_cast<int>(VideoScaleMode::Fit) &&
-            storedMode <= static_cast<int>(VideoScaleMode::Original)) {
-            scalePolicy.mode = static_cast<VideoScaleMode>(storedMode);
-        }
-        scalePolicy.zoomPercent = scaleSettings.value(
-            QString::fromLatin1(VideoSurface::kVideoZoomSettingKey), 0).toInt();
-        scalePolicy.upscale = scaleSettings.value(
-            QString::fromLatin1(VideoSurface::kVideoUpscaleSettingKey),
-            QStringLiteral("lanczos")).toString();
-        scalePolicy.downscale = scaleSettings.value(
-            QString::fromLatin1(VideoSurface::kVideoDownscaleSettingKey),
-            QString()).toString();
-        VideoSurface::setVideoScalePolicy(scalePolicy);
-    }
+    VideoSurface::setVideoScalePolicy(videoScalePolicyFromSettings());
     QSettings animeJanaiSettings;
     const bool wasEnabled = !animeJanaiPresetId_.isEmpty();
     const QString preset = wasEnabled

@@ -169,6 +169,41 @@ $env:MIKAI_PROBE_TRANSLATION = (Resolve-Path 'build/release/mikai_uk.qm').Path
 .\build\release\native_settings_probe.exe --hdr-settings-only
 ```
 
+### Video scaling settings persistence smoke (Windows)
+
+`native_settings_probe --video-scaling-smoke` drives the real General "Video
+scaling" card — mode, zoom, upscaler, downscaler — through the dialog's own
+Save and Cancel actions, then proves the store is read back by the production
+reader and by a freshly constructed dialog, and finally spawns itself with
+`--video-scaling-smoke-read` so a second process reads the same store. It never
+writes a scale setting itself, never shows or activates a window (the shipped
+offscreen platform is enough), and the probe's isolation launcher already gives
+it an empty owned settings directory and native store, so it cannot touch the
+user's populated application store.
+
+```powershell
+$qt = 'C:/temp/qt6/6.12.0/mingw_64'
+cmake --build build/release --target native_settings_probe mikai_test_launcher --parallel 4
+$launcher = (Resolve-Path build/release/mikai_test_launcher.exe).Path
+$probe = (Resolve-Path build/release/native_settings_probe.exe).Path
+cmake -E make_directory .probe-out/video-scaling-persistence
+Push-Location .probe-out/video-scaling-persistence
+& $launcher $probe (Resolve-Path ../../shaders).Path (Resolve-Path ../../build/release/mpv/libmpv-2.dll).Path `
+  "$qt/bin" "$qt/plugins" ../../build/release/_test-runs --video-scaling-smoke
+Pop-Location
+```
+
+(A direct `build\release\native_settings_probe.exe --video-scaling-smoke` run is
+equivalent; the trailing arguments are forwarded unchanged.) Exit code 0 means
+every check passed, including the fresh-process read. The writer writes
+`native-video-scaling-persistence-evidence.json` in its working directory; the
+spawned read phase writes `video-scaling-restart-evidence.json` into the store
+it was handed, and the writer embeds that object under `restart`.
+
+What it does **not** claim: no player, mpv core or surface is created, so the
+application player-startup path is not exercised, and the dialogs are never
+shown, so this is not visible layout/typography or flyout/PiP/Compare evidence.
+
 ### Continuous frame-order and HDR acceptance
 
 The frame-ID clip defaults to 16 seconds. Its visible 8-bit barcode identifies advancing frames in the decoded/rendered image. For continuous same-source-epoch aging, generate a 61-minute clip (3660 seconds) with an ffmpeg build that includes `libx265`; do not loop a short file:

@@ -116,6 +116,12 @@ std::vector<VideoScaleOption> videoScaleOptions(const VideoScalePolicy& policy,
 /// The name a viewer-facing control shows for a mode. Kept here because both
 /// the Settings card and the player flyout offer the same choice.
 QString videoScaleModeLabel(VideoScaleMode mode);
+/// The stored viewing preference, read from the application's own settings
+/// store. This is the one reader the startup policy block, a player refreshed
+/// from the store and the persistence probe share, so a key rename or a changed
+/// default cannot diverge between them. It neither installs the policy nor
+/// touches a surface: the caller decides when the process-wide static changes.
+VideoScalePolicy videoScalePolicyFromSettings();
 
 /// Provenance for the legacy FPS value passed to the HUD; this is display
 /// metadata only and says nothing about whether a native filter ran.
