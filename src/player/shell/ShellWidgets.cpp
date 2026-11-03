@@ -32,15 +32,6 @@ namespace {
 /// instead of the cache growing to the size of the window.
 constexpr qint64 kChromeCacheBudgetBytes = 8 * 1024 * 1024;
 
-/// The cache is an optimisation, so it has a rollback that does not need a
-/// rebuild: a driver or a paint path that disagrees with it can be isolated by
-/// launching with MIKAI_CHROME_CACHE=0.
-bool chromeCacheEnabled() {
-    static const bool enabled =
-        qEnvironmentVariable("MIKAI_CHROME_CACHE") != QLatin1String("0");
-    return enabled;
-}
-
 /// `rgba(r,g,b,a)` for a colour, so a stylesheet fragment is built from the
 /// same tokens the paint routines use.
 QString rgba(const QColor& color) {
@@ -344,17 +335,16 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
         if (box.isEmpty() || !box.intersects(clip)) {
             continue;
         }
-        // Why this control cannot be served, decided before the attempt: a hit
-        // ratio hides whether the cache is thrashing on geometry, ratio, a full
-        // invalidation or its budget, and those are different defects.
+        // The miss reason, not just the miss: geometry, ratio, a full
+        // invalidation and the budget are different defects.
         int missReason = 0;
         if (entry.valid) {
             if (entry.box != box) missReason = 1;
             else if (entry.devicePixelRatio != ratio) missReason = 2;
             else if (entry.stamp != generation_) missReason = 3;
         }
-        const bool reusable = chromeCacheEnabled() && entry.valid && entry.box == box &&
-                              entry.devicePixelRatio == ratio && entry.stamp == generation_;
+        const bool reusable = entry.valid && entry.box == box && entry.devicePixelRatio == ratio &&
+                              entry.stamp == generation_;
         if (reusable) {
             // A reuse is the entire per-control cost: the pass already carries
             // the hint this blit needs, so there is no save/restore around it.
@@ -368,7 +358,7 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
             ++cached;
             continue;
         }
-        if (chromeCacheEnabled()) {
+        {
             const QSize deviceSize(static_cast<int>(std::ceil(box.width() * ratio)),
                                    static_cast<int>(std::ceil(box.height() * ratio)));
             const qint64 bytes = qint64(deviceSize.width()) * deviceSize.height() * 4;
@@ -381,9 +371,7 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                 buffer.fill(Qt::transparent);
                 {
                     QPainter cachePainter(&buffer);
-                    // The raster engine's 256-level coverage is the point: the GL
-                    // device has samples()==0, so this is what makes overlay
-                    // glyphs antialiased at all.
+                    // Raster coverage is the antialiasing the GL device lacks.
                     cachePainter.setRenderHint(QPainter::Antialiasing, true);
                     cachePainter.setRenderHint(QPainter::TextAntialiasing, true);
                     cachePainter.setRenderHint(QPainter::SmoothPixmapTransform, true);

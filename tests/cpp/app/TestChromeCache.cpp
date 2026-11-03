@@ -119,9 +119,6 @@ bool presented(QWidget* widget) {
 }  // namespace
 
 void TestChromeCache::aSecondPaintServesTheCachedPixels() {
-  if (qgetenv("MIKAI_CHROME_CACHE") == QByteArrayLiteral("0")) {
-    QSKIP("MIKAI_CHROME_CACHE=0 switches the cache off in this environment");
-  }
   Host host;
   auto* control = new QuietChrome(&host);
   control->move(4, 5);
@@ -154,9 +151,6 @@ void TestChromeCache::aSecondPaintServesTheCachedPixels() {
 }
 
 void TestChromeCache::aDevicePixelRatioChangeReRendersAtTheNewRatio() {
-  if (qgetenv("MIKAI_CHROME_CACHE") == QByteArrayLiteral("0")) {
-    QSKIP("MIKAI_CHROME_CACHE=0 switches the cache off in this environment");
-  }
   Host host;
   auto* control = new QuietChrome(&host);
   control->move(4, 5);
@@ -181,9 +175,6 @@ void TestChromeCache::aDevicePixelRatioChangeReRendersAtTheNewRatio() {
 }
 
 void TestChromeCache::aTranslucentControlLeavesNoBlackFringe() {
-  if (qgetenv("MIKAI_CHROME_CACHE") == QByteArrayLiteral("0")) {
-    QSKIP("MIKAI_CHROME_CACHE=0 switches the cache off in this environment");
-  }
   Host host;
   auto* control = new VeilChrome(&host);
   control->move(6, 6);
