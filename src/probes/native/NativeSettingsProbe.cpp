@@ -4092,9 +4092,17 @@ int main(int argc, char** argv) {
             const std::wstring tracePathWide = tracePath.toStdWString();
             const bool installed =
                 mikai::probes::native_trace::install(tracePathWide.c_str());
-            std::fprintf(stderr, "[native_settings_probe] native file trace %s: %s\n",
+            std::fprintf(stderr, "[native_settings_probe] native file trace %s: %s (%s)\n",
                          installed ? "installed" : "FAILED to install",
-                         qPrintable(tracePath));
+                         qPrintable(tracePath),
+                         installed ? "coverage complete"
+                                   : qPrintable(QString::fromWCharArray(
+                                         mikai::probes::native_trace::lastError())));
+            if (!installed) {
+                // A requested trace that cannot be trusted must not consume the
+                // one diagnostic run with partial hooks or a partial log.
+                return 3;
+            }
         }
     }
     QCoreApplication::setOrganizationName(QStringLiteral("MikaiNativeSettingsProbe"));
