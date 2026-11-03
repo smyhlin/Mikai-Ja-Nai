@@ -15,4 +15,5 @@ private slots:
     void zoomFormattingIgnoresTheLocale();
     void autoDownscaleLeavesTheCoreDefaultAlone();
     void settingsKeysRoundTrip();
+    void hiddenPlaybackChangesThePicturePerMode();
 };
