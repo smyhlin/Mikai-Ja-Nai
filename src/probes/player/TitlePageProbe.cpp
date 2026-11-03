@@ -648,6 +648,51 @@ int runScreenshotReview(QApplication& app, TitlePage* page, const QString& ref,
     };
     bool synopsisExpanded = false;
 
+    // Measured geometry of the surfaces GOAL-C aligns, per review case and per
+    // view: logical px at the run's own device ratio, from the live fixture.
+    QJsonArray geometryCases;
+    const auto measure = [&](const ReviewCase& reviewCase, const char* view) {
+        const auto describe = [](QWidget* widget) {
+            QJsonObject entry;
+            if (widget == nullptr) return entry;
+            entry.insert(QStringLiteral("visible"), widget->isVisible());
+            entry.insert(QStringLiteral("width"), widget->width());
+            entry.insert(QStringLiteral("height"), widget->height());
+            return entry;
+        };
+        QJsonObject entry;
+        entry.insert(QStringLiteral("case"), QString::fromLatin1(reviewCase.name));
+        entry.insert(QStringLiteral("view"), QString::fromLatin1(view));
+        entry.insert(QStringLiteral("devicePixelRatio"), page->devicePixelRatioF());
+        entry.insert(QStringLiteral("viewport"), QStringLiteral("%1x%2")
+                                                     .arg(reviewCase.size.width())
+                                                     .arg(reviewCase.size.height()));
+        const auto add = [&](const QString& id, const char* name) {
+            entry.insert(id, describe(page->findChild<QWidget*>(QString::fromLatin1(name))));
+        };
+        add(QStringLiteral("header"), "titleHeader");
+        add(QStringLiteral("back"), "titleBack");
+        add(QStringLiteral("home"), "titleHome");
+        add(QStringLiteral("settingsChip"), "settingsChip");
+        add(QStringLiteral("heroWatch"), "titleHeroWatchButton");
+        add(QStringLiteral("episodes"), "titleEpisodesAnchor");
+        add(QStringLiteral("detailsToggle"), "titleDetailsToggle");
+        add(QStringLiteral("watch"), "titleWatchButton");
+        add(QStringLiteral("watchedToggle"), "titleWatchWatchedToggle");
+        QJsonArray scoreLines;
+        for (QLabel* label : page->findChildren<QLabel*>(QStringLiteral("titleScores"))) {
+            QJsonObject line = describe(label);
+            line.insert(QStringLiteral("text"), label->text());
+            line.insert(QStringLiteral("wrappedHeight"), label->heightForWidth(label->width()));
+            QWidget* surface = label->parentWidget();
+            const QRect bounds(label->mapTo(surface, QPoint(0, 0)), label->size());
+            line.insert(QStringLiteral("insideSurface"), surface->rect().contains(bounds));
+            scoreLines.append(line);
+        }
+        entry.insert(QStringLiteral("scoreLines"), scoreLines);
+        geometryCases.append(entry);
+    };
+
     auto* heading = page->findChild<QLabel*>(QStringLiteral("titleHeading"));
     auto* tabs = page->findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
     auto* overview = page->findChild<QScrollArea*>(QStringLiteral("titleOverview"));
@@ -727,6 +772,7 @@ int runScreenshotReview(QApplication& app, TitlePage* page, const QString& ref,
         QWidget* hero = page->findChild<QWidget*>(QStringLiteral("titleHero"));
         if (hero != nullptr) overview->ensureWidgetVisible(hero, 0, 0);
         if (!saveView(reviewCase, QStringLiteral("hero"))) return 1;
+        measure(reviewCase, "hero");
 
         // Exercise live accent, gradient and corner updates without rebuilding
         // the page or refetching its title data; restore the case appearance.
@@ -799,6 +845,7 @@ int runScreenshotReview(QApplication& app, TitlePage* page, const QString& ref,
             auto* overlay = page->findChild<QWidget*>(QStringLiteral("titleDetailsOverlay"));
             detailsPassed = overlay != nullptr && overlay->isVisible();
             if (detailsPassed && !saveView(reviewCase, QStringLiteral("details-open"))) return 1;
+            if (detailsPassed) measure(reviewCase, "details-open");
             auto* close = page->findChild<QPushButton*>(QStringLiteral("titleDetailsClose"));
             if (close != nullptr) close->click();
             settle();
@@ -832,6 +879,7 @@ int runScreenshotReview(QApplication& app, TitlePage* page, const QString& ref,
 
     result.insert(QStringLiteral("screenshots"), screenshots);
     result.insert(QStringLiteral("interactions"), interactions);
+    result.insert(QStringLiteral("geometry"), geometryCases);
     const QString resultPath = QDir(outputDirectory).filePath(
         QStringLiteral("%1-%2-result.json").arg(prefix, ref));
     QFile file(resultPath);

@@ -38,6 +38,7 @@
 #include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
+#include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
@@ -52,6 +53,7 @@
 #include "backend/MikaiClient.hpp"
 #include "dialogs/NativeAssetsPanel.hpp"
 #include "dialogs/SettingsDialog.hpp"
+#include "theme/Metrics.hpp"
 #include "workers/Runner.hpp"
 
 using mikai::app::NativeAssetsPanel;
@@ -663,6 +665,75 @@ int main(int argc, char** argv) {
 
     // Record the observed bounds so a failure is a measurement, not a claim.
     reportBounds("native controls", minimum, dialog.devicePixelRatioF(), nativeControls);
+
+    // GOAL-C: the components page's action row and card headers at the dialog's
+    // own minimum width. Bounds are printed so a failure is a measurement.
+    if (dialog.showPage(QStringLiteral("components"))) {
+        QApplication::processEvents();
+        QWidget* componentsPage = dialog.findChild<QWidget*>(QStringLiteral("componentsPage"));
+        if (componentsPage == nullptr) {
+            check(false, QStringLiteral("the components page exists"));
+        } else {
+            settleLayout(componentsPage);
+            const QStringList actionNames{
+                QStringLiteral("componentDownloadButton"),
+                QStringLiteral("refreshComponentsButton"),
+                QStringLiteral("nativeComponentVerifyButton"),
+                QStringLiteral("nativeComponentImportAnimeJanaiButton"),
+                QStringLiteral("nativeComponentTabCancelButton")};
+            QList<QWidget*> geometryTargets;
+            int actionWidth = -1;
+            bool equalWidths = true;
+            bool controlHeight = true;
+            for (const QString& name : actionNames) {
+                auto* action = dialog.findChild<QPushButton*>(name);
+                if (action == nullptr) {
+                    equalWidths = false;
+                    controlHeight = false;
+                    continue;
+                }
+                geometryTargets.append(action);
+                if (actionWidth < 0) actionWidth = action->width();
+                equalWidths = equalWidths && action->width() == actionWidth;
+                controlHeight =
+                    controlHeight && action->height() == mikai::app::theme::kControlHeight;
+            }
+            check(equalWidths, QStringLiteral("the components actions share one width"));
+            check(controlHeight, QStringLiteral("every components action is one control height"));
+
+            bool badgeLines = true;
+            bool countLines = true;
+            for (const QString& card :
+                 {QStringLiteral("tensorRtRuntimeCard"), QStringLiteral("animeJanaiModelsCard"),
+                  QStringLiteral("rifeModelsCard"), QStringLiteral("tensorRtKernelsCard")}) {
+                auto* badge = dialog.findChild<QLabel*>(card + QStringLiteral("State"));
+                auto* title = dialog.findChild<QLabel*>(card + QStringLiteral("Title"));
+                auto* counts = dialog.findChild<QLabel*>(card + QStringLiteral("Count"));
+                if (badge == nullptr || title == nullptr || counts == nullptr) {
+                    badgeLines = false;
+                    countLines = false;
+                    continue;
+                }
+                geometryTargets.append(badge);
+                geometryTargets.append(counts);
+                badgeLines = badgeLines &&
+                             badge->height() <= mikai::app::theme::kBadgeHeight &&
+                             badge->width() <= mikai::app::theme::kComponentBadgeWidth &&
+                             !badge->geometry().intersects(title->geometry());
+                auto* description =
+                    dialog.findChild<QLabel*>(card + QStringLiteral("Description"));
+                const bool belowDescription =
+                    !counts->isVisible() || description == nullptr ||
+                    counts->mapTo(componentsPage, QPoint(0, 0)).y() >=
+                        description->mapTo(componentsPage,
+                                            QPoint(0, description->height())).y();
+                countLines = countLines && counts != badge && belowDescription;
+            }
+            check(badgeLines, QStringLiteral("every component badge is one 24 px line"));
+            check(countLines, QStringLiteral("component counts have their own line"));
+            reportBounds("goals geometry", minimum, dialog.devicePixelRatioF(), geometryTargets);
+        }
+    }
 
     std::fprintf(stderr, "[native_geometry_probe] %s (%d failures)\n",
                  failures == 0 ? "PASS" : "FAIL", failures);
