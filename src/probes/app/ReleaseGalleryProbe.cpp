@@ -823,8 +823,7 @@ private:
     }
 
     /// One pixel of a button rendered in a chosen state: the widget's own style
-    /// resolves the sheet with the state handed to it, so a hover is measurable
-    /// without a pointer being anywhere near the control.
+    /// resolves the sheet, so no pointer has to be near the control.
     static QColor pixelOfState(QAbstractButton& button, bool mouseOver, int x, int y) {
         if (button.width() <= 0 || button.height() <= 0) return QColor();
         const qreal scale = button.devicePixelRatioF() > 0.0 ? button.devicePixelRatioF() : 1.0;
@@ -1167,10 +1166,8 @@ private:
         return true;
     }
 
-    /// Every real accent chip on the appearance page, at whatever width the
-    /// settings dialog currently has: exactly one metric in both directions and
-    /// a closed minimum/maximum interval, so a stylesheet cannot inflate the
-    /// body past the caller's fixed size.
+    /// Every real accent chip on the appearance page: one metric in both
+    /// directions with a closed interval, so a sheet cannot inflate it.
     bool measureAccentSwatches(const QString& stage) {
         const QList<QPushButton*> swatches =
             settings_->findChildren<QPushButton*>(QStringLiteral("accentSwatch"));
@@ -1256,9 +1253,7 @@ private:
                                 {QStringLiteral("presentationOnly"), true},
                                 {QStringLiteral("inferenceProven"), false}});
             if (compare_ != nullptr && compare_->isVisible()) {
-                // A freshly shown window paints its chrome a frame later; a grab
-                // taken inside the same turn reads the surface before the style
-                // is on it and reports no accent pixels at all.
+                // A freshly shown window paints its chrome a frame later.
                 compare_->repaint();
                 QTest::qWait(150);
                 const QImage before = compare_->grab().toImage();
@@ -1334,12 +1329,9 @@ private:
                           .arg(nameColor(expected))
                           .arg(expectedAlpha));
 
-                // Title page hero watch: the primary role's real button. The page
-                // disables it without a playable episode, and a disabled primary
-                // is a neutral by design, so the enabled state is set for the
-                // presentation and re-applied here - the page re-derives it on
-                // its own schedule, and a sample taken after that would measure
-                // the disabled rule instead of the accent.
+                // The page disables the hero action without a playable episode
+                // and re-derives that on its own schedule, so the enabled state
+                // is set immediately before the sample.
                 if (titleWatch_ != nullptr) {
                     titleWatch_->setEnabled(true);
                     titleWatch_->style()->unpolish(titleWatch_);
@@ -1357,9 +1349,7 @@ private:
                           .arg(nameColor(watchPixel), nameColor(expected))
                           .arg(titleWatch_ != nullptr && titleWatch_->isEnabled()));
 
-                // Benchmark chunk: accent, not the old muted grey. Its rule lives
-                // in the settings sheet, so the re-polish follows the sheet swap
-                // above.
+                // Its rule lives in the settings sheet, so it follows that swap.
                 if (benchmarkProgress_ != nullptr) {
                     benchmarkProgress_->style()->unpolish(benchmarkProgress_);
                     benchmarkProgress_->style()->polish(benchmarkProgress_);
@@ -1400,19 +1390,11 @@ private:
                           QStringLiteral("the media inspector is not open"));
                 }
 
-                // A chrome chip is neutral at rest and takes the accent on
-                // hover. The pointer cannot be parked on it, so the hover state
-                // is put on the widget immediately before it paints - the same
-                // resolution the paint event performs. The contract is the
-                // colour: the painted hue must be the chosen accent and the
-                // boundary must be visible. The wash's alpha belongs to the
-                // implementation, so only a "painted at all" floor is asserted,
-                // never one design's exact value.
+                // Hover is the contract; the wash alpha is not, so only a
+                // "painted at all" floor is asserted.
                 if (chip_ != nullptr) {
-                    // The pointer cannot be parked on the chip, and a forced
-                    // under-mouse flag does not survive an event turn here, so
-                    // the state is handed to the widget's own style - the same
-                    // resolution its paint event performs.
+                    // A forced under-mouse flag does not survive an event turn
+                    // here, so the state goes to the widget's own style.
                     const QColor border = pixelOfState(*chip_, true, chip_->width() / 2, 0);
                     row.insert(QStringLiteral("playerChipHover"), nameColor(border));
                     row.insert(QStringLiteral("playerChipHoverAlpha"), border.alpha());
@@ -1425,15 +1407,23 @@ private:
                               .arg(nameColor(expected)));
                 }
 
-                // The played part belongs to the scrub bar, which paints it in
-                // its own paint event; rendering the player window samples the
-                // video under a mapper, not this chrome. The bar is sampled where
-                // the played run is: a quarter in, halfway down.
+                // The bar is adopted chrome: its own paintEvent draws nothing
+                // once the surface owns it, so the played run is read from the
+                // surface's framebuffer at the bar's mapped point.
                 QColor timelinePixel;
-                if (scrub_ != nullptr && scrub_->isVisible()) {
-                    timelinePixel = pixelsOf(scrub_)
-                                        .at(qRound(scrub_->width() * 0.25),
-                                            scrub_->height() / 2);
+                if (scrub_ != nullptr && surface_ != nullptr && scrub_->isVisible() &&
+                    surface_->width() > 0) {
+                    const QImage frame = surface_->grabFramebuffer();
+                    if (!frame.isNull() && frame.width() > 0 && frame.height() > 0) {
+                        const qreal ratio = static_cast<qreal>(frame.width()) /
+                                            static_cast<qreal>(surface_->width());
+                        const QPoint mapped = scrub_->mapTo(
+                            surface_.data(),
+                            QPoint(qRound(scrub_->width() * 0.25), scrub_->height() / 2));
+                        timelinePixel = frame.pixelColor(
+                            qBound(0, qRound(mapped.x() * ratio), frame.width() - 1),
+                            qBound(0, qRound(mapped.y() * ratio), frame.height() - 1));
+                    }
                 }
                 row.insert(QStringLiteral("timelinePlayed"), nameColor(timelinePixel));
                 check(QStringLiteral("%1/timeline-played-live").arg(variant),
@@ -1516,10 +1506,8 @@ private:
         return true;
     }
 
-    /// The gradient source, switched on the pages that are already open and
-    /// without touching the stored colour. The page wash is painted live, but the
-    /// title page's hero is a cached composite: a consumer that compared the
-    /// stored colour instead of the resolved one would keep the previous source.
+    /// Switches the gradient source on the open pages without touching the stored
+    /// colour: the hero's cached composite is the surface that goes stale.
     void sweepGradientSource() {
         Appearance autoLook;
         autoLook.accent = QStringLiteral("#bdacff");
@@ -1559,9 +1547,8 @@ private:
                 evidence_.insert(QStringLiteral("heroWash/") + stage,
                                  QJsonObject{{QStringLiteral("pixel"), nameColor(hero)},
                                              {QStringLiteral("alpha"), hero.alpha()}});
-                // The composite may sit over cover artwork, so the contract is
-                // that the cached wash CHANGED with the source: the same pixels
-                // across a source switch mean the cache was never rebuilt.
+                // Over cover artwork the absolute colour is not the contract:
+                // the cached wash has to CHANGE with the source.
                 check(QStringLiteral("gradient-source/%1/hero-wash-painted").arg(stage),
                       hero.alpha() > 0,
                       QStringLiteral("cached hero wash %1 a%2")
@@ -1604,22 +1591,22 @@ private:
         report(QStringLiteral("auto-again"), mikai::app::theme::accentColor(autoLook));
     }
 
-    /// The picture-in-picture float, opened on its own and kept open across two
-    /// accent changes. It carries no stream: only the chrome it paints is
-    /// measured, so no second mpv core and no model is created (presentation
-    /// only). The player is closed first because two live QOpenGLWidgets on one
-    /// screen is the pattern the shipped player deliberately pools around.
+    /// A bare float, kept open across two accents: no stream, no second mpv core,
+    /// only the chrome it paints (presentation only).
     bool sweepPip() {
-        // Compare and the inspector hold locks and pointers into the player's
-        // surface and release them in their own destructors, so they leave while
-        // that surface is still alive. Only then does the player close, and only
-        // after its window is gone is a second OpenGL widget created.
+        // This teardown is the one that crashed last time, so the measurements
+        // go to disk before it starts.
+        writeEvidence(QStringLiteral("pip-teardown-pending"), false);
+        // Both windows release surface locks in their destructors, so they close
+        // while the surface is alive; the player follows, then the float.
         if (compare_ != nullptr) {
             compare_->close();
             compare_.reset();
             QTest::qWait(200);
         }
         if (mediaInfo_ != nullptr) {
+            // WA_DeleteOnClose, parented to the player: the pointer clears once
+            // the deferred delete runs in the turn below, before the player goes.
             mediaInfo_->close();
             mediaInfo_ = nullptr;
             QTest::qWait(100);
@@ -1812,8 +1799,7 @@ private:
         if (settings_ != nullptr) settings_->resize(kWidth, kHeight);
     }
 
-    /// Serializes everything observed so far. Called before teardown as well as
-    /// after it: a crash while widgets are being destroyed must not discard the
+    /// Written before teardown and again after it, so a crash cannot discard
     /// measurements that are already collected.
     bool writeEvidence(const QString& stage, bool success) {
         evidence_.insert(QStringLiteral("stage"), stage);
@@ -1841,10 +1827,9 @@ private:
     }
 
     int finish(bool ok) {
-        // The observations are on disk before anything is torn down.
         writeEvidence(QStringLiteral("teardown-pending"), false);
-        // Widgets that hold locks or pointers into the player's surface release
-        // them in their own destructors, so they go first, while it is alive.
+        // Surface-holding widgets release their locks in their destructors, so
+        // they go while the surface is alive.
         overlayProgress_ = nullptr;
         overlay_.reset();
         if (compare_ != nullptr) {
