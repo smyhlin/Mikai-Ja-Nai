@@ -278,7 +278,11 @@ void TestComponentState::deletedFilesClearTheStaleBarOnRefresh() {
     QVERIFY(spatialStatus->isHidden());
     QVERIFY(!spatialStatus->text().contains(QStringLiteral("Installed: ")));
     // A 0/5 card never begins with "installed" in English either.
-    QVERIFY(spatialState->text().startsWith(QStringLiteral("not installed (0/")));
+    QVERIFY2(spatialState->text() == QStringLiteral("not installed"), qPrintable(spatialState->text()));
+    auto* spatialCounts = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardCount"));
+    QVERIFY(spatialCounts != nullptr);
+    QVERIFY2(spatialCounts->text().startsWith(QStringLiteral("0/")),
+             qPrintable(spatialCounts->text()));
     runner.waitForDone(5000);
 }
 
@@ -319,9 +323,11 @@ void TestComponentState::staleModelItemIsClearedWhenUnrelatedModelsRemain() {
         tab.findChild<QProgressBar*>(QStringLiteral("animeJanaiModelsCardProgress"));
     auto* progressStatus =
         tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardProgressStatus"));
+    auto* cardCounts = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardCount"));
     QVERIFY(cardState != nullptr && cardBar != nullptr && progressStatus != nullptr);
-    QVERIFY2(cardState->text().startsWith(QStringLiteral("5/5 installed")),
-             qPrintable(cardState->text()));
+    QVERIFY(cardCounts != nullptr);
+    QVERIFY2(cardCounts->text().startsWith(QStringLiteral("5/5 installed")),
+             qPrintable(cardCounts->text()));
 
     const SpatialAsset& installed = catalog.last();
     emit provisioner.progress(ComponentProvisionProgress{
@@ -379,10 +385,12 @@ void TestComponentState::initialInventorySurvivesClientInjection() {
 
     waitUntil([&] { return tab->inventoryReady() && !tab->acquisitionRunning(); });
     QVERIFY(tab->inventoryReady());
-    QVERIFY2(cardState->text().startsWith(QStringLiteral("1/5 installed")),
-             qPrintable(cardState->text()));
-    QVERIFY2(cardState->text().contains(QStringLiteral("0/5 verified")),
-             qPrintable(cardState->text()));
+    auto* cardCounts = tab->findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardCount"));
+    QVERIFY(cardCounts != nullptr);
+    QVERIFY2(cardCounts->text().startsWith(QStringLiteral("1/5 installed")),
+             qPrintable(cardCounts->text()));
+    QVERIFY2(cardCounts->text().contains(QStringLiteral("0/5 verified")),
+             qPrintable(cardCounts->text()));
     runner.waitForDone(5000);
 }
 

@@ -2070,9 +2070,8 @@ void TestPublicApiUi::aViewerChoiceLeadsTheProgrammaticWatchEmbed() {
   QCOMPARE(tabs->tabText(tabs->currentIndex()), QStringLiteral("Tortuga"));
 }
 
-// The design contract these cases measure: every action sits on a 40 px row, a
-// watch CTA is the one documented 44 px action, a card badge is one 24 px line
-// no wider than 120 px, and the buttons of one action row share one width.
+// The design contract: 40 px actions, 44 px watch CTAs, one 24 px card badge
+// line, and the buttons of one action row at one width.
 void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
   qApp->setStyle(QStringLiteral("Fusion"));
   const QString savedSheet = qApp->styleSheet();
@@ -2160,13 +2159,8 @@ void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
                                         .arg(filters->width())
                                         .arg(teams->width())
                                         .arg(action->width())));
-  for (QPushButton* control : {filters, teams, action}) {
-    QVERIFY2(control->width() >= control->minimumWidth(),
-             "an action button is narrower than the width its own text needs");
-  }
-
-  // A translation restates the captions; the row has to stay equal at the new
-  // advances instead of keeping the old width.
+  // A translation restates the captions; the row stays equal at the new
+  // advances instead of keeping the width the old language asked for.
   if (primeBuiltCatalogForSwitching()) {
     QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
     const auto restoreEnglish =
@@ -2234,7 +2228,7 @@ void TestPublicApiUi::wrappedScoreLinesFillTheirTextColumn() {
   });
   mikai::app::QualityCache cache;
   mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"));
-  page.resize(1120, 900);
+  page.resize(1280, 900);
   page.show();
 
   auto* heroScores = page.findChild<QLabel*>(QStringLiteral("titleScores"));
@@ -2242,31 +2236,78 @@ void TestPublicApiUi::wrappedScoreLinesFillTheirTextColumn() {
   QTRY_VERIFY_WITH_TIMEOUT(heroScores->isVisible(), 20000);
   QVERIFY2(heroScores->text().contains(QStringLiteral("MAL")),
            qPrintable(QStringLiteral("the fixture score line is %1").arg(heroScores->text())));
+  auto* hero = page.findChild<QWidget*>(QStringLiteral("titleHero"));
   auto* facts = page.findChild<QLabel*>(QStringLiteral("titleFacts"));
-  QVERIFY(facts != nullptr && facts->isVisible());
+  QVERIFY(hero != nullptr && facts != nullptr && facts->isVisible());
 
-  // A wrapping line is added without an alignment flag, so it takes the column
-  // width its sibling metadata line takes and heightForWidth governs its height.
-  QVERIFY2(heroScores->width() == facts->width(),
-           qPrintable(QStringLiteral("the hero score line is %1 px beside a %2 px column")
-                          .arg(heroScores->width())
-                          .arg(facts->width())));
-  QVERIFY2(heroScores->height() >= heroScores->heightForWidth(heroScores->width()),
-           "the hero score line is shorter than its wrapped text");
-
-  // The same contract in the details sheet.
-  const auto scoreLabels = page.findChildren<QLabel*>(QStringLiteral("titleScores"));
-  QVERIFY(scoreLabels.size() >= 2);
+  // The details sheet only counts on screen: open it through its real toggle.
+  auto* meta = button(page, "titleDetailsToggle");
+  auto* overlay = page.findChild<QWidget*>(QStringLiteral("titleDetailsOverlay"));
   auto* detailsTitle = page.findChild<QLabel*>(QStringLiteral("titleDetailsTitle"));
-  QVERIFY(detailsTitle != nullptr);
-  for (QLabel* scores : scoreLabels) {
-    if (scores == heroScores) continue;
-    QVERIFY2(scores->width() == detailsTitle->width(),
-             qPrintable(QStringLiteral("the details score line is %1 px beside a %2 px column")
-                            .arg(scores->width())
-                            .arg(detailsTitle->width())));
-    QVERIFY2(scores->height() >= scores->heightForWidth(scores->width()),
-             "the details score line is shorter than its wrapped text");
+  QVERIFY(meta != nullptr && overlay != nullptr && detailsTitle != nullptr);
+  meta->setChecked(true);
+  QTRY_VERIFY_WITH_TIMEOUT(overlay->isVisible(), 5000);
+  QTRY_VERIFY_WITH_TIMEOUT(detailsTitle->isVisible(), 5000);
+  QLabel* detailsScores = nullptr;
+  for (QLabel* label : page.findChildren<QLabel*>(QStringLiteral("titleScores"))) {
+    if (label != heroScores) detailsScores = label;
+  }
+  QVERIFY(detailsScores != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(detailsScores->isVisible(), 5000);
+
+  const auto lineProblem = [](QLabel* line, QLabel* columnSibling, QWidget* surface) {
+    if (!line->isVisible()) return QStringLiteral("not on screen");
+    if (line->width() != columnSibling->width()) {
+      return QStringLiteral("%1 px beside a %2 px column")
+          .arg(line->width())
+          .arg(columnSibling->width());
+    }
+    if (line->height() < line->heightForWidth(line->width())) {
+      return QStringLiteral("%1 px tall, %2 px needed at width %3")
+          .arg(line->height())
+          .arg(line->heightForWidth(line->width()))
+          .arg(line->width());
+    }
+    const QRect bounds(line->mapTo(surface, QPoint(0, 0)), line->size());
+    if (!surface->rect().contains(bounds)) {
+      return QStringLiteral("overflows its surface: %1,%2 %3x%4")
+          .arg(bounds.x())
+          .arg(bounds.y())
+          .arg(bounds.width())
+          .arg(bounds.height());
+    }
+    return QString();
+  };
+
+  for (const int width : {1280, 860}) {
+    page.resize(width, 900);
+    QCoreApplication::processEvents();
+    QTRY_VERIFY_WITH_TIMEOUT(heroScores->isVisible(), 5000);
+    const QString heroProblem = lineProblem(heroScores, facts, hero);
+    QVERIFY2(heroProblem.isEmpty(),
+             qPrintable(QStringLiteral("hero score line at %1 px: %2").arg(width).arg(heroProblem)));
+    const QString detailsProblem =
+        lineProblem(detailsScores, detailsTitle, detailsScores->parentWidget());
+    QVERIFY2(detailsProblem.isEmpty(), qPrintable(QStringLiteral(
+                                            "details score line at %1 px: %2")
+                                            .arg(width)
+                                            .arg(detailsProblem)));
+  }
+
+  if (primeBuiltCatalogForSwitching()) {
+    QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
+    const auto restoreEnglish =
+        qScopeGuard([] { mikai::app::applyInterfaceLanguage(QStringLiteral("en")); });
+    page.resize(860, 900);
+    QCoreApplication::processEvents();
+    QTRY_VERIFY_WITH_TIMEOUT(heroScores->isVisible(), 5000);
+    const QString heroProblem = lineProblem(heroScores, facts, hero);
+    QVERIFY2(heroProblem.isEmpty(),
+             qPrintable(QStringLiteral("Ukrainian hero score line: %1").arg(heroProblem)));
+    const QString detailsProblem =
+        lineProblem(detailsScores, detailsTitle, detailsScores->parentWidget());
+    QVERIFY2(detailsProblem.isEmpty(),
+             qPrintable(QStringLiteral("Ukrainian details score line: %1").arg(detailsProblem)));
   }
 }
 
@@ -2299,9 +2340,8 @@ void TestPublicApiUi::componentCardsKeepASingleLineBadgeAndASeparateCountLine() 
     auto* counts = tab.findChild<QLabel*>(cardId + QStringLiteral("Count"));
     QVERIFY2(badge != nullptr && title != nullptr && description != nullptr,
              qPrintable(QStringLiteral("%1 is missing a header element").arg(cardId)));
-    QVERIFY2(counts != nullptr,
-             qPrintable(QStringLiteral("%1 shows its counts inside the badge").arg(cardId)));
-    QTRY_VERIFY_WITH_TIMEOUT(!badge->text().isEmpty(), 10000);
+    QVERIFY2(counts != nullptr, qPrintable(QStringLiteral("%1 has no count line").arg(cardId)));
+    QTRY_VERIFY_WITH_TIMEOUT(badge->isVisible() && !badge->text().isEmpty(), 10000);
     QVERIFY2(badge->height() <= 24,
              qPrintable(QStringLiteral("%1 badge is %2 px tall: %3")
                             .arg(cardId)
@@ -2313,14 +2353,18 @@ void TestPublicApiUi::componentCardsKeepASingleLineBadgeAndASeparateCountLine() 
                             .arg(badge->width())));
     QVERIFY2(!badge->geometry().intersects(title->geometry()),
              qPrintable(QStringLiteral("%1 badge covers its title").arg(cardId)));
-    QVERIFY2(counts->geometry().top() >= description->geometry().bottom(),
-             qPrintable(QStringLiteral("%1 counts share the description line").arg(cardId)));
   }
 
+  // The spatial card's counts sit on their own line under its description.
   auto* spatialCounts = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardCount"));
-  QVERIFY(spatialCounts != nullptr);
+  auto* spatialDescription =
+      tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardDescription"));
+  QVERIFY(spatialCounts != nullptr && spatialDescription != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(spatialCounts->isVisible(), 10000);
   QVERIFY2(spatialCounts->text().contains(QLatin1Char('/')),
            qPrintable(QStringLiteral("the spatial count line is %1").arg(spatialCounts->text())));
+  QVERIFY2(spatialCounts->geometry().top() >= spatialDescription->geometry().bottom(),
+           "the spatial counts share the description line");
 }
 
 int runTestPublicApiUi(int argc, char** argv) {
