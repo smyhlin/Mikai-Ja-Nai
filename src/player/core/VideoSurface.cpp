@@ -363,13 +363,13 @@ void VideoSurface::ensureEngine() {
                         if (havePlaylistEntryId_ && currentPlaylistEntryId_ == *entryId) {
                             entryMediaToken_ = load.token;
                             entrySourceEpoch_ = load.epoch;
-                            // The identity of a load is the playlist entry this
-                            // reply names plus the epoch it was issued under: an
-                            // episode token is reused across quality and variant
-                            // swaps, so it cannot tell two loads apart. FILE_LOADED
-                            // can precede this reply, which is why the landing is
-                            // also latched here.
-                            if (engineFrameHoldNeedsLoadLanding_ &&
+                            // A named START_FILE and an accepted command are not a
+                            // loaded file, so this latches only when FILE_LOADED has
+                            // already reported for this entry (the same condition
+                            // the event's own branch uses) and the epoch is current.
+                            // An episode token is reused across quality and variant
+                            // swaps, so it cannot tell two loads apart.
+                            if (engineFrameHoldNeedsLoadLanding_ && entryLoadReported_ &&
                                 load.epoch == mpv_->sourceEpoch()) {
                                 engineFrameHoldLandingSeen_ = true;
                             }
@@ -1263,16 +1263,17 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
         load.emplace_back("-1");
     }
     load.push_back(std::move(options));
-    issueCoreCommand(std::move(load), "loadfile", /*reportRefusal=*/true, mediaToken_);
-    // Every submission re-arms the landing gate on whatever picture is being
-    // held - freeze included, because a freeze also owns the load that follows.
-    // A rapid second load reuses the previous hold, and a gate already satisfied
-    // by the first load's landing would let the outgoing source's last in-flight
-    // frame clear this one.
+    // Armed BEFORE the submission: a transport refusal reports synchronously
+    // inside issueCoreCommand and drops the gate there, so arming after the call
+    // would overwrite that with a gate nothing can satisfy. Every submission
+    // re-arms whatever picture is held - freeze included, because a freeze also
+    // owns the load that follows - and a gate already satisfied by an earlier
+    // landing would otherwise let the outgoing source's last frame clear this one.
     if (engineFrameHoldFbo_) {
         engineFrameHoldNeedsLoadLanding_ = true;
         engineFrameHoldLandingSeen_ = false;
     }
+    issueCoreCommand(std::move(load), "loadfile", /*reportRefusal=*/true, mediaToken_);
     // mpv also comes up paused when a render context is its only consumer: it
     // has no window of its own to drive playback. Without this the core decodes
     // one frame, hands it over and stops, which reads as a black surface and a
