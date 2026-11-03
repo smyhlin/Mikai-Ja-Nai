@@ -140,13 +140,11 @@ public:
     /// a repaint and not an allocation. Painting them straight into the GL
     /// device re-rasterised every glyph and stroked button on every video frame,
     /// and the GL paint engine has no multisampling - which is why the overlay
-    /// glyphs were the jagged ones. One image per control, not one for the
-    /// union of their rects: the chrome sits in the corners of a 4K window, so a
-    /// union would be a near-full-frame buffer, and every changed control would
-    /// cost a re-upload of it.
-    ///
-    /// The painter state this pass needs is set once around the walk: a reuse
-    /// is then a single drawPixmap with no state change of its own.
+    /// glyphs were the jagged ones. Controls that already sit together are copied
+    /// into one sheet and uploaded once: a per-control draw on the GL engine
+    /// flushes a batch each, and that flush — not the raster — was the
+    /// paused-hover cost. A sheet never spans a gap, so a 4K window does not
+    /// upload one near-full-frame buffer when a dock control changes.
     void paint(QPainter& painter, QWidget* root, const QRect& clip);
 
     /// Marks one control's cached pixels stale: its own state changed, and the
@@ -175,7 +173,17 @@ private:
         QRect localBox;
         qreal devicePixelRatio = 0.0;
         quint64 stamp = 0;
+        /// Bumped when this control's pixels are rendered again, so a sheet
+        /// keyed on it cannot outlive the pixmap it was copied from.
+        quint64 rasterSerial = 0;
         bool valid = false;
+    };
+
+    struct Sheet {
+        QPixmap image;
+        QRect box;
+        quint64 fingerprint = 0;
+        int lastUsed = 0;
     };
 
     void addSubtree(QWidget* root, QObject* watcher);
@@ -184,10 +192,12 @@ private:
     void markStale(Entry& entry);
 
     QVector<Entry> entries_;
+    QVector<Sheet> sheets_;
 
     /// Bumped by invalidateAll(), so every entry is stale without walking them.
     quint64 generation_ = 0;
     qint64 cachedBytes_ = 0;
+    int sheetSerial_ = 0;
 };
 
 /// Routes an adopted widget's notifications to the surface. Called first in

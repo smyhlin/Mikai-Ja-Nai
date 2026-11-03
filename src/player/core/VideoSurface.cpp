@@ -1012,19 +1012,17 @@ bool VideoSurface::drawPresentedPicture(unsigned int target, int width, int heig
     if (glContext == nullptr) return false;
     QOpenGLExtraFunctions* gl = glContext->extraFunctions();
     if (gl == nullptr) return false;
-    GLint previousRead = 0;
-    GLint previousDraw = 0;
-    gl->glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousRead);
-    gl->glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousDraw);
     // A filtered blit between a fixed-point and a floating-point buffer is not
     // defined by GL, so the two formats are compared rather than assumed equal.
+    // The caller already bound `target`. Querying the previous binding here is a
+    // pipeline stall on every chrome repaint, and restoring to `target` is the
+    // state that caller still owns.
     const GLenum filter =
         presentedPictureFormat_ == renderInternalFormat_ ? GL_LINEAR : GL_NEAREST;
     gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, presentedPictureFbo_->handle());
     gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
     gl->glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, filter);
-    gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousRead));
-    gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDraw));
+    gl->glBindFramebuffer(GL_FRAMEBUFFER, target);
     return true;
 }
 
@@ -2196,10 +2194,21 @@ void VideoSurface::paintGL() {
     // it is presented at once.
     bool frameArrived = false;
     if (schedule.consumesFrame || !schedule.keepsArmedSlot) {
-        const uint64_t updateFlags = render_->update();
-        frameArrived = (updateFlags & MPV_RENDER_UPDATE_FRAME) != 0;
-        if (!schedule.consumesFrame) {
-            schedule = decidePaintSchedule(false, false, false, frameArrived, false);
+        // A paused chrome repaint already has the picture it will blit. Asking
+        // mpv whether a frame arrived is a context sync, and nothing is coming.
+        const QSize deviceSize = QSize(width(), height()) * devicePixelRatioF();
+        const bool snapshotCovers =
+            presentedPictureFbo_ && presentedPictureFbo_->isValid() &&
+            presentedPictureFbo_->size() == deviceSize;
+        const bool pausedQuiet = !playing_ && !framePending_ && !pacingTimerArmed_ &&
+                                 !engineFrameHoldAwaitingOutput_ && !schedule.consumesFrame &&
+                                 snapshotCovers;
+        if (!pausedQuiet) {
+            const uint64_t updateFlags = render_->update();
+            frameArrived = (updateFlags & MPV_RENDER_UPDATE_FRAME) != 0;
+            if (!schedule.consumesFrame) {
+                schedule = decidePaintSchedule(false, false, false, frameArrived, false);
+            }
         }
     }
     const bool frameOwed = framePending_ || frameArrived;
@@ -2278,8 +2287,20 @@ void VideoSurface::paintGL() {
     // Qt enables blending before paintGL; libmpv requires its default disabled state.
     gl->glDisable(GL_BLEND);
     gl->glDisable(GL_SCISSOR_TEST);
-    gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    gl->glClear(GL_COLOR_BUFFER_BIT);
+    // A full-size blit overwrites every pixel, including the letterbox. Clearing
+    // first is a second write of the same buffer on every chrome repaint.
+    const bool holdCovers =
+        retainedPictureVisible && engineFrameHoldFbo_ && engineFrameHoldFbo_->isValid() &&
+        engineFrameHoldFbo_->size() == QSize(targetWidth, targetHeight);
+    const bool snapshotCovers =
+        !consumesFrame && presentedPictureFbo_ && presentedPictureFbo_->isValid() &&
+        presentedPictureFbo_->size() == QSize(targetWidth, targetHeight);
+    bool cleared = false;
+    if (!holdCovers && !snapshotCovers) {
+        gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        gl->glClear(GL_COLOR_BUFFER_BIT);
+        cleared = true;
+    }
 
     // Query the widget color attachment once per context/target, with that
     // target actually bound, so the format handed to mpv is the one it draws
@@ -2313,6 +2334,11 @@ void VideoSurface::paintGL() {
         // mpv's render here would show the frame its VO is still holding for the
         // slot this pass is not allowed to take.
     } else {
+        if (!cleared) {
+            gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            gl->glClear(GL_COLOR_BUFFER_BIT);
+            cleared = true;
+        }
         renderResult = render_->render(static_cast<int>(target), targetWidth, targetHeight,
                                        renderInternalFormat_, renderDepthBitsPerChannel_);
         presentedFrame = haveFrame;
