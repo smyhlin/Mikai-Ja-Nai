@@ -6,7 +6,7 @@
 #include "theme/Metrics.hpp"
 #include "theme/Theme.hpp"
 #include "workers/Runner.hpp"
-#include "widgets/FlowLayout.hpp"
+#include "widgets/ActionGrid.hpp"
 #include "player/shaders/Anime4K.hpp"
 
 #include <QAbstractItemView>
@@ -17,6 +17,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QDoubleSpinBox>
+#include <QEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFrame>
@@ -144,6 +145,17 @@ mplayer::native::AnimeJanaiConfig AnimeJanaiManagerPanel::currentConfig() const 
     return config_;
 }
 
+void AnimeJanaiManagerPanel::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::FontChange || event->type() == QEvent::ApplicationFontChange ||
+        event->type() == QEvent::StyleChange || event->type() == QEvent::DevicePixelRatioChange ||
+        event->type() == QEvent::ScreenChangeInternal) {
+        for (ActionGrid* row : actionRows_) {
+            if (row != nullptr) row->recalculate();
+        }
+    }
+}
+
 void AnimeJanaiManagerPanel::reloadFromDisk() {
     QString error;
     const auto loaded = mplayer::native::AnimeJanaiConfigStore::load(&error);
@@ -250,7 +262,8 @@ void AnimeJanaiManagerPanel::buildUi() {
     applyTabularNumerals(customModelsTable_);
     modelsLayout->addWidget(customModelsTable_);
 
-    auto* modelsToolbar = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
+    auto* modelsToolbar = new ActionGrid(theme::kSpacingSmall);
+    actionRows_.append(modelsToolbar);
     importModelButton_ = new QPushButton(tr("Import .onnx Model…"), modelsCard);
     importModelButton_->setObjectName(QStringLiteral("ajiImportModelButton"));
     theme::applyActionRole(importModelButton_, theme::ActionRole::Primary);
@@ -262,9 +275,9 @@ void AnimeJanaiManagerPanel::buildUi() {
     openModelsDirButton_ = new QPushButton(tr("Open Models Folder"), modelsCard);
     openModelsDirButton_->setObjectName(QStringLiteral("ajiOpenModelsFolderButton"));
     polishInteractiveControl(openModelsDirButton_);
-    modelsToolbar->addWidget(importModelButton_);
-    modelsToolbar->addWidget(removeModelButton_);
-    modelsToolbar->addWidget(openModelsDirButton_);
+    modelsToolbar->addButton(importModelButton_);
+    modelsToolbar->addButton(removeModelButton_);
+    modelsToolbar->addButton(openModelsDirButton_);
     modelsLayout->addLayout(modelsToolbar);
 
     auto* externalDirRow = new QVBoxLayout();
@@ -277,14 +290,17 @@ void AnimeJanaiManagerPanel::buildUi() {
     polishInteractiveControl(externalDirEdit_);
     externalDirLabel_ = makeFieldLabel(tr("External models folder"), modelsCard, externalDirEdit_);
     browseExternalDirButton_ = new QPushButton(tr("Browse…"), modelsCard);
+    browseExternalDirButton_->setObjectName(QStringLiteral("ajiBrowseExternalDirButton"));
     polishInteractiveControl(browseExternalDirButton_);
     clearExternalDirButton_ = new QPushButton(tr("Clear"), modelsCard);
+    clearExternalDirButton_->setObjectName(QStringLiteral("ajiClearExternalDirButton"));
     polishInteractiveControl(clearExternalDirButton_);
     externalDirRow->addWidget(externalDirLabel_);
     externalDirRow->addWidget(externalDirEdit_);
-    auto* externalDirActions = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
-    externalDirActions->addWidget(browseExternalDirButton_);
-    externalDirActions->addWidget(clearExternalDirButton_);
+    auto* externalDirActions = new ActionGrid(theme::kSpacingSmall);
+    actionRows_.append(externalDirActions);
+    externalDirActions->addButton(browseExternalDirButton_);
+    externalDirActions->addButton(clearExternalDirButton_);
     externalDirRow->addLayout(externalDirActions);
     modelsLayout->addLayout(externalDirRow);
 
@@ -424,16 +440,20 @@ void AnimeJanaiManagerPanel::buildUi() {
     rawArgsForm->addRow(trtRawArgsLabel_, trtRawArgsEdit_);
     globalLayout->addLayout(rawArgsForm);
 
-    auto* confToolbar = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
+    auto* confToolbar = new ActionGrid(theme::kSpacingSmall);
+    actionRows_.append(confToolbar);
     importConfButton_ = new QPushButton(tr("Import animejanai.conf…"), globalCard);
+    importConfButton_->setObjectName(QStringLiteral("ajiImportConfButton"));
     polishInteractiveControl(importConfButton_);
     exportConfButton_ = new QPushButton(tr("Export animejanai.conf…"), globalCard);
+    exportConfButton_->setObjectName(QStringLiteral("ajiExportConfButton"));
     polishInteractiveControl(exportConfButton_);
     resetDefaultsButton_ = new QPushButton(tr("Reset Defaults"), globalCard);
+    resetDefaultsButton_->setObjectName(QStringLiteral("ajiResetDefaultsButton"));
     polishInteractiveControl(resetDefaultsButton_);
-    confToolbar->addWidget(importConfButton_);
-    confToolbar->addWidget(exportConfButton_);
-    confToolbar->addWidget(resetDefaultsButton_);
+    confToolbar->addButton(importConfButton_);
+    confToolbar->addButton(exportConfButton_);
+    confToolbar->addButton(resetDefaultsButton_);
     globalLayout->addLayout(confToolbar);
 
     root->addWidget(globalCard);
@@ -467,24 +487,29 @@ void AnimeJanaiManagerPanel::buildUi() {
     slotSelectForm->addRow(slotSelectLabel_, slotSelectCombo_);
     profilesLayout->addLayout(slotSelectForm);
 
-    auto* slotToolbar = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
+    auto* slotToolbar = new ActionGrid(theme::kSpacingSmall);
+    actionRows_.append(slotToolbar);
     createSlotButton_ = new QPushButton(tr("Activate / Reset Slot"), profilesCard);
     createSlotButton_->setObjectName(QStringLiteral("ajiCreateSlotButton"));
     polishInteractiveControl(createSlotButton_);
     cloneSlotButton_ = new QPushButton(tr("Clone From…"), profilesCard);
+    cloneSlotButton_->setObjectName(QStringLiteral("ajiCloneSlotButton"));
     polishInteractiveControl(cloneSlotButton_);
     deleteSlotButton_ = new QPushButton(tr("Clear Slot"), profilesCard);
+    deleteSlotButton_->setObjectName(QStringLiteral("ajiDeleteSlotButton"));
     theme::applyActionRole(deleteSlotButton_, theme::ActionRole::Danger);
     polishInteractiveControl(deleteSlotButton_);
     importPconfButton_ = new QPushButton(tr("Import .pconf…"), profilesCard);
+    importPconfButton_->setObjectName(QStringLiteral("ajiImportPconfButton"));
     polishInteractiveControl(importPconfButton_);
     exportPconfButton_ = new QPushButton(tr("Export .pconf…"), profilesCard);
+    exportPconfButton_->setObjectName(QStringLiteral("ajiExportPconfButton"));
     polishInteractiveControl(exportPconfButton_);
-    slotToolbar->addWidget(createSlotButton_);
-    slotToolbar->addWidget(cloneSlotButton_);
-    slotToolbar->addWidget(deleteSlotButton_);
-    slotToolbar->addWidget(importPconfButton_);
-    slotToolbar->addWidget(exportPconfButton_);
+    slotToolbar->addButton(createSlotButton_);
+    slotToolbar->addButton(cloneSlotButton_);
+    slotToolbar->addButton(deleteSlotButton_);
+    slotToolbar->addButton(importPconfButton_);
+    slotToolbar->addButton(exportPconfButton_);
     profilesLayout->addLayout(slotToolbar);
 
     profilesLayout->addWidget(makeSettingsDivider(profilesCard));
@@ -515,20 +540,25 @@ void AnimeJanaiManagerPanel::buildUi() {
     chainSelectLabel_ =
         makeFieldLabel(tr("Active chain"), slotEditorContainer_, chainSelectCombo_);
     addChainButton_ = new QPushButton(tr("Add Chain"), slotEditorContainer_);
+    addChainButton_->setObjectName(QStringLiteral("ajiAddChainButton"));
     polishInteractiveControl(addChainButton_);
     removeChainButton_ = new QPushButton(tr("Remove Chain"), slotEditorContainer_);
+    removeChainButton_->setObjectName(QStringLiteral("ajiRemoveChainButton"));
     polishInteractiveControl(removeChainButton_);
     moveChainUpButton_ = new QPushButton(tr("Move Up"), slotEditorContainer_);
+    moveChainUpButton_->setObjectName(QStringLiteral("ajiMoveChainUpButton"));
     polishInteractiveControl(moveChainUpButton_);
     moveChainDownButton_ = new QPushButton(tr("Move Down"), slotEditorContainer_);
+    moveChainDownButton_->setObjectName(QStringLiteral("ajiMoveChainDownButton"));
     polishInteractiveControl(moveChainDownButton_);
     chainToolbar->addWidget(chainSelectLabel_);
     chainToolbar->addWidget(chainSelectCombo_);
-    auto* chainActions = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
-    chainActions->addWidget(addChainButton_);
-    chainActions->addWidget(removeChainButton_);
-    chainActions->addWidget(moveChainUpButton_);
-    chainActions->addWidget(moveChainDownButton_);
+    auto* chainActions = new ActionGrid(theme::kSpacingSmall);
+    actionRows_.append(chainActions);
+    chainActions->addButton(addChainButton_);
+    chainActions->addButton(removeChainButton_);
+    chainActions->addButton(moveChainUpButton_);
+    chainActions->addButton(moveChainDownButton_);
     chainToolbar->addLayout(chainActions);
     editorLayout->addLayout(chainToolbar);
 
@@ -2091,6 +2121,11 @@ void AnimeJanaiManagerPanel::retranslateUi() {
     rebuildSlotCombo();
     rebuildChainCombo();
     rebuildModelStepRows();
+    // The captions just changed in place, so every row is measured again from
+    // the font it now renders in.
+    for (ActionGrid* row : actionRows_) {
+        if (row != nullptr) row->recalculate();
+    }
 }
 
 }  // namespace mikai::app

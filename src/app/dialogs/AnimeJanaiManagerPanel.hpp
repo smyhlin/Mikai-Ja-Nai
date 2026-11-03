@@ -2,6 +2,7 @@
 
 #include <native/components/AnimeJanaiConfig.hpp>
 
+#include <QList>
 #include <QWidget>
 #include <atomic>
 #include <memory>
@@ -22,6 +23,7 @@ class AnimeJanaiCatalogWatcher;
 }
 
 namespace mikai::app {
+class ActionGrid;
 class Runner;
 
 class AnimeJanaiManagerPanel : public QWidget {
@@ -42,6 +44,9 @@ public:
 signals:
     void configModified();
     void modelsChanged();
+
+protected:
+    void changeEvent(QEvent* event) override;
 
 private:
     struct ModelStepRow {
@@ -201,6 +206,7 @@ private:
     QDoubleSpinBox* chainRifeSceneSpin_ = nullptr;
     QCheckBox* chainRifeEnsembleCheck_ = nullptr;
     QCheckBox* chainRifeBeforeUpscaleCheck_ = nullptr;
+    QList<ActionGrid*> actionRows_;
 };
 
 }  // namespace mikai::app
