@@ -48,6 +48,7 @@
 #include "WindowRaisePolicy.hpp"
 #include "backend/MikaiClient.hpp"
 #include "dialogs/SettingsDialog.hpp"
+#include "dialogs/settings/SettingsUi.hpp"
 #include "pages/MainWindow.hpp"
 #include "pages/SearchPage.hpp"
 #include "pages/TitlePage.hpp"
@@ -1881,7 +1882,7 @@ private:
         // The interim write is a crash guard for the file; only the final report
         // goes to stdout, so a reader never sees two documents.
         if (stage == QLatin1String("complete")) {
-            std::fwrite(json.constData(), 1, size_t(json.size()));
+            std::fwrite(json.constData(), 1, size_t(json.size()), stdout);
             std::fflush(stdout);
         }
         return written;
