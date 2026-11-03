@@ -29,6 +29,8 @@ namespace mplayer::shell {
 namespace {
 
 QString selectorRowStyle() {
+    // Seat identity comes from compareSide(), never from a literal: seat A names
+    // the accent, seat B is the documented amber (or its rotation).
     return QStringLiteral(
                "QWidget#compareSelectorRow {"
                "  background-color: #16181d;"
@@ -39,7 +41,7 @@ QString selectorRowStyle() {
                "  background: #16181d;"
                "  color: #e5e7eb;"
                "  border: none;"
-               "  border-left: 3px solid #3b82f6;"
+               "  border-left: 3px solid %2;"
                "  border-right: 1px solid #282c34;"
                "  border-radius: 0px;"
                "  padding: 0px %1px;"
@@ -50,7 +52,7 @@ QString selectorRowStyle() {
                "  background: #16181d;"
                "  color: #e5e7eb;"
                "  border: none;"
-               "  border-left: 3px solid #f59e0b;"
+               "  border-left: 3px solid %3;"
                "  border-radius: 0px;"
                "  padding: 0px %1px;"
                "  font-weight: 600;"
@@ -67,7 +69,8 @@ QString selectorRowStyle() {
                "  image: none;"
                "  width: 0px;"
                "}")
-        .arg(QString::number(kCompareSelectorInset));
+        .arg(QString::number(kCompareSelectorInset),
+             compareSide(0).name(QColor::HexRgb), compareSide(1).name(QColor::HexRgb));
 }
 
 void fitSelectorLabel(QToolButton* button, const QString& full) {
@@ -189,6 +192,12 @@ CompareCanvas::CompareCanvas(QWidget* parent) : QGraphicsView(parent) {
     selectorRow_->setObjectName(QStringLiteral("compareSelectorRow"));
     selectorRow_->setAttribute(Qt::WA_StyledBackground, true);
     selectorRow_->setStyleSheet(selectorRowStyle());
+    // The row's seat borders are accent-derived, so a live accent change has to
+    // rebuild them rather than leave the badges on the previous colour.
+    connect(&accentNotifier(), &AccentNotifier::changed, selectorRow_, [this] {
+        selectorRow_->setStyleSheet(selectorRowStyle());
+        if (viewport() != nullptr) viewport()->update();
+    });
     selectorRow_->hide();
     selectorRow_->installEventFilter(this);
     auto* chips = new QHBoxLayout(selectorRow_);
@@ -727,18 +736,18 @@ void CompareCanvas::drawForeground(QPainter* painter, const QRectF&) {
 
     // Top-left status pill
     QString pillText;
-    QColor pillAccent(59, 130, 246);
+    QColor pillAccent = compareSide(0);
     if (heldSide_ == 0) {
         pillText = tr("PEEK · SIDE A (%1×%2)").arg(imageSize_.width()).arg(imageSize_.height());
-        pillAccent = QColor(59, 130, 246);
+        pillAccent = compareSide(0);
     } else if (heldSide_ == 1) {
         pillText = tr("PEEK · SIDE B (%1×%2)").arg(imageSize_.width()).arg(imageSize_.height());
-        pillAccent = QColor(245, 158, 11);
+        pillAccent = compareSide(1);
     } else if (mode_ == CompareMode::Flicker) {
         pillText = flickerShowA_
                        ? tr("FLICKER · SIDE A (%1×%2)").arg(imageSize_.width()).arg(imageSize_.height())
                        : tr("FLICKER · SIDE B (%1×%2)").arg(imageSize_.width()).arg(imageSize_.height());
-        pillAccent = flickerShowA_ ? QColor(59, 130, 246) : QColor(245, 158, 11);
+        pillAccent = flickerShowA_ ? compareSide(0) : compareSide(1);
     } else if (mode_ == CompareMode::Difference) {
         pillText = tr("DIFFERENCE · %1×%2").arg(imageSize_.width()).arg(imageSize_.height());
         pillAccent = QColor(16, 185, 129);

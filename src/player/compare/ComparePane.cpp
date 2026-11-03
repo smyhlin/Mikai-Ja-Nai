@@ -27,7 +27,7 @@ namespace mplayer::shell {
 namespace {
 
 QString selectorBarStyle(int sideIndex) {
-    const QString accent = sideIndex == 0 ? QStringLiteral("#3b82f6") : QStringLiteral("#f59e0b");
+    const QString accent = compareSide(sideIndex).name(QColor::HexRgb);
     return QStringLiteral(
                "QWidget#compareSelectorBar {"
                "  background-color: #16181d;"
@@ -133,6 +133,12 @@ ComparePane::ComparePane(QWidget* parent) : QGraphicsView(parent) {
     selectorBar_->setObjectName(QStringLiteral("compareSelectorBar"));
     selectorBar_->setAttribute(Qt::WA_StyledBackground, true);
     selectorBar_->setStyleSheet(selectorBarStyle(sideIndex_));
+    // A live accent change re-colours this seat's marker; the pane's painted
+    // pill reads the token on every paint, so it only needs a repaint.
+    connect(&accentNotifier(), &AccentNotifier::changed, this, [this] {
+        if (selectorBar_ != nullptr) selectorBar_->setStyleSheet(selectorBarStyle(sideIndex_));
+        update();
+    });
     selectorBar_->hide();
     selectorBar_->installEventFilter(this);
     auto* row = new QHBoxLayout(selectorBar_);
@@ -478,7 +484,7 @@ void ComparePane::drawForeground(QPainter* painter, const QRectF&) {
     painter->setRenderHint(QPainter::Antialiasing, true);
 
     const QString sideTag = sideIndex_ == 0 ? QStringLiteral("A") : QStringLiteral("B");
-    const QColor accent = sideIndex_ == 0 ? QColor(59, 130, 246) : QColor(245, 158, 11);
+    const QColor accent = compareSide(sideIndex_);
     const QString text =
         QStringLiteral("%1 · %2×%3").arg(sideTag).arg(image_.width()).arg(image_.height());
 

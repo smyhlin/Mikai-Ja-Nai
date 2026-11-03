@@ -2081,7 +2081,7 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
           "Benchmark keeps the removed checked model visible but unrunnable");
     QPushButton* modelSelection = nullptr;
     for (QPushButton* button : benchmarkDialog.findChildren<QPushButton*>()) {
-        if (button->objectName() == QLatin1String("textAction") &&
+        if (button->objectName() == QLatin1String("benchmarkSelectAllModels") &&
             button->property("benchmarkSelectionControl").toString() ==
                 QLatin1String("models")) {
             modelSelection = button;

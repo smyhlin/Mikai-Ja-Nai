@@ -14,6 +14,7 @@
 #include "theme/Icons.hpp"
 #include "theme/Metrics.hpp"
 #include "theme/Palette.hpp"
+#include "theme/Theme.hpp"
 #include "widgets/FailureView.hpp"
 #include "widgets/FlowLayout.hpp"
 #include "widgets/RangePager.hpp"
@@ -542,6 +543,7 @@ void TitlePage::buildHeader() {
 
     backButton_ = new QPushButton(tr("← Back"), headerRow_);
     backButton_->setObjectName(QStringLiteral("titleBack"));
+    theme::applyActionRole(backButton_, theme::ActionRole::Secondary);
     backButton_->setCursor(Qt::PointingHandCursor);
     connect(backButton_, &QPushButton::clicked, this, &TitlePage::backRequested);
 
@@ -691,6 +693,7 @@ void TitlePage::buildHero() {
 
     heroWatchButton_ = new QPushButton(tr("Watch"), hero_);
     heroWatchButton_->setObjectName(QStringLiteral("titleHeroWatchButton"));
+    theme::applyActionRole(heroWatchButton_, theme::ActionRole::Primary);
     heroWatchButton_->setMinimumHeight(48);
     heroWatchButton_->setMinimumWidth(180);
     heroWatchButton_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
@@ -715,6 +718,7 @@ void TitlePage::buildHero() {
     heroActions->setAlignment(heroWatchButton_, Qt::AlignVCenter);
     episodesButton_ = new QPushButton(tr("Episodes"), heroActionsHost);
     episodesButton_->setObjectName(QStringLiteral("titleEpisodesAnchor"));
+    theme::applyActionRole(episodesButton_, theme::ActionRole::Secondary);
     episodesButton_->setMinimumHeight(40);
     episodesButton_->setCursor(Qt::PointingHandCursor);
     episodesButton_->setToolTip(tr("Jump to episodes"));
@@ -726,6 +730,7 @@ void TitlePage::buildHero() {
     heroActions->setAlignment(episodesButton_, Qt::AlignVCenter);
     metaButton_ = new QPushButton(tr("More details"), heroActionsHost);
     metaButton_->setObjectName(QStringLiteral("titleDetailsToggle"));
+    theme::applyActionRole(metaButton_, theme::ActionRole::Ghost);
     metaButton_->setMinimumHeight(40);
     metaButton_->hide();
     metaButton_->setCheckable(true);
@@ -775,6 +780,7 @@ void TitlePage::buildHero() {
     disclosureRow_->setLayout(disclosure);
     descriptionButton_ = new QPushButton(tr("Read more"), disclosureRow_);
     descriptionButton_->setObjectName(QStringLiteral("titleSynopsisToggle"));
+    theme::applyActionRole(descriptionButton_, theme::ActionRole::Ghost);
     descriptionButton_->setMinimumHeight(40);
     descriptionButton_->setCursor(Qt::PointingHandCursor);
     descriptionButton_->hide();
@@ -812,6 +818,7 @@ void TitlePage::buildDiscovery() {
     discoveryHeader->addStretch(1);
     relatedButton_ = new QPushButton(tr("Hide"), discoveryHost_);
     relatedButton_->setObjectName(QStringLiteral("titleDiscoveryToggle"));
+    theme::applyActionRole(relatedButton_, theme::ActionRole::Ghost);
     relatedButton_->setMinimumHeight(40);
     relatedButton_->setCheckable(true);
     relatedButton_->setCursor(Qt::PointingHandCursor);
@@ -957,6 +964,7 @@ void TitlePage::buildEpisodeWorkspace() {
     watchLayout_->addLayout(watchText, 1);
     watchWatchedButton_ = new QPushButton(tr("Watched"), watchPanel_);
     watchWatchedButton_->setObjectName(QStringLiteral("titleWatchWatchedToggle"));
+    theme::applyActionRole(watchWatchedButton_, theme::ActionRole::Secondary);
     watchWatchedButton_->setCheckable(true);
     watchWatchedButton_->setMinimumHeight(theme::kTitleControlHeight);
     watchWatchedButton_->setCursor(Qt::PointingHandCursor);
@@ -968,6 +976,7 @@ void TitlePage::buildEpisodeWorkspace() {
     });
     watchButton_ = new QPushButton(tr("Watch"), watchPanel_);
     watchButton_->setObjectName(QStringLiteral("titleWatchButton"));
+    theme::applyActionRole(watchButton_, theme::ActionRole::Primary);
     watchButton_->setMinimumHeight(theme::kPrimaryControlSize);
     watchButton_->setCursor(Qt::PointingHandCursor);
     connect(watchButton_, &QPushButton::clicked, this, [this] {

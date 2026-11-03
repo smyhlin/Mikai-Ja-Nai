@@ -48,34 +48,46 @@ constexpr auto kPanelQss =
     "  background-color: transparent;"
     "  border: none; }";
 
-constexpr auto kChoiceMenuQss =
-    "QMenu {"
-    "  background-color: #16181d;"
-    "  color: #e5e7eb;"
-    "  border: 1px solid #282c34;"
-    "  border-radius: 6px;"
-    "  padding: 4px;"
-    "}"
-    "QMenu::item {"
-    "  padding: 5px 24px 5px 24px;"
-    "  border-radius: 4px;"
-    "  font-size: 12px;"
-    "}"
-    "QMenu::item:selected {"
-    "  background-color: #2563eb;"
-    "  color: #ffffff;"
-    "}"
-    "QMenu::item:disabled {"
-    "  color: #6b7280;"
-    "  background-color: transparent;"
-    "}"
-    "QMenu::separator {"
-    "  height: 1px;"
-    "  background: #282c34;"
-    "  margin: 4px 6px;"
-    "}";
+/// The choice menu's selection follows the pushed accent, so the player's menus
+/// agree with the window's chips. Rebuilt per menu because the token can change
+/// while a player window is open.
+QString choiceMenuQss() {
+    const QColor accent = shell::accent();
+    return QStringLiteral(
+               "QMenu {"
+               "  background-color: #16181d;"
+               "  color: #e5e7eb;"
+               "  border: 1px solid #282c34;"
+               "  border-radius: 6px;"
+               "  padding: 4px;"
+               "}"
+               "QMenu::item {"
+               "  padding: 5px 24px 5px 24px;"
+               "  border-radius: 4px;"
+               "  font-size: 12px;"
+               "}"
+               "QMenu::item:selected {"
+               "  background-color: %1;"
+               "  color: %2;"
+               "}"
+               "QMenu::item:disabled {"
+               "  color: #6b7280;"
+               "  background-color: transparent;"
+               "}"
+               "QMenu::separator {"
+               "  height: 1px;"
+               "  background: #282c34;"
+               "  margin: 4px 6px;"
+               "}")
+        .arg(accent.name(QColor::HexRgb), shell::inkOn(accent).name(QColor::HexRgb));
+}
 
-QString rowQss(const char* foreground, const char* fill) {
+/// `rgba()` from the accent, so a wash states only its alpha.
+QString accentWash(qreal alpha) {
+    return QStringLiteral("rgba(%1, %2)").arg(shell::rgbaTriplet(shell::accent())).arg(alpha);
+}
+
+QString rowQss(const QString& foreground, const QString& fill) {
     return QStringLiteral(
                "QPushButton {"
                "  color: %1;"
@@ -85,8 +97,22 @@ QString rowQss(const char* foreground, const char* fill) {
                "QPushButton:hover {"
                "  background: rgba(255, 255, 255, 0.12); color: #ffffff;"
                "  border-color: rgba(255, 255, 255, 0.20); }")
-        .arg(QLatin1String(foreground), QLatin1String(fill))
+        .arg(foreground, fill)
         .arg(kSpacingSmall);
+}
+
+/// The currently-playing row: an accent wash, so the shade a viewer reads as
+/// "this one" is the accent they chose.
+QString currentRowQss() { return rowQss(QStringLiteral("#ffffff"), accentWash(0.40)); }
+
+/// The engine-build progress chunk, in the pushed accent.
+QString progressQss() {
+    return QStringLiteral("QProgressBar {"
+                          "  background-color: #1e2128;"
+                          "  border: none; border-radius: 3px; }"
+                          "QProgressBar::chunk {"
+                          "  background-color: %1; border-radius: 3px; }")
+        .arg(shell::accent().name(QColor::HexRgb));
 }
 
 /// A row that is shown but cannot be chosen. No hover rule on purpose: a
@@ -138,7 +164,8 @@ void fillChoiceMenu(QMenu* menu, const QVector<ChoiceEntry>& entries, const QStr
         leaves->reserve(entries.size());
     }
     clearChoiceMenu(menu);
-    menu->setStyleSheet(QString::fromLatin1(kChoiceMenuQss));
+    const QString menuSheet = choiceMenuQss();
+    menu->setStyleSheet(menuSheet);
     menu->setToolTipsVisible(true);
 
     // One submenu per distinct path, not one per entry: addMenu() always
@@ -159,7 +186,7 @@ void fillChoiceMenu(QMenu* menu, const QVector<ChoiceEntry>& entries, const QStr
                 continue;
             }
             QMenu* created = level->addMenu(name);
-            created->setStyleSheet(QString::fromLatin1(kChoiceMenuQss));
+            created->setStyleSheet(menuSheet);
             created->setToolTipsVisible(true);
             levels.insert(key, created);
             level = created;
@@ -221,6 +248,9 @@ MenuPopup::MenuPopup(const QString& title, QWidget* parent) : QFrame(parent) {
     setProperty("playerOverlay", true);
     setFocusPolicy(Qt::StrongFocus);
     setStyleSheet(QString::fromLatin1(kPanelQss));
+    // An open popup keeps painting its row washes from the previous accent
+    // unless the current row is restated.
+    connect(&accentNotifier(), &AccentNotifier::changed, this, [this] { paintRows(); });
     hide();
 
     auto* outer = new QVBoxLayout(this);
@@ -495,7 +525,7 @@ void MenuPopup::paintRows() {
         if (index < rowEntries_.size() && rowEntries_.at(index).disabled)
             rows_.at(index)->setStyleSheet(disabledRowQss());
         else if (index < rowEntries_.size() && rowEntries_.at(index).current)
-            rows_.at(index)->setStyleSheet(rowQss("#ffffff", "rgba(88, 101, 242, 0.40)"));
+            rows_.at(index)->setStyleSheet(currentRowQss());
         else if (index == highlight_)
             rows_.at(index)->setStyleSheet(rowQss("#ffffff", "rgba(255, 255, 255, 0.12)"));
         else
@@ -545,6 +575,15 @@ SeriesDrawer::SeriesDrawer(QWidget* parent) : QFrame(parent) {
     rowsLayout_->setSpacing(2);
     scroll->setWidget(content);
     outer->addWidget(scroll, 1);
+    // The current row is an accent wash; a live accent change repaints the rows
+    // that already exist instead of waiting for the next setEntries().
+    connect(&accentNotifier(), &AccentNotifier::changed, this, [this] {
+        for (QPushButton* row : rows_) {
+            if (row == nullptr) continue;
+            const bool current = row->objectName() == QLatin1String("playerSeriesItemCurrent");
+            row->setStyleSheet(current ? currentRowQss() : rowQss(kPopupMuted, "transparent"));
+        }
+    });
 }
 
 void SeriesDrawer::setEntries(const QStringList& labels, int current) {
@@ -570,7 +609,7 @@ void SeriesDrawer::setEntries(const QStringList& labels, int current) {
         connect(button, &QPushButton::clicked, this, [this, spot] { emit picked(spot); });
         rowsLayout_->addWidget(button);
         rows_.append(button);
-        button->setStyleSheet(spot == current ? rowQss(kPopupText, "rgba(189, 172, 255, 0.20)")
+        button->setStyleSheet(spot == current ? currentRowQss()
                                               : rowQss(kPopupMuted, "transparent"));
     }
     rowsLayout_->addStretch(1);
@@ -624,11 +663,11 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
     // indeterminate-versus-staged fact can be read: a silent bar reads as
     // nothing happening at all.
     progress_->setAccessibleName(tr("Preparation progress"));
-    progress_->setStyleSheet(QStringLiteral("QProgressBar {"
-                                            "  background-color: #1e2128;"
-                                            "  border: none; border-radius: 3px; }"
-                                            "QProgressBar::chunk {"
-                                            "  background-color: #3b82f6; border-radius: 3px; }"));
+    progress_->setStyleSheet(progressQss());
+    // A build runs for minutes with this window on screen; the chunk it shows
+    // must be the accent the viewer picked, including one changed mid-build.
+    connect(&accentNotifier(), &AccentNotifier::changed, this,
+            [this] { progress_->setStyleSheet(progressQss()); });
     layout->addWidget(progress_);
 
     elapsedLabel_ = new QLabel(this);

@@ -7,6 +7,16 @@
 
 namespace mikai::app::theme {
 
+/// WCAG 2.1 relative luminance contrast ratio of two opaque colours, 1.0 for
+/// identical ones. Both the sheet's token gates and the tests measure with this
+/// one function, so a reported ratio is the ratio the rule actually has.
+double contrastRatio(const QColor& a, const QColor& b);
+
+/// Black or white, whichever reads better on `background`. Every fill that a
+/// chosen accent can produce (including a very dark custom one) needs this
+/// rather than a fixed ink, or the label on the primary action disappears.
+QColor contrastText(const QColor& background);
+
 /// Every colour the sheets and the painted surfaces use, resolved for one
 /// appearance. The names mirror Colors.hpp, which stays the source of the dark
 /// values; a light appearance substitutes its own values and the accent family
@@ -42,9 +52,15 @@ struct Palette {
     QString surfaceControl;
     QString surfaceControlHover;
     QString surfaceControlPressed;
+    /// A neutral action's fill and its 3:1 boundary; see Colors.hpp.
+    QString surfaceControlRaised;
+    QString borderControl;
     QString surfaceTileHover;
     QString tableAlternateRow;
 
+    /// The ink a primary action's label is painted with: contrast-derived from
+    /// `accentValue`, so the accent fill is never changed to make text legible.
+    QString accentInk;
     QString accentFocus;
     QString accentSolid;
     QString accentDeep;

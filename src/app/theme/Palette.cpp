@@ -2,6 +2,8 @@
 
 #include "theme/Colors.hpp"
 
+#include <cmath>
+
 namespace mikai::app::theme {
 namespace {
 
@@ -9,7 +11,32 @@ QString text(const char* value) { return QString::fromLatin1(value); }
 
 QString rgb(const QColor& color) { return rgbTriplet(color); }
 
+double linearChannel(int value) {
+    const double channel = value / 255.0;
+    return channel <= 0.04045 ? channel / 12.92
+                              : std::pow((channel + 0.055) / 1.055, 2.4);
+}
+
+double luminance(const QColor& color) {
+    return 0.2126 * linearChannel(color.red()) + 0.7152 * linearChannel(color.green()) +
+           0.0722 * linearChannel(color.blue());
+}
+
 }  // namespace
+
+double contrastRatio(const QColor& a, const QColor& b) {
+    const double first = luminance(a);
+    const double second = luminance(b);
+    const double lighter = std::max(first, second);
+    const double darker = std::min(first, second);
+    return (lighter + 0.05) / (darker + 0.05);
+}
+
+QColor contrastText(const QColor& background) {
+    const double black = contrastRatio(background, QColor(Qt::black));
+    const double white = contrastRatio(background, QColor(Qt::white));
+    return black >= white ? QColor(Qt::black) : QColor(Qt::white);
+}
 
 Palette paletteFor(const Appearance& appearance) {
     Palette p;
@@ -45,6 +72,8 @@ Palette paletteFor(const Appearance& appearance) {
         p.surfaceControl = text(kSurfaceControl);
         p.surfaceControlHover = text(kSurfaceControlHover);
         p.surfaceControlPressed = text(kSurfaceControlPressed);
+        p.surfaceControlRaised = text(kSurfaceControlRaised);
+        p.borderControl = text(kBorderControl);
         p.surfaceTileHover = text(kSurfaceTileHover);
         p.tableAlternateRow = text(kTableAlternateRow);
         p.surfaceControlRgb = text(kSurfaceControlRgb);
@@ -105,6 +134,10 @@ Palette paletteFor(const Appearance& appearance) {
         p.surfaceControl = QStringLiteral("#f2f2f8");
         p.surfaceControlHover = QStringLiteral("#e9e9f2");
         p.surfaceControlPressed = QStringLiteral("#e2e2ee");
+        p.surfaceControlRaised = QStringLiteral("#ffffff");
+        // The light pair carries the same 3:1 gate: 3.74:1 on the page bed and
+        // 4.10:1 on a white settings card.
+        p.borderControl = QStringLiteral("#7c7c8c");
         p.surfaceTileHover = QStringLiteral("#eeeef6");
         p.tableAlternateRow = QStringLiteral("#f7f7fb");
         p.surfaceControlRgb = QStringLiteral("242, 242, 248");
@@ -144,6 +177,7 @@ Palette paletteFor(const Appearance& appearance) {
     // the primary action, focus rings, progress chunks and washes alike.
     p.accent = hexOf(accent);
     p.accentHover = hexOf(hoverOf(accent, p.light));
+    p.accentInk = hexOf(contrastText(accent));
     p.accentSolid = p.accent;
     p.accentDeep = hexOf(p.light ? accent.darker(115) : accent.darker(112));
     p.accentDeepest = hexOf(p.light ? accent.darker(130) : accent.darker(122));

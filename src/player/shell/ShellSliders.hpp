@@ -48,6 +48,11 @@ public:
 
     bool isDragging() const { return drag_; }
 
+    /// Replaces the colour the filled part is painted with. A slider that lives
+    /// in a long-lived flyout follows setAccent() through this instead of
+    /// keeping the colour it was constructed with.
+    void setAccent(const QColor& accent);
+
     void paintChrome(QPainter& painter) override;
 
 signals:
@@ -56,6 +61,10 @@ signals:
     void released();
 
 protected:
+    /// The colour of the filled part. The base returns the stored accent; a
+    /// timeline overrides it to read the pushed token at paint time.
+    virtual QColor playedColor() const { return accent_; }
+
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
@@ -145,6 +154,11 @@ signals:
     void hoverLeft();
 
 protected:
+    /// The played part is the pushed accent, read when the bar paints: the
+    /// scrub control outlives an accent change and must not keep the colour it
+    /// was built with.
+    QColor playedColor() const override;
+
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void leaveEvent(QEvent* event) override;

@@ -340,7 +340,7 @@ void TestNativeComponents::upscalingPackReviewsAndQueuesMissingGraphs() {
     tab.setRunner(&runner);
     auto* pack = tab.findChild<QCheckBox*>(QStringLiteral("animeJanaiModelsCardCheck"));
     auto* status = tab.findChild<QLabel*>(QStringLiteral("nativeComponentStatus"));
-    auto* apply = tab.findChild<QPushButton*>(QStringLiteral("primary"));
+    auto* apply = tab.findChild<QPushButton*>(QStringLiteral("componentDownloadButton"));
     auto* cancel = tab.findChild<QPushButton*>(QStringLiteral("nativeComponentTabCancelButton"));
     QVERIFY(pack != nullptr);
     QVERIFY(status != nullptr);

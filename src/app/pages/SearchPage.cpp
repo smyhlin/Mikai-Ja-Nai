@@ -162,6 +162,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
 
     homeButton_ = new QPushButton(tr("Home"), header);
     homeButton_->setObjectName(QStringLiteral("homeButton"));
+    theme::applyActionRole(homeButton_, theme::ActionRole::Secondary);
     connect(homeButton_, &QPushButton::clicked, this, &SearchPage::returnHome);
     topRow->addWidget(homeButton_, 0, Qt::AlignVCenter);
     homeButton_->hide();
@@ -175,8 +176,9 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     topRow->addWidget(rateLabel_, 0, Qt::AlignVCenter);
 
     mediaButton_ = new QPushButton(tr("Open video"), header);
-    mediaButton_->setObjectName(QStringLiteral("secondary"));
+    mediaButton_->setObjectName(QStringLiteral("openMediaButton"));
     mediaButton_->setAccessibleName(tr("Open video"));
+    theme::applyActionRole(mediaButton_, theme::ActionRole::Secondary);
     mediaButton_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     mediaButton_->setIconSize(QSize(theme::kSearchIconSize + theme::kSearchIconGlyphPad,
                                     theme::kSearchIconSize));
@@ -276,14 +278,17 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
 
     filtersButton_ = new QPushButton(tr("Filters"), header);
     filtersButton_->setObjectName(QStringLiteral("catalogueFiltersButton"));
+    theme::applyActionRole(filtersButton_, theme::ActionRole::Secondary);
     filtersButton_->setIconSize(QSize(theme::kSearchIconSize + theme::kSearchIconGlyphPad,
                                       theme::kSearchIconSize));
     teamsButton_ = new QPushButton(tr("Teams…"), header);
     teamsButton_->setObjectName(QStringLiteral("catalogueTeamsButton"));
+    theme::applyActionRole(teamsButton_, theme::ActionRole::Secondary);
     teamsButton_->setIconSize(QSize(theme::kSearchIconSize + theme::kSearchIconGlyphPad,
                                     theme::kSearchIconSize));
     searchButton_ = new QPushButton(tr("Search"), header);
-    searchButton_->setObjectName(QStringLiteral("primary"));
+    searchButton_->setObjectName(QStringLiteral("searchActionButton"));
+    theme::applyActionRole(searchButton_, theme::ActionRole::Primary);
     searchButton_->setIconSize(QSize(theme::kSearchIconSize + theme::kSearchIconGlyphPad,
                                      theme::kSearchIconSize));
     connect(query_, &QLineEdit::returnPressed, this, &SearchPage::search);
@@ -995,7 +1000,8 @@ SearchPage::FeedSection* SearchPage::buildFeedSection(const QString& key) {
     header->addWidget(section->heading);
     header->addStretch();
     section->retry = new QPushButton(tr("Refresh"), section->section);
-    section->retry->setObjectName(QStringLiteral("textAction"));
+    section->retry->setObjectName(QStringLiteral("feedRetryAction"));
+    theme::applyActionRole(section->retry, theme::ActionRole::Ghost);
     connect(section->retry, &QPushButton::clicked, this, [this, key] {
         if (key == QLatin1String("updates")) {
             loadUpdates();
@@ -1938,18 +1944,16 @@ void SearchPage::showCatalogueFilters() {
     buttons->setObjectName(QStringLiteral("catalogueFilterButtons"));
     if (auto* apply = buttons->button(QDialogButtonBox::Apply)) {
         apply->setObjectName(QStringLiteral("catalogueApplyButton"));
-        apply->setProperty("accentAction", true);
-        const theme::Palette palette = theme::paletteFor(currentAppearance());
-        apply->setStyleSheet(QStringLiteral(
-            "QPushButton { background: %1; color: %2; border: none; font-weight: 600; "
-            "border-radius: %3px; padding: 6px 16px; }"
-            "QPushButton:hover { background: %4; }")
-            .arg(palette.accent, palette.accentOnFill)
-            .arg(theme::radiusSmall(currentAppearance()))
-            .arg(palette.accentHover));
+        // The shared role paints it: a private sheet here is what let this one
+        // button drift from the accent while the rest of the dialog followed.
+        theme::applyActionRole(apply, theme::ActionRole::Primary);
     }
-    if (auto* reset = buttons->button(QDialogButtonBox::Reset))
+    if (auto* reset = buttons->button(QDialogButtonBox::Reset)) {
         reset->setObjectName(QStringLiteral("catalogueResetButton"));
+        theme::applyActionRole(reset, theme::ActionRole::Secondary);
+    }
+    if (auto* cancel = buttons->button(QDialogButtonBox::Cancel))
+        theme::applyActionRole(cancel, theme::ActionRole::Secondary);
     layout->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     connect(buttons, &QDialogButtonBox::clicked, &dialog, [&dialog, buttons](QAbstractButton* button) {
@@ -2043,6 +2047,7 @@ void SearchPage::openTeamPicker() {
     browse->setEnabled(false);
     auto* filterTeam = new QPushButton(tr("Filter catalogue"), &dialog);
     filterTeam->setObjectName(QStringLiteral("teamFilterButton"));
+    theme::applyActionRole(filterTeam, theme::ActionRole::Primary);
     auto* state = new QLabel(&dialog);
     state->setObjectName(QStringLiteral("muted"));
     layout->addWidget(search);

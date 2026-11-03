@@ -4,6 +4,7 @@
 #include "dialogs/settings/SettingsUi.hpp"
 #include "theme/Colors.hpp"
 #include "theme/Metrics.hpp"
+#include "theme/Theme.hpp"
 
 #include <player/shaders/Anime4K.hpp>
 #include <player/shaders/PresetShortcuts.hpp>
@@ -66,6 +67,7 @@ QWidget* SettingsDialog::buildPresetsTab() {
     clearAllPresetsButton_ = new QPushButton(tr("Clear all"), headerCard);
     clearAllPresetsButton_->setObjectName(QStringLiteral("clearAllPresetsButton"));
     clearAllPresetsButton_->setAccessibleName(tr("Clear all preset shortcuts"));
+    theme::applyActionRole(clearAllPresetsButton_, theme::ActionRole::Danger);
     polishInteractiveControl(clearAllPresetsButton_, theme::kSettingsControlSize);
     filterRow->addWidget(clearAllPresetsButton_, 0);
     headerCardLayout->addLayout(filterRow);

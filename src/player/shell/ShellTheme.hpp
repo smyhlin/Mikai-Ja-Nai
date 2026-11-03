@@ -10,6 +10,7 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QFontMetrics>
+#include <QObject>
 #include <QRectF>
 
 namespace mplayer {
@@ -58,19 +59,65 @@ inline QColor blackSoft() { return QColor(0, 0, 0, 150); }
 /// before a player window is built; the player library cannot reach the app's
 /// appearance store, so the last pushed value is what the overlay paints.
 QColor accent();
+/// Stores a new accent and tells every already-open shell surface. A widget
+/// that baked the accent into a stylesheet, a palette or a slider at
+/// construction time subscribes here and rebuilds that styling; paint-time
+/// readers need only repaint.
 void setAccent(const QColor& color);
+
+/// Emitted by setAccent() when the token actually changes. Connect with the
+/// subscriber as the context object, so a closed window disconnects itself.
+class AccentNotifier : public QObject {
+    Q_OBJECT
+
+public:
+    using QObject::QObject;
+
+signals:
+    void changed(const QColor& previous);
+};
+
+AccentNotifier& accentNotifier();
 /// The player's corner radius, in logical pixels, in the same push model as
 /// accent(): the application owns the customization step and pushes the
 /// resolved token in before a player window is built. Panels and steppers read
 /// this instead of a constant, so one setting shapes every chrome surface.
 double cornerRadius();
 void setCornerRadius(double radius);
-/// The played part of a timeline. It is not the accent: a progress bar reads as
-/// a quantity, not as a call to action.
-inline QColor timelinePlayed() { return QColor(QStringLiteral("#7289ff")); }
-inline QColor accentSoft() { return QColor(88, 101, 242, 70); }
+/// The played part of a timeline. It derives from the accent so the scrub bar,
+/// the PiP track and the compare seats report the one colour the viewer chose;
+/// the shape of the control, not its hue, is what distinguishes a quantity from
+/// a call to action.
+inline QColor timelinePlayed() { return accent(); }
+/// The accent as a translucent wash (row selection, chips, hover bands).
+inline QColor accentSoft() {
+    QColor wash = accent();
+    wash.setAlpha(70);
+    return wash;
+}
 inline QColor green() { return QColor(QStringLiteral("#3ba55d")); }
 inline QColor red() { return QColor(QStringLiteral("#ed4245")); }
+
+/// The colour of Compare's side B. Side A is always the accent; side B is a
+/// fixed semantic amber so the two seats stay tellable apart, unless the chosen
+/// accent is itself amber-adjacent - then amber would read as the same colour
+/// twice, and the complement (210 degrees on the hue wheel) is used instead.
+/// Hue adjacency is +/-30 degrees around amber's 37 degrees.
+QColor compareSideB(const QColor& accentColor);
+
+/// The colour that names a Compare seat: seat 0 is the accent, seat 1 is
+/// compareSideB. One function so the badge, the selector bar and the peek pill
+/// cannot disagree about which side is which colour.
+QColor compareSide(int index);
+
+/// "r, g, b" - the components a QSS `rgba(%1, 0.4)` needs. A derived value, not
+/// a token: the hue stays the accent's.
+QString rgbaTriplet(const QColor& color);
+
+/// Black or white, whichever reads better on `background`. A widget that fills
+/// with the accent must take its ink from here, or a very dark accent paints a
+/// near-black label on itself.
+QColor inkOn(const QColor& background);
 
 /// White with the given alpha, 0..255.
 inline QColor white(int alpha) { return QColor(255, 255, 255, alpha); }

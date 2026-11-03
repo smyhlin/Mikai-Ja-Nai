@@ -7,8 +7,8 @@
 namespace mikai::app::theme {
 namespace {
 
-constexpr char kDefaultAccent[] = "#bdacff";
-constexpr char kDefaultGradient[] = "#6797e4";
+// Colors.hpp owns the shipped accent; Appearance.cpp only names it.
+constexpr const char* kDefaultAccent = kAccent;
 
 }  // namespace
 
@@ -97,6 +97,14 @@ NameLanguage nameLanguageFromId(const QString& id) {
     return NameLanguage::Interface;
 }
 
+QString gradientModeId(GradientMode mode) {
+    return mode == GradientMode::Custom ? QStringLiteral("custom") : QStringLiteral("auto");
+}
+
+GradientMode gradientModeFromId(const QString& id) {
+    return id == QStringLiteral("custom") ? GradientMode::Custom : GradientMode::Auto;
+}
+
 QString presetName(const QString& color) {
     const QColor value(color);
     if (!value.isValid()) return QString();
@@ -125,8 +133,9 @@ QColor accentColor(const Appearance& appearance) {
 }
 
 QColor gradientColor(const Appearance& appearance) {
+    if (appearance.gradientMode != GradientMode::Custom) return accentColor(appearance);
     const QColor stored(appearance.gradientColor);
-    return stored.isValid() ? stored : QColor(QString::fromLatin1(kDefaultGradient));
+    return stored.isValid() ? stored : accentColor(appearance);
 }
 
 QString scaleRadii(const QString& sheet, double scale) {

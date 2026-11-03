@@ -2,6 +2,7 @@
 
 #include "support/I18n.hpp"
 #include "theme/Metrics.hpp"
+#include "theme/Theme.hpp"
 
 #include <QAccessible>
 #include <QEvent>
@@ -31,7 +32,8 @@ FailureView::FailureView(QWidget* parent) : QWidget(parent) {
     layout->addWidget(code_, 0, Qt::AlignVCenter);
 
     retry_ = new QPushButton(tr("Retry"), this);
-    retry_->setObjectName(QStringLiteral("textAction"));
+    retry_->setObjectName(QStringLiteral("failureRetryAction"));
+    theme::applyActionRole(retry_, theme::ActionRole::Ghost);
     connect(retry_, &QPushButton::clicked, this, &FailureView::retryRequested);
     layout->addWidget(retry_, 0, Qt::AlignVCenter);
 

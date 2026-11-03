@@ -12,6 +12,7 @@
 #include "state/NativePlaybackAssembly.hpp"
 #include "state/QualityCache.hpp"
 #include "theme/Metrics.hpp"
+#include "theme/Theme.hpp"
 #include "workers/Runner.hpp"
 
 #include <backend/MikaiClient.hpp>
@@ -19,6 +20,7 @@
 #include <native/bundle/NativeRuntimeSelection.hpp>
 
 #include <PlayerDialog.hpp>
+#include <QAbstractButton>
 #include <memory>
 #include <optional>
 #include <QtCore/QDebug>
@@ -618,8 +620,15 @@ void MainWindow::ensureNativeComponents() {
     QPointer<QMessageBox> promptGuard(prompt);
     prompt->setObjectName(QStringLiteral("nativeComponentsPrompt"));
     QPushButton* download = prompt->addButton(tr("Download"), QMessageBox::AcceptRole);
-    prompt->addButton(tr("Skip for now"), QMessageBox::RejectRole);
-    prompt->addButton(tr("Skip and never ask"), QMessageBox::DestructiveRole);
+    // A message box builds its own buttons, so the roles are stated on the
+    // buttons it handed back rather than on a box Qt invented.
+    download->setObjectName(QStringLiteral("nativeComponentsDownload"));
+    theme::applyActionRole(download, theme::ActionRole::Primary);
+    if (QAbstractButton* later = prompt->addButton(tr("Skip for now"), QMessageBox::RejectRole))
+        theme::applyActionRole(later, theme::ActionRole::Secondary);
+    if (QAbstractButton* never = prompt->addButton(tr("Skip and never ask"),
+                                                   QMessageBox::DestructiveRole))
+        theme::applyActionRole(never, theme::ActionRole::Ghost);
     prompt->setDefaultButton(download);
     pausePlaybackForComponentAsk(false);
     // This box was always owned by the shell itself, so keep that relation;
@@ -734,8 +743,10 @@ void MainWindow::showAnimeJanaiSetupPrompt(SettingsDialog* settings) {
 
     auto* buttons = new QDialogButtonBox(dialog);
     auto* install = buttons->addButton(tr("Download"), QDialogButtonBox::AcceptRole);
-    install->setObjectName(QStringLiteral("primary"));
+    install->setObjectName(QStringLiteral("setupInstallButton"));
+    theme::applyActionRole(install, theme::ActionRole::Primary);
     auto* notNow = buttons->addButton(tr("Not now"), QDialogButtonBox::RejectRole);
+    theme::applyActionRole(notNow, theme::ActionRole::Secondary);
     install->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     notNow->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     layout->addWidget(buttons);

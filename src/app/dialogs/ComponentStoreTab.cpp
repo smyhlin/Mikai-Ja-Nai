@@ -4,6 +4,7 @@
 #include "state/NativeComponentProvisioner.hpp"
 #include "workers/Runner.hpp"
 #include "theme/Metrics.hpp"
+#include "theme/Theme.hpp"
 
 #include <backend/MikaiClient.hpp>
 #include <backend/Cancellation.hpp>
@@ -658,26 +659,26 @@ void ComponentStoreTab::buildUi() {
     actions->setSpacing(theme::kSpacingSmall);
     auto* primaryActions = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
     downloadButton_ = new QPushButton(actionsCard);
-    downloadButton_->setObjectName(QStringLiteral("primary"));
-    downloadButton_->setMinimumHeight(theme::kSettingsControlSize);
+    downloadButton_->setObjectName(QStringLiteral("componentDownloadButton"));
+    theme::applyActionRole(downloadButton_, theme::ActionRole::Primary);
     primaryActions->addWidget(downloadButton_);
     auto* refreshButton = new QPushButton(actionsCard);
     refreshButton->setObjectName(QStringLiteral("refreshComponentsButton"));
-    refreshButton->setMinimumHeight(theme::kSettingsControlSize);
+    theme::applyActionRole(refreshButton, theme::ActionRole::Secondary);
     primaryActions->addWidget(refreshButton);
     actions->addLayout(primaryActions);
     auto* utilityActions = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
     verifyButton_ = new QPushButton(actionsCard);
     verifyButton_->setObjectName(QStringLiteral("nativeComponentVerifyButton"));
-    verifyButton_->setMinimumHeight(theme::kSettingsControlSize);
+    theme::applyActionRole(verifyButton_, theme::ActionRole::Secondary);
     utilityActions->addWidget(verifyButton_);
     importAnimeJanaiButton_ = new QPushButton(actionsCard);
     importAnimeJanaiButton_->setObjectName(QStringLiteral("nativeComponentImportAnimeJanaiButton"));
-    importAnimeJanaiButton_->setMinimumHeight(theme::kSettingsControlSize);
+    theme::applyActionRole(importAnimeJanaiButton_, theme::ActionRole::Secondary);
     utilityActions->addWidget(importAnimeJanaiButton_);
     cancelButton_ = new QPushButton(actionsCard);
     cancelButton_->setObjectName(QStringLiteral("nativeComponentTabCancelButton"));
-    cancelButton_->setMinimumHeight(theme::kSettingsControlSize);
+    theme::applyActionRole(cancelButton_, theme::ActionRole::Secondary);
     cancelButton_->setEnabled(false);
     utilityActions->addWidget(cancelButton_);
     actions->addLayout(utilityActions);

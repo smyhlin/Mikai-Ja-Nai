@@ -19,6 +19,7 @@ constexpr char kRadiusKey[] = "customization/radiusStep";
 constexpr char kBackgroundGradientKey[] = "customization/backgroundGradient";
 constexpr char kGradientIntensityKey[] = "customization/gradientIntensity";
 constexpr char kGradientHeightKey[] = "customization/gradientHeight";
+constexpr char kGradientModeKey[] = "customization/gradientMode";
 constexpr char kGradientColorKey[] = "customization/gradientColor";
 
 theme::Appearance& stored() {
@@ -59,6 +60,19 @@ theme::Appearance loadAppearance() {
     if (QColor(gradient).isValid()) {
         appearance.gradientColor = gradient;
     }
+    // The gradient used to be an independent colour, so every profile that ever
+    // saved customization carries one. A profile with no mode key but with a
+    // stored colour chose that colour deliberately and keeps it; one with
+    // neither key never made the choice, so it joins the accent instead of
+    // inheriting the old blue default.
+    if (settings.contains(QString::fromLatin1(kGradientModeKey))) {
+        appearance.gradientMode = theme::gradientModeFromId(
+            settings.value(QString::fromLatin1(kGradientModeKey)).toString());
+    } else {
+        appearance.gradientMode = settings.contains(QString::fromLatin1(kGradientColorKey))
+                                      ? theme::GradientMode::Custom
+                                      : theme::GradientMode::Auto;
+    }
     return appearance;
 }
 
@@ -80,8 +94,15 @@ void saveAppearance(const theme::Appearance& appearance) {
                       qBound(0, appearance.gradientIntensity, 100));
     settings.setValue(QString::fromLatin1(kGradientHeightKey),
                       qBound(10, appearance.gradientHeight, 100));
-    settings.setValue(QString::fromLatin1(kGradientColorKey),
-                      theme::hexOf(theme::gradientColor(appearance)));
+    settings.setValue(QString::fromLatin1(kGradientModeKey),
+                      theme::gradientModeId(appearance.gradientMode));
+    // Only a Custom gradient is written: while Auto is selected the stored
+    // colour is the viewer's last custom choice, and saving the accent over it
+    // would silently destroy a preference they can return to.
+    if (appearance.gradientMode == theme::GradientMode::Custom) {
+        settings.setValue(QString::fromLatin1(kGradientColorKey),
+                          theme::hexOf(theme::gradientColor(appearance)));
+    }
     settings.sync();
     setCurrentAppearance(appearance);
 }

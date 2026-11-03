@@ -9,6 +9,7 @@
 #include "state/AppearanceStore.hpp"
 #include "theme/Palette.hpp"
 #include "theme/Metrics.hpp"
+#include "theme/Theme.hpp"
 
 #include <native/components/AnimeJanaiCatalogWatcher.hpp>
 #include <native/components/AnimeJanaiRuntime.hpp>
@@ -166,8 +167,9 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     stylePillBadge(benchmarkClipCount_);
 
     benchmarkSelectAllClips_ = new QPushButton(tr("Select all"), clipsCard);
-    benchmarkSelectAllClips_->setObjectName(QStringLiteral("textAction"));
+    benchmarkSelectAllClips_->setObjectName(QStringLiteral("benchmarkSelectAllClips"));
     benchmarkSelectAllClips_->setProperty("benchmarkSelectionControl", QStringLiteral("clips"));
+    theme::applyActionRole(benchmarkSelectAllClips_, theme::ActionRole::Ghost);
     polishInteractiveControl(benchmarkSelectAllClips_, theme::kSettingsControlSize);
 
     clipsHeader->addWidget(benchmarkVideoTitle_, 1, Qt::AlignVCenter);
@@ -236,8 +238,9 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     stylePillBadge(benchmarkModelCount_);
 
     benchmarkSelectAllModels_ = new QPushButton(tr("Select all"), modelsCard);
-    benchmarkSelectAllModels_->setObjectName(QStringLiteral("textAction"));
+    benchmarkSelectAllModels_->setObjectName(QStringLiteral("benchmarkSelectAllModels"));
     benchmarkSelectAllModels_->setProperty("benchmarkSelectionControl", QStringLiteral("models"));
+    theme::applyActionRole(benchmarkSelectAllModels_, theme::ActionRole::Ghost);
     polishInteractiveControl(benchmarkSelectAllModels_, theme::kSettingsControlSize);
 
     modelsHeader->addWidget(benchmarkModelTitle_, 1, Qt::AlignVCenter);
@@ -496,7 +499,7 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     benchmarkRunButton_ = new QPushButton(tr("Run benchmark"), bottomBar);
     benchmarkRunButton_->setObjectName(QStringLiteral("benchmarkRunButton"));
     benchmarkRunButton_->setProperty("benchmarkRunAction", true);
-    benchmarkRunButton_->setProperty("primaryAction", true);
+    theme::applyActionRole(benchmarkRunButton_, theme::ActionRole::Primary);
     polishInteractiveControl(benchmarkRunButton_, theme::kPrimaryControlSize);
     connect(benchmarkRunButton_, &QPushButton::clicked, this, &SettingsDialog::runBenchmark);
     barLayout->addWidget(benchmarkRunButton_, 0, Qt::AlignVCenter);

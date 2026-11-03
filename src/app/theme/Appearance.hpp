@@ -1,5 +1,7 @@
 #pragma once
 
+#include "theme/Colors.hpp"
+
 #include <QColor>
 #include <QString>
 #include <QStringList>
@@ -20,6 +22,12 @@ enum class TitleLanguage { Ukrainian, English, Original };
 /// interface language, so an English UI can still name episodes in Ukrainian.
 enum class NameLanguage { Interface, Ukrainian, English, Original };
 
+/// Where the page gradient's colour comes from. `Auto` is the shipped default:
+/// the wash is the chosen accent, so "my theme colour" is one decision. A viewer
+/// who wants the wash to stay distinct from the accent keeps a colour of their
+/// own and it is never overwritten while they stay on Auto.
+enum class GradientMode { Auto, Custom };
+
 struct AccentPreset {
     QString id;
     QString color;
@@ -36,7 +44,10 @@ struct Appearance {
     bool backgroundGradient = true;
     int gradientIntensity = 30;
     int gradientHeight = 100;
-    QString gradientColor = QStringLiteral("#6797e4");
+    GradientMode gradientMode = GradientMode::Auto;
+    /// Only meaningful in Custom mode. It keeps the viewer's last custom choice
+    /// while Auto is selected, so returning to Custom does not lose it.
+    QString gradientColor = QString::fromLatin1(kAccent);
 
     bool operator==(const Appearance&) const = default;
 };
@@ -60,6 +71,8 @@ QString languageId(TitleLanguage language);
 TitleLanguage titleLanguageFromId(const QString& id);
 QString nameLanguageId(NameLanguage language);
 NameLanguage nameLanguageFromId(const QString& id);
+QString gradientModeId(GradientMode mode);
+GradientMode gradientModeFromId(const QString& id);
 
 /// The readable name of a swatch's colour ("Blue"), empty for a custom one,
 /// resolved through the application translator.
@@ -69,6 +82,9 @@ bool isLight(const Appearance& appearance);
 /// The accent actually used: the stored one when it parses, the default
 /// otherwise, so a corrupted setting cannot leave the application unreadable.
 QColor accentColor(const Appearance& appearance);
+/// The colour the page wash is painted with: the accent in Auto mode, the
+/// stored colour in Custom mode. One function, so the gradient cannot disagree
+/// with the accent it is supposed to follow.
 QColor gradientColor(const Appearance& appearance);
 
 /// Scales every `border-radius: Npx` in `sheet` by `scale`, keeping a sheet

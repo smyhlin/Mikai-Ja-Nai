@@ -57,6 +57,7 @@
 #include <native/components/NativeComponentToolchain.hpp>
 #include <native/components/NativeGpuProbe.hpp>
 #include "state/NativeComponentProvisioner.hpp"
+#include "theme/Theme.hpp"
 #include "workers/Runner.hpp"
 #include "theme/Metrics.hpp"
 
@@ -560,6 +561,7 @@ void NativeAssetsPanel::buildUi() {
     auto* cacheRow = new QHBoxLayout();
     deleteCacheButton_ = new QPushButton(tr("Delete"), cacheDetails_);
     deleteCacheButton_->setObjectName(QStringLiteral("nativeCacheDeleteButton"));
+    theme::applyActionRole(deleteCacheButton_, theme::ActionRole::Danger);
     deleteCacheButton_->setEnabled(false);
     cacheRow->addWidget(deleteCacheButton_);
     cacheDeleteHint_ = new QLabel(tr("Remove the selected cache artifact."), cacheDetails_);
@@ -592,6 +594,7 @@ void NativeAssetsPanel::buildUi() {
     auto* stagingRow = new QHBoxLayout();
     discardStagingButton_ = new QPushButton(tr("Discard"), this);
     discardStagingButton_->setObjectName(QStringLiteral("nativeStagingDiscardButton"));
+    theme::applyActionRole(discardStagingButton_, theme::ActionRole::Danger);
     discardStagingButton_->setEnabled(false);
     stagingRow->addWidget(discardStagingButton_);
     stagingDiscardHint_ = new QLabel(tr("Remove the selected incomplete scratch directory."), this);

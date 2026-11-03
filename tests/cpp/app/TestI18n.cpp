@@ -347,14 +347,20 @@ void TestI18n::contentNamesFollowTheirOwnLanguage() {
            QStringLiteral("brand-new"));
 }
 
+// The wash follows the accent unless the viewer overrode it, so a fresh profile
+// has one colour decision rather than two that disagree.
 void TestI18n::defaultGradientUsesBlueAccentWhileCustomGradientRemainsDistinct() {
   const mikai::app::theme::Appearance defaults;
-  QCOMPARE(defaults.gradientColor, QStringLiteral("#6797e4"));
-  QCOMPARE(mikai::app::theme::gradientColor(defaults), QColor(QStringLiteral("#6797e4")));
+  QCOMPARE(defaults.gradientMode, mikai::app::theme::GradientMode::Auto);
+  QCOMPARE(mikai::app::theme::gradientColor(defaults),
+           mikai::app::theme::accentColor(defaults));
 
+  // Picking a colour is what makes the gradient Custom, and the stored value is
+  // then what the pages paint.
   auto customized = defaults;
   QCOMPARE(mikai::app::theme::presetName(QStringLiteral("#67e4e4")),
            QCoreApplication::translate("mikai::app::theme", "Turquoise"));
+  customized.gradientMode = mikai::app::theme::GradientMode::Custom;
   customized.gradientColor = QStringLiteral("#abcdef");
   QCOMPARE(mikai::app::theme::gradientColor(customized), QColor(QStringLiteral("#abcdef")));
   QCOMPARE(customized.gradientColor, QStringLiteral("#abcdef"));
@@ -380,6 +386,7 @@ void TestI18n::appearanceRoundTripsThroughSettings() {
   wanted.backgroundGradient = false;
   wanted.gradientIntensity = 75;
   wanted.gradientHeight = 40;
+  wanted.gradientMode = mikai::app::theme::GradientMode::Custom;
   wanted.gradientColor = QStringLiteral("#abcdef");
   mikai::app::saveAppearance(wanted);
 
@@ -394,6 +401,7 @@ void TestI18n::appearanceRoundTripsThroughSettings() {
   QCOMPARE(reloaded.backgroundGradient, wanted.backgroundGradient);
   QCOMPARE(reloaded.gradientIntensity, wanted.gradientIntensity);
   QCOMPARE(reloaded.gradientHeight, wanted.gradientHeight);
+  QCOMPARE(reloaded.gradientMode, wanted.gradientMode);
   QCOMPARE(mikai::app::theme::gradientColor(reloaded), QColor(wanted.gradientColor));
 }
 
@@ -445,7 +453,7 @@ void TestI18n::unsetRadiusAndResetUseXsWithoutOverwritingSavedChoices() {
   reset->click();
   auto* footer = dialog.findChild<QWidget*>(QStringLiteral("settingsFooter"));
   QVERIFY(footer != nullptr);
-  auto* save = footer->findChild<QPushButton*>(QStringLiteral("primary"));
+  auto* save = footer->findChild<QPushButton*>(QStringLiteral("settingsSaveButton"));
   QVERIFY(save != nullptr);
   save->click();
   QCOMPARE(dialog.result(), int(QDialog::Accepted));
@@ -483,7 +491,7 @@ void TestI18n::appearanceSaveAndCancelKeepTheLatestBatchedStyle() {
   const QColor selected(presets.at(1).color);
   auto* footer = dialog.findChild<QWidget*>(QStringLiteral("settingsFooter"));
   QVERIFY(footer != nullptr);
-  auto* save = footer->findChild<QPushButton*>(QStringLiteral("primary"));
+  auto* save = footer->findChild<QPushButton*>(QStringLiteral("settingsSaveButton"));
   QVERIFY(save != nullptr);
   save->click();
   QCOMPARE(dialog.result(), int(QDialog::Accepted));
@@ -568,7 +576,7 @@ void TestI18n::appearancePreviewCancelRollsBackAndSavePersists() {
   auto chips = dialog.findChildren<QPushButton*>(QStringLiteral("radiusChip"));
   QVERIFY2(!chips.isEmpty(), "the appearance page has no radius chips");
   auto* footer = dialog.findChild<QWidget*>(QStringLiteral("settingsFooter"));
-  auto* save = footer != nullptr ? footer->findChild<QPushButton*>(QStringLiteral("primary"))
+  auto* save = footer != nullptr ? footer->findChild<QPushButton*>(QStringLiteral("settingsSaveButton"))
                                  : nullptr;
   QVERIFY2(save != nullptr, "the settings footer has no Save button");
 
@@ -1413,7 +1421,7 @@ void TestI18n::hdrPlaybackSaveAndCancelRespectDeferredChanges() {
     auto* nativeOverride =
         dialog.findChild<QCheckBox*>(QStringLiteral("nativeHdrOverrideCheck"));
     auto* footer = dialog.findChild<QWidget*>(QStringLiteral("settingsFooter"));
-    auto* save = footer != nullptr ? footer->findChild<QPushButton*>(QStringLiteral("primary"))
+    auto* save = footer != nullptr ? footer->findChild<QPushButton*>(QStringLiteral("settingsSaveButton"))
                                    : nullptr;
     QVERIFY(policy != nullptr && nativeOverride != nullptr && save != nullptr);
     policy->setCurrentIndex(policy->findData(static_cast<int>(HdrPolicy::Vivid)));
@@ -1467,7 +1475,7 @@ void TestI18n::dialogPreviewAndSavePersistWithoutRestart() {
   QCoreApplication::processEvents();
   auto* language = dialog.findChild<QComboBox*>(QStringLiteral("uiLanguageCombo"));
   auto* footer = dialog.findChild<QWidget*>(QStringLiteral("settingsFooter"));
-  auto* save = footer != nullptr ? footer->findChild<QPushButton*>(QStringLiteral("primary"))
+  auto* save = footer != nullptr ? footer->findChild<QPushButton*>(QStringLiteral("settingsSaveButton"))
                                  : nullptr;
   QVERIFY2(language != nullptr && save != nullptr,
            "the real settings surface has the language selector and Save");
@@ -1555,7 +1563,7 @@ void TestI18n::refusedSaveKeepsThePreviewAndCancelRollsBack() {
   auto* language = dialog.findChild<QComboBox*>(QStringLiteral("uiLanguageCombo"));
   auto* token = dialog.findChild<QLineEdit*>(QStringLiteral("apiTokenEdit"));
   auto* footer = dialog.findChild<QWidget*>(QStringLiteral("settingsFooter"));
-  auto* save = footer != nullptr ? footer->findChild<QPushButton*>(QStringLiteral("primary"))
+  auto* save = footer != nullptr ? footer->findChild<QPushButton*>(QStringLiteral("settingsSaveButton"))
                                  : nullptr;
   QVERIFY2(language != nullptr && token != nullptr && save != nullptr,
            "the real settings surface has every control this test drives");
@@ -1752,7 +1760,7 @@ void TestI18n::failureViewRephrasesOnlyItsOwnWordsAndKeepsBackendDetail() {
   mikai::app::FailureView canonicalView;
   QSignalSpy canonicalRetries(&canonicalView, &mikai::app::FailureView::retryRequested);
   auto* canonicalRetry =
-      canonicalView.findChild<QPushButton*>(QStringLiteral("textAction"));
+      canonicalView.findChild<QPushButton*>(QStringLiteral("failureRetryAction"));
   QVERIFY(canonicalRetry != nullptr);
   const QString englishRetry = canonicalRetry->text();
 
@@ -1802,7 +1810,7 @@ void TestI18n::failureViewRephrasesOnlyItsOwnWordsAndKeepsBackendDetail() {
   // not the app's wording and must survive every switch verbatim.
   mikai::app::FailureView detailView;
   QSignalSpy detailRetries(&detailView, &mikai::app::FailureView::retryRequested);
-  auto* detailRetry = detailView.findChild<QPushButton*>(QStringLiteral("textAction"));
+  auto* detailRetry = detailView.findChild<QPushButton*>(QStringLiteral("failureRetryAction"));
   QVERIFY(detailRetry != nullptr);
   mikai::backend::Failure detail;
   detail.code = QStringLiteral("http_error");
