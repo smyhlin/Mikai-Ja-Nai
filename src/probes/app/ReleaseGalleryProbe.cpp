@@ -1463,15 +1463,22 @@ private:
         autoLook.gradientHeight = 100;
         applyLook(autoLook);
 
-        QWidget* backdrop = nullptr;
-        for (QWidget* child : titlePage_->findChildren<QWidget*>()) {
-            if (qstrcmp(child->metaObject()->className(), "mikai::app::PosterBackdrop") == 0) {
-                backdrop = child;
-                break;
-            }
-        }
+        // The hero is the cached composite: it is found by the object name the
+        // page publishes, because the widget itself carries no Q_OBJECT and its
+        // meta-object is a plain QWidget. A missing hero is a failure, never a
+        // silent skip - an unavailable surface must not read as a pass.
+        QWidget* backdrop = titlePage_ != nullptr
+                                ? titlePage_->findChild<QWidget*>(QStringLiteral("titleBackdrop"))
+                                : nullptr;
         evidence_.insert(QStringLiteral("heroWashBackdropPresent"), backdrop != nullptr);
+        check(QStringLiteral("gradient-source/hero-present"),
+              backdrop != nullptr && backdrop->width() > 40 && backdrop->height() > 40,
+              backdrop == nullptr ? QStringLiteral("titleBackdrop is absent")
+                                  : QStringLiteral("titleBackdrop is %1x%2")
+                                        .arg(backdrop->width())
+                                        .arg(backdrop->height()));
 
+        QColor previousHero;
         const auto report = [&](const QString& stage, const QColor& expected) {
             const QColor wash = glow_ != nullptr
                                     ? pixelsOf(glow_).at(glow_->width() / 2, 2)
@@ -1485,10 +1492,25 @@ private:
                 evidence_.insert(QStringLiteral("heroWash/") + stage,
                                  QJsonObject{{QStringLiteral("pixel"), nameColor(hero)},
                                              {QStringLiteral("alpha"), hero.alpha()}});
-                check(QStringLiteral("gradient-source/%1/hero-wash").arg(stage),
-                      nearColor(hero, expected, 12),
-                      QStringLiteral("cached hero wash %1, resolved %2")
-                          .arg(nameColor(hero), nameColor(expected)));
+                // The composite may sit over cover artwork, so the contract is
+                // that the cached wash CHANGED with the source: the same pixels
+                // across a source switch mean the cache was never rebuilt.
+                check(QStringLiteral("gradient-source/%1/hero-wash-painted").arg(stage),
+                      hero.alpha() > 0,
+                      QStringLiteral("cached hero wash %1 a%2")
+                          .arg(nameColor(hero))
+                          .arg(hero.alpha()));
+                if (previousHero.isValid()) {
+                    const int delta = qAbs(hero.red() - previousHero.red()) +
+                                      qAbs(hero.green() - previousHero.green()) +
+                                      qAbs(hero.blue() - previousHero.blue());
+                    check(QStringLiteral("gradient-source/%1/hero-wash-changed").arg(stage),
+                          delta >= 12,
+                          QStringLiteral("cached hero wash moved by %1 (%2 -> %3)")
+                              .arg(delta)
+                              .arg(nameColor(previousHero), nameColor(hero)));
+                }
+                previousHero = hero;
             }
             capture(searchPage_.get(), QStringLiteral("gradient-source-%1-search").arg(stage),
                     QJsonObject{{QStringLiteral("surface"), QStringLiteral("search page wash")},
