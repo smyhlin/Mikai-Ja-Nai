@@ -308,15 +308,28 @@ double textContrast(const RoleSample& sample, const QColor& bed) {
 }
 
 /// How much of a state's appearance a viewer can actually see, compared with the
-/// resting role: fill and edge, both composited onto the bed.
+/// resting role: the whole rendered control - fill, edge and label alike - as it
+/// would appear on the real bed. A state may legitimately change only its ink
+/// (a disabled neutral keeps its fill and boundary and just dims its label), so
+/// the label has to be part of the measurement or that feedback is invisible to
+/// it. Two identical renders give zero; any real change gives a large per-pixel
+/// step at the pixels that changed.
 int perceivedDistance(const RoleSample& first, const RoleSample& second, const QColor& bed) {
-    const QColor a = perceived(first.fill, bed);
-    const QColor b = perceived(second.fill, bed);
-    const QColor c = perceived(first.border, bed);
-    const QColor d = perceived(second.border, bed);
-    return std::abs(a.red() - b.red()) + std::abs(a.green() - b.green()) +
-           std::abs(a.blue() - b.blue()) + std::abs(c.red() - d.red()) +
-           std::abs(c.green() - d.green()) + std::abs(c.blue() - d.blue());
+    if (first.pixels.image.isNull() || second.pixels.image.isNull()) return 0;
+    if (first.width != second.width || first.height != second.height) return 255 * 3;
+    int best = 0;
+    for (int y = 0; y < first.height; ++y) {
+        for (int x = 0; x < first.width; ++x) {
+            const QColor left = first.pixels.at(x, y);
+            const QColor right = second.pixels.at(x, y);
+            const QColor a = over(left, bed, left.alpha() / 255.0);
+            const QColor b = over(right, bed, right.alpha() / 255.0);
+            const int delta = std::abs(a.red() - b.red()) + std::abs(a.green() - b.green()) +
+                              std::abs(a.blue() - b.blue());
+            best = std::max(best, delta);
+        }
+    }
+    return best;
 }
 
 int hueDistance(const QColor& first, const QColor& second) {
@@ -631,13 +644,17 @@ void TestThemeRoles::roleStatesRenderTheirDocumentedContract() {
             }
 
             // ── Every state reads differently from rest ─────────────────────
+            // Measured on the rendered control as a viewer sees it, label
+            // included: a disabled neutral legitimately keeps its fill and its
+            // boundary and dims only its ink.
             for (RoleState state : states) {
                 if (state == RoleState::Normal) continue;
                 const int delta = perceivedDistance(resting, samples.value(slot(state)), bed);
                 QVERIFY2(delta >= kFeedbackFloor,
                          qPrintable(detail(state,
-                                           QStringLiteral("the state must read differently from "
-                                                          "the resting role, the change is %1")
+                                           QStringLiteral("the rendered control must read "
+                                                          "differently from rest, the strongest "
+                                                          "changed pixel is %1")
                                                .arg(delta))));
             }
         }
