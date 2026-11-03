@@ -2302,6 +2302,28 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     }
     QCursor::setPos(dialog->mapToGlobal(picturePoint));
 
+    // The hover cycles above stop counting once auto-hide no longer happens.
+    // Mute toggles are still real control changes, so keep making them until
+    // the budget is met instead of ending the section short.
+    for (int extra = 0; chromeChanges < kChromeChangesRequired && extra < 12; ++extra) {
+        if (!dockUp()) {
+            aimAt(shell, dockPoint);
+            pumpUntil(dockUp, 2500);
+        }
+        const bool mutedBefore = volume->isMuted();
+        QTest::mouseClick(volume, Qt::LeftButton, Qt::NoModifier,
+                          QPoint(10, volume->height() / 2));
+        if (pumpUntil([&] { return volume->isMuted() != mutedBefore; }, 1200)) {
+            ++controlChanges;
+            noteChromeChange(QStringLiteral("control-state"),
+                             QStringLiteral("volume mute toggled by a click on the speaker "
+                                            "hit area; the control's own state changed"),
+                             QJsonObject{{"mutedBefore", mutedBefore},
+                                         {"mutedAfter", volume->isMuted()},
+                                         {"cycle", 6 + extra}});
+        }
+    }
+
     // ── ten verified native foreground away/back cycles ───────────────────
     currentPhase = QStringLiteral("native-foreground");
     ActivationRun activation = runActivationCycles(
@@ -2650,7 +2672,12 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         finalOwner != nullptr ? readComposedCrop(finalOwner) : QImage();
     const double motionPositionFirst = surface->position();
     const quint64 motionFramesFirst = surface->playbackDiagnostics().renderedOutputFrames;
-    pumpFor(260);
+    // 260 ms can land between two presents of a 24 fps source. Wait until the
+    // core has actually presented another frame, then compare. A frozen picture
+    // still fails.
+    pumpUntil([&] {
+        return surface->playbackDiagnostics().renderedOutputFrames > motionFramesFirst;
+    }, 1000);
     const QImage motionSecond =
         finalOwner != nullptr ? readComposedCrop(finalOwner) : QImage();
     const double motionPositionSecond = surface->position();
