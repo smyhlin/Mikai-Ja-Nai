@@ -1123,6 +1123,14 @@ void TestPublicApiUi::gradientPreviewKeepsItsLatestColorAndCancelRestoresIt() {
   const auto colors = dialog.findChildren<QPushButton*>(QStringLiteral("gradientSwatch"));
   QVERIFY(sliders.size() == 2 && colors.size() > 2);
   for (int intensity : {40, 60, 80}) sliders.at(0)->setValue(intensity);
+  // Auto is the default source and it paints the accent, so the colour picker is
+  // disabled until the viewer asks for a custom gradient. The switch goes
+  // through the page's own control, exactly as a viewer would.
+  auto* mode = dialog.findChild<QComboBox*>(QStringLiteral("gradientModeCombo"));
+  QVERIFY(mode != nullptr);
+  const int custom = mode->findData(QStringLiteral("custom"));
+  QVERIFY2(custom >= 0, "the gradient source offers a custom entry");
+  mode->setCurrentIndex(custom);
   colors.at(2)->click();
   QCOMPARE(glow->geometry(), originalGeometry);
   const QColor green = host.grab().toImage().pixelColor(sample);
