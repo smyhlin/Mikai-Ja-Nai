@@ -1868,7 +1868,7 @@ private:
     void acceptPending() {
         while (QTcpSocket* socket = server_.nextPendingConnection()) {
             ++connections_;
-            auto* buffer = std::make_shared<QByteArray>();
+            const auto buffer = std::make_shared<QByteArray>();
             connect(socket, &QTcpSocket::readyRead, this, [this, socket, buffer] {
                 buffer->append(socket->readAll());
                 if (buffer->indexOf("\r\n\r\n") < 0) return;
