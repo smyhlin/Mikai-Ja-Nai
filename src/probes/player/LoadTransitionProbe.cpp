@@ -586,6 +586,19 @@ int runContextLoss(PlayerDialog* dialog, VideoSurface* surface, const Baseline& 
     dialog->resize(dialog->size());
     pump(700);
     const quint64 generationBack = surface->renderContextGeneration();
+    // A lost render context costs a reload, and the reload needs the source's own
+    // time to report a position again: judging at a fixed 700 ms measures the
+    // load's latency, not whether the position was kept. Wait for the core to
+    // reach it, bounded, and report the wait - a source that never gets there is
+    // the real loss.
+    const qint64 reloadClockStart = runClock.elapsed();
+    bool positionRestored = positionBefore <= 0.0 ||
+                            surface->position() + 1.5 >= positionBefore;
+    while (!positionRestored && runClock.elapsed() - reloadClockStart < 12000) {
+        pump(120);
+        positionRestored = surface->position() + 1.5 >= positionBefore;
+    }
+    const qint64 reloadWaitMs = runClock.elapsed() - reloadClockStart;
     const PictureRead after =
         readPicture(surface, baseline.device, baseline.videoWidth, baseline.videoHeight);
     noteObserverRead(after.micros);
@@ -617,8 +630,15 @@ int runContextLoss(PlayerDialog* dialog, VideoSurface* surface, const Baseline& 
     }
     if (pausedBefore && positionAfter + 1.5 < positionBefore) {
         metric(QStringLiteral("context recreation: the position moved backwards across the "
-                              "recreation"));
+                              "recreation (waited %1 ms for the reload to report it)")
+                   .arg(reloadWaitMs));
         ++failures;
+    }
+    // The stage leaves the surface as it found it, so later stages measure the
+    // source they opened rather than this one's paused pose.
+    if (!pausedBefore) {
+        surface->setPaused(false);
+        waitFor([surface] { return surface->isPlaying(); }, 4000);
     }
     // Display proof, not memory proof: a CPU copy that never reaches the surface
     // is not "the picture survived", so the framebuffer has to carry it.
@@ -1086,31 +1106,60 @@ int run(int argc, char** argv) {
         dialog->showNormal();
         pump(250);
         const QSize base = dialog->size();
+        const bool countersOn = mikai::gui::uiprofile::countersEnabled();
+        const QSize surfaceBefore = surface->size();
         // These counters describe this stage only; the earlier stages keep
         // their own numbers.
         mikai::gui::uiprofile::resetCounters();
+        int distinctSizes = 0;
+        QSize lastSurface = surfaceBefore;
         for (int index = 0; index < 200; ++index) {
             const bool wider = index % 2 == 0;
             dialog->resize(wider ? std::max(320, base.width() - 96) : base.width() - 32,
                            wider ? std::max(200, base.height() - 72) : base.height() - 24);
             QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
+            const QSize now = surface->size();
+            if (now != lastSurface) {
+                ++distinctSizes;
+                lastSurface = now;
+            }
         }
         pump(400);
         const auto counters = mikai::gui::uiprofile::snapshot();
-        metric(QStringLiteral("format probe: resizes=200 base=%1x%2 probes=%3 "
-                              "format_resets=%4")
+        metric(QStringLiteral("format probe: resizes=200 base=%1x%2 surface=%3x%4->%5x%6 "
+                              "distinct_sizes=%7 probes=%8 format_resets=%9 counters=%10")
                    .arg(base.width())
                    .arg(base.height())
+                   .arg(surfaceBefore.width())
+                   .arg(surfaceBefore.height())
+                   .arg(surface->size().width())
+                   .arg(surface->size().height())
+                   .arg(distinctSizes)
                    .arg(counters.renderTargetProbes)
-                   .arg(counters.renderTargetFormatResets));
-        check(counters.renderTargetProbes <= 2,
-              QStringLiteral("200 resizes re-probe the render target at most twice "
-                             "(probes=%1)")
-                  .arg(counters.renderTargetProbes));
+                   .arg(counters.renderTargetFormatResets)
+                   .arg(int(countersOn)));
+        // A zero is only evidence when the sweep really resized the surface and
+        // the counters could move: otherwise "no re-probe" describes a window
+        // that never resized anything.
+        const bool observable = countersOn && distinctSizes > 0;
+        if (observable) {
+            check(counters.renderTargetProbes <= 2,
+                  QStringLiteral("200 resizes re-probe the render target at most twice "
+                                 "(probes=%1)")
+                      .arg(counters.renderTargetProbes));
+        } else {
+            metric(QStringLiteral("format probe: unobservable this run (counters=%1 "
+                                  "distinct_sizes=%2), so no probe-budget verdict is claimed")
+                       .arg(int(countersOn))
+                       .arg(distinctSizes));
+        }
         evidence.insert(QStringLiteral("formatProbe"),
                         QJsonObject{{"resizes", 200},
                                     {"baseWidth", base.width()},
                                     {"baseHeight", base.height()},
+                                    {"countersEnabled", countersOn},
+                                    {"distinctSurfaceSizes", distinctSizes},
+                                    {"observable", observable},
                                     {"renderTargetProbes", static_cast<qint64>(
                                                                counters.renderTargetProbes)},
                                     {"renderTargetFormatResets",
@@ -1131,6 +1180,16 @@ int run(int argc, char** argv) {
               QStringLiteral("a paused picture and its pause intent survive a real context "
                              "recreation (result=%1)")
                   .arg(result));
+        // The next stages measure a transition, so they must start from a playing
+        // source: this stage left it wherever the viewer's intent was.
+        surface->setPaused(false);
+        if (!waitFor([surface] {
+                return surface->isPlaying() && surface->hasVisibleOutputFrame();
+            }, 8000)) {
+            metric(QStringLiteral("context recreation: the source did not resume before the "
+                                  "transition stages"));
+        }
+        pump(300);
     }
 
     // ── the load transition itself ──────────────────────────────────────────
