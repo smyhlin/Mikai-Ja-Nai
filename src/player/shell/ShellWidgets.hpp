@@ -318,6 +318,9 @@ public:
     void setQuality(const QString& quality);
     /// Rebuilds the quality list. Empty hides the section entirely.
     void setQualityOptions(const QVector<QualityOption>& options);
+    /// The display mode the rows tick, as a mplayer::VideoScaleMode value. The
+    /// flyout never owns the choice: it reports a click and is told the result.
+    void setVideoScaleMode(int mode);
     /// Places the popover above-right of a global anchor point and shows it.
     void popupNear(const QPoint& anchorGlobal);
 
@@ -329,6 +332,8 @@ protected:
 signals:
     void speedSelected(double speed);
     void qualitySelected(int height);
+    /// A display mode row was clicked; the value is a mplayer::VideoScaleMode.
+    void videoScaleModeSelected(int mode);
     void defaultPlayerRequested();
 
 private:
@@ -351,6 +356,10 @@ private:
     QVBoxLayout* qualityBody_ = nullptr;
     QVector<QualityOption> qualityOptions_;
     QVector<QPushButton*> qualityRows_;
+    QWidget* scaleSection_ = nullptr;
+    QLabel* scaleCaption_ = nullptr;
+    QVector<QPushButton*> scaleRows_;
+    int videoScaleMode_ = 0;
     QPushButton* defaultPlayerButton_ = nullptr;
     QLabel* defaultPlayerLabel_ = nullptr;
 };

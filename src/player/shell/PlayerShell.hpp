@@ -1,8 +1,9 @@
 // The lightbox shell: chrome, display state machine and input.
 //
-// The picture is always shown fitted: there is no zoom and no pan. Every way
-// in to a scaled frame (wheel, +/-/R keys, drag, the reset menu rows) is gone,
-// so a viewer cannot end up in a frame they cannot find their way out of.
+// The picture is shown fitted unless the viewer picked another display mode in
+// Settings or the player flyout (GOAL-H2). The shell offers no wheel/keys/drag
+// scaling of its own: a mode is a named, persisted choice, and Fit remains the
+// way back, so a viewer cannot end up in a frame they cannot find a way out of.
 //
 // This is a port of mikai_ui/media_shell.py, and the port is deliberately not
 // faithful in one respect. The Python shell promotes every chrome widget to a
@@ -356,6 +357,9 @@ private:
     void onVolume(double volume);
     void toggleMute();
     void onRate(double rate);
+    /// The flyout's display-mode row: the policy is process-wide, so the write
+    /// reaches every player (and this one's picture area) without a restart.
+    void onVideoScaleMode(int mode);
     void onAnime4KMode(anime4k::Mode mode);
     void onAnime4KPreset(const QString& presetId);
     /// Opens the enhancement tree at its root, replacing whatever was open.

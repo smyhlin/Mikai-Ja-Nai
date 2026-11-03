@@ -21,6 +21,7 @@
 #include "ShellSliders.hpp"
 #include "gui/SystemDefaultPlayer.hpp"
 #include "gui/UiProfile.hpp"
+#include "../core/VideoSurface.hpp"
 
 namespace mplayer {
 namespace shell {
@@ -745,6 +746,45 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     lay->addWidget(qualitySection_);
     qualitySection_->setVisible(false);
 
+    // The display mode belongs next to quality: both are "how the picture is
+    // shown", and a viewer reaching for one is already looking at this card.
+    // Original 1:1 stays a Settings-only choice - a quarter-screen picture is
+    // not a quick switch, and Fit is the way back from every row here.
+    scaleSection_ = new QWidget(this);
+    scaleSection_->setObjectName(QStringLiteral("playerScaleSection"));
+    scaleSection_->setStyleSheet(QStringLiteral("background: transparent;"));
+    auto* slay = new QVBoxLayout(scaleSection_);
+    slay->setContentsMargins(0, 0, 0, 0);
+    slay->setSpacing(2);
+    scaleCaption_ = new QLabel(tr("SCALING"));
+    scaleCaption_->setObjectName(QStringLiteral("playerScaleCaption"));
+    scaleCaption_->setFont(monoFont(8));
+    scaleCaption_->setStyleSheet(
+        QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
+    slay->addWidget(scaleCaption_);
+    const mplayer::VideoScaleMode kQuickModes[] = {
+        mplayer::VideoScaleMode::Fit, mplayer::VideoScaleMode::Fill,
+        mplayer::VideoScaleMode::Stretch, mplayer::VideoScaleMode::Aspect16x9,
+        mplayer::VideoScaleMode::Aspect4x3};
+    for (const mplayer::VideoScaleMode mode : kQuickModes) {
+        auto* btn = new QPushButton(this);
+        btn->setFont(uiFont(10));
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setFixedHeight(26);
+        btn->setFocusPolicy(Qt::NoFocus);
+        const int value = static_cast<int>(mode);
+        // The row carries the mode it selects, so the order of this list is not
+        // also the meaning of the value the refresh loop reads back.
+        btn->setProperty("videoScaleMode", value);
+        connect(btn, &QPushButton::clicked, this, [this, value] {
+            close();
+            emit videoScaleModeSelected(value);
+        });
+        slay->addWidget(btn);
+        scaleRows_.append(btn);
+    }
+    lay->addWidget(scaleSection_);
+
     auto* defaultSeparator = new QFrame(this);
     defaultSeparator->setFixedHeight(1);
     defaultSeparator->setStyleSheet(QStringLiteral("background: %1;").arg(rgba(w10())));
@@ -838,6 +878,11 @@ void SettingsFlyout::setQualityOptions(const QVector<QualityOption>& options) {
     refresh();
 }
 
+void SettingsFlyout::setVideoScaleMode(int mode) {
+    videoScaleMode_ = mode;
+    refresh();
+}
+
 void SettingsFlyout::changeEvent(QEvent* event) {
     QFrame::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
@@ -848,9 +893,11 @@ void SettingsFlyout::changeEvent(QEvent* event) {
 void SettingsFlyout::retranslate() {
     speedCaption_->setText(tr("SPEED"));
     qualityCaption_->setText(tr("QUALITY"));
+    scaleCaption_->setText(tr("SCALING"));
     // Spoken names never reach the painter, so only this handler refreshes them.
     slider_->setAccessibleName(tr("Speed"));
     qualitySection_->setAccessibleName(tr("Quality"));
+    scaleSection_->setAccessibleName(tr("Video scaling"));
     const QString defaultText = tr("Set as default video player…");
     defaultPlayerLabel_->setText(defaultText);
     defaultPlayerButton_->setAccessibleName(defaultText);
@@ -973,6 +1020,22 @@ void SettingsFlyout::refresh() {
             btn->setText(text);
         }
         const QString sheet = rowQss(option.current);
+        if (btn->styleSheet() != sheet) {
+            btn->setStyleSheet(sheet);
+        }
+    }
+    for (int i = 0; i < scaleRows_.size(); ++i) {
+        QPushButton* btn = scaleRows_[i];
+        // A mode outside this list (Original 1:1, chosen in Settings) simply
+        // ticks nothing here.
+        const int mode = btn->property("videoScaleMode").toInt();
+        const bool selected = videoScaleMode_ == mode;
+        const QString text = (selected ? QStringLiteral("✓  ") : QString())
+            + mplayer::videoScaleModeLabel(static_cast<mplayer::VideoScaleMode>(mode));
+        if (btn->text() != text) {
+            btn->setText(text);
+        }
+        const QString sheet = rowQss(selected);
         if (btn->styleSheet() != sheet) {
             btn->setStyleSheet(sheet);
         }

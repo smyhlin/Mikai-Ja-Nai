@@ -18,6 +18,7 @@
 #include <QMessageBox>
 #include <QWindow>
 #include <QRegion>
+#include <QSettings>
 #include <QShowEvent>
 #include <QStyle>
 #include <QUrl>
@@ -544,6 +545,10 @@ void PlayerShell::buildSurface() {
     // The warm-up waits for a frame that actually swapped on this core: a load
     // request, a mediaLoaded event or a thumbnail is not a picture on screen.
     connect(surface_, &QOpenGLWidget::frameSwapped, this, &PlayerShell::schedulePreviewPrewarm);
+    // Fill and Stretch need the whole picture area, so the canvas is a function
+    // of the adopted display policy: the surface applies it on its pump and the
+    // shell re-lays out from that, never from a poll of its own.
+    connect(surface_, &VideoSurface::videoScaleApplied, this, [this] { layoutChrome(); });
 }
 
 void PlayerShell::notePreviewActivity() {
@@ -761,6 +766,8 @@ void PlayerShell::buildDock() {
     flyout_ = new SettingsFlyout(overlayHost);
     connect(flyout_, &SettingsFlyout::speedSelected, this, &PlayerShell::onRate);
     connect(flyout_, &SettingsFlyout::qualitySelected, this, &PlayerShell::qualityRequested);
+    connect(flyout_, &SettingsFlyout::videoScaleModeSelected, this,
+            &PlayerShell::onVideoScaleMode);
     connect(flyout_, &SettingsFlyout::defaultPlayerRequested, this, [this] {
         QString error;
         if (!mikai::gui::requestSystemDefaultPlayer(&error)) {
@@ -1192,6 +1199,14 @@ QSize PlayerShell::fitted() const {
     const int chromeHeight = 150 + titleBarOffset_;
     const int vw = std::max(160, width() - 2 * (pad + 24));
     const int vh = std::max(100, height() - chromeHeight);
+    // Fill and Stretch are the picture area itself: mpv crops or distorts inside
+    // a surface that already spans it, so aspect-fitting here would leave the
+    // bars those modes exist to remove. Compare holds Fit on this surface, so a
+    // comparison pane keeps the fitted box whatever the viewer chose.
+    const VideoScaleMode mode = VideoSurface::videoScalePolicy().mode;
+    const bool fillsArea = (mode == VideoScaleMode::Fill || mode == VideoScaleMode::Stretch) &&
+                           (surface_ == nullptr || !surface_->compareFitHeld());
+    if (fillsArea) return {vw, vh};
     if (static_cast<double>(vw) / vh > aspect_) {
         return {static_cast<int>(vh * aspect_), vh};
     }
@@ -1720,6 +1735,24 @@ void PlayerShell::onRate(double rate) {
     setRate(rate);
     emit rateChanged(rate_);
     toast_->flash(tr("Speed %1x").arg(rate_, 0, 'g', 3));
+}
+
+void PlayerShell::onVideoScaleMode(int mode) {
+    if (mode < static_cast<int>(VideoScaleMode::Fit) ||
+        mode > static_cast<int>(VideoScaleMode::Original)) {
+        return;
+    }
+    VideoScalePolicy policy = VideoSurface::videoScalePolicy();
+    policy.mode = static_cast<VideoScaleMode>(mode);
+    VideoSurface::setVideoScalePolicy(policy);
+    // The policy is what the surfaces read, so the store follows it here: a
+    // restart opens in the mode the viewer left the player in.
+    QSettings settings;
+    settings.setValue(QString::fromLatin1(VideoSurface::kVideoScaleModeSettingKey), mode);
+    // Immediate, without waiting for this surface's pump: Fill and Stretch move
+    // the picture area, and the canvas follows the choice in the same turn.
+    layoutChrome();
+    if (toast_ != nullptr) toast_->flash(videoScaleModeLabel(policy.mode));
 }
 
 void PlayerShell::setQualityOptions(const QVector<SettingsFlyout::QualityOption>& options) {
@@ -2287,6 +2320,9 @@ void PlayerShell::openSettings() {
     flyout_->setRate(rate_);
     flyout_->setQuality(quality_);
     flyout_->setQualityOptions(qualityOptions_);
+    // Read from the policy, not from a shell copy: the Settings card may have
+    // changed the mode since this flyout was last opened.
+    flyout_->setVideoScaleMode(static_cast<int>(VideoSurface::videoScalePolicy().mode));
     flyout_->popupNear(btnSettings_->mapToGlobal(QPoint(btnSettings_->width(), 0)));
 }
 
