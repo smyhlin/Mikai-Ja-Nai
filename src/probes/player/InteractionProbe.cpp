@@ -2229,7 +2229,11 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
     QJsonObject cardPixels;
     int cardInk = -1;
     if (surface != nullptr && card != nullptr && card->isVisible()) {
-        const QRect cardInSurface(card->mapTo(surface, QPoint(0, 0)), card->size());
+        // Through the global frame: the card and the surface are siblings, and
+        // QWidget::mapTo() only takes an ancestor. At a non-zero window origin a
+        // sibling mapping is undefined, which would silently misplace the crop.
+        const QPoint cardAt = surface->mapFromGlobal(card->mapToGlobal(QPoint(0, 0)));
+        const QRect cardInSurface(cardAt, card->size());
         const QImage rendered = surface->grabFramebuffer();
         if (!rendered.isNull() && !cardInSurface.isEmpty() && surface->width() > 0 &&
             surface->height() > 0) {
