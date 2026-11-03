@@ -818,7 +818,10 @@ private:
         }
     };
 
-    static Pixels pixelsOf(QWidget* widget) {
+    static Pixels pixelsOf(
+        QWidget* widget,
+        QWidget::RenderFlags flags = QWidget::RenderFlags(QWidget::DrawWindowBackground |
+                                                          QWidget::DrawChildren)) {
         Pixels pixels;
         if (widget == nullptr) return pixels;
         // A transparent bed makes an unpainted fill measurable (the page glow
@@ -830,7 +833,7 @@ private:
         pixels.image.setDevicePixelRatio(pixels.scale);
         pixels.image.fill(Qt::transparent);
         QPainter painter(&pixels.image);
-        widget->render(&painter);
+        widget->render(&painter, QPoint(), QRegion(), flags);
         painter.end();
         return pixels;
     }
@@ -1092,9 +1095,8 @@ private:
         }
     }
 
-    /// The ink a control paints in its own top-left block: a square step fills
-    /// it and a rounded one leaves it to the bed, so these pixels are the
-    /// evidence that a radius step reached the surface.
+    /// Painted corner pixels: a square step fills this block, a rounded one
+    /// leaves it to the bed.
     static int cornerInk(const Pixels& pixels) {
         int ink = 0;
         for (int y = 0; y < 6; ++y) {
@@ -1105,10 +1107,8 @@ private:
         return ink;
     }
 
-    /// The shipped corner-radius steps on the three real surfaces, wide and at
-    /// each surface's own minimum width. Each stage is applied through the same
-    /// look the application uses and the step is proven by the pixels a real
-    /// control paints, never by a sheet token or a widget property.
+    /// The shipped radius steps on the three real surfaces, wide and at their
+    /// own minimum width.
     bool sweepRadii() {
         if (settings_ != nullptr) {
             settings_->showPage(QStringLiteral("customization/appearance"));
@@ -1181,7 +1181,9 @@ private:
                                      {QStringLiteral("requestedWidth"), width}})) {
                         return false;
                     }
-                    const Pixels control = pixelsOf(target.control);
+                    // No window background: outside a rounded edge that fill
+                    // would give every step the same alpha.
+                    const Pixels control = pixelsOf(target.control, QWidget::DrawChildren);
                     const int ink = cornerInk(control);
                     const int advance =
                         target.control->fontMetrics().horizontalAdvance(target.control->text());
