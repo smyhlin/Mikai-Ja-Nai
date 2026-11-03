@@ -5,28 +5,37 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
+#include <QDialog>
 #include <QElapsedTimer>
+#include <QEvent>
 #include <QFile>
 #include <QFileInfo>
+#include <QFontMetrics>
 #include <QIcon>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
 #include <QLocale>
+#include <QPainter>
 #include <QPlainTextEdit>
 #include <QPixmap>
 #include <QPointer>
+#include <QProgressBar>
 #include <QPushButton>
+#include <QTranslator>
 #include <QSaveFile>
 #include <QScopedValueRollback>
 #include <QScreen>
 #include <QSlider>
 #include <QSettings>
+#include <QStyle>
 #include <QTest>
 #include <QTimer>
+#include <QtMath>
 
 #include <cstdio>
+#include <functional>
 #include <memory>
 #include <utility>
 
@@ -38,8 +47,10 @@
 #include "dialogs/SettingsDialog.hpp"
 #include "pages/MainWindow.hpp"
 #include "pages/SearchPage.hpp"
+#include "pages/TitlePage.hpp"
 #include "state/AppearanceStore.hpp"
 #include "theme/Theme.hpp"
+#include "widgets/PageGlow.hpp"
 #include "widgets/TitleCard.hpp"
 #include "workers/Runner.hpp"
 #include "CompareWindow.hpp"
@@ -47,15 +58,18 @@
 #include "PlayerDialog.hpp"
 #include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
+#include "ShellSliders.hpp"
 #include "ShellTheme.hpp"
 #include "VideoSurface.hpp"
 
 namespace {
 using mikai::app::MainWindow;
+using mikai::app::theme::Appearance;
 using mplayer::shell::CompareWindow;
 using mplayer::shell::MediaInformationDialog;
 using mplayer::shell::PlayerDialog;
 using mplayer::shell::PlayerShell;
+using mplayer::shell::ProcessingOverlay;
 
 constexpr int kWidth = 1280;
 constexpr int kHeight = 800;
@@ -65,8 +79,10 @@ struct Arguments {
     QString video;
     QString credit;
     QString source;
+    QString translations;
     QString error;
     bool help = false;
+    bool accentSweep = false;
 };
 
 Arguments parseArguments(const QStringList& arguments) {
@@ -77,11 +93,16 @@ Arguments parseArguments(const QStringList& arguments) {
             result.help = true;
             continue;
         }
+        if (option == QLatin1String("--accent-sweep")) {
+            result.accentSweep = true;
+            continue;
+        }
         QString* value = nullptr;
         if (option == QLatin1String("--output-dir")) value = &result.output;
         else if (option == QLatin1String("--video")) value = &result.video;
         else if (option == QLatin1String("--video-credit")) value = &result.credit;
         else if (option == QLatin1String("--video-source")) value = &result.source;
+        else if (option == QLatin1String("--translations")) value = &result.translations;
         if (value == nullptr || index + 1 == arguments.size() || !value->isEmpty()) {
             result.error = QStringLiteral("Unknown, repeated or incomplete option: %1").arg(option);
             return result;
@@ -702,6 +723,820 @@ private:
     bool settingsSized_ = false;
     bool drainReported_ = false;
 };
+
+// ── Focused accent sweep ────────────────────────────────────────────────────
+// `--accent-sweep` runs this instead of the gallery. It sweeps every shipped
+// preset plus a dark custom accent through the real widgets and the real sheets,
+// keeps Compare and the engine-preparation window OPEN while the accent changes,
+// and measures the pixels each surface actually paints. It never starts
+// TensorRT, RIFE or any model: Compare refuses to open when the catalogue would
+// select an AI candidate, and the preparation window is driven with stage data
+// only (presentation-only, no builder process).
+class AccentSweep final {
+public:
+    AccentSweep(QApplication& app, Arguments arguments, QString demo, QString digest)
+        : app_(app), arguments_(std::move(arguments)), demo_(std::move(demo)), digest_(std::move(digest)),
+          offlineClient_(QString(), QStringLiteral("http://127.0.0.1:1")) {
+        evidence_ = QJsonObject{
+            {QStringLiteral("schema"), 1},
+            {QStringLiteral("mode"), QStringLiteral("accent-sweep")},
+            {QStringLiteral("startedUtc"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
+            {QStringLiteral("applicationVersion"), QCoreApplication::applicationVersion()},
+            {QStringLiteral("qtVersion"), QString::fromLatin1(qVersion())},
+            {QStringLiteral("platform"), QGuiApplication::platformName()},
+            {QStringLiteral("outputDirectory"), arguments_.output},
+            {QStringLiteral("isolation"), QStringLiteral("verified executable copy; fresh INI settings, home, cache, working directory and native store")},
+            {QStringLiteral("catalogue"), QStringLiteral("no live service is used: this sweep measures chrome, not content")},
+            {QStringLiteral("video"), QJsonObject{
+                {QStringLiteral("filename"), QFileInfo(demo_).fileName()},
+                {QStringLiteral("sha256"), digest_},
+                {QStringLiteral("bytes"), double(QFileInfo(demo_).size())},
+                {QStringLiteral("creditDeclaration"), arguments_.credit},
+                {QStringLiteral("sourceDeclaration"), arguments_.source},
+                {QStringLiteral("declarationVerified"), false}}},
+            {QStringLiteral("devicePixelRatio"), QGuiApplication::primaryScreen() != nullptr
+                ? QGuiApplication::primaryScreen()->devicePixelRatio() : 0.0},
+            {QStringLiteral("nativeDesktopScale"), 1.75},
+            {QStringLiteral("presentationOnly"), QJsonObject{
+                {QStringLiteral("preparationOverlay"), true},
+                {QStringLiteral("titleWatchState"), true},
+                {QStringLiteral("benchmarkProgressState"), true},
+                {QStringLiteral("comparePictures"), false}}},
+            {QStringLiteral("inference"), QJsonObject{
+                {QStringLiteral("proven"), false},
+                {QStringLiteral("trtStarted"), false},
+                {QStringLiteral("rifeStarted"), false},
+                {QStringLiteral("modelRequested"), false}}},
+            {QStringLiteral("note"), QStringLiteral("Presentation-only surfaces are labelled per capture. Compare is the real window and is never opened when its selection would be an AI candidate.")}};
+    }
+
+    int run() {
+        total_.start();
+        // A startup prompt owns a nested loop; reject foreign modals on a timer
+        // so no sweep step can be held hostage by one.
+        QTimer modalGuard;
+        QObject::connect(&modalGuard, &QTimer::timeout, &modalGuard,
+                         [this] { dismissForeignModals(); });
+        modalGuard.start(200);
+        if (!buildSurfaces()) return finish(false);
+        if (!sweepAccents()) return finish(false);
+        measureLanguages();
+        return finish(failed_ == 0);
+    }
+
+private:
+    struct Pixels {
+        QImage image;
+        qreal scale = 1.0;
+        QColor at(int x, int y) const {
+            if (image.isNull()) return {};
+            const int px = qBound(0, qRound(x * scale), image.width() - 1);
+            const int py = qBound(0, qRound(y * scale), image.height() - 1);
+            return image.pixelColor(px, py);
+        }
+    };
+
+    static Pixels pixelsOf(QWidget* widget) {
+        Pixels pixels;
+        if (widget == nullptr) return pixels;
+        // A transparent bed makes an unpainted fill measurable (the page glow
+        // is an alpha wash, not an opaque panel).
+        pixels.scale = widget->devicePixelRatioF() > 0.0 ? widget->devicePixelRatioF() : 1.0;
+        pixels.image = QImage(qCeil(widget->width() * pixels.scale),
+                              qCeil(widget->height() * pixels.scale),
+                              QImage::Format_ARGB32_Premultiplied);
+        pixels.image.setDevicePixelRatio(pixels.scale);
+        pixels.image.fill(Qt::transparent);
+        QPainter painter(&pixels.image);
+        widget->render(&painter);
+        painter.end();
+        return pixels;
+    }
+
+    static int countNear(const QImage& image, const QColor& color, int tolerance = 10) {
+        int count = 0;
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                const QColor pixel = image.pixelColor(x, y);
+                if (pixel.alpha() < 128) continue;
+                if (qAbs(pixel.red() - color.red()) <= tolerance &&
+                    qAbs(pixel.green() - color.green()) <= tolerance &&
+                    qAbs(pixel.blue() - color.blue()) <= tolerance) {
+                    ++count;
+                }
+            }
+        }
+        return count;
+    }
+
+    static QString nameColor(const QColor& color) {
+        return color.name(QColor::HexRgb);
+    }
+
+    static bool nearColor(const QColor& actual, const QColor& expected, int tolerance = 6) {
+        return actual.isValid() && qAbs(actual.red() - expected.red()) <= tolerance &&
+               qAbs(actual.green() - expected.green()) <= tolerance &&
+               qAbs(actual.blue() - expected.blue()) <= tolerance;
+    }
+
+    static QString safeName(QString name) {
+        for (QChar& character : name) {
+            if (!character.isLetterOrNumber() && character != QLatin1Char('-')) {
+                character = QLatin1Char('-');
+            }
+        }
+        return name;
+    }
+
+    void check(const QString& name, bool ok, const QString& detail) {
+        checks_.append(QJsonObject{{QStringLiteral("name"), name},
+                                   {QStringLiteral("passed"), ok},
+                                   {QStringLiteral("detail"), detail}});
+        if (ok) {
+            ++passed_;
+        } else {
+            ++failed_;
+            failures_.append(QJsonObject{{QStringLiteral("name"), name},
+                                         {QStringLiteral("cause"), detail}});
+        }
+        diagnostic(QStringLiteral("%1: %2%3")
+                       .arg(ok ? QStringLiteral("ok") : QStringLiteral("FAIL"), name,
+                            detail.isEmpty() ? QString() : QStringLiteral(" - ") + detail));
+    }
+
+    bool capture(QWidget* widget, const QString& rawName, QJsonObject extra) {
+        if (widget == nullptr || !widget->isVisible() || widget->width() <= 0 ||
+            widget->height() <= 0) {
+            check(QStringLiteral("capture:") + rawName, false,
+                  QStringLiteral("the real widget is not visible or has no size"));
+            return false;
+        }
+        const QPixmap grab = widget->grab();
+        if (grab.isNull()) {
+            check(QStringLiteral("capture:") + rawName, false,
+                  QStringLiteral("the real widget produced no pixels"));
+            return false;
+        }
+        const QString name = safeName(rawName);
+        const QString path = QDir(arguments_.output).filePath(name + QStringLiteral(".png"));
+        if (!grab.save(path, "PNG")) {
+            check(QStringLiteral("capture:") + rawName, false,
+                  QStringLiteral("saving the grab failed"));
+            return false;
+        }
+        extra.insert(QStringLiteral("file"), name + QStringLiteral(".png"));
+        extra.insert(QStringLiteral("sha256"), sha256(path));
+        extra.insert(QStringLiteral("widgetClass"),
+                     QString::fromLatin1(widget->metaObject()->className()));
+        extra.insert(QStringLiteral("widgetObjectName"), widget->objectName());
+        extra.insert(QStringLiteral("logicalSize"), QJsonArray{widget->width(), widget->height()});
+        extra.insert(QStringLiteral("pixelSize"), QJsonArray{grab.width(), grab.height()});
+        extra.insert(QStringLiteral("devicePixelRatio"), grab.devicePixelRatio());
+        extra.insert(QStringLiteral("capturedUtc"),
+                     QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+        shots_.append(extra);
+        diagnostic(QStringLiteral("Captured %1").arg(path));
+        return true;
+    }
+
+    static void place(QWidget* widget, int width, int height) {
+        widget->resize(width, height);
+        if (QScreen* screen = widget->screen()) {
+            const QRect available = screen->availableGeometry();
+            widget->move(available.center() - QPoint(widget->width() / 2, widget->height() / 2));
+        }
+    }
+
+    bool waitFor(const std::function<bool()>& predicate, int timeoutMs,
+                 const QString& what) {
+        QElapsedTimer clock;
+        clock.start();
+        while (!predicate()) {
+            if (clock.elapsed() > timeoutMs) {
+                check(what, false, QStringLiteral("timed out after %1 ms").arg(timeoutMs));
+                return false;
+            }
+            QTest::qWait(25);
+        }
+        return true;
+    }
+
+    void dismissForeignModals() {
+        for (QWidget* window : QApplication::topLevelWidgets()) {
+            auto* dialog = qobject_cast<QDialog*>(window);
+            if (dialog == nullptr || !dialog->isVisible() || !dialog->isModal()) continue;
+            if (dialog == compare_.get()) continue;
+            if (dialog == settings_.get()) continue;
+            diagnostic(QStringLiteral("Rejecting a startup modal that is not part of the sweep: %1")
+                           .arg(dialog->objectName()));
+            dialog->reject();
+        }
+    }
+
+    void applyLook(const Appearance& appearance) {
+        mikai::app::setCurrentAppearance(appearance);
+        mikai::app::theme::applyPalette(appearance);
+        app_.setStyleSheet(mikai::app::theme::buildStylesheet(appearance));
+        mplayer::shell::setAccent(mikai::app::theme::accentColor(appearance));
+        mplayer::shell::setCornerRadius(mikai::app::theme::radiusSmall(appearance));
+        QTest::qWait(90);
+    }
+
+    bool buildSurfaces() {
+        window_ = std::make_unique<MainWindow>(offlineClient_, MainWindow::StartupMode::FilePlayer);
+        window_->setWindowIcon(QIcon(QStringLiteral(":/app/mikai.png")));
+        place(window_.get(), kWidth, kHeight);
+        window_->show();
+        QTest::qWait(120);
+        dismissForeignModals();
+
+        searchPage_ = window_->findChild<mikai::app::SearchPage*>();
+        searchAction_ = window_->findChild<QPushButton*>(QStringLiteral("searchActionButton"));
+        glow_ = searchPage_ != nullptr ? searchPage_->findChild<mikai::app::PageGlow*>() : nullptr;
+        if (!waitFor([this] { return searchPage_ != nullptr && searchPage_->isVisible() &&
+                                     searchAction_ != nullptr && searchAction_->isVisible(); },
+                     8000, QStringLiteral("search-page-real")) ||
+            !waitFor([this] { return glow_ != nullptr && glow_->isVisible() && glow_->height() > 0; },
+                     5000, QStringLiteral("page-glow-real"))) {
+            return false;
+        }
+
+        titlePage_ = std::make_unique<mikai::app::TitlePage>(
+            localRunner_, offlineClient_, qualityCache_, QStringLiteral("accent-sweep"));
+        place(titlePage_.get(), kWidth, kHeight);
+        titlePage_->show();
+        titleWatch_ = titlePage_->findChild<QPushButton*>(QStringLiteral("titleHeroWatchButton"));
+        if (!waitFor([this] { return titleWatch_ != nullptr && titleWatch_->isVisible(); }, 5000,
+                     QStringLiteral("title-watch-real"))) {
+            return false;
+        }
+        // The page needs service detail to enable the hero action. No entry is
+        // fabricated: the button is enabled for presentation and the capture
+        // carries presentationOnly=true.
+        titleWatch_->setEnabled(true);
+        titleWatch_->style()->unpolish(titleWatch_);
+        titleWatch_->style()->polish(titleWatch_);
+
+        settings_ = std::make_unique<mikai::app::SettingsDialog>(offlineClient_, localRunner_);
+        place(settings_.get(), kWidth, kHeight);
+        settings_->show();
+        settings_->showPage(QStringLiteral("benchmark"));
+        benchmarkProgress_ = settings_->findChild<QProgressBar*>(QStringLiteral("benchmarkProgress"));
+        if (benchmarkProgress_ != nullptr) {
+            benchmarkProgress_->setRange(0, 100);
+            benchmarkProgress_->setValue(80);
+            benchmarkProgress_->setProperty("runState", QStringLiteral("running"));
+            benchmarkProgress_->setVisible(true);
+            benchmarkProgress_->style()->unpolish(benchmarkProgress_);
+            benchmarkProgress_->style()->polish(benchmarkProgress_);
+        }
+        if (!waitFor([this] { return benchmarkProgress_ != nullptr &&
+                                     benchmarkProgress_->isVisible() &&
+                                     benchmarkProgress_->height() > 0; },
+                     5000, QStringLiteral("benchmark-progress-real"))) {
+            return false;
+        }
+
+        overlay_ = std::make_unique<ProcessingOverlay>(nullptr);
+        overlay_->begin(QStringLiteral("Engine preparation (presentation only)"));
+        overlay_->setStage(2, 4, QStringLiteral("Stage 3 of 4"),
+                           QStringLiteral("No builder process is started; this window only proves the accent."));
+        QTest::qWait(120);
+        overlayProgress_ = overlay_->findChild<QProgressBar*>();
+        if (!waitFor([this] { return overlayProgress_ != nullptr && overlayProgress_->isVisible(); },
+                     5000, QStringLiteral("preparation-overlay-real"))) {
+            return false;
+        }
+
+        if (!window_->openMedia(demo_)) {
+            check(QStringLiteral("player-open-real"), false,
+                  QStringLiteral("the application refused the supplied demo"));
+            return false;
+        }
+        player_ = window_->currentMediaPlayer();
+        if (!waitFor([this] { return player_ != nullptr; }, 8000,
+                     QStringLiteral("player-dialog-real"))) {
+            return false;
+        }
+        place(player_.get(), kWidth, kHeight);
+        shell_ = player_->findChild<PlayerShell*>();
+        surface_ = player_->findChild<mplayer::VideoSurface*>();
+        if (!waitFor([this] { return surface_ != nullptr && shell_ != nullptr; }, 5000,
+                     QStringLiteral("player-surface-real"))) {
+            return false;
+        }
+        if (!waitFor([this] { return surface_->hasVisibleOutputFrame() &&
+                                     surface_->isPlaying() && surface_->duration() >= 1.0; },
+                     35000, QStringLiteral("player-frame-real"))) {
+            return false;
+        }
+        auto* pause = player_->findChild<QPushButton*>(QStringLiteral("playerPlayToggle"));
+        if (pause == nullptr) {
+            check(QStringLiteral("player-pause-real"), false,
+                  QStringLiteral("the real pause control is missing"));
+            return false;
+        }
+        pause->click();
+        if (!waitFor([this] { return surface_->pauseObserved() && !surface_->isPlaying(); }, 8000,
+                     QStringLiteral("player-paused-real"))) {
+            return false;
+        }
+        shell_->wake();
+        QTest::qWait(250);
+        scrub_ = player_->findChild<mplayer::shell::ScrubBar*>();
+        if (scrub_ != nullptr) {
+            scrub_->setValue(0.5);
+            QTest::qWait(80);
+        }
+        check(QStringLiteral("timeline-real"), scrub_ != nullptr && scrub_->isVisible(),
+              QStringLiteral("the player exposes its scrub bar"));
+
+        // The real Compare window. It renders only the built-in shader
+        // candidates; if the catalogue's selection would be an AI model, the
+        // window is never shown and no engine is touched.
+        compare_ = std::make_unique<CompareWindow>(surface_.data(), QString(), nullptr);
+        place(compare_.get(), kWidth, kHeight);
+        const QString sideA = compare_->selectedCandidateId(0);
+        const QString sideB = compare_->selectedCandidateId(1);
+        const bool aiSelected = sideA.startsWith(QLatin1String("spatial:")) ||
+                                sideB.startsWith(QLatin1String("spatial:")) ||
+                                sideA.startsWith(QLatin1String("rife")) ||
+                                sideB.startsWith(QLatin1String("rife"));
+        check(QStringLiteral("compare-no-ai-selection"), !aiSelected,
+              QStringLiteral("A=%1 B=%2").arg(sideA, sideB));
+        if (aiSelected) {
+            compare_.reset();
+            check(QStringLiteral("compare-open-real"), false,
+                  QStringLiteral("refused to open Compare because an AI candidate would be selected"));
+        } else {
+            compare_->show();
+            const bool settled = waitFor(
+                [this] {
+                    return compare_ != nullptr && !compare_->comparisonPending() &&
+                           compare_->captureError().isEmpty() &&
+                           !compare_->frozenFrame().isNull() &&
+                           !compare_->renderedSideA().isNull() &&
+                           !compare_->renderedSideB().isNull();
+                },
+                25000, QStringLiteral("compare-rendered-real"));
+            check(QStringLiteral("compare-open-real"), settled,
+                  settled ? QString()
+                          : QStringLiteral("captureError=%1 lockError=%2")
+                                .arg(compare_ ? compare_->captureError() : QString(),
+                                     compare_ ? compare_->lockError() : QString()));
+        }
+        dismissForeignModals();
+        return true;
+    }
+
+    QJsonObject widgetMetrics(QWidget* widget) const {
+        if (widget == nullptr) return QJsonObject{{QStringLiteral("present"), false}};
+        QJsonObject result{{QStringLiteral("present"), true},
+                           {QStringLiteral("objectName"), widget->objectName()},
+                           {QStringLiteral("visible"), widget->isVisible()},
+                           {QStringLiteral("size"), QJsonArray{widget->width(), widget->height()}},
+                           {QStringLiteral("minimumSizeHint"),
+                            QJsonArray{widget->minimumSizeHint().width(),
+                                       widget->minimumSizeHint().height()}},
+                           {QStringLiteral("sizeHint"), QJsonArray{widget->sizeHint().width(),
+                                                                    widget->sizeHint().height()}},
+                           {QStringLiteral("devicePixelRatio"), widget->devicePixelRatioF()}};
+        if (auto* button = qobject_cast<QAbstractButton*>(widget)) {
+            result.insert(QStringLiteral("text"), button->text());
+            result.insert(QStringLiteral("textPx"),
+                          QFontMetrics(button->font()).horizontalAdvance(button->text()));
+        }
+        return result;
+    }
+
+    bool sweepAccents() {
+        QVector<QPair<QString, QString>> accents;
+        for (const mikai::app::theme::AccentPreset& preset :
+             mikai::app::theme::accentPresets()) {
+            accents.append({preset.id, preset.color});
+        }
+        accents.append({QStringLiteral("dark-custom"), QStringLiteral("#123456")});
+
+        // The windows were built under the boot appearance. Record that state
+        // before the first switch so "before/after while open" is evidenced, not
+        // inferred from the absence of a restart.
+        {
+            const QColor initial = mplayer::shell::accent();
+            QColor overlayPixel;
+            if (overlayProgress_ != nullptr) {
+                overlayPixel = pixelsOf(overlayProgress_)
+                                   .at(overlayProgress_->width() / 8,
+                                       overlayProgress_->height() / 2);
+            }
+            check(QStringLiteral("initial/preparation-overlay"), nearColor(overlayPixel, initial, 8),
+                  QStringLiteral("painted %1, opened with %2")
+                      .arg(nameColor(overlayPixel), nameColor(initial)));
+            capture(overlay_.get(), QStringLiteral("accent-initial-overlay"),
+                    QJsonObject{{QStringLiteral("surface"), QStringLiteral("engine preparation overlay")},
+                                {QStringLiteral("accent"), nameColor(initial)},
+                                {QStringLiteral("presentationOnly"), true},
+                                {QStringLiteral("inferenceProven"), false}});
+            if (compare_ != nullptr && compare_->isVisible()) {
+                const QImage before = compare_->grab().toImage();
+                const int initialPixels = countNear(before, initial);
+                check(QStringLiteral("initial/compare-live-accent"), initialPixels > 0,
+                      QStringLiteral("%1 accent pixels before the first switch").arg(initialPixels));
+                capture(compare_.get(), QStringLiteral("accent-initial-compare"),
+                        QJsonObject{{QStringLiteral("surface"), QStringLiteral("live Compare window")},
+                                    {QStringLiteral("accent"), nameColor(initial)},
+                                    {QStringLiteral("presentationOnly"), false},
+                                    {QStringLiteral("inferenceProven"), false}});
+            }
+        }
+
+        QJsonArray sweepRows;
+        for (mikai::app::theme::SiteTheme site :
+             {mikai::app::theme::SiteTheme::Dark, mikai::app::theme::SiteTheme::Light}) {
+            const QString siteId =
+                site == mikai::app::theme::SiteTheme::Light ? QStringLiteral("light")
+                                                            : QStringLiteral("dark");
+            for (const auto& accent : accents) {
+                Appearance appearance;
+                appearance.siteTheme = site;
+                appearance.accent = accent.second;
+                appearance.gradientMode = mikai::app::theme::GradientMode::Auto;
+                appearance.backgroundGradient = true;
+                appearance.gradientIntensity = 30;
+                appearance.gradientHeight = 100;
+                applyLook(appearance);
+                // The timeline reads the token at paint time; the shell's own
+                // wake is the production path that repaints its chrome.
+                if (shell_ != nullptr) {
+                    shell_->wake();
+                    QTest::qWait(60);
+                }
+
+                const QColor expected = mikai::app::theme::accentColor(appearance);
+                const QString variant = QStringLiteral("%1-%2").arg(siteId, accent.first);
+                QJsonObject row{{QStringLiteral("variant"), variant},
+                                {QStringLiteral("siteTheme"), siteId},
+                                {QStringLiteral("accentId"), accent.first},
+                                {QStringLiteral("accent"), nameColor(expected)}};
+
+                // Search primary: the emitted rule and the painted pixel.
+                row.insert(QStringLiteral("searchPrimary"), searchAction_ != nullptr
+                    ? nameColor(pixelsOf(searchAction_).at(4, searchAction_->height() / 2))
+                    : QString());
+                const QColor searchPixel = searchAction_ != nullptr
+                    ? pixelsOf(searchAction_).at(4, searchAction_->height() / 2) : QColor();
+                check(QStringLiteral("%1/search-primary").arg(variant),
+                      nearColor(searchPixel, expected),
+                      QStringLiteral("painted %1, chosen %2")
+                          .arg(nameColor(searchPixel), nameColor(expected)));
+
+                // Page glow: the gradient's first row is the chosen accent with
+                // the bounded alpha, never the old independent blue.
+                QColor glowPixel;
+                int expectedAlpha = 0;
+                if (glow_ != nullptr) {
+                    glowPixel = pixelsOf(glow_).at(glow_->width() / 2, 0);
+                    expectedAlpha = qBound(0, appearance.gradientIntensity * 190 / 100, 170);
+                }
+                row.insert(QStringLiteral("pageGlow"), QJsonObject{
+                    {QStringLiteral("pixel"), nameColor(glowPixel)},
+                    {QStringLiteral("alpha"), glowPixel.alpha()},
+                    {QStringLiteral("expectedAlpha"), expectedAlpha}});
+                check(QStringLiteral("%1/page-glow").arg(variant),
+                      nearColor(glowPixel, expected, 8) &&
+                          qAbs(glowPixel.alpha() - expectedAlpha) <= 3,
+                      QStringLiteral("paint %1 a%2, expected %3 a%4")
+                          .arg(nameColor(glowPixel))
+                          .arg(glowPixel.alpha())
+                          .arg(nameColor(expected))
+                          .arg(expectedAlpha));
+
+                // Title page hero watch: the primary role's real button.
+                const QColor watchPixel = titleWatch_ != nullptr
+                    ? pixelsOf(titleWatch_).at(4, titleWatch_->height() / 2) : QColor();
+                row.insert(QStringLiteral("titleWatch"), nameColor(watchPixel));
+                check(QStringLiteral("%1/title-watch").arg(variant),
+                      nearColor(watchPixel, expected),
+                      QStringLiteral("painted %1, chosen %2")
+                          .arg(nameColor(watchPixel), nameColor(expected)));
+
+                // Benchmark chunk: accent, not the old muted grey.
+                const QColor benchmarkPixel = benchmarkProgress_ != nullptr
+                    ? pixelsOf(benchmarkProgress_)
+                          .at(benchmarkProgress_->width() / 3, benchmarkProgress_->height() / 2)
+                    : QColor();
+                row.insert(QStringLiteral("benchmarkChunk"), nameColor(benchmarkPixel));
+                check(QStringLiteral("%1/benchmark-chunk").arg(variant),
+                      nearColor(benchmarkPixel, expected),
+                      QStringLiteral("painted %1, chosen %2")
+                          .arg(nameColor(benchmarkPixel), nameColor(expected)));
+
+                // The preparation window stays open across the whole sweep; its
+                // chunk must follow this variant without a restart.
+                const QColor overlayPixel = overlayProgress_ != nullptr
+                    ? pixelsOf(overlayProgress_)
+                          .at(overlayProgress_->width() / 8, overlayProgress_->height() / 2)
+                    : QColor();
+                row.insert(QStringLiteral("overlayChunk"), nameColor(overlayPixel));
+                check(QStringLiteral("%1/preparation-overlay-live").arg(variant),
+                      nearColor(overlayPixel, expected, 8),
+                      QStringLiteral("painted %1, chosen %2 (window stayed open)")
+                          .arg(nameColor(overlayPixel), nameColor(expected)));
+
+                // The player timeline is painted into the real player window at
+                // the scrub bar's mapped position.
+                QColor timelinePixel;
+                if (scrub_ != nullptr && player_ != nullptr && scrub_->isVisible()) {
+                    const Pixels playerPixels = pixelsOf(player_.get());
+                    const QPoint local(qRound(scrub_->width() * 0.15), scrub_->height() / 2);
+                    const QPoint mapped = scrub_->mapTo(player_.get(), local);
+                    timelinePixel = playerPixels.at(mapped.x(), mapped.y());
+                }
+                row.insert(QStringLiteral("timelinePlayed"), nameColor(timelinePixel));
+                check(QStringLiteral("%1/timeline-played-live").arg(variant),
+                      nearColor(timelinePixel, expected, 10),
+                      QStringLiteral("painted %1, chosen %2")
+                          .arg(nameColor(timelinePixel), nameColor(expected)));
+
+                // Compare chrome, while the same window stays open across the
+                // sweep: seat A and the selector border carry the accent, seat B
+                // keeps its documented semantic colour.
+                if (compare_ != nullptr && compare_->isVisible()) {
+                    const QImage compareImage = compare_->grab().toImage();
+                    const int accentPixels = countNear(compareImage, expected);
+                    const QColor seatB = mplayer::shell::compareSideB(expected);
+                    const int seatBPixels = countNear(compareImage, seatB);
+                    row.insert(QStringLiteral("compare"), QJsonObject{
+                        {QStringLiteral("accentPixels"), accentPixels},
+                        {QStringLiteral("seatBPixels"), seatBPixels},
+                        {QStringLiteral("seatB"), nameColor(seatB)}});
+                    check(QStringLiteral("%1/compare-live-accent").arg(variant),
+                          accentPixels > 0,
+                          QStringLiteral("%1 accent pixels while the window stayed open")
+                              .arg(accentPixels));
+                    check(QStringLiteral("%1/compare-seat-b").arg(variant),
+                          seatBPixels > 0,
+                          QStringLiteral("%1 seat-B pixels of %2")
+                              .arg(seatBPixels)
+                              .arg(nameColor(seatB)));
+                    capture(compare_.get(), QStringLiteral("accent-%1-compare").arg(variant),
+                            QJsonObject{{QStringLiteral("surface"), QStringLiteral("live Compare window")},
+                                        {QStringLiteral("accent"), nameColor(expected)},
+                                        {QStringLiteral("presentationOnly"), false},
+                                        {QStringLiteral("inferenceProven"), false}});
+                } else {
+                    row.insert(QStringLiteral("compare"), QJsonObject{
+                        {QStringLiteral("present"), false}});
+                }
+
+                capture(searchPage_.get(), QStringLiteral("accent-%1-search").arg(variant),
+                        QJsonObject{{QStringLiteral("surface"), QStringLiteral("search page and page glow")},
+                                    {QStringLiteral("accent"), nameColor(expected)}});
+                capture(titlePage_.get(), QStringLiteral("accent-%1-title").arg(variant),
+                        QJsonObject{{QStringLiteral("surface"), QStringLiteral("title page hero watch")},
+                                    {QStringLiteral("accent"), nameColor(expected)},
+                                    {QStringLiteral("presentationOnly"), true},
+                                    {QStringLiteral("syntheticState"), QStringLiteral("hero watch enabled for presentation; no catalogue entry was fabricated")},
+                                    {QStringLiteral("inferenceProven"), false}});
+                capture(benchmarkProgress_.get(),
+                        QStringLiteral("accent-%1-benchmark").arg(variant),
+                        QJsonObject{{QStringLiteral("surface"), QStringLiteral("benchmark progress chunk")},
+                                    {QStringLiteral("accent"), nameColor(expected)},
+                                    {QStringLiteral("presentationOnly"), true},
+                                    {QStringLiteral("syntheticState"), QStringLiteral("running state and value shown for presentation; no benchmark was started")},
+                                    {QStringLiteral("inferenceProven"), false}});
+                capture(overlay_.get(), QStringLiteral("accent-%1-overlay").arg(variant),
+                        QJsonObject{{QStringLiteral("surface"), QStringLiteral("engine preparation overlay")},
+                                    {QStringLiteral("accent"), nameColor(expected)},
+                                    {QStringLiteral("presentationOnly"), true},
+                                    {QStringLiteral("syntheticState"), QStringLiteral("stage data only; no builder process, no engine")},
+                                    {QStringLiteral("inferenceProven"), false}});
+                capture(player_.get(), QStringLiteral("accent-%1-player").arg(variant),
+                        QJsonObject{{QStringLiteral("surface"), QStringLiteral("player window and timeline")},
+                                    {QStringLiteral("accent"), nameColor(expected)},
+                                    {QStringLiteral("inferenceProven"), false}});
+                sweepRows.append(row);
+            }
+        }
+        const int expectedRows =
+            (mikai::app::theme::accentPresets().size() + 1) * 2;
+        check(QStringLiteral("sweep-coverage"), sweepRows.size() == expectedRows,
+              QStringLiteral("%1 appearance variants captured (expected %2: every preset plus a dark custom, dark and light)")
+                  .arg(sweepRows.size()).arg(expectedRows));
+        evidence_.insert(QStringLiteral("sweeps"), sweepRows);
+        evidence_.insert(QStringLiteral("switchCount"), sweepRows.size());
+        evidence_.insert(QStringLiteral("restartObserved"), false);
+        evidence_.insert(QStringLiteral("openAcrossSweep"), QJsonObject{
+            {QStringLiteral("compare"), compare_ != nullptr && compare_->isVisible()},
+            {QStringLiteral("preparationOverlay"), overlay_ != nullptr && overlay_->isVisible()},
+            {QStringLiteral("player"), player_ != nullptr && player_->isVisible()}});
+        return true;
+    }
+
+    void measureLanguages() {
+        QJsonArray geometry;
+        QString catalog = arguments_.translations;
+        if (catalog.isEmpty()) {
+            catalog = QDir(QCoreApplication::applicationDirPath())
+                          .filePath(QStringLiteral("mikai_uk.qm"));
+        }
+        QTranslator ukrainian;
+        const bool catalogAvailable =
+            QFileInfo(catalog).isFile() && ukrainian.load(catalog);
+        evidence_.insert(QStringLiteral("translations"), QJsonObject{
+            {QStringLiteral("path"), catalog},
+            {QStringLiteral("loaded"), catalogAvailable}});
+        check(QStringLiteral("uk-translations-load"), catalogAvailable,
+              QStringLiteral("catalog %1").arg(catalog));
+
+        const auto restate = [this](QTranslator* translator, bool install) {
+            if (translator != nullptr) {
+                if (install) {
+                    app_.installTranslator(translator);
+                } else {
+                    app_.removeTranslator(translator);
+                }
+            }
+            QEvent languageChange(QEvent::LanguageChange);
+            for (QWidget* window : QApplication::topLevelWidgets()) {
+                if (window != nullptr && window->isVisible()) {
+                    QCoreApplication::sendEvent(window, &languageChange);
+                }
+            }
+            QTest::qWait(100);
+        };
+
+        const auto measure = [&](const QString& code) {
+            for (int width : {580, 1280}) {
+                window_->resize(width, kHeight);
+                if (titlePage_ != nullptr) titlePage_->resize(width, kHeight);
+                if (settings_ != nullptr) settings_->resize(width, kHeight);
+                QTest::qWait(100);
+                const QJsonObject row{
+                    {QStringLiteral("language"), code},
+                    {QStringLiteral("width"), width},
+                    {QStringLiteral("devicePixelRatio"),
+                     window_ != nullptr ? window_->devicePixelRatioF() : 0.0},
+                    {QStringLiteral("searchPage"),
+                     widgetMetrics(window_->findChild<mikai::app::SearchPage*>())},
+                    {QStringLiteral("searchAction"), widgetMetrics(searchAction_)},
+                    {QStringLiteral("titleWatch"), widgetMetrics(titleWatch_)},
+                    {QStringLiteral("benchmarkProgress"), widgetMetrics(benchmarkProgress_)},
+                    {QStringLiteral("timeline"), widgetMetrics(scrub_)}};
+                geometry.append(row);
+                check(QStringLiteral("geometry/%1/%2/search-action").arg(code).arg(width),
+                      searchAction_ != nullptr && searchAction_->width() > 0 &&
+                          searchAction_->height() > 0,
+                      QStringLiteral("size %1x%2")
+                          .arg(searchAction_ ? searchAction_->width() : 0)
+                          .arg(searchAction_ ? searchAction_->height() : 0));
+                check(QStringLiteral("geometry/%1/%2/title-watch").arg(code).arg(width),
+                      titleWatch_ != nullptr && titleWatch_->width() > 0 &&
+                          titleWatch_->height() > 0,
+                      QStringLiteral("size %1x%2")
+                          .arg(titleWatch_ ? titleWatch_->width() : 0)
+                          .arg(titleWatch_ ? titleWatch_->height() : 0));
+                capture(window_.get(), QStringLiteral("geometry-%1-%2-search").arg(code).arg(width),
+                        QJsonObject{{QStringLiteral("surface"), QStringLiteral("search page")},
+                                    {QStringLiteral("language"), code},
+                                    {QStringLiteral("width"), width}});
+                capture(titlePage_.get(),
+                        QStringLiteral("geometry-%1-%2-title").arg(code).arg(width),
+                        QJsonObject{{QStringLiteral("surface"), QStringLiteral("title page")},
+                                    {QStringLiteral("language"), code},
+                                    {QStringLiteral("width"), width},
+                                    {QStringLiteral("presentationOnly"), true},
+                                    {QStringLiteral("inferenceProven"), false}});
+            }
+        };
+
+        restate(nullptr, false);
+        measure(QStringLiteral("en"));
+        if (catalogAvailable) {
+            restate(&ukrainian, true);
+            const QString translated = titleWatch_ != nullptr ? titleWatch_->text() : QString();
+            check(QStringLiteral("uk-translation-applied"),
+                  !translated.isEmpty() && translated != QStringLiteral("Watch"),
+                  QStringLiteral("hero action reads \"%1\"").arg(translated));
+            measure(QStringLiteral("uk"));
+            restate(&ukrainian, false);
+        } else {
+            check(QStringLiteral("uk-translation-applied"), false,
+                  QStringLiteral("no Ukrainian catalog was loaded; UK coverage was not measured"));
+        }
+        evidence_.insert(QStringLiteral("geometry"), geometry);
+        evidence_.insert(QStringLiteral("devicePixelRatioAfterResize"),
+                         window_ != nullptr ? window_->devicePixelRatioF() : 0.0);
+        const double dpr = window_ != nullptr ? window_->devicePixelRatioF() : 0.0;
+        const double scale = dpr > 0.0 ? 1.75 / dpr : 0.0;
+        evidence_.insert(QStringLiteral("scale"), QJsonObject{
+            {QStringLiteral("nativeDesktopScale"), 1.75},
+            {QStringLiteral("qtDevicePixelRatio"), dpr},
+            {QStringLiteral("nativeDividedByQt"), scale},
+            {QStringLiteral("dividesNativeScale"),
+             dpr > 0.0 && qAbs(scale - qRound(scale)) < 0.02}});
+        check(QStringLiteral("device-pixel-ratio-recorded"), dpr > 0.0,
+              QStringLiteral("Qt reports %1; native desktop is 1.75").arg(dpr));
+        // Restore the application window to its capture size.
+        window_->resize(kWidth, kHeight);
+        if (titlePage_ != nullptr) titlePage_->resize(kWidth, kHeight);
+        if (settings_ != nullptr) settings_->resize(kWidth, kHeight);
+    }
+
+    int finish(bool ok) {
+        // Destroy borrowed widgets before draining the workers they used, then
+        // let the borrowed client outlive its runner's retirement.
+        overlayProgress_ = nullptr;
+        overlay_.reset();
+        compare_.reset();
+        titleWatch_ = nullptr;
+        titlePage_.reset();
+        settings_.reset();
+        benchmarkProgress_ = nullptr;
+        searchAction_ = nullptr;
+        glow_ = nullptr;
+        searchPage_ = nullptr;
+        scrub_ = nullptr;
+        shell_ = nullptr;
+        surface_ = nullptr;
+        if (player_ != nullptr) {
+            player_->close();
+            player_ = nullptr;
+        }
+        if (window_ != nullptr) {
+            window_->close();
+        }
+        localRunner_.cancel();
+        if (!localRunner_.waitForDone(15000)) {
+            check(QStringLiteral("local-workers-drained"), false,
+                  QStringLiteral("worker retirement exceeded 15 seconds"));
+        }
+        bool drained = false;
+        mikai::app::Runner::shutdownAll([&drained] { drained = true; });
+        QElapsedTimer drainClock;
+        drainClock.start();
+        while (!drained && drainClock.elapsed() < 20000) {
+            QTest::qWait(25);
+        }
+        check(QStringLiteral("workers-drained"), drained,
+              QStringLiteral("application workers retired before the client is destroyed"));
+        window_.reset();
+
+        const bool success = ok && failed_ == 0 && !shots_.isEmpty();
+        evidence_.insert(QStringLiteral("success"), success);
+        evidence_.insert(QStringLiteral("finishedUtc"),
+                         QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+        evidence_.insert(QStringLiteral("elapsedMs"), double(total_.elapsed()));
+        evidence_.insert(QStringLiteral("checks"), checks_);
+        evidence_.insert(QStringLiteral("passed"), passed_);
+        evidence_.insert(QStringLiteral("failed"), failed_);
+        evidence_.insert(QStringLiteral("failures"), failures_);
+        evidence_.insert(QStringLiteral("failureCauses"), failures_);
+        evidence_.insert(QStringLiteral("screenshots"), shots_);
+        const QByteArray json = QJsonDocument(evidence_).toJson(QJsonDocument::Indented);
+        QSaveFile file(QDir(arguments_.output).filePath(QStringLiteral("accent-sweep-evidence.json")));
+        const bool written = file.open(QIODevice::WriteOnly) && file.write(json) == json.size() &&
+                             file.commit();
+        std::fwrite(json.constData(), 1, size_t(json.size()), stdout);
+        std::fflush(stdout);
+        diagnostic(success && written
+                       ? QStringLiteral("PASS: accent sweep covered %1 checks, %2 passed, %3 failed.")
+                             .arg(checks_.size()).arg(passed_).arg(failed_)
+                       : QStringLiteral("FAIL: consult accent-sweep-evidence.json failures; counts %1/%2/%3.")
+                             .arg(checks_.size()).arg(passed_).arg(failed_));
+        app_.exit(success && written ? 0 : 1);
+        return success && written ? 0 : 1;
+    }
+
+    QApplication& app_;
+    Arguments arguments_;
+    QString demo_;
+    QString digest_;
+    mikai::backend::MikaiClient offlineClient_;
+    mikai::app::Runner localRunner_;
+    mikai::app::QualityCache qualityCache_;
+    std::unique_ptr<MainWindow> window_;
+    QPointer<mikai::app::SearchPage> searchPage_;
+    QPointer<mikai::app::PageGlow> glow_;
+    QPointer<QPushButton> searchAction_;
+    std::unique_ptr<mikai::app::TitlePage> titlePage_;
+    QPointer<QPushButton> titleWatch_;
+    std::unique_ptr<mikai::app::SettingsDialog> settings_;
+    QPointer<QProgressBar> benchmarkProgress_;
+    std::unique_ptr<ProcessingOverlay> overlay_;
+    QPointer<QProgressBar> overlayProgress_;
+    QPointer<PlayerDialog> player_;
+    QPointer<PlayerShell> shell_;
+    QPointer<mplayer::VideoSurface> surface_;
+    QPointer<mplayer::shell::ScrubBar> scrub_;
+    std::unique_ptr<CompareWindow> compare_;
+    QJsonObject evidence_;
+    QJsonArray checks_;
+    QJsonArray shots_;
+    QJsonArray failures_;
+    int passed_ = 0;
+    int failed_ = 0;
+    QElapsedTimer total_;
+};
 } // namespace
 
 int main(int argc, char** argv) {
@@ -712,9 +1547,16 @@ int main(int argc, char** argv) {
         std::fprintf(arguments.help ? stdout : stderr,
             "release_gallery_probe --output-dir <NEW-directory> --video <original-demo.mp4>\n"
             "  --video-credit <authorship-and-license> [--video-source <description-or-URL>]\n"
+            "  [--accent-sweep] [--translations <mikai_uk.qm>]\n"
             "Requires an active desktop (at least 1280x800 plus window borders), an original\n"
             "bright demo of at least 8 seconds, and absolute MIKAI_MPV_MODULE pointing to an\n"
-            "installed Standard mpv runtime. Never selects/downloads AI. Output must not exist.\n");
+            "installed Standard mpv runtime. Never selects/downloads AI. Output must not exist.\n"
+            "--accent-sweep runs the focused accent/action-role sweep instead of the gallery.\n"
+            "  It writes accent-sweep-evidence.json and screenshots to the explicit absolute\n"
+            "  --output-dir; Compare and the preparation window stay open across accent changes.\n"
+            "  Preparation/title/benchmark states that need service data are presentation-only\n"
+            "  and are labelled presentationOnly=true, inferenceProven=false.\n"
+            "--translations defaults to <probe-dir>/mikai_uk.qm for the EN/UK geometry pass.\n");
         if (!arguments.error.isEmpty()) diagnostic(arguments.error);
         return arguments.help ? 0 : 2;
     }
@@ -722,6 +1564,9 @@ int main(int argc, char** argv) {
     // preserves argv and CWD, so the child computes these same absolute paths.
     arguments.video = QFileInfo(arguments.video).absoluteFilePath();
     arguments.output = QFileInfo(arguments.output).absoluteFilePath();
+    if (!arguments.translations.isEmpty()) {
+        arguments.translations = QFileInfo(arguments.translations).absoluteFilePath();
+    }
     const QString runtime = qEnvironmentVariable("MIKAI_MPV_MODULE");
     if (!QFileInfo(runtime).isAbsolute() || !QFileInfo(runtime).isFile()) {
         diagnostic(QStringLiteral("ERROR: set MIKAI_MPV_MODULE to the absolute installed Standard mpv module path; scratch never searches the user's install."));
@@ -811,6 +1656,10 @@ int main(int argc, char** argv) {
     if (digest.isEmpty() || !QDir().mkpath(arguments.output)) {
         diagnostic(QStringLiteral("ERROR: cannot hash the scratch demo or create the fresh output directory."));
         return 2;
+    }
+    if (arguments.accentSweep) {
+        AccentSweep sweep(app, std::move(arguments), demo, digest);
+        return sweep.run();
     }
     Gallery gallery(app, std::move(arguments), demo, digest);
     return app.exec();
