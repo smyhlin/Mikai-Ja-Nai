@@ -90,7 +90,7 @@ These settings are separate: HDR tone mapping describes how HDR video is mapped 
 - **Upscaler** and **Downscaler** choose the display resample. Downscaler **Auto (recommended)** restores the running core's own default after the player has initialized; it does not send the literal `auto`, which this runtime rejects. If that default cannot be read, the player says so and the previous downscaler stays until you choose one or reopen the player.
 - The player settings flyout has the same mode list, without the zoom and scaler rows. Compare always uses Fit while a comparison owns the picture, so the panes stay comparable. Picture-in-picture follows the saved setting.
 
-Saved changes reach a running player on the next event pump. Changing mode rewrites keep-aspect, panscan, aspect override, unscaled, zoom, scale and downscale together, so an old crop or override cannot survive the switch.
+Saved changes reach a running player on the next event pump. A paused picture redraws after the asynchronous option writes complete without resuming playback. Changing mode rewrites keep-aspect, panscan, aspect override, unscaled, zoom, scale and downscale together, so an old crop or override cannot survive the switch.
 
 ## Anime4K preset keyboard shortcuts
 

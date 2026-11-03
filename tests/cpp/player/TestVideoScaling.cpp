@@ -236,15 +236,11 @@ double meanLuma(const QImage& image, QRect rect) {
     return count > 0 ? total / count : -1.0;
 }
 
-int litSpan(const QImage& image, int along, bool horizontal) {
+int litWidth(const QImage& image) {
     int lit = 0;
-    const int limit = horizontal ? image.width() : image.height();
-    const int fixed = horizontal ? image.height() / 2 : image.width() / 2;
-    for (int i = 0; i < limit; ++i) {
-        const QColor color = horizontal ? image.pixelColor(i, fixed) : image.pixelColor(fixed, i);
-        if (pixelLuma(color) > 16.0) ++lit;
+    for (int x = 0; x < image.width(); ++x) {
+        if (pixelLuma(image.pixelColor(x, image.height() / 2)) > 16.0) ++lit;
     }
-    Q_UNUSED(along);
     return lit;
 }
 
@@ -258,63 +254,63 @@ bool pumpUntil(const std::function<bool()>& done, int timeoutMs) {
     return done();
 }
 
-bool loadSiblingRuntime() {
+bool loadPixelRuntime(QString* reason) {
     if (mplayer::MpvApi::instance().loaded()) return true;
-    QString module = qEnvironmentVariable("MIKAI_MPV_MODULE");
-    if (module.isEmpty()) {
-        module = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("libmpv-2.dll"));
-    }
-    if (!QFileInfo::exists(module)) return false;
+    const QString module = qEnvironmentVariable("MIKAI_MPV_MODULE");
     mplayer::MpvBundle bundle;
     bundle.root = QFileInfo(module).absolutePath();
     bundle.modulePath = QFileInfo(module).absoluteFilePath();
     bundle.descriptorId = QStringLiteral("scale-pixel-runtime");
     bundle.protocolVersion = 1;
-    QString reason;
-    return mplayer::MpvApi::instance().load(bundle, &reason);
+    return mplayer::MpvApi::instance().load(bundle, reason);
 }
 
 }  // namespace
 
+void TestVideoScaling::hiddenPlaybackChangesThePicturePerMode_data() {
+    QTest::addColumn<bool>("paused");
+    QTest::newRow("playing") << false;
+    QTest::newRow("paused") << true;
+}
+
 void TestVideoScaling::hiddenPlaybackChangesThePicturePerMode() {
-    const QString outDir = QDir(QStringLiteral(MIKAI_SOURCE_DIR))
-                               .filePath(QStringLiteral("docs/ai/GOAL-H2/windows-hidden-scale"));
-    QDir().mkpath(outDir);
-    QFile log(QDir(outDir).filePath(QStringLiteral("log.txt")));
-    if (!log.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        QSKIP("cannot write the scale pixel log");
-    }
-    const auto note = [&](const QString& line) {
-        log.write(line.toUtf8());
-        log.write("\n");
-        log.flush();
-    };
-    note(QStringLiteral("platform=%1").arg(QGuiApplication::platformName()));
+    QFETCH(bool, paused);
     if (QGuiApplication::platformName() == QLatin1String("offscreen") ||
         QGuiApplication::platformName() == QLatin1String("minimal")) {
-        note(QStringLiteral("skip: no GL platform"));
         QSKIP("scale pixels need a real GL platform");
     }
-    const QString fixture = QDir(QStringLiteral(MIKAI_SOURCE_DIR))
-                                .filePath(QStringLiteral(
-                                    "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4"));
-    note(QStringLiteral("fixture=%1 exists=%2")
-             .arg(fixture)
-             .arg(QFileInfo::exists(fixture) ? 1 : 0));
-    if (!QFileInfo::exists(fixture)) {
-        note(QStringLiteral("skip: fixture missing"));
-        QSKIP("the motion fixture is not in this tree");
+    const QString fixture = QStringLiteral(
+        MIKAI_SOURCE_DIR "/tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4");
+    QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
+    if (qEnvironmentVariable("MIKAI_MPV_MODULE").isEmpty()) {
+        QSKIP("run through the isolated launcher with the pinned mpv runtime");
     }
-    note(QStringLiteral("runtime=%1").arg(loadSiblingRuntime() ? 1 : 0));
-    if (!mplayer::MpvApi::instance().loaded()) {
-        note(QStringLiteral("skip: runtime missing dir=%1")
-                 .arg(QCoreApplication::applicationDirPath()));
-        QSKIP("libmpv-2.dll was not beside the test or in MIKAI_MPV_MODULE");
+    QString runtimeError;
+    QVERIFY2(loadPixelRuntime(&runtimeError), qPrintable(runtimeError));
+
+    QTemporaryDir scratch;
+    QVERIFY(scratch.isValid());
+    const QString outputRoot = qEnvironmentVariable("MIKAI_SCALE_PIXEL_OUTPUT");
+    const QString outDir = outputRoot.isEmpty()
+                               ? scratch.path()
+                               : QDir(outputRoot).filePath(QString::fromLatin1(QTest::currentDataTag()));
+    if (!outputRoot.isEmpty()) {
+        QVERIFY(QFileInfo(outputRoot).isAbsolute());
+        QVERIFY2(!QFileInfo::exists(outDir), qPrintable(outDir));
+        QVERIFY(QDir().mkpath(outDir));
     }
+    QFile log(QDir(outDir).filePath(QStringLiteral("log.txt")));
+    QVERIFY2(log.open(QIODevice::WriteOnly | QIODevice::NewOnly), qPrintable(log.errorString()));
+    const auto note = [&](const QString& line) {
+        const QByteArray text = line.toUtf8() + '\n';
+        QCOMPARE(log.write(text), qint64(text.size()));
+        QVERIFY(log.flush());
+    };
+    note(QStringLiteral("platform=%1 paused=%2").arg(QGuiApplication::platformName()).arg(paused));
 
     const mplayer::VideoScalePolicy saved = mplayer::VideoSurface::videoScalePolicy();
     const auto restore = qScopeGuard([&] { mplayer::VideoSurface::setVideoScalePolicy(saved); });
-    mplayer::VideoSurface::setVideoScaleMode(mplayer::VideoScaleMode::Fit);
+    mplayer::VideoSurface::setVideoScalePolicy(mplayer::VideoScalePolicy{});
 
     // Not a PlayerDialog: that show path maps fullscreen and would cover the
     // desktop. A tool surface that is never shown on screen is the whole window.
@@ -345,10 +341,11 @@ void TestVideoScaling::hiddenPlaybackChangesThePicturePerMode() {
              .arg(surface.videoHeight())
              .arg(first.width())
              .arg(first.height()));
-    if (!framed || surface.width() < 200 || surface.height() < 120) {
-        surface.hide();
-        note(QStringLiteral("skip: no frame"));
-        QSKIP("the hidden surface produced no 320x180 frame; a visible window was not opened");
+    QVERIFY2(framed, "the native hidden surface did not render the fixture");
+    QVERIFY(surface.width() >= 200 && surface.height() >= 120);
+    if (paused) {
+        surface.setPaused(true);
+        QVERIFY(pumpUntil([&] { return !surface.isPlaying(); }, 2000));
     }
     const auto grabSettled = [&] {
         QImage image;
@@ -364,68 +361,89 @@ void TestVideoScaling::hiddenPlaybackChangesThePicturePerMode() {
             3000);
         return advanced ? image : QImage();
     };
-    const auto apply = [&](mplayer::VideoScaleMode mode, int zoom) {
+    const auto grabMatching = [&](const std::function<bool(const QImage&)>& matches) {
+        QImage image;
+        const bool matched = pumpUntil(
+            [&] {
+                image = surface.grabVideoFramebuffer();
+                return !image.isNull() && matches(image);
+            },
+            2500);
+        return matched ? image : QImage();
+    };
+    const auto apply = [&](mplayer::VideoScaleMode mode, int zoom,
+                           const std::function<bool(const QImage&)>& matches) {
         mplayer::VideoScalePolicy policy;
         policy.mode = mode;
         policy.zoomPercent = zoom;
         mplayer::VideoSurface::setVideoScalePolicy(policy);
-        return grabSettled();
+        return grabMatching(matches);
     };
 
-    const QImage fitted = grabSettled();
+    const QImage fitted = paused ? surface.grabVideoFramebuffer() : grabSettled();
     QVERIFY(!fitted.isNull());
-    const int fitSpan = litSpan(fitted, 0, true);
+    const int fitSpan = litWidth(fitted);
     const double fitCenter =
         meanLuma(fitted, QRect(fitted.width() / 2 - 24, fitted.height() / 2 - 16, 48, 32));
     QVERIFY2(fitCenter > 20.0, qPrintable(QStringLiteral("fit center luma %1").arg(fitCenter)));
     QVERIFY2(fitSpan > 0 && fitSpan < fitted.width() * 9 / 10,
              qPrintable(QStringLiteral("fit span %1 of %2").arg(fitSpan).arg(fitted.width())));
 
-    const QImage filled = apply(mplayer::VideoScaleMode::Fill, 0);
+    const auto fillsWidth = [](const QImage& image) {
+        return litWidth(image) > image.width() * 9 / 10;
+    };
+    const QImage filled = apply(mplayer::VideoScaleMode::Fill, 0, fillsWidth);
     QVERIFY(!filled.isNull());
-    const int fillSpan = litSpan(filled, 0, true);
+    const int fillSpan = litWidth(filled);
     QVERIFY2(fillSpan > fitSpan && fillSpan > filled.width() * 9 / 10,
              qPrintable(QStringLiteral("fill span %1 fit %2 width %3")
                             .arg(fillSpan)
                             .arg(fitSpan)
                             .arg(filled.width())));
 
-    const QImage stretched = apply(mplayer::VideoScaleMode::Stretch, 0);
+    const QImage stretched = apply(mplayer::VideoScaleMode::Stretch, 0, fillsWidth);
     QVERIFY(!stretched.isNull());
-    QVERIFY2(litSpan(stretched, 0, true) > stretched.width() * 9 / 10, "stretch leaves a side bar");
+    QVERIFY2(litWidth(stretched) > stretched.width() * 9 / 10, "stretch leaves a side bar");
 
-    const QImage original = apply(mplayer::VideoScaleMode::Original, 0);
+    const QImage original = apply(mplayer::VideoScaleMode::Original, 0, [](const QImage& image) {
+        return std::abs(litWidth(image) - 320) <= 2;
+    });
     QVERIFY(!original.isNull());
-    const int originalSpan = litSpan(original, 0, true);
+    const int originalSpan = litWidth(original);
     QVERIFY2(originalSpan > 0 && originalSpan < fitSpan,
              qPrintable(QStringLiteral("original span %1 fit %2").arg(originalSpan).arg(fitSpan)));
 
-    const QImage classic = apply(mplayer::VideoScaleMode::Aspect4x3, 0);
+    const QImage classic = apply(mplayer::VideoScaleMode::Aspect4x3, 0, [&](const QImage& image) {
+        return std::abs(litWidth(image) - fitSpan * 3 / 4) < 8;
+    });
     QVERIFY(!classic.isNull());
-    const int classicSpan = litSpan(classic, 0, true);
+    const int classicSpan = litWidth(classic);
     QVERIFY2(classicSpan > 0 && classicSpan < fitSpan,
              qPrintable(QStringLiteral("4:3 span %1 fit %2").arg(classicSpan).arg(fitSpan)));
 
-    const QImage wide = apply(mplayer::VideoScaleMode::Aspect16x9, 0);
+    const auto fitsWidth = [&](const QImage& image) {
+        return std::abs(litWidth(image) - fitSpan) < 8;
+    };
+    const QImage wide = apply(mplayer::VideoScaleMode::Aspect16x9, 0, fitsWidth);
     QVERIFY(!wide.isNull());
-    const int wideSpan = litSpan(wide, 0, true);
+    const int wideSpan = litWidth(wide);
     QVERIFY2(std::abs(wideSpan - fitSpan) < fitted.width() / 10,
              qPrintable(QStringLiteral("16:9 span %1 fit %2").arg(wideSpan).arg(fitSpan)));
 
-    const QImage zoomed = apply(mplayer::VideoScaleMode::Fit, 50);
+    const QImage zoomed = apply(mplayer::VideoScaleMode::Fit, 50, fillsWidth);
     QVERIFY(!zoomed.isNull());
-    const int zoomSpan = litSpan(zoomed, 0, true);
+    const int zoomSpan = litWidth(zoomed);
     QVERIFY2(zoomSpan > fitSpan,
              qPrintable(QStringLiteral("zoom span %1 fit %2").arg(zoomSpan).arg(fitSpan)));
 
-    const QImage filledAgain = apply(mplayer::VideoScaleMode::Fill, 0);
-    Q_UNUSED(filledAgain);
-    const auto lock = surface.acquireVideoScaleFitLock();
+    const QImage filledAgain = apply(mplayer::VideoScaleMode::Fill, 0, fillsWidth);
+    QVERIFY(!filledAgain.isNull());
+    auto lock = surface.acquireVideoScaleFitLock();
     QVERIFY(lock.has_value());
     QVERIFY(surface.compareFitHeld());
-    const QImage locked = grabSettled();
+    const QImage locked = grabMatching(fitsWidth);
     QVERIFY(!locked.isNull());
-    const int lockedSpan = litSpan(locked, 0, true);
+    const int lockedSpan = litWidth(locked);
     QVERIFY2(lockedSpan < fillSpan && std::abs(lockedSpan - fitSpan) < fitted.width() / 8,
              qPrintable(QStringLiteral("fit-lock span %1 fit %2 fill %3")
                             .arg(lockedSpan)
@@ -448,5 +466,10 @@ void TestVideoScaling::hiddenPlaybackChangesThePicturePerMode() {
     QVERIFY(wide.save(QDir(outDir).filePath(QStringLiteral("aspect-16x9.png"))));
     QVERIFY(zoomed.save(QDir(outDir).filePath(QStringLiteral("zoom-150.png"))));
     QVERIFY(locked.save(QDir(outDir).filePath(QStringLiteral("compare-fit-lock.png"))));
+    lock.reset();
+    const QImage restored = grabMatching(fillsWidth);
+    QVERIFY2(!restored.isNull(), "closing Compare did not restore the selected Fill mode");
+    QVERIFY(restored.save(QDir(outDir).filePath(QStringLiteral("compare-released-fill.png"))));
+    QCOMPARE(surface.isPlaying(), !paused);
     surface.hide();
 }

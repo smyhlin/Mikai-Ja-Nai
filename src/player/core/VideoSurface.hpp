@@ -1166,6 +1166,9 @@ private:
     /// `queryCoreDefault` is set only at engine creation, where no native stage
     /// can hold the core lock: reading dscale's default is a synchronous core
     /// read and must never happen from the state pump.
+    /// The writes are asynchronous; the last reply of the newest batch refreshes
+    /// the render state, so a paused surface repaints through the new chain
+    /// instead of presenting the snapshot taken before the writes landed.
     void applyVideoScaleToEngine(bool queryCoreDefault = false);
     /// The core's own dscale default, queried once the core is initialized: an
     /// Auto downscale must restore a real id, and "auto" is refused. Empty when
@@ -1490,6 +1493,9 @@ private:
     /// Whether this surface has written an explicit dscale to the engine. Only
     /// then can an Auto request leave a wrong value behind.
     bool downscaleWasExplicit_ = false;
+    /// Only the newest completed batch may redraw a paused display.
+    quint64 videoScaleBatch_ = 0;
+    int videoScaleBatchPending_ = 0;
     bool compareFitActive_ = false;
     SourceColorProfile sourceColorProfile_;
     VideoMetadata videoMetadata_;

@@ -492,6 +492,30 @@ supplies the required shaders, mpv DLL, Qt runtime/plugins and disposable
 scratch parent. See the [safe PowerShell invocation](../../AGENTS.md#running-individual-test-suites). Test startup refuses an existing populated or unsafe adjacent
 native tree; isolation does not make arbitrary manually launched binaries safe.
 
+## Native scaling framebuffer regression
+
+`TestVideoScaling hiddenPlaybackChangesThePicturePerMode` exercises six display modes, 150% size
+(`+50%` zoom), and the Compare Fit lock and release while playing and paused. It uses the real
+`motion_320x180_24fps_8bit_hevc.mp4` through a native hidden OpenGL surface. It checks framebuffer
+geometry, not window composition, UI clicks, inference, or pacing. Offscreen/minimal Qt platforms
+skip these data rows explicitly.
+
+Use the isolated launcher and a native Qt platform. For example, from a Windows command prompt:
+
+```bat
+set QT_QPA_PLATFORM=windows
+set MIKAI_SCALE_PIXEL_OUTPUT=F:\absolute\new\scale-pixel-run
+build\release\mikai_test_launcher.exe build\release\mikai_tests.exe shaders build\release\mpv\libmpv-2.dll C:\path\to\Qt\bin C:\path\to\Qt\plugins build\release\_test-runs TestVideoScaling hiddenPlaybackChangesThePicturePerMode
+```
+
+`MIKAI_SCALE_PIXEL_OUTPUT` is optional. Without it the test uses disposable scratch. With it, the
+absolute output root receives fresh `playing/` and `paused/` subdirectories; existing data rows
+are refused rather than overwritten. Regular CTest runs never rewrite repository evidence.
+
+On native Linux, use the same isolated launcher arguments with the `linux-release` executables,
+the pinned TLS mpv library, Qt library/plugin directories, and the native `xcb` or `wayland`
+platform. The launcher exports its staged `MIKAI_MPV_MODULE`; do not substitute the host mpv.
+
 ## Recorded media/server verification
 
 The following observations record the earlier media/server fixture validation;

@@ -3150,19 +3150,37 @@ void VideoSurface::applyVideoScaleToEngine(bool queryCoreDefault) {
                 .arg(QString::fromStdString(
                     downscaleDefaultError_.value_or("no default value reported"))));
     }
-    for (const VideoScaleOption& option : videoScaleOptions(policy, downscaleDefault)) {
+    const std::vector<VideoScaleOption> writes = videoScaleOptions(policy, downscaleDefault);
+    // Redraw after all accepted writes reply; an older apply cannot complete a
+    // newer batch or leave a paused surface displaying its old snapshot.
+    const quint64 batch = ++videoScaleBatch_;
+    videoScaleBatchPending_ = 0;
+    for (const VideoScaleOption& option : writes) {
         // Issued here rather than through issueCoreCommand: that helper reports a
         // refusal through errorOccurred, which the player treats as a failed
         // source and answers with a re-extraction. A scaler id the runtime does
         // not know must name itself without claiming the stream failed.
         const std::string name = option.name;
-        mpv_->commandAsync({"set", name, option.value}, [this, name](const AsyncReply& reply) {
-            if (mpv_ == nullptr || reply.ok()) return;
-            const QString reason = QString::fromStdString(mpv_->describeError(reply.error));
-            qWarning("VideoSurface: %s refused (%s)", name.c_str(), qUtf8Printable(reason));
-            emit displayScalingRefused(
-                tr("%1: %2").arg(QString::fromStdString(name), reason));
-        });
+        const AsyncRequestId request =
+            mpv_->commandAsync({"set", name, option.value},
+                               [this, name, batch](const AsyncReply& reply) {
+                                   if (mpv_ == nullptr) return;
+                                   QString refusal;
+                                   if (!reply.ok()) {
+                                       const QString reason = QString::fromStdString(
+                                           mpv_->describeError(reply.error));
+                                       qWarning("VideoSurface: %s refused (%s)", name.c_str(),
+                                                qUtf8Printable(reason));
+                                       refusal = tr("%1: %2").arg(QString::fromStdString(name), reason);
+                                   }
+                                   if (batch == videoScaleBatch_ && --videoScaleBatchPending_ == 0) {
+                                       refreshRenderState();
+                                   }
+                                   // A receiver can destroy this surface while reporting.
+                                   if (!refusal.isEmpty()) emit displayScalingRefused(refusal);
+                               });
+        // commandAsync drops rejected submissions without invoking their callback.
+        if (request.valid()) ++videoScaleBatchPending_;
     }
     // What the engine now holds, not what was asked for: an explicit id written
     // here, a restored default, or - when Auto could not be produced - whatever
