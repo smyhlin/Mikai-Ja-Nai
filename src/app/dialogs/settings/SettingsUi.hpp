@@ -474,17 +474,23 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             outline: 0;
         }
 
-        /* ── Buttons (Primary Slight-Purple CTA, Secondary & Ghost Actions) ── */
+        /* ── Action roles (see theme::ActionRole) ───────────────────────────
+           The settings page states the same hierarchy the application sheet
+           does: the bare rule is the secondary role, so the neutral controls
+           carry the 3:1 boundary the raised fill alone cannot, and hover lifts
+           toward the accent. A primary keeps the accent as its fill and takes a
+           contrast-derived ink, which is what keeps a very dark custom accent
+           readable. */
         QPushButton {
-            background-color: %29;
+            background-color: %45;
             color: %7;
-            border: 1px solid rgba(%4, 0.18);
+            border: 1px solid %46;
             border-radius: 8px;
             padding: 6px 14px;
             font-weight: 500;
         }
         QPushButton:hover {
-            background-color: %30;
+            background-color: rgba(%10, 0.12);
             border-color: rgba(%10, 0.38);
             color: %22;
         }
@@ -493,60 +499,75 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             border-color: %24;
         }
         QPushButton:disabled {
-            background-color: rgba(%32, 0.45);
-            color: %26;
-            border-color: rgba(%4, 0.07);
+            background-color: %20;
+            color: rgba(%36, 0.55);
+            border-color: %46;
         }
-        QPushButton#benchmarkRunButton,
-        QPushButton#primary,
-        QPushButton[primaryAction="true"] {
+        QPushButton[actionRole="primary"] {
             background-color: %33;
-            color: %22;
+            color: %47;
             border: 1px solid %33;
             border-radius: 8px;
             padding: 7px 18px;
             font-weight: 600;
         }
-        QPushButton#benchmarkRunButton:hover,
-        QPushButton#primary:hover,
-        QPushButton[primaryAction="true"]:hover {
+        QPushButton[actionRole="primary"]:hover {
             background-color: %21;
             border-color: %24;
         }
-        QPushButton#benchmarkRunButton:pressed,
-        QPushButton#primary:pressed,
-        QPushButton[primaryAction="true"]:pressed {
+        QPushButton[actionRole="primary"]:pressed {
             background-color: %34;
             border-color: %21;
         }
-        QPushButton#benchmarkRunButton:disabled,
-        QPushButton#primary:disabled,
-        QPushButton[primaryAction="true"]:disabled {
-            background-color: rgba(%35, 0.28);
-            color: rgba(%36, 0.42);
-            border-color: rgba(%10, 0.14);
+        QPushButton[actionRole="primary"]:disabled {
+            background-color: %20;
+            color: rgba(%36, 0.55);
+            border-color: %46;
         }
-        QPushButton#textAction {
+        QPushButton[actionRole="ghost"] {
             background-color: transparent;
-            color: %18;
-            border: 1px solid rgba(%10, 0.16);
+            color: %33;
+            border: 1px solid rgba(%10, 0.22);
             border-radius: 7px;
             padding: 4px 10px;
             font-size: 12px;
             font-weight: 500;
         }
-        QPushButton#textAction:hover {
+        QPushButton[actionRole="ghost"]:hover {
             background-color: rgba(%10, 0.12);
             border-color: rgba(%10, 0.35);
-            color: %7;
+            color: %21;
         }
-        QPushButton#textAction:pressed {
+        QPushButton[actionRole="ghost"]:pressed {
             background-color: rgba(%10, 0.20);
         }
-        QPushButton#clearAllPresetsButton:hover {
+        QPushButton[actionRole="ghost"]:disabled {
+            color: rgba(%36, 0.55);
+            border-color: %46;
+        }
+        QPushButton[actionRole="danger"] {
+            background-color: transparent;
+            color: %44;
+            border: 1px solid %44;
+            font-weight: 600;
+        }
+        QPushButton[actionRole="danger"]:hover {
             background-color: rgba(%16, 0.14);
-            border-color: rgba(%16, 0.38);
-            color: %37;
+        }
+        QPushButton[actionRole="danger"]:disabled {
+            color: rgba(%36, 0.55);
+            border-color: %46;
+        }
+        /* A colour chip paints its own disc and the caller fixes its size; the
+           generic button box model would inflate it past that size. */
+        QPushButton#accentSwatch, QPushButton#gradientSwatch,
+        QPushButton#customAccentSwatch, QPushButton#customGradientSwatch {
+            background: transparent;
+            border: none;
+            padding: 0;
+            min-width: 0;
+            min-height: 0;
+            border-radius: 0;
         }
 
         /* ── Checkboxes & Selectable Resolution / Feed Tiles ───────────────── */
@@ -754,7 +775,10 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
         .arg(p.surfaceShortcutRow)
         .arg(p.tableAlternateRow)
         .arg(p.successFill)
-        .arg(p.dangerFill);
+        .arg(p.dangerFill)
+        .arg(p.surfaceControlRaised)
+        .arg(p.borderControl)
+        .arg(p.accentInk);
     // Literal corners use the 8 px design baseline, not the saved default.
     return theme::scaleRadii(sheet, theme::radiusSmall(appearance) / 8.0);
 }

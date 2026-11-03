@@ -488,6 +488,25 @@ QWidget* SettingsDialog::buildAppearanceTab() {
     });
 
     gradientLayout->addWidget(makeSettingsDivider(gradientCard));
+    gradientModeLabel_ = makeFieldLabel(gradientCard, tr("Gradient source"));
+    gradientMode_ = makeChoice(gradientCard, QStringLiteral("gradientModeCombo"));
+    gradientMode_->addItem(tr("Auto (follow accent)"), theme::gradientModeId(theme::GradientMode::Auto));
+    gradientMode_->addItem(tr("Custom color"), theme::gradientModeId(theme::GradientMode::Custom));
+    gradientLayout->addWidget(gradientModeLabel_);
+    gradientLayout->addWidget(gradientMode_);
+    connect(gradientMode_, &QComboBox::currentIndexChanged, this, [this](int index) {
+        if (gradientMode_ == nullptr || index < 0) return;
+        appearanceDraft_.gradientMode =
+            theme::gradientModeFromId(gradientMode_->itemData(index).toString());
+        // In Auto the picker follows the accent, so the preview never shows the
+        // last custom mix beside an accent it no longer belongs to. The stored
+        // custom colour survives until the viewer saves a Custom choice.
+        if (appearanceDraft_.gradientMode == theme::GradientMode::Auto) {
+            appearanceDraft_.gradientColor = theme::hexOf(theme::accentColor(appearanceDraft_));
+        }
+        applyAppearancePreview();
+    });
+
     gradientColorLabel_ = makeFieldLabel(gradientCard, tr("Gradient color"));
     gradientLayout->addWidget(gradientColorLabel_);
     auto* colorRow = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
@@ -504,6 +523,7 @@ QWidget* SettingsDialog::buildAppearanceTab() {
         swatch->setToolTip(preset.color);
         const QString color = preset.color;
         connect(swatch, &QPushButton::clicked, this, [this, color] {
+            appearanceDraft_.gradientMode = theme::GradientMode::Custom;
             appearanceDraft_.gradientColor = color;
             applyAppearancePreview();
         });
@@ -521,6 +541,7 @@ QWidget* SettingsDialog::buildAppearanceTab() {
         const QColor chosen = QColorDialog::getColor(theme::gradientColor(appearanceDraft_), this,
                                                      tr("Custom gradient color"));
         if (!chosen.isValid()) return;
+        appearanceDraft_.gradientMode = theme::GradientMode::Custom;
         appearanceDraft_.gradientColor = theme::hexOf(chosen);
         applyAppearancePreview();
     });
@@ -541,6 +562,7 @@ QWidget* SettingsDialog::buildAppearanceTab() {
         appearanceDraft_.backgroundGradient = shipped.backgroundGradient;
         appearanceDraft_.gradientIntensity = shipped.gradientIntensity;
         appearanceDraft_.gradientHeight = shipped.gradientHeight;
+        appearanceDraft_.gradientMode = shipped.gradientMode;
         appearanceDraft_.gradientColor = shipped.gradientColor;
         applyAppearancePreview();
     });
@@ -610,6 +632,7 @@ void SettingsDialog::refreshAppearanceControls() {
     syncChoice(siteTheme_, theme::themeId(appearanceDraft_.siteTheme));
     syncChoice(titleLanguage_, theme::languageId(appearanceDraft_.titleLanguage));
     syncChoice(nameLanguage_, theme::nameLanguageId(appearanceDraft_.nameLanguage));
+    syncChoice(gradientMode_, theme::gradientModeId(appearanceDraft_.gradientMode));
 
     const auto syncSwitch = [](QAbstractButton* button, bool on) {
         if (button == nullptr) return;
@@ -634,11 +657,17 @@ void SettingsDialog::refreshAppearanceControls() {
         heightValueLabel_->setText(QStringLiteral("%1%").arg(appearanceDraft_.gradientHeight));
     }
     const bool gradientOn = appearanceDraft_.backgroundGradient;
+    // The colour controls only matter for a Custom gradient; in Auto the wash is
+    // the accent and the picker would offer a choice that is not being painted.
+    const bool customGradient =
+        gradientOn && appearanceDraft_.gradientMode == theme::GradientMode::Custom;
     if (intensitySlider_ != nullptr) intensitySlider_->setEnabled(gradientOn);
     if (heightSlider_ != nullptr) heightSlider_->setEnabled(gradientOn);
-    if (gradientColorLabel_ != nullptr) gradientColorLabel_->setEnabled(gradientOn);
-    for (auto& swatch : gradientSwatches_) swatch.second->setEnabled(gradientOn);
-    if (customGradientButton_ != nullptr) customGradientButton_->setEnabled(gradientOn);
+    if (gradientModeLabel_ != nullptr) gradientModeLabel_->setEnabled(gradientOn);
+    if (gradientMode_ != nullptr) gradientMode_->setEnabled(gradientOn);
+    if (gradientColorLabel_ != nullptr) gradientColorLabel_->setEnabled(customGradient);
+    for (auto& swatch : gradientSwatches_) swatch.second->setEnabled(customGradient);
+    if (customGradientButton_ != nullptr) customGradientButton_->setEnabled(customGradient);
     refreshAppearanceCaptions();
 }
 
@@ -764,6 +793,15 @@ void SettingsDialog::retranslateCustomizationTabs() {
     }
     if (intensityLabel_ != nullptr) intensityLabel_->setText(tr("Intensity"));
     if (heightLabel_ != nullptr) heightLabel_->setText(tr("Height"));
+    if (gradientModeLabel_ != nullptr) gradientModeLabel_->setText(tr("Gradient source"));
+    if (gradientMode_ != nullptr) {
+        gradientMode_->setItemText(gradientMode_->findData(
+                                       theme::gradientModeId(theme::GradientMode::Auto)),
+                                   tr("Auto (follow accent)"));
+        gradientMode_->setItemText(gradientMode_->findData(
+                                       theme::gradientModeId(theme::GradientMode::Custom)),
+                                   tr("Custom color"));
+    }
     if (gradientColorLabel_ != nullptr) gradientColorLabel_->setText(tr("Gradient color"));
     if (customAccentButton_ != nullptr) {
         customAccentButton_->setAccessibleName(tr("Custom accent color"));

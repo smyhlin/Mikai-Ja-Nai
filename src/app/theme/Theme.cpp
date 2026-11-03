@@ -5,11 +5,12 @@
 #include "theme/Metrics.hpp"
 #include "theme/Palette.hpp"
 
+#include <QAbstractButton>
 #include <QApplication>
 #include <QPalette>
+#include <QStyle>
 #include <QVector>
 
-#include <cmath>
 #include <utility>
 
 /// The arrow asset lives in the app's resource bundle; a static library keeps
@@ -77,25 +78,28 @@ QWidget#settingsCard QLineEdit:focus, QWidget#settingsCard QComboBox:focus, QWid
     border-color: %11;
 }
 QFrame#settingsCard QPushButton, QWidget#settingsCard QPushButton {
-    background: %8;
-    border: 1px solid %10;
+    background: %25;
+    border: 1px solid %26;
 }
 QFrame#settingsCard QPushButton:hover, QWidget#settingsCard QPushButton:hover {
-    background: %9;
-    border-color: rgba(%24, 0.45);
+    background: rgba(%24, 0.12);
+    border-color: rgba(%24, 0.55);
 }
 QFrame#settingsCard QPushButton:disabled, QWidget#settingsCard QPushButton:disabled {
-    color: %4;
-    background: rgba(%23, 0.03);
-    border-color: rgba(%23, 0.06);
+    color: rgba(%23, 0.55);
+    background: %5;
+    border-color: %26;
 }
-QFrame#settingsCard QPushButton#primary, QWidget#settingsCard QPushButton#primary {
+QFrame#settingsCard QPushButton[actionRole="primary"],
+QWidget#settingsCard QPushButton[actionRole="primary"] {
     background: %11;
-    color: %1;
-    border: none;
+    color: %27;
+    border: 1px solid %11;
 }
-QFrame#settingsCard QPushButton#primary:hover, QWidget#settingsCard QPushButton#primary:hover {
+QFrame#settingsCard QPushButton[actionRole="primary"]:hover,
+QWidget#settingsCard QPushButton[actionRole="primary"]:hover {
     background: %12;
+    border-color: %12;
 }
 QWidget#presetShortcutRow {
     background: %5;
@@ -194,21 +198,37 @@ QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top righ
 QComboBox QAbstractItemView { background: %5; border: 1px solid %10;
     selection-background-color: %8; }
 QCheckBox { spacing: %3px; }
+/* ── Action roles ────────────────────────────────────────────────────────────
+   The four roles declared in Theme.hpp are the only button hierarchy. The bare
+   rule is the secondary role: Qt builds standard buttons itself (a
+   QDialogButtonBox, a QMessageBox), and a neutral action is what an unlabelled
+   standard button is. Its boundary carries the control - the raised fill is
+   only 1.28:1 against the bed, while kBorderControl is 3.32:1 on the
+   application bed, the settings page bed and a settings card alike.
+   Hover moves toward the accent, which is the "підсвітити" the neutral chrome
+   was missing; a disabled control keeps that same visible boundary instead of
+   dissolving into the page. */
 QPushButton {
-    background: %5; border: 1px solid %10; border-radius: %6px;
+    background: %25; border: 1px solid %26; border-radius: %6px;
     padding: %3px %7px; min-height: 22px;
 }
-QPushButton:hover { background: %8; border-color: rgba(%24, 0.35); }
+QPushButton:hover { background: rgba(%24, 0.12); border-color: rgba(%24, 0.55); }
 QPushButton:pressed { background: %9; }
 QPushButton:checked { background: rgba(%24, 0.14); border-color: %11; color: %2; }
 QPushButton:focus { border-color: %11; }
-QPushButton:disabled { color: %4; background: %5; border-color: transparent; }
-QPushButton#primary { background: %11; color: %1; border: none; font-weight: 600;
-    font-size: 14px; padding: 6px 16px; border-radius: %6px; }
-QPushButton#primary:hover { background: %12; }
-QPushButton#primary:disabled { background: %8; color: %4; }
-QPushButton#textAction {
-    background: rgba(%24, 0.08);
+QPushButton:disabled { color: rgba(%23, 0.55); background: %5; border-color: %26; }
+QPushButton[actionRole="primary"] {
+    background: %11; color: %27; border: 1px solid %11; border-radius: %6px;
+    font-weight: 600; font-size: 14px; padding: 6px 16px;
+}
+QPushButton[actionRole="primary"]:hover { background: %12; border-color: %12; }
+QPushButton[actionRole="primary"]:pressed { background: %11; border-color: %12; }
+QPushButton[actionRole="primary"]:focus { border-color: %27; }
+QPushButton[actionRole="primary"]:disabled {
+    background: %5; color: rgba(%23, 0.55); border-color: %26;
+}
+QPushButton[actionRole="ghost"] {
+    background: transparent;
     color: %11;
     border: 1px solid rgba(%24, 0.22);
     border-radius: %21px;
@@ -217,15 +237,43 @@ QPushButton#textAction {
     font-size: 13px;
     font-weight: 600;
 }
-QPushButton#textAction:hover {
+QPushButton[actionRole="ghost"]:hover {
     color: %12;
     background: rgba(%24, 0.16);
     border-color: rgba(%24, 0.45);
 }
-QPushButton#textAction:checked {
+QPushButton[actionRole="ghost"]:checked {
     background: rgba(%24, 0.18);
     border-color: %11;
     color: %12;
+}
+QPushButton[actionRole="ghost"]:focus { border-color: %11; }
+QPushButton[actionRole="ghost"]:disabled {
+    color: rgba(%23, 0.55);
+    background: transparent;
+    border-color: rgba(%23, 0.18);
+}
+QPushButton[actionRole="danger"] {
+    background: transparent;
+    color: %22;
+    border: 1px solid %22;
+    font-weight: 600;
+}
+QPushButton[actionRole="danger"]:hover { background: rgba(%28, 0.14); }
+QPushButton[actionRole="danger"]:pressed { background: rgba(%28, 0.22); }
+QPushButton[actionRole="danger"]:focus { border-color: %28; }
+QPushButton[actionRole="danger"]:disabled {
+    color: rgba(%23, 0.55);
+    background: transparent;
+    border-color: %26;
+}
+/* A colour chip paints its own disc and the caller fixes its size; the generic
+   button box model (padding, border, minimum height) would inflate the size hint
+   past that fixed size, so it is cleared for the chips only. */
+QPushButton#accentSwatch, QPushButton#gradientSwatch,
+QPushButton#customAccentSwatch, QPushButton#customGradientSwatch {
+    background: transparent; border: none; padding: 0;
+    min-width: 0; min-height: 0; border-radius: 0;
 }
 QPushButton#settingsChip { padding: 0; min-width: %13px;
     max-width: %13px; min-height: %13px; max-height: %13px; border: 1px solid transparent; }
@@ -233,7 +281,7 @@ QPushButton#animeCard { background: %5; border: 1px solid %10;
     border-radius: %6px; padding: 0; }
 QPushButton#animeCard:hover { background: %8; border-color: rgba(%24, 0.45); }
 QPushButton#animeCard:focus { border-color: %11; }
-QPushButton#carouselControl { background: %5; color: %2; border: 1px solid %10;
+QPushButton#carouselControl { background: %25; color: %2; border: 1px solid %26;
     border-radius: 8px; padding: 0; min-width: 30px; max-width: 30px;
     min-height: 30px; max-height: 30px; }
 QPushButton#carouselControl:hover { background: %8; border-color: rgba(%24, 0.45); color: %11; }
@@ -329,14 +377,6 @@ QGroupBox#catalogueFilterSection::title {
 }
 QDialog#catalogueFiltersDialog QSpinBox::up-button,
 QDialog#catalogueFiltersDialog QSpinBox::down-button { width: 0; border: none; }
-QPushButton#catalogueApplyButton, QPushButton#teamFilterButton,
-QPushButton[accentAction="true"] {
-    background: %11; color: %1; border: none; font-weight: 600;
-}
-QPushButton#catalogueApplyButton:hover, QPushButton#teamFilterButton:hover,
-QPushButton[accentAction="true"]:hover { background: %12; }
-QPushButton#catalogueApplyButton:disabled, QPushButton#teamFilterButton:disabled,
-QPushButton[accentAction="true"]:disabled { background: %8; color: %4; }
 QTreeWidget#benchmarkModelTree {
     background: %1;
     color: %2;
@@ -394,14 +434,6 @@ QLabel#benchmarkRunSummary, QLabel#benchmarkRunStatus {
     font-size: 12px;
     font-weight: 600;
 }
-QPushButton#benchmarkRunButton {
-    background: %2;
-    color: %1;
-    border: 1px solid %2;
-    font-weight: 600;
-}
-QPushButton#benchmarkRunButton:hover { background: %4; color: %1; border-color: %4; }
-QPushButton#benchmarkRunButton:disabled { background: %9; color: %4; border-color: %10; }
 QProgressBar#benchmarkProgress, QProgressBar#benchmarkEngineProgress {
     background: %1;
     border: 1px solid %10;
@@ -412,7 +444,7 @@ QProgressBar#benchmarkProgress, QProgressBar#benchmarkEngineProgress {
 }
 QProgressBar#benchmarkProgress[runState="failure"], QProgressBar#benchmarkEngineProgress[runState="failure"] { border-color: %22; }
 QProgressBar#benchmarkProgress::chunk, QProgressBar#benchmarkEngineProgress::chunk {
-    background: %4; border-radius: %6px;
+    background: %11; border-radius: %6px;
 }
 QProgressBar#benchmarkProgress[runState="failure"]::chunk { background: %22; }
 QLabel#benchmarkEmptyState { color: %4; background: transparent; padding: %18px; }
@@ -439,19 +471,6 @@ QWidget#coverViewerView { background: transparent; border: none; }
 // selected application appearance. Spacing and column widths are owned by
 // TitlePage's layout, while this sheet owns colour, type scale,
 // radii and control states.
-QColor contrastText(const QColor& background) {
-    const auto linear = [](double channel) {
-        channel /= 255.0;
-        return channel <= 0.04045 ? channel / 12.92
-                                  : std::pow((channel + 0.055) / 1.055, 2.4);
-    };
-    const double luminance = 0.2126 * linear(background.red()) +
-                             0.7152 * linear(background.green()) +
-                             0.0722 * linear(background.blue());
-    const double blackContrast = (luminance + 0.05) / 0.05;
-    const double whiteContrast = 1.05 / (luminance + 0.05);
-    return blackContrast >= whiteContrast ? QColor(Qt::black) : QColor(Qt::white);
-}
 
 QString titlePage(const Palette& p, const Appearance& a) {
     const QColor accentText = contrastText(p.accentValue);
@@ -482,9 +501,9 @@ QWidget#titlePage QWidget#titleHeader {
     border-bottom: 1px solid %8;
 }
 QWidget#titlePage QWidget#titleHeader QPushButton {
-    background: %2;
+    background: %43;
     color: %6;
-    border: 1px solid transparent;
+    border: 1px solid %44;
     border-radius: %42px;
     min-height: %12px;
     max-height: %12px;
@@ -497,8 +516,8 @@ QWidget#titlePage QWidget#titleHeader QPushButton:pressed { background: %3; }
 QWidget#titlePage QWidget#titleHeader QPushButton:focus { border-color: %4; }
 QWidget#titlePage QWidget#titleHeader QPushButton:disabled { color: %7; }
 QWidget#titlePage QPushButton#settingsChip {
-    background: %2;
-    border: 1px solid %8;
+    background: %43;
+    border: 1px solid %44;
     border-radius: %42px;
     min-width: %12px;
     max-width: %12px;
@@ -554,12 +573,12 @@ QWidget#titlePage QPushButton#titleDiscoveryToggle {
 }
 QWidget#titlePage QLabel#titleLinks { color: %6; font-size: %26px; }
 
-QWidget#titlePage QPushButton#textAction,
-QWidget#titlePage QPushButton#titleSynopsisToggle,
-QWidget#titlePage QPushButton#titleDetailsToggle,
-QWidget#titlePage QPushButton#titleDiscoveryToggle {
-    background: %2;
-    color: %6;
+/* Ghost actions: no fill, accent text. The page keeps its own pill geometry so
+   the disclosure row still lines up with the hero's type scale, and the shared
+   role carries the colour contract. */
+QWidget#titlePage QPushButton[actionRole="ghost"] {
+    background: transparent;
+    color: %4;
     border: 1px solid %8;
     border-radius: %42px;
     min-height: 32px;
@@ -567,31 +586,18 @@ QWidget#titlePage QPushButton#titleDiscoveryToggle {
     font-size: %26px;
     font-weight: 500;
 }
-QWidget#titlePage QPushButton#textAction:hover:enabled,
-QWidget#titlePage QPushButton#titleSynopsisToggle:hover:enabled,
-QWidget#titlePage QPushButton#titleDetailsToggle:hover:enabled,
-QWidget#titlePage QPushButton#titleDiscoveryToggle:hover:enabled {
-    background: %3; border-color: rgba(%9, 0.60);
+QWidget#titlePage QPushButton[actionRole="ghost"]:hover:enabled {
+    background: rgba(%9, 0.16); border-color: rgba(%9, 0.45); color: %5;
 }
-QWidget#titlePage QPushButton#textAction:pressed { background: %3; }
-QWidget#titlePage QPushButton#textAction:checked,
-QWidget#titlePage QPushButton#titleDetailsToggle:checked,
-QWidget#titlePage QPushButton#titleDiscoveryToggle:checked {
-    background: %3; border-color: %4; color: %6;
+QWidget#titlePage QPushButton[actionRole="ghost"]:pressed { background: rgba(%9, 0.22); }
+QWidget#titlePage QPushButton[actionRole="ghost"]:checked {
+    background: rgba(%9, 0.18); border-color: %4; color: %4;
 }
-QWidget#titlePage QPushButton#textAction:checked:hover,
-QWidget#titlePage QPushButton#titleDetailsToggle:checked:hover,
-QWidget#titlePage QPushButton#titleDiscoveryToggle:checked:hover { border-color: %5; }
-QWidget#titlePage QPushButton#textAction:focus,
-QWidget#titlePage QPushButton#titleSynopsisToggle:focus,
-QWidget#titlePage QPushButton#titleDetailsToggle:focus,
-QWidget#titlePage QPushButton#titleDiscoveryToggle:focus { border-color: %4; }
-QWidget#titlePage QPushButton#titleDetailsToggle:disabled,
-QWidget#titlePage QPushButton#titleDiscoveryToggle:disabled,
-QWidget#titlePage QPushButton#titleSynopsisToggle:disabled {
-    color: %7; background: %2; border-color: %8;
+QWidget#titlePage QPushButton[actionRole="ghost"]:checked:hover { border-color: %5; }
+QWidget#titlePage QPushButton[actionRole="ghost"]:focus { border-color: %4; }
+QWidget#titlePage QPushButton[actionRole="ghost"]:disabled {
+    color: %7; background: transparent; border-color: %8;
 }
-QWidget#titlePage QPushButton#textAction:disabled { color: %7; border-color: transparent; }
 
 QWidget#titlePage QWidget#titlePlaybackControls {
     background: %2;
@@ -599,9 +605,9 @@ QWidget#titlePage QWidget#titlePlaybackControls {
     border-radius: %14px;
 }
 QWidget#titlePage QPushButton#titleEpisodesAnchor {
-    background: %2;
+    background: %43;
     color: %6;
-    border: 1px solid %8;
+    border: 1px solid %44;
     border-radius: %42px;
     min-height: 32px;
     padding: 0 %37px;
@@ -675,9 +681,9 @@ QWidget#titlePage QLabel#releaseKind {
 }
 QWidget#titlePage QWidget#releaseChipsHost { background: transparent; }
 QWidget#titlePage QPushButton#releaseChip {
-    background: %2;
+    background: %43;
     color: %7;
-    border: 1px solid transparent;
+    border: 1px solid %44;
     border-radius: %42px;
     min-height: %12px;
     max-height: %12px;
@@ -742,9 +748,9 @@ QWidget#titlePage QLabel#titleEpisodeCount { color: %7; font-size: %26px; }
 QWidget#titlePage QScrollArea#animeCarousel { background: transparent; border: none; }
 QWidget#titlePage QWidget#animeCarouselTrack { background: transparent; }
 QWidget#titlePage QPushButton#carouselControl {
-    background: %2;
+    background: %43;
     color: %6;
-    border: 1px solid %8;
+    border: 1px solid %44;
     border-radius: %42px;
     min-width: %18px;
     max-width: %18px;
@@ -806,9 +812,9 @@ QWidget#titlePage QLabel#carouselStatusLive {
 QWidget#titlePage QLabel#carouselEpisodes { color: %7; font-size: %28px; }
 
 QWidget#titlePage QPushButton#episodeButton {
-    background: %2;
+    background: %43;
     color: %6;
-    border: 1px solid transparent;
+    border: 1px solid %44;
     border-radius: %42px;
     min-height: %17px;
     max-height: %17px;
@@ -829,13 +835,13 @@ QWidget#titlePage QPushButton#episodeButton:pressed { background: %3; }
 QWidget#titlePage QPushButton#episodeButton:focus { border-color: %4; }
 QWidget#titlePage QPushButton#episodeButton:disabled {
     background: %2;
-    border-color: transparent;
-    color: rgba(%10, 0.35);
+    border-color: %44;
+    color: %7;
 }
 QWidget#titlePage QPushButton#episodeButton:checked:disabled {
     background: %2;
-    border-color: transparent;
-    color: rgba(%10, 0.35);
+    border-color: %44;
+    color: %7;
 }
 QWidget#titlePage QWidget#episodeWatchedMark {
     background: %4;
@@ -860,9 +866,9 @@ QWidget#titlePage QWidget#episodeLegendUnavailable {
     border-radius: %38px;
 }
 QWidget#titlePage QPushButton#titleWatchWatchedToggle {
-    background: %2;
+    background: %43;
     color: %7;
-    border: 1px solid %8;
+    border: 1px solid %44;
     border-radius: %42px;
     min-height: 40px;
     padding: 0 %37px;
@@ -934,9 +940,9 @@ QWidget#titlePage QLabel#titleDetailsThumb {
     border-radius: %35px;
 }
 QWidget#titlePage QPushButton#titleDetailsClose {
-    background: %2;
+    background: %43;
     color: %6;
-    border: 1px solid %8;
+    border: 1px solid %44;
     border-radius: %42px;
     min-width: %36px;
     max-width: %36px;
@@ -987,7 +993,9 @@ QWidget#titlePage QPushButton#titleDetailsClose:focus { border-color: %4; }
         .arg(accentText.name())
         .arg(hoverText.name())
         .arg(kTitleHeroTitlePixelSizeNarrow)
-        .arg(radiusSmall(a));
+        .arg(radiusSmall(a))
+        .arg(p.surfaceControlRaised)
+        .arg(p.borderControl);
 }
 
 // The main page's header: two aligned rows with their own quiet surfaces. Every
@@ -1024,10 +1032,11 @@ QWidget#searchPage QLabel#searchKeycap {
     font-size: 11px;
     font-weight: 600;
 }
-QWidget#searchPage QPushButton#catalogueFiltersButton,
-QWidget#searchPage QPushButton#catalogueTeamsButton,
-QWidget#searchPage QPushButton#homeButton,
-QWidget#searchPage QPushButton#secondary {
+/* The header's controls take the shared action roles and only re-state the
+   geometry the compact bar needs; their colours come from the same tokens the
+   rest of the application uses, so a neutral control keeps its 3:1 boundary
+   here too. */
+QWidget#searchPage QPushButton[actionRole="secondary"] {
     background: @secondary;
     color: @text;
     border: 1px solid @border;
@@ -1037,54 +1046,44 @@ QWidget#searchPage QPushButton#secondary {
     padding: 0 %12px 0 %6px;
     font-weight: 500;
 }
-QWidget#searchPage QPushButton#secondary { padding: 0 %7px 0 %6px; }
-QWidget#searchPage QPushButton#catalogueFiltersButton:hover,
-QWidget#searchPage QPushButton#catalogueTeamsButton:hover,
-QWidget#searchPage QPushButton#homeButton:hover,
-QWidget#searchPage QPushButton#secondary:hover {
+QWidget#searchPage QPushButton#openMediaButton { padding: 0 %7px 0 %6px; }
+QWidget#searchPage QPushButton[actionRole="secondary"]:hover {
     background: @secondaryHover;
-    border-color: @borderStrong;
+    border-color: @primary;
 }
-QWidget#searchPage QPushButton#catalogueFiltersButton:pressed,
-QWidget#searchPage QPushButton#catalogueTeamsButton:pressed,
-QWidget#searchPage QPushButton#homeButton:pressed,
-QWidget#searchPage QPushButton#secondary:pressed { background: @input; }
-QWidget#searchPage QPushButton#catalogueFiltersButton:focus,
-QWidget#searchPage QPushButton#catalogueTeamsButton:focus,
-QWidget#searchPage QPushButton#homeButton:focus,
-QWidget#searchPage QPushButton#secondary:focus { border-color: @primary; }
-QWidget#searchPage QPushButton#catalogueFiltersButton:disabled,
-QWidget#searchPage QPushButton#catalogueTeamsButton:disabled {
+QWidget#searchPage QPushButton[actionRole="secondary"]:pressed { background: @input; }
+QWidget#searchPage QPushButton[actionRole="secondary"]:focus { border-color: @primary; }
+QWidget#searchPage QPushButton[actionRole="secondary"]:disabled {
     color: @pillText;
     background: @secondary;
     border-color: @border;
 }
-QWidget#searchPage QPushButton#secondary::menu-indicator {
+QWidget#searchPage QPushButton#openMediaButton::menu-indicator {
     image: none;
     width: 0px;
     height: 0px;
 }
-QWidget#searchPage QPushButton#secondary QLabel {
+QWidget#searchPage QPushButton#openMediaButton QLabel {
     background: transparent;
     border: none;
     color: @text;
 }
-QWidget#searchPage QPushButton#primary {
+QWidget#searchPage QPushButton[actionRole="primary"] {
     background: @primary;
     color: @onPrimary;
-    border: 1px solid transparent;
+    border: 1px solid @primary;
     border-radius: %1px;
     min-height: %2px;
     max-height: %2px;
     padding: 0 %13px 0 %8px;
     font-weight: 600;
 }
-QWidget#searchPage QPushButton#primary:hover,
-QWidget#searchPage QPushButton#primary:pressed { background: @primaryHover; }
-QWidget#searchPage QPushButton#primary:focus { border-color: @onPrimary; }
-QWidget#searchPage QPushButton#primary:disabled {
+QWidget#searchPage QPushButton[actionRole="primary"]:hover,
+QWidget#searchPage QPushButton[actionRole="primary"]:pressed { background: @primaryHover; }
+QWidget#searchPage QPushButton[actionRole="primary"]:focus { border-color: @onPrimary; }
+QWidget#searchPage QPushButton[actionRole="primary"]:disabled {
     background: @secondary;
-    color: @pillText;
+    color: @onPrimary;
     border-color: @border;
 }
 QWidget#searchPage QPushButton#settingsChip {
@@ -1182,9 +1181,9 @@ SearchHeaderPalette searchHeaderPalette(const Appearance& appearance) {
     if (p.light) {
         roles.input = p.surfaceInput;
         roles.inputBorder = p.border;
-        roles.border = p.border;
-        roles.borderStrong = p.textMutedSoft;
-        roles.secondary = p.surface;
+        roles.border = p.borderControl;
+        roles.borderStrong = p.borderControl;
+        roles.secondary = p.surfaceControlRaised;
         roles.secondaryHover = p.surfaceHover;
         roles.text = p.text;
         roles.pillSurface = p.surfaceControl;
@@ -1196,14 +1195,12 @@ SearchHeaderPalette searchHeaderPalette(const Appearance& appearance) {
         roles.dotUnknown = p.textDisabled;
         roles.keycapSurface = p.surfaceHover;
         roles.keycapBorder = p.border;
-        roles.primary = p.accent;
-        roles.primaryHover = p.accentHover;
     } else {
         roles.input = QString::fromLatin1(kSearchInput);
         roles.inputBorder = QString::fromLatin1(kSearchInputHairline);
-        roles.border = QString::fromLatin1(kSearchHairline);
-        roles.borderStrong = QString::fromLatin1(kSearchHairlineStrong);
-        roles.secondary = QString::fromLatin1(kSearchSecondary);
+        roles.border = p.borderControl;
+        roles.borderStrong = p.borderControl;
+        roles.secondary = p.surfaceControlRaised;
         roles.secondaryHover = QString::fromLatin1(kSearchSecondaryHover);
         roles.text = p.text;
         roles.pillSurface = QString::fromLatin1(kSearchPill);
@@ -1215,21 +1212,13 @@ SearchHeaderPalette searchHeaderPalette(const Appearance& appearance) {
         roles.dotUnknown = QString::fromLatin1(kSearchDotUnknown);
         roles.keycapSurface = QString::fromLatin1(kSearchKeycap);
         roles.keycapBorder = QString::fromLatin1(kSearchKeycapHairline);
-        // The reference's pink is the primary action on the appearance the app
-        // ships with; a chosen accent replaces it and keeps the rest of the
-        // header on the same beds.
-        if (appearance.accent.compare(QStringLiteral("#bdacff"), Qt::CaseInsensitive) == 0) {
-            const QColor pink(kSearchDefaultPrimary);
-            roles.primary = hexOf(pink);
-            roles.primaryHover = hexOf(pink.lighter(112));
-        } else {
-            roles.primary = p.accent;
-            roles.primaryHover = p.accentHover;
-        }
     }
-    roles.onPrimary = contrastText(QColor(roles.primary)) == QColor(Qt::black)
-                          ? QString::fromLatin1(kSearchOnPrimary)
-                          : QStringLiteral("#ffffff");
+    // The search action is the chosen accent on every appearance, the shipped
+    // one included. A special case here is what made a purple accent render a
+    // pink button: the header must not carry a colour of its own.
+    roles.primary = p.accent;
+    roles.primaryHover = p.accentHover;
+    roles.onPrimary = p.accentInk;
     return roles;
 }
 
@@ -1260,11 +1249,42 @@ QString buildStylesheet(const Appearance& appearance) {
             .arg(radiusPill(appearance), 21)
             .arg(p.danger, 22)
             .arg(p.wash, 23)
-            .arg(p.accentRgb, 24);
+            .arg(p.accentRgb, 24)
+            .arg(p.surfaceControlRaised, 25)
+            .arg(p.borderControl, 26)
+            .arg(p.accentInk, 27)
+            .arg(p.dangerRgb, 28);
     return application + titlePage(p, appearance) + searchPageSheet(searchHeaderPalette(appearance));
 }
 
 QString buildStylesheet() { return buildStylesheet(Appearance{}); }
+
+QString actionRoleName(ActionRole role) {
+    switch (role) {
+        case ActionRole::Primary:
+            return QStringLiteral("primary");
+        case ActionRole::Secondary:
+            return QStringLiteral("secondary");
+        case ActionRole::Ghost:
+            return QStringLiteral("ghost");
+        case ActionRole::Danger:
+            return QStringLiteral("danger");
+    }
+    return QStringLiteral("secondary");
+}
+
+void applyActionRole(QAbstractButton* button, ActionRole role) {
+    if (button == nullptr) return;
+    const QString name = actionRoleName(role);
+    if (button->property("actionRole").toString() != name) {
+        button->setProperty("actionRole", name);
+    }
+    // The role states a colour contract, not a size. A widget-level minimum here
+    // would outlive the sheet and inflate a control the caller fixed (a compact
+    // row glyph, a self-painted chip); the sheets carry the height, so one
+    // metric owns it instead of two.
+    if (button->style() != nullptr) button->style()->polish(button);
+}
 
 void applyPalette(const Appearance& appearance) {
     const Palette p = paletteFor(appearance);
@@ -1277,7 +1297,10 @@ void applyPalette(const Appearance& appearance) {
     pal.setColor(QPalette::Base, QColor(p.surfaceInput));
     pal.setColor(QPalette::AlternateBase, QColor(p.tableAlternateRow));
     pal.setColor(QPalette::Text, QColor(p.text));
-    pal.setColor(QPalette::Button, QColor(p.surface));
+    // Native-drawn buttons and their indicators follow the same raised neutral
+    // the sheet paints a secondary control with, or a combo popup's own buttons
+    // show the old dark slab next to a styled one.
+    pal.setColor(QPalette::Button, QColor(p.surfaceControlRaised));
     pal.setColor(QPalette::ButtonText, QColor(p.text));
     pal.setColor(QPalette::BrightText, QColor(p.accentSoftBright));
     pal.setColor(QPalette::Highlight, QColor(p.accentValue));
@@ -1289,6 +1312,10 @@ void applyPalette(const Appearance& appearance) {
     pal.setColor(QPalette::Disabled, QPalette::Text, QColor(p.textDisabled));
     pal.setColor(QPalette::Disabled, QPalette::WindowText, QColor(p.textDisabled));
     pal.setColor(QPalette::Disabled, QPalette::ButtonText, QColor(p.textDisabled));
+    pal.setColor(QPalette::Light, QColor(p.borderControl));
+    pal.setColor(QPalette::Midlight, QColor(p.borderControl));
+    pal.setColor(QPalette::Mid, QColor(p.borderControl));
+    pal.setColor(QPalette::Dark, QColor(p.borderControl));
     QApplication::setPalette(pal);
 }
 

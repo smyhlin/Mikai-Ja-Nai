@@ -141,6 +141,13 @@ QFrame* createVerticalDivider(QWidget* parent) {
 }
 
 QString windowStyleSheet() {
+    // Every accent site is the pushed token, not a Tailwind literal: the sheet
+    // is rebuilt on accentNotifier() so an open Compare window follows a new
+    // accent without being reopened. Seat A keeps its own line because it names
+    // the accent rather than being styled by it.
+    const QString accent = mplayer::shell::accent().name(QColor::HexRgb);
+    const QString accentWash =
+        QStringLiteral("rgba(%1, 0.22)").arg(mplayer::shell::rgbaTriplet(mplayer::shell::accent()));
     return QStringLiteral(
         "QDialog {"
         "  background-color: #0d0e11;"
@@ -164,14 +171,14 @@ QString windowStyleSheet() {
         "  min-height: 22px;"
         "}"
         "QComboBox:hover {"
-        "  border-color: #3b82f6;"
+        "  border-color: %1;"
         "}"
         "QComboBox QAbstractItemView {"
         "  background-color: #16181d;"
         "  color: #e5e7eb;"
         "  border: 1px solid #282c34;"
-        "  selection-background-color: #2563eb;"
-        "  selection-color: #ffffff;"
+        "  selection-background-color: %1;"
+        "  selection-color: %2;"
         "}"
         "QToolButton, QPushButton {"
         "  background-color: #1e2128;"
@@ -184,13 +191,13 @@ QString windowStyleSheet() {
         "}"
         "QToolButton:hover, QPushButton:hover {"
         "  background-color: #262a34;"
-        "  border-color: #3b82f6;"
+        "  border-color: %1;"
         "  color: #ffffff;"
         "}"
         "QPushButton#comparePinBtn:checked {"
-        "  background-color: rgba(59, 130, 246, 0.22);"
-        "  border-color: #3b82f6;"
-        "  color: #60a5fa;"
+        "  background-color: %3;"
+        "  border-color: %1;"
+        "  color: %1;"
         "}"
         "QSpinBox, QDoubleSpinBox {"
         "  background-color: #1e2128;"
@@ -206,16 +213,17 @@ QString windowStyleSheet() {
         "  border-radius: 2px;"
         "}"
         "QSlider::sub-page:horizontal {"
-        "  background: #3b82f6;"
+        "  background: %1;"
         "  border-radius: 2px;"
         "}"
         "QSlider::handle:horizontal {"
         "  background: #e5e7eb;"
-        "  border: 1px solid #3b82f6;"
+        "  border: 1px solid %1;"
         "  width: 12px;"
         "  margin: -4px 0;"
         "  border-radius: 6px;"
-        "}");
+        "}")
+        .arg(accent, mplayer::shell::inkOn(mplayer::shell::accent()), accentWash);
 }
 
 }  // namespace
@@ -241,6 +249,10 @@ CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandid
     setWindowFlags(Qt::Dialog | Qt::WindowTitleHint | Qt::CustomizeWindowHint);
     resize(kWindowWidth, kWindowHeight);
     setStyleSheet(windowStyleSheet());
+    // An open Compare window is a live surface: a new accent in Settings must
+    // repaint its controls instead of waiting for the window to be reopened.
+    connect(&accentNotifier(), &AccentNotifier::changed, this,
+            [this] { setStyleSheet(windowStyleSheet()); });
     if (surface_ != nullptr) {
         const native::AnimeJanaiPlan activePlan = surface_->animeJanaiPlan();
         if (activePlan.enabled && !activePlan.presetId.isEmpty()) {

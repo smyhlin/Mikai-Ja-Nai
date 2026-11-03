@@ -47,17 +47,19 @@ inline constexpr const char* kSurfaceDeep = "#0f0d17";
 inline constexpr const char* kSurfaceControl = "#1d192b";
 inline constexpr const char* kSurfaceControlHover = "#262038";
 inline constexpr const char* kSurfaceControlPressed = "#181424";
+// A neutral action's fill and boundary. The fill is deliberately close to the
+// bed (1.28:1); WCAG 1.4.11 measures the component against what surrounds it,
+// and the boundary is what carries it: kBorderControl is 3.32:1 on both the
+// application bed and the settings page bed and 3.15:1 on a settings card.
+// Do not dim either one - a neutral control below 3:1 is the defect this pair
+// exists to fix.
+inline constexpr const char* kSurfaceControlRaised = "#222430";
+inline constexpr const char* kBorderControl = "#63636f";
 inline constexpr const char* kSurfaceInputHover = "#120f1c";
 inline constexpr const char* kSurfaceInputFocus = "#141120";
 inline constexpr const char* kSurfaceTileHover = "#211c30";
 inline constexpr const char* kTableAlternateRow = "#14111f";
 
-inline constexpr const char* kAccentFocus = "#a78bfa";
-inline constexpr const char* kAccentSolid = "#8b5cf6";
-inline constexpr const char* kAccentDeep = "#7c3aed";
-inline constexpr const char* kAccentDeepest = "#6d28d9";
-inline constexpr const char* kAccentSoft = "#c4b5fd";
-inline constexpr const char* kAccentSoftBright = "#ddd6fe";
 inline constexpr const char* kAccentOnFill = "#f8f7fc";
 
 inline constexpr const char* kTextPrimary = "#f3f1f8";
@@ -81,11 +83,8 @@ inline constexpr const char* kDangerTextSoft = "#fecaca";
 
 // Hue triplets, for the washes QSS composes with an alpha channel:
 // `rgba(%1, 0.12)`. Keeping the components here is what lets a rule vary its
-// alpha without restating the hue.
-inline constexpr const char* kAccentRgb = "167, 139, 250";
-inline constexpr const char* kAccentSolidRgb = "139, 92, 246";
-inline constexpr const char* kAccentDeepRgb = "124, 58, 237";
-inline constexpr const char* kHairlineRgb = "196, 181, 253";
+// alpha without restating the hue. The accent's own triplet is not here: it is
+// resolved per appearance in Palette, because the accent is a preference.
 inline constexpr const char* kSuccessRgb = "52, 211, 153";
 inline constexpr const char* kWarningRgb = "251, 191, 36";
 inline constexpr const char* kDangerRgb = "248, 113, 113";
@@ -94,15 +93,14 @@ inline constexpr const char* kSurfaceDeepRgb = "15, 13, 23";
 inline constexpr const char* kTextPrimaryRgb = "243, 241, 248";
 
 // ── Title page surfaces ─────────────────────────────────────────────────────
-// The media detail page keeps the reference's neutral near-black bed and a
-// desaturated steel-blue accent, distinct from the violet settings ramp. These
+// The media detail page keeps the reference's neutral near-black bed. These
 // aliases are scoped to the title page stylesheet; the application palette
 // above is unchanged, so search, settings and the player keep their colours.
+// The page's accent is not a token: Palette derives it from the chosen accent,
+// so the page cannot stay steel-blue while the rest of the app changes.
 inline constexpr const char* kTitleBackground = "#0b0b0e";
 inline constexpr const char* kTitleSurface = "#16161d";
 inline constexpr const char* kTitleSurfaceHover = "#1e1e26";
-inline constexpr const char* kTitleAccent = "#7b8ab8";
-inline constexpr const char* kTitleAccentHover = "#98a6d2";
 inline constexpr const char* kTitleText = "#ffffff";
 inline constexpr const char* kTitleMuted = "#8a8a98";
 // The border and the raised hover fill are the same value in the reference;
@@ -115,34 +113,24 @@ inline constexpr const char* kTitleBorder = "#1e1e26";
 inline constexpr int kTitleBackdropAlpha = 77;
 inline constexpr int kTitleBackdropFadeAlpha = 60;
 
-inline constexpr const char* kTitleAccentRgb = "123, 138, 184";
-inline constexpr const char* kTitleBackgroundRgb = "11, 11, 14";
-inline constexpr const char* kTitleMutedRgb = "138, 138, 152";
-
 // ── Search header ───────────────────────────────────────────────────────────
 // The main page's two-row header keeps its own quiet surfaces: an input bed, a
 // secondary-control fill, the passive quota pill, the Enter keycap, and the
 // primary action. The rules that use them are scoped to QWidget#searchPage, so
 // the catalogue, title page, settings and player keep the palette above.
 //
-// On the default dark appearance the primary action is the reference's pink; a
-// chosen accent replaces it (see theme::searchHeaderPalette). The hairline is a
-// white alpha rather than a grey so it reads as an edge on every one of these
-// beds.
+// The primary action is the chosen accent like everywhere else; there is no
+// shipped-app exception. The input hairline is a white alpha because it is an
+// input edge, not a control boundary - controls take kBorderControl.
 inline constexpr const char* kSearchInput = "#101014";
-inline constexpr const char* kSearchSecondary = "#1a1a22";
 inline constexpr const char* kSearchSecondaryHover = "#22222c";
-inline constexpr const char* kSearchHairline = "rgba(255, 255, 255, 0.12)";
 inline constexpr const char* kSearchInputHairline = "rgba(255, 255, 255, 0.10)";
 inline constexpr const char* kSearchPillHairline = "rgba(255, 255, 255, 0.08)";
 inline constexpr const char* kSearchKeycapHairline = "rgba(255, 255, 255, 0.14)";
-inline constexpr const char* kSearchHairlineStrong = "rgba(255, 255, 255, 0.18)";
 inline constexpr const char* kSearchPill = "#14141b";
 inline constexpr const char* kSearchPillText = "#a1a1aa";
 inline constexpr const char* kSearchKeycap = "#22222b";
 inline constexpr const char* kSearchDotHealthy = "#22c55e";
 inline constexpr const char* kSearchDotUnknown = "#5c5c68";
-inline constexpr const char* kSearchDefaultPrimary = "#f472b6";
-inline constexpr const char* kSearchOnPrimary = "#09090b";
 
 }  // namespace mikai::app::theme

@@ -41,16 +41,11 @@ MediaInformationDialog::MediaInformationDialog(VideoSurface* surface, QWidget* p
     }
     setMinimumSize(QSize(420, 320).boundedTo(available));
     resize(QSize(680, 560).boundedTo(available));
-    QPalette colors = palette();
-    colors.setColor(QPalette::Window, flyout());
-    colors.setColor(QPalette::WindowText, w95());
-    colors.setColor(QPalette::Base, bg0());
-    colors.setColor(QPalette::Text, w95());
-    colors.setColor(QPalette::Button, pill());
-    colors.setColor(QPalette::ButtonText, w95());
-    colors.setColor(QPalette::Highlight, accent());
-    colors.setColor(QPalette::HighlightedText, w95());
-    setPalette(colors);
+    applyShellPalette();
+    // The palette is a captured copy, so a repaint cannot pick up a new accent:
+    // rebuild it, or a selection keeps the previous colour.
+    connect(&accentNotifier(), &AccentNotifier::changed, this,
+            [this] { applyShellPalette(); });
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(2 * kFrameMargin, 2 * kFrameMargin,
                                2 * kFrameMargin, 2 * kFrameMargin);
@@ -136,6 +131,21 @@ bool MediaInformationDialog::sourceIsCurrent() const {
     return surface_ != nullptr && sourceUrl_ == surface_->sourceUrl() &&
         information_.sourceEpoch == surface_->sourceEpoch() &&
         information_.coreIdentity == surface_->mediaTracks().coreIdentity;
+}
+
+void MediaInformationDialog::applyShellPalette() {
+    QPalette colors = palette();
+    colors.setColor(QPalette::Window, flyout());
+    colors.setColor(QPalette::WindowText, w95());
+    colors.setColor(QPalette::Base, bg0());
+    colors.setColor(QPalette::Text, w95());
+    colors.setColor(QPalette::Button, pill());
+    colors.setColor(QPalette::ButtonText, w95());
+    colors.setColor(QPalette::Highlight, accent());
+    // The selection ink follows the highlight, or a dark accent paints an
+    // unreadable label on its own selected row.
+    colors.setColor(QPalette::HighlightedText, inkOn(accent()));
+    setPalette(colors);
 }
 
 void MediaInformationDialog::cancelRequest() {

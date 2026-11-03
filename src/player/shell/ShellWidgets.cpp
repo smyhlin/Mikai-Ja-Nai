@@ -443,6 +443,30 @@ void SkipButton::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 //  SETTINGS FLYOUT
 // ═══════════════════════════════════════════════════════════════════════════
 
+/// The shortcut card's keycaps: an accent wash with a visible edge, so a hint
+/// reads as part of the same colour system as the rest of the chrome.
+QString keyHintsQss() {
+    return QStringLiteral(
+               "KeyHints { background: transparent; }"
+               "QLabel#playerKeyHintKey {"
+               "  color: %1;"
+               "  background: rgba(%2, 0.18);"
+               "  border: 1px solid rgba(%2, 0.42);"
+               "  border-radius: 4px;"
+               "  padding: 2px 6px;"
+               "  font-weight: 600;"
+               "}")
+        .arg(rgba(white(235)), rgbaTriplet(accent()));
+}
+
+/// The speed badge: the pushed accent behind a contrast-derived ink, so a very
+/// dark accent still carries a legible label.
+QString badgeQss() {
+    return QStringLiteral("background:%1; color:%2; border-radius:4px; padding:1px 6px;"
+                          " font-weight:700;")
+        .arg(accent().name(QColor::HexRgb), inkOn(accent()).name(QColor::HexRgb));
+}
+
 SettingsFlyout::SettingsFlyout(QWidget* parent)
     : QFrame(parent), quality_(QStringLiteral("HD")) {
     setObjectName(QStringLiteral("playerSettingsFlyout"));
@@ -463,10 +487,7 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     head->addStretch();
     badge_ = new QLabel(QStringLiteral("1.0x"));
     badge_->setFont(monoFont(9));
-    badge_->setStyleSheet(
-        QStringLiteral("background:%1; color:#ffffff; border-radius:4px; padding:1px 6px;"
-                       " font-weight:700;")
-            .arg(accent().name()));
+    badge_->setStyleSheet(badgeQss());
     head->addWidget(badge_);
     lay->addLayout(head);
 
@@ -557,6 +578,13 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
         close();
         emit defaultPlayerRequested();
     });
+    // The badge, the speed track and the selected rows carry the accent; a live
+    // change restates them instead of waiting for the flyout to be rebuilt.
+    connect(&accentNotifier(), &AccentNotifier::changed, this, [this] {
+        badge_->setStyleSheet(badgeQss());
+        slider_->setAccent(accent());
+        refresh();
+    });
 
     retranslate();
 }
@@ -566,15 +594,18 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
 // text. The popovers already spell alpha as a fraction, which is why their rows
 // read correctly; both row styles go through here now.
 QString rowQss(bool current) {
+    // The selected row is the pushed accent, not a stale copy of a library
+    // default, so the flyout agrees with the badge above it.
+    const QString accent = rgbaTriplet(accent());
     return QStringLiteral(
                "QPushButton { color: %1; background: %2; border: 1px solid %3; border-radius: 6px;"
                " text-align: left; padding: 0 10px; font-size: 13px; font-weight: 500; min-height: 26px; }"
                "QPushButton:hover { background: rgba(255, 255, 255, 0.12); color: #ffffff;"
                " border-color: rgba(255, 255, 255, 0.20); }")
         .arg(current ? QStringLiteral("#ffffff") : QStringLiteral("#e0e0e6"),
-             current ? QStringLiteral("rgba(88, 101, 242, 0.40)")
+             current ? QStringLiteral("rgba(%1, 0.40)").arg(accent)
                      : QStringLiteral("rgba(255, 255, 255, 0.05)"),
-             current ? QStringLiteral("rgba(88, 101, 242, 0.60)")
+             current ? QStringLiteral("rgba(%1, 0.60)").arg(accent)
                      : QStringLiteral("transparent"));
 }
 
@@ -975,7 +1006,11 @@ KeyHints::KeyHints(QWidget* parent) : QFrame(parent) {
     setObjectName(QStringLiteral("playerKeyHints"));
     setProperty("playerOverlay", true);
     setFocusPolicy(Qt::StrongFocus);
-    setStyleSheet(QStringLiteral("KeyHints { background: transparent; }"));
+    setStyleSheet(keyHintsQss());
+    // The keycaps are an accent wash (the ghost role's "keyboard hints"), so a
+    // live accent change restates them from one place.
+    connect(&accentNotifier(), &AccentNotifier::changed, this,
+            [this] { setStyleSheet(keyHintsQss()); });
     hide();
 
     auto* lay = new QVBoxLayout(this);
@@ -994,12 +1029,9 @@ KeyHints::KeyHints(QWidget* parent) : QFrame(parent) {
         row->setSpacing(8);
         auto* key = new QLabel(entry.first);
         key->setFont(monoFont(8));
+        key->setObjectName(QStringLiteral("playerKeyHintKey"));
         key->setAlignment(Qt::AlignCenter);
         key->setMinimumWidth(68);
-        key->setStyleSheet(
-            QStringLiteral("color: %1; background: rgba(0,0,0,120); border: 1px solid %2;"
-                           " border-radius: 4px; padding: 2px 6px; font-weight: 600;")
-                .arg(rgba(white(235)), rgba(white(40))));
         auto* action = new QLabel(entry.second);
         action->setFont(uiFont(9));
         action->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(rgba(white(180))));

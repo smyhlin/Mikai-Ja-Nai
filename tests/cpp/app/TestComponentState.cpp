@@ -462,7 +462,7 @@ void TestComponentState::generationBumpMidCheckReleasesEveryLatch() {
     waitUntil([&] { return tab.inventoryReady() && !tab.acquisitionRunning(); });
     QVERIFY(tab.inventoryReady());
 
-    auto* apply = tab.findChild<QPushButton*>(QStringLiteral("primary"));
+    auto* apply = tab.findChild<QPushButton*>(QStringLiteral("componentDownloadButton"));
     auto* cancel =
         tab.findChild<QPushButton*>(QStringLiteral("nativeComponentTabCancelButton"));
     auto* backendCombo =

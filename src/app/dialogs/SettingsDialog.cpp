@@ -114,11 +114,10 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     footerLayout->setSpacing(theme::kSpacingSmall);
     buttonBox_ = new QDialogButtonBox(footer);
     cancelButton_ = buttonBox_->addButton(tr("Cancel"), QDialogButtonBox::RejectRole);
-    cancelButton_->setMinimumHeight(theme::kSettingsControlSize);
+    theme::applyActionRole(cancelButton_, theme::ActionRole::Secondary);
     saveButton_ = buttonBox_->addButton(tr("Save"), QDialogButtonBox::AcceptRole);
-    saveButton_->setObjectName(QStringLiteral("primary"));
-    saveButton_->setProperty("primaryAction", true);
-    saveButton_->setMinimumHeight(theme::kSettingsControlSize);
+    saveButton_->setObjectName(QStringLiteral("settingsSaveButton"));
+    theme::applyActionRole(saveButton_, theme::ActionRole::Primary);
     connect(cancelButton_, &QPushButton::clicked, this, &QDialog::reject);
     connect(saveButton_, &QPushButton::clicked, this, &SettingsDialog::save);
     footerLayout->addWidget(buttonBox_);

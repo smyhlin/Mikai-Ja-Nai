@@ -14,20 +14,74 @@ namespace mplayer {
 namespace shell {
 
 namespace {
+/// The shipped application accent (#bdacff). The application pushes its own
+/// token before any window exists; this default is what a probe or a bare
+/// surface sees, and it must be the app's colour rather than a library's story.
 QColor& accentStorage() {
-    static QColor current(QStringLiteral("#5865F2"));
+    static QColor current(QStringLiteral("#bdacff"));
     return current;
 }
 double& cornerRadiusStorage() {
     static double current = 8.0;
     return current;
 }
+
+/// Amber, the semantic "side B" hue, and the complement a warm accent rotates
+/// it to.
+constexpr int kCompareAmberHue = 37;
+constexpr int kCompareRotatedHue = 210;
+constexpr int kCompareHueWindow = 30;
 }  // namespace
 
 QColor accent() { return accentStorage(); }
 
 void setAccent(const QColor& color) {
-    if (color.isValid()) accentStorage() = color;
+    if (!color.isValid() || color == accentStorage()) return;
+    const QColor previous = accentStorage();
+    accentStorage() = color;
+    Q_EMIT accentNotifier().changed(previous);
+}
+
+AccentNotifier& accentNotifier() {
+    static AccentNotifier notifier;
+    return notifier;
+}
+
+QColor compareSideB(const QColor& accentColor) {
+    const int hue = accentColor.hue();
+    const int distance = qAbs(((hue - kCompareAmberHue) % 360 + 540) % 360 - 180);
+    if (distance > kCompareHueWindow) return QColor(245, 158, 11);  // #f59e0b
+    // Amber would read as the accent at a glance, so side B moves to the
+    // complement and keeps its saturation and value from the accent.
+    float h = 0.0f;
+    float s = 0.0f;
+    float v = 0.0f;
+    accentColor.getHsvF(&h, &s, &v);
+    Q_UNUSED(h);
+    return QColor::fromHsvF(kCompareRotatedHue / 360.0, qBound(0.45f, s, 0.9f),
+                            qBound(0.55f, v, 0.95f));
+}
+
+QColor compareSide(int index) {
+    return index == 0 ? accent() : compareSideB(accent());
+}
+
+QString rgbaTriplet(const QColor& color) {
+    return QStringLiteral("%1, %2, %3").arg(color.red()).arg(color.green()).arg(color.blue());
+}
+
+QColor inkOn(const QColor& background) {
+    const auto linear = [](int value) {
+        const double channel = value / 255.0;
+        return channel <= 0.04045 ? channel / 12.92
+                                  : std::pow((channel + 0.055) / 1.055, 2.4);
+    };
+    const double luminance = 0.2126 * linear(background.red()) +
+                             0.7152 * linear(background.green()) +
+                             0.0722 * linear(background.blue());
+    const double onBlack = (luminance + 0.05) / 0.05;
+    const double onWhite = 1.05 / (luminance + 0.05);
+    return onBlack >= onWhite ? QColor(Qt::black) : QColor(Qt::white);
 }
 
 double cornerRadius() { return cornerRadiusStorage(); }

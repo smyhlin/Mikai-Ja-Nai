@@ -600,7 +600,7 @@ class CannedApi : public QObject {
 /// the button itself reads "Повторити" - a visible affordance the slot would
 /// miss depending on the language a previous slot happened to leave active. The
 /// updates and schedule rows reuse FailureView with its retry suppressed, so a
-/// visible view with a visible `textAction` is exactly a carousel failure.
+/// visible view with a visible retry action is exactly a carousel failure.
 int visibleCarouselRetries(const SearchPage& page) {
   int visible = 0;
   for (FailureView* view : page.findChildren<FailureView*>()) {
@@ -608,7 +608,7 @@ int visibleCarouselRetries(const SearchPage& page) {
       continue;
     }
     for (QPushButton* button : view->findChildren<QPushButton*>()) {
-      if (button->isVisible() && button->objectName() == QLatin1String("textAction")) {
+      if (button->isVisible() && button->objectName() == QLatin1String("failureRetryAction")) {
         ++visible;
       }
     }
@@ -1815,8 +1815,8 @@ void TestFeedRender::mainPageHeaderKeepsEveryActionAndSkipsTheKeycap() {
   auto* keycap = page.findChild<QLabel*>(QStringLiteral("searchKeycap"));
   auto* filters = page.findChild<QPushButton*>(QStringLiteral("catalogueFiltersButton"));
   auto* teams = page.findChild<QPushButton*>(QStringLiteral("catalogueTeamsButton"));
-  auto* search = page.findChild<QPushButton*>(QStringLiteral("primary"));
-  auto* media = page.findChild<QPushButton*>(QStringLiteral("secondary"));
+  auto* search = page.findChild<QPushButton*>(QStringLiteral("searchActionButton"));
+  auto* media = page.findChild<QPushButton*>(QStringLiteral("openMediaButton"));
   auto* menu = page.findChild<QMenu*>(QStringLiteral("openMediaMenu"));
   auto* ratePill = page.findChild<mikai::app::RateLimitLabel*>();
   auto* dot = page.findChild<QLabel*>(QStringLiteral("rateDot"));
@@ -1927,7 +1927,7 @@ void TestFeedRender::loadedResultsRetranslateWithoutRefetchingOrLosingViewState(
 
   auto* query = page.findChild<QLineEdit*>(QStringLiteral("searchQuery"));
   auto* results = page.findChild<QListWidget*>(QStringLiteral("searchResults"));
-  auto* searchButton = page.findChild<QPushButton*>(QStringLiteral("primary"));
+  auto* searchButton = page.findChild<QPushButton*>(QStringLiteral("searchActionButton"));
   auto* status = page.findChild<QLabel*>(QStringLiteral("status"));
   QVERIFY2(query != nullptr && results != nullptr && searchButton != nullptr &&
                status != nullptr,

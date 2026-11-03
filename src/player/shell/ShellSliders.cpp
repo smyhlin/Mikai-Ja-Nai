@@ -93,6 +93,12 @@ void RangeSlider::leaveEvent(QEvent* event) {
     chromeUpdate(this);
 }
 
+void RangeSlider::setAccent(const QColor& accent) {
+    if (!accent.isValid() || accent == accent_) return;
+    accent_ = accent;
+    chromeUpdate(this);
+}
+
 void RangeSlider::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 void RangeSlider::paintChrome(QPainter& p) {
@@ -103,7 +109,7 @@ void RangeSlider::paintChrome(QPainter& p) {
 
     paintRounded(p, QRectF(m, y, w, track_), half, w25());
     if (v_ > 0) {
-        paintRounded(p, QRectF(m, y, w * v_, track_), half, accent_);
+        paintRounded(p, QRectF(m, y, w * v_, track_), half, playedColor());
     }
     if (hover_ >= 0.0 && hover_ <= 1.0) {
         paintRounded(p, QRectF(m, y, w * qMin(hover_, v_), track_), half, white(60));
@@ -121,7 +127,9 @@ void RangeSlider::paintChrome(QPainter& p) {
 
 // ── ScrubBar ───────────────────────────────────────────────────────────────
 
-ScrubBar::ScrubBar(QWidget* parent) : RangeSlider(w95(), 4, parent) {}
+ScrubBar::ScrubBar(QWidget* parent) : RangeSlider(accent(), 4, parent) {}
+
+QColor ScrubBar::playedColor() const { return accent(); }
 
 void ScrubBar::setDuration(double d) {
     const double next = std::isfinite(d) ? qMax(0.0, d) : 0.0;

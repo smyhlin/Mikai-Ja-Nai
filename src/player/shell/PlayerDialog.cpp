@@ -115,6 +115,8 @@ constexpr int kStripHeight = 30;
 constexpr int kStripMargin = 8;
 
 QString chipQss() {
+    // The strip sits on the picture, so its hover is the pushed accent: the only
+    // affordance a viewer has that these chips belong to the window they styled.
     return QStringLiteral(
                "QPushButton {"
                "  color: %1;"
@@ -125,10 +127,12 @@ QString chipQss() {
                "  font-size: 12px;"
                "}"
                "QPushButton:hover {"
-               "  background: rgba(231, 231, 234, 0.12);"
+               "  background: rgba(%4, 0.18);"
+               "  border-color: rgba(%4, 0.55);"
                "}")
         .arg(kText, kBorder)
-        .arg(kSpacingSmall);
+        .arg(kSpacingSmall)
+        .arg(rgbaTriplet(accent()));
 }
 
 QString panelQss() {
@@ -146,6 +150,8 @@ QString statusTextQss() { return QStringLiteral("color: %1; background: transpar
 QPushButton* makeChip(QWidget* parent, const QString& name, const QString& text) {
     auto* button = new QPushButton(text, parent);
     button->setObjectName(name);
+    // Marks the accent-derived chips so one accent change can restate them all.
+    button->setProperty("shellChip", true);
     button->setFixedHeight(kStripHeight);
     button->setCursor(Qt::PointingHandCursor);
     // A focused button would swallow Space, and Space is play/pause.
@@ -225,6 +231,14 @@ PlayerDialog::PlayerDialog(const QString& caption,
       forwardingKey_(false),
       pipWasFullscreen_(false) {
     setObjectName(QStringLiteral("playerWindow"));
+    // The feature strip's chips carry the accent in their hover; a window that
+    // is already open when the accent changes restates them here.
+    connect(&accentNotifier(), &AccentNotifier::changed, this, [this] {
+        const QString sheet = chipQss();
+        for (QPushButton* chip : findChildren<QPushButton*>()) {
+            if (chip->property("shellChip").toBool()) chip->setStyleSheet(sheet);
+        }
+    });
     setWindowTitle(tr("Player — %1").arg(caption_));
     setWindowFlags(Qt::Window | Qt::WindowTitleHint | Qt::WindowSystemMenuHint |
                    Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
@@ -424,6 +438,7 @@ void PlayerDialog::buildStrip() {
 
     seriesButton_ = new QPushButton(strip_);
     seriesButton_->setObjectName(QStringLiteral("playerSeriesToggle"));
+    seriesButton_->setProperty("shellChip", true);
     seriesButton_->setFixedSize(kStripHeight, kStripHeight);
     seriesButton_->setCursor(Qt::PointingHandCursor);
     seriesButton_->setToolTip(tr("Episode list (S)"));

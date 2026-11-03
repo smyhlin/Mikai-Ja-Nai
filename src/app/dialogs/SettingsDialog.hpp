@@ -421,6 +421,8 @@ private:
     QLabel* heightLabel_ = nullptr;
     QSlider* heightSlider_ = nullptr;
     QLabel* heightValueLabel_ = nullptr;
+    QLabel* gradientModeLabel_ = nullptr;
+    QComboBox* gradientMode_ = nullptr;
     QLabel* gradientColorLabel_ = nullptr;
     QVector<QPair<QString, SwatchButton*>> gradientSwatches_;
     SwatchButton* customGradientButton_ = nullptr;

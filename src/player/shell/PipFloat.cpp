@@ -134,6 +134,10 @@ PipFloat::PipFloat(QWidget* parent)
     // recorded in paint order, so a frame is a walk of that list.
     chrome_.adopt(this, this);
 
+    // The timeline's played part is the pushed accent, read at paint time; the
+    // float only needs to be told the token moved so it repaints.
+    connect(&accentNotifier(), &AccentNotifier::changed, this, [this] { update(); });
+
     overlayFade_ = new QVariantAnimation(this);
     overlayFade_->setDuration(kPipBarFadeMs);
     overlayFade_->setEasingCurve(QEasingCurve::OutCubic);

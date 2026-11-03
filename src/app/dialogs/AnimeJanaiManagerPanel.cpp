@@ -4,6 +4,7 @@
 #include "native/components/AnimeJanaiCatalogWatcher.hpp"
 #include "theme/Colors.hpp"
 #include "theme/Metrics.hpp"
+#include "theme/Theme.hpp"
 #include "workers/Runner.hpp"
 #include "widgets/FlowLayout.hpp"
 #include "player/shaders/Anime4K.hpp"
@@ -252,10 +253,11 @@ void AnimeJanaiManagerPanel::buildUi() {
     auto* modelsToolbar = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
     importModelButton_ = new QPushButton(tr("Import .onnx Model…"), modelsCard);
     importModelButton_->setObjectName(QStringLiteral("ajiImportModelButton"));
-    importModelButton_->setProperty("primaryAction", true);
+    theme::applyActionRole(importModelButton_, theme::ActionRole::Primary);
     polishInteractiveControl(importModelButton_);
     removeModelButton_ = new QPushButton(tr("Remove Selected"), modelsCard);
     removeModelButton_->setObjectName(QStringLiteral("ajiRemoveModelButton"));
+    theme::applyActionRole(removeModelButton_, theme::ActionRole::Danger);
     polishInteractiveControl(removeModelButton_);
     openModelsDirButton_ = new QPushButton(tr("Open Models Folder"), modelsCard);
     openModelsDirButton_->setObjectName(QStringLiteral("ajiOpenModelsFolderButton"));
@@ -472,6 +474,7 @@ void AnimeJanaiManagerPanel::buildUi() {
     cloneSlotButton_ = new QPushButton(tr("Clone From…"), profilesCard);
     polishInteractiveControl(cloneSlotButton_);
     deleteSlotButton_ = new QPushButton(tr("Clear Slot"), profilesCard);
+    theme::applyActionRole(deleteSlotButton_, theme::ActionRole::Danger);
     polishInteractiveControl(deleteSlotButton_);
     importPconfButton_ = new QPushButton(tr("Import .pconf…"), profilesCard);
     polishInteractiveControl(importPconfButton_);
@@ -1371,15 +1374,18 @@ void AnimeJanaiManagerPanel::rebuildModelStepRows() {
         row.moveUpButton->setObjectName(QStringLiteral("animeJanaiStepMoveUp_%1").arg(i + 1));
         row.moveUpButton->setAccessibleName(tr("Move step %1 up").arg(i + 1));
         row.moveUpButton->setEnabled(i > 0);
+        theme::applyActionRole(row.moveUpButton, theme::ActionRole::Secondary);
         row.moveDownButton = new QPushButton(QStringLiteral("↓"), row.frame);
         row.moveDownButton->setToolTip(tr("Move Down"));
         row.moveDownButton->setObjectName(QStringLiteral("animeJanaiStepMoveDown_%1").arg(i + 1));
         row.moveDownButton->setAccessibleName(tr("Move step %1 down").arg(i + 1));
         row.moveDownButton->setEnabled(i + 1 < chain->steps.size());
+        theme::applyActionRole(row.moveDownButton, theme::ActionRole::Secondary);
         row.removeButton = new QPushButton(QStringLiteral("×"), row.frame);
         row.removeButton->setAccessibleName(tr("Remove step %1").arg(i + 1));
         row.removeButton->setToolTip(tr("Remove"));
         row.removeButton->setObjectName(QStringLiteral("animeJanaiStepRemove_%1").arg(i + 1));
+        theme::applyActionRole(row.removeButton, theme::ActionRole::Danger);
         polishInteractiveControl(row.moveUpButton);
         polishInteractiveControl(row.moveDownButton);
         polishInteractiveControl(row.removeButton);

@@ -63,6 +63,26 @@ public:
     }
 
 private:
+    /// The size this item is allowed to take. A size hint is a preference, and
+    /// a stylesheet's box model can inflate it past the size the caller fixed
+    /// (a colour chip is 34x34 because setFixedSize says so, not because a
+    /// generic button rule agrees). Honouring the item's own bounds keeps a
+    /// self-painted control at its intrinsic size and leaves every other
+    /// control exactly at its hint, because their bounds are wider than it.
+    static QSize fitted(const QLayoutItem* item) {
+        const QSize hint = item->sizeHint();
+        const QSize minimum = item->minimumSize();
+        const QSize maximum = item->maximumSize();
+        // A widget can report a minimum above its maximum when a style raised
+        // one and the caller capped the other; the cap is the author's decision,
+        // so the interval is normalized onto it rather than left inverted.
+        const int width = qBound(qMin(minimum.width(), maximum.width()), hint.width(),
+                                 qMax(minimum.width(), maximum.width()));
+        const int height = qBound(qMin(minimum.height(), maximum.height()), hint.height(),
+                                  qMax(minimum.height(), maximum.height()));
+        return QSize(width, height);
+    }
+
     int doLayout(const QRect& rect, bool testOnly) const {
         const QMargins margins = contentsMargins();
         const QRect content = rect.adjusted(margins.left(), margins.top(),
@@ -77,7 +97,7 @@ private:
             int rowWidth = 0;
             int rowHeight = 0;
             while (last < items_.size()) {
-                const QSize size = items_.at(last)->sizeHint();
+                const QSize size = fitted(items_.at(last));
                 const int nextWidth =
                     last == first ? size.width() : rowWidth + horizontalSpacing_ + size.width();
                 if (last > first && content.x() + nextWidth > right) {
@@ -91,7 +111,7 @@ private:
             int x = content.x();
             for (int index = first; index < last; ++index) {
                 QLayoutItem* item = items_.at(index);
-                const QSize size = item->sizeHint();
+                const QSize size = fitted(item);
                 const int verticalOffset =
                     item->alignment().testFlag(Qt::AlignVCenter)
                         ? (rowHeight - size.height()) / 2
