@@ -31,6 +31,7 @@
 namespace {
 
 using mplayer::shell::FramePreviewService;
+using mplayer::shell::FramePreviewStats;
 using mplayer::shell::hoverCardKeepsPointer;
 using mplayer::shell::HoverPreview;
 using mplayer::shell::PreviewFrame;
@@ -595,7 +596,7 @@ void TestHoverPreview::aRepeatedInstantIsServedWithoutAskingTheDecoder() {
     service.shutdown();
 }
 
-void TestHoverPreview::aDecodeThatFinishesAfterThePointerMovedIsKept() {
+void TestHoverPreview::aFinishedDecodeIsNeverThrownAwayWhenThePointerMovesOn() {
     if (!requireRuntime()) return;
     const QString clip = fixtureClip();
     QVERIFY2(QFileInfo::exists(clip), qPrintable(clip));
