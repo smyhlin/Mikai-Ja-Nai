@@ -1336,12 +1336,16 @@ void TitlePage::repolishTitleSubtree() {
     // effect.
     pageStyle->unpolish(this);
     pageStyle->polish(this);
+    int polished = 1;
     if (heading_ != nullptr) {
         pageStyle->unpolish(heading_);
         pageStyle->polish(heading_);
         heading_->updateGeometry();
+        ++polished;
     }
-    mikai::gui::uiprofile::noteTitleRepolishWidgets(2);
+    // Counted, not assumed: a page that somehow has no heading repolished one
+    // widget, and this counter is the report's evidence for the per-crossing cost.
+    mikai::gui::uiprofile::noteTitleRepolishWidgets(polished);
     update();
 }
 
