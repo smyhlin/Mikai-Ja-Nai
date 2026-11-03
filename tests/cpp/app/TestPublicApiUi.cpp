@@ -2073,9 +2073,15 @@ void TestPublicApiUi::aViewerChoiceLeadsTheProgrammaticWatchEmbed() {
 // The design contract: 40 px actions, 44 px watch CTAs, one 24 px card badge
 // line, and the buttons of one action row at one width.
 void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
-  qApp->setStyle(QStringLiteral("Fusion"));
+  // The style object dies with the style it is replaced by, so its name is
+  // captured rather than the pointer.
+  const QString savedStyle = qApp->style() != nullptr ? qApp->style()->objectName() : QString();
   const QString savedSheet = qApp->styleSheet();
-  const auto restoreSheet = qScopeGuard([savedSheet] { qApp->setStyleSheet(savedSheet); });
+  const auto restoreStyle = qScopeGuard([savedStyle, savedSheet] {
+    if (!savedStyle.isEmpty()) qApp->setStyle(savedStyle);
+    qApp->setStyleSheet(savedSheet);
+  });
+  qApp->setStyle(QStringLiteral("Fusion"));
   qApp->setStyleSheet(mikai::app::theme::buildStylesheet());
   IsolatedSettings settings;
   ApiFixture api;
@@ -2213,9 +2219,13 @@ void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
 }
 
 void TestPublicApiUi::wrappedScoreLinesFillTheirTextColumn() {
-  qApp->setStyle(QStringLiteral("Fusion"));
+  const QString savedStyle = qApp->style() != nullptr ? qApp->style()->objectName() : QString();
   const QString savedSheet = qApp->styleSheet();
-  const auto restoreSheet = qScopeGuard([savedSheet] { qApp->setStyleSheet(savedSheet); });
+  const auto restoreStyle = qScopeGuard([savedStyle, savedSheet] {
+    if (!savedStyle.isEmpty()) qApp->setStyle(savedStyle);
+    qApp->setStyleSheet(savedSheet);
+  });
+  qApp->setStyle(QStringLiteral("Fusion"));
   qApp->setStyleSheet(mikai::app::theme::buildStylesheet());
   IsolatedSettings settings;
   ApiFixture api;
@@ -2312,9 +2322,13 @@ void TestPublicApiUi::wrappedScoreLinesFillTheirTextColumn() {
 }
 
 void TestPublicApiUi::componentCardsKeepASingleLineBadgeAndASeparateCountLine() {
-  qApp->setStyle(QStringLiteral("Fusion"));
+  const QString savedStyle = qApp->style() != nullptr ? qApp->style()->objectName() : QString();
   const QString savedSheet = qApp->styleSheet();
-  const auto restoreSheet = qScopeGuard([savedSheet] { qApp->setStyleSheet(savedSheet); });
+  const auto restoreStyle = qScopeGuard([savedStyle, savedSheet] {
+    if (!savedStyle.isEmpty()) qApp->setStyle(savedStyle);
+    qApp->setStyleSheet(savedSheet);
+  });
+  qApp->setStyle(QStringLiteral("Fusion"));
   qApp->setStyleSheet(mikai::app::theme::buildStylesheet());
   IsolatedSettings settings;
   mikai::app::Runner runner;

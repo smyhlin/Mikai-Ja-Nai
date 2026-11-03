@@ -277,8 +277,7 @@ void TestComponentState::deletedFilesClearTheStaleBarOnRefresh() {
     QVERIFY(runtimeStatus->text().isEmpty());
     QVERIFY(spatialStatus->isHidden());
     QVERIFY(!spatialStatus->text().contains(QStringLiteral("Installed: ")));
-    // A 0/5 card never begins with "installed" in English either.
-    QVERIFY2(spatialState->text() == QStringLiteral("not installed"), qPrintable(spatialState->text()));
+    // The counts are the truth the old badge prose carried.
     auto* spatialCounts = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardCount"));
     QVERIFY(spatialCounts != nullptr);
     QVERIFY2(spatialCounts->text().startsWith(QStringLiteral("0/")),
