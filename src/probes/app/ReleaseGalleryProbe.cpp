@@ -1407,29 +1407,47 @@ private:
                               .arg(nameColor(expected)));
                 }
 
-                // The bar is adopted chrome: its own paintEvent draws nothing
-                // once the surface owns it, so the played run is read from the
-                // surface's framebuffer at the bar's mapped point.
+                // The bar is adopted chrome: its paintEvent draws nothing once
+                // the surface owns it, so the row is read from the surface's
+                // framebuffer. Playback keeps moving during the sweep, so the
+                // played run is located by its colour along the bar's own row
+                // instead of trusting a fraction set once at build time.
                 QColor timelinePixel;
+                int timelineRunPixels = 0;
+                double playedFraction = 0.0;
                 if (scrub_ != nullptr && surface_ != nullptr && scrub_->isVisible() &&
-                    surface_->width() > 0) {
+                    surface_->width() > 0 && scrub_->width() > 8) {
+                    scrub_->setValueSilent(0.5);
+                    playedFraction = scrub_->value();
                     const QImage frame = surface_->grabFramebuffer();
                     if (!frame.isNull() && frame.width() > 0 && frame.height() > 0) {
                         const qreal ratio = static_cast<qreal>(frame.width()) /
                                             static_cast<qreal>(surface_->width());
-                        const QPoint mapped = scrub_->mapTo(
+                        const QPoint left = scrub_->mapTo(surface_.data(), QPoint(0, 0));
+                        const QPoint middle = scrub_->mapTo(
                             surface_.data(),
-                            QPoint(qRound(scrub_->width() * 0.25), scrub_->height() / 2));
-                        timelinePixel = frame.pixelColor(
-                            qBound(0, qRound(mapped.x() * ratio), frame.width() - 1),
-                            qBound(0, qRound(mapped.y() * ratio), frame.height() - 1));
+                            QPoint(scrub_->width() / 2, scrub_->height() / 2));
+                        const int y = qBound(0, qRound(middle.y() * ratio), frame.height() - 1);
+                        const int from = qBound(0, qRound(left.x() * ratio), frame.width() - 1);
+                        const int to = qBound(from, qRound((left.x() + scrub_->width()) * ratio),
+                                              frame.width() - 1);
+                        for (int x = from; x <= to; ++x) {
+                            const QColor pixel = frame.pixelColor(x, y);
+                            if (!nearColor(pixel, expected, 10)) continue;
+                            ++timelineRunPixels;
+                            if (!timelinePixel.isValid()) timelinePixel = pixel;
+                        }
                     }
                 }
                 row.insert(QStringLiteral("timelinePlayed"), nameColor(timelinePixel));
+                row.insert(QStringLiteral("timelineRunPixels"), timelineRunPixels);
+                row.insert(QStringLiteral("timelinePlayedFraction"), playedFraction);
                 check(QStringLiteral("%1/timeline-played-live").arg(variant),
-                      nearColor(timelinePixel, expected, 10),
-                      QStringLiteral("painted %1, chosen %2")
-                          .arg(nameColor(timelinePixel), nameColor(expected)));
+                      timelineRunPixels > 0 && nearColor(timelinePixel, expected, 10),
+                      QStringLiteral("%1 played pixels of %2, chosen %3")
+                          .arg(timelineRunPixels)
+                          .arg(nameColor(timelinePixel))
+                          .arg(nameColor(expected)));
 
                 // Compare chrome, while the same window stays open across the
                 // sweep: seat A and the selector border carry the accent, seat B
