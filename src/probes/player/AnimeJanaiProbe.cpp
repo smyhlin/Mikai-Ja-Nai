@@ -1916,6 +1916,7 @@ bool validateRifePlans(native::Backend backend) {
 
 constexpr qint64 kFocusVisibleCompositionDeadlineMs = 2500;
 constexpr qint64 kFocusAwayHoldMs = 180;
+constexpr int kFocusWarmupAttempts = 6;
 constexpr double kFocusBrightBandLuma = 40.0;
 constexpr double kFocusVisibleLatencyTargetMs = 300.0;
 
@@ -2007,70 +2008,163 @@ double focusPercentileMs(QVector<qint64> values, double percentile) {
     return static_cast<double>(values.at(index));
 }
 
-/// Runs the away/back cycles while `buildActive()` stays true. A cycle that ends
-/// after the build settled, or whose foreground was taken by a third process, is
-/// named and abandoned rather than counted; an observation that ran out of time
-/// stays in the p95 as its deadline lower bound.
-void runFocusDuringBuildCycles(shell::PlayerDialog* dialog, VideoSurface* surface,
-                               FocusDuringBuildEvidence& evidence,
-                               const std::function<bool()>& buildActive,
-                               const std::function<bool()>& frameHeld) {
-    evidence.countersEnabled = mikai::gui::uiprofile::countersEnabled();
-    if (dialog == nullptr || surface == nullptr) {
-        evidence.unavailable = true;
-        evidence.unavailableReason = QStringLiteral("the player dialog or surface went away before the build was observed");
-        return;
+#ifdef Q_OS_WIN
+/// Drives the away/back cycles from the real event loop. Every step returns to
+/// Qt between actions, so the probe's own engine-pause observer keeps sampling
+/// while the cycles run: a nested wait here would starve that observer and make
+/// the build's pause acknowledgement and held-framebuffer proof unobservable.
+/// A cycle whose foreground was taken by a third process, or that ends after the
+/// build settled, is named and abandoned rather than counted; an observation that
+/// ran out of time stays in the p95 as its deadline lower bound.
+class FocusDuringBuildRunner : public QObject {
+public:
+    FocusDuringBuildRunner(shell::PlayerDialog* dialog, VideoSurface* surface,
+                           FocusDuringBuildEvidence& evidence,
+                           std::function<bool()> buildActive,
+                           std::function<bool()> frameHeld)
+        : QObject(dialog), dialog_(dialog), surface_(surface), evidence_(evidence),
+          buildActive_(std::move(buildActive)), frameHeld_(std::move(frameHeld)) {
+        timer_.setInterval(5);
+        QObject::connect(&timer_, &QTimer::timeout, this, [this] { step(); });
     }
-#ifndef Q_OS_WIN
-    evidence.unavailable = true;
-    evidence.unavailableReason =
-        QStringLiteral("native activation of another process's window is Windows only");
-    return;
-#else
-    auto* overlay = dialog->findChild<shell::ProcessingOverlay*>();
-    if (overlay == nullptr || !overlay->isVisible()) {
-        evidence.unavailable = true;
-        evidence.unavailableReason =
-            QStringLiteral("the real engine-preparation overlay was not visible when the build became active");
-        std::fprintf(stderr, "FAIL [focus-build] %s\n", qPrintable(evidence.unavailableReason));
-        return;
+
+    void begin() {
+        phaseClock_.start();
+        timer_.start();
     }
-    QScreen* const screen = surface->screen() != nullptr ? surface->screen() : dialog->screen();
-    if (screen == nullptr) {
-        evidence.unavailable = true;
-        evidence.unavailableReason = QStringLiteral("the player has no screen to sample");
-        return;
+    bool finished() const { return phase_ == Phase::Finished; }
+
+private:
+    enum class Phase {
+        Calibrate,
+        PeerStart,
+        Warmup,
+        Restore,
+        HeldWait,
+        ForegroundPoll,
+        AwayHold,
+        BackOwn,
+        BackVisible,
+        BackPaint,
+        BackSample,
+        Cooldown,
+        Finished
+    };
+
+    void step();
+    void calibrate();
+    void startWarmupAttempt();
+    void startCycle();
+    void startBack();
+    void recordSample();
+    void logCycle(bool valid, bool stillBuilding);
+    void fail(const QString& reason);
+    void finish();
+    void enter(Phase phase) {
+        phase_ = phase;
+        phaseClock_.start();
     }
-    // The GPU that composes the picture, so the run names the hardware it used.
-    if (surface->context() != nullptr) {
-        QOpenGLContext* const previous = QOpenGLContext::currentContext();
-        QSurface* const previousSurface = previous != nullptr ? previous->surface() : nullptr;
-        surface->makeCurrent();
-        if (QOpenGLContext* context = surface->context(); context != nullptr) {
-            if (QOpenGLFunctions* gl = context->functions(); gl != nullptr) {
-                const auto read = [gl](GLenum which) {
-                    const GLubyte* bytes = gl->glGetString(which);
-                    return bytes != nullptr
-                               ? QString::fromLatin1(reinterpret_cast<const char*>(bytes))
-                               : QString();
-                };
-                if (!read(GL_RENDERER).isEmpty()) evidence.gpuRenderer = read(GL_RENDERER);
-                if (!read(GL_VENDOR).isEmpty()) evidence.gpuVendor = read(GL_VENDOR);
-            }
+    void readGpuIdentity();
+
+    shell::PlayerDialog* dialog_ = nullptr;
+    VideoSurface* surface_ = nullptr;
+    FocusDuringBuildEvidence& evidence_;
+    std::function<bool()> buildActive_;
+    std::function<bool()> frameHeld_;
+    QTimer timer_;
+    mikai::probes::ForegroundPeer peer_;
+    QScreen* screen_ = nullptr;
+    shell::ProcessingOverlay* overlay_ = nullptr;
+    QRect overlayRect_;
+    Phase phase_ = Phase::Calibrate;
+    QElapsedTimer phaseClock_;
+    QElapsedTimer backClock_;
+    int warmupAttempt_ = 0;
+    int restoreAttempt_ = 0;
+    int activationAttempts_ = 0;
+    // One cycle's captured state.
+    bool pollActiveForeground_ = false;
+    quint64 stopsBeforeAway_ = 0;
+    quint64 attachAtOwned_ = 0;
+    quint64 attachAfterAway_ = 0;
+    quint64 stopsAfterAway_ = 0;
+    quint64 generationBefore_ = 0;
+    quint64 glBefore_ = 0;
+    double cycleBaseline_ = -1.0;
+    bool heldBefore_ = false;
+    QString fingerprintBefore_;
+    bool awayOwned_ = false;
+    bool stillAway_ = false;
+    bool awayQtInactive_ = false;
+    bool occluded_ = false;
+    bool pollActiveAway_ = false;
+    qint64 awayHeldMs_ = -1;
+    double awayLuma_ = -1.0;
+    bool paintSeen_ = false;
+    qint64 paintAtNs_ = 0;
+    qint64 activationAtNs_ = 0;
+    bool visibleObserved_ = false;
+    qint64 visibleAtMs_ = -1;
+    bool foregroundTaken_ = false;
+    bool foregroundLost_ = false;
+    QMetaObject::Connection swapConnection_;
+};
+
+void FocusDuringBuildRunner::readGpuIdentity() {
+    if (surface_ == nullptr || surface_->context() == nullptr) return;
+    QOpenGLContext* const previous = QOpenGLContext::currentContext();
+    QSurface* const previousSurface = previous != nullptr ? previous->surface() : nullptr;
+    surface_->makeCurrent();
+    if (QOpenGLContext* context = surface_->context(); context != nullptr) {
+        if (QOpenGLFunctions* gl = context->functions(); gl != nullptr) {
+            const auto read = [gl](GLenum which) {
+                const GLubyte* bytes = gl->glGetString(which);
+                return bytes != nullptr
+                           ? QString::fromLatin1(reinterpret_cast<const char*>(bytes))
+                           : QString();
+            };
+            if (!read(GL_RENDERER).isEmpty()) evidence_.gpuRenderer = read(GL_RENDERER);
+            if (!read(GL_VENDOR).isEmpty()) evidence_.gpuVendor = read(GL_VENDOR);
         }
-        if (previous != nullptr && previousSurface != nullptr)
-            previous->makeCurrent(previousSurface);
-        else
-            surface->doneCurrent();
     }
-    const QRect overlayRect(overlay->mapToGlobal(QPoint(0, 0)), overlay->size());
-    const QRect surfaceGlobal(surface->mapToGlobal(QPoint(0, 0)), surface->size());
+    if (previous != nullptr && previousSurface != nullptr)
+        previous->makeCurrent(previousSurface);
+    else
+        surface_->doneCurrent();
+}
+
+void FocusDuringBuildRunner::calibrate() {
+    evidence_.countersEnabled = mikai::gui::uiprofile::countersEnabled();
+    // Calibrate on the frame the build itself holds, not on whatever was on
+    // screen at the instant the build was announced.
+    if (!frameHeld_()) {
+        if (!buildActive_()) {
+            fail(QStringLiteral("the build settled before its held frame became observable"));
+            return;
+        }
+        if (phaseClock_.elapsed() >= 3000) {
+            fail(QStringLiteral("the build's held frame was not observable within 3000 ms; "
+                                "its pause/framebuffer proof would be invalid"));
+        }
+        return;
+    }
+    overlay_ = dialog_->findChild<shell::ProcessingOverlay*>();
+    if (overlay_ == nullptr || !overlay_->isVisible()) {
+        fail(QStringLiteral("the real engine-preparation overlay was not visible when the build became active"));
+        return;
+    }
+    screen_ = surface_->screen() != nullptr ? surface_->screen() : dialog_->screen();
+    if (screen_ == nullptr) {
+        fail(QStringLiteral("the player has no screen to sample"));
+        return;
+    }
+    readGpuIdentity();
+    overlayRect_ = QRect(overlay_->mapToGlobal(QPoint(0, 0)), overlay_->size());
+    const QRect surfaceGlobal(surface_->mapToGlobal(QPoint(0, 0)), surface_->size());
     if (surfaceGlobal.width() < 160 || surfaceGlobal.height() < 120) {
-        evidence.unavailable = true;
-        evidence.unavailableReason =
-            QStringLiteral("the player surface is too small for an off-centre fixture band (%1x%2)")
-                .arg(surfaceGlobal.width())
-                .arg(surfaceGlobal.height());
+        fail(QStringLiteral("the player surface is too small for an off-centre fixture band (%1x%2)")
+                 .arg(surfaceGlobal.width())
+                 .arg(surfaceGlobal.height()));
         return;
     }
     // A band inside the picture, off centre, that the build overlay does not own:
@@ -2086,9 +2180,9 @@ void runFocusDuringBuildCycles(shell::PlayerDialog* dialog, VideoSurface* surfac
                 surfaceGlobal.y() + static_cast<int>((surfaceGlobal.height() - bandHeight) * fy),
                 bandWidth, bandHeight);
             if (!surfaceGlobal.contains(candidate)) continue;
-            const bool clearsOverlay = !candidate.intersects(overlayRect.adjusted(-8, -8, 8, 8));
+            const bool clearsOverlay = !candidate.intersects(overlayRect_.adjusted(-8, -8, 8, 8));
             const double luma = clearsOverlay
-                                    ? focusMeanLuma(focusDesktopCrop(screen, candidate))
+                                    ? focusMeanLuma(focusDesktopCrop(screen_, candidate))
                                     : -1.0;
             std::fprintf(stderr,
                          "[focus-build] crop-candidate fx=%.2f fy=%.2f rect=%d,%d,%d,%d "
@@ -2096,320 +2190,430 @@ void runFocusDuringBuildCycles(shell::PlayerDialog* dialog, VideoSurface* surfac
                          fx, fy, candidate.x(), candidate.y(), candidate.width(),
                          candidate.height(), clearsOverlay ? 1 : 0, luma);
             if (!clearsOverlay || luma < kFocusBrightBandLuma) continue;
-            evidence.crop = candidate;
-            evidence.baselineLuma = luma;
-            evidence.calibrated = true;
-            evidence.cropPlacement =
+            evidence_.crop = candidate;
+            evidence_.baselineLuma = luma;
+            evidence_.calibrated = true;
+            evidence_.cropPlacement =
                 QStringLiteral("offscreen-band x=%1 y=%2 clears-overlay=1").arg(fx).arg(fy);
             break;
         }
-        if (evidence.calibrated) break;
+        if (evidence_.calibrated) break;
     }
-    if (!evidence.calibrated) {
-        evidence.unavailable = true;
-        evidence.unavailableReason =
-            QStringLiteral("no off-centre fixture band outside the build overlay reached mean luma %1")
-                .arg(kFocusBrightBandLuma, 0, 'f', 0);
-        std::fprintf(stderr, "FAIL [focus-build] %s\n", qPrintable(evidence.unavailableReason));
+    if (!evidence_.calibrated) {
+        fail(QStringLiteral("no off-centre fixture band outside the build overlay reached mean luma %1")
+                 .arg(kFocusBrightBandLuma, 0, 'f', 0));
         return;
     }
     std::fprintf(stderr,
                  "[focus-build] calibrated crop=%d,%d,%d,%d baseline-luma=%.1f overlay=%d,%d,%d,%d "
                  "gpu-renderer=%s gpu-vendor=%s attach-metric=%d counters=%d\n",
-                 evidence.crop.x(), evidence.crop.y(), evidence.crop.width(),
-                 evidence.crop.height(), evidence.baselineLuma, overlayRect.x(), overlayRect.y(),
-                 overlayRect.width(), overlayRect.height(), qPrintable(evidence.gpuRenderer),
-                 qPrintable(evidence.gpuVendor), evidence.attachMetricSupported ? 1 : 0,
-                 evidence.countersEnabled ? 1 : 0);
+                 evidence_.crop.x(), evidence_.crop.y(), evidence_.crop.width(),
+                 evidence_.crop.height(), evidence_.baselineLuma, overlayRect_.x(),
+                 overlayRect_.y(), overlayRect_.width(), overlayRect_.height(),
+                 qPrintable(evidence_.gpuRenderer), qPrintable(evidence_.gpuVendor),
+                 evidence_.attachMetricSupported ? 1 : 0, evidence_.countersEnabled ? 1 : 0);
+    enter(Phase::HeldWait);
+}
 
-    // A separate process owns the black helper, so native activation and Qt's
-    // inactive state are real. Its window covers the calibrated band.
-    mikai::probes::ForegroundPeer peer;
-    QString peerError;
-    const QRect peerGeometry(evidence.crop.center() - QPoint(240, 180), QSize(480, 360));
-    if (!peer.start(peerGeometry, &peerError)) {
-        evidence.unavailable = true;
-        evidence.unavailableReason = peerError;
-        std::fprintf(stderr, "FAIL [focus-build] %s\n", qPrintable(peerError));
+void FocusDuringBuildRunner::startWarmupAttempt() {
+    peer_.activate();
+    peer_.raiseToFront();
+    phaseClock_.start();
+}
+
+void FocusDuringBuildRunner::startCycle() {
+    if (!buildActive_()) {
+        finish();
         return;
     }
-    evidence.peerStarted = true;
-    std::fprintf(stderr,
-                 "[focus-build] foreground-peer pid=%lld window=%lld foreign=%d\n",
-                 static_cast<long long>(peer.processId()),
-                 static_cast<long long>(peer.windowId()),
-                 peer.processId() != QCoreApplication::applicationPid() ? 1 : 0);
-
-    // Launch-scoped readiness: the peer can sit behind a freshly shown dialog even
-    // while it owns the foreground, so settle z-order and verify the black window
-    // actually occludes the calibrated band before any cycle is measured.
-    bool settled = false;
-    double occludedLuma = -1.0;
-    for (int attempt = 0; attempt < 6 && !settled; ++attempt) {
-        peer.activate();
-        peer.raiseToFront();
-        for (int spin = 0; spin < 10 && !peer.ownsForeground(); ++spin) {
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
-            QThread::msleep(8);
-        }
-        occludedLuma = focusMeanLuma(focusDesktopCrop(screen, evidence.crop));
-        settled = peer.ownsForeground() && evidence.baselineLuma >= kFocusBrightBandLuma &&
-                  occludedLuma >= 0.0 && occludedLuma < evidence.baselineLuma * 0.5;
-        std::fprintf(stderr,
-                     "[focus-build] warmup attempt=%d owned=%d occluded-luma=%.1f settled=%d\n",
-                     attempt + 1, peer.ownsForeground() ? 1 : 0, occludedLuma,
-                     settled ? 1 : 0);
-        if (!settled) {
-            for (int spin = 0; spin < 10; ++spin) {
-                QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
-                QThread::msleep(10);
-            }
-        }
-    }
-    if (!settled) {
-        evidence.unavailable = true;
-        evidence.unavailableReason =
-            QStringLiteral("the foreign helper never occluded the calibrated band "
-                           "(baseline=%1 occluded=%2)")
-                .arg(evidence.baselineLuma, 0, 'f', 1)
-                .arg(occludedLuma, 0, 'f', 1);
-        std::fprintf(stderr, "FAIL [focus-build] %s\n", qPrintable(evidence.unavailableReason));
-        peer.stop();
+    if (evidence_.cyclesCompleted >= evidence_.cyclesRequested ||
+        evidence_.attempts >= evidence_.cyclesRequested + 4) {
+        finish();
         return;
     }
-    // Restore the pre-measurement state: this player owns the foreground and the
-    // paused picture is visible again.
-    const bool restored = nativeActivateForeground(dialog, 2000);
-    peer.sendToBack();
-    bool restoredLuma = false;
-    {
-        QElapsedTimer restoreClock;
-        restoreClock.start();
-        while (restoreClock.elapsed() < 2000) {
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
-            const double luma = focusMeanLuma(focusDesktopCrop(screen, evidence.crop));
-            if (luma >= evidence.baselineLuma * 0.6) {
-                restoredLuma = true;
-                break;
-            }
-            QThread::msleep(5);
-        }
+    ++evidence_.attempts;
+    const mikai::gui::uiprofile::Snapshot countersBefore = mikai::gui::uiprofile::snapshot();
+    stopsBeforeAway_ = countersBefore.awayStackingStops;
+    const auto profileBefore = surface_->uiProfileCounters();
+    generationBefore_ = profileBefore.contextGeneration;
+    glBefore_ = profileBefore.initializeGlCalls;
+    cycleBaseline_ = focusMeanLuma(focusDesktopCrop(screen_, evidence_.crop));
+    heldBefore_ = frameHeld_();
+    fingerprintBefore_ =
+        heldBefore_ ? focusFingerprint(surface_->grabVideoFramebuffer()) : QString();
+    stillAway_ = false;
+    awayQtInactive_ = false;
+    occluded_ = false;
+    pollActiveAway_ = false;
+    awayLuma_ = -1.0;
+    awayHeldMs_ = -1;
+    visibleObserved_ = false;
+    visibleAtMs_ = -1;
+    foregroundLost_ = false;
+    foregroundTaken_ = false;
+    awayOwned_ = peer_.activate();
+    attachAtOwned_ = mikai::gui::uiprofile::snapshot().threadInputAttaches;
+    enter(Phase::AwayHold);
+}
+
+void FocusDuringBuildRunner::startBack() {
+    if (swapConnection_) QObject::disconnect(swapConnection_);
+    paintSeen_ = false;
+    paintAtNs_ = 0;
+    swapConnection_ = QObject::connect(
+        surface_, &QOpenGLWidget::frameSwapped, surface_,
+        [this] {
+            if (paintSeen_) return;
+            paintSeen_ = true;
+            paintAtNs_ = mikai::gui::uiprofile::nowNs();
+        },
+        Qt::DirectConnection);
+    activationAttempts_ = 1;
+    peer_.sendToBack();
+    dialog_->raise();
+    dialog_->activateWindow();
+    surface_->update();
+    backClock_.start();
+    if (!nativeForegroundAllowsInput(dialog_))
+        nativeActivateForeground(dialog_, 0);
+    foregroundTaken_ = nativeForegroundAllowsInput(dialog_);
+    if (foregroundTaken_) {
+        // The interval starts only once this process owns the foreground; a swap
+        // that landed while the foreground was being taken belongs to the steal.
+        paintSeen_ = false;
+        paintAtNs_ = 0;
+        activationAtNs_ = mikai::gui::uiprofile::nowNs();
+        enter(Phase::BackVisible);
+    } else {
+        enter(Phase::BackOwn);
     }
-    if (!restored || !restoredLuma) {
-        evidence.unavailable = true;
-        evidence.unavailableReason =
-            QStringLiteral("the player did not restore its foreground picture after the peer warmup");
-        std::fprintf(stderr, "FAIL [focus-build] %s\n", qPrintable(evidence.unavailableReason));
-        peer.stop();
-        return;
+}
+
+void FocusDuringBuildRunner::recordSample() {
+    if (swapConnection_) {
+        QObject::disconnect(swapConnection_);
+        swapConnection_ = QMetaObject::Connection();
     }
-
-    // The build's own hold is what makes a retained frame comparable across a
-    // switch. Wait for it briefly; if it never lands, the play evidence already
-    // names that and the continuity comparison stays unproven rather than wrong.
-    {
-        QElapsedTimer heldClock;
-        heldClock.start();
-        while (!frameHeld() && heldClock.elapsed() < 3000 && buildActive()) {
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
-            QThread::msleep(5);
+    const bool foregroundAtEnd = nativeForegroundAllowsInput(dialog_);
+    const bool stillBuilding = buildActive_();
+    const bool valid = awayOwned_ && stillAway_ && occluded_ && foregroundTaken_ &&
+        !foregroundLost_ && foregroundAtEnd;
+    if (valid && stillBuilding) {
+        ++evidence_.cyclesCompleted;
+        if (visibleObserved_) {
+            evidence_.activationToVisibleCompositionMs.append(visibleAtMs_);
+            evidence_.activationToVisibleLowerBoundMs.append(visibleAtMs_);
+        } else {
+            ++evidence_.visibleTimeouts;
+            // A timeout is not "no measurement": it is at least the deadline.
+            evidence_.activationToVisibleLowerBoundMs.append(
+                kFocusVisibleCompositionDeadlineMs);
         }
-        std::fprintf(stderr, "[focus-build] build-held-frame=%d after-ms=%lld build-active=%d\n",
-                     frameHeld() ? 1 : 0, static_cast<long long>(heldClock.elapsed()),
-                     buildActive() ? 1 : 0);
-    }
-
-    const int maxAttempts = evidence.cyclesRequested + 4;
-    while (evidence.cyclesCompleted < evidence.cyclesRequested &&
-           evidence.attempts < maxAttempts) {
-        if (!buildActive()) break;
-        ++evidence.attempts;
-        const int cycle = evidence.cyclesCompleted;
-        const mikai::gui::uiprofile::Snapshot countersBefore =
-            mikai::gui::uiprofile::snapshot();
-        const auto profileBefore = surface->uiProfileCounters();
-
-        // The overlay's stacking poll must be running while this application owns
-        // the foreground; otherwise "stopped while away" would be vacuous.
-        bool pollActiveForeground = false;
-        for (int wait = 0; wait < 500 && !pollActiveForeground; wait += 10) {
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
-            pollActiveForeground = overlay->stackingPollActive();
-            if (!pollActiveForeground) QThread::msleep(10);
-        }
-        if (!pollActiveForeground) ++evidence.stackingPollInactiveForeground;
-
-        const double cycleBaseline = focusMeanLuma(focusDesktopCrop(screen, evidence.crop));
-        const bool heldBefore = frameHeld();
-        const QString fingerprintBefore =
-            heldBefore ? focusFingerprint(surface->grabVideoFramebuffer()) : QString();
-
-        // Away: the peer is a different process, so its ownership is native.
-        const bool awayOwned = peer.activate();
-        const quint64 attachAtOwned =
-            mikai::gui::uiprofile::snapshot().threadInputAttaches;
-        QElapsedTimer awayClock;
-        awayClock.start();
-        while (awayClock.elapsed() < kFocusAwayHoldMs) {
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
-            QThread::msleep(2);
-        }
-        const qint64 awayHeldMs = awayClock.elapsed();
-        const bool stillAway = peer.ownsForeground() &&
-            QGuiApplication::applicationState() != Qt::ApplicationActive;
-        const double awayLuma = focusMeanLuma(focusDesktopCrop(screen, evidence.crop));
-        const bool occluded = stillAway && cycleBaseline >= kFocusBrightBandLuma &&
-            awayLuma >= 0.0 && awayLuma < cycleBaseline * 0.5;
-        const bool pollActiveAway = overlay->stackingPollActive();
-        const quint64 attachAfterAway =
-            mikai::gui::uiprofile::snapshot().threadInputAttaches;
-        const quint64 stopsAfterAway =
-            mikai::gui::uiprofile::snapshot().awayStackingStops;
-        if (awayOwned && stillAway) {
-            ++evidence.awayVerified;
-            evidence.attachCallsAway += attachAfterAway - attachAtOwned;
-            evidence.awayStackingStops += stopsAfterAway - countersBefore.awayStackingStops;
-            if (pollActiveAway) ++evidence.stackingPollActiveAway;
-            evidence.awayHeldMinMs = evidence.awayHeldMinMs < 0
-                                         ? awayHeldMs
-                                         : std::min(evidence.awayHeldMinMs, awayHeldMs);
-            evidence.awayHeldMaxMs = std::max(evidence.awayHeldMaxMs, awayHeldMs);
-        }
-        if (occluded) ++evidence.occlusionVerified;
-
-        // Back: owned activation -> first desktop sample showing the picture
-        // again, with swap completion kept as a separate number.
-        bool paintSeen = false;
-        qint64 paintAtNs = 0;
-        const QMetaObject::Connection swapConnection = QObject::connect(
-            surface, &QOpenGLWidget::frameSwapped, surface,
-            [&paintSeen, &paintAtNs] {
-                if (paintSeen) return;
-                paintSeen = true;
-                paintAtNs = mikai::gui::uiprofile::nowNs();
-            },
-            Qt::DirectConnection);
-        const bool foregroundTaken = nativeActivateForeground(dialog, 2000);
-        // The interval starts only once this process owns the foreground: a swap
-        // that landed while the foreground was being taken belongs to the steal,
-        // not to the interval the p95 claims.
-        paintSeen = false;
-        paintAtNs = 0;
-        const qint64 activationAtNs = mikai::gui::uiprofile::nowNs();
-        peer.sendToBack();
-        dialog->raise();
-        dialog->activateWindow();
-        surface->update();
-        const double visibleThreshold = std::max(30.0, cycleBaseline * 0.6);
-        bool visibleObserved = false;
-        bool foregroundLost = false;
-        qint64 visibleAtMs = -1;
-        QElapsedTimer visibleClock;
-        visibleClock.start();
-        while (visibleClock.elapsed() < kFocusVisibleCompositionDeadlineMs && !visibleObserved) {
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
-            if (!nativeForegroundAllowsInput(dialog)) {
-                foregroundLost = true;
-                break;
-            }
-            const double luma = focusMeanLuma(focusDesktopCrop(screen, evidence.crop));
-            if (luma >= visibleThreshold && nativeForegroundAllowsInput(dialog)) {
-                visibleObserved = true;
-                visibleAtMs = (mikai::gui::uiprofile::nowNs() - activationAtNs) / 1000000;
-            }
-            QThread::msleep(2);
-        }
-        if (!paintSeen) {
-            QElapsedTimer paintClock;
-            paintClock.start();
-            while (!paintSeen && paintClock.elapsed() < 600) {
-                QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
-                QThread::msleep(2);
-            }
-        }
-        QObject::disconnect(swapConnection);
-        const bool foregroundAtEnd = nativeForegroundAllowsInput(dialog);
-        const bool stillBuilding = buildActive();
-        const bool valid = awayOwned && stillAway && occluded && foregroundTaken &&
-            !foregroundLost && foregroundAtEnd;
-
-        if (valid && stillBuilding) {
-            ++evidence.cyclesCompleted;
-            if (visibleObserved) {
-                evidence.activationToVisibleCompositionMs.append(visibleAtMs);
-                evidence.activationToVisibleLowerBoundMs.append(visibleAtMs);
-            } else {
-                ++evidence.visibleTimeouts;
-                // A timeout is not "no measurement": it is at least the deadline.
-                evidence.activationToVisibleLowerBoundMs.append(
-                    kFocusVisibleCompositionDeadlineMs);
-            }
-            if (paintSeen)
-                evidence.activationToFirstSwapMs.append(
-                    (paintAtNs - activationAtNs) / 1000000);
-            // A composed picture may only be sampled while this player is expected
-            // visible; the peer's own black window is never read as the player's.
-            if (foregroundAtEnd) {
-                const QImage composed = surface->grabVideoFramebuffer();
-                if (!composed.isNull()) {
-                    ++evidence.blackSamplesMeasured;
-                    // Whole composed picture: one lit pixel anywhere means the
-                    // player was not showing an all-black frame.
-                    if (!nonBlack(composed)) ++evidence.blackSamples;
-                    if (heldBefore) {
-                        ++evidence.retainedFramesCompared;
-                        if (focusFingerprint(composed) != fingerprintBefore)
-                            ++evidence.retainedFrameMismatches;
-                    } else {
-                        ++evidence.retainedFrameUnproven;
-                    }
+        if (paintSeen_)
+            evidence_.activationToFirstSwapMs.append(
+                (paintAtNs_ - activationAtNs_) / 1000000);
+        // A composed picture may only be sampled while this player is expected
+        // visible; the peer's own black window is never read as the player's.
+        if (foregroundAtEnd) {
+            const QImage composed = surface_->grabVideoFramebuffer();
+            if (!composed.isNull()) {
+                ++evidence_.blackSamplesMeasured;
+                // Whole composed picture: one lit pixel anywhere means the
+                // player was not showing an all-black frame.
+                if (!nonBlack(composed)) ++evidence_.blackSamples;
+                if (heldBefore_) {
+                    ++evidence_.retainedFramesCompared;
+                    if (focusFingerprint(composed) != fingerprintBefore_)
+                        ++evidence_.retainedFrameMismatches;
+                } else {
+                    ++evidence_.retainedFrameUnproven;
                 }
             }
-            const auto profileAfter = surface->uiProfileCounters();
-            evidence.contextGenerationChanges +=
-                profileAfter.contextGeneration - profileBefore.contextGeneration;
-            evidence.initializeGlCalls +=
-                profileAfter.initializeGlCalls - profileBefore.initializeGlCalls;
-        } else {
-            ++evidence.cyclesAbandoned;
         }
-        std::fprintf(stderr,
-                     "[focus-build] cycle=%d attempt=%d build-active=%d away-owned=%d "
-                     "away-held-ms=%lld away-qt-inactive=%d occluded=%d baseline-luma=%.1f "
-                     "away-luma=%.1f visible-observed=%d visible-ms=%lld swap-ms=%lld "
-                     "foreground-lost=%d poll-active-away=%d poll-active-foreground=%d "
-                     "attach-calls-away=%lld away-stacking-stops=%lld valid=%d "
-                     "context-generation=%lld\n",
-                     cycle, evidence.attempts, stillBuilding ? 1 : 0, awayOwned ? 1 : 0,
-                     static_cast<long long>(awayHeldMs),
-                     QGuiApplication::applicationState() != Qt::ApplicationActive ? 1 : 0,
-                     occluded ? 1 : 0, cycleBaseline, awayLuma, visibleObserved ? 1 : 0,
-                     static_cast<long long>(visibleAtMs),
-                     paintSeen ? static_cast<long long>((paintAtNs - activationAtNs) / 1000000)
-                               : -1,
-                     foregroundLost ? 1 : 0, pollActiveAway ? 1 : 0,
-                     pollActiveForeground ? 1 : 0,
-                     static_cast<long long>(attachAfterAway - attachAtOwned),
-                     static_cast<long long>(stopsAfterAway - countersBefore.awayStackingStops),
-                     valid && stillBuilding ? 1 : 0,
-                     static_cast<long long>(profileBefore.contextGeneration));
-        if (!stillBuilding) break;
-        QElapsedTimer cooldown;
-        cooldown.start();
-        while (cooldown.elapsed() < 150) {
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
-            QThread::msleep(2);
-        }
+        const auto profileAfter = surface_->uiProfileCounters();
+        evidence_.contextGenerationChanges +=
+            profileAfter.contextGeneration - generationBefore_;
+        evidence_.initializeGlCalls += profileAfter.initializeGlCalls - glBefore_;
+    } else {
+        ++evidence_.cyclesAbandoned;
     }
-    peer.stop();
-    nativeActivateForeground(dialog, 2000);
+    logCycle(valid && stillBuilding, stillBuilding);
+    if (!stillBuilding) {
+        finish();
+        return;
+    }
+    enter(Phase::Cooldown);
+}
+
+void FocusDuringBuildRunner::logCycle(bool valid, bool stillBuilding) {
+    std::fprintf(stderr,
+                 "[focus-build] cycle=%d attempt=%d build-active=%d away-owned=%d "
+                 "away-held-ms=%lld away-qt-inactive=%d away-native-owned=%d occluded=%d "
+                 "baseline-luma=%.1f away-luma=%.1f visible-observed=%d visible-ms=%lld "
+                 "swap-ms=%lld foreground-lost=%d poll-active-away=%d "
+                 "poll-active-foreground=%d attach-calls-away=%lld away-stacking-stops=%lld "
+                 "valid=%d context-generation=%lld\n",
+                 evidence_.cyclesCompleted, evidence_.attempts, stillBuilding ? 1 : 0,
+                 awayOwned_ ? 1 : 0, static_cast<long long>(awayHeldMs_),
+                 awayQtInactive_ ? 1 : 0, stillAway_ ? 1 : 0, occluded_ ? 1 : 0,
+                 cycleBaseline_, awayLuma_, visibleObserved_ ? 1 : 0,
+                 static_cast<long long>(visibleAtMs_),
+                 paintSeen_ ? static_cast<long long>((paintAtNs_ - activationAtNs_) / 1000000)
+                            : -1LL,
+                 foregroundLost_ ? 1 : 0, pollActiveAway_ ? 1 : 0,
+                 pollActiveForeground_ ? 1 : 0,
+                 static_cast<long long>(attachAfterAway_ - attachAtOwned_),
+                 static_cast<long long>(stopsAfterAway_ - stopsBeforeAway_), valid ? 1 : 0,
+                 static_cast<long long>(generationBefore_));
+}
+
+void FocusDuringBuildRunner::step() {
+    if (phase_ == Phase::Finished) return;
+    if (surface_ == nullptr) {
+        fail(QStringLiteral("the player surface went away during the build"));
+        return;
+    }
+    switch (phase_) {
+    case Phase::Calibrate:
+        calibrate();
+        return;
+    case Phase::PeerStart: {
+        if (!buildActive_()) {
+            fail(QStringLiteral("the build settled before the foreground peer could settle"));
+            return;
+        }
+        QString peerError;
+        const QRect peerGeometry(evidence_.crop.center() - QPoint(240, 180), QSize(480, 360));
+        if (!peer_.start(peerGeometry, &peerError)) {
+            fail(peerError);
+            return;
+        }
+        evidence_.peerStarted = true;
+        std::fprintf(stderr,
+                     "[focus-build] foreground-peer pid=%lld window=%lld foreign=%d\n",
+                     static_cast<long long>(peer_.processId()),
+                     static_cast<long long>(peer_.windowId()),
+                     peer_.processId() != QCoreApplication::applicationPid() ? 1 : 0);
+        warmupAttempt_ = 0;
+        startWarmupAttempt();
+        enter(Phase::Warmup);
+        return;
+    }
+    case Phase::Warmup: {
+        if (peer_.ownsForeground()) {
+            const double luma = focusMeanLuma(focusDesktopCrop(screen_, evidence_.crop));
+            const bool settled = evidence_.baselineLuma >= kFocusBrightBandLuma &&
+                luma >= 0.0 && luma < evidence_.baselineLuma * 0.5;
+            std::fprintf(stderr,
+                         "[focus-build] warmup attempt=%d owned=1 occluded-luma=%.1f "
+                         "settled=%d\n",
+                         warmupAttempt_ + 1, luma, settled ? 1 : 0);
+            if (settled) {
+                restoreAttempt_ = 0;
+                peer_.sendToBack();
+                dialog_->raise();
+                dialog_->activateWindow();
+                if (!nativeForegroundAllowsInput(dialog_))
+                    nativeActivateForeground(dialog_, 0);
+                enter(Phase::Restore);
+                return;
+            }
+            if (++warmupAttempt_ >= kFocusWarmupAttempts) {
+                fail(QStringLiteral("the foreign helper never occluded the calibrated band"));
+                return;
+            }
+            startWarmupAttempt();
+            return;
+        }
+        if (phaseClock_.elapsed() >= 400) {
+            std::fprintf(stderr, "[focus-build] warmup attempt=%d owned=0\n",
+                         warmupAttempt_ + 1);
+            if (++warmupAttempt_ >= kFocusWarmupAttempts) {
+                fail(QStringLiteral("the foreign helper never owned the foreground"));
+                return;
+            }
+            startWarmupAttempt();
+        }
+        return;
+    }
+    case Phase::Restore: {
+        if (nativeForegroundAllowsInput(dialog_) &&
+            focusMeanLuma(focusDesktopCrop(screen_, evidence_.crop)) >=
+                evidence_.baselineLuma * 0.6) {
+            enter(Phase::ForegroundPoll);
+            return;
+        }
+        if (phaseClock_.elapsed() >= 700) {
+            if (restoreAttempt_ >= 3) {
+                fail(QStringLiteral("the player did not restore its foreground picture after "
+                                    "the peer warmup"));
+                return;
+            }
+            ++restoreAttempt_;
+            nativeActivateForeground(dialog_, 0);
+            peer_.sendToBack();
+            phaseClock_.start();
+        }
+        return;
+    }
+    case Phase::HeldWait: {
+        if (frameHeld_()) {
+            std::fprintf(stderr,
+                         "[focus-build] build-held-frame=1 after-ms=%lld build-active=%d\n",
+                         static_cast<long long>(phaseClock_.elapsed()),
+                         buildActive_() ? 1 : 0);
+            // The peer starts only after the build's own hold and framebuffer
+            // sample are observable: its startup wait must not delay the pause
+            // acknowledgement the engine-pause proof measures.
+            enter(Phase::PeerStart);
+            return;
+        }
+        if (!buildActive_()) {
+            fail(QStringLiteral("the build settled before its held frame became observable"));
+            return;
+        }
+        if (phaseClock_.elapsed() >= 3000) {
+            fail(QStringLiteral("the build's held frame was not observable within 3000 ms; "
+                                "its pause/framebuffer proof would be invalid"));
+            return;
+        }
+        return;
+    }
+    case Phase::ForegroundPoll: {
+        if (!buildActive_()) {
+            finish();
+            return;
+        }
+        pollActiveForeground_ = overlay_ != nullptr && overlay_->stackingPollActive();
+        if (pollActiveForeground_) {
+            startCycle();
+            return;
+        }
+        if (phaseClock_.elapsed() < 400) return;
+        ++evidence_.stackingPollInactiveForeground;
+        startCycle();
+        return;
+    }
+    case Phase::AwayHold: {
+        if (phaseClock_.elapsed() < kFocusAwayHoldMs) return;
+        awayHeldMs_ = phaseClock_.elapsed();
+        stillAway_ = peer_.ownsForeground();
+        awayQtInactive_ = QGuiApplication::applicationState() != Qt::ApplicationActive;
+        awayLuma_ = focusMeanLuma(focusDesktopCrop(screen_, evidence_.crop));
+        occluded_ = stillAway_ && cycleBaseline_ >= kFocusBrightBandLuma &&
+            awayLuma_ >= 0.0 && awayLuma_ < cycleBaseline_ * 0.5;
+        pollActiveAway_ = overlay_ != nullptr && overlay_->stackingPollActive();
+        attachAfterAway_ = mikai::gui::uiprofile::snapshot().threadInputAttaches;
+        stopsAfterAway_ = mikai::gui::uiprofile::snapshot().awayStackingStops;
+        if (awayOwned_ && stillAway_) {
+            ++evidence_.awayVerified;
+            evidence_.attachCallsAway += attachAfterAway_ - attachAtOwned_;
+            evidence_.awayStackingStops += stopsAfterAway_ - stopsBeforeAway_;
+            if (pollActiveAway_) ++evidence_.stackingPollActiveAway;
+            evidence_.awayHeldMinMs = evidence_.awayHeldMinMs < 0
+                                          ? awayHeldMs_
+                                          : std::min(evidence_.awayHeldMinMs, awayHeldMs_);
+            evidence_.awayHeldMaxMs = std::max(evidence_.awayHeldMaxMs, awayHeldMs_);
+        }
+        if (occluded_) ++evidence_.occlusionVerified;
+        startBack();
+        return;
+    }
+    case Phase::BackOwn: {
+        if (nativeForegroundAllowsInput(dialog_)) {
+            // The interval starts only once this process owns the foreground.
+            paintSeen_ = false;
+            paintAtNs_ = 0;
+            activationAtNs_ = mikai::gui::uiprofile::nowNs();
+            enter(Phase::BackVisible);
+            return;
+        }
+        if (backClock_.elapsed() >= 900) {
+            foregroundTaken_ = false;
+            foregroundLost_ = true;
+            enter(Phase::BackPaint);
+            return;
+        }
+        if (phaseClock_.elapsed() >= 150 && activationAttempts_ < 4) {
+            peer_.sendToBack();
+            dialog_->raise();
+            dialog_->activateWindow();
+            if (!nativeForegroundAllowsInput(dialog_))
+                nativeActivateForeground(dialog_, 0);
+            ++activationAttempts_;
+            phaseClock_.start();
+        }
+        return;
+    }
+    case Phase::BackVisible: {
+        if (!nativeForegroundAllowsInput(dialog_)) {
+            foregroundLost_ = true;
+            enter(Phase::BackPaint);
+            return;
+        }
+        const double threshold = std::max(30.0, cycleBaseline_ * 0.6);
+        if (focusMeanLuma(focusDesktopCrop(screen_, evidence_.crop)) >= threshold) {
+            visibleObserved_ = true;
+            visibleAtMs_ = (mikai::gui::uiprofile::nowNs() - activationAtNs_) / 1000000;
+            enter(Phase::BackPaint);
+            return;
+        }
+        if (phaseClock_.elapsed() >= kFocusVisibleCompositionDeadlineMs)
+            enter(Phase::BackPaint);
+        return;
+    }
+    case Phase::BackPaint: {
+        if (!paintSeen_ && phaseClock_.elapsed() < 600) return;
+        enter(Phase::BackSample);
+        return;
+    }
+    case Phase::BackSample:
+        recordSample();
+        return;
+    case Phase::Cooldown: {
+        if (phaseClock_.elapsed() < 150) return;
+        if (evidence_.cyclesCompleted >= evidence_.cyclesRequested ||
+            evidence_.attempts >= evidence_.cyclesRequested + 4) {
+            finish();
+            return;
+        }
+        enter(Phase::ForegroundPoll);
+        return;
+    }
+    case Phase::Finished:
+        return;
+    }
+}
+
+void FocusDuringBuildRunner::fail(const QString& reason) {
+    evidence_.unavailable = true;
+    evidence_.unavailableReason = reason;
+    std::fprintf(stderr, "FAIL [focus-build] %s\n", qPrintable(reason));
+    finish();
+}
+
+void FocusDuringBuildRunner::finish() {
+    if (phase_ == Phase::Finished) return;
+    phase_ = Phase::Finished;
+    timer_.stop();
+    if (swapConnection_) {
+        QObject::disconnect(swapConnection_);
+        swapConnection_ = QMetaObject::Connection();
+    }
+    peer_.stop();
+    dialog_->raise();
+    dialog_->activateWindow();
+    if (!nativeForegroundAllowsInput(dialog_))
+        nativeActivateForeground(dialog_, 0);
     std::fprintf(stderr,
                  "[focus-build] cycles-requested=%d completed=%d abandoned=%d attempts=%d "
                  "build-active-at-end=%d\n",
-                 evidence.cyclesRequested, evidence.cyclesCompleted, evidence.cyclesAbandoned,
-                 evidence.attempts, buildActive() ? 1 : 0);
-#endif
+                 evidence_.cyclesRequested, evidence_.cyclesCompleted,
+                 evidence_.cyclesAbandoned, evidence_.attempts,
+                 buildActive_() ? 1 : 0);
+    deleteLater();
 }
+#endif
 
 }  // namespace
 
@@ -2654,11 +2858,13 @@ int main(int argc, char** argv) {
 #endif
         std::fprintf(stderr,
                      "[focus-build] mode=on platform=%s attach-metric=%d counters=%d "
-                     "raise-policy=%s\n",
+                     "raise-policy=%s attach-counter-scope=%s\n",
                      qPrintable(QGuiApplication::platformName()),
                      kFocusAttachMetricSupported ? 1 : 0,
                      mikai::gui::uiprofile::countersEnabled() ? 1 : 0,
-                     kFocusAttachMetricSupported ? "shipping-installed" : "unavailable");
+                     kFocusAttachMetricSupported ? "shipping-installed" : "unavailable",
+                     "shipping WindowRaisePolicy only; the probe's own activation borrow is "
+                     "not counted");
 #endif
     }
     if ((parser.isSet(importOption) && parser.isSet(provisionOption)) ||
@@ -2819,6 +3025,9 @@ int main(int argc, char** argv) {
     FocusDuringBuildEvidence focusBuild;
     focusBuild.requested = focusDuringBuild;
     bool focusRunStarted = false;
+#ifdef Q_OS_WIN
+    QPointer<FocusDuringBuildRunner> focusRunner;
+#endif
     bool buildFailureObserved = false;
     bool buildFailureTimerSampled = false;
     bool buildFailureTimerStopped = false;
@@ -2855,17 +3064,15 @@ int main(int argc, char** argv) {
             buildWindowSampler.start();
             if (focusDuringBuild && !focusRunStarted) {
                 focusRunStarted = true;
-                // Deferred out of the signal emission: the cycles pump the event
-                // loop, and the build runs on its own worker thread meanwhile.
-                QPointer<PlayerDialog> focusDialog = naturalDialog;
-                QPointer<VideoSurface> focusSurface = surface;
-                QTimer::singleShot(0, &window, [&, focusDialog, focusSurface] {
-                    if (focusDialog == nullptr || focusSurface == nullptr) return;
-                    runFocusDuringBuildCycles(
-                        focusDialog.data(), focusSurface.data(), focusBuild,
-                        [&] { return buildActive; },
-                        [&] { return buildPlayback.held && buildPlayback.framebufferAt >= 0; });
-                });
+#ifdef Q_OS_WIN
+                // The runner advances from timer ticks, so the probe's own
+                // engine-pause observer keeps sampling while the cycles run.
+                focusRunner = new FocusDuringBuildRunner(
+                    naturalDialog, surface, focusBuild,
+                    [&] { return buildActive; },
+                    [&] { return buildPlayback.held && buildPlayback.framebufferAt >= 0; });
+                focusRunner->begin();
+#endif
             }
         } else {
             buildWindowSampler.stop();
@@ -3810,6 +4017,14 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "PLAYBACK-ONLY: no AnimeJaNai preset supplied; no inference PASS is claimed\n");
     }
 
+#ifdef Q_OS_WIN
+    if (focusDuringBuild) {
+        // The runner advances from timer ticks; a build that settled early stops
+        // it, and this only waits for the in-flight step to finish before the
+        // evidence is read.
+        waitUntil([&] { return focusRunner.isNull() || focusRunner->finished(); }, 8000);
+    }
+#endif
     if (focusDuringBuild) {
         const double swapP50 = focusPercentileMs(focusBuild.activationToFirstSwapMs, 0.50);
         const double swapP95 = focusPercentileMs(focusBuild.activationToFirstSwapMs, 0.95);
@@ -3842,6 +4057,7 @@ int main(int argc, char** argv) {
                      "activation-to-visible-p95-lower-bound-ms=%s max-lower-bound-ms=%s "
                      "activation-to-first-swap-p50-ms=%s p95-ms=%s max-ms=%s swaps=%d "
                      "attach-metric=%d counters=%d attach-calls-away=%llu "
+                     "attach-counter-scope=%s "
                      "stacking-poll-active-away=%d stacking-poll-inactive-foreground=%d "
                      "away-stacking-stops=%llu context-generation-changes=%llu "
                      "initialize-gl-delta=%llu retained-frames-compared=%d "
@@ -3871,6 +4087,7 @@ int main(int argc, char** argv) {
                      focusBuild.attachMetricSupported ? 1 : 0,
                      focusBuild.countersEnabled ? 1 : 0,
                      static_cast<unsigned long long>(focusBuild.attachCallsAway),
+                     "shipping-WindowRaisePolicy-only; probe-activation-borrow-excluded",
                      focusBuild.stackingPollActiveAway,
                      focusBuild.stackingPollInactiveForeground,
                      static_cast<unsigned long long>(focusBuild.awayStackingStops),
