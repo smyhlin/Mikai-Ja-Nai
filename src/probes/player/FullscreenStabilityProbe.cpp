@@ -3,6 +3,7 @@
 #include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
 #include "ProbeIsolation.hpp"
+#include "ShellSliders.hpp"
 #include "ProbeRuntime.hpp"
 #include "VideoSurface.hpp"
 
@@ -18,6 +19,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMouseEvent>
 #include <QMutex>
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
@@ -211,6 +213,17 @@ bool foregroundIs(QWidget* window) {
            GetForegroundWindow() == reinterpret_cast<HWND>(window->winId());
 }
 
+/// True when any window of this process owns the native foreground. During PiP
+/// the float is a separate top-level window of ours, so "not the dialog" must
+/// not be read as "another application": its pixels are still our picture.
+bool foregroundIsOurProcess() {
+    const HWND foreground = GetForegroundWindow();
+    if (foreground == nullptr) return false;
+    DWORD processId = 0;
+    GetWindowThreadProcessId(foreground, &processId);
+    return processId != 0 && processId == GetCurrentProcessId();
+}
+
 QString foregroundProcessImage() {
     const HWND foreground = GetForegroundWindow();
     if (foreground == nullptr) return QStringLiteral("none");
@@ -269,6 +282,10 @@ QJsonObject presentationMode() {
 
 bool foregroundIs(QWidget* window) {
     return window != nullptr && window->isActiveWindow();
+}
+
+bool foregroundIsOurProcess() {
+    return QGuiApplication::applicationState() == Qt::ApplicationActive;
 }
 
 QString foregroundProcessImage() {
@@ -486,6 +503,228 @@ bool settleForegroundPeer(mikai::probes::ForegroundPeer& peer,
     return foregroundIs(dialog);
 }
 
+/// The surface that is compositing the picture right now: the main surface,
+/// or the PiP float's surface while the float is up. A matrix sample attributed
+/// to the wrong surface would report the floating window's pixels as a
+/// main-window black frame (or the reverse).
+mplayer::VideoSurface* activePlaybackSurface(mplayer::shell::PlayerDialog* dialog,
+                                             mplayer::VideoSurface* fallback) {
+    if (dialog == nullptr) return nullptr;
+    if (!dialog->isPipActive()) return fallback;
+    for (QWidget* window : QApplication::topLevelWidgets()) {
+        auto* pip = qobject_cast<mplayer::shell::PipFloat*>(window);
+        if (pip != nullptr && pip->isVisible() && pip->videoSurface() != nullptr)
+            return pip->videoSurface();
+    }
+    return nullptr;
+}
+
+/// Fraction of pixels whose RGB sum moved by more than 24 between two composed
+/// crops of the same surface. Not a frame counter: it is the picture itself
+/// changing, which is what "the video output is still moving" has to mean.
+double frameDifferenceFraction(const QImage& first, const QImage& second) {
+    if (first.isNull() || second.isNull() || first.size() != second.size()) return -1.0;
+    const QImage a = first.convertToFormat(QImage::Format_RGBA8888);
+    const QImage b = second.convertToFormat(QImage::Format_RGBA8888);
+    qint64 different = 0;
+    qint64 total = 0;
+    for (int y = 0; y < a.height(); ++y) {
+        const uchar* rowA = a.constScanLine(y);
+        const uchar* rowB = b.constScanLine(y);
+        for (int x = 0; x < a.width(); ++x) {
+            const int offset = x * 4;
+            const int delta = std::abs(int(rowA[offset]) - int(rowB[offset])) +
+                              std::abs(int(rowA[offset + 1]) - int(rowB[offset + 1])) +
+                              std::abs(int(rowA[offset + 2]) - int(rowB[offset + 2]));
+            if (delta > 24) ++different;
+            ++total;
+        }
+    }
+    return total > 0 ? static_cast<double>(different) / total : -1.0;
+}
+
+/// Why a matrix tick produced no picture. An excluded tick is counted under its
+/// own reason and is never evaluated for black: the black helper's window, a
+/// minimized player and another application's foreground are not this player's
+/// picture, so treating their pixels as either "black" or "clean" would be
+/// fabricated evidence in both directions.
+enum class MatrixExposure { Exposed, PeerForeground, Minimized, NotExposed, ForeignForeground };
+
+struct MatrixSampler {
+    mplayer::shell::PlayerDialog* dialog = nullptr;
+    mplayer::VideoSurface* mainSurface = nullptr;
+    const mikai::probes::ForegroundPeer* peer = nullptr;
+    std::function<void(QJsonObject)> record;
+    std::function<void(const QImage&, const QString&)> saveImage;
+
+    qint64 attempts = 0;
+    qint64 exposedSamples = 0;
+    qint64 fboSamples = 0;
+    qint64 fboBlack = 0;
+    qint64 fboUnmeasured = 0;
+    qint64 desktopSamples = 0;
+    qint64 desktopBlack = 0;
+    qint64 desktopUnmeasured = 0;
+    qint64 excludedPeerForeground = 0;
+    qint64 excludedMinimized = 0;
+    qint64 excludedNotExposed = 0;
+    qint64 excludedForeignForeground = 0;
+    qint64 excludedNoVisibleOutputFrame = 0;
+    qint64 grabCalls = 0;
+    qint64 grabTotalMicros = 0;
+    qint64 grabMaxMicros = -1;
+    qint64 readbackCalls = 0;
+    qint64 readbackTotalMicros = 0;
+    qint64 readbackMaxMicros = -1;
+    qint64 maxWorkMs = 0;
+    qint64 firstSampleAtMs = -1;
+    qint64 lastSampleAtMs = -1;
+    double desktopLumaTotal = 0.0;
+    qint64 desktopLumaCount = 0;
+    int blackArtifactsSaved = 0;
+
+    quint64 contextGenerationStart = 0;
+    quint64 contextGenerationLast = 0;
+    quint64 contextGenerationChanges = 0;
+    quint64 initializeGlStart = 0;
+    quint64 initializeGlLast = 0;
+    bool contextObserved = false;
+    quint64 sourceEpochStart = 0;
+    quint64 sourceEpochLast = 0;
+    quint64 sourceEpochChanges = 0;
+    bool sourceEpochObserved = false;
+
+    void noteBlack(const QImage& image, const QString& label, qint64 elapsedMs,
+                   const QJsonObject& context) {
+        if (!saveImage || blackArtifactsSaved >= 8) return;
+        ++blackArtifactsSaved;
+        saveImage(image, QStringLiteral("%1-%2.png").arg(label).arg(elapsedMs));
+        if (record) {
+            QJsonObject row = context;
+            row.insert(QStringLiteral("event"), QStringLiteral("matrixBlackSample"));
+            row.insert(QStringLiteral("elapsedMs"), elapsedMs);
+            row.insert(QStringLiteral("kind"), label);
+            record(row);
+        }
+    }
+
+    /// Takes one tick. `elapsedMs` is the run clock, recorded so every count can
+    /// be placed on the timeline.
+    void tick(qint64 elapsedMs) {
+        QElapsedTimer work;
+        work.start();
+        ++attempts;
+        mplayer::VideoSurface* owner = activePlaybackSurface(dialog, mainSurface);
+        const bool minimized = dialog != nullptr && dialog->isMinimized();
+        const bool peerOwns =
+            peer != nullptr && peer->supported() && peer->ownsForeground();
+        MatrixExposure exposure = MatrixExposure::Exposed;
+        if (minimized) {
+            exposure = MatrixExposure::Minimized;
+        } else if (peerOwns) {
+            exposure = MatrixExposure::PeerForeground;
+        } else if (!foregroundIsOurProcess()) {
+            exposure = MatrixExposure::ForeignForeground;
+        } else if (owner == nullptr || owner->context() == nullptr || !owner->isVisible() ||
+                   !dialog->isVisible()) {
+            // A surface without a render context has no composed picture to
+            // judge; it is counted as an exclusion, never as a black frame.
+            exposure = MatrixExposure::NotExposed;
+        }
+        switch (exposure) {
+            case MatrixExposure::Exposed: break;
+            case MatrixExposure::PeerForeground: ++excludedPeerForeground; break;
+            case MatrixExposure::Minimized: ++excludedMinimized; break;
+            case MatrixExposure::NotExposed: ++excludedNotExposed; break;
+            case MatrixExposure::ForeignForeground: ++excludedForeignForeground; break;
+        }
+        if (exposure != MatrixExposure::Exposed) {
+            maxWorkMs = std::max(maxWorkMs, work.elapsed());
+            return;
+        }
+        ++exposedSamples;
+        if (firstSampleAtMs < 0) firstSampleAtMs = elapsedMs;
+        lastSampleAtMs = elapsedMs;
+
+        const mplayer::VideoSurface::UiProfileCounters counters =
+            mainSurface != nullptr ? mainSurface->uiProfileCounters()
+                                   : mplayer::VideoSurface::UiProfileCounters{};
+        if (!contextObserved) {
+            contextGenerationStart = contextGenerationLast = counters.contextGeneration;
+            initializeGlStart = initializeGlLast = counters.initializeGlCalls;
+            contextObserved = true;
+        } else if (counters.contextGeneration != contextGenerationLast) {
+            ++contextGenerationChanges;
+            contextGenerationLast = counters.contextGeneration;
+        }
+        initializeGlLast = counters.initializeGlCalls;
+
+        const quint64 epoch = owner->sourceEpoch();
+        if (!sourceEpochObserved) {
+            sourceEpochStart = sourceEpochLast = epoch;
+            sourceEpochObserved = true;
+        } else if (epoch != sourceEpochLast) {
+            ++sourceEpochChanges;
+            sourceEpochLast = epoch;
+        }
+
+        // Only a surface that claims a visible output frame is asked for its
+        // composed pixels. Before that claim there is no picture to judge.
+        if (!owner->hasVisibleOutputFrame()) {
+            ++excludedNoVisibleOutputFrame;
+        } else {
+            QElapsedTimer readback;
+            readback.start();
+            const QImage composed = readComposedCrop(owner);
+            const qint64 elapsedMicros = readback.nsecsElapsed() / 1000;
+            ++readbackCalls;
+            readbackTotalMicros += elapsedMicros;
+            readbackMaxMicros = std::max(readbackMaxMicros, elapsedMicros);
+            if (composed.isNull()) {
+                ++fboUnmeasured;
+            } else {
+                ++fboSamples;
+                if (isBlack(composed)) {
+                    ++fboBlack;
+                    noteBlack(composed, QStringLiteral("qa-matrix-black-fbo"), elapsedMs,
+                              QJsonObject{{"surface", "main-or-pip"},
+                                          {"contextGeneration",
+                                           static_cast<qint64>(counters.contextGeneration)},
+                                          {"sourceEpoch", static_cast<qint64>(epoch)},
+                                          {"position", owner->position()}});
+                }
+            }
+        }
+
+        QElapsedTimer grab;
+        grab.start();
+        const QImage desktop = desktopCrop(owner->screen(), videoSampleCrop(owner));
+        const qint64 elapsedMicros = grab.nsecsElapsed() / 1000;
+        ++grabCalls;
+        grabTotalMicros += elapsedMicros;
+        grabMaxMicros = std::max(grabMaxMicros, elapsedMicros);
+        if (desktop.isNull()) {
+            ++desktopUnmeasured;
+        } else {
+            ++desktopSamples;
+            const double luma = meanLuma(desktop);
+            if (luma >= 0.0) {
+                desktopLumaTotal += luma;
+                ++desktopLumaCount;
+            }
+            if (isBlack(desktop)) {
+                ++desktopBlack;
+                noteBlack(desktop, QStringLiteral("qa-matrix-black-desktop"), elapsedMs,
+                          QJsonObject{{"luma", luma},
+                                      {"position", owner->position()},
+                                      {"contextGeneration",
+                                       static_cast<qint64>(counters.contextGeneration)}});
+            }
+        }
+        maxWorkMs = std::max(maxWorkMs, work.elapsed());
+    }
+};
+
 struct ActivationRun {
     QString phase;
     int cycles = 0;
@@ -513,6 +752,20 @@ struct ActivationRun {
     qint64 desktopGrabCalls = 0;
     qint64 desktopGrabTotalMicros = 0;
     qint64 desktopGrabMaxMicros = 0;
+    /// Position (media seconds) gained across each occlusion: a cycle that lost
+    /// the playhead is not a successful away/back, whatever the foreground said.
+    QVector<double> positionDeltaSeconds;
+    int positionAdvancedCycles = 0;
+    int positionStalledCycles = 0;
+    /// Composed-picture luma before the helper covered it and after the player
+    /// took the picture back. A recreated render context has to show a bright
+    /// picture again; a black or absent frame is a lost picture, not a redraw.
+    QVector<double> fboLumaBeforeAway;
+    QVector<double> fboLumaAfterBack;
+    /// Desktop grabs taken while the peer owned the foreground: the helper's own
+    /// pixels, counted here and excluded from the player's black accounting.
+    int peerForegroundDesktopSamples = 0;
+    int peerForegroundBlackDesktopSamples = 0;
 };
 
 ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
@@ -542,6 +795,13 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
         // while it owns the foreground: a visible-composition sample is only
         // meaningful when the two differ.
         const double baselineLuma = meanLuma(grabDesktop());
+        // Picture and playhead as this cycle finds them: the away interval has to
+        // keep playing, and the picture it returns with has to be the same picture
+        // (not a re-initialised, never-rendered target) when the context was
+        // recreated underneath the cycle.
+        const QImage pictureBeforeAway = readComposedCrop(surface);
+        run.fboLumaBeforeAway.append(meanLuma(pictureBeforeAway));
+        const double positionBeforeAway = surface->position();
 
         const bool awayOwned = peer.activate();
         spinFor(650);
@@ -551,6 +811,10 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
         const double occludedLuma = meanLuma(grabDesktop());
         const bool occlusionVerified =
             baselineLuma >= 40.0 && occludedLuma >= 0.0 && occludedLuma < baselineLuma * 0.5;
+        if (stillAway && occludedLuma >= 0.0) {
+            ++run.peerForegroundDesktopSamples;
+            if (occludedLuma < 24.0) ++run.peerForegroundBlackDesktopSamples;
+        }
         const quint64 attachAfterAway =
             mikai::gui::uiprofile::snapshot().threadInputAttaches;
         // Away-only: an attach made while the player still held the foreground
@@ -584,7 +848,15 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
                                 surface->uiProfileCounters().contextGeneration)},
                            {"initializeGlCalls",
                             static_cast<qint64>(
-                                surface->uiProfileCounters().initializeGlCalls)}});
+                                surface->uiProfileCounters().initializeGlCalls)},
+                           {"focusCycleKind", "native foreground cycle"},
+                           {"focusCycleMechanism",
+                            "SetForegroundWindow on a separate helper process's window; no "
+                            "synthetic keyboard input, so this is not an Alt-Tab reproduction"},
+                           {"desktopSampleWhilePeerForeground", stillAway},
+                           {"peerPixelsExcluded", true},
+                           {"positionBefore", positionBeforeAway},
+                           {"fboLumaBeforeAway", run.fboLumaBeforeAway.last()}});
 
         bool paintSeen = false;
         qint64 paintAtNs = 0;
@@ -676,6 +948,15 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
         // Sampling the screen while another process owns the foreground would
         // report that process's pixels; the cycle names the loss instead.
         const QImage crop = cycleValid ? readComposedCrop(surface) : QImage();
+        const double positionAfterBack = surface->position();
+        const double positionDelta = positionAfterBack - positionBeforeAway;
+        run.positionDeltaSeconds.append(positionDelta);
+        if (positionDelta > 0.0) {
+            ++run.positionAdvancedCycles;
+        } else {
+            ++run.positionStalledCycles;
+        }
+        run.fboLumaAfterBack.append(meanLuma(crop));
         bool black = false;
         if (!crop.isNull()) {
             ++run.blackMeasured;
@@ -713,6 +994,11 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
             {"activationRequestToOwnedMs", activationRequestToOwnedMs},
             {"foregroundProcess", foregroundProcessImage()},
             {"cycleValid", cycleValid},
+            {"focusCycleKind", "native foreground cycle"},
+            {"positionAfter", positionAfterBack},
+            {"positionDeltaSeconds", positionDelta},
+            {"positionAdvanced", positionDelta > 0.0},
+            {"fboLumaAfterBack", run.fboLumaAfterBack.last()},
             {"black", black},
             {"blackMeasured", !crop.isNull()},
             {"cropLuma", meanLuma(crop)},
@@ -808,6 +1094,15 @@ QJsonObject activationSummary(const ActivationRun& run) {
          attachMetricSupported() ? QJsonValue(static_cast<qint64>(run.attachCalls))
                                  : QJsonValue(QStringLiteral("unavailable"))},
         {"attachMetricSupported", attachMetricSupported()},
+        {"focusCycleKind", "native foreground cycle"},
+        {"positionAdvancedCycles", run.positionAdvancedCycles},
+        {"positionStalledCycles", run.positionStalledCycles},
+        {"peerForegroundDesktopSamples", run.peerForegroundDesktopSamples},
+        {"peerForegroundBlackDesktopSamples", run.peerForegroundBlackDesktopSamples},
+        {"peerPixelPolicy",
+         "desktop grabs taken while the separate helper owned the foreground are counted "
+         "here and excluded from the player's black accounting; they are the helper's "
+         "pixels, not the player's picture"},
         {"contextGenerationChanges", static_cast<qint64>(run.contextGenerationChanges)},
         {"initializeGlCalls", static_cast<qint64>(run.initializeGlCalls)},
         {"dwmCompositionFramesDisplayed",
@@ -1472,6 +1767,944 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     return measured ? 0 : 3;
 }
 
+/// GOAL-E long-playback QA matrix.
+///
+/// One real playback, sampled from the composed framebuffer and from the real
+/// desktop roughly every 32 ms while the player is exposed, exercised against a
+/// fixed budget: >=30 observed chrome state changes, ten verified native
+/// foreground away/back cycles, five minimize/restore cycles, and the
+/// fullscreen/PiP seams the transition mode already watches. It never
+/// synthesizes an engine build and never pauses playback: the media clock itself
+/// has to advance for the whole window, and every observation is counted or
+/// excluded by name rather than assumed.
+int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface* surface,
+                    mplayer::shell::PlayerShell* shell, const QString& media,
+                    const QString& outputPath, const PlaybackHost* host, bool knownBright,
+                    int seconds, const std::function<void(QJsonObject)>& record,
+                    QString* error) {
+    constexpr int kChromeChangesRequired = 30;
+    constexpr int kNativeForegroundCyclesRequired = 10;
+    constexpr int kMinimizeRestoreCyclesRequired = 5;
+    constexpr int kMinimizeDwellMs = 900;
+    constexpr int kMaxMinimizeDwellMs = 5000;
+    constexpr qint64 kMaxTotalMinimizedMs = 15000;
+    constexpr int kFullscreenSeamTransitions = 3;
+
+    const auto fail = [&](const QString& reason, const char* result) {
+        *error = reason;
+        record(QJsonObject{{"event", "qaMatrixResult"},
+                           {"result", QString::fromLatin1(result)},
+                           {"reason", reason},
+                           {"mode", "qa-matrix"},
+                           {"requestedSeconds", seconds},
+                           {"knownBrightFixture", knownBright},
+                           {"mediaFacts", mediaFacts(media)},
+                           {"surfaceState", surfaceState(surface)},
+                           {"presentationMode", presentationMode()}});
+        return 3;
+    };
+
+    if (shell == nullptr) {
+        return fail(QStringLiteral("the player shell was not built, so chrome state is "
+                                   "unobservable"),
+                    "INVALID");
+    }
+    if (seconds < 300) {
+        return fail(QStringLiteral("the QA matrix is a 300 s long-playback matrix; requested %1 s")
+                        .arg(seconds),
+                    "INVALID");
+    }
+    if (!waitForVideo(surface, 20000)) {
+        return fail(QStringLiteral("no video decoded before the QA matrix"), "INCOMPLETE");
+    }
+    // This mode is long playback: a paused core would make every position and
+    // motion observation a statement about a still frame.
+    const auto pauseFlag = [&]() -> std::optional<bool> {
+        const auto value =
+            surface->probeMpvProperty(QStringLiteral("pause"), mplayer::ProbePropertyKind::Flag);
+        if (!value.has_value() || value->kind != mplayer::ProbePropertyValue::Kind::Flag)
+            return std::nullopt;
+        return value->flag;
+    };
+    if (!surface->isPlaying() || pauseFlag().value_or(true)) {
+        dialog->resumePlayback();
+        spinFor(600);
+    }
+    const std::optional<bool> pausedAtStart = pauseFlag();
+    if (!pausedAtStart.has_value() || *pausedAtStart || !surface->isPlaying()) {
+        return fail(QStringLiteral("the QA matrix requires a playing source; pause=%1 playing=%2")
+                        .arg(pausedAtStart.has_value()
+                                 ? (*pausedAtStart ? QStringLiteral("true")
+                                                   : QStringLiteral("false"))
+                                 : QStringLiteral("unavailable"))
+                        .arg(surface->isPlaying() ? QStringLiteral("true")
+                                                  : QStringLiteral("false")),
+                    "INVALID");
+    }
+    if (!dialog->isFullScreen()) {
+        dialog->showFullScreen();
+        spinFor(700);
+    }
+    if (!ensureForeground(dialog)) {
+        return fail(QStringLiteral("the player never owned the native foreground at start"),
+                    "INVALID");
+    }
+    spinFor(300);
+
+    // ── async evidence writer ─────────────────────────────────────────────
+    // PNG encoding on the GUI thread would distort the same sampling this mode
+    // is measuring, so the matrix reuses the writer the transition mode uses.
+    EvidenceWrites artifactWrites;
+    QThreadPool artifactPool;
+    artifactPool.setMaxThreadCount(1);
+    bool collectingArtifacts = true;
+    const auto saveImage = [&](const QImage& image, const QString& name) {
+        if (!collectingArtifacts) return;
+        const QString path = QDir(outputPath).filePath(name);
+        artifactWrites.noteAttempt();
+        if (image.isNull()) {
+            artifactWrites.noteFinish(false, 0, name);
+            return;
+        }
+        auto* task = new ArtifactWriteTask(image, path, name, &artifactWrites);
+        if (artifactPool.tryStart(task)) return;
+        delete task;
+        artifactWrites.noteSkip();
+        record({{"event", "artifactSkipped"}, {"artifact", name},
+                {"reason", "evidence writer busy"}});
+    };
+
+    MatrixSampler sampler;
+    sampler.dialog = dialog;
+    sampler.mainSurface = surface;
+    sampler.record = record;
+    sampler.saveImage = saveImage;
+
+    QElapsedTimer runClock;
+    runClock.start();
+    QString currentPhase = QStringLiteral("calibration");
+
+    // ── calibration: a measured bright picture, not a declared one ────────
+    double calibratedLuma = -1.0;
+    double calibratedDesktopLuma = -1.0;
+    int brightFboSamples = 0;
+    int brightDesktopSamples = 0;
+    QElapsedTimer calibrationClock;
+    calibrationClock.start();
+    while (calibrationClock.elapsed() < 12000 &&
+           (brightFboSamples < 8 || brightDesktopSamples < 4)) {
+        if (!foregroundIs(dialog)) ensureForeground(dialog);
+        const QImage composed = readComposedCrop(surface);
+        const double luma = meanLuma(composed);
+        if (!composed.isNull() && luma >= 40.0) {
+            ++brightFboSamples;
+            calibratedLuma = std::max(calibratedLuma, luma);
+        }
+        const QImage desktop = desktopCrop(surface->screen(), videoSampleCrop(surface));
+        const double desktopLuma = meanLuma(desktop);
+        if (!desktop.isNull() && desktopLuma >= 40.0) {
+            ++brightDesktopSamples;
+            calibratedDesktopLuma = std::max(calibratedDesktopLuma, desktopLuma);
+        }
+        spinFor(32);
+    }
+    const double brightThreshold =
+        calibratedLuma >= 40.0 ? std::max(30.0, calibratedLuma * 0.6) : -1.0;
+    record(QJsonObject{{"event", "qaMatrixCalibration"},
+                       {"elapsedMs", runClock.elapsed()},
+                       {"calibratedFboLuma", calibratedLuma},
+                       {"calibratedDesktopLuma", calibratedDesktopLuma},
+                       {"brightFboSamples", brightFboSamples},
+                       {"brightDesktopSamples", brightDesktopSamples},
+                       {"brightThreshold", brightThreshold},
+                       {"knownBrightFixture", knownBright},
+                       {"fixtureMeanLuma", meanLuma(readComposedCrop(surface))},
+                       {"corePaused", false},
+                       {"playing", surface->isPlaying()},
+                       {"surfaceState", surfaceState(surface)}});
+    if (brightThreshold < 0.0) {
+        return fail(QStringLiteral("the composed framebuffer never showed a calibrated bright "
+                                   "frame (fbo samples=%1 desktop samples=%2)")
+                        .arg(brightFboSamples)
+                        .arg(brightDesktopSamples),
+                    "INCOMPLETE");
+    }
+
+    const double positionStart = surface->position();
+    const double durationAtStart = surface->duration();
+    const quint64 framesStart = surface->playbackDiagnostics().renderedOutputFrames;
+    const quint64 sourceEpochAtStart = surface->sourceEpoch();
+    const auto countersAtStart = surface->uiProfileCounters();
+    const auto profileAtStart = mikai::gui::uiprofile::snapshot();
+
+    // ── the separate-process foreground peer ──────────────────────────────
+    currentPhase = QStringLiteral("peer-warmup");
+    const QRect sampleCrop = videoSampleCrop(surface);
+    mikai::probes::ForegroundPeer peer;
+    QString peerError;
+    if (!peer.start(QRect(sampleCrop.center() - QPoint(240, 180), QSize(480, 360)), &peerError)) {
+        return fail(peerError, "UNAVAILABLE");
+    }
+    sampler.peer = &peer;
+    if (!settleForegroundPeer(peer, dialog, surface, sampleCrop, record, &peerError)) {
+        peer.stop();
+        return fail(peerError, "INCOMPLETE");
+    }
+    record(QJsonObject{{"event", "foregroundPeer"},
+                       {"pid", static_cast<qint64>(peer.processId())},
+                       {"window", static_cast<qint64>(peer.windowId())},
+                       {"foreignPid", peer.processId() != QCoreApplication::applicationPid()},
+                       {"focusCycleKind", "native foreground cycle"},
+                       {"focusCycleMechanism",
+                        "SetForegroundWindow on a separate helper process's window; no "
+                        "synthetic keyboard input, so it is not an Alt-Tab reproduction"}});
+
+    // ── sampling pump ─────────────────────────────────────────────────────
+    qint64 lastSummaryElapsed = 0;
+    const auto maybeSummary = [&] {
+        const qint64 now = runClock.elapsed();
+        if (now - lastSummaryElapsed < 10000) return;
+        lastSummaryElapsed = now;
+        record(QJsonObject{{"event", "matrixSamplingSummary"},
+                           {"elapsedMs", now},
+                           {"phase", currentPhase},
+                           {"attempted", sampler.attempts},
+                           {"exposedSamples", sampler.exposedSamples},
+                           {"fboSamples", sampler.fboSamples},
+                           {"fboBlackSamples", sampler.fboBlack},
+                           {"fboUnmeasured", sampler.fboUnmeasured},
+                           {"desktopSamples", sampler.desktopSamples},
+                           {"desktopBlackSamples", sampler.desktopBlack},
+                           {"desktopUnmeasured", sampler.desktopUnmeasured},
+                           {"excludedPeerForeground", sampler.excludedPeerForeground},
+                           {"excludedMinimized", sampler.excludedMinimized},
+                           {"excludedNotExposed", sampler.excludedNotExposed},
+                           {"excludedForeignForeground", sampler.excludedForeignForeground},
+                           {"excludedNoVisibleOutputFrame",
+                            sampler.excludedNoVisibleOutputFrame},
+                           {"contextGenerationChanges",
+                            static_cast<qint64>(sampler.contextGenerationChanges)},
+                           {"sourceEpochChanges",
+                            static_cast<qint64>(sampler.sourceEpochChanges)},
+                           {"position", surface->position()},
+                           {"frames", static_cast<qint64>(
+                                          surface->playbackDiagnostics().renderedOutputFrames)},
+                           {"maxSampleWorkMs", sampler.maxWorkMs}});
+    };
+    // One sample every ~32 ms of wall time: the tick's own work is inside that
+    // budget, so a slow readback cannot silently halve the sampling density.
+    const auto sampleTick = [&] {
+        QElapsedTimer cadence;
+        cadence.start();
+        sampler.tick(runClock.elapsed());
+        maybeSummary();
+        const qint64 spent = cadence.elapsed();
+        if (spent < 32) spinFor(static_cast<int>(32 - spent));
+    };
+    const auto pumpFor = [&](int milliseconds) {
+        QElapsedTimer slice;
+        slice.start();
+        while (slice.elapsed() < milliseconds) sampleTick();
+    };
+    const auto pumpUntil = [&](const std::function<bool()>& done, int timeoutMs) -> bool {
+        QElapsedTimer wait;
+        wait.start();
+        while (true) {
+            sampleTick();
+            if (done()) return true;
+            if (wait.elapsed() >= timeoutMs) return false;
+        }
+    };
+
+    auto* dock = dialog->findChild<QWidget*>(QStringLiteral("playerDock"));
+    auto* settingsButton = dialog->findChild<QWidget*>(QStringLiteral("playerSettingsButton"));
+    auto* flyout = dialog->findChild<QWidget*>(QStringLiteral("playerSettingsFlyout"));
+    auto* pictureMenu = dialog->findChild<QWidget*>(QStringLiteral("playerPictureMenu"));
+    auto* volume = dialog->findChild<mplayer::shell::VolumeGroup*>(
+        QStringLiteral("playerVolumeGroup"));
+    const bool chromeDevicesBuilt =
+        dock != nullptr && settingsButton != nullptr && flyout != nullptr && volume != nullptr;
+    record(QJsonObject{{"event", "qaMatrixChromeDevices"},
+                       {"elapsedMs", runClock.elapsed()},
+                       {"dock", dock != nullptr},
+                       {"settingsButton", settingsButton != nullptr},
+                       {"settingsFlyout", flyout != nullptr},
+                       {"pictureMenu", pictureMenu != nullptr},
+                       {"volumeGroup", volume != nullptr},
+                       {"built", chromeDevicesBuilt}});
+    if (!chromeDevicesBuilt) {
+        peer.stop();
+        return fail(QStringLiteral("the dock, settings control or volume control was not built, "
+                                   "so the chrome budget is unobservable"),
+                    "INCOMPLETE");
+    }
+
+    int chromeChanges = 0;
+    int hoverReveals = 0;
+    int hoverHides = 0;
+    int panelOpens = 0;
+    int panelCloses = 0;
+    int controlChanges = 0;
+    const auto noteChromeChange = [&](const QString& kind, const QString& detail,
+                                      QJsonObject extra) {
+        ++chromeChanges;
+        extra.insert(QStringLiteral("event"), QStringLiteral("matrixChromeChange"));
+        extra.insert(QStringLiteral("elapsedMs"), runClock.elapsed());
+        extra.insert(QStringLiteral("phase"), currentPhase);
+        extra.insert(QStringLiteral("kind"), kind);
+        extra.insert(QStringLiteral("detail"), detail);
+        extra.insert(QStringLiteral("chromeChanges"), chromeChanges);
+        record(extra);
+    };
+
+    const QPoint dockPoint(shell->width() / 2, shell->height() - 42);
+    const QPoint picturePoint(dialog->width() / 2, dialog->height() / 3);
+    const auto aimAt = [&](QWidget* target, const QPoint& local) {
+        if (target == nullptr) return;
+        const QPoint global = target->mapToGlobal(local);
+        QCursor::setPos(global);
+        QCoreApplication::processEvents();
+        QMouseEvent enter(QEvent::Enter, QPointF(local), QPointF(global), Qt::NoButton,
+                          Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(target, &enter);
+        QMouseEvent move(QEvent::MouseMove, QPointF(local), QPointF(global), Qt::NoButton,
+                         Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(target, &move);
+        QCoreApplication::processEvents();
+    };
+    const auto dockUp = [&] {
+        return dock->isVisible() && shell->state() !=
+                                        mplayer::shell::PlayerShell::State::FullscreenAutoHidden;
+    };
+    const auto autoHidden = [&] {
+        return shell->state() ==
+                   mplayer::shell::PlayerShell::State::FullscreenAutoHidden &&
+               !dock->isVisible();
+    };
+
+    // ── chrome hover reveal / auto-hide, observed on the shell's own state ─
+    currentPhase = QStringLiteral("chrome-hover");
+    for (int cycle = 0; cycle < 10; ++cycle) {
+        aimAt(shell, dockPoint);
+        if (pumpUntil(dockUp, 2500)) {
+            ++hoverReveals;
+            noteChromeChange(QStringLiteral("hover-reveal"),
+                             QStringLiteral("pointer over the dock; the shell left its "
+                                            "auto-hidden state and the dock became visible"),
+                             QJsonObject{{"shellState", shell->stateName()},
+                                         {"dockVisible", dock->isVisible()},
+                                         {"cycle", cycle}});
+        }
+        // Park over the picture and stop moving: only then can the 2.5 s
+        // auto-hide timer fire, and only then is the hide a real state change.
+        QCursor::setPos(dialog->mapToGlobal(picturePoint));
+        if (pumpUntil(autoHidden, 4500)) {
+            ++hoverHides;
+            noteChromeChange(QStringLiteral("hover-autohide"),
+                             QStringLiteral("pointer parked off the chrome; the shell entered "
+                                            "FULLSCREEN_AUTO_HIDDEN and the dock hid"),
+                             QJsonObject{{"shellState", shell->stateName()},
+                                         {"dockVisible", dock->isVisible()},
+                                         {"cycle", cycle}});
+        }
+    }
+
+    // ── settings popover open/close, from a real click on the gear ─────────
+    currentPhase = QStringLiteral("chrome-panels");
+    for (int cycle = 0; cycle < 4; ++cycle) {
+        if (!dockUp()) {
+            aimAt(shell, dockPoint);
+            pumpUntil(dockUp, 2500);
+        }
+        QTest::mouseClick(settingsButton, Qt::LeftButton, Qt::NoModifier,
+                          settingsButton->rect().center());
+        if (pumpUntil([&] { return flyout->isVisible(); }, 2500)) {
+            ++panelOpens;
+            noteChromeChange(QStringLiteral("panel-open"),
+                             QStringLiteral("settings flyout visible after a click on the gear"),
+                             QJsonObject{{"flyoutVisible", flyout->isVisible()},
+                                         {"shellHasOverlay", shell->hasVisibleOverlay()},
+                                         {"cycle", cycle}});
+        }
+        const bool dismissed = shell->dismissOverlay();
+        if (pumpUntil([&] { return !flyout->isVisible(); }, 2500)) {
+            ++panelCloses;
+            noteChromeChange(QStringLiteral("panel-close"),
+                             QStringLiteral("settings flyout hidden by the shell's own dismiss "
+                                            "path"),
+                             QJsonObject{{"flyoutVisible", flyout->isVisible()},
+                                         {"dismissReportedVisibleOverlay", dismissed},
+                                         {"cycle", cycle}});
+        }
+        if (!foregroundIs(dialog)) ensureForeground(dialog);
+    }
+    if (pictureMenu != nullptr) {
+        for (int cycle = 0; cycle < 2; ++cycle) {
+            aimAt(shell, dockPoint);
+            pumpUntil(dockUp, 2500);
+            shell->openPictureMenu(shell->mapFromGlobal(dialog->mapToGlobal(dockPoint)));
+            if (pumpUntil([&] { return pictureMenu->isVisible(); }, 2500)) {
+                ++panelOpens;
+                noteChromeChange(QStringLiteral("picture-menu-open"),
+                                 QStringLiteral("picture context menu visible"),
+                                 QJsonObject{{"menuVisible", pictureMenu->isVisible()},
+                                             {"cycle", cycle}});
+            }
+            shell->dismissOverlay();
+            if (pumpUntil([&] { return !pictureMenu->isVisible(); }, 2500)) {
+                ++panelCloses;
+                noteChromeChange(QStringLiteral("picture-menu-close"),
+                                 QStringLiteral("picture context menu hidden"),
+                                 QJsonObject{{"menuVisible", pictureMenu->isVisible()},
+                                             {"cycle", cycle}});
+            }
+            if (!foregroundIs(dialog)) ensureForeground(dialog);
+        }
+    }
+
+    // ── control state changes: the real speaker hit area toggles mute ──────
+    currentPhase = QStringLiteral("chrome-controls");
+    for (int cycle = 0; cycle < 6; ++cycle) {
+        if (!dockUp()) {
+            aimAt(shell, dockPoint);
+            pumpUntil(dockUp, 2500);
+        }
+        const bool mutedBefore = volume->isMuted();
+        QTest::mouseClick(volume, Qt::LeftButton, Qt::NoModifier,
+                          QPoint(10, volume->height() / 2));
+        if (pumpUntil([&] { return volume->isMuted() != mutedBefore; }, 1200)) {
+            ++controlChanges;
+            noteChromeChange(QStringLiteral("control-state"),
+                             QStringLiteral("volume mute toggled by a click on the speaker "
+                                            "hit area; the control's own state changed"),
+                             QJsonObject{{"mutedBefore", mutedBefore},
+                                         {"mutedAfter", volume->isMuted()},
+                                         {"effectiveVolume", volume->effective()},
+                                         {"cycle", cycle}});
+        }
+    }
+    if (volume->isMuted()) {
+        QTest::mouseClick(volume, Qt::LeftButton, Qt::NoModifier,
+                          QPoint(10, volume->height() / 2));
+        spinFor(120);
+    }
+    QCursor::setPos(dialog->mapToGlobal(picturePoint));
+
+    // ── ten verified native foreground away/back cycles ───────────────────
+    currentPhase = QStringLiteral("native-foreground");
+    ActivationRun activation = runActivationCycles(
+        dialog, surface, peer, QStringLiteral("native-foreground"),
+        kNativeForegroundCyclesRequired, knownBright, record);
+    const bool awayComplete =
+        activation.cycles == kNativeForegroundCyclesRequired &&
+        activation.foregroundLostCycles == 0 && activation.visibleCompositionTimeouts == 0 &&
+        activation.visibleCompositionUnsupported == 0 &&
+        activation.positionAdvancedCycles == kNativeForegroundCyclesRequired;
+    const bool contextRecreated = activation.initializeGlCalls > 0 ||
+                                  activation.contextGenerationChanges > 0;
+    bool continuityVerified = true;
+    if (contextRecreated) {
+        for (int index = 0; index < activation.fboLumaAfterBack.size(); ++index) {
+            const double before = index < activation.fboLumaBeforeAway.size()
+                                      ? activation.fboLumaBeforeAway.at(index)
+                                      : -1.0;
+            const double after = activation.fboLumaAfterBack.at(index);
+            continuityVerified = continuityVerified && before > 0.0 && after >= brightThreshold &&
+                                 after >= before * 0.6;
+        }
+    }
+    record(QJsonObject{{"event", "qaMatrixAwayBack"},
+                       {"elapsedMs", runClock.elapsed()},
+                       {"nativeForegroundCycles", activation.cycles},
+                       {"nativeForegroundCyclesRequired", kNativeForegroundCyclesRequired},
+                       {"foregroundLostCycles", activation.foregroundLostCycles},
+                       {"positionAdvancedCycles", activation.positionAdvancedCycles},
+                       {"positionStalledCycles", activation.positionStalledCycles},
+                       {"peerForegroundDesktopSamples", activation.peerForegroundDesktopSamples},
+                       {"peerForegroundBlackDesktopSamples",
+                        activation.peerForegroundBlackDesktopSamples},
+                       {"focusCycleKind", "native foreground cycle"},
+                       {"contextRecreated", contextRecreated},
+                       {"initializeGlCalls", static_cast<qint64>(activation.initializeGlCalls)},
+                       {"contextGenerationChanges",
+                        static_cast<qint64>(activation.contextGenerationChanges)},
+                       {"heldPictureContinuityRequired", contextRecreated},
+                       {"heldPictureContinuityVerified", continuityVerified},
+                       {"complete", awayComplete}});
+
+    // ── five minimize/restore cycles, each short and each observed ─────────
+    currentPhase = QStringLiteral("minimize-restore");
+    int minimizeCycles = 0;
+    int minimizeVerified = 0;
+    int fiveMinuteMinimizedCycles = 0;
+    qint64 totalMinimizedMs = 0;
+    qint64 maxMinimizedDwellMs = 0;
+    QVector<qint64> restoreVisibleMs;
+    for (int cycle = 0; cycle < kMinimizeRestoreCyclesRequired; ++cycle) {
+        const double positionBefore = surface->position();
+        const QImage pictureBefore = readComposedCrop(surface);
+        const double lumaBefore = meanLuma(pictureBefore);
+        dialog->showMinimized();
+        const bool minimizedObserved = pumpUntil([&] { return dialog->isMinimized(); }, 3000);
+        const qint64 minimizedAt = runClock.elapsed();
+        pumpFor(kMinimizeDwellMs);
+        const bool stillMinimized = dialog->isMinimized();
+        const double positionWhileMinimized = surface->position();
+        const qint64 dwellMs = runClock.elapsed() - minimizedAt;
+        totalMinimizedMs += dwellMs;
+        maxMinimizedDwellMs = std::max(maxMinimizedDwellMs, dwellMs);
+        if (dwellMs >= 300000) ++fiveMinuteMinimizedCycles;
+
+        dialog->showFullScreen();
+        bool restored = pumpUntil(
+            [&] { return !dialog->isMinimized() && dialog->isVisible(); }, 3000);
+        if (!restored) {
+            dialog->showNormal();
+            spinFor(200);
+            dialog->showFullScreen();
+            restored = pumpUntil(
+                [&] { return !dialog->isMinimized() && dialog->isVisible(); }, 3000);
+        }
+        const qint64 restoreAt = runClock.elapsed();
+        const bool foregroundRestored = ensureForeground(dialog);
+        const bool pictureBack = pumpUntil(
+            [&] {
+                const QImage desktop =
+                    desktopCrop(surface->screen(), videoSampleCrop(surface));
+                return !desktop.isNull() && meanLuma(desktop) >= brightThreshold;
+            },
+            2500);
+        const qint64 visibleAfterMs = runClock.elapsed() - restoreAt;
+        restoreVisibleMs.append(visibleAfterMs);
+        pumpFor(200);
+        const double positionAfter = surface->position();
+        const QImage pictureAfter = readComposedCrop(surface);
+        const double lumaAfter = meanLuma(pictureAfter);
+        const bool fullscreenAfter = dialog->isFullScreen();
+        const bool positionAdvanced = positionAfter > positionBefore &&
+                                      positionWhileMinimized > positionBefore;
+        const bool pictureRestored = !pictureAfter.isNull() && !isBlack(pictureAfter) &&
+                                     lumaAfter >= 0.0;
+        const bool verified = minimizedObserved && stillMinimized && restored &&
+                              foregroundRestored && pictureBack && fullscreenAfter &&
+                              positionAdvanced && pictureRestored;
+        ++minimizeCycles;
+        if (verified) ++minimizeVerified;
+        record(QJsonObject{{"event", "matrixMinimizeRestore"},
+                           {"elapsedMs", runClock.elapsed()},
+                           {"cycle", cycle},
+                           {"minimizedObserved", minimizedObserved},
+                           {"stillMinimizedAfterDwell", stillMinimized},
+                           {"minimizedDwellMs", dwellMs},
+                           {"restored", restored},
+                           {"restoreVisibleMs", visibleAfterMs},
+                           {"foregroundRestored", foregroundRestored},
+                           {"pictureBack", pictureBack},
+                           {"fullscreenAfter", fullscreenAfter},
+                           {"positionBefore", positionBefore},
+                           {"positionWhileMinimized", positionWhileMinimized},
+                           {"positionAfter", positionAfter},
+                           {"positionAdvanced", positionAdvanced},
+                           {"lumaBefore", lumaBefore},
+                           {"lumaAfter", lumaAfter},
+                           {"pictureRestored", pictureRestored},
+                           {"excludedMinimizedSamplesSoFar", sampler.excludedMinimized},
+                           {"minimizedSamplesExcludedFromPicture", true},
+                           {"verified", verified}});
+    }
+    const bool minimizeComplete =
+        minimizeCycles == kMinimizeRestoreCyclesRequired &&
+        minimizeVerified == kMinimizeRestoreCyclesRequired && fiveMinuteMinimizedCycles == 0 &&
+        maxMinimizedDwellMs <= kMaxMinimizeDwellMs && totalMinimizedMs <= kMaxTotalMinimizedMs;
+    record(QJsonObject{{"event", "qaMatrixMinimizeSummary"},
+                       {"elapsedMs", runClock.elapsed()},
+                       {"cycles", minimizeCycles},
+                       {"verifiedCycles", minimizeVerified},
+                       {"requiredCycles", kMinimizeRestoreCyclesRequired},
+                       {"totalMinimizedMs", totalMinimizedMs},
+                       {"maxMinimizedDwellMs", maxMinimizedDwellMs},
+                       {"maxMinimizedDwellLimitMs", kMaxMinimizeDwellMs},
+                       {"fiveMinuteMinimizedCycles", fiveMinuteMinimizedCycles},
+                       {"restoreVisibleMaxMs", restoreVisibleMs.isEmpty()
+                                                   ? QJsonValue(QStringLiteral("unavailable"))
+                                                   : QJsonValue(*std::max_element(
+                                                         restoreVisibleMs.begin(),
+                                                         restoreVisibleMs.end()))},
+                       {"excludedMinimizedSamples", sampler.excludedMinimized},
+                       {"complete", minimizeComplete}});
+
+    // ── fullscreen seams and one geometry-write edge ───────────────────────
+    currentPhase = QStringLiteral("presentation-seams");
+    const qint64 seamBlackBefore = sampler.fboBlack + sampler.desktopBlack;
+    const quint64 geometryWritesBefore = mikai::gui::uiprofile::snapshot().layoutGeometryWrites;
+    const quint64 masksBefore = mikai::gui::uiprofile::snapshot().setMaskApplications;
+    int seamTransitionsObserved = 0;
+    quint64 firstTransitionGeometryWrites = 0;
+    bool geometryEdgeMeasured = false;
+    QVector<qint64> seamVisibleMs;
+    for (int cycle = 0; cycle < kFullscreenSeamTransitions; ++cycle) {
+        for (int phase = 0; phase < 2; ++phase) {
+            const quint64 writesBefore =
+                mikai::gui::uiprofile::snapshot().layoutGeometryWrites;
+            QElapsedTimer seamClock;
+            seamClock.start();
+            if (phase == 0) {
+                dialog->showNormal();
+            } else {
+                dialog->showFullScreen();
+            }
+            const bool composed = pumpUntil(
+                [&] {
+                    const QImage desktop =
+                        desktopCrop(surface->screen(), videoSampleCrop(surface));
+                    return !desktop.isNull() && meanLuma(desktop) >= brightThreshold;
+                },
+                2500);
+            seamVisibleMs.append(seamClock.elapsed());
+            const quint64 writesAfter =
+                mikai::gui::uiprofile::snapshot().layoutGeometryWrites;
+            if (!geometryEdgeMeasured) {
+                firstTransitionGeometryWrites = writesAfter - writesBefore;
+                geometryEdgeMeasured = true;
+            }
+            const bool stateOwned = phase == 1 ? dialog->isFullScreen() : !dialog->isFullScreen();
+            if (composed && stateOwned) ++seamTransitionsObserved;
+            if (!foregroundIs(dialog)) ensureForeground(dialog);
+        }
+    }
+    const quint64 geometryWritesAfter = mikai::gui::uiprofile::snapshot().layoutGeometryWrites;
+    const quint64 masksAfter = mikai::gui::uiprofile::snapshot().setMaskApplications;
+    const qint64 seamBlackAfter = sampler.fboBlack + sampler.desktopBlack;
+
+    // ── PiP round trip: the float's picture is sampled, not assumed ────────
+    const double pipPositionBefore = surface->position();
+    dialog->togglePip();
+    const bool pipSurfaceReady = pumpUntil(
+        [&] {
+            mplayer::VideoSurface* owner = activePlaybackSurface(dialog, surface);
+            return dialog->isPipActive() && owner != nullptr && owner != surface &&
+                   owner->hasVideo();
+        },
+        8000);
+    mplayer::VideoSurface* pipOwner = activePlaybackSurface(dialog, surface);
+    pumpFor(400);
+    const double pipPositionAtStart = pipOwner != nullptr ? pipOwner->position() : -1.0;
+    // The float's own core starts at the main position and has to keep playing;
+    // a fixed sleep would turn a slow first decode into a false "no motion".
+    const bool pipAdvanced = pipPositionAtStart >= 0.0 &&
+                             pumpUntil([&] {
+                                 return pipOwner->position() > pipPositionAtStart + 0.05;
+                             }, 6000);
+    const double pipPositionAtEnd = pipOwner != nullptr ? pipOwner->position() : -1.0;
+    const QImage pipPicture = pipOwner != nullptr ? readComposedCrop(pipOwner) : QImage();
+    dialog->togglePip();
+    const bool mainSurfaceBack = pumpUntil(
+        [&] { return !dialog->isPipActive() && surface->isVisible(); }, 8000);
+    ensureForeground(dialog);
+    pumpFor(500);
+    const double pipPositionAfter = surface->position();
+    const bool pictureAfterPip = pumpUntil(
+        [&] {
+            const QImage desktop = desktopCrop(surface->screen(), videoSampleCrop(surface));
+            return !desktop.isNull() && meanLuma(desktop) >= brightThreshold;
+        },
+        2500);
+    const bool pipAdvance = pipAdvanced && pipPositionAtEnd > pipPositionAtStart;
+    const bool pipVerified = pipSurfaceReady && pipOwner != nullptr && pipOwner != surface &&
+                             !pipPicture.isNull() && !isBlack(pipPicture) && pipAdvance &&
+                             mainSurfaceBack && pictureAfterPip && dialog->isFullScreen() &&
+                             pipPositionAfter >= pipPositionAtStart;
+    record(QJsonObject{{"event", "qaMatrixPresentationSeams"},
+                       {"elapsedMs", runClock.elapsed()},
+                       {"fullscreenTransitions", 2 * kFullscreenSeamTransitions},
+                       {"transitionsObserved", seamTransitionsObserved},
+                       {"seamVisibleMaxMs", seamVisibleMs.isEmpty()
+                                                ? QJsonValue(QStringLiteral("unavailable"))
+                                                : QJsonValue(*std::max_element(
+                                                      seamVisibleMs.begin(), seamVisibleMs.end()))},
+                       {"seamBlackSamples", seamBlackAfter - seamBlackBefore},
+                       {"seamSamplesExposed", sampler.exposedSamples},
+                       {"layoutGeometryWrites",
+                        static_cast<qint64>(geometryWritesAfter - geometryWritesBefore)},
+                       {"layoutGeometryWritesFirstTransition",
+                        static_cast<qint64>(firstTransitionGeometryWrites)},
+                       {"layoutGeometryWritesPerTransition",
+                        static_cast<double>(geometryWritesAfter - geometryWritesBefore) /
+                            (2.0 * kFullscreenSeamTransitions)},
+                       {"geometryWriteEdgeMeasured", geometryEdgeMeasured},
+                       {"setMaskApplications",
+                        static_cast<qint64>(masksAfter - masksBefore)},
+                       {"pipSurfaceReady", pipSurfaceReady},
+                       {"pipPositionStart", pipPositionAtStart},
+                       {"pipPositionEnd", pipPositionAtEnd},
+                       {"pipPositionAfterExit", pipPositionAfter},
+                       {"pipPictureBlack", pipPicture.isNull() ? QJsonValue(QStringLiteral("unmeasured"))
+                                                              : QJsonValue(isBlack(pipPicture))},
+                       {"pipPositionBeforeExit", pipPositionBefore},
+                       {"mainSurfaceBack", mainSurfaceBack},
+                       {"pictureAfterPip", pictureAfterPip},
+                       {"pipVerified", pipVerified}});
+
+    // ── finish the 300 s window with continuous idle sampling ──────────────
+    currentPhase = QStringLiteral("idle-sampling");
+    const qint64 idleStartMs = runClock.elapsed();
+    const qint64 exposedAtIdleStart = sampler.exposedSamples;
+    const qint64 deadlineMs = static_cast<qint64>(seconds) * 1000;
+    while (runClock.elapsed() < deadlineMs) sampleTick();
+    const qint64 idleMs = runClock.elapsed() - idleStartMs;
+    const qint64 idleSamples = sampler.exposedSamples - exposedAtIdleStart;
+    const qint64 idleSamplesExpected = idleMs / 32;
+    const bool idleCadenceSatisfied =
+        idleMs < 2000 || idleSamples * 10 >= idleSamplesExpected * 9;
+
+    // ── final motion: the picture itself still changes ─────────────────────
+    currentPhase = QStringLiteral("final-motion");
+    pumpFor(150);
+    mplayer::VideoSurface* finalOwner = activePlaybackSurface(dialog, surface);
+    const QImage motionFirst =
+        finalOwner != nullptr ? readComposedCrop(finalOwner) : QImage();
+    const double motionPositionFirst = surface->position();
+    const quint64 motionFramesFirst = surface->playbackDiagnostics().renderedOutputFrames;
+    pumpFor(260);
+    const QImage motionSecond =
+        finalOwner != nullptr ? readComposedCrop(finalOwner) : QImage();
+    const double motionPositionSecond = surface->position();
+    const quint64 motionFramesSecond = surface->playbackDiagnostics().renderedOutputFrames;
+    const double motionFraction = frameDifferenceFraction(motionFirst, motionSecond);
+    const bool motionObserved = motionFraction >= 0.01 &&
+                                motionPositionSecond > motionPositionFirst &&
+                                motionFramesSecond > motionFramesFirst &&
+                                !isBlack(motionSecond);
+
+    collectingArtifacts = false;
+    QElapsedTimer settle;
+    settle.start();
+    const bool artifactWritesSettled = artifactPool.waitForDone(15000);
+    const qint64 artifactSettleMs = settle.elapsed();
+    const EvidenceWriteSnapshot artifactSnapshot = artifactWrites.snapshot();
+
+    const qint64 elapsedMs = runClock.elapsed();
+    const double elapsedSeconds = elapsedMs / 1000.0;
+    const double positionEnd = surface->position();
+    const double positionAdvance = positionEnd - positionStart;
+    const quint64 framesEnd = surface->playbackDiagnostics().renderedOutputFrames;
+    const quint64 sourceEpochAtEnd = surface->sourceEpoch();
+    const auto countersAtEnd = surface->uiProfileCounters();
+    const auto profileAtEnd = mikai::gui::uiprofile::snapshot();
+    const bool durationSatisfied = elapsedMs >= deadlineMs;
+    const bool mediaAdvanceSatisfied =
+        durationAtStart > 0.0 && positionAdvance >= 0.85 * elapsedSeconds;
+    const bool chromeSatisfied = chromeChanges >= kChromeChangesRequired &&
+                                 hoverReveals > 0 && hoverHides > 0 && panelOpens > 0 &&
+                                 panelCloses > 0 && controlChanges > 0;
+    const bool blackClean = sampler.fboBlack == 0 && sampler.desktopBlack == 0 &&
+                            activation.blackSamples == 0 && sampler.fboSamples > 0 &&
+                            sampler.desktopSamples > 0;
+    const bool samplingCoverage = sampler.fboUnmeasured == 0 && sampler.desktopUnmeasured == 0 &&
+                                  sampler.exposedSamples > 0 && idleCadenceSatisfied;
+    QStringList coverageGaps;
+    if (sampler.fboUnmeasured > 0)
+        coverageGaps.append(QStringLiteral("composed framebuffer reads returned no pixels %1 "
+                                           "times while the surface claimed a visible frame")
+                                .arg(sampler.fboUnmeasured));
+    if (sampler.desktopUnmeasured > 0)
+        coverageGaps.append(QStringLiteral("desktop grabs returned no pixels %1 times")
+                                .arg(sampler.desktopUnmeasured));
+    if (!idleCadenceSatisfied)
+        coverageGaps.append(QStringLiteral("idle sampling kept the 32 ms cadence for only %1 of "
+                                           "%2 expected ticks")
+                                .arg(idleSamples)
+                                .arg(idleSamplesExpected));
+    if (!geometryEdgeMeasured)
+        coverageGaps.append(QStringLiteral("no fullscreen geometry edge was measured"));
+    const bool passed = durationSatisfied && mediaAdvanceSatisfied && chromeSatisfied &&
+                        awayComplete && continuityVerified && minimizeComplete &&
+                        seamTransitionsObserved == 2 * kFullscreenSeamTransitions &&
+                        seamBlackAfter == seamBlackBefore && pipVerified && blackClean &&
+                        samplingCoverage && coverageGaps.isEmpty() && motionObserved &&
+                        (host == nullptr || !host->failed);
+    const QString result = passed ? QStringLiteral("PASS")
+                                  : (coverageGaps.isEmpty() ? QStringLiteral("FAIL")
+                                                            : QStringLiteral("INCOMPLETE"));
+    record(QJsonObject{
+        {"event", "qaMatrixResult"},
+        {"result", result},
+        {"mode", "qa-matrix"},
+        {"requestedSeconds", seconds},
+        {"elapsedMs", elapsedMs},
+        {"elapsedSeconds", elapsedSeconds},
+        {"knownBrightFixture", knownBright},
+        {"calibratedFboLuma", calibratedLuma},
+        {"calibratedDesktopLuma", calibratedDesktopLuma},
+        {"brightThreshold", brightThreshold},
+        {"mediaFacts", mediaFacts(media)},
+        {"durationSeconds", durationAtStart},
+        {"positionStart", positionStart},
+        {"positionEnd", positionEnd},
+        {"positionAdvanceSeconds", positionAdvance},
+        {"positionAdvanceRatio", elapsedSeconds > 0.0 ? positionAdvance / elapsedSeconds : -1.0},
+        {"renderedOutputFramesStart", static_cast<qint64>(framesStart)},
+        {"renderedOutputFramesEnd", static_cast<qint64>(framesEnd)},
+        {"renderedOutputFramesAdvance", static_cast<qint64>(framesEnd - framesStart)},
+        {"durationSatisfied", durationSatisfied},
+        {"mediaAdvanceSatisfied", mediaAdvanceSatisfied},
+        {"chromeStateChanges", chromeChanges},
+        {"chromeStateChangesRequired", kChromeChangesRequired},
+        {"chromeHoverReveals", hoverReveals},
+        {"chromeHoverAutoHides", hoverHides},
+        {"chromePanelOpens", panelOpens},
+        {"chromePanelCloses", panelCloses},
+        {"chromeControlStateChanges", controlChanges},
+        {"chromeSatisfied", chromeSatisfied},
+        {"nativeForegroundCycles", activation.cycles},
+        {"nativeForegroundCyclesRequired", kNativeForegroundCyclesRequired},
+        {"nativeForegroundCyclesVerified",
+         activation.cycles - activation.foregroundLostCycles},
+        {"nativeForegroundPositionAdvancedCycles", activation.positionAdvancedCycles},
+        {"focusCycleKind", "native foreground cycle"},
+        {"focusCycleMechanism",
+         "SetForegroundWindow on a separate helper process's window; no synthetic keyboard "
+         "input, so it is not an Alt-Tab reproduction"},
+        {"peerForegroundDesktopSamples", activation.peerForegroundDesktopSamples},
+        {"peerForegroundBlackDesktopSamples", activation.peerForegroundBlackDesktopSamples},
+        {"peerPixelsExcludedFromPicture", true},
+        {"awayBackComplete", awayComplete},
+        {"minimizeRestoreCycles", minimizeCycles},
+        {"minimizeRestoreCyclesVerified", minimizeVerified},
+        {"minimizeRestoreCyclesRequired", kMinimizeRestoreCyclesRequired},
+        {"totalMinimizedMs", totalMinimizedMs},
+        {"maxMinimizedDwellMs", maxMinimizedDwellMs},
+        {"minimizedSamplesExcluded", sampler.excludedMinimized},
+        {"fiveMinuteMinimizedCycles", fiveMinuteMinimizedCycles},
+        {"minimizeComplete", minimizeComplete},
+        {"fullscreenSeamTransitions", seamTransitionsObserved},
+        {"fullscreenSeamTransitionsRequired", 2 * kFullscreenSeamTransitions},
+        {"seamBlackSamples", seamBlackAfter - seamBlackBefore},
+        {"surfaceGeometryWritesPerFullscreenTransition",
+         static_cast<double>(geometryWritesAfter - geometryWritesBefore) /
+             (2.0 * kFullscreenSeamTransitions)},
+        {"layoutGeometryWrites", static_cast<qint64>(geometryWritesAfter - geometryWritesBefore)},
+        {"geometryWriteEdgeMeasured", geometryEdgeMeasured},
+        {"firstTransitionGeometryWrites",
+         static_cast<qint64>(firstTransitionGeometryWrites)},
+        {"setMaskApplications", static_cast<qint64>(masksAfter - masksBefore)},
+        {"pipVerified", pipVerified},
+        {"exposedSamples", sampler.exposedSamples},
+        {"exposedFboSamples", sampler.fboSamples},
+        {"blackFboSamples", sampler.fboBlack},
+        {"fboUnmeasuredSamples", sampler.fboUnmeasured},
+        {"exposedDesktopSamples", sampler.desktopSamples},
+        {"blackDesktopSamples", sampler.desktopBlack},
+        {"desktopUnmeasuredSamples", sampler.desktopUnmeasured},
+        {"excludedPeerForegroundSamples", sampler.excludedPeerForeground},
+        {"excludedMinimizedSamples", sampler.excludedMinimized},
+        {"excludedNotExposedSamples", sampler.excludedNotExposed},
+        {"excludedForeignForegroundSamples", sampler.excludedForeignForeground},
+        {"excludedNoVisibleOutputFrameSamples", sampler.excludedNoVisibleOutputFrame},
+        {"blackSamplesStrictWhileVisible",
+         static_cast<qint64>(sampler.fboBlack + sampler.desktopBlack +
+                             activation.blackSamples)},
+        {"peerBlackSamplesExcluded",
+         static_cast<qint64>(activation.peerForegroundBlackDesktopSamples)},
+        {"peerForegroundSamplesExcludedTotal",
+         static_cast<qint64>(sampler.excludedPeerForeground +
+                             activation.peerForegroundDesktopSamples)},
+        {"enginePreparationSynthesized", false},
+        {"longPlaybackOnly", true},
+        {"pictureAccountingPolicy",
+         "a tick made while the separate helper owned the foreground, while the player was "
+         "minimized, while another application was foreground, or while the active surface "
+         "claimed no visible output frame is counted under that reason and is never judged "
+         "black or clean; only exposed ticks are"},
+        {"desktopLumaMean", sampler.desktopLumaCount > 0
+                                ? QJsonValue(sampler.desktopLumaTotal / sampler.desktopLumaCount)
+                                : QJsonValue(QStringLiteral("unavailable"))},
+        {"desktopGrabMeanMicros", sampler.grabCalls == 0
+                                      ? QJsonValue(QStringLiteral("unavailable"))
+                                      : QJsonValue(static_cast<double>(sampler.grabTotalMicros) /
+                                                   sampler.grabCalls)},
+        {"desktopGrabMaxMicros", sampler.grabMaxMicros},
+        {"readbackMeanMicros", sampler.readbackCalls == 0
+                                   ? QJsonValue(QStringLiteral("unavailable"))
+                                   : QJsonValue(static_cast<double>(sampler.readbackTotalMicros) /
+                                                sampler.readbackCalls)},
+        {"readbackMaxMicros", sampler.readbackMaxMicros},
+        {"maxSampleWorkMs", sampler.maxWorkMs},
+        {"firstSampleAtMs", sampler.firstSampleAtMs},
+        {"lastSampleAtMs", sampler.lastSampleAtMs},
+        {"idleSamplingMs", idleMs},
+        {"idleSamplingSamples", idleSamples},
+        {"idleSamplingExpected", idleSamplesExpected},
+        {"idleCadenceSatisfied", idleCadenceSatisfied},
+        {"samplingCoverageComplete", samplingCoverage},
+        {"blackCleanWhileVisible", blackClean},
+        {"contextGenerationStart", static_cast<qint64>(sampler.contextObserved
+                                                          ? sampler.contextGenerationStart
+                                                          : 0)},
+        {"contextGenerationEnd",
+         static_cast<qint64>(surface->uiProfileCounters().contextGeneration)},
+        {"contextGenerationChanges", static_cast<qint64>(sampler.contextGenerationChanges)},
+        {"initializeGlCalls", static_cast<qint64>(countersAtEnd.initializeGlCalls -
+                                                  countersAtStart.initializeGlCalls)},
+        {"sourceEpochStart", static_cast<qint64>(sourceEpochAtStart)},
+        {"sourceEpochEnd", static_cast<qint64>(sourceEpochAtEnd)},
+        {"sourceEpochChanges", static_cast<qint64>(sampler.sourceEpochChanges)},
+        {"heldPictureContinuityRequired", contextRecreated},
+        {"heldPictureContinuityVerified", continuityVerified},
+        {"contextRecreatedAnywhere",
+         contextRecreated || sampler.contextGenerationChanges > 0 ||
+             countersAtEnd.contextGeneration != countersAtStart.contextGeneration},
+        {"heldPictureContinuityEvidence",
+         "away/back cycles compare the composed picture before the helper covers it with the "
+         "picture the same surface presents after the player takes it back; the whole run "
+         "also requires zero black on every exposed tick, so a recreated context that left "
+         "the target blank could not pass"},
+        {"layoutGeometryWritesProcessTotal",
+         static_cast<qint64>(profileAtEnd.layoutGeometryWrites -
+                             profileAtStart.layoutGeometryWrites)},
+        {"setMaskApplicationsProcessTotal",
+         static_cast<qint64>(profileAtEnd.setMaskApplications - profileAtStart.setMaskApplications)},
+        {"chromePaintCalls", static_cast<qint64>(profileAtEnd.chromePaintCalls -
+                                                 profileAtStart.chromePaintCalls)},
+        {"finalMotionFraction", motionFraction},
+        {"finalMotionObserved", motionObserved},
+        {"finalPositionDeltaSeconds", motionPositionSecond - motionPositionFirst},
+        {"maxImageSaveMs", artifactSnapshot.maxWriteMs},
+        {"artifactWritesAttempted", artifactSnapshot.attempted},
+        {"artifactWritesCompleted", artifactSnapshot.completed},
+        {"artifactWritesFailed", artifactSnapshot.failed},
+        {"artifactWritesSkipped", artifactSnapshot.skipped},
+        {"artifactWritesSettled", artifactWritesSettled},
+        {"artifactSettleMs", artifactSettleMs},
+        {"failedArtifacts", QJsonArray::fromStringList(artifactSnapshot.failedArtifacts)},
+        {"coverageGaps", QJsonArray::fromStringList(coverageGaps)},
+        {"samplingDefinition",
+         "composed framebuffer centre crop plus a real desktop grab of the same rect, "
+         "roughly every 32 ms while the player owns the native foreground and is not "
+         "minimized; excluded ticks are counted by reason and never judged for black"},
+        {"presentationMode", presentationMode()},
+        {"surfaceState", surfaceState(surface)},
+        {"error", *error}});
+    peer.stop();
+    if (!passed && error != nullptr) {
+        *error = QStringLiteral("QA matrix %1: chrome=%2/%3 away=%4/%5 minimize=%6/%7 "
+                                "seams=%8/%9 pip=%10 black=%11 motion=%12")
+                     .arg(result)
+                     .arg(chromeChanges)
+                     .arg(kChromeChangesRequired)
+                     .arg(activation.cycles - activation.foregroundLostCycles)
+                     .arg(kNativeForegroundCyclesRequired)
+                     .arg(minimizeVerified)
+                     .arg(kMinimizeRestoreCyclesRequired)
+                     .arg(seamTransitionsObserved)
+                     .arg(2 * kFullscreenSeamTransitions)
+                     .arg(pipVerified)
+                     .arg(sampler.fboBlack + sampler.desktopBlack)
+                     .arg(motionObserved);
+    }
+    return passed ? 0 : 3;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1488,6 +2721,7 @@ int main(int argc, char** argv) {
     bool steadyFullscreen = false;
     bool focusSwitch = false;
     bool baseline = false;
+    bool qaMatrix = false;
     for (int index = 1; index < argc; ++index) {
         const QString argument = QString::fromLocal8Bit(argv[index]);
         if (argument == QLatin1String("--known-bright")) {
@@ -1498,6 +2732,8 @@ int main(int argc, char** argv) {
             focusSwitch = true;
         } else if (argument == QLatin1String("--baseline")) {
             baseline = true;
+        } else if (argument == QLatin1String("--qa-matrix")) {
+            qaMatrix = true;
         } else {
             positionalArguments.append(argument);
         }
@@ -1506,14 +2742,23 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "--focus-switch and --steady-fullscreen are separate modes\n");
         return 2;
     }
+    // Each mode measures a different thing; a run that asked for two would
+    // report one mode's numbers under the other's name.
+    const int selectedModes = int(focusSwitch) + int(baseline) + int(qaMatrix) +
+                              int(steadyFullscreen);
+    if (selectedModes > 1) {
+        std::fprintf(stderr, "--focus-switch, --baseline, --qa-matrix and --steady-fullscreen "
+                             "are separate modes\n");
+        return 2;
+    }
     if (positionalArguments.size() < 3 || positionalArguments.size() > 4) {
         std::fprintf(stderr,
                      "Usage: fullscreen_stability_probe <video> <seconds> <output-directory> "
                      "[anime4k-preset] [--known-bright] [--steady-fullscreen] "
-                     "[--focus-switch] [--baseline]\n");
+                     "[--focus-switch] [--baseline] [--qa-matrix]\n");
         return 2;
     }
-    if (focusSwitch || baseline) {
+    if (focusSwitch || baseline || qaMatrix) {
         // The counters are the measurement; the env var caches on first use, so
         // it is set before any widget exists.
         qputenv("MIKAI_UI_PROFILE", QByteArrayLiteral("1"));
@@ -1526,7 +2771,11 @@ int main(int argc, char** argv) {
     bool validDuration = false;
     const int seconds = positionalArguments.at(1).toInt(&validDuration);
     if (!validDuration || seconds < 5 || seconds > 1800) return 2;
-    const int isolationTimeoutMs = seconds * 1000 + 60000;
+    // The QA matrix measures for the full requested window and then finalizes;
+    // its mandatory interaction budget runs inside that window, so the isolation
+    // watchdog only needs headroom for dialog start-up and the final motion
+    // sample, not for stretching the 300 s itself.
+    const int isolationTimeoutMs = seconds * 1000 + (qaMatrix ? 240000 : 60000);
     const auto isolation = mikai::probes::isolation::enter(
         argc, argv, {"fullscreen_stability_probe", false, isolationTimeoutMs});
     if (isolation != mikai::probes::isolation::Gate::RunHere)
@@ -1630,13 +2879,17 @@ int main(int argc, char** argv) {
         evidence.write("\n");
         evidence.flush();
     };
-    if (focusSwitch || baseline) {
+    if (focusSwitch || baseline || qaMatrix) {
         QString modeError;
-        const int modeExit = focusSwitch
-                                 ? runFocusSwitchMode(dialog, surface, shell, knownBright, seconds,
-                                                      record, &modeError)
-                                 : runBaselineMode(dialog, surface, shell, media, knownBright,
-                                                   seconds, record, &modeError);
+        const int modeExit =
+            focusSwitch
+                ? runFocusSwitchMode(dialog, surface, shell, knownBright, seconds, record,
+                                     &modeError)
+            : baseline
+                ? runBaselineMode(dialog, surface, shell, media, knownBright, seconds, record,
+                                  &modeError)
+                : runQaMatrixMode(dialog, surface, shell, media, outputPath, &host, knownBright,
+                                  seconds, record, &modeError);
         evidence.flush();
         dialog->close();
         // The mode's verdict is explicit: 0 measured, 3 incomplete/invalid.
