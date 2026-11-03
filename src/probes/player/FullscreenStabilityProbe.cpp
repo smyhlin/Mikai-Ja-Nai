@@ -577,6 +577,9 @@ struct MatrixSampler {
     qint64 readbackTotalMicros = 0;
     qint64 readbackMaxMicros = -1;
     qint64 maxWorkMs = 0;
+    /// Work of the most recent tick. The GUI heartbeat reads it so a gap can be
+    /// told apart from the probe's own readback/grab work.
+    qint64 lastWorkMs = -1;
     qint64 firstSampleAtMs = -1;
     qint64 lastSampleAtMs = -1;
     double desktopLumaTotal = 0.0;
@@ -594,16 +597,25 @@ struct MatrixSampler {
     quint64 sourceEpochChanges = 0;
     bool sourceEpochObserved = false;
 
+    /// `composed` is the same tick's framebuffer crop. It is written beside the
+    /// desktop crop so the receipt shows whether a black desktop rectangle was
+    /// a painted picture the compositor had not carried yet, or a rectangle the
+    /// active surface had no picture in at all.
     void noteBlack(const QImage& image, const QString& label, qint64 elapsedMs,
-                   const QJsonObject& context) {
+                   const QJsonObject& context, const QImage& composed = QImage()) {
         if (!saveImage || blackArtifactsSaved >= 8) return;
         ++blackArtifactsSaved;
         saveImage(image, QStringLiteral("%1-%2.png").arg(label).arg(elapsedMs));
+        if (!composed.isNull()) {
+            saveImage(composed,
+                      QStringLiteral("%1-fbo-%2.png").arg(label).arg(elapsedMs));
+        }
         if (record) {
             QJsonObject row = context;
             row.insert(QStringLiteral("event"), QStringLiteral("matrixBlackSample"));
             row.insert(QStringLiteral("elapsedMs"), elapsedMs);
             row.insert(QStringLiteral("kind"), label);
+            row.insert(QStringLiteral("composedCropSaved"), !composed.isNull());
             record(row);
         }
     }
@@ -642,7 +654,8 @@ struct MatrixSampler {
             case MatrixExposure::ForeignForeground: ++excludedForeignForeground; break;
         }
         if (exposure != MatrixExposure::Exposed) {
-            maxWorkMs = std::max(maxWorkMs, work.elapsed());
+            lastWorkMs = work.elapsed();
+            maxWorkMs = std::max(maxWorkMs, lastWorkMs);
             return;
         }
         ++exposedSamples;
@@ -671,6 +684,12 @@ struct MatrixSampler {
             sourceEpochLast = epoch;
         }
 
+        // What the composed half of this same tick showed. A black desktop crop
+        // means one of two very different things, and the receipt has to say
+        // which: the surface had a picture the compositor had not carried yet,
+        // or the surface had no picture and the crop was a measuring artifact.
+        QString fboVerdict = QStringLiteral("not-claimed");
+        QImage fboCrop;
         // Only a surface that claims a visible output frame is asked for its
         // composed pixels. Before that claim there is no picture to judge.
         if (!owner->hasVisibleOutputFrame()) {
@@ -685,8 +704,12 @@ struct MatrixSampler {
             readbackMaxMicros = std::max(readbackMaxMicros, elapsedMicros);
             if (composed.isNull()) {
                 ++fboUnmeasured;
+                fboVerdict = QStringLiteral("unmeasured");
             } else {
                 ++fboSamples;
+                fboCrop = composed;
+                fboVerdict = isBlack(composed) ? QStringLiteral("black")
+                                               : QStringLiteral("bright");
                 if (isBlack(composed)) {
                     ++fboBlack;
                     noteBlack(composed, QStringLiteral("qa-matrix-black-fbo"), elapsedMs,
@@ -701,7 +724,8 @@ struct MatrixSampler {
 
         QElapsedTimer grab;
         grab.start();
-        const QImage desktop = desktopCrop(owner->screen(), videoSampleCrop(owner));
+        const QRect sampleRect = videoSampleCrop(owner);
+        const QImage desktop = desktopCrop(owner->screen(), sampleRect);
         const qint64 elapsedMicros = grab.nsecsElapsed() / 1000;
         ++grabCalls;
         grabTotalMicros += elapsedMicros;
@@ -717,14 +741,49 @@ struct MatrixSampler {
             }
             if (isBlack(desktop)) {
                 ++desktopBlack;
-                noteBlack(desktop, QStringLiteral("qa-matrix-black-desktop"), elapsedMs,
-                          QJsonObject{{"luma", luma},
-                                      {"position", owner->position()},
-                                      {"contextGeneration",
-                                       static_cast<qint64>(counters.contextGeneration)}});
+                QScreen* screen = owner->screen();
+                const QPoint cropOrigin = sampleRect.topLeft();
+                noteBlack(
+                    desktop, QStringLiteral("qa-matrix-black-desktop"), elapsedMs,
+                    QJsonObject{
+                        {"luma", luma},
+                        {"position", owner->position()},
+                        {"contextGeneration",
+                         static_cast<qint64>(counters.contextGeneration)},
+                        // Everything below is attribution, not a verdict: it
+                        // says which window the rectangle belongs to, what the
+                        // same tick's framebuffer held, and what the surface
+                        // geometry made the crop mean.
+                        {"owner", owner == mainSurface ? QStringLiteral("main")
+                                                       : QStringLiteral("pip")},
+                        {"cropRect",
+                         QJsonArray{cropOrigin.x(), cropOrigin.y(), sampleRect.width(),
+                                    sampleRect.height()}},
+                        {"surfaceSize",
+                         QJsonArray{owner->width(), owner->height()}},
+                        {"surfaceDevicePixelRatio", owner->devicePixelRatioF()},
+                        {"surfaceIsVisible", owner->isVisible()},
+                        {"hasVisibleOutputFrame", owner->hasVisibleOutputFrame()},
+                        {"fboVerdictThisTick", fboVerdict},
+                        {"dialogVisible", dialog != nullptr && dialog->isVisible()},
+                        {"dialogMinimized", dialog != nullptr && dialog->isMinimized()},
+                        {"dialogFullScreen", dialog != nullptr && dialog->isFullScreen()},
+                        {"pipActive", dialog != nullptr && dialog->isPipActive()},
+                        {"screen",
+                         screen != nullptr ? screen->name() : QStringLiteral("none")},
+                        {"screenGeometry",
+                         screen != nullptr
+                             ? QJsonArray{screen->geometry().x(), screen->geometry().y(),
+                                          screen->geometry().width(),
+                                          screen->geometry().height()}
+                             : QJsonArray{}},
+                        {"screenDevicePixelRatio",
+                         screen != nullptr ? screen->devicePixelRatio() : -1.0}},
+                    fboCrop);
             }
         }
-        maxWorkMs = std::max(maxWorkMs, work.elapsed());
+        lastWorkMs = work.elapsed();
+        maxWorkMs = std::max(maxWorkMs, lastWorkMs);
     }
 };
 
@@ -1968,6 +2027,66 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                         .arg(brightDesktopSamples),
                     "INCOMPLETE");
     }
+    // A bright framebuffer with a desktop crop that never showed a bright pixel
+    // is not "the player was black": the screen grab is not returning this
+    // desktop's pixels, so every later desktop verdict - including the
+    // peer-occlusion settle, which needs a lit baseline - would be measuring a
+    // rectangle that is already dark. Name that precondition here instead of
+    // running the matrix and blaming the helper for an occlusion it cannot aim.
+    if (brightDesktopSamples == 0 && brightFboSamples > 0) {
+        const QRect preconditionCrop = videoSampleCrop(surface);
+        const QImage preconditionDesktop = desktopCrop(surface->screen(), preconditionCrop);
+        saveImage(preconditionDesktop, QStringLiteral("qa-matrix-desktop-precondition.png"));
+        QScreen* screen = surface->screen();
+        const QPoint surfaceOrigin = surface != nullptr ? surface->mapToGlobal(QPoint(0, 0))
+                                                        : QPoint(0, 0);
+        record(QJsonObject{
+            {"event", "qaMatrixCapturePrecondition"},
+            {"elapsedMs", runClock.elapsed()},
+            {"calibrationWindowMs", calibrationClock.elapsed()},
+            {"brightFboSamples", brightFboSamples},
+            {"brightDesktopSamples", brightDesktopSamples},
+            {"calibratedFboLuma", calibratedLuma},
+            {"desktopCropNull", preconditionDesktop.isNull()},
+            {"desktopCropLuma", meanLuma(preconditionDesktop)},
+            {"desktopCropSize",
+             QJsonArray{preconditionDesktop.width(), preconditionDesktop.height()}},
+            {"cropRect", QJsonArray{preconditionCrop.x(), preconditionCrop.y(),
+                                    preconditionCrop.width(), preconditionCrop.height()}},
+            {"surfaceGeometry",
+             QJsonArray{surfaceOrigin.x(), surfaceOrigin.y(), surface->width(),
+                        surface->height()}},
+            {"surfaceDevicePixelRatio", surface->devicePixelRatioF()},
+            {"screen", screen != nullptr ? screen->name() : QStringLiteral("none")},
+            {"screenGeometry",
+             screen != nullptr ? QJsonArray{screen->geometry().x(), screen->geometry().y(),
+                                            screen->geometry().width(),
+                                            screen->geometry().height()}
+                               : QJsonArray{}},
+            {"screenDevicePixelRatio", screen != nullptr ? screen->devicePixelRatio() : -1.0},
+            // Environment values that change what the crop means. Recorded as
+            // values, never offered as an inferred cause.
+            {"qtScaleFactor", qEnvironmentVariable("QT_SCALE_FACTOR")},
+            {"note",
+             QStringLiteral("the composed framebuffer was bright for the whole calibration "
+                            "window while the desktop grab never returned a bright pixel; the "
+                            "peer-occlusion settle was not attempted because a dark baseline "
+                            "cannot show occlusion, and no matrix verdict can rest on desktop "
+                            "pixels this process cannot read")}});
+        return fail(QStringLiteral("the desktop grab never returned a bright pixel in the %1 ms "
+                                   "calibration window although the composed framebuffer was "
+                                   "bright %2 times (crop %3x%4 at %5,%6, screen %7, dpr %8); "
+                                   "peer occlusion was not attempted")
+                        .arg(calibrationClock.elapsed())
+                        .arg(brightFboSamples)
+                        .arg(preconditionCrop.width())
+                        .arg(preconditionCrop.height())
+                        .arg(preconditionCrop.x())
+                        .arg(preconditionCrop.y())
+                        .arg(screen != nullptr ? screen->name() : QStringLiteral("none"))
+                        .arg(surface->devicePixelRatioF()),
+                    "INCOMPLETE");
+    }
 
     // ── the separate-process foreground peer (pre-monitor) ────────────────
     // Peer process start-up and the foreground settle are diagnostic setup, not
@@ -2083,6 +2202,10 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     qint64 heartbeatSamples = 0;
     qint64 firstHeartbeatAtMs = -1;
     qint64 lastHeartbeatAtMs = -1;
+    // Attribution state for a gap: how much of the interval the probe itself
+    // spent in sample ticks versus how many paints the player started.
+    quint64 lastGapPaintCalls = surface->uiProfileCounters().paintCalls;
+    qint64 lastGapAttempts = 0;
     QTimer guiHeartbeat;
     guiHeartbeat.setTimerType(Qt::PreciseTimer);
     guiHeartbeat.setInterval(kGuiHeartbeatIntervalMs);
@@ -2098,13 +2221,32 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         if (gapMs > kGuiGapLimitMs) {
             ++guiGapViolations;
             if (guiGapViolations <= 8) {
+                // The gap itself is the finding; these fields say what the
+                // thread could have been doing, so the next run can tell an
+                // application stall from the probe's own readback/grab work
+                // without guessing at the phase name alone.
+                const mplayer::VideoSurface::UiProfileCounters counters =
+                    surface->uiProfileCounters();
+                const quint64 paintsSince = counters.paintCalls - lastGapPaintCalls;
+                const qint64 sincePaintMs =
+                    counters.lastPaintEntryNs > 0
+                        ? mikai::gui::uiprofile::elapsedMs(counters.lastPaintEntryNs)
+                        : -1;
+                lastGapPaintCalls = counters.paintCalls;
                 record(QJsonObject{{"event", "matrixGuiGap"},
                                    {"elapsedMs", atMs},
                                    {"phase", currentPhase},
                                    {"gapMs", gapMs},
                                    {"limitMs", kGuiGapLimitMs},
                                    {"heartbeatIntervalMs", kGuiHeartbeatIntervalMs},
-                                   {"position", surface->position()}});
+                                   {"position", surface->position()},
+                                   {"sampleTicksBetweenHeartbeats",
+                                    static_cast<qint64>(sampler.attempts - lastGapAttempts)},
+                                   {"lastSampleWorkMs", sampler.lastWorkMs},
+                                   {"paintCallsBetweenHeartbeats",
+                                    static_cast<qint64>(paintsSince)},
+                                   {"msSinceLastPaintEntry", sincePaintMs}});
+                lastGapAttempts = sampler.attempts;
             }
         }
     });
@@ -2679,15 +2821,46 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         finalOwner != nullptr ? readComposedCrop(finalOwner) : QImage();
     const double motionPositionFirst = surface->position();
     const quint64 motionFramesFirst = surface->playbackDiagnostics().renderedOutputFrames;
-    // Elapsed time alone does not establish that a new output frame arrived.
-    pumpUntil([&] {
-        return surface->playbackDiagnostics().renderedOutputFrames > motionFramesFirst;
-    }, 1000);
-    const QImage motionSecond =
-        finalOwner != nullptr ? readComposedCrop(finalOwner) : QImage();
-    const double motionPositionSecond = surface->position();
-    const quint64 motionFramesSecond = surface->playbackDiagnostics().renderedOutputFrames;
-    const double motionFraction = frameDifferenceFraction(motionFirst, motionSecond);
+    // One pair is not a motion sample. The fixture is 24 fps CFR and can hold a
+    // single scene for many frames, so two consecutive reads are often the same
+    // picture while the film plays: the 300 s matrix recorded +0.33 s of media
+    // and twelve new output frames with a fraction of 0 from exactly that. Each
+    // pair still spans a real output frame; up to kMotionPairs pairs are taken
+    // inside a bounded window and every fraction is recorded, so "no motion"
+    // rests on the whole window rather than on one unlucky pair. The 1 %
+    // threshold, the black test and both advance requirements are unchanged.
+    constexpr int kMotionPairs = 8;
+    QJsonArray motionPairs;
+    double motionFraction = -1.0;
+    QImage motionSecond;
+    double motionPositionSecond = motionPositionFirst;
+    quint64 motionFramesSecond = motionFramesFirst;
+    for (int pair = 0; pair < kMotionPairs; ++pair) {
+        const QImage before = pair == 0 && !motionFirst.isNull()
+                                  ? motionFirst
+                                  : (finalOwner != nullptr ? readComposedCrop(finalOwner)
+                                                           : QImage());
+        const double positionBeforePair = surface->position();
+        const quint64 framesBefore = surface->playbackDiagnostics().renderedOutputFrames;
+        // Elapsed time alone does not establish that a new output frame arrived.
+        pumpUntil([&] {
+            return surface->playbackDiagnostics().renderedOutputFrames > framesBefore;
+        }, 1000);
+        const QImage after = finalOwner != nullptr ? readComposedCrop(finalOwner) : QImage();
+        motionPositionSecond = surface->position();
+        motionFramesSecond = surface->playbackDiagnostics().renderedOutputFrames;
+        const double pairFraction = frameDifferenceFraction(before, after);
+        motionPairs.append(QJsonObject{
+            {"pair", pair},
+            {"framesAdvanced", static_cast<qint64>(motionFramesSecond - framesBefore)},
+            {"positionFrom", positionBeforePair},
+            {"positionTo", motionPositionSecond},
+            {"changedFraction", pairFraction}});
+        motionFraction = std::max(motionFraction, pairFraction);
+        motionSecond = after;
+        if (motionFraction >= 0.01) break;
+        if (motionFramesSecond <= motionFramesFirst) break;
+    }
     const bool motionObserved = motionFraction >= 0.01 &&
                                 motionPositionSecond > motionPositionFirst &&
                                 motionFramesSecond > motionFramesFirst &&
@@ -2908,6 +3081,12 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                                                  profileAtStart.chromePaintCalls)},
         {"finalMotionFraction", motionFraction},
         {"finalMotionObserved", motionObserved},
+        {"finalMotionPairs", motionPairs},
+        {"finalMotionPairLimit", kMotionPairs},
+        {"finalMotionDefinition",
+         "up to eight pairs, each spanning a real rendered output frame; the best pair's "
+         "changed fraction is compared against 1 %, so a source that holds one scene still "
+         "for a few frames cannot be reported as frozen on one unlucky read"},
         {"finalPositionDeltaSeconds", motionPositionSecond - motionPositionFirst},
         {"maxImageSaveMs", artifactSnapshot.maxWriteMs},
         {"artifactWritesAttempted", artifactSnapshot.attempted},
