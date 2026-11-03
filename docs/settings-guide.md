@@ -28,10 +28,24 @@ In **Customization → Appearance**:
 
 - Choose an accent-color swatch or use the custom color picker.
 - Choose a corner radius. This affects the app's rounded controls, including title-page buttons, and player chrome as well as the rest of the interface.
-- Toggle **Background gradient** to show or hide the accent glow at the top of the page. When it is off, its intensity, height and color controls are disabled. When on, adjust intensity and height with the sliders and choose a preset or custom gradient color.
+- Toggle **Background gradient** to show or hide the accent glow at the top of the page. When it is off, its intensity, height and color controls are disabled. When on, adjust intensity and height with the sliders.
+- **Gradient source** decides what that glow is painted from. **Auto (follow accent)** is the default: the glow is the accent you chose, so the theme is one decision. **Custom color** reveals the preset swatches and the picker; the colour you choose there is kept even if you switch back to Auto, so returning to Custom restores it.
 - **Reset** resets the appearance-page choices (accent, radius and background-gradient settings). It does not reset the separate General-page choices.
 
 Appearance and site/content display changes preview while Settings is open. **Save** keeps them; **Cancel**, Escape, or closing the dialog restores the appearance from when that Settings session opened.
+
+### What each button colour means
+
+The interface uses one accent and three supporting roles, so the same kind of action looks the same on every page:
+
+| Role | Looks like | Used for |
+|---|---|---|
+| Primary | the accent colour with a readable label | the one main action of a view - Search, Save, Watch, Apply changes, Run benchmark, the engine-build progress bar |
+| Secondary | a raised neutral button with a visible outline | Filters, Teams, Cancel, Refresh, and any standard button the interface did not explicitly label |
+| Ghost | no fill, accent-coloured text | inline actions - a header's Refresh, Select all, Read more, keyboard hints |
+| Danger | accent-free red text on a red outline | destructive actions only - removing a model, clearing a slot, discarding a cache entry |
+
+A neutral button keeps a visible outline in every state, including disabled, so no control dissolves into the page. Primary buttons are always filled with the accent itself; the label colour is chosen for contrast, which is why a very dark custom accent still shows readable text. The accent reaches the player window, the Compare window and the engine-build overlay without restarting the app.
 
 ## Interface language, token and feeds
 
