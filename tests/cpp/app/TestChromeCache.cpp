@@ -1,6 +1,5 @@
 #include "TestChromeCache.hpp"
 
-#include <player/shell/EpisodeNavButton.hpp>
 #include <player/shell/ShellSliders.hpp>
 #include <player/shell/ShellWidgets.hpp>
 
@@ -29,6 +28,8 @@ using mplayer::shell::ChromeList;
 using mplayer::shell::ChromePaint;
 using mplayer::shell::chromeRepaintEvent;
 using mplayer::shell::chromeUpdate;
+using mplayer::shell::IconButton;
+using mplayer::shell::RangeSlider;
 
 /// A control whose pixels are its own fill. `setFillQuietly` moves that state
 /// and tells nobody, so a paint that still shows the old colour is a paint that
