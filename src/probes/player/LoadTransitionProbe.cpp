@@ -506,18 +506,6 @@ bool aimPointerAt(QWidget* target, const QPoint& local) {
     return true;
 }
 
-/// Sweeps the pointer over chrome for a wall-clock window: a p95 of paint cost
-/// has to describe a real stretch of interaction, not a handful of events.
-int sweepChrome(QWidget* first, QWidget* second, QWidget* scrub, int durationMs) {
-    QElapsedTimer clock;
-    clock.start();
-    int moves = 0;
-    while (clock.elapsed() < durationMs) {
-        moves += hoverRound(first, second, scrub);
-    }
-    return moves;
-}
-
 /// One round of a viewer moving the pointer across chrome: two controls, so the
 /// repaint is a hover state changing rather than a single control's animation.
 int hoverRound(QWidget* first, QWidget* second, QWidget* scrub) {
@@ -537,6 +525,18 @@ int hoverRound(QWidget* first, QWidget* second, QWidget* scrub) {
     if (aimPointerAt(second, QPoint(second != nullptr ? second->width() / 2 : 0, 8))) ++moved;
     pump(12);
     return moved;
+}
+
+/// Sweeps the pointer over chrome for a wall-clock window: a p95 of paint cost
+/// has to describe a real stretch of interaction, not a handful of events.
+int sweepChrome(QWidget* first, QWidget* second, QWidget* scrub, int durationMs) {
+    QElapsedTimer clock;
+    clock.start();
+    int moves = 0;
+    while (clock.elapsed() < durationMs) {
+        moves += hoverRound(first, second, scrub);
+    }
+    return moves;
 }
 
 // ── one measured load transition ─────────────────────────────────────────
