@@ -45,7 +45,7 @@ incomplete/interfered runs remain preserved, not silently promoted to passes.
 | Activation → visible composition p95, dock hover | `focusSwitchResult.phases[2].activationToVisibleCompositionP95LowerBoundMs` | 4 ms; 5 valid samples |
 | Activation-to-first-swap p95, plain (secondary diagnostic; `frameSwapped`, not physical scanout) | `focusSwitchResult.phases[0].activationToFirstSwapP95Ms` | 22 ms; 10 valid samples |
 | Black samples across 20 `loadfile` transitions | `baselineResult.blackSamplesLoadfile20` | 0 / 463 samples; 20 transitions completed |
-| Surface-geometry writes per fullscreen transition | `baselineResult.surfaceGeometryWritesPerFullscreenTransition` | 2 |
+| Surface-geometry writes per normal→fullscreen round trip (legacy key says “transition”) | `baselineResult.surfaceGeometryWritesPerFullscreenTransition` | 2 per round trip = 1 per mode edge |
 | `ChromeList::paint` mean per composition during the paused hover storm | `baselineResult.chromePaintMeanMicros` | 284.996 µs; 1850 paints |
 
 A run whose `profileCountersEnabled` is false, whose
