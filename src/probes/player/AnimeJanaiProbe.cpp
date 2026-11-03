@@ -10,6 +10,7 @@
 #include <QFileInfo>
 #include <QImage>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QLabel>
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
@@ -50,6 +51,7 @@
 #include <memory>
 #include <optional>
 #include <thread>
+#include <utility>
 
 #include "VideoSurface.hpp"
 #include "PlayerDialog.hpp"
@@ -1072,7 +1074,10 @@ QString selectedModelIdentity(const native::AnimeJanaiPlan& plan) {
     return contents.mid(valueStart, end - valueStart).trimmed();
 }
 
-QString normalizedArtifactPath(QString path, const QString& baseDirectory) {
+/// The path as the filesystem spells it. Case-folded forms are for comparing two
+/// observations, never for opening or testing a file: on a case-sensitive filesystem
+/// the folded spelling is a different name.
+QString absoluteArtifactPath(QString path, const QString& baseDirectory) {
     path = path.trimmed();
     if (path.size() >= 2 &&
         ((path.startsWith(QLatin1Char('"')) && path.endsWith(QLatin1Char('"'))) ||
@@ -1080,7 +1085,11 @@ QString normalizedArtifactPath(QString path, const QString& baseDirectory) {
         path = path.mid(1, path.size() - 2);
     path.replace(QLatin1Char('\\'), QLatin1Char('/'));
     if (!QDir::isAbsolutePath(path)) path = QDir(baseDirectory).filePath(path);
-    return QDir::cleanPath(QFileInfo(path).absoluteFilePath())
+    return QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+}
+
+QString normalizedArtifactPath(QString path, const QString& baseDirectory) {
+    return absoluteArtifactPath(std::move(path), baseDirectory)
         .replace(QLatin1Char('\\'), QLatin1Char('/')).toCaseFolded();
 }
 
@@ -1094,6 +1103,19 @@ QString trtexecOptionValue(const QString& logContents, const QString& option) {
     for (int group = 1; group <= 3; ++group)
         if (!match.captured(group).isEmpty()) return match.captured(group);
     return {};
+}
+
+QString finalEngineArtifactPath(const QString& saveEnginePath) {
+    // The fork's TensorRT build hands trtexec "<final>.engine.tmp" and renames it to
+    // "<final>.engine" only after trtexec reports PASSED, so the passed command line
+    // names the temporary file the finished artifact came from. The artifact the
+    // player loads is the renamed file, and the engine's own name is not required to
+    // start with the graph digest, so the binding is the path, not the file name.
+    QString path = saveEnginePath.trimmed();
+    const QLatin1String temporarySuffix(".tmp");
+    if (path.endsWith(temporarySuffix, Qt::CaseInsensitive)) path.chop(temporarySuffix.size());
+    if (!path.endsWith(QLatin1String(".engine"), Qt::CaseInsensitive)) return {};
+    return path;
 }
 
 QStringList selectedFreshEngineFiles(const QStringList& fresh,
@@ -1134,6 +1156,8 @@ QStringList selectedBuildLogEvidence(const QString& modelDir,
                                      const QString& selectedGraphPath) {
     QStringList evidence;
     if (selectedGraphPath.isEmpty()) return evidence;
+    const QString normalizedModelDirectory = normalizedArtifactPath(modelDir, {});
+    const QString normalizedSelectedGraph = normalizedArtifactPath(selectedGraphPath, modelDir);
     QDirIterator it(modelDir, {QStringLiteral("*.log")}, QDir::Files | QDir::NoDotAndDotDot,
                     QDirIterator::Subdirectories);
     while (it.hasNext()) {
@@ -1155,24 +1179,27 @@ QStringList selectedBuildLogEvidence(const QString& modelDir,
             }
         }
         if (passedLine.isEmpty()) continue;
-        const QString onnxArgument = trtexecOptionValue(contents, QStringLiteral("onnx"));
-        const QString engineArgument = trtexecOptionValue(contents, QStringLiteral("saveEngine"));
-        const QString normalizedGraph =
-            normalizedArtifactPath(onnxArgument, modelDir);
-        const QString normalizedEngine =
-            normalizedArtifactPath(engineArgument, modelDir);
-        const QString normalizedModelDirectory =
-            normalizedArtifactPath(modelDir, {});
-        if (normalizedGraph.compare(
-                normalizedArtifactPath(selectedGraphPath, modelDir),
-                Qt::CaseInsensitive) != 0 ||
-            QFileInfo(normalizedEngine).suffix().compare(
-                QStringLiteral("engine"), Qt::CaseInsensitive) != 0 ||
-            normalizedArtifactPath(QFileInfo(normalizedEngine).absolutePath(), {})
+        // The recorded command line is the authority: it binds these exact arguments
+        // to the PASSED run. The progress lines above name the same paths but are not
+        // a claim about how the build was invoked.
+        QString onnxArgument = trtexecOptionValue(passedLine, QStringLiteral("onnx"));
+        QString saveEngineArgument =
+            trtexecOptionValue(passedLine, QStringLiteral("saveEngine"));
+        if (onnxArgument.isEmpty())
+            onnxArgument = trtexecOptionValue(contents, QStringLiteral("onnx"));
+        if (saveEngineArgument.isEmpty())
+            saveEngineArgument = trtexecOptionValue(contents, QStringLiteral("saveEngine"));
+        const QString normalizedGraph = normalizedArtifactPath(onnxArgument, modelDir);
+        const QString engineArgumentPath = absoluteArtifactPath(saveEngineArgument, modelDir);
+        QString finalEngine = finalEngineArtifactPath(engineArgumentPath);
+        if (normalizedGraph.compare(normalizedSelectedGraph, Qt::CaseInsensitive) != 0 ||
+            finalEngine.isEmpty() || !QFileInfo(finalEngine).isFile() ||
+            normalizedArtifactPath(QFileInfo(finalEngine).absolutePath(), {})
                 .compare(normalizedModelDirectory, Qt::CaseInsensitive) != 0)
             continue;
-        evidence.append(QStringLiteral("%1|%2|%3|%4")
-                            .arg(path, digest, normalizedEngine, passedLine));
+        const QString reportedEngine = finalEngine.replace(QLatin1Char('\\'), QLatin1Char('/'));
+        evidence.append(QStringLiteral("%1|%2|%3|%4|%5")
+                            .arg(path, digest, reportedEngine, engineArgumentPath, passedLine));
     }
     return evidence;
 }
@@ -1412,6 +1439,14 @@ struct EngineBuildPlaybackEvidence {
     bool completed = false;
     bool succeeded = false;
     bool completionObservedProcessing = false;
+    /// The same source was observed while the build held it paused. A sample taken
+    /// before mpv's own filter-restart lands cannot read the core's identity at all;
+    /// that is neither a source change nor proof of one, so only an observed identity
+    /// counts, and only once the pause is acknowledged.
+    bool identityConfirmed = false;
+    int unobservableIdentitySamples = 0;
+    int framebufferMismatches = 0;
+    qint64 corePathNoticeAt = -1;
     QString source;
     QString corePath;
     uint64_t sourceEpoch = 0;
@@ -1453,10 +1488,66 @@ struct EngineBuildPlaybackEvidence {
         const auto path = surface->probeMpvProperty(QStringLiteral("path"), ProbePropertyKind::Text);
         const auto time = numericProperty(surface, QStringLiteral("time-pos"));
         const bool paused = pause && pause->kind == ProbePropertyValue::Kind::Flag && pause->flag;
-        const bool sameSource = surface->sourceEpoch() == sourceEpoch &&
-            surface->sourceUrl() == source && path &&
-            path->kind == ProbePropertyValue::Kind::Text && path->text == corePath;
-        held &= sameSource;
+        const QString observedPath =
+            path && path->kind == ProbePropertyValue::Kind::Text ? path->text : QString();
+        const QString observedSource = surface->sourceUrl();
+        const uint64_t observedEpoch = surface->sourceEpoch();
+        // A sample taken at the moment the build announces itself can read nothing:
+        // probeMpvProperty refuses a nested read and answers "no value" rather than
+        // a stale one, so an empty identity there is not a source change - and not
+        // evidence the picture was held either. It may only pass before the pause is
+        // acknowledged; the identity must be observed afterwards.
+        const bool identityReadable =
+            !observedPath.isEmpty() && !observedSource.isEmpty() && observedEpoch != 0;
+        // The epoch is the surface's own source generation and `source` is the URL it
+        // was asked to open: together they are the exact source identity, and a reload
+        // of the same URL is a new generation. The core's path string names the same
+        // file by another route, so a difference there is reported, not folded into
+        // the identity.
+        const bool sameSource = identityReadable && observedEpoch == sourceEpoch &&
+            observedSource == source;
+        const bool sameCorePath = sameSource && observedPath == corePath;
+        if (!identityReadable) {
+            ++unobservableIdentitySamples;
+            if (acknowledgedAt >= 0) {
+                if (held)
+                    std::fprintf(stderr,
+                                 "FAIL [engine-pause] source identity unobservable after the pause acknowledgement at %lld ms: path=%s epoch=%llu source=%s\n",
+                                 static_cast<long long>(elapsed),
+                                 observedPath.isEmpty() ? "unavailable" : qPrintable(observedPath),
+                                 static_cast<unsigned long long>(observedEpoch),
+                                 observedSource.isEmpty() ? "unavailable"
+                                                          : qPrintable(observedSource));
+                held = false;
+            } else if (unobservableIdentitySamples == 1) {
+                std::fprintf(stderr,
+                             "[engine-pause] source identity not observable at %lld ms: path=%s epoch=%llu source=%s; before the pause acknowledgement this is not a source change, and it must be observable once the pause is acknowledged\n",
+                             static_cast<long long>(elapsed),
+                             observedPath.isEmpty() ? "unavailable" : qPrintable(observedPath),
+                             static_cast<unsigned long long>(observedEpoch),
+                             observedSource.isEmpty() ? "unavailable"
+                                                      : qPrintable(observedSource));
+            }
+        } else if (!sameSource) {
+            if (held)
+                std::fprintf(stderr,
+                             "FAIL [engine-pause] source identity changed during build at %lld ms: path=%s expected-path=%s epoch=%llu expected-epoch=%llu source=%s expected-source=%s\n",
+                             static_cast<long long>(elapsed), qPrintable(observedPath),
+                             qPrintable(corePath),
+                             static_cast<unsigned long long>(observedEpoch),
+                             static_cast<unsigned long long>(sourceEpoch),
+                             qPrintable(observedSource), qPrintable(source));
+            held = false;
+        } else if (paused) {
+            if (!sameCorePath && corePathNoticeAt < 0) {
+                corePathNoticeAt = elapsed;
+                std::fprintf(stderr,
+                             "[engine-pause] core path spelling differs while held at %lld ms: path=%s expected-path=%s (same source epoch and URL)\n",
+                             static_cast<long long>(elapsed), qPrintable(observedPath),
+                             qPrintable(corePath));
+            }
+            identityConfirmed = true;
+        }
         if (!paused) {
             // libmpv acknowledges the async pause on its next event pump.
             if (acknowledgedAt >= 0 || elapsed > 2000) held = false;
@@ -1484,10 +1575,47 @@ struct EngineBuildPlaybackEvidence {
                     heldImageSaved = frame.save(
                         QDir(nativeRoot).filePath(QStringLiteral("animejanai-probe-build-held.png")), "PNG");
                 } else {
-                    const bool sameFramebuffer = !frame.isNull() && frame == heldFramebuffer;
+                    // Exact, on purpose: a held video picture is the same pixels,
+                    // size, format and scale. The comparison names which of them
+                    // differed instead of collapsing them into one boolean.
+                    const bool sameShape = !frame.isNull() &&
+                        frame.size() == heldFramebuffer.size() &&
+                        frame.format() == heldFramebuffer.format() &&
+                        frame.devicePixelRatio() == heldFramebuffer.devicePixelRatio();
+                    qsizetype differingPixels = -1;
+                    if (sameShape) {
+                        const QImage current = frame.convertToFormat(QImage::Format_RGB32);
+                        const QImage reference =
+                            heldFramebuffer.convertToFormat(QImage::Format_RGB32);
+                        differingPixels = 0;
+                        for (int y = 0; y < current.height(); ++y) {
+                            const QRgb* currentRow =
+                                reinterpret_cast<const QRgb*>(current.constScanLine(y));
+                            const QRgb* referenceRow =
+                                reinterpret_cast<const QRgb*>(reference.constScanLine(y));
+                            for (int x = 0; x < current.width(); ++x)
+                                if (currentRow[x] != referenceRow[x]) ++differingPixels;
+                        }
+                    }
+                    const bool sameFramebuffer = sameShape && differingPixels == 0;
+                    if (!sameFramebuffer) ++framebufferMismatches;
                     if (held && !sameFramebuffer)
-                        std::fprintf(stderr, "FAIL [engine-pause] native framebuffer changed during build at %lld ms\n",
-                                     static_cast<long long>(elapsed));
+                        std::fprintf(stderr,
+                                     "FAIL [engine-pause] native framebuffer changed during build at %lld ms: capture=%s reference=%s format=%d reference-format=%d dpr=%.2f reference-dpr=%.2f differing-pixels=%lld\n",
+                                     static_cast<long long>(elapsed),
+                                     frame.isNull()
+                                         ? "unavailable"
+                                         : qPrintable(QStringLiteral("%1x%2")
+                                                          .arg(frame.width())
+                                                          .arg(frame.height())),
+                                     qPrintable(QStringLiteral("%1x%2")
+                                                    .arg(heldFramebuffer.width())
+                                                    .arg(heldFramebuffer.height())),
+                                     static_cast<int>(frame.format()),
+                                     static_cast<int>(heldFramebuffer.format()),
+                                     frame.devicePixelRatio(),
+                                     heldFramebuffer.devicePixelRatio(),
+                                     static_cast<long long>(differingPixels));
                     held &= sameFramebuffer;
                 }
                 ++framebufferSamples;
@@ -1496,17 +1624,20 @@ struct EngineBuildPlaybackEvidence {
         if (elapsed - lastNotice >= 5000) {
             lastNotice = static_cast<int>(elapsed);
             std::fprintf(stderr,
-                         "[engine-pause] during-build-ms=%lld mpv-pause=%d mpv-time-pos=%.6f held-time-pos=%.6f same-source=%d held=%d pause-samples=%d framebuffer-samples=%d\n",
+                         "[engine-pause] during-build-ms=%lld mpv-pause=%d mpv-time-pos=%.6f held-time-pos=%.6f same-source=%d identity-confirmed=%d unobservable-identity-samples=%d held=%d pause-samples=%d framebuffer-samples=%d framebuffer-mismatches=%d\n",
                          static_cast<long long>(elapsed), paused ? 1 : 0,
                          time ? *time : -1.0, heldTime ? *heldTime : -1.0,
-                         sameSource ? 1 : 0, held ? 1 : 0, heldSamples, framebufferSamples);
+                         sameSource ? 1 : 0, identityConfirmed ? 1 : 0,
+                         unobservableIdentitySamples, held ? 1 : 0, heldSamples,
+                         framebufferSamples, framebufferMismatches);
         }
     }
 
     bool proved() const {
         return originallyPlaying && started && held && completed && succeeded &&
             completionObservedProcessing && acknowledgedAt >= 0 && acknowledgedAt <= 2000 &&
-            heldSamples >= 4 && framebufferSamples >= 3 && framebufferAt >= 0 &&
+            identityConfirmed && framebufferMismatches == 0 && heldSamples >= 4 &&
+            framebufferSamples >= 3 && framebufferAt >= 0 &&
             lastHeldAt - framebufferAt >= 1000 && heldImageSaved;
     }
 };
@@ -2303,24 +2434,82 @@ int main(int argc, char** argv) {
 
     bool seekObserved = false;
     if (parser.isSet(naturalOption)) {
-        const auto sendDialogKey = [&](int key) {
+        const auto sendDialogKey = [&](int key) -> bool {
+            // A physical key goes to the focus widget, and Qt's own key dispatch walks
+            // up the parent chain while each receiver ignores it. Handing the event
+            // straight to the dialog skips that path: while focus sits inside the
+            // shell, the dialog's T-410 guard refuses to forward a key it did not
+            // receive from the shell's ignored propagation, so a probe-injected key
+            // would be dropped where a real one is not.
+            QWidget* const focus = QApplication::focusWidget();
+            QWidget* const start = focus != nullptr &&
+                    (focus == naturalDialog || naturalDialog->isAncestorOf(focus))
+                ? focus
+                : static_cast<QWidget*>(naturalDialog.data());
             QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
-            QCoreApplication::sendEvent(naturalDialog, &press);
+            const bool accepted = QCoreApplication::sendEvent(start, &press);
             QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
-            QCoreApplication::sendEvent(naturalDialog, &release);
+            QCoreApplication::sendEvent(start, &release);
+            std::fprintf(stderr,
+                         "[AnimeJanaiProbe] key-delivery key=%s delivery-start=%s/%s focus=%s/%s focus-chain=%d active-window=%d accepted=%d\n",
+                         qPrintable(QKeySequence(key).toString(QKeySequence::NativeText)),
+                         start->metaObject()->className(),
+                         start->objectName().isEmpty() ? "-" : qPrintable(start->objectName()),
+                         focus != nullptr ? focus->metaObject()->className() : "none",
+                         focus != nullptr && !focus->objectName().isEmpty()
+                             ? qPrintable(focus->objectName())
+                             : "-",
+                         focus != nullptr && naturalDialog->isAncestorOf(focus) ? 1 : 0,
+                         naturalDialog->isActiveWindow() ? 1 : 0, accepted ? 1 : 0);
+            return accepted;
         };
         surface->setPaused(false);
-        sendDialogKey(Qt::Key_Space);
+        // The key has to act on a source the viewer is watching. The request is
+        // asynchronous, so the state it acts on is observed before the key is sent.
+        const bool playingBeforePauseKey = waitUntil([&] {
+            const auto paused = surface->probeMpvProperty(QStringLiteral("pause"),
+                                                          ProbePropertyKind::Flag);
+            return paused && paused->kind == ProbePropertyValue::Kind::Flag && !paused->flag;
+        }, 5000);
+        std::fprintf(stderr, "[AnimeJanaiProbe] keyboard-precondition observed-playing=%d\n",
+                     playingBeforePauseKey ? 1 : 0);
+        const bool spaceAccepted = sendDialogKey(Qt::Key_Space);
         const bool keyboardPauseObserved = waitUntil([&] {
             const auto paused = surface->probeMpvProperty(QStringLiteral("pause"),
                                                           ProbePropertyKind::Flag);
             return paused && paused->kind == ProbePropertyValue::Kind::Flag && paused->flag;
         }, 5000);
+        if (!keyboardPauseObserved)
+            std::fprintf(stderr,
+                         "[AnimeJanaiProbe] Space key delivery was accepted=%d; the shell pauses only when the key it receives ends up with it\n",
+                         spaceAccepted ? 1 : 0);
         result(keyboardPauseObserved, "PlayerDialog Space key paused the embedded source");
         if (!keyboardPauseObserved) ++failures;
+        // A playing source advances its own playhead, so "position increased" passes
+        // with no key at all. The step is measured against a parked playhead and the
+        // park has to survive the step, which only a key-handled seek produces.
+        bool pauseRequestedForSeek = false;
+        const bool parkedForSeek = waitUntil([&] {
+            const auto paused = surface->probeMpvProperty(QStringLiteral("pause"),
+                                                          ProbePropertyKind::Flag);
+            if (paused && paused->kind == ProbePropertyValue::Kind::Flag && paused->flag) return true;
+            if (!pauseRequestedForSeek) {
+                pauseRequestedForSeek = true;
+                surface->setPaused(true);
+            }
+            return false;
+        }, 3000);
         const double beforeSeek = surface->position();
         sendDialogKey(Qt::Key_Right);
-        seekObserved = waitUntil([&] { return surface->position() > beforeSeek + 0.25; }, 5000);
+        seekObserved = parkedForSeek && waitUntil([&] {
+            const auto paused = surface->probeMpvProperty(QStringLiteral("pause"),
+                                                          ProbePropertyValue::Kind::Flag);
+            return paused && paused->kind == ProbePropertyValue::Kind::Flag && paused->flag &&
+                surface->position() >= beforeSeek + 4.0;
+        }, 3000);
+        std::fprintf(stderr,
+                     "[AnimeJanaiProbe] right-key-seek parked=%d before=%.3f observed=%.3f\n",
+                     parkedForSeek ? 1 : 0, beforeSeek, surface->position());
     } else {
         surface->setPaused(true);
         const double beforeSeek = surface->position();
@@ -2629,11 +2818,14 @@ int main(int argc, char** argv) {
                     const bool pauseProved = completionSettled && buildPlayback.proved() &&
                         !buildActive && effectLogged && buildCompletionVisible;
                     std::fprintf(stderr,
-                                 "[engine-pause] summary started=%d original-playing=%d acknowledgement-ms=%lld held-ms=%lld pause-samples=%d framebuffer-samples=%d held=%d completion=%d successful=%d backend-processing-at-completion=%d held-image=%d source=%s\n",
+                                 "[engine-pause] summary started=%d original-playing=%d acknowledgement-ms=%lld held-ms=%lld pause-samples=%d framebuffer-samples=%d identity-confirmed=%d unobservable-identity-samples=%d framebuffer-mismatches=%d held=%d completion=%d successful=%d backend-processing-at-completion=%d held-image=%d source=%s\n",
                                  buildPlayback.started ? 1 : 0, buildPlayback.originallyPlaying ? 1 : 0,
                                  static_cast<long long>(buildPlayback.acknowledgedAt),
                                  static_cast<long long>(buildPlayback.lastHeldAt - buildPlayback.framebufferAt),
                                  buildPlayback.heldSamples, buildPlayback.framebufferSamples,
+                                 buildPlayback.identityConfirmed ? 1 : 0,
+                                 buildPlayback.unobservableIdentitySamples,
+                                 buildPlayback.framebufferMismatches,
                                  buildPlayback.held ? 1 : 0, buildPlayback.completed ? 1 : 0,
                                  buildPlayback.succeeded ? 1 : 0,
                                  buildPlayback.completionObservedProcessing ? 1 : 0,
