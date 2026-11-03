@@ -316,11 +316,19 @@ inline void writeLogText(const wchar_t* text, int length) {
 }
 
 inline void logLine(const wchar_t* format, ...) {
+    wchar_t payload[8192];
     wchar_t line[8192];
     va_list args;
     va_start(args, format);
-    const int length = std::vswprintf(line, 8192, format, args);
+    const int payloadLength = std::vswprintf(payload, 8192, format, args);
     va_end(args);
+    // Timestamp is taken when the line is written, after the real call; it is
+    // an ordering aid, never an event timestamp.
+    const int length = payloadLength > 0
+                           ? std::swprintf(line, 8192, L"logMs=%llu %ls",
+                                           static_cast<unsigned long long>(::GetTickCount64()),
+                                           payload)
+                           : payloadLength;
     if (length < 0) {
         g_logLost.fetch_add(1);
         line[0] = L'[';
@@ -432,7 +440,7 @@ inline int countOpenOnTargetLocked(const wchar_t* destination, wchar_t* detail,
 
 inline void logAttributes(const wchar_t* label, const wchar_t* path) {
     const DWORD attributes = ::GetFileAttributesW(path);
-    logLine(L"%ls attrs=0x%08lX readOnly=%d exists=%d",
+    logLine(L"%ls attrsObservedAfter=1 attrs=0x%08lX readOnly=%d exists=%d",
             label, static_cast<unsigned long>(attributes),
             attributes != INVALID_FILE_ATTRIBUTES &&
                     (attributes & FILE_ATTRIBUTE_READONLY) != 0
@@ -558,6 +566,8 @@ inline BOOL WINAPI hookSetFileInformationByHandle(HANDLE handle,
         const bool setComplete = dropped == 0 && truncated == 0 && fallback == 0 &&
                                  inFlightCreates == 0 && inFlightCloses == 0 &&
                                  logLost == 0;
+        const int bookkeepingOverlap =
+            (inFlightCreates + inFlightCloses) > 0 ? 1 : 0;
         wchar_t ownSummary[1024];
         if (setComplete) {
             std::swprintf(ownSummary, 1024,
@@ -574,12 +584,14 @@ inline BOOL WINAPI hookSetFileInformationByHandle(HANDLE handle,
         if (isTraceTarget(renameTarget) || trackedHandle || targetTruncated) {
             logLine(L"SetFileInformationByHandle RENAME handle=%p source=\"%ls\" "
                     L"target=\"%ls\" targetTruncated=%d replaceExisting=%d size=%lu "
-                    L"result=%ls error=%lu ownOpenObservedAfter=%ls %ls "
+                    L"result=%ls error=%lu bookkeepingOverlap=%d recordSet=%ls "
+                    L"ownOpenObservedAfter=%ls %ls "
                     L"zeroMeaning=no-own-handle-observed-after-rename",
                     handle, trackedHandle ? tracked.path : L"(untracked)", renameTarget,
                     targetTruncated ? 1 : 0, replaceExisting ? 1 : 0,
                     static_cast<unsigned long>(infoSize), result ? L"ok" : L"failed",
-                    static_cast<unsigned long>(error), ownSummary, ownOpen);
+                    static_cast<unsigned long>(error), bookkeepingOverlap,
+                    setComplete ? L"COMPLETE" : L"UNKNOWN", ownSummary, ownOpen);
             logAttributes(L"RENAME target", renameTarget);
         }
     } else if (trackedHandle) {
