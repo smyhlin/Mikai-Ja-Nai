@@ -658,11 +658,23 @@ What the mode does, exactly:
 4. Measures the close request to the dialog's destruction (the deferred delete `WA_DeleteOnClose`
    schedules) and writes `animejanai-close-during-build.json` under the owned native root.
 
-Read these keys from that JSON: `buildStarted`, `buildStartMs`, `buildDetail`,
-`overlayVisibleAtClose`, `buildLogs`, `finishingNoticeObserved`, `closeReturnMs`,
+Read these keys from that JSON: `buildStarted`, `buildActiveAtClose`, `buildStartMs`,
+`buildDetail`, `overlayVisibleAtClose`, `buildLogs`, `finishingNoticeObserved`, `closeReturnMs`,
 `dialogDestroyedMs`, `budgetMs`, `settleAbandoned`, `abandonedLogged`, `closeRefused`,
 `statusAfterClose`, `passes`. The stderr lines `[close-build] summary …` and
 `PASS close-during-build: …` carry the same numbers for the run log.
+
+The verdict is contemporaneous with the close, not with the wait before it: after the corroboration
+wait the probe re-checks both guards and re-reads `animeJanaiEngineBuildActive()`, the backend
+detail and the preparation window, so `buildActiveAtClose=0` is a FAIL even when a build did start
+earlier. The destruction time is the moment a flush targeted at that dialog
+(`sendPostedEvents(dialog, DeferredDelete)`) returns - child destruction included, unrelated queued
+events drained afterwards - so it is request-to-destruction with nothing else billed to it.
+
+`finishingNoticeObserved` can only be observed on a settle longer than 300 ms when the shipping
+close path keeps the notice armed across both of its waits. Before that fix a run without a PiP
+float showed `closeReturnMs >= 300` with `finishing-notice=0`; that is the reproduction to take
+against an unfixed build, not a probe defect.
 
 Scope, stated rather than implied: this proves teardown during a build, not that the build
 completed, and it is not native inference or throughput evidence. It needs a store where the

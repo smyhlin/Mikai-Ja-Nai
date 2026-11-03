@@ -688,7 +688,10 @@ QJsonObject scaleEnvironment(const QWidget* widget) {
         out.insert(QStringLiteral("screenLogicalY"), geometry.y());
         out.insert(QStringLiteral("screenLogicalWidth"), geometry.width());
         out.insert(QStringLiteral("screenLogicalHeight"), geometry.height());
-        out.insert(QStringLiteral("screenNativeDevicePixelRatio"), screen->devicePixelRatio());
+        // Qt's effective screen ratio: on Qt 6 this can already include a global
+        // (QT_SCALE_FACTOR) factor as well as the platform's own scale, so it is
+        // recorded as what Qt reports and never as a "native" base.
+        out.insert(QStringLiteral("screenDevicePixelRatio"), screen->devicePixelRatio());
     }
     const QString scaleFactor = qEnvironmentVariable("QT_SCALE_FACTOR");
     out.insert(QStringLiteral("qtScaleFactor"),
@@ -1207,7 +1210,7 @@ int run(int argc, char** argv) {
     {
         const QJsonObject environment = scaleEnvironment(surface);
         metric(QStringLiteral("scale: surface_dpr=%1 logical=%2x%3 device=%4x%5 "
-                              "screen=%6 %7x%8 native_dpr=%9 qt_scale_factor=%10")
+                              "screen=%6 %7x%8 screen_dpr=%9 qt_scale_factor=%10")
                    .arg(environment.value(QStringLiteral("surfaceDevicePixelRatio")).toDouble())
                    .arg(environment.value(QStringLiteral("surfaceLogicalWidth")).toInt())
                    .arg(environment.value(QStringLiteral("surfaceLogicalHeight")).toInt())
@@ -1216,7 +1219,7 @@ int run(int argc, char** argv) {
                    .arg(environment.value(QStringLiteral("screenName")).toString())
                    .arg(environment.value(QStringLiteral("screenLogicalWidth")).toInt())
                    .arg(environment.value(QStringLiteral("screenLogicalHeight")).toInt())
-                   .arg(environment.value(QStringLiteral("screenNativeDevicePixelRatio")).toDouble())
+                   .arg(environment.value(QStringLiteral("screenDevicePixelRatio")).toDouble())
                    .arg(environment.value(QStringLiteral("qtScaleFactor")).toString()));
     }
     {
