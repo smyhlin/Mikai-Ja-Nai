@@ -126,6 +126,13 @@ private:
     /// rather than inferred from the status text, which is display copy.
     bool refused_ = false;
     QImage frame_;
+    /// `frame_` prescaled once to the card's physical pixels, keyed on the frame
+    /// itself and on the target size and ratio. Drawing it is a 1:1 blit, where
+    /// the frame it replaces cost a smooth affine resample on every paint.
+    QImage preparedFrame_;
+    qint64 preparedFrameKey_ = 0;
+    QSize preparedFrameSize_;
+    qreal preparedFrameRatio_ = 0.0;
     /// The instant `frame_` was decoded for, or -1 when there is no frame.
     double frameSeconds_ = -1.0;
     double seconds_ = 0.0;
