@@ -173,6 +173,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/player/TestMediaInformation.cpp
     tests/cpp/player/TestHdrRenderContracts.hpp
     tests/cpp/player/TestHdrRenderContracts.cpp
+    tests/cpp/player/TestPacingContract.hpp
+    tests/cpp/player/TestPacingContract.cpp
     tests/cpp/player/TestHoverPreview.hpp
     tests/cpp/player/TestHoverPreview.cpp
     # Native bundle, component, model, preparation & status suites
@@ -342,6 +344,7 @@ if(MIKAI_BUILD_PROBES)
     TestTimelineMarks
     TestMediaInformation
     TestHdrRenderContracts
+    TestPacingContract
     TestHoverPreview
     TestNativePrefs
     TestNativeMenu

@@ -635,6 +635,7 @@ VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
                 Q_UNUSED(succeeded);
                 animeJanaiEngineBuildActive_ = active;
                 animeJanaiEngineBuildDetail_ = detail;
+                publishEnginePauseHold();
             });
     nativeStatusClock_.start();
     nativePlaybackClock_.start();
@@ -772,6 +773,9 @@ void VideoSurface::clearEngineFrameHold() {
 
 void VideoSurface::invalidateEngineFrameHold() {
     clearEngineFrameHold();
+    // A source boundary retires the presented copy for the same reason: the
+    // picture it holds belongs to the source that is going away.
+    invalidatePresentedPicture();
     // The teardown picture belongs to the same boundary: an intentional clear,
     // a close or a new source retires it with the hold. A load that has one to
     // show uses clearEngineFrameHold() instead.
@@ -781,6 +785,13 @@ void VideoSurface::invalidateEngineFrameHold() {
 
 qint64 VideoSurface::retainedPictureBytes() const {
     qint64 bytes = teardownPicture_.sizeInBytes();
+    if (presentedPictureFbo_ && presentedPictureFbo_->isValid()) {
+        const int perPixel = presentedPictureFormat_ == kGlInternalFormatRgba16F ||
+                                     presentedPictureFormat_ == kGlInternalFormatRgba16
+                                 ? 8
+                                 : 4;
+        bytes += qint64(presentedPictureFbo_->width()) * presentedPictureFbo_->height() * perPixel;
+    }
     if (engineFrameHoldFbo_ && engineFrameHoldFbo_->isValid()) {
         // The snapshot is stored at the target's own precision, so its per-pixel
         // cost follows the probed format, not a fixed RGBA8 assumption.
@@ -896,6 +907,83 @@ bool VideoSurface::drawEngineFrameHold(unsigned int target, int width, int heigh
     return true;
 }
 
+void VideoSurface::invalidatePresentedPicture() {
+    presentedPictureFbo_.reset();
+    presentedPictureFormat_ = 0;
+}
+
+bool VideoSurface::drawPresentedPicture(unsigned int target, int width, int height) {
+    if (!presentedPictureFbo_ || !presentedPictureFbo_->isValid() || width <= 0 || height <= 0) {
+        return false;
+    }
+    if (presentedPictureFbo_->size() != QSize(width, height)) {
+        // A new target size makes the copy describe a shape that is gone.
+        invalidatePresentedPicture();
+        return false;
+    }
+    QOpenGLContext* glContext = QOpenGLContext::currentContext();
+    if (glContext == nullptr) return false;
+    QOpenGLExtraFunctions* gl = glContext->extraFunctions();
+    if (gl == nullptr) return false;
+    GLint previousRead = 0;
+    GLint previousDraw = 0;
+    gl->glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousRead);
+    gl->glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousDraw);
+    // A filtered blit between a fixed-point and a floating-point buffer is not
+    // defined by GL, so the two formats are compared rather than assumed equal.
+    const GLenum filter =
+        presentedPictureFormat_ == renderInternalFormat_ ? GL_LINEAR : GL_NEAREST;
+    gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, presentedPictureFbo_->handle());
+    gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
+    gl->glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, filter);
+    gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousRead));
+    gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDraw));
+    return true;
+}
+
+void VideoSurface::capturePresentedPicture(unsigned int target, int width, int height) {
+    if (width <= 0 || height <= 0 || context_ == nullptr) {
+        invalidatePresentedPicture();
+        return;
+    }
+    if (presentedPictureFbo_ && presentedPictureFbo_->size() != QSize(width, height)) {
+        invalidatePresentedPicture();
+    }
+    if (!presentedPictureFbo_) {
+        // The copy takes the widget target's own probed format, for the same
+        // reason the transition hold does: an 8-bit copy of a 10-bit or float
+        // target would quantize the picture it exists to preserve.
+        const bool probed = renderFormatProbed_ && renderInternalFormat_ != 0;
+        QOpenGLFramebufferObjectFormat format;
+        format.setAttachment(QOpenGLFramebufferObject::NoAttachment);
+        format.setInternalTextureFormat(probed ? renderInternalFormat_ : kGlInternalFormatRgba8);
+        auto snapshot = std::make_unique<QOpenGLFramebufferObject>(QSize(width, height), format);
+        if (!snapshot->isValid()) {
+            invalidatePresentedPicture();
+            return;
+        }
+        presentedPictureFormat_ = probed ? renderInternalFormat_ : kGlInternalFormatRgba8;
+        presentedPictureFbo_ = std::move(snapshot);
+    }
+    QOpenGLContext* glContext = QOpenGLContext::currentContext();
+    QOpenGLExtraFunctions* gl = glContext != nullptr ? glContext->extraFunctions() : nullptr;
+    if (gl == nullptr) {
+        invalidatePresentedPicture();
+        return;
+    }
+    GLint previousRead = 0;
+    GLint previousDraw = 0;
+    gl->glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousRead);
+    gl->glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousDraw);
+    gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, target);
+    gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, presentedPictureFbo_->handle());
+    // The copy is one-to-one, so no filtering is asked for at all.
+    gl->glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT,
+                          GL_NEAREST);
+    gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousRead));
+    gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDraw));
+}
+
 bool VideoSurface::captureTeardownPicture() {
     if (destroying_ || context_ == nullptr) return false;
     QOpenGLExtraFunctions* gl = context_->extraFunctions();
@@ -1007,6 +1095,14 @@ bool VideoSurface::drawRetainedPicture(QPainter& painter, unsigned int target, i
     if (engineFrameHoldFbo_ && engineFrameHoldFbo_->isValid()) {
         painter.beginNativePainting();
         const bool blitted = drawEngineFrameHold(target, width, height);
+        painter.endNativePainting();
+        if (blitted) return true;
+    }
+    if (contextReady_ && context_ != nullptr) {
+        // The last presented frame is a copy with no chrome on it, exactly what a
+        // pass that cannot render has to show.
+        painter.beginNativePainting();
+        const bool blitted = drawPresentedPicture(target, width, height);
         painter.endNativePainting();
         if (blitted) return true;
     }
@@ -1884,6 +1980,8 @@ void VideoSurface::resizeGL(int width, int height) {
     // synchronous format query in the resize path for an answer already known -
     // resetRenderTargetFormat() is for context creation and release only.
     forceRender_ = true;
+    // The copy describes the target that no longer exists.
+    invalidatePresentedPicture();
     if (contextReady_) render_->update();
     // Ask for that paint rather than hoping Qt repaints on its own: the fresh
     // buffer has no defined content, and with a paused core nothing else will
@@ -1910,8 +2008,20 @@ void VideoSurface::hideEvent(QHideEvent* event) {
     acknowledgeDroppedFrame();
 }
 
+VideoSurface::PaintScheduleDecision VideoSurface::decidePaintSchedule(bool pacedRelease, bool forced,
+                                                                    bool armedSlot,
+                                                                    bool frameOwed,
+                                                                    bool holdOwesOutput) {
+    PaintScheduleDecision decision;
+    // A hold taken across a source change is released by the frame it is waiting
+    // for, and that release is a presentation of its own.
+    decision.consumesFrame = pacedRelease || forced || (frameOwed && (!armedSlot || holdOwesOutput));
+    decision.keepsArmedSlot = armedSlot && !decision.consumesFrame;
+    return decision;
+}
+
 void VideoSurface::paintGL() {
-    // Profile observations are recorded before the timer is stopped: the
+    // Profile observations are recorded before any decision is taken: the
     // counters describe what this paint found, not what it left behind.
     const bool profilePaint = mikai::gui::uiprofile::countersEnabled();
     const bool pacingActiveAtEntry = profilePaint && pacingTimer_.isActive();
@@ -1921,25 +2031,28 @@ void VideoSurface::paintGL() {
     if (profilePaint) {
         ++profilePaintCalls_;
         profileLastPaintEntryNs_ = profilePaintStartNs;
-        // Only an ACTIVE timer can be disarmed by this paint; a timer that
-        // already fired is a paced paint, not a disarm.
-        if (pacingActiveAtEntry && !framePending_) ++profilePacingDisarms_;
         if ((pacingActiveAtEntry || pacingFired) && profilePacingArmedAtNs_ != 0) {
             profileLastPaintDelayMs_ =
                 mikai::gui::uiprofile::elapsedMs(profilePacingArmedAtNs_);
         } else {
             profileLastPaintDelayMs_ = -1;
         }
-        profilePacingAwaitingPaint_ = false;
-        profilePacingArmedAtNs_ = 0;
-        profilePacingFired_ = false;
     }
-    pacingTimer_.stop();
-    pacingTimerArmed_ = false;
-    pacingTargetTime_ = 0;
-    pacingRetryOnly_ = false;
     QOpenGLWidget::paintGL();
     if (!contextReady_ || !render_) {
+        // No renderer, so nothing this surface armed can ever be presented:
+        // whatever slot it was holding goes with the engine.
+        pacingTimer_.stop();
+        pacingTimerArmed_ = false;
+        pacingTargetTime_ = 0;
+        pacingRetryOnly_ = false;
+        pacedPaintReleased_ = false;
+        if (profilePaint) {
+            profilePacingAwaitingPaint_ = false;
+            profilePacingArmedAtNs_ = 0;
+            profilePacingFired_ = false;
+            if (pacingActiveAtEntry && !framePending_) ++profilePacingDisarms_;
+        }
         // No engine, so there is no frame to render - but NoPartialUpdate leaves
         // whatever is in this buffer visible, so this pass always defines every
         // pixel. The order is the retainer, then the opening placeholder, then
@@ -1978,11 +2091,52 @@ void VideoSurface::paintGL() {
         }
         return;
     }
-    // MPV_RENDER_UPDATE_FRAME marks a new output frame, independent of UI paints.
-    // The callback hop's update() may have consumed that flag already, so a frame
-    // it carried counts the same as one this call reports.
-    const uint64_t updateFlags = render_->update();
-    const bool newOutputFrame = (updateFlags & MPV_RENDER_UPDATE_FRAME) != 0 || framePending_;
+    // Which paint this is decides what it may take. A paint the pacing timer
+    // released, a forced redraw and a frame that arrived with no slot to wait for
+    // are presentations; every other pass is Qt asking for a repaint over a
+    // picture that is already on screen. Presenting the frame a scheduled slot is
+    // still holding would be the burst this classification exists to stop, and
+    // stopping the timer here would leave the frame with nothing to present it.
+    const bool pacedRelease = pacedPaintReleased_;
+    pacedPaintReleased_ = false;
+    const bool armedSlot = pacingTimerArmed_ && !pacingRetryOnly_;
+    PaintScheduleDecision schedule = decidePaintSchedule(
+        pacedRelease, forceRender_, armedSlot, framePending_, engineFrameHoldAwaitingOutput_);
+    // MPV_RENDER_UPDATE_FRAME marks a new output frame. A pass that keeps an armed
+    // slot does not read mpv's queue at all: that flag is the slot's frame, and
+    // consuming it here would leave the paint it is waiting for with nothing to
+    // present. Every other pass may read it, and an arrival with no slot behind
+    // it is presented at once.
+    bool frameArrived = false;
+    if (schedule.consumesFrame || !schedule.keepsArmedSlot) {
+        const uint64_t updateFlags = render_->update();
+        frameArrived = (updateFlags & MPV_RENDER_UPDATE_FRAME) != 0;
+        if (!schedule.consumesFrame) {
+            schedule = decidePaintSchedule(false, false, false, frameArrived, false);
+        }
+    }
+    const bool frameOwed = framePending_ || frameArrived;
+    const bool consumesFrame = schedule.consumesFrame;
+    const bool newOutputFrame = consumesFrame && frameOwed;
+    if (schedule.keepsArmedSlot) {
+        // The slot is the frame's: keep it armed, and keep the measurement window
+        // of the paint it is waiting for.
+        if (profilePaint) {
+            profileLastPaintDelayMs_ = -1;
+        }
+    } else {
+        if (profilePaint) {
+            // Only an ACTIVE timer this pass really stopped is a disarm.
+            if (pacingActiveAtEntry && !frameOwed) ++profilePacingDisarms_;
+            profilePacingAwaitingPaint_ = false;
+            profilePacingArmedAtNs_ = 0;
+            profilePacingFired_ = false;
+        }
+        pacingTimer_.stop();
+        pacingTimerArmed_ = false;
+        pacingTargetTime_ = 0;
+        pacingRetryOnly_ = false;
+    }
     bool freshOutputFrame = false;
     if (engineFrameHoldAwaitingOutput_) {
         mpv_render_frame_info frameInfo{};
@@ -1998,7 +2152,7 @@ void VideoSurface::paintGL() {
     }
     // forceRender_ covers the framebuffer Qt hands back empty: a resize or a
     // re-show wipes the picture, and with a paused core no new frame is coming.
-    const bool haveFrame = framePending_ || newOutputFrame || forceRender_;
+    const bool haveFrame = newOutputFrame || forceRender_;
 
     const bool retainedPictureVisible =
         engineFrameHoldFbo_ &&
@@ -2060,15 +2214,29 @@ void VideoSurface::paintGL() {
         retentionMicros += (mikai::gui::uiprofile::nowNs() - phaseMark) / 1000;
         phaseMark = mikai::gui::uiprofile::nowNs();
     }
+    bool presentedPictureDrawn = false;
     if (heldPictureDrawn) {
         if (newOutputFrame) {
             renderResult = render_->skipRendering();
             if (renderResult == 0) render_->reportSwap();
         }
+    } else if (!consumesFrame &&
+               (presentedPictureDrawn = drawPresentedPicture(target, targetWidth, targetHeight))) {
+        // A repaint presents the picture that is already on screen. Re-running
+        // mpv's render here would show the frame its VO is still holding for the
+        // slot this pass is not allowed to take.
     } else {
         renderResult = render_->render(static_cast<int>(target), targetWidth, targetHeight,
                                        renderInternalFormat_, renderDepthBitsPerChannel_);
         presentedFrame = haveFrame;
+        if (renderResult >= 0) {
+            if (presentedFrame) {
+                // The picture moved on: the snapshot describes the frame before it.
+                invalidatePresentedPicture();
+            } else {
+                capturePresentedPicture(target, targetWidth, targetHeight);
+            }
+        }
     }
     if (phaseTimed) {
         engineMicros += (mikai::gui::uiprofile::nowNs() - phaseMark) / 1000;
@@ -2080,14 +2248,9 @@ void VideoSurface::paintGL() {
     }
     gl->glBindFramebuffer(GL_FRAMEBUFFER, target);
     painter.endNativePainting();
-    if (pacingMeasurePending_) {
-        pacingMeasurePending_ = false;
-        const double tookMs = static_cast<double>(steadyClockNowNs() - pacingFiredAtNs_) / 1.0e6;
-        if (tookMs > 0.0 && tookMs < 1000.0) {
-            renderLeadMs_ = std::clamp(0.8 * renderLeadMs_ + 0.2 * tookMs, kMinRenderLeadMs,
-                                       kMaxRenderLeadMs);
-        }
-    }
+    // The render lead is measured at the swap, not here: composition and the
+    // vsync wait happen after this function returns, and a lead that excludes
+    // them is the very lateness the timer is supposed to subtract.
     if (!g_frameTimingLogPath.isEmpty()) {
         const auto counterValue = [](const std::optional<int64_t>& value) {
             return value.has_value() ? QString::number(*value) : QStringLiteral("unknown");
@@ -2113,6 +2276,9 @@ void VideoSurface::paintGL() {
     lastRenderedFboSize_ = deviceSize;
     hasRenderedFrame_ = hasRenderedFrame_ || renderResult == 0;
     if (renderResult < 0) {
+        // A failed render leaves the target holding something this surface did
+        // not put there, so the copy no longer describes what is on screen.
+        invalidatePresentedPicture();
         // The retained picture stands in for the frame the renderer could not
         // produce, so a reported failure is never also a black clear.
         drawRetainedPicture(painter, target, targetWidth, targetHeight);
@@ -2124,7 +2290,8 @@ void VideoSurface::paintGL() {
     // cost belongs to the same retention segment as the held blit. Painting it
     // once per target would leave the buffer holding whatever the next pass
     // cleared it to.
-    if (renderResult == 0 && !retainedPictureVisible && !newOutputFrame && !framePending_) {
+    if (renderResult == 0 && !retainedPictureVisible && !presentedPictureDrawn &&
+        !newOutputFrame && !framePending_) {
         const qint64 fallbackStart = phaseTimed ? mikai::gui::uiprofile::nowNs() : 0;
         paintTeardownPicture(painter);
         if (phaseTimed) {
@@ -2206,7 +2373,11 @@ void VideoSurface::paintGL() {
             videoFramePainted_ = true;
         }
     }
-    framePending_ = false;
+    if (consumesFrame) {
+        // The frame this pass was allowed to present has been presented; one it
+        // was not is still the slot's, and that tick is what presents it.
+        framePending_ = false;
+    }
     forceRender_ = false;
 
     // No self-update here: mpv's own update callback is what asks for the next
@@ -2348,6 +2519,18 @@ bool VideoSurface::paintCanHappen() const {
 }
 
 void VideoSurface::onFrameSwapped() {
+    // The lead is measured here because this is the moment the compositor has the
+    // frame: FBO composition and the vsync wait both happen between paintGL
+    // returning and this signal, and a lead that left them out would keep the
+    // timer scheduling frames later than the screen can take them.
+    if (pacingMeasurePending_) {
+        pacingMeasurePending_ = false;
+        const double tookMs = static_cast<double>(steadyClockNowNs() - pacingFiredAtNs_) / 1.0e6;
+        if (tookMs > 0.0 && tookMs < 1000.0) {
+            renderLeadMs_ = std::clamp(0.8 * renderLeadMs_ + 0.2 * tookMs, kMinRenderLeadMs,
+                                       kMaxRenderLeadMs);
+        }
+    }
     if (!videoFramePainted_) return;
     videoFramePainted_ = false;
     if (!contextReady_ || render_ == nullptr) return;
@@ -2495,6 +2678,9 @@ void VideoSurface::onPacingTick() {
         }
         pacingFiredAtNs_ = retry ? 0 : steadyClockNowNs();
         pacingMeasurePending_ = !retry;
+        // The paint this update() asks for is the frame's presentation, not a
+        // repaint: it may consume the frame and report its swap.
+        pacedPaintReleased_ = !retry;
         update();
     }
 }
@@ -2850,6 +3036,9 @@ void VideoSurface::releaseRenderContext() {
     pacingTargetTime_ = 0;
     pacingRetryOnly_ = false;
     pacingMeasurePending_ = false;
+    pacedPaintReleased_ = false;
+    // Its pixels belonged to a context that is going away.
+    invalidatePresentedPicture();
     if (render_ == nullptr) {
         if (contextDestroyedConnection_) {
             disconnect(contextDestroyedConnection_);

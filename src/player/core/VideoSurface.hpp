@@ -139,6 +139,10 @@ class VideoSurface : public QOpenGLWidget {
     Q_OBJECT
 
 public:
+    /// The GUI-side budget for a player-close native settle. The stop keeps
+    /// running after it; only this wait is bounded.
+    static constexpr int kTeardownSettleBudgetMs = 2000;
+
     explicit VideoSurface(QWidget* parent = nullptr);
     ~VideoSurface() override;
 
@@ -216,6 +220,23 @@ public:
     /// cannot tell a working chain from a preset naming a deleted file - useful
     /// for Off vs On; the probe proves the rest with pixels.
     QString effectiveShaderChain() const;
+
+    /// What a paint may take from the state it found. A paint that presents no
+    /// new frame must neither consume the frame a pacing slot is holding nor stop
+    /// that slot: doing either is the burst-then-stall the timer exists to stop.
+    struct PaintScheduleDecision {
+        /// The frame (or the forced redraw) this pass presents.
+        bool consumesFrame = false;
+        /// The armed pacing slot survives this pass and presents that frame.
+        bool keepsArmedSlot = false;
+    };
+    /// `pacedRelease` is a paint the pacing timer released, `forced` a redraw a
+    /// caller demanded, `armedSlot` an armed presentation slot, `frameOwed` a
+    /// frame pending or newly handed out, and `holdOwesOutput` a retained picture
+    /// that waits for the frame which replaces it.
+    static PaintScheduleDecision decidePaintSchedule(bool pacedRelease, bool forced,
+                                                     bool armedSlot, bool frameOwed,
+                                                     bool holdOwesOutput);
 
     enum class HdrToneMappingPolicy {
         Auto,
@@ -400,13 +421,14 @@ public:
     /// transition is settled first (the filter refuses control while its own
     /// admit job runs), then an acknowledged plan is really suspended; no
     /// acknowledgement is ever faked from a cancelled local pending, and the
-    /// claims survive anything that ends without one. The bound defaults past
-    /// the controller's own control timeout, so its watchdog names a failure
-    /// before this returns. True when the surface still exists and the
+    /// claims survive anything that ends without one. The GUI-side bound is two
+    /// seconds: past that the settle is abandoned and logged
+    /// (native.playback.teardownSettleAbandoned) while the controller's own
+    /// watchdog keeps naming the failure off this call - a spin to the
+    /// controller's full control timeout froze the window for eleven seconds for
+    /// a stop nobody could see. True when the surface still exists and the
     /// controller has no transition left in flight.
-    bool settleNativeForTeardown(
-        int timeoutMs = static_cast<int>(native::NativePlaybackController::kDefaultControlTimeoutMs) +
-                        1000);
+    bool settleNativeForTeardown(int timeoutMs = kTeardownSettleBudgetMs);
 
     // ── native plan lock ──────────────────────────────────────────────────
     //
@@ -562,6 +584,10 @@ signals:
     void animeJanaiStatusChanged(const QString& status);
     void animeJanaiFailure(const QString& reason);
     void animeJanaiEngineBuildChanged(bool active, bool succeeded, const QString& detail);
+    /// The engine pause hold appeared or was released. Playback is physically
+    /// paused for a transition or an engine build here, so a chrome that shows
+    /// nothing would be showing a frozen picture for no visible reason.
+    void enginePauseHoldChanged(bool held);
     /// The controller's status changed. This is how an asynchronous transition
     /// is acknowledged: read the status, never a transport return.
     void nativePlaybackStatusChanged(const native::NativePlaybackController::Status& status);
@@ -954,6 +980,19 @@ private:
     bool drawRetainedPicture(QPainter& painter, unsigned int target, int width, int height);
     /// Draws only the teardown readback, letterboxed. False when none is held.
     bool paintTeardownPicture(QPainter& painter);
+    /// Blits the last frame this surface presented into the widget target. A
+    /// repaint Qt asked for (a hover, a mask change) must put the picture that is
+    /// already on screen back, not ask mpv to render the frame it is holding for
+    /// its own presentation slot. False when no current snapshot is held.
+    bool drawPresentedPicture(unsigned int target, int width, int height);
+    /// Copies the target into the snapshot after a pass that rendered no new
+    /// output frame, so the next such pass can blit instead of re-rendering.
+    void capturePresentedPicture(unsigned int target, int width, int height);
+    /// Drops the snapshot: a presented frame, a target change, a context loss or
+    /// a source boundary all make the pixels it holds wrong.
+    void invalidatePresentedPicture();
+    /// Announces enginePauseHeld() when it differs from what was last published.
+    void publishEnginePauseHold();
     /// Asks a recreated render context, over a bounded number of paints, whether
     /// the live core still delivers output; a reload happens only when it does.
     void beginContextReattach();
@@ -1093,6 +1132,14 @@ private:
     /// lead the next paintGL should measure.
     qint64 pacingFiredAtNs_ = 0;
     bool pacingMeasurePending_ = false;
+    /// Set by onPacingTick() and consumed by the paint it released. It is what
+    /// lets a paint tell "the slot I armed has arrived" from "Qt asked for a
+    /// repaint", which is the difference between presenting a frame and
+    /// presenting the picture that is already on screen.
+    bool pacedPaintReleased_ = false;
+    /// The last value enginePauseHoldChanged() announced, so a hold that is
+    /// re-asserted for the same source is not re-announced.
+    bool enginePauseHoldPublished_ = false;
     /// Output geometry mpv reports after its filters: aspect-corrected size and
     /// the intended clockwise rotation that is not yet applied to that output.
     double observedOutputWidth_ = 0.0;
@@ -1251,6 +1298,11 @@ private:
     /// precision it was read at (half-float, 10-bit packed or 16-bit).
     QImage teardownPicture_;
     int teardownPictureFormat_ = 0;
+    /// The last frame this surface put in its own target, at the target's
+    /// probed format, so a repaint that presents no new frame can blit it
+    /// instead of re-running mpv's render of the frame it is holding.
+    std::unique_ptr<QOpenGLFramebufferObject> presentedPictureFbo_;
+    int presentedPictureFormat_ = 0;
     /// One error report per streak of failed renders, never one per paint.
     bool renderFailureStreak_ = false;
     /// True while a recreated context is being asked whether the live core still

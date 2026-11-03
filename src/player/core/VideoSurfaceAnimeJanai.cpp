@@ -636,6 +636,13 @@ bool VideoSurface::enginePauseHeld() const {
            (enginePreparationPaused_ || animeJanaiEngineBuildActive_);
 }
 
+void VideoSurface::publishEnginePauseHold() {
+    const bool held = enginePauseHeld();
+    if (held == enginePauseHoldPublished_) return;
+    enginePauseHoldPublished_ = held;
+    emit enginePauseHoldChanged(held);
+}
+
 bool VideoSurface::playbackPauseIntent() const {
     return enginePauseHeld() ? enginePauseIntent_ : !isPlaying();
 }
@@ -648,6 +655,7 @@ void VideoSurface::beginEnginePause() {
     enginePauseEpoch_ = mpv_->sourceEpoch();
     reassertPaused();
     setPlaying(false);
+    publishEnginePauseHold();
 }
 
 void VideoSurface::endEnginePause(bool restoreIntent) {
@@ -656,6 +664,9 @@ void VideoSurface::endEnginePause(bool restoreIntent) {
                             enginePauseEpoch_ == mpv_->sourceEpoch();
     const bool paused = enginePauseIntent_;
     enginePauseEpoch_ = 0;
+    // Announced before the early returns: the hold is over on every one of them,
+    // and a chip left standing would outlive the pause it described.
+    publishEnginePauseHold();
     if (!restoreIntent || !sameSource) return;
     setPlaying(!paused);
     requestPausedWrite(paused);
@@ -664,12 +675,14 @@ void VideoSurface::endEnginePause(bool restoreIntent) {
 void VideoSurface::discardEnginePause() {
     enginePauseEpoch_ = 0;
     enginePreparationPaused_ = false;
+    publishEnginePauseHold();
 }
 
 void VideoSurface::setEnginePreparationPaused(bool active, bool restoreIntent) {
     if (active == enginePreparationPaused_) return;
     if (active) beginEnginePause();
     enginePreparationPaused_ = active;
+    publishEnginePauseHold();
     if (!active) endEnginePause(restoreIntent);
 }
 

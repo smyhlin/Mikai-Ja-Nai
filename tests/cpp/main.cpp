@@ -57,6 +57,7 @@
 #include "TestTimelineMarks.hpp"
 #include "TestMediaInformation.hpp"
 #include "TestHdrRenderContracts.hpp"
+#include "TestPacingContract.hpp"
 #include "TestHoverPreview.hpp"
 #include "TestNativeTypes.hpp"
 #include "TestRuntimeSelection.hpp"
@@ -248,6 +249,7 @@ int main(int argc, char** argv) {
   TestTimelineMarks timelineMarks;
   TestMediaInformation mediaInformation;
   TestHdrRenderContracts hdrRenderContracts;
+  TestPacingContract pacingContract;
   TestHoverPreview hoverPreview;
   TestNativePrefs nativePrefs;
   TestNativeMenu nativeMenu;
@@ -363,6 +365,7 @@ int main(int argc, char** argv) {
   run("TestTimelineMarks", &timelineMarks, true);
   run("TestMediaInformation", &mediaInformation, true);
   run("TestHdrRenderContracts", &hdrRenderContracts, true);
+  run("TestPacingContract", &pacingContract, true);
   run("TestHoverPreview", &hoverPreview, true);
   run("TestNativePrefs", &nativePrefs, true);
   run("TestNativeMenu", &nativeMenu, true);
