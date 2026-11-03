@@ -314,11 +314,11 @@ QString videoScaleModeLabel(VideoScaleMode mode) {
     return {};
 }
 
-VideoScalePolicy videoScalePolicyFromSettings() {
-    // The stored preference, read once per consumer instead of a copy per
-    // caller. Installing the static stays the caller's step, because startup
-    // and a store-refresh reach the same value at different moments.
-    QSettings settings;
+VideoScalePolicy videoScalePolicyFromSettings(const QSettings& settings) {
+    // The stored preference, read from the caller's own store handle so this
+    // adds no QSettings/INI allocation per call. Installing the static stays the
+    // caller's step: startup and a store-refresh reach the value at different
+    // moments.
     VideoScalePolicy policy;
     const int storedMode = settings.value(
         QString::fromLatin1(VideoSurface::kVideoScaleModeSettingKey),

@@ -315,7 +315,7 @@ int main(int argc, char** argv) {
         // other consumer uses: the first engine must be created in the mode the
         // viewer saved, not default to Fit and jump once a surface pumps.
         mplayer::VideoSurface::setVideoScalePolicy(
-            mplayer::videoScalePolicyFromSettings());
+            mplayer::videoScalePolicyFromSettings(settings));
     }
     if (!launch.frameTimingLog.isEmpty()) {
         mplayer::VideoSurface::setFrameTimingLogPath(launch.frameTimingLog);

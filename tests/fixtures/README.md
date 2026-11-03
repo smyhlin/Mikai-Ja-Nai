@@ -176,33 +176,112 @@ scaling" card — mode, zoom, upscaler, downscaler — through the dialog's own
 Save and Cancel actions, then proves the store is read back by the production
 reader and by a freshly constructed dialog, and finally spawns itself with
 `--video-scaling-smoke-read` so a second process reads the same store. It never
-writes a scale setting itself, never shows or activates a window (the shipped
-offscreen platform is enough), and the probe's isolation launcher already gives
-it an empty owned settings directory and native store, so it cannot touch the
-user's populated application store.
+writes a scale setting itself and never shows or activates a window (the shipped
+offscreen platform is enough).
+
+Isolation ownership, precisely: `mikai_test_launcher` copies the probe into its
+own scratch and that executable-local tree owns the empty native store; inside
+the copied probe, `ProbeIsolation` relaunches again and a `QTemporaryDir` owns
+the settings directory. Nothing here reads or writes the user's populated
+application store.
+
+The launcher runs the probe with the scratch directory as its working directory
+and deletes it afterwards, so every path below is absolute and the evidence file
+is named explicitly with `--video-scaling-evidence`:
 
 ```powershell
+$repo = (Resolve-Path .).Path
 $qt = 'C:/temp/qt6/6.12.0/mingw_64'
-cmake --build build/release --target native_settings_probe mikai_test_launcher --parallel 4
-$launcher = (Resolve-Path build/release/mikai_test_launcher.exe).Path
-$probe = (Resolve-Path build/release/native_settings_probe.exe).Path
-cmake -E make_directory .probe-out/video-scaling-persistence
-Push-Location .probe-out/video-scaling-persistence
-& $launcher $probe (Resolve-Path ../../shaders).Path (Resolve-Path ../../build/release/mpv/libmpv-2.dll).Path `
-  "$qt/bin" "$qt/plugins" ../../build/release/_test-runs --video-scaling-smoke
-Pop-Location
+$out = Join-Path $repo '.probe-out/video-scaling-persistence'
+New-Item -ItemType Directory -Force $out | Out-Null
+cmake --build (Join-Path $repo 'build/release') --target native_settings_probe mikai_test_launcher --parallel 4
+& (Join-Path $repo 'build/release/mikai_test_launcher.exe') `
+  (Join-Path $repo 'build/release/native_settings_probe.exe') `
+  (Join-Path $repo 'shaders') `
+  (Join-Path $repo 'build/release/mpv/libmpv-2.dll') `
+  (Join-Path $qt 'bin') (Join-Path $qt 'plugins') `
+  (Join-Path $repo 'build/release/_test-runs') `
+  --video-scaling-smoke `
+  --video-scaling-evidence (Join-Path $out 'native-video-scaling-persistence-evidence.json')
 ```
 
 (A direct `build\release\native_settings_probe.exe --video-scaling-smoke` run is
 equivalent; the trailing arguments are forwarded unchanged.) Exit code 0 means
-every check passed, including the fresh-process read. The writer writes
-`native-video-scaling-persistence-evidence.json` in its working directory; the
-spawned read phase writes `video-scaling-restart-evidence.json` into the store
-it was handed, and the writer embeds that object under `restart`.
+every check passed, including the fresh-process read. `--video-scaling-evidence`
+must be an absolute path in an existing directory. The spawned read phase writes
+`video-scaling-restart-evidence.json` into the throwaway settings directory it
+was handed, and the writer embeds that object under `restart`, so the persistent
+file keeps the child's verdict after the store is deleted.
 
 What it does **not** claim: no player, mpv core or surface is created, so the
 application player-startup path is not exercised, and the dialogs are never
 shown, so this is not visible layout/typography or flyout/PiP/Compare evidence.
+
+### Visible video scaling live smoke (Windows)
+
+`native_settings_probe --video-scaling-live-smoke` opens a real `PlayerDialog` on
+a real media file and drives the ordinary windowed path: the Settings dialog's
+real Save changed the mode while playing; the real Cancel changed nothing; the
+player flyout's mode rows changed the mode, box and rendered picture; a paused
+surface adopted a change without resuming or seeking; PiP's float rendered the
+current policy; and a fresh process read the final Saved policy through the
+production reader. It records, per state, the shell size, the surface widget
+rectangle, the rendered framebuffer span and luminance, plus screenshots, and it
+measures the new Settings card at 860, 1000 and 1280 px.
+
+It only shows this process's own windows. It never moves the pointer, activates
+another process or sends global input. The dialogs and flyout are driven through
+real widget actions (`QAbstractButton::click`, `QComboBox::setCurrentIndex`).
+
+Requirements and conventions (existing probe conventions, no new ones):
+
+- A native Qt platform (`QT_QPA_PLATFORM=windows`) and the pinned mpv runtime
+  staged by `mikai_test_launcher`.
+- `--video-scaling-media <absolute path>`: a long fixture (at least 60 s). A
+  shorter clip is refused before the matrix because it would reach EOS mid-run.
+- `--video-scaling-evidence <absolute json path>`: the persistent JSON. All
+  screenshots are written into the same directory, because the launcher deletes
+  its scratch working directory.
+- `MIKAI_PROBE_WIDTH`/`MIKAI_PROBE_HEIGHT` size the real player window.
+- `MIKAI_PROBE_LANGUAGE` selects the interface language (`en` default; `uk`
+  additionally needs `MIKAI_PROBE_TRANSLATION`). One run measures the Settings
+  card only in the language it installed and says so in the evidence; the other
+  language needs its own run. The mode never claims translated layout it did not
+  render.
+- `--video-scaling-hold-ms <ms>` optionally leaves the finished player visible
+  (with its scaling flyout open) and prints `LIVE-SMOKE-HOLD-READY` so a person
+  or a read-only desktop capture can observe it; it prints
+  `LIVE-SMOKE-HOLD-DONE` before exiting.
+
+```powershell
+$repo = (Resolve-Path .).Path
+$qt = 'C:/temp/qt6/6.12.0/mingw_64'
+$out = Join-Path $repo '.probe-out/video-scaling-live'
+New-Item -ItemType Directory -Force $out | Out-Null
+cmake --build (Join-Path $repo 'build/release') --target native_settings_probe mikai_test_launcher --parallel 4
+$env:QT_QPA_PLATFORM = 'windows'
+$env:MIKAI_PROBE_LANGUAGE = 'en'
+& (Join-Path $repo 'build/release/mikai_test_launcher.exe') `
+  (Join-Path $repo 'build/release/native_settings_probe.exe') `
+  (Join-Path $repo 'shaders') `
+  (Join-Path $repo 'build/release/mpv/libmpv-2.dll') `
+  (Join-Path $qt 'bin') (Join-Path $qt 'plugins') `
+  (Join-Path $repo 'build/release/_test-runs') `
+  --video-scaling-live-smoke `
+  --video-scaling-media (Join-Path $repo '.probe-out/goals/focus-1080p-cfr-360s.mp4') `
+  --video-scaling-evidence (Join-Path $out 'native-video-scaling-live-evidence.json') `
+  --video-scaling-hold-ms 30000
+```
+
+Exit code 0 requires every check, the fresh-process read and the evidence write
+to succeed. The JSON records `observations` (per state), `settingsCard` (per
+width), `artifacts` (each screen grab's size and `windowExposed`), the language
+and the device pixel ratio. Screen grabs of an occluded window are flagged, so
+they cannot read as visible evidence.
+
+What it does **not** claim: Compare remains a separate lock proof; the mode does
+not open Compare. Visible Settings typography is proven only in the language the
+run installed, and only for the window sizes it recorded.
 
 ### Continuous frame-order and HDR acceptance
 

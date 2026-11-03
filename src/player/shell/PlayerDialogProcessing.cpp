@@ -110,11 +110,11 @@ void PlayerDialog::pushNativeInputs() {
 
 void PlayerDialog::refreshStoredSettings() {
     loadPresetShortcuts();
+    QSettings animeJanaiSettings;
     // The display scaling is process-wide, so a saved change is already in the
     // statics; reading the store here keeps a player refreshed from a store
     // edited elsewhere in step, and the setter re-applies only a real change.
-    VideoSurface::setVideoScalePolicy(videoScalePolicyFromSettings());
-    QSettings animeJanaiSettings;
+    VideoSurface::setVideoScalePolicy(videoScalePolicyFromSettings(animeJanaiSettings));
     const bool wasEnabled = !animeJanaiPresetId_.isEmpty();
     const QString preset = wasEnabled
         ? animeJanaiSettings.value(kAnimeJanaiPresetSettingKey).toString() : QString{};

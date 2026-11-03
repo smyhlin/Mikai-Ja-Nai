@@ -138,7 +138,10 @@ if(TARGET mikai_app)
   mikai_add_probe(native_hud_probe src/probes/native/NativeHudProbe.cpp
     LINKS mikai_app Qt6::Widgets)
   mikai_add_probe(native_settings_probe src/probes/native/NativeSettingsProbe.cpp
-    EXTRA_SOURCES tests/fixtures/IdentityOnnxFixture.hpp
+    EXTRA_SOURCES
+      tests/fixtures/IdentityOnnxFixture.hpp
+      src/probes/native/VideoScalingLiveProbe.cpp
+      src/probes/native/VideoScalingLiveProbe.hpp
     LINKS mikai_app Qt6::Test)
   mikai_add_probe(crash_probe src/probes/player/CrashProbe.cpp
     LINKS mikai_app Qt6::Core)

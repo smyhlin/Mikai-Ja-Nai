@@ -14,6 +14,10 @@
 #include <QStringList>
 #include <QTimer>
 
+QT_BEGIN_NAMESPACE
+class QSettings;
+QT_END_NAMESPACE
+
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -120,8 +124,9 @@ QString videoScaleModeLabel(VideoScaleMode mode);
 /// store. This is the one reader the startup policy block, a player refreshed
 /// from the store and the persistence probe share, so a key rename or a changed
 /// default cannot diverge between them. It neither installs the policy nor
-/// touches a surface: the caller decides when the process-wide static changes.
-VideoScalePolicy videoScalePolicyFromSettings();
+/// touches a surface or allocates a store handle: the caller supplies the
+/// QSettings it already owns, and decides when the process-wide static changes.
+VideoScalePolicy videoScalePolicyFromSettings(const QSettings& settings);
 
 /// Provenance for the legacy FPS value passed to the HUD; this is display
 /// metadata only and says nothing about whether a native filter ran.

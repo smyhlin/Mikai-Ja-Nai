@@ -39,7 +39,6 @@
 #include <QPalette>
 #include <QPixmap>
 #include <QProcess>
-#include <QProcessEnvironment>
 #include <QProgressBar>
 #include <QRegion>
 #include <QScreen>
@@ -62,6 +61,7 @@
 #include "ProbeIsolation.hpp"
 #include "ProbeUi.hpp"
 #include "IdentityOnnxFixture.hpp"
+#include "VideoScalingLiveProbe.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -4121,17 +4121,14 @@ QString videoScaleOptionValue(const std::vector<mplayer::VideoScaleOption>& opti
     return QString();
 }
 
-/// Fails, per field, when a differently constructed dialog does not show the
-/// expected policy. Each field is separate so a report names the one that
-/// drifted instead of only saying "the policy differs".
 void checkVideoScaleControls(const VideoScaleControls& controls,
                              const mplayer::VideoScalePolicy& expected,
                              const char* what) {
     const mplayer::VideoScalePolicy shown = videoScalePolicyOfControls(controls);
-    check(shown.mode == expected.mode, what);
-    check(shown.zoomPercent == expected.zoomPercent, what);
-    check(shown.upscale == expected.upscale, what);
-    check(shown.downscale == expected.downscale, what);
+    check(shown.mode == expected.mode, what, QStringLiteral("mode"));
+    check(shown.zoomPercent == expected.zoomPercent, what, QStringLiteral("zoomPercent"));
+    check(shown.upscale == expected.upscale, what, QStringLiteral("upscale"));
+    check(shown.downscale == expected.downscale, what, QStringLiteral("downscale"));
 }
 
 QJsonObject videoScalingPersistenceScenario(mikai::backend::MikaiClient& client, Runner& runner,
@@ -4154,8 +4151,11 @@ QJsonObject videoScalingPersistenceScenario(mikai::backend::MikaiClient& client,
     VideoSurface::setVideoScalePolicy(defaults);
     QApplication::processEvents();
 
-    check(mplayer::videoScalePolicyFromSettings() == defaults,
-          "the empty isolated store reads the documented default display policy");
+    {
+        QSettings settings;
+        check(mplayer::videoScalePolicyFromSettings(settings) == defaults,
+              "the empty isolated store reads the documented default display policy");
+    }
     check(VideoSurface::videoScalePolicy() == defaults,
           "the process-wide display policy starts at that same default");
 
@@ -4199,8 +4199,11 @@ QJsonObject videoScalingPersistenceScenario(mikai::backend::MikaiClient& client,
               "the real Cancel action closed the dialog without accepting");
         check(VideoSurface::videoScalePolicy() == defaults,
               "Cancel publishes no edited display policy to the live process");
-        check(mplayer::videoScalePolicyFromSettings() == defaults,
-              "Cancel leaves every scale field at its stored default");
+        {
+            QSettings settings;
+            check(mplayer::videoScalePolicyFromSettings(settings) == defaults,
+                  "Cancel leaves every scale field at its stored default");
+        }
         evidence.insert(QStringLiteral("editedBeforeCancel"), videoScalePolicyJson(edited));
         dialog.reject();
         QApplication::processEvents();
@@ -4253,7 +4256,8 @@ QJsonObject videoScalingPersistenceScenario(mikai::backend::MikaiClient& client,
             }
         }
 
-        const VideoScalePolicy stored = mplayer::videoScalePolicyFromSettings();
+        QSettings storedSettings;
+        const VideoScalePolicy stored = mplayer::videoScalePolicyFromSettings(storedSettings);
         check(stored.mode == edited.mode,
               "Save stored the selected display mode");
         check(stored.zoomPercent == edited.zoomPercent,
@@ -4407,7 +4411,8 @@ QJsonObject videoScalingRestartRead(mikai::backend::MikaiClient& client, Runner&
 
     check(VideoSurface::videoScalePolicy() == VideoScalePolicy{},
           "a fresh process starts at the default policy before any store read");
-    const VideoScalePolicy read = mplayer::videoScalePolicyFromSettings();
+    QSettings readSettings;
+    const VideoScalePolicy read = mplayer::videoScalePolicyFromSettings(readSettings);
     check(read.mode == expected.mode,
           "the fresh process reads the saved display mode from the store");
     check(read.zoomPercent == expected.zoomPercent,
@@ -4443,7 +4448,8 @@ QJsonObject videoScalingRestartRead(mikai::backend::MikaiClient& client, Runner&
     evidence.insert(QStringLiteral("checks"), checks);
     evidence.insert(QStringLiteral("failures"), failures);
     bool written = false;
-    if (!evidencePath.isEmpty()) {
+    const bool absoluteEvidencePath = !evidencePath.isEmpty() && QFileInfo(evidencePath).isAbsolute();
+    if (absoluteEvidencePath) {
         QFile file(evidencePath);
         if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
             const QByteArray payload = QJsonDocument(evidence).toJson(QJsonDocument::Indented);
@@ -4525,6 +4531,21 @@ int main(int argc, char** argv) {
         QStringLiteral("File the fresh-process read writes its evidence to."),
         QStringLiteral("path"));
     parser.addOption(videoScalingEvidenceOption);
+    QCommandLineOption videoScalingLiveOption(
+        QStringLiteral("video-scaling-live-smoke"),
+        QStringLiteral("Run the visible real-player display scaling smoke: Settings "
+                       "Save/Cancel, flyout rows, paused adoption, PiP inheritance."));
+    parser.addOption(videoScalingLiveOption);
+    QCommandLineOption videoScalingMediaOption(
+        QStringLiteral("video-scaling-media"),
+        QStringLiteral("Absolute media path for the live smoke (a long clip, >= 60 s)."),
+        QStringLiteral("path"));
+    parser.addOption(videoScalingMediaOption);
+    QCommandLineOption videoScalingHoldOption(
+        QStringLiteral("video-scaling-hold-ms"),
+        QStringLiteral("Keep the finished live-smoke player visible this long, ms."),
+        QStringLiteral("ms"));
+    parser.addOption(videoScalingHoldOption);
     parser.process(app);
     const bool installRuntime = parser.isSet(installRuntimeOption);
     const bool componentProgressOnly = parser.isSet(componentProgressOnlyOption);
@@ -4533,6 +4554,7 @@ int main(int argc, char** argv) {
     const bool textRasterOnly = parser.isSet(textRasterOnlyOption);
     const bool videoScalingSmoke = parser.isSet(videoScalingSmokeOption);
     const bool videoScalingSmokeRead = parser.isSet(videoScalingSmokeReadOption);
+    const bool videoScalingLiveSmoke = parser.isSet(videoScalingLiveOption);
     QCoreApplication::setOrganizationName(QStringLiteral("MikaiNativeSettingsProbe"));
     QCoreApplication::setApplicationName(QStringLiteral("NativeSettingsProbe"));
 
@@ -4622,16 +4644,36 @@ int main(int argc, char** argv) {
     }
 
     if (videoScalingSmoke) {
+        // The launcher runs the probe in a disposable scratch directory, so a
+        // relative evidence file would be deleted with it. An explicit path must
+        // be absolute and its directory must already exist; otherwise the
+        // default stays beside a direct run's working directory.
+        QString evidencePath = parser.value(videoScalingEvidenceOption);
+        bool pathAccepted = true;
+        if (evidencePath.isEmpty()) {
+            evidencePath = QStringLiteral("native-video-scaling-persistence-evidence.json");
+        } else {
+            const QFileInfo info(evidencePath);
+            pathAccepted = info.isAbsolute() && info.absoluteDir().exists();
+            if (!pathAccepted) {
+                std::fprintf(stderr,
+                             "FAIL --video-scaling-evidence must be an absolute path in an "
+                             "existing directory\n");
+                ++failures;
+            }
+            evidencePath = info.absoluteFilePath();
+        }
         bool restartVerified = false;
         QJsonObject evidence = videoScalingPersistenceScenario(
             client, runner, settingsRoot, QCoreApplication::applicationFilePath(),
             restartVerified);
-        const bool passed = failures == 0 && restartVerified;
+        const bool passed = failures == 0 && restartVerified && pathAccepted;
         evidence.insert(QStringLiteral("probe"), QStringLiteral("native_settings_probe"));
+        evidence.insert(QStringLiteral("evidencePath"), QDir::cleanPath(evidencePath));
         evidence.insert(QStringLiteral("passed"), passed);
         evidence.insert(QStringLiteral("checks"), checks);
         evidence.insert(QStringLiteral("failures"), failures);
-        QFile evidenceFile(QStringLiteral("native-video-scaling-persistence-evidence.json"));
+        QFile evidenceFile(evidencePath);
         bool evidenceWritten = false;
         if (evidenceFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
             const QByteArray payload = QJsonDocument(evidence).toJson(QJsonDocument::Indented);
@@ -4639,14 +4681,34 @@ int main(int argc, char** argv) {
             evidenceFile.close();
         }
         if (!evidenceWritten) {
-            std::fprintf(stderr, "FAIL the video scaling persistence evidence was written\n");
+            std::fprintf(stderr, "FAIL the video scaling persistence evidence was written to %s\n",
+                         qPrintable(evidencePath));
         }
         std::fprintf(stderr,
                      "[native_settings_probe video-scaling-smoke] %s (%d checks, %d failures) "
-                     "restart=%d evidence=%d\n",
+                     "restart=%d evidence=%d path=%s\n",
                      passed ? "PASS" : "FAIL", checks, failures, restartVerified ? 1 : 0,
-                     evidenceWritten ? 1 : 0);
+                     evidenceWritten ? 1 : 0, qPrintable(evidencePath));
         return passed && evidenceWritten ? 0 : 1;
+    }
+
+    if (videoScalingLiveSmoke) {
+        mikai::probes::VideoScalingLiveOptions liveOptions;
+        liveOptions.mediaPath = parser.value(videoScalingMediaOption);
+        liveOptions.settingsRoot = settingsRoot;
+        liveOptions.selfPath = QCoreApplication::applicationFilePath();
+        liveOptions.evidencePath = parser.value(videoScalingEvidenceOption);
+        const QString holdValue = parser.value(videoScalingHoldOption);
+        bool holdOk = true;
+        liveOptions.holdMs = 0;
+        if (!holdValue.isEmpty()) {
+            liveOptions.holdMs = holdValue.toInt(&holdOk);
+        }
+        if (!holdOk) {
+            std::fprintf(stderr, "FAIL --video-scaling-hold-ms must be a whole number of ms\n");
+            return 2;
+        }
+        return mikai::probes::runVideoScalingLiveSmoke(client, runner, liveOptions);
     }
 
     if (textRasterOnly) {
