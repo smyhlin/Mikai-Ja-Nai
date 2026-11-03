@@ -1,0 +1,43 @@
+{
+  "name": "hover-on-timeline-keeps-hud",
+  "description": "A pointer parked on the timeline keeps the HUD and its hover card. The bar is hovered, then the run waits longer than the 2.5 s chrome auto-hide, and both the dock and the card must still be there: the preview is the tool the viewer needs exactly while the cursor is on the timeline.",
+  "category": "ui-interaction",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "mouse_move",
+      "target": "playerScrubBar",
+      "position": 0.35,
+      "note": "The hover path, not a click: the reading under the pointer is what the card shows and what the chrome must survive."
+    },
+    {
+      "kind": "sleep_ms",
+      "value": 3200,
+      "note": "Bounded settle over the 2.5 s auto-hide. This is the only sleep in the manifest: it is the timeout under test, not a synchroniser for anything else."
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "qt_property",
+      "target": "playerHoverPreview",
+      "property": "visible",
+      "expected": true,
+      "note": "The card did not vanish while the pointer rested on the timeline."
+    },
+    {
+      "kind": "qt_property",
+      "target": "playerDock",
+      "property": "visible",
+      "expected": true,
+      "note": "The dock the pointer is on did not auto-hide underneath it."
+    }
+  ]
+}

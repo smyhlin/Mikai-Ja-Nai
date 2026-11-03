@@ -99,8 +99,10 @@ endif()
 if(WIN32)
   target_link_libraries(fullscreen_stability_probe PRIVATE psapi dwmapi)
 endif()
+# Qt6::Network is for the hover/loading case's loopback origin: a probe may not
+# depend on the public internet to produce a slow source.
 mikai_add_probe(interaction_probe src/probes/player/InteractionProbe.cpp
-  LINKS mikai_player Qt6::Widgets Qt6::Test
+  LINKS mikai_player Qt6::Widgets Qt6::Test Qt6::Network
   DEPLOY_SHADERS)
 mikai_add_probe(compare_shot_probe src/probes/player/CompareShotProbe.cpp
   LINKS mikai_player Qt6::Widgets Qt6::Test
