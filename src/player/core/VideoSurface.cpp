@@ -3062,7 +3062,7 @@ void VideoSurface::setVideoScalePolicy(const VideoScalePolicy& policy) {
     // setter never has to know how many surfaces exist.
 }
 
-VideoSurface::VideoScalePolicy VideoSurface::videoScalePolicy() {
+VideoScalePolicy VideoSurface::videoScalePolicy() {
     return g_videoScalePolicy;
 }
 
