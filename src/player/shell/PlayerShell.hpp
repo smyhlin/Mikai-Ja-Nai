@@ -327,6 +327,9 @@ private:
     /// genuinely on screen and playing, so the first hover does not pay a second
     /// decoder's load. Never from a preference, a load request or a thumbnail.
     void schedulePreviewPrewarm();
+    /// Tells the hover card that somebody is still driving the player, without
+    /// starting its decoder: activity keeps a warm core alive, it never builds one.
+    void notePreviewActivity();
     /// Chrome that is nobody's widget - the chevron discs and the empty-state
     /// hint - plus the adopted controls. `clip` separates the two callers: the
     /// surface's painter passes the whole shell, the shell's paintEvent passes

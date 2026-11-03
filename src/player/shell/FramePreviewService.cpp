@@ -244,6 +244,7 @@ public slots:
     void initialize();
     void setSource(const QString& url, quint64 generation);
     void requestFrame(quint64 token, double seconds);
+    void noteActivity();
     void cancelPending();
     void shutdown();
 
@@ -251,6 +252,9 @@ signals:
     void frameReady(quint64 token, double requestedSeconds, double decodedSeconds,
                     const QImage& frame);
     void frameUnavailable(quint64 token, double seconds, const QString& reason);
+    /// Seeks mpv accepted so far, in issue order. Published from the worker
+    /// because that is where a seek is actually sent.
+    void seeksChanged(quint64 total);
 
 private:
     /// One step at a time; a superseding request is served once the current
@@ -319,6 +323,8 @@ private:
     qint64 deadlineMs_ = 0;
     qint64 retryAfterMs_ = 0;
     qint64 idleSinceMs_ = 0;
+    /// Seeks mpv accepted. Monotonic for the lifetime of this worker.
+    quint64 seekCount_ = 0;
     /// Pushed forward by every hover: only a pointer at rest is served.
     qint64 startAfterMs_ = 0;
     /// A completion read is in flight; the tick must not issue a second one.
@@ -405,6 +411,11 @@ void FramePreviewWorker::requestFrame(quint64 token, double seconds) {
     idleSinceMs_ = startAfterMs_;
     pump();
     updateTimer();
+}
+
+void FramePreviewWorker::noteActivity() {
+    // Playback, a pointer or a transport action: the decoder is still wanted.
+    idleSinceMs_ = nowMs();
 }
 
 void FramePreviewWorker::cancelPending() {
@@ -703,12 +714,16 @@ void FramePreviewWorker::startSeek() {
     const AsyncRequestId request = core_->commandAsync(
         {"seek", mpvNumber(activeSeconds_), mode},
         [this, token](const AsyncReply& reply) {
-            if (phase_ != Phase::Seek) return;
-            // A refusal for a superseded seek says nothing about its replacement.
-            if (token != activeToken_ || token != requestedToken_) return;
             if (!reply.ok()) {
+                // A refusal for a superseded seek says nothing about its replacement.
+                if (phase_ != Phase::Seek) return;
+                if (token != activeToken_ || token != requestedToken_) return;
                 fail(tr("The source refused the seek: %1").arg(coreError(reply.error)));
+                return;
             }
+            // Counted where mpv accepted it, not where the request was queued: an
+            // accepted seek was paid for even when the state machine moved on.
+            emit seeksChanged(++seekCount_);
         });
     if (!request.valid()) fail(tr("The player would not take the seek request."));
 }
@@ -939,6 +954,15 @@ void FramePreviewService::prewarm(double seconds) {
     emit frameRequested(prewarmToken_, seconds);
 }
 
+void FramePreviewService::noteActivity() {
+    // No worker means no decoder to keep warm, and creating one for a mouse move
+    // would put a second libmpv core beside a stream that is still opening.
+    if (stopped_ || worker_ == nullptr) return;
+    if (activitySince_.isValid() && activitySince_.elapsed() < 1000) return;
+    activitySince_.start();
+    emit activityNoted();
+}
+
 void FramePreviewService::cancel() {
     pendingToken_ = 0;
     prewarmToken_ = 0;
@@ -984,6 +1008,10 @@ void FramePreviewService::ensureWorker() {
             Qt::QueuedConnection);
     connect(this, &FramePreviewService::cancelRequested, worker, &FramePreviewWorker::cancelPending,
             Qt::QueuedConnection);
+    connect(this, &FramePreviewService::activityNoted, worker, &FramePreviewWorker::noteActivity,
+            Qt::QueuedConnection);
+    connect(worker, &FramePreviewWorker::seeksChanged, this,
+            [this](quint64 total) { stats_.seeks = total; }, Qt::QueuedConnection);
     connect(worker, &FramePreviewWorker::frameReady, this,
             [this](quint64 token, double requestedSeconds, double decodedSeconds,
                    const QImage& frame) {

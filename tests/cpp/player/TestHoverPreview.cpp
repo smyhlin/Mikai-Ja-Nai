@@ -483,9 +483,11 @@ void TestHoverPreview::aHoveredInstantIsDecodedAndOnlyTheNewestServes() {
     QCOMPARE(frameFor(4).requestedSeconds, 4.0);
 
     // A hover racing a media change: the frame belongs to the source the card
-    // has left, so it must not reach it at all.
+    // has left, so it must not reach it at all. The instant is one the store
+    // cannot answer - 1.0 was decoded by the first hover and would be published
+    // inside the request itself, before the media change exists.
     const qsizetype settled = frames.size();
-    service.requestFrame(5, 1.0);
+    service.requestFrame(5, 9.0);
     service.setSource(absentClip(), 2);
     QVERIFY2(!settleUntil([&] { return frames.size() > settled; }, 2000),
              "a frame of the replaced source survived the media change");
@@ -709,9 +711,12 @@ void TestHoverPreview::aDecodingCardNamesTheWaitAndARefusalStaysNamed() {
     card.setSource(absentClip(), 2);
     card.present(4.0, host.mapToGlobal(anchor), QRect(host.mapToGlobal(bar.topLeft()), bar.size()),
                  QString(), /*allowFrame=*/true);
-    QVERIFY2(settleUntil([&] { return !card.statusText().isEmpty() && !card.hasFrame(); }, 20000),
+    // The refusal, not the wait: a card with no picture already names its wait,
+    // so the state to wait for is the one that carries the decoder's own reason.
+    QVERIFY2(settleUntil([&] { return !card.statusDetail().isEmpty(); }, 20000),
              "a refused preview must say so instead of staying blank");
-    QVERIFY2(!card.statusDetail().isEmpty(), "the refusal keeps the decoder's own reason");
+    QVERIFY2(!card.statusText().isEmpty(), "the refusal is a named state, not a blank card");
+    QVERIFY2(!card.hasFrame(), "a refusal leaves no picture behind as if it were the instant");
     QVERIFY2(!card.isFrameStale(), "a refusal is not a stale picture");
     card.dismiss();
 }
@@ -909,4 +914,72 @@ void TestHoverPreview::aCardRescuedInTheBandIsDismissedWhenThePointerLeavesIt() 
         QThread::msleep(50);
     }
     QVERIFY2(!card->isVisible(), "the card outlived the pointer leaving the bar-and-card band");
+}
+
+void TestHoverPreview::aCacheHitSpendsNoSeekAndADecodeCountsItsOwn() {
+    if (!requireRuntime()) return;
+    const QString clip = fixtureClip();
+    QVERIFY2(QFileInfo::exists(clip), qPrintable(clip));
+
+    QList<FrameReply> frames;
+    FramePreviewService service;
+    QObject::connect(&service, &FramePreviewService::frameReady, &service,
+                     [&frames](quint64 token, double requestedSeconds, double decodedSeconds,
+                               const QImage& image) {
+                         frames.append(FrameReply{token, requestedSeconds, decodedSeconds, image});
+                     });
+    service.setSource(clip, 1);
+    service.requestFrame(1, 3.0);
+    QVERIFY2(settleUntil([&] { return frames.size() == 1; }, 20000),
+             "the decoder never answered the first hover");
+
+    // A decoded instant paid for its seeks: at most a keyframe pass and the exact
+    // seek that refines it, and at least one of them. A request is not a seek.
+    const FramePreviewStats decoded = service.stats();
+    QCOMPARE(decoded.workerRequests, quint64(1));
+    QVERIFY2(decoded.seeks >= 1, "a decoded instant accepted a seek");
+    QVERIFY2(decoded.seeks <= 2, "a far jump is one keyframe pass and one exact seek");
+
+    // The store answers the same instant without spending another one.
+    service.requestFrame(2, 3.0);
+    QCOMPARE(frames.size(), 2);
+    const FramePreviewStats hit = service.stats();
+    QCOMPARE(hit.cacheHits, decoded.cacheHits + 1);
+    QCOMPARE(hit.seeks, decoded.seeks);
+    QVERIFY2(hit.lastHitLatencyUs >= 0 && hit.lastHitLatencyUs < 5000,
+             "a stored answer is a lookup and a signal, not a decode");
+
+    service.shutdown();
+}
+
+void TestHoverPreview::shellActivityWithoutAHoverStartsNoPreviewDecoder() {
+    mplayer::shell::PlayerShell shell;
+    shell.resize(1000, 620);
+    shell.setMedia(QStringLiteral("activity-without-hover-fixture.mp4"));
+    shell.setDuration(120.0);
+    shell.show();
+    QCoreApplication::processEvents();
+
+    auto* card = shell.findChild<HoverPreview*>(QStringLiteral("playerHoverPreview"));
+    QVERIFY(card != nullptr);
+
+    // Playback advancing, a pause and a pointer over the picture: activity a
+    // viewer makes before ever touching the timeline. None of it may create the
+    // second decoder or queue a frame request - keeping a warm core warm is the
+    // only thing activity is allowed to do.
+    for (int tick = 0; tick < 8; ++tick) {
+        shell.setPosition(double(tick) * 0.5);
+        shell.setPlaying(tick % 2 == 0);
+        const QPoint spot = shell.rect().center();
+        QMouseEvent move(QEvent::MouseMove, QPointF(spot), QPointF(shell.mapToGlobal(spot)),
+                         Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&shell, &move);
+        QCoreApplication::processEvents();
+    }
+
+    const FramePreviewStats stats = card->previewStats();
+    QCOMPARE(stats.requests, quint64(0));
+    QCOMPARE(stats.workerRequests, quint64(0));
+    QCOMPARE(stats.seeks, quint64(0));
+    QVERIFY(!card->isVisible());
 }

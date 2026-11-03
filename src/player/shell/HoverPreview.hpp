@@ -41,6 +41,8 @@ bool previewReplyMatches(quint64 replyToken, quint64 currentToken, double replyS
 /// span. A pointer leaving the timeline for the card it just opened must not
 /// kill the card halfway across the gap, which is why the band and not the two
 /// rects alone is the answer. All three are in the same (global) coordinates.
+/// Both rects must exist: a bar that is gone leaves no band, and the shell ends
+/// that card itself instead of asking this policy.
 bool hoverCardKeepsPointer(const QRect& bar, const QRect& card, const QPoint& cursor);
 
 /// The hover card of one player window.
@@ -68,6 +70,13 @@ public:
     /// decoder serves a card request first, and a hover that arrives during a
     /// warm-up replaces it. Never published to the card as its own reply.
     void prewarm(double seconds);
+
+    /// A player interaction that is not a hover - playback, a pointer move, a
+    /// seek, a pause - so a decoder this session already warmed is not released
+    /// while somebody is still watching. Cheap enough to call per event: the
+    /// service coalesces a burst to one message a second and never starts
+    /// anything that was not already running.
+    void noteActivity();
 
     /// Hides the card and drops the outstanding decode.
     void dismiss();

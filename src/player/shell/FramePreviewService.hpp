@@ -105,6 +105,11 @@ struct FramePreviewStats {
     quint64 cacheHits = 0;
     /// Forwarded to the decoder: a load, a seek and a capture at most once.
     quint64 workerRequests = 0;
+    /// Seek commands mpv accepted on the preview core, counted on the worker
+    /// where they are issued: an exact one, or a keyframe pass plus the exact
+    /// refinement that follows it, per request served from a miss. A request is
+    /// not a seek, so this is the number a "the store answered" claim uses.
+    quint64 seeks = 0;
     /// Wall time of the last cache hit, including the reply. A hit is a lookup
     /// and a signal, so this is microseconds in practice and any number above a
     /// millisecond means something else answered.
@@ -148,6 +153,14 @@ public:
     /// while playback is genuinely running never competes with the first frame.
     void prewarm(double seconds);
 
+    /// Player activity that is not a hover: playback advancing, a pointer move
+    /// over the window, a seek, a pause. A warm preview core is worth keeping
+    /// exactly as long as somebody is still watching, so the idle release counts
+    /// a session nobody touched rather than a session that has been open for
+    /// five minutes. Never creates a worker, and a burst of activity is
+    /// coalesced to one message per second, so a per-frame caller queues nothing.
+    void noteActivity();
+
     /// Drops the outstanding request. A capture in flight is cancelled; a seek
     /// or a load that cannot be recalled settles without answering.
     void cancel();
@@ -175,6 +188,7 @@ signals:
     void sourceChanged(const QString& url, quint64 generation);
     void frameRequested(quint64 token, double seconds);
     void cancelRequested();
+    void activityNoted();
 
 private:
     void ensureWorker();
@@ -199,6 +213,9 @@ private:
     QHash<quint64, quint64> requestEpochs_;
     /// Started with each worker request; read when its reply settles.
     QElapsedTimer pendingSince_;
+    /// The last activity this service forwarded, so a caller that reports every
+    /// mouse move and every playback tick costs one comparison.
+    QElapsedTimer activitySince_;
     quint64 prewarmToken_ = 0;
     quint64 nextInternalToken_ = kInternalTokenBit;
     bool stopped_ = false;

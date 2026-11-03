@@ -46,6 +46,8 @@ private slots:
     // rescued card is still ended when the pointer leaves its band.
     void aCachedAnswerForTheNewestRequestSettlesTheCard();
     void aCardRescuedInTheBandIsDismissedWhenThePointerLeavesIt();
+    void aCacheHitSpendsNoSeekAndADecodeCountsItsOwn();
+    void shellActivityWithoutAHoverStartsNoPreviewDecoder();
 
 private:
     // True when a runtime is selected. Without a module it skips; a selection

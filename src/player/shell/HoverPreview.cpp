@@ -78,8 +78,11 @@ bool previewReplyMatches(quint64 replyToken, quint64 currentToken, double replyS
 }
 
 bool hoverCardKeepsPointer(const QRect& bar, const QRect& card, const QPoint& cursor) {
-    if (bar.contains(cursor) || card.contains(cursor)) return true;
+    // A pair needs both rects: with no bar there is nothing the card was opened
+    // from, so the card has no band to keep a pointer in and the shell's own
+    // dismissal of a vanished timeline is what ends it.
     if (bar.isEmpty() || card.isEmpty()) return false;
+    if (bar.contains(cursor) || card.contains(cursor)) return true;
     // The band the two rects span: the gap between the bar and the card is part
     // of the journey, and a pointer crossing it is not a pointer that left.
     return bar.united(card).contains(cursor);
@@ -169,6 +172,11 @@ void HoverPreview::prewarm(double seconds) {
     service_->prewarm(seconds);
 }
 
+void HoverPreview::noteActivity() {
+    if (released_ || service_ == nullptr) return;
+    service_->noteActivity();
+}
+
 void HoverPreview::dismiss() {
     ++token_;
     if (service_ != nullptr) service_->cancel();
@@ -195,11 +203,22 @@ FramePreviewStats HoverPreview::previewStats() const {
 void HoverPreview::applyFrame(quint64 token, double requestedSeconds, double decodedSeconds,
                               const QImage& frame) {
     if (released_ || frame.isNull() || !isVisible()) return;
+    const bool newest = previewReplyMatches(token, token_, requestedSeconds, seconds_);
+    if (newest) {
+        // The answer settles the card before it is weighed as a picture: a cache
+        // hit for the instant under the pointer is often the same frame the card
+        // already shows, and leaving "Decoding preview…" over it is a wait that
+        // is over.
+        status_.clear();
+        detail_.clear();
+        refused_ = false;
+    }
     // A picture already closer to the instant under the pointer than this one is
     // the better placeholder; a decode that finished late must not walk the card
     // backwards to an older instant.
     if (!frame_.isNull() && std::isfinite(decodedSeconds) &&
         std::abs(frameSeconds_ - seconds_) <= std::abs(decodedSeconds - seconds_)) {
+        if (newest) chromeUpdate(this);
         return;
     }
     frame_ = frame;
@@ -209,11 +228,7 @@ void HoverPreview::applyFrame(quint64 token, double requestedSeconds, double dec
     if (frame.width() > 0 && frame.height() > 0) {
         aspect_ = static_cast<double>(frame.width()) / static_cast<double>(frame.height());
     }
-    if (previewReplyMatches(token, token_, requestedSeconds, seconds_)) {
-        status_.clear();
-        detail_.clear();
-        refused_ = false;
-    } else {
+    if (!newest) {
         status_ = tr("Decoding preview…");
         detail_.clear();
         refused_ = false;

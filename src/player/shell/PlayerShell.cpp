@@ -428,6 +428,9 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
             // Still on the way to (or on) the card: keep it and the chrome that
             // carries it awake.
             wake();
+            // And keep watching the band: one rescue must not be the last word
+            // on a pointer that is still on its way out of it.
+            hoverLeaveTimer_.start();
             return;
         }
         dismissHoverPreview();
@@ -539,6 +542,11 @@ void PlayerShell::buildSurface() {
     // The warm-up waits for a frame that actually swapped on this core: a load
     // request, a mediaLoaded event or a thumbnail is not a picture on screen.
     connect(surface_, &QOpenGLWidget::frameSwapped, this, &PlayerShell::schedulePreviewPrewarm);
+}
+
+void PlayerShell::notePreviewActivity() {
+    if (hoverPreview_ == nullptr) return;
+    hoverPreview_->noteActivity();
 }
 
 void PlayerShell::schedulePreviewPrewarm() {
@@ -1161,6 +1169,9 @@ void PlayerShell::wake() {
         applyState();
     }
     hideTimer_.start(kAutohideMs);
+    // A pointer or a key that crossed the window is a viewer still at the
+    // player: the preview decoder warmed for them must not be released as idle.
+    notePreviewActivity();
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1302,6 +1313,8 @@ void PlayerShell::setDuration(double seconds) {
 void PlayerShell::setPosition(double seconds) {
     position_ = std::max(0.0, seconds);
     updateTimeLabels();
+    // Playback advancing is the least ambiguous activity there is.
+    notePreviewActivity();
     // The video clock is what offers a skip segment, so every position is a
     // chance to enter or leave one. The comparison inside is what keeps a tick
     // inside the same segment from touching a widget.
@@ -1312,6 +1325,8 @@ void PlayerShell::setPlaying(bool playing) {
     playing_ = playing;
     updatePlayIcon();
     updateCenterGlyph();
+    // A pause is a viewer stopping to look: the keep-warm clock restarts here too.
+    notePreviewActivity();
     if (!hudHidden_) {
         hideTimer_.start(kAutohideMs);
     }
@@ -2378,6 +2393,21 @@ void PlayerShell::mousePressEvent(QMouseEvent* event) {
 
 void PlayerShell::mouseMoveEvent(QMouseEvent* event) {
     wake();
+
+    // A move the shell itself sees is a pointer over the picture, not over the
+    // timeline: while a card stands, that is the pointer leaving the band it
+    // spans. The grace timer is what makes it a journey rather than an absence -
+    // the next move can still land on the card - and it re-checks the pointer it
+    // is given rather than assuming the departure held.
+    if (hoverPreview_ != nullptr && hoverPreview_->isVisible() && scrub_ != nullptr) {
+        const QRect barGlobal(scrub_->mapToGlobal(QPoint(0, 0)), scrub_->size());
+        const QRect cardGlobal(hoverPreview_->mapToGlobal(QPoint(0, 0)), hoverPreview_->size());
+        if (hoverCardKeepsPointer(barGlobal, cardGlobal, event->globalPosition().toPoint())) {
+            hoverLeaveTimer_.stop();
+        } else {
+            hoverLeaveTimer_.start();
+        }
+    }
 
     if (resizingLeft_ || resizingTop_ || resizingRight_ || resizingBottom_) {
         QRect g = dragGeometry_;
