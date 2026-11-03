@@ -57,6 +57,7 @@
 #include "IdentityOnnxFixture.hpp"
 
 #include <chrono>
+#include <cstdlib>
 #include <functional>
 #include <future>
 #include <memory>
@@ -3437,11 +3438,16 @@ int main(int argc, char** argv) {
         // The acquisition needs a real backend client and a real runner. No
         // credential is consulted for the pinned raw.githubusercontent.com URLs,
         // and the environment-file search is pointed at a file this run owns, so
-        // a stray .env beside the output directory cannot supply one.
+        // a stray .env beside the output directory cannot supply one. The
+        // environment variable is cleared too: the default constructor adopts
+        // MIKAI_API_KEY, so leaving it set would break the anonymous contract.
         mikai::backend::setEnvFilePathOverride(
             QDir(mikai::probes::isolation::isolatedRoot())
                 .filePath(QStringLiteral("probe-anonymous.env")));
+        qunsetenv("MIKAI_API_KEY");
         mikai::backend::MikaiClient acquisitionClient;
+        check(acquisitionClient.apiKey().isEmpty(),
+              "the acquisition client carries no credential");
         Runner acquisitionRunner;
         SpatialAcquisitionEvidence evidence;
         {
@@ -3454,6 +3460,8 @@ int main(int argc, char** argv) {
         }
         // Drain before the borrowed client leaves scope: every transfer the tab
         // started must be retired while the client it captured is still alive.
+        // Cancel first so a stuck unit cannot outlive the finite drain budget.
+        acquisitionRunner.cancel();
         const bool drained = acquisitionRunner.waitForDone(30000);
         check(drained, "the acquisition runner drained while its client was still alive");
 
@@ -3489,22 +3497,40 @@ int main(int argc, char** argv) {
         QJsonArray screenshots;
         for (const QString& shot : evidence.screenshots) screenshots.append(shot);
         result.insert(QStringLiteral("screenshots"), screenshots);
-        result.insert(QStringLiteral("passed"), failures == 0);
+        // The final verdict is the post-drain one: a run that acquired every
+        // graph but could not retire its workers is not a pass.
+        const bool passed = failures == 0 && drained;
+        result.insert(QStringLiteral("passed"), passed);
         result.insert(QStringLiteral("checks"), checks);
         result.insert(QStringLiteral("failures"), failures);
         QFile evidenceFile(QStringLiteral("native-spatial-acquisition-evidence.json"));
-        if (evidenceFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            evidenceFile.write(QJsonDocument(result).toJson(QJsonDocument::Indented));
+        const bool evidenceWritten = [&result, &evidenceFile] {
+            if (!evidenceFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+            const QByteArray payload = QJsonDocument(result).toJson(QJsonDocument::Indented);
+            const bool wrote = evidenceFile.write(payload) == payload.size();
             evidenceFile.close();
-        } else {
-            check(false, "the spatial acquisition evidence was written");
+            return wrote;
+        }();
+        if (!evidenceWritten) {
+            std::fprintf(stderr, "FAIL the spatial acquisition evidence was written\n");
         }
         std::fprintf(stderr,
                      "[native_settings_probe spatial-acquisition-only] %s (%d failures) "
-                     "live=%d proof=%d transition-records=%d\n",
-                     failures == 0 ? "PASS" : "FAIL", failures, live ? 1 : 0,
-                     proof ? 1 : 0, static_cast<int>(evidence.transitions.size()));
-        return failures == 0 ? 0 : 1;
+                     "live=%d proof=%d drained=%d transition-records=%d\n",
+                     passed ? "PASS" : "FAIL", failures, live ? 1 : 0, proof ? 1 : 0,
+                     drained ? 1 : 0, static_cast<int>(evidence.transitions.size()));
+        if (!drained) {
+            // Returning would destroy the borrowed client while workers it
+            // captured may still be running. The evidence is already on disk;
+            // leave through the process boundary so the isolation gate removes
+            // the owned child and its scratch without unwinding here.
+            std::fprintf(stderr,
+                         "[native_settings_probe spatial-acquisition-only] the runner did "
+                         "not drain; exiting without unwinding the borrowed client\n");
+            std::fflush(stderr);
+            std::_Exit(1);
+        }
+        return passed && evidenceWritten ? 0 : 1;
     }
 
     if (hdrSettingsOnly) {
