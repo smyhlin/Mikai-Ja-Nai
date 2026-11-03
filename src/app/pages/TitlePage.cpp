@@ -590,11 +590,12 @@ void TitlePage::buildHeader() {
 
     // One control height across the row, so the pills, the rate chip and the
     // gear read as a single bar whatever the font does to their text.
-    QPushButton* const headerControls[] = {backButton_, homeButton_, settingsButton_};
-    for (QPushButton* control : headerControls) {
+    for (QPushButton* control : {backButton_, homeButton_}) {
         control->setMinimumHeight(theme::kControlHeight);
     }
-    settingsButton_->setMinimumWidth(theme::kControlHeight);
+    // The gear is the one fixed square: an icon chip whose box no label or
+    // style padding may widen.
+    settingsButton_->setFixedSize(theme::kControlHeight, theme::kControlHeight);
 
     rateLabel_ = new RateLimitLabel(client_, headerRow_);
     headerRowLayout_->addWidget(backButton_);
