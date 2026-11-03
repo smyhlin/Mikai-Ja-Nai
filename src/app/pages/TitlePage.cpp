@@ -606,6 +606,14 @@ void TitlePage::buildHeader() {
     headerRowLayout_->addWidget(settingsButton_);
 }
 
+void TitlePage::refreshActionWidths() {
+    // Captions arrive with the detail, the history and the episode, so the
+    // groups are measured again after each of those, not once at construction.
+    theme::equalizeWidths({backButton_, homeButton_});
+    theme::equalizeWidths({heroWatchButton_, episodesButton_, metaButton_}, 148);
+    theme::equalizeWidths({watchWatchedButton_, watchButton_});
+}
+
 void TitlePage::buildBody() {
     buildHero();
     buildEpisodeWorkspace();
@@ -754,9 +762,7 @@ void TitlePage::buildHero() {
     connect(metaButton_, &QPushButton::toggled, this, &TitlePage::toggleMetadata);
     heroActions->addWidget(metaButton_);
     heroActions->setAlignment(metaButton_, Qt::AlignVCenter);
-    // The three hero actions are one group: one width, measured from whichever
-    // of the three captions is widest, and the 148 px floor the design names.
-    theme::equalizeWidths({heroWatchButton_, episodesButton_, metaButton_}, 148);
+    refreshActionWidths();
     QWidget::setTabOrder(heading_, subtitle_);
     QWidget::setTabOrder(subtitle_, heroWatchButton_);
     QWidget::setTabOrder(heroWatchButton_, episodesButton_);
@@ -1008,7 +1014,7 @@ void TitlePage::buildEpisodeWorkspace() {
     watchActions->setLayout(watchActionsLayout);
     watchActionsLayout->addWidget(watchWatchedButton_);
     watchActionsLayout->addWidget(watchButton_);
-    theme::equalizeWidths({watchWatchedButton_, watchButton_});
+    refreshActionWidths();
     watchLayout_->addWidget(watchActions, 0, Qt::AlignVCenter);
     watchPanel_->hide();
 
@@ -2429,6 +2435,9 @@ void TitlePage::updateWatchPanel() {
             watched ? tr("%1 — mark as unwatched").arg(watchEpisode_->text())
                     : tr("%1 — mark as watched").arg(watchEpisode_->text()));
     }
+    // These captions change with the episode and the history, so the width is
+    // measured here and not only at construction.
+    refreshActionWidths();
 }
 
 QString TitlePage::episodeType(const EpisodeEntry* entry) const {
@@ -3160,15 +3169,13 @@ void TitlePage::changeEvent(QEvent* event) {
     } else if (event->type() == QEvent::FontChange ||
                event->type() == QEvent::ApplicationFontChange ||
                event->type() == QEvent::StyleChange) {
-        // A new font changes every advance the two groups were measured from.
-        theme::equalizeWidths({heroWatchButton_, episodesButton_, metaButton_}, 148);
-        theme::equalizeWidths({watchWatchedButton_, watchButton_});
+        // A new font changes every advance the groups were measured from.
+        refreshActionWidths();
     } else if (event->type() == QEvent::DevicePixelRatioChange ||
                event->type() == QEvent::ScreenChangeInternal) {
         // The even-width rounding is a device-pixel decision, so a ratio change
-        // measures both groups again.
-        theme::equalizeWidths({heroWatchButton_, episodesButton_, metaButton_}, 148);
-        theme::equalizeWidths({watchWatchedButton_, watchButton_});
+        // measures every group again.
+        refreshActionWidths();
         // Frames are painted at the ratio they will be shown at: a window that
         // moves to another screen repaints them instead of scaling the old ones.
         for (const auto& entry : relatedPosterImages_) {
@@ -4036,10 +4043,9 @@ void TitlePage::retranslateUi() {
     refreshRelatedTexts();
     refreshReleaseTexts();
     refreshEpisodeTexts();
-    // The action captions changed, so both groups are measured again from the
-    // font they now render in; a longer translation widens the group.
-    theme::equalizeWidths({heroWatchButton_, episodesButton_, metaButton_}, 148);
-    theme::equalizeWidths({watchWatchedButton_, watchButton_});
+    // The action captions changed, so every group is measured again from the
+    // font it now renders in; a longer translation widens the group.
+    refreshActionWidths();
     updateEpisodeSummary();
     if (hasDetail_) {
         updateLicenseInfo(player_);

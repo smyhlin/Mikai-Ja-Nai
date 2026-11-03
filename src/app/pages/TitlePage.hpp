@@ -352,6 +352,8 @@ private:
     /// title, the release/episode selection, the expansion toggles, the scroll
     /// position, the open players and every task in flight are left exactly as
     /// they were: nothing is reloaded, refetched or rebuilt from data.
+    /// Re-measures every action group from the captions and fonts live now.
+    void refreshActionWidths();
     void retranslateUi();
     /// Facts, scores, details rows and links, rebuilt from the retained detail.
     void refreshDetailTexts();
