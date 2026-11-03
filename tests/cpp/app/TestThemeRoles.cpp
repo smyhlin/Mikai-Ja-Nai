@@ -262,15 +262,20 @@ WidgetPixels grabWidget(QWidget& widget) {
 struct RoleSample {
     QColor fill;
     QColor border;
+    WidgetPixels pixels;
+    int width = 0;
+    int height = 0;
 };
 
 RoleSample sampleRole(QPushButton& button, RoleState state) {
     RoleSample sample;
     if (button.width() < 8 || button.height() < 8) return sample;
-    const WidgetPixels pixels = grabRoleState(button, state);
-    if (pixels.image.isNull()) return sample;
-    sample.fill = pixels.at(qMin(4, button.width() / 4), button.height() / 2);
-    sample.border = pixels.at(button.width() / 2, 0);
+    sample.pixels = grabRoleState(button, state);
+    if (sample.pixels.image.isNull()) return sample;
+    sample.width = button.width();
+    sample.height = button.height();
+    sample.fill = sample.pixels.at(qMin(4, sample.width / 4), sample.height / 2);
+    sample.border = sample.pixels.at(sample.width / 2, 0);
     return sample;
 }
 
@@ -279,6 +284,27 @@ RoleSample sampleRole(QPushButton& button, RoleState state) {
 QColor perceived(const QColor& pixel, const QColor& bed) {
     if (!pixel.isValid()) return QColor();
     return over(pixel, bed, pixel.alpha() / 255.0);
+}
+
+/// The strongest labelled-text contrast inside the control: the core of a glyph
+/// stroke against the surface it is painted on. The border ring is excluded, so
+/// a borderless role is measured by its text and a filled one by whichever of
+/// the two carries more.
+double textContrast(const RoleSample& sample, const QColor& bed) {
+    if (sample.width <= 4 || sample.height <= 4 || sample.pixels.image.isNull()) return 0.0;
+    const QColor surface = perceived(sample.fill, bed);
+    double best = 0.0;
+    for (int y = 2; y < sample.height - 2; ++y) {
+        for (int x = 2; x < sample.width - 2; ++x) {
+            // A borderless role paints its label with an alpha of its own, so
+            // every pixel is composited onto the surface it is drawn over
+            // rather than filtered by its opacity.
+            const QColor pixel = sample.pixels.at(x, y);
+            const QColor seen = over(pixel, surface, pixel.alpha() / 255.0);
+            best = std::max(best, independentContrast(seen, surface));
+        }
+    }
+    return best;
 }
 
 /// How much of a state's appearance a viewer can actually see, compared with the
@@ -480,12 +506,6 @@ void TestThemeRoles::roleStatesRenderTheirDocumentedContract() {
             const QString roleName = mikai::app::theme::actionRoleName(role);
             QMap<int, RoleSample> samples;
             for (RoleState state : states) {
-                // Neither the primary nor the danger role defines a checked
-                // state; the sheets say so by having no rule for it.
-                if (state == RoleState::Checked &&
-                    (role == ActionRole::Primary || role == ActionRole::Danger)) {
-                    continue;
-                }
                 setVisualState(button, state);
                 QVERIFY2(button.isVisible(), "the role host must be visible to render");
                 samples.insert(slot(state), sampleRole(button, state));
@@ -547,13 +567,14 @@ void TestThemeRoles::roleStatesRenderTheirDocumentedContract() {
                     QVERIFY2(error.isEmpty(), qPrintable(error));
                 }
             } else if (role == ActionRole::Ghost) {
-                for (RoleState state : {RoleState::Checked, RoleState::Focus}) {
+                for (RoleState state : {RoleState::Hover, RoleState::Pressed, RoleState::Checked,
+                                        RoleState::Focus}) {
                     const QString error = hueError(state, accent, QStringLiteral("the ghost edge"));
                     QVERIFY2(error.isEmpty(), qPrintable(error));
                 }
             } else {
                 for (RoleState state : {RoleState::Normal, RoleState::Hover, RoleState::Pressed,
-                                        RoleState::Focus}) {
+                                        RoleState::Checked, RoleState::Focus}) {
                     const QString error = hueError(state, danger, QStringLiteral("the danger edge"));
                     QVERIFY2(error.isEmpty(), qPrintable(error));
                 }
@@ -574,22 +595,44 @@ void TestThemeRoles::roleStatesRenderTheirDocumentedContract() {
             for (RoleState state : states) {
                 if (!samples.contains(slot(state))) continue;
                 const bool neutralBoundary =
-                    (role == ActionRole::Primary && state == RoleState::Disabled) ||
+                    (state == RoleState::Disabled &&
+                     (role == ActionRole::Primary || role == ActionRole::Secondary ||
+                      role == ActionRole::Danger)) ||
                     (role == ActionRole::Secondary &&
-                     (state == RoleState::Normal || state == RoleState::Pressed ||
-                      state == RoleState::Disabled));
+                     (state == RoleState::Normal || state == RoleState::Pressed));
                 if (!neutralBoundary) continue;
                 const QString error = boundaryError(state);
                 QVERIFY2(error.isEmpty(), qPrintable(error));
             }
 
-            // ── Every documented state reads differently from rest ──────────
-            // The ghost role defines no pressed rule, and the danger role keeps
-            // its colour identity in every state (only its wash moves), so those
-            // two are the documented exceptions rather than hidden tolerances.
+            // ── A disabled control stays readable whichever part carries it ─
+            // Filled roles are carried by their boundary; a borderless role by
+            // its text. One gate covers both, so no role needs an exemption.
+            {
+                const RoleSample disabled = samples.value(slot(RoleState::Disabled));
+                const double edge = independentContrast(perceived(disabled.border, bed), bed);
+                const double text = textContrast(disabled, bed);
+                QVERIFY2(std::max(edge, text) >= 3.0,
+                         qPrintable(detail(RoleState::Disabled,
+                                           QStringLiteral("a disabled control must stay readable: "
+                                                          "boundary %1:1, text %2:1")
+                                               .arg(edge, 0, 'f', 2)
+                                               .arg(text, 0, 'f', 2))));
+            }
+
+            // ── Focus is always drawn, and always solid ─────────────────────
+            {
+                const RoleSample focused = samples.value(slot(RoleState::Focus));
+                QVERIFY2(focused.border.alpha() >= 250,
+                         qPrintable(detail(RoleState::Focus,
+                                           QStringLiteral("the focus edge must be painted solid, it "
+                                                          "is alpha %1")
+                                               .arg(focused.border.alpha()))));
+            }
+
+            // ── Every state reads differently from rest ─────────────────────
             for (RoleState state : states) {
-                if (state == RoleState::Normal || !samples.contains(slot(state))) continue;
-                if (role == ActionRole::Ghost && state == RoleState::Pressed) continue;
+                if (state == RoleState::Normal) continue;
                 const int delta = perceivedDistance(resting, samples.value(slot(state)), bed);
                 QVERIFY2(delta >= kFeedbackFloor,
                          qPrintable(detail(state,
