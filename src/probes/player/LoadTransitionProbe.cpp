@@ -26,6 +26,7 @@
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
 #include <QPointer>
+#include <QScreen>
 #include <QScopeGuard>
 #include <QSettings>
 #include <QStringList>
@@ -662,6 +663,39 @@ QJsonObject passObject(const PassSummary& summary) {
                        {"max_us", summary.max}};
 }
 
+/// The scale facts a paint-cost number is only comparable inside: the surface's
+/// own DPR and the logical/device size it paints into, the screen Qt resolved it
+/// on, and the launch-time QT_SCALE_FACTOR. Read from the widget and the display,
+/// never by asking for a paint and never by resizing anything - a historical
+/// before-side that did not record these cannot be told from this one without
+/// them, and matching a host at a different DPR is guesswork.
+QJsonObject scaleEnvironment(const QWidget* widget) {
+    QJsonObject out;
+    if (widget == nullptr) return out;
+    const qreal ratio = widget->devicePixelRatioF();
+    const QSize logical = widget->size();
+    out.insert(QStringLiteral("surfaceDevicePixelRatio"), ratio);
+    out.insert(QStringLiteral("surfaceLogicalWidth"), logical.width());
+    out.insert(QStringLiteral("surfaceLogicalHeight"), logical.height());
+    // The surface paints with NoPartialUpdate into a default framebuffer sized by
+    // the widget times its DPR; this is that size, not a measured GL query.
+    out.insert(QStringLiteral("surfaceDeviceWidth"), qRound(logical.width() * ratio));
+    out.insert(QStringLiteral("surfaceDeviceHeight"), qRound(logical.height() * ratio));
+    if (const QScreen* screen = widget->screen()) {
+        const QRect geometry = screen->geometry();
+        out.insert(QStringLiteral("screenName"), screen->name());
+        out.insert(QStringLiteral("screenLogicalX"), geometry.x());
+        out.insert(QStringLiteral("screenLogicalY"), geometry.y());
+        out.insert(QStringLiteral("screenLogicalWidth"), geometry.width());
+        out.insert(QStringLiteral("screenLogicalHeight"), geometry.height());
+        out.insert(QStringLiteral("screenNativeDevicePixelRatio"), screen->devicePixelRatio());
+    }
+    const QString scaleFactor = qEnvironmentVariable("QT_SCALE_FACTOR");
+    out.insert(QStringLiteral("qtScaleFactor"),
+               scaleFactor.isEmpty() ? QStringLiteral("unset") : scaleFactor);
+    return out;
+}
+
 void reportPasses(const QString& scope) {
     for (int pass = 0; pass < mikai::gui::uiprofile::kPaintPassCount; ++pass) {
         const PassSummary summary = summarize(pass);
@@ -1166,6 +1200,25 @@ int run(int argc, char** argv) {
                                 {"videoWidth", baseline.videoWidth},
                                 {"videoHeight", baseline.videoHeight},
                                 {"judgedRegions", baseline.judgedRegions()}});
+    // Recorded before any measured stage and outside every timed paint: the
+    // hovering numbers are only comparable to a run on the same surface DPR and
+    // the same screen geometry.
+    evidence.insert(QStringLiteral("scaleEnvironment"), scaleEnvironment(surface));
+    {
+        const QJsonObject environment = scaleEnvironment(surface);
+        metric(QStringLiteral("scale: surface_dpr=%1 logical=%2x%3 device=%4x%5 "
+                              "screen=%6 %7x%8 native_dpr=%9 qt_scale_factor=%10")
+                   .arg(environment.value(QStringLiteral("surfaceDevicePixelRatio")).toDouble())
+                   .arg(environment.value(QStringLiteral("surfaceLogicalWidth")).toInt())
+                   .arg(environment.value(QStringLiteral("surfaceLogicalHeight")).toInt())
+                   .arg(environment.value(QStringLiteral("surfaceDeviceWidth")).toInt())
+                   .arg(environment.value(QStringLiteral("surfaceDeviceHeight")).toInt())
+                   .arg(environment.value(QStringLiteral("screenName")).toString())
+                   .arg(environment.value(QStringLiteral("screenLogicalWidth")).toInt())
+                   .arg(environment.value(QStringLiteral("screenLogicalHeight")).toInt())
+                   .arg(environment.value(QStringLiteral("screenNativeDevicePixelRatio")).toDouble())
+                   .arg(environment.value(QStringLiteral("qtScaleFactor")).toString()));
+    }
     {
         const PictureRead settled =
             readPicture(surface, baseline.device, baseline.videoWidth, baseline.videoHeight);
@@ -1195,6 +1248,9 @@ int run(int argc, char** argv) {
         // difference of two snapshots: what this paused sweep paid, by class.
         const mikai::gui::uiprofile::Snapshot pausedPhaseBefore =
             mikai::gui::uiprofile::snapshot();
+        // The hover stage's own scale facts, read once before the sweep: the same
+        // surface, outside every timed paint, with no geometry touched.
+        const QJsonObject pausedScaleEnvironment = scaleEnvironment(surface);
         const int hoverMoves =
             sweepChrome(playToggle, settingsButton, scrub, hoverSeconds * 1000);
         const mikai::gui::uiprofile::Snapshot pausedPhaseAfter =
@@ -1273,7 +1329,8 @@ int run(int argc, char** argv) {
                                     {"chromeOnly", passObject(chromeOnly)},
                                     {"retained", passObject(retained)},
                                     {"videoFrame", passObject(videoFrame)},
-                                    {"phaseByPass", pausedPhases}});
+                                    {"phaseByPass", pausedPhases},
+                                    {"scaleEnvironment", pausedScaleEnvironment}});
         if (!g_outputDir.isEmpty()) {
             dialog->grab().save(artifactPath(QStringLiteral("load-transition-paused.png")));
         }
