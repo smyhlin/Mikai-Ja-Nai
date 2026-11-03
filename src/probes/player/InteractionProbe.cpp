@@ -60,6 +60,8 @@
 #include <initializer_list>
 #include <memory>
 #include <optional>
+#include <type_traits>
+#include <utility>
 
 #include "CompareWindow.hpp"
 #include "HoverPreview.hpp"
@@ -1857,6 +1859,7 @@ int runLanguageSmoke(const QString& url, PlayerHost* host) {
 class DelayedHttpSource : public QObject {
 public:
     explicit DelayedHttpSource(QObject* parent = nullptr) : QObject(parent) {
+        clock_.start();
         if (!server_.listen(QHostAddress::LocalHost, 0)) return;
         connect(&server_, &QTcpServer::newConnection, this, [this] { acceptPending(); });
     }
@@ -1874,6 +1877,11 @@ public:
     }
 
     int connections() const { return connections_; }
+
+    /// When the first response was actually written, in milliseconds from this
+    /// origin's construction, or -1 while nothing has been answered yet. This is
+    /// the boundary an "opening" claim has to be on the right side of.
+    qint64 replyAtMs() const { return replyAtMs_; }
 
 private:
     void acceptPending() {
@@ -1905,8 +1913,11 @@ private:
         offset = std::clamp<qint64>(offset, 0, payload_.size());
         const qint64 total = payload_.size();
         const QByteArray body = payload_.mid(static_cast<int>(offset));
-        QTimer::singleShot(delayMs_, socket, [socket, offset, total, body] {
+        QTimer::singleShot(delayMs_, socket, [this, socket, offset, total, body] {
             if (socket->state() != QAbstractSocket::ConnectedState) return;
+            // The first answer this origin ever gives: the instant a claim about
+            // "before the source responded" is measured against.
+            if (replyAtMs_ < 0) replyAtMs_ = clock_.elapsed();
             QByteArray response;
             response += offset > 0 ? "HTTP/1.1 206 Partial Content\r\n"
                                    : "HTTP/1.1 200 OK\r\n";
@@ -1926,9 +1937,39 @@ private:
 
     QTcpServer server_;
     QByteArray payload_;
+    QElapsedTimer clock_;
+    qint64 replyAtMs_ = -1;
     int delayMs_ = 2400;
     int connections_ = 0;
 };
+
+/// Whether the card in front of this build can report what its decoder did.
+/// The probe is also run against trees that predate the counters, so the check
+/// is a compile-time one and the absent case reports -1 instead of failing to
+/// build: a diagnostic is worth nothing if it cannot measure the "before".
+template <typename T, typename = void>
+struct HasPreviewStats : std::false_type {};
+template <typename T>
+struct HasPreviewStats<T, std::void_t<decltype(std::declval<const T&>().previewStats())>>
+    : std::true_type {};
+
+/// Decoder work the card reports, or -1/-1 when this build has no counters.
+struct PreviewCounters {
+    qint64 cacheHits = -1;
+    qint64 workerRequests = -1;
+};
+
+template <typename Card>
+PreviewCounters previewCounters(const Card* card) {
+    if constexpr (HasPreviewStats<Card>::value) {
+        if (card != nullptr) {
+            const auto stats = card->previewStats();
+            return PreviewCounters{static_cast<qint64>(stats.cacheHits),
+                                   static_cast<qint64>(stats.workerRequests)};
+        }
+    }
+    return PreviewCounters{};
+}
 
 /// What the card says about itself at one instant.
 struct HoverCardFacts {
@@ -2202,7 +2243,14 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
     constexpr int kSweepInstants = 10;
     QVector<double> firstPass;
     QVector<double> secondPass;
+    // The decoder's own bookkeeping, not the clock's: a latency can be fast for
+    // the wrong reason, but a worker request that never happened cannot. These
+    // are -1/-1 on a tree that predates them, and the assertions below only run
+    // where the numbers exist.
+    PreviewCounters firstPassCounters;
+    PreviewCounters secondPassCounters;
     for (int pass = 0; pass < 2; ++pass) {
+        const PreviewCounters passStart = previewCounters(card);
         for (int index = 0; index < kSweepInstants; ++index) {
             // The second pass walks the same instants in reverse, which is the
             // worst order for a recency list that is not doing its job.
@@ -2212,6 +2260,37 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
             const qint64 took = settleCard(card, 2500);
             (pass == 0 ? firstPass : secondPass).append(static_cast<double>(took));
         }
+        const PreviewCounters passEnd = previewCounters(card);
+        if (pass == 0) {
+            firstPassCounters = PreviewCounters{passEnd.cacheHits - passStart.cacheHits,
+                                                passEnd.workerRequests - passStart.workerRequests};
+        } else {
+            secondPassCounters = PreviewCounters{passEnd.cacheHits - passStart.cacheHits,
+                                                 passEnd.workerRequests - passStart.workerRequests};
+        }
+    }
+    const PreviewCounters& sweepSecondPass = secondPassCounters;
+    evidence.insert(QStringLiteral("sweepFirstCacheHits"),
+                    static_cast<double>(firstPassCounters.cacheHits));
+    evidence.insert(QStringLiteral("sweepFirstWorkerRequests"),
+                    static_cast<double>(firstPassCounters.workerRequests));
+    evidence.insert(QStringLiteral("sweepSecondCacheHits"),
+                    static_cast<double>(sweepSecondPass.cacheHits));
+    evidence.insert(QStringLiteral("sweepSecondWorkerRequests"),
+                    static_cast<double>(sweepSecondPass.workerRequests));
+    // Worker requests are not seeks: the decoder crosses a far jump with a
+    // keyframe seek and refines it with one exact seek, and a near jump with one
+    // exact seek. This probe reports what the product counts; it never derives a
+    // seek number from a request number.
+    evidence.insert(QStringLiteral("sweepSeekPolicy"),
+                    QStringLiteral("far jump: absolute+keyframes then absolute+exact; near jump: "
+                                   "absolute+exact"));
+    if (sweepSecondPass.workerRequests >= 0) {
+        check(sweepSecondPass.workerRequests == 0,
+              "the repeated sweep asked the decoder for nothing at all");
+        check(sweepSecondPass.cacheHits * 10 >=
+                  static_cast<qint64>(secondPass.size()) * 8,
+              "the store answered at least 80 % of the repeated sweep");
     }
     int fastHits = 0;
     for (double took : secondPass) {
@@ -2273,10 +2352,23 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
             }
             if (facts.settled) break;
         }
+        const PreviewCounters slowCounters = previewCounters(slowCard);
         evidence.insert(QStringLiteral("slowPreviewExplainedMs"),
                         static_cast<double>(explainedMs));
+        evidence.insert(QStringLiteral("slowPreviewCacheHits"),
+                        static_cast<double>(slowCounters.cacheHits));
+        evidence.insert(QStringLiteral("slowPreviewWorkerRequests"),
+                        static_cast<double>(slowCounters.workerRequests));
+        std::fprintf(stderr, "     slow preview: explained=%d at_ms=%lld hits=%lld workers=%lld\n",
+                     int(explained), static_cast<long long>(explainedMs),
+                     static_cast<long long>(slowCounters.cacheHits),
+                     static_cast<long long>(slowCounters.workerRequests));
         check(explained,
               "a preview of a source that has not answered yet says what it is waiting for");
+        if (slowCounters.workerRequests >= 0) {
+            check(slowCounters.workerRequests > 0 && slowCounters.cacheHits == 0,
+                  "the explanation belongs to a real decode, not to a stored frame");
+        }
         saveShot(slowCard, QStringLiteral("hover-motion-loading-card.png"), &screenshots);
     }
     // The shell's own destructor releases the card's decoder without waiting.
@@ -2307,33 +2399,74 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
     QCoreApplication::processEvents();
     auto* opening = slowDialog->findChild<QWidget*>(QStringLiteral("playerOpeningOverlay"));
     auto* slowSurface = slowDialog->findChild<VideoSurface*>();
-    bool openingSeen = false;
+    // The widget itself, first. An absent overlay is a failure at this instant,
+    // not after a timeout that only lengthens the log and invents a latency for
+    // something the window never had.
+    const bool openingPresent = opening != nullptr;
+    check(openingPresent, "the player window owns an opening indicator widget");
+
+    // The one state in which "what the viewer sees while waiting" can be
+    // captured honestly: the origin has the request and has not answered it.
+    const bool withheld = waitFor(
+        [&origin] { return origin.connections() > 0 && origin.replyAtMs() < 0; }, 2000, 5);
+    qint64 openingVisibleMs = -1;
+    bool openingSeenWhileWithheld = false;
     QString openingText;
-    const qint64 openingVisibleMs = openClock.elapsed();
-    for (int waited = 0; waited < 3000; waited += 20) {
-        QCoreApplication::processEvents();
-        QThread::msleep(20);
-        if (opening != nullptr && opening->isVisible()) {
-            openingSeen = true;
-            openingText = opening->property("openingText").toString();
-            break;
+    if (openingPresent) {
+        // A frame or two of event turns, and only while the body is still held:
+        // a latency that includes the reply would be measuring the source, not
+        // the window.
+        for (int attempt = 0; attempt < 20; ++attempt) {
+            QCoreApplication::processEvents();
+            if (opening->isVisible()) {
+                openingSeenWhileWithheld = true;
+                openingVisibleMs = openClock.elapsed();
+                openingText = opening->property("openingText").toString();
+                break;
+            }
+            if (origin.replyAtMs() >= 0) break;
+            QThread::msleep(5);
         }
     }
-    evidence.insert(QStringLiteral("openingVisibleMs"), static_cast<double>(openingVisibleMs));
-    evidence.insert(QStringLiteral("openingText"), openingText);
-    std::fprintf(stderr, "     opening: overlay=%d text='%s' first_seen_ms=%lld\n",
-                 int(openingSeen), qPrintable(openingText),
-                 static_cast<long long>(openingVisibleMs));
-    check(openingSeen,
-          "the opening state is visible within one frame of the player window appearing");
-    check(!openingText.isEmpty(), "the opening state names what the window is waiting for");
-    saveShot(slowDialog, QStringLiteral("hover-motion-opening.png"), &screenshots);
+    const bool capturedWhileWithheld = origin.replyAtMs() < 0;
+    const qint64 replyAtMs = origin.replyAtMs();
 
-    const QImage openingPicture = slowDialog->grab().toImage();
-    const int brightWhileOpening = brightPixelsInTheCentre(openingPicture);
-    evidence.insert(QStringLiteral("openingBrightPixels"), brightWhileOpening);
-    check(brightWhileOpening > 200,
-          "the window is not a bare dark rectangle while the stream opens");
+    // The crop somebody will look at, taken while the wait is real. The full
+    // window is saved too, but the crop is the evidence that the waiting state
+    // carries pixels.
+    const QImage waitingPicture = slowDialog->grab().toImage();
+    const int brightWhileWaiting = brightPixelsInTheCentre(waitingPicture);
+    const QImage waitingCentre =
+        waitingPicture.copy(QRect(waitingPicture.width() / 3, waitingPicture.height() / 3,
+                                  waitingPicture.width() / 3, waitingPicture.height() / 3));
+    if (!waitingCentre.isNull() && !g_outputDir.isEmpty()) {
+        waitingCentre.save(artifactPath(QStringLiteral("hover-motion-opening-waiting-centre.png")));
+        screenshots.append(QStringLiteral("hover-motion-opening-waiting-centre.png"));
+    }
+    saveShot(slowDialog, QStringLiteral("hover-motion-opening-waiting.png"), &screenshots);
+
+    evidence.insert(QStringLiteral("openingVisibleMs"),
+                    openingVisibleMs >= 0 ? QJsonValue(double(openingVisibleMs))
+                                          : QJsonValue(-1.0));
+    evidence.insert(QStringLiteral("openingText"), openingText);
+    evidence.insert(QStringLiteral("openingWhileWithheld"), capturedWhileWithheld);
+    evidence.insert(QStringLiteral("openingSeenWhileWithheld"), openingSeenWhileWithheld);
+    evidence.insert(QStringLiteral("originReplyAtMs"), static_cast<double>(replyAtMs));
+    evidence.insert(QStringLiteral("openingBrightPixels"), brightWhileWaiting);
+    std::fprintf(stderr,
+                 "     opening: present=%d visible_while_withheld=%d first_seen_ms=%lld "
+                 "withheld=%d reply_ms=%lld bright=%d text='%s'\n",
+                 int(openingPresent), int(openingSeenWhileWithheld),
+                 static_cast<long long>(openingVisibleMs), int(capturedWhileWithheld),
+                 static_cast<long long>(replyAtMs), brightWhileWaiting, qPrintable(openingText));
+    check(withheld, "the delayed origin received the request before answering it");
+    check(capturedWhileWithheld,
+          "the opening state was captured while the origin still withheld the body");
+    check(openingSeenWhileWithheld,
+          "the opening indicator is visible before the source has sent a single byte");
+    check(!openingText.isEmpty(), "the opening state names what the window is waiting for");
+    check(brightWhileWaiting > 200,
+          "the waiting picture carries text instead of an undifferentiated dark field");
 
     qint64 firstFrameMs = -1;
     for (int waited = 0; waited < 20000; waited += 20) {
@@ -2345,20 +2478,38 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
         }
     }
     evidence.insert(QStringLiteral("firstFrameMs"), static_cast<double>(firstFrameMs));
+    std::fprintf(stderr, "     opening: first_frame_ms=%lld connections=%d reply_ms=%lld\n",
+                 static_cast<long long>(firstFrameMs), origin.connections(),
+                 static_cast<long long>(replyAtMs));
     check(origin.connections() > 0, "the delayed origin was actually asked for the stream");
     check(firstFrameMs > 500, "the delayed source really made the window wait");
-    bool retracted = false;
-    for (int waited = 0; waited < 3000; waited += 20) {
-        QCoreApplication::processEvents();
-        QThread::msleep(20);
-        if (opening == nullptr || !opening->isVisible()) {
-            retracted = true;
-            break;
+    if (openingVisibleMs >= 0 && replyAtMs >= 0) {
+        check(openingVisibleMs < replyAtMs,
+              "the opening state appeared before the source sent its first response byte");
+        evidence.insert(QStringLiteral("openingBeforeFirstResponse"), true);
+    } else {
+        evidence.insert(QStringLiteral("openingBeforeFirstResponse"), false);
+    }
+    qint64 retractedAfterMs = -1;
+    if (openingPresent) {
+        const QElapsedTimer retractClock = [] {
+            QElapsedTimer timer;
+            timer.start();
+            return timer;
+        }();
+        for (int waited = 0; waited < 3000; waited += 20) {
+            QCoreApplication::processEvents();
+            QThread::msleep(20);
+            if (!opening->isVisible()) {
+                retractedAfterMs = retractClock.elapsed();
+                break;
+            }
         }
     }
-    check(retracted, "the opening state retracts once the first frame is on screen");
-    std::fprintf(stderr, "     opening: first_frame_ms=%lld connections=%d\n",
-                 static_cast<long long>(firstFrameMs), origin.connections());
+    evidence.insert(QStringLiteral("openingRetractedAfterMs"),
+                    static_cast<double>(retractedAfterMs));
+    check(retractedAfterMs >= 0,
+          "the opening state retracts once the first frame is on screen");
 
     if (!slowGuard.isNull()) {
         slowGuard->close();
