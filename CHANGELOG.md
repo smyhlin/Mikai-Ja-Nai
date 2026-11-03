@@ -15,6 +15,7 @@ Published changes are recorded with their downloads on the [GitHub releases page
 - Redesign the Home/Search header and its RPM indicator.
 - Prefer MoonAnime when that provider is present; an explicit choice still wins, and a title without it keeps its first provider.
 - Keep a presented picture across source changes and ordinary chrome repaints instead of clearing to black. A chrome-only repaint no longer consumes an armed presentation slot.
+- Keep cached controls pixel-stable when neighboring controls hide at fractional display scales. Remove the experimental shared chrome sheets and retain the 8 MiB per-list cache budget.
 - Show "Preparing enhancement — playback paused" while an engine build holds playback, and "Finishing enhancement…" if closing that player takes more than a third of a second. The close wait is bounded at two seconds; if the native stop has not acknowledged by then, the close continues and the abandonment is logged.
 - Add **Video scaling** after HDR playback: Fit, Fill, Stretch, 16:9, 4:3, original size, zoom, upscaler and downscaler. The same modes are in the player settings flyout. Compare forces Fit while it owns the picture. Paused changes redraw after the asynchronous option writes complete. Windows framebuffer geometry is verified; visible UI interaction and Linux pixel verification remain pending.
 

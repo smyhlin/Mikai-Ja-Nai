@@ -22,9 +22,10 @@ it includes FBO composition and the vsync wait. The canonical before-side stays
 `docs/ai/GOAL-E/windows-load-after-pacing` passed its 23 load/context checks, but paused chrome-only
 p95 was 899 µs (p50 676 µs). That is not a 30 percent reduction. The same run still recorded 3429
 dirty chrome-cache misses and 543 ms of chrome raster, so the remaining cost is the dirty overlay,
-not an unmeasured pacing slot. `659af02` then sheets nearby controls into one upload and skips the
-clear when that blit covers the buffer. That change is not in the 899 µs number. No pacing-cost fix
-is claimed.
+not proof of which GPU operation caused the delay. The sheet experiment (`659af02`, `99d7768`)
+was removed: hiding a neighboring control changed unchanged pixels at 125/150/175% DPR, and its
+pixmaps bypassed the cache's 8 MiB budget. Per-control caches remain. The retained-blit clear
+optimization is not included in the 899 µs measurement. No 30% paint-cost reduction is claimed.
 
 ## Presentation baseline (Windows before-side)
 
@@ -84,6 +85,14 @@ before-side evidence rather than describing these zero-event observations as
 a demonstrated fix.
 
 ## Recorded verification
+
+At source checkpoint `7e88871`, the Windows app, tests and acceptance probes build with four jobs.
+Native hidden-framebuffer scaling tests pass both playing and paused modes, including Compare Fit
+release; artifacts and limitations are in [GOAL-H2](ai/reports/GOAL-H2.md). The final `7e88871`
+full CTest run passed 66/66 in 247.87 s. This does not close the foreground acceptance gates: the five-minute
+composition matrix, fullscreen hover-cost reduction, close-during-build timing and visible scaling
+Settings/flyout/PiP interactions remain unverified. [GOAL-Z](ai/reports/GOAL-Z.md) remains NOT-READY.
+Linux verification is deferred until the user's native-Linux reboot.
 
 These observations apply to the identified runs, not automatically to later builds or every machine:
 
