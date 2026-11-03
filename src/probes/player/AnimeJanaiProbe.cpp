@@ -1074,9 +1074,8 @@ QString selectedModelIdentity(const native::AnimeJanaiPlan& plan) {
     return contents.mid(valueStart, end - valueStart).trimmed();
 }
 
-/// The path as the filesystem spells it. Case-folded forms are for comparing two
-/// observations, never for opening or testing a file: on a case-sensitive filesystem
-/// the folded spelling is a different name.
+/// The path as the filesystem spells it: a case-folded spelling is a different name
+/// on a case-sensitive filesystem, so folding is only ever for comparison.
 QString absoluteArtifactPath(QString path, const QString& baseDirectory) {
     path = path.trimmed();
     if (path.size() >= 2 &&
@@ -1106,11 +1105,9 @@ QString trtexecOptionValue(const QString& logContents, const QString& option) {
 }
 
 QString finalEngineArtifactPath(const QString& saveEnginePath) {
-    // The fork's TensorRT build hands trtexec "<final>.engine.tmp" and renames it to
-    // "<final>.engine" only after trtexec reports PASSED, so the passed command line
-    // names the temporary file the finished artifact came from. The artifact the
-    // player loads is the renamed file, and the engine's own name is not required to
-    // start with the graph digest, so the binding is the path, not the file name.
+    // The build hands trtexec "<final>.engine.tmp" and renames it after PASSED, so the
+    // passed line names the temporary file the installed artifact came from. The engine
+    // name need not start with the graph digest: the binding is the path.
     QString path = saveEnginePath.trimmed();
     const QLatin1String temporarySuffix(".tmp");
     if (path.endsWith(temporarySuffix, Qt::CaseInsensitive)) path.chop(temporarySuffix.size());
@@ -1179,9 +1176,8 @@ QStringList selectedBuildLogEvidence(const QString& modelDir,
             }
         }
         if (passedLine.isEmpty()) continue;
-        // The recorded command line is the authority: it binds these exact arguments
-        // to the PASSED run. The progress lines above name the same paths but are not
-        // a claim about how the build was invoked.
+        // The PASSED line binds these exact arguments to the run; the progress lines
+        // above name the same paths but say nothing about how the build was invoked.
         QString onnxArgument = trtexecOptionValue(passedLine, QStringLiteral("onnx"));
         QString saveEngineArgument =
             trtexecOptionValue(passedLine, QStringLiteral("saveEngine"));
@@ -1492,18 +1488,13 @@ struct EngineBuildPlaybackEvidence {
             path && path->kind == ProbePropertyValue::Kind::Text ? path->text : QString();
         const QString observedSource = surface->sourceUrl();
         const uint64_t observedEpoch = surface->sourceEpoch();
-        // A sample taken at the moment the build announces itself can read nothing:
-        // probeMpvProperty refuses a nested read and answers "no value" rather than
-        // a stale one, so an empty identity there is not a source change - and not
-        // evidence the picture was held either. It may only pass before the pause is
-        // acknowledged; the identity must be observed afterwards.
+        // probeMpvProperty refuses a nested read rather than answering from a stale
+        // queue, so the build's own first sample can read nothing. That is not a source
+        // change, and it only passes before the pause is acknowledged.
         const bool identityReadable =
             !observedPath.isEmpty() && !observedSource.isEmpty() && observedEpoch != 0;
-        // The epoch is the surface's own source generation and `source` is the URL it
-        // was asked to open: together they are the exact source identity, and a reload
-        // of the same URL is a new generation. The core's path string names the same
-        // file by another route, so a difference there is reported, not folded into
-        // the identity.
+        // Epoch plus the requested URL is the exact source identity, and a reload of the
+        // same URL is a new epoch. A differing core path string is reported, not folded in.
         const bool sameSource = identityReadable && observedEpoch == sourceEpoch &&
             observedSource == source;
         const bool sameCorePath = sameSource && observedPath == corePath;
@@ -1575,9 +1566,8 @@ struct EngineBuildPlaybackEvidence {
                     heldImageSaved = frame.save(
                         QDir(nativeRoot).filePath(QStringLiteral("animejanai-probe-build-held.png")), "PNG");
                 } else {
-                    // Exact, on purpose: a held video picture is the same pixels,
-                    // size, format and scale. The comparison names which of them
-                    // differed instead of collapsing them into one boolean.
+                    // Exact on purpose: a held picture is the same pixels, size, format
+                    // and scale, and the failure names which one differed.
                     const bool sameShape = !frame.isNull() &&
                         frame.size() == heldFramebuffer.size() &&
                         frame.format() == heldFramebuffer.format() &&
@@ -2435,23 +2425,20 @@ int main(int argc, char** argv) {
     bool seekObserved = false;
     if (parser.isSet(naturalOption)) {
         const auto sendDialogKey = [&](int key) -> bool {
-            // A physical key goes to the focus widget, and Qt's own key dispatch walks
-            // up the parent chain while each receiver ignores it. Handing the event
-            // straight to the dialog skips that path: while focus sits inside the
-            // shell, the dialog's T-410 guard refuses to forward a key it did not
-            // receive from the shell's ignored propagation, so a probe-injected key
-            // would be dropped where a real one is not.
+            // Real keys reach the shell through the focus widget's own propagation; the
+            // dialog's T-410 guard drops a dialog-injected key when focus is inside it.
             QWidget* const focus = QApplication::focusWidget();
             QWidget* const start = focus != nullptr &&
                     (focus == naturalDialog || naturalDialog->isAncestorOf(focus))
                 ? focus
                 : static_cast<QWidget*>(naturalDialog.data());
             QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
-            const bool accepted = QCoreApplication::sendEvent(start, &press);
+            const bool delivered = QCoreApplication::sendEvent(start, &press);
+            const bool accepted = press.isAccepted();
             QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
             QCoreApplication::sendEvent(start, &release);
             std::fprintf(stderr,
-                         "[AnimeJanaiProbe] key-delivery key=%s delivery-start=%s/%s focus=%s/%s focus-chain=%d active-window=%d accepted=%d\n",
+                         "[AnimeJanaiProbe] key-delivery key=%s delivery-start=%s/%s focus=%s/%s focus-chain=%d active-window=%d delivered=%d accepted=%d\n",
                          qPrintable(QKeySequence(key).toString(QKeySequence::NativeText)),
                          start->metaObject()->className(),
                          start->objectName().isEmpty() ? "-" : qPrintable(start->objectName()),
@@ -2460,7 +2447,8 @@ int main(int argc, char** argv) {
                              ? qPrintable(focus->objectName())
                              : "-",
                          focus != nullptr && naturalDialog->isAncestorOf(focus) ? 1 : 0,
-                         naturalDialog->isActiveWindow() ? 1 : 0, accepted ? 1 : 0);
+                         naturalDialog->isActiveWindow() ? 1 : 0, delivered ? 1 : 0,
+                         accepted ? 1 : 0);
             return accepted;
         };
         surface->setPaused(false);
@@ -2483,11 +2471,11 @@ int main(int argc, char** argv) {
             std::fprintf(stderr,
                          "[AnimeJanaiProbe] Space key delivery was accepted=%d; the shell pauses only when the key it receives ends up with it\n",
                          spaceAccepted ? 1 : 0);
-        result(keyboardPauseObserved, "PlayerDialog Space key paused the embedded source");
-        if (!keyboardPauseObserved) ++failures;
-        // A playing source advances its own playhead, so "position increased" passes
-        // with no key at all. The step is measured against a parked playhead and the
-        // park has to survive the step, which only a key-handled seek produces.
+        result(playingBeforePauseKey && keyboardPauseObserved,
+               "PlayerDialog Space key paused the embedded source");
+        if (!(playingBeforePauseKey && keyboardPauseObserved)) ++failures;
+        // A playing source advances its own playhead, so the step is measured from a
+        // parked one and has to survive while parked: only a key-handled seek does.
         bool pauseRequestedForSeek = false;
         const bool parkedForSeek = waitUntil([&] {
             const auto paused = surface->probeMpvProperty(QStringLiteral("pause"),
