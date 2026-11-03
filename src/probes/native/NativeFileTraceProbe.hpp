@@ -116,8 +116,6 @@ inline void setInstallError(const wchar_t* text) {
     g_installError[767] = 0;
 }
 
-inline const wchar_t* lastError() { return g_installError; }
-
 struct HookScope {
     const bool active;
     HookScope() : active(g_hookDepth == 0) {
@@ -842,6 +840,11 @@ inline ModulePatchResult patchModule(HMODULE module, const wchar_t* moduleLabel)
 }
 
 }  // namespace detail
+
+/// Public accessor for the last install refusal. It reports only the trace
+/// scaffold's own precondition/coverage failure; it never masks an application
+/// error.
+inline const wchar_t* lastError() { return detail::g_installError; }
 
 /// Installs the trace. The output path is policy-checked before anything is
 /// opened (local absolute `.log`, existing non-reparse parent, outside the
