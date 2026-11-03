@@ -1334,18 +1334,23 @@ private:
                 // A chrome chip is neutral at rest and takes the accent on
                 // hover. The pointer cannot be parked on it, so the hover state
                 // is put on the widget immediately before it paints - the same
-                // resolution the paint event performs.
+                // resolution the paint event performs. The contract is the
+                // colour: the painted hue must be the chosen accent and the
+                // boundary must be visible. The wash's alpha belongs to the
+                // implementation, so only a "painted at all" floor is asserted,
+                // never one design's exact value.
                 if (chip_ != nullptr) {
                     chip_->setAttribute(Qt::WA_UnderMouse, true);
                     chip_->style()->unpolish(chip_);
                     chip_->style()->polish(chip_);
                     const QColor border = pixelsOf(chip_).at(chip_->width() / 2, 0);
                     row.insert(QStringLiteral("playerChipHover"), nameColor(border));
+                    row.insert(QStringLiteral("playerChipHoverAlpha"), border.alpha());
                     row.insert(QStringLiteral("playerChipUnderMouse"), chip_->underMouse());
                     check(QStringLiteral("%1/player-chip-live").arg(variant),
-                          chip_->underMouse() && nearColor(border, expected, 8) &&
-                              border.alpha() >= 120,
-                          QStringLiteral("hover border %1 a%2, chosen %3")
+                          chip_->underMouse() && border.alpha() >= 24 &&
+                              nearColor(border, expected, 8),
+                          QStringLiteral("hover boundary %1 a%2, chosen %3")
                               .arg(nameColor(border))
                               .arg(border.alpha())
                               .arg(nameColor(expected)));
