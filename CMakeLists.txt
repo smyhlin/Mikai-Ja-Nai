@@ -242,6 +242,7 @@ set(PLAYER_SOURCES
   src/player/shell/MediaInformationPresentation.cpp
   src/player/shell/MediaInformationTree.cpp
   src/player/shell/MediaInformationOverview.cpp
+  src/player/shell/OpeningOverlay.cpp
   src/player/shell/PlayerPopups.cpp
   src/player/shell/PlayerShell.cpp
   src/player/shell/ShellSliders.cpp
@@ -282,6 +283,7 @@ set(PLAYER_HEADERS
   src/player/shell/MediaInformationPresentation.hpp
   src/player/shell/MediaInformationTree.hpp
   src/player/shell/MediaInformationOverview.hpp
+  src/player/shell/OpeningOverlay.hpp
   src/player/shell/PlayerPopups.hpp
   src/player/shell/PlayerShell.hpp
   src/player/shell/ProcessingSettingsIntent.hpp

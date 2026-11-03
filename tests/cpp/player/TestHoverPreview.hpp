@@ -31,6 +31,18 @@ private slots:
     void aHoverCardShowsTheDecodedFrameOfItsInstant();
     void aHoveredInstantIsDecodedAndOnlyTheNewestServes();
 
+    // ── the store, the identity and the states a viewer waits in ─────────
+    void theStoreKeepsSixtyFourInstantsAndEvictsTheOldest();
+    void aStoredInstantIsBucketedByHalfSecondsAndBySourceEpoch();
+    void aRepeatedInstantIsServedWithoutAskingTheDecoder();
+    void aFinishedDecodeIsNeverThrownAwayWhenThePointerMovesOn();
+    void theCardKeepsAnOlderPictureAsExplicitlyStale();
+    void aDecodingCardNamesTheWaitAndARefusalStaysNamed();
+    void aSameUrlReloadInvalidatesTheStoredFrames();
+    void aPointerBetweenTheBarAndTheCardKeepsIt();
+    void aParkedTimelineHoverKeepsTheChromeAwake();
+    void aVanishedTimelineEndsTheCardWithoutGrace();
+
 private:
     // True when a runtime is selected. Without a module it skips; a selection
     // that failed in initTestCase fails here with the loader's own reason.

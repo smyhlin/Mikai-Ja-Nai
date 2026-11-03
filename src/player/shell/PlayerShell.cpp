@@ -51,6 +51,12 @@ void skipForwardGlyph(QPainter& painter, qreal x, qreal y, qreal size, const QCo
     painter.restore();
 }
 
+/// How long the pointer may be absent from the timeline before the card that
+/// journey leads to is ended. A move from the bar to the card takes a few tens
+/// of milliseconds; 120 ms covers the crossing without keeping a card alive for
+/// a pointer that really left.
+constexpr int kHoverLeaveGraceMs = 120;
+
 QString stateName(PlayerShell::State state) {
     switch (state) {
         case PlayerShell::State::DefaultFit: return QStringLiteral("DEFAULT_FIT");
@@ -409,6 +415,23 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
 
     hideTimer_.setSingleShot(true);
     connect(&hideTimer_, &QTimer::timeout, this, &PlayerShell::enterAutoHidden);
+    // The gap between the timeline and the card it opened is a journey, not an
+    // absence: the card is only ended once the pointer has really gone.
+    hoverLeaveTimer_.setSingleShot(true);
+    hoverLeaveTimer_.setInterval(kHoverLeaveGraceMs);
+    connect(&hoverLeaveTimer_, &QTimer::timeout, this, [this] {
+        const QPoint cursor = QCursor::pos();
+        const QRect barGlobal(scrub_->mapToGlobal(QPoint(0, 0)), scrub_->size());
+        const QRect cardGlobal(hoverPreview_->mapToGlobal(QPoint(0, 0)), hoverPreview_->size());
+        if (hoverPreview_->isVisible() &&
+            hoverCardKeepsPointer(barGlobal, cardGlobal, cursor)) {
+            // Still on the way to (or on) the card: keep it and the chrome that
+            // carries it awake.
+            wake();
+            return;
+        }
+        dismissHoverPreview();
+    });
     enhancementHoverTimer_.setSingleShot(true);
     connect(&enhancementHoverTimer_, &QTimer::timeout, this, [this] {
         MenuPopup* panel = pendingEnhancementHoverPanel_.data();
@@ -504,6 +527,29 @@ void PlayerShell::buildSurface() {
     // valid for the length of the call.
     connect(surface_, &VideoSurface::paintOverlay, this, &PlayerShell::paintSurfaceOverlay,
             Qt::DirectConnection);
+    // The preview's identity follows the core's own source epoch: a stream that
+    // is reloaded keeps its URL, and the only thing that says the picture changed
+    // is the epoch.
+    connect(surface_, &VideoSurface::sourceEpochChanged, this, [this](uint64_t epoch) {
+        if (hoverPreview_ == nullptr || !hasMedia_) return;
+        hoverPreview_->setSource(path_, epoch);
+        // A new source has not been warmed yet.
+        if (epoch != previewPrewarmEpoch_) previewPrewarmEpoch_ = 0;
+    });
+    // The warm-up waits for a frame that actually swapped on this core: a load
+    // request, a mediaLoaded event or a thumbnail is not a picture on screen.
+    connect(surface_, &QOpenGLWidget::frameSwapped, this, &PlayerShell::schedulePreviewPrewarm);
+}
+
+void PlayerShell::schedulePreviewPrewarm() {
+    if (hoverPreview_ == nullptr || surface_ == nullptr || !hasMedia_ || duration_ <= 0.0) return;
+    if (!surface_->hasVisibleOutputFrame() || !surface_->isPlaying()) return;
+    const quint64 epoch = surface_->sourceEpoch();
+    if (epoch == 0 || epoch == previewPrewarmEpoch_) return;
+    previewPrewarmEpoch_ = epoch;
+    // The midpoint: the instant a timeline hover is least likely to already be
+    // parked on, and one seek plus one capture on the paused preview core.
+    hoverPreview_->prewarm(duration_ / 2.0);
 }
 
 void PlayerShell::buildWindowControls() {
@@ -571,6 +617,9 @@ void PlayerShell::buildChevrons() {
 void PlayerShell::buildDock() {
     const int radius = static_cast<int>(cornerRadius());
     dock_ = new Panel(dock(), radius + 4.0, w15(), this);
+    // Named so a consumer that must observe the whole transport subtree (the
+    // dialog's presence watcher) can find it without a second accessor.
+    dock_->setObjectName(QStringLiteral("playerDock"));
     auto* dockLayout = new QVBoxLayout(dock_);
     dockLayout->setContentsMargins(16, 8, 16, 8);
     dockLayout->setSpacing(3);
@@ -681,7 +730,8 @@ void PlayerShell::buildDock() {
     // The card above the timeline follows the pointer, not the playhead: the
     // preview is a read of the source and never moves what is playing.
     connect(scrub_, &ScrubBar::hoverTimeChanged, this, &PlayerShell::onTimelineHover);
-    connect(scrub_, &ScrubBar::hoverLeft, this, &PlayerShell::dismissHoverPreview);
+    connect(scrub_, &ScrubBar::hoverLeft, this, &PlayerShell::onTimelineHoverLeft);
+    connect(scrub_, &ScrubBar::hoverVanished, this, &PlayerShell::onTimelineHoverVanished);
     // A release ends the gesture, so the instant the pointer rests on gets the
     // frame the drag deliberately withheld; without this the card would keep its
     // time-and-label state until the pointer moved again.
@@ -1091,6 +1141,16 @@ void PlayerShell::enterAutoHidden() {
         hideTimer_.start(kAutohideMs);
         return;
     }
+    // A resting pointer is interaction even though no move crossed the shell:
+    // the timeline consumes its own moves, the dock's controls consume theirs,
+    // and the card under the pointer covers the picture the viewer is reading.
+    // Hiding the chrome - and with it the timeline and the card - underneath a
+    // pointer that never left is the defect this guard exists for.
+    if (scrub_->isHovering() || vol_->isHovering() || dock_->underMouse() ||
+        (hoverPreview_ != nullptr && hoverPreview_->isVisible())) {
+        hideTimer_.start(kAutohideMs);
+        return;
+    }
     hudHidden_ = true;
     applyState();
 }
@@ -1202,10 +1262,14 @@ void PlayerShell::setMedia(const QString& path, const QString& origin, const QSt
     path_ = path;
     hasMedia_ = !path.isEmpty();
     // The frame source follows the media: a quality or a dub swap publishes a new
-    // URL here, and the card must decode from the source that is playing.
+    // URL here, and the card must decode from the source that is playing - with
+    // the core's own source identity, so a reload of the same URL is a new
+    // picture and not the old one under a reused name.
     if (hoverPreview_ != nullptr) {
-        hoverPreview_->setSource(hasMedia_ ? path : QString());
+        hoverPreview_->setSource(hasMedia_ ? path : QString(),
+                                 hasMedia_ && surface_ != nullptr ? surface_->sourceEpoch() : 0);
     }
+    previewPrewarmEpoch_ = 0;
     btnSkipForward_->setEnabled(hasMedia_ && duration_ > 0.0);
     if (!origin.isEmpty()) origin_ = origin;
     if (!quality.isEmpty()) setQuality(quality);
@@ -1547,6 +1611,10 @@ void PlayerShell::onTimelineHover(double seconds, const QPoint& globalPosition) 
         dismissHoverPreview();
         return;
     }
+    // A reading under the pointer is presence: the chrome the timeline lives in
+    // must not be hiding while the viewer reads it.
+    hoverLeaveTimer_.stop();
+    wake();
     const QRect barGlobal(dock_->mapToGlobal(QPoint(0, 0)), dock_->size());
     const bool wasVisible = hoverPreview_->isVisible();
     hoverPreview_->present(seconds, globalPosition, barGlobal, scrub_->segmentLabelAt(seconds),
@@ -1558,7 +1626,20 @@ void PlayerShell::onTimelineHover(double seconds, const QPoint& globalPosition) 
     }
 }
 
+void PlayerShell::onTimelineHoverLeft() {
+    if (hoverPreview_ == nullptr || !hoverPreview_->isVisible()) return;
+    // Deferred rather than dismissed: the pointer that just left the bar may be
+    // on its way to the card the bar opened.
+    hoverLeaveTimer_.start();
+}
+
+void PlayerShell::onTimelineHoverVanished() {
+    hoverLeaveTimer_.stop();
+    dismissHoverPreview();
+}
+
 void PlayerShell::dismissHoverPreview() {
+    hoverLeaveTimer_.stop();
     if (hoverPreview_ != nullptr) {
         hoverPreview_->dismiss();
     }

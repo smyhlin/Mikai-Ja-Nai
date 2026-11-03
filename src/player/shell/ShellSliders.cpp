@@ -329,9 +329,11 @@ void ScrubBar::hideEvent(QHideEvent* event) {
     // A bar that disappears under the pointer (the HUD auto-hides while it is
     // hovered) is no longer under it, and Qt sends no leave event for a widget
     // that vanished - so the hover ends here or a preview over the picture
-    // outlives the control it describes.
+    // outlives the control it describes. This is not the pointer travelling to
+    // the card the bar opened: the control itself is gone, so the card ends with
+    // it rather than waiting out a grace period for a journey to nowhere.
     clearHover();
-    emit hoverLeft();
+    emit hoverVanished();
 }
 
 void ScrubBar::paintChrome(QPainter& p) {
@@ -531,6 +533,10 @@ void VolumeGroup::setMuted(bool m) {
 
 bool VolumeGroup::isDragging() const {
     return track_ != nullptr && track_->isDragging();
+}
+
+bool VolumeGroup::isHovering() const {
+    return isDragging() || underMouse() || (track_ != nullptr && track_->underMouse());
 }
 
 void VolumeGroup::wheelEvent(QWheelEvent* event) {
