@@ -2198,6 +2198,7 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
 
   CannedApi api;
   QString error;
+  api.setDescription(longCannedDescription());
   QVERIFY2(api.start(&error), qPrintable(error));
   // Three pages of pills, so the episode pager has a selection to preserve.
   api.setReleaseEpisodeCount(300);
@@ -2242,8 +2243,8 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
   QTRY_VERIFY_WITH_TIMEOUT(disclosureAction(page, false) != nullptr, 5000);
   QPushButton* descriptionButton = disclosureAction(page, false);
   QVERIFY(descriptionButton != nullptr);
-  QVERIFY2(description->text() != cannedDescription(),
-           "the canned description fits its preview, so expanding it would be invisible");
+  QVERIFY2(description->text() != longCannedDescription(),
+           "the long description fits its preview, so expanding it would be invisible");
   QVERIFY(description->text().endsWith(QStringLiteral("…")));
   // The overview is scrollable; the action has to be inside its viewport before
   // a real click can reach it.
@@ -2251,7 +2252,7 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
   QCoreApplication::processEvents();
   QTest::mouseClick(descriptionButton, Qt::LeftButton);
   QCoreApplication::processEvents();
-  QCOMPARE(description->text(), cannedDescription());
+  QCOMPARE(description->text(), longCannedDescription());
 
   // The details action opens the sheet over the page; it is dismissed in place.
   QPushButton* metaButton = disclosureAction(page, true);

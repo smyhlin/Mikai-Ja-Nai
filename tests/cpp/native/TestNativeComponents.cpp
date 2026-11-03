@@ -356,12 +356,20 @@ void TestNativeComponents::upscalingPackReviewsAndQueuesMissingGraphs() {
     }
     QVERIFY(tab.inventoryReady());
     auto* packState = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardState"));
+    auto* packCount = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardCount"));
     auto* packSize = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardSize"));
     QVERIFY(packState != nullptr);
+    QVERIFY(packCount != nullptr);
     QVERIFY(packSize != nullptr);
-    QVERIFY(packState->text().contains(
-        QStringLiteral("%1/%2").arg(corruptRow ? 1 : 0).arg(catalog.size())));
-    QVERIFY(packState->text().contains(QStringLiteral("0/%1").arg(catalog.size())));
+    const QString installedCount =
+        QStringLiteral("%1/%2").arg(corruptRow ? 1 : 0).arg(catalog.size());
+    const QString verifiedCount = QStringLiteral("0/%1").arg(catalog.size());
+    QVERIFY2(packCount->text().contains(installedCount), qPrintable(packCount->text()));
+    QVERIFY2(packCount->text().contains(verifiedCount), qPrintable(packCount->text()));
+    QVERIFY2(!packState->accessibleName().contains(QLatin1Char('/')),
+             qPrintable(packState->accessibleName()));
+    QCOMPARE(packState->accessibleName(),
+             corruptRow ? QStringLiteral("installed") : QStringLiteral("not installed"));
     QVERIFY(apply != nullptr);
     QVERIFY(cancel != nullptr);
     QVERIFY(pack->isChecked());
