@@ -3164,6 +3164,10 @@ void TitlePage::changeEvent(QEvent* event) {
         theme::equalizeWidths({watchWatchedButton_, watchButton_});
     } else if (event->type() == QEvent::DevicePixelRatioChange ||
                event->type() == QEvent::ScreenChangeInternal) {
+        // The even-width rounding is a device-pixel decision, so a ratio change
+        // measures both groups again.
+        theme::equalizeWidths({heroWatchButton_, episodesButton_, metaButton_}, 148);
+        theme::equalizeWidths({watchWatchedButton_, watchButton_});
         // Frames are painted at the ratio they will be shown at: a window that
         // moves to another screen repaints them instead of scaling the old ones.
         for (const auto& entry : relatedPosterImages_) {

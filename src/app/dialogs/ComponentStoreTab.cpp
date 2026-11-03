@@ -835,7 +835,9 @@ void ComponentStoreTab::changeEvent(QEvent* event) {
         restateStatus();
     } else if (event->type() == QEvent::FontChange ||
                event->type() == QEvent::ApplicationFontChange ||
-               event->type() == QEvent::StyleChange) {
+               event->type() == QEvent::StyleChange ||
+               event->type() == QEvent::DevicePixelRatioChange ||
+               event->type() == QEvent::ScreenChangeInternal) {
         if (actionGrid_ != nullptr) actionGrid_->recalculate();
     }
 }

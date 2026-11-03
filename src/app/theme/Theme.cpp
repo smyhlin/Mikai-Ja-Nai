@@ -1361,8 +1361,13 @@ void applyActionRole(QAbstractButton* button, ActionRole role) {
 
 int equalizedWidth(std::span<QAbstractButton* const> buttons, int minimum) {
     int width = qMax(0, minimum);
+    qreal ratio = 1.0;
     for (QAbstractButton* button : buttons) {
         if (button == nullptr) continue;
+        // A stylesheet font reaches the widget only at polish, so measuring
+        // before it reads the ambient font and understates the row.
+        button->ensurePolished();
+        ratio = button->devicePixelRatioF();
         const QFontMetrics metrics(button->font());
         int need = metrics.horizontalAdvance(button->text());
         if (!button->icon().isNull()) {
@@ -1373,7 +1378,11 @@ int equalizedWidth(std::span<QAbstractButton* const> buttons, int minimum) {
         need += 2 * (kControlInsetHPrimary + 1);
         width = qMax(width, need);
     }
-    return width + (width % 2);
+    // Even in device pixels: the group shares one window, so the narrowest
+    // logical width whose device width is even is the answer at 1.25 and 1.5
+    // as well as at 1.0.
+    while (qRound(width * ratio) % 2 != 0) ++width;
+    return width;
 }
 
 void equalizeWidths(std::span<QAbstractButton* const> buttons, int minimum) {

@@ -465,9 +465,9 @@ void SearchPage::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::FontChange || event->type() == QEvent::ApplicationFontChange ||
         event->type() == QEvent::StyleChange ||
-        event->type() == QEvent::DevicePixelRatioChange) {
-        // A new font changes every advance the row was measured from, so the
-        // equality is recomputed from the font rather than re-scaled.
+        event->type() == QEvent::DevicePixelRatioChange ||
+        event->type() == QEvent::ScreenChangeInternal) {
+        // A new font or ratio changes what the row was measured from.
         equalizeHeaderActions();
     }
     if (event->type() == QEvent::LanguageChange) {
