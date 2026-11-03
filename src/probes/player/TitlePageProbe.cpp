@@ -53,6 +53,7 @@
 #include "player/shell/PlayerShell.hpp"
 #include "ProbeRuntime.hpp"
 #include "VideoSurface.hpp"
+#include "gui/UiProfile.hpp"
 #include "state/AppearanceStore.hpp"
 #include "state/QualityCache.hpp"
 #include "support/I18n.hpp"
@@ -1149,6 +1150,48 @@ int main(int argc, char** argv) {
                          static_cast<int>(releaseChips.size()),
                          selectorPass ? "PASS" : "FAIL");
             layoutPass = layoutPass && selectorPass;
+
+            // GOAL-E repolish criterion: bounded work per breakpoint crossing,
+            // proven by the counter and by the consumer-visible heading font.
+            mikai::gui::uiprofile::forceCounters(true);
+            mikai::gui::uiprofile::resetCounters();
+            const QSize startedAt = page->size();
+            page->resize(1400, 900);
+            QCoreApplication::processEvents();
+            auto* heading = page->findChild<QLabel*>(QStringLiteral("titleHeading"));
+            const int fontBefore = heading != nullptr ? heading->font().pixelSize() : -1;
+            const qint64 flatBefore = mikai::gui::uiprofile::snapshot().titleRepolishWidgets;
+            page->resize(1300, 900);
+            QCoreApplication::processEvents();
+            const qint64 flat =
+                mikai::gui::uiprofile::snapshot().titleRepolishWidgets - flatBefore;
+            const qint64 compactBefore = mikai::gui::uiprofile::snapshot().titleRepolishWidgets;
+            page->resize(860, 900);
+            QCoreApplication::processEvents();
+            const qint64 compact =
+                mikai::gui::uiprofile::snapshot().titleRepolishWidgets - compactBefore;
+            const qint64 narrowBefore = mikai::gui::uiprofile::snapshot().titleRepolishWidgets;
+            page->resize(620, 900);
+            QCoreApplication::processEvents();
+            const qint64 narrow =
+                mikai::gui::uiprofile::snapshot().titleRepolishWidgets - narrowBefore;
+            const int fontAfter = heading != nullptr ? heading->font().pixelSize() : -1;
+            page->resize(startedAt);
+            QCoreApplication::processEvents();
+            mikai::gui::uiprofile::forceCounters(false);
+            std::fprintf(stderr,
+                         "TITLE-PROBE: repolish widgets flat=%lld compact=%lld narrow=%lld "
+                         "headingPx=%d->%d at %dx%d\n",
+                         static_cast<long long>(flat), static_cast<long long>(compact),
+                         static_cast<long long>(narrow), fontBefore, fontAfter,
+                         startedAt.width(), startedAt.height());
+            const bool repolishPass = flat == 0 && compact >= 1 && compact <= 20 &&
+                                      narrow >= 1 && narrow <= 20 &&
+                                      (heading == nullptr || fontAfter != fontBefore);
+            if (!repolishPass) {
+                std::fprintf(stderr, "TITLE-PROBE: repolish criterion FAIL\n");
+            }
+            layoutPass = layoutPass && repolishPass;
             QCoreApplication::exit(layoutPass ? 0 : 1);
             return;
         }
