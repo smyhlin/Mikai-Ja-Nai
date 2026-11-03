@@ -830,3 +830,82 @@ void TestHoverPreview::aVanishedTimelineEndsTheCardWithoutGrace() {
     QCoreApplication::processEvents();
     QVERIFY2(!card->isVisible(), "the card outlived the timeline it belongs to");
 }
+
+void TestHoverPreview::aCachedAnswerForTheNewestRequestSettlesTheCard() {
+    if (!requireRuntime()) return;
+    const QString clip = fixtureClip();
+    QVERIFY2(QFileInfo::exists(clip), qPrintable(clip));
+
+    QWidget host;
+    host.resize(1000, 620);
+    host.show();
+    QCoreApplication::processEvents();
+
+    HoverPreview card(&host);
+    card.setSource(clip, 1);
+    const QRect bar(120, 500, 760, 18);
+    const QPoint anchor(520, bar.center().y());
+    const QRect barGlobal(host.mapToGlobal(bar.topLeft()), bar.size());
+
+    card.present(1.0, host.mapToGlobal(anchor), barGlobal, QString(), /*allowFrame=*/true);
+    QVERIFY2(settleUntil([&] { return card.hasFrame() && card.statusText().isEmpty(); }, 20000),
+             "the card never settled on the first instant");
+    const double pictureSeconds = card.frameSeconds();
+
+    // One pixel further on the same timeline: still inside the decoded half
+    // second, and more than a frame away from the picture's own instant. The
+    // store answers this at once, so the answer is this request's answer and the
+    // card must stop claiming it is waiting for one.
+    card.present(1.2, host.mapToGlobal(anchor), barGlobal, QString(), /*allowFrame=*/true);
+    QVERIFY2(card.hasFrame(), "the card lost the picture it already had");
+    QVERIFY2(card.statusText().isEmpty(),
+             "a card that already holds this bucket's picture still claims to be decoding");
+    QVERIFY2(!card.isFrameStale(), "a stored answer is not a stale picture");
+    QCOMPARE(card.frameSeconds(), pictureSeconds);
+    card.dismiss();
+}
+
+void TestHoverPreview::aCardRescuedInTheBandIsDismissedWhenThePointerLeavesIt() {
+    mplayer::shell::PlayerShell shell;
+    shell.resize(1000, 620);
+    shell.setMedia(QStringLiteral("band-exit-fixture.mp4"));
+    shell.setDuration(120.0);
+    shell.show();
+    QCoreApplication::processEvents();
+
+    auto* bar = shell.findChild<mplayer::shell::ScrubBar*>(QStringLiteral("playerScrubBar"));
+    auto* card = shell.findChild<HoverPreview*>(QStringLiteral("playerHoverPreview"));
+    QVERIFY(bar != nullptr && card != nullptr);
+
+    // A pointer on the bar, the way a viewer reaches the card.
+    const QPoint onBar = bar->rect().center();
+    QMouseEvent hoverBar(QEvent::MouseMove, QPointF(onBar), QPointF(bar->mapToGlobal(onBar)),
+                         Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(bar, &hoverBar);
+    QVERIFY2(card->isVisible(), "the hover card did not appear for a pointer on the timeline");
+
+    // On the card itself: inside the band the bar and the card span. A rescue
+    // here is correct - the journey is not an absence - but it must not be the
+    // last word on a pointer that keeps moving.
+    const QPoint onCard = card->mapTo(&shell, card->rect().center());
+    QMouseEvent hoverCard(QEvent::MouseMove, QPointF(onCard),
+                          QPointF(shell.mapToGlobal(onCard)), Qt::NoButton, Qt::NoButton,
+                          Qt::NoModifier);
+    QCoreApplication::sendEvent(&shell, &hoverCard);
+    for (int waited = 0; waited < 400; waited += 50) {
+        QCoreApplication::processEvents();
+        QThread::msleep(50);
+    }
+    QVERIFY2(card->isVisible(), "the card did not survive the pointer resting in its band");
+
+    // Away from both: the picture, nowhere near the timeline.
+    const QPoint away(8, 8);
+    QMouseEvent leaveBand(QEvent::MouseMove, QPointF(away), QPointF(shell.mapToGlobal(away)),
+                          Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(&shell, &leaveBand);
+    for (int waited = 0; waited < 600; waited += 50) {
+        QCoreApplication::processEvents();
+        QThread::msleep(50);
+    }
+    QVERIFY2(!card->isVisible(), "the card outlived the pointer leaving the bar-and-card band");
+}

@@ -42,6 +42,10 @@ private slots:
     void aPointerBetweenTheBarAndTheCardKeepsIt();
     void aParkedTimelineHoverKeepsTheChromeAwake();
     void aVanishedTimelineEndsTheCardWithoutGrace();
+    // ReviewPreviewContracts findings 1 and 2: the newest answer settles, and a
+    // rescued card is still ended when the pointer leaves its band.
+    void aCachedAnswerForTheNewestRequestSettlesTheCard();
+    void aCardRescuedInTheBandIsDismissedWhenThePointerLeavesIt();
 
 private:
     // True when a runtime is selected. Without a module it skips; a selection
