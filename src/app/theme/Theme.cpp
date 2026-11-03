@@ -550,7 +550,9 @@ QWidget#titlePage QWidget#titleHeader QPushButton:hover:enabled { border-color: 
 QWidget#titlePage QWidget#titleHeader QPushButton:pressed { background: %3; }
 QWidget#titlePage QWidget#titleHeader QPushButton:focus { border-color: %4; }
 QWidget#titlePage QWidget#titleHeader QPushButton:disabled { color: %7; }
-QWidget#titlePage QPushButton#settingsChip {
+/* The same specificity as the header's pill rule, plus the chip's id: the
+   gear states its whole 40 px square, so no inherited padding can widen it. */
+QWidget#titlePage QWidget#titleHeader QPushButton#settingsChip {
     background: %43;
     border: 1px solid %44;
     border-radius: %42px;
@@ -560,9 +562,9 @@ QWidget#titlePage QPushButton#settingsChip {
     max-height: %12px;
     padding: 0;
 }
-QWidget#titlePage QPushButton#settingsChip:hover { border-color: %4; }
-QWidget#titlePage QPushButton#settingsChip:pressed { background: %3; }
-QWidget#titlePage QPushButton#settingsChip:focus { border-color: %4; }
+QWidget#titlePage QWidget#titleHeader QPushButton#settingsChip:hover { border-color: %4; }
+QWidget#titlePage QWidget#titleHeader QPushButton#settingsChip:pressed { background: %3; }
+QWidget#titlePage QWidget#titleHeader QPushButton#settingsChip:focus { border-color: %4; }
 QWidget#titlePage QLabel#status,
 QWidget#titlePage QLabel#muted { color: %7; font-size: %29px; }
 
