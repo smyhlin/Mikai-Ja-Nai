@@ -300,6 +300,10 @@ QStyleOptionButton roleOption(const QPushButton& button, RoleState state) {
 }
 
 WidgetPixels grabRoleState(QPushButton& button, RoleState state) {
+    // Both places a sheet can read a hover from are set here, and nothing is
+    // processed afterwards: the style option's state and the widget's own
+    // under-mouse attribute (an event turn can clear the latter).
+    button.setAttribute(Qt::WA_UnderMouse, state == RoleState::Hover);
     WidgetPixels pixels;
     pixels.scale = button.devicePixelRatioF() > 0.0 ? button.devicePixelRatioF() : 1.0;
     pixels.image = QImage(qCeil(button.width() * pixels.scale),
