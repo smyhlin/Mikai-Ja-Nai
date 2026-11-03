@@ -148,12 +148,20 @@ inline void noteRenderTargetFormatReset() {
     g_renderTargetFormatResets.fetch_add(1, std::memory_order_relaxed);
 }
 
-inline void noteChromeCacheRender(qint64 bytes) {
+/// One control was rasterised into its cache. A render is not a hit: the hit
+/// count is `chromePaintCached`, and the two only add up if they are kept apart.
+inline void noteChromeCacheRender() {
     if (!countersEnabled()) return;
     g_chromeCacheRenders.fetch_add(1, std::memory_order_relaxed);
-    if (bytes > 0) {
-        g_chromeCacheBytes.store(static_cast<quint64>(bytes), std::memory_order_relaxed);
-    }
+}
+
+/// The cache's CURRENT occupancy in device pixels, not the size of the control
+/// that was just rendered. Set on every add, drop and adopt, so a reader sees the
+/// live total against the budget and a zero after the last eviction.
+inline void noteChromeCacheHeld(qint64 bytes) {
+    if (!countersEnabled()) return;
+    g_chromeCacheBytes.store(bytes > 0 ? static_cast<quint64>(bytes) : 0,
+                             std::memory_order_relaxed);
 }
 
 inline void noteAwayStackingStop() {

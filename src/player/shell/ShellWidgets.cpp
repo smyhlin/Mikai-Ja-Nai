@@ -191,6 +191,7 @@ void chromeUpdate(QWidget* widget, const QRect& rect) {
 void ChromeList::adopt(QWidget* root, QObject* watcher) {
     entries_.clear();
     cachedBytes_ = 0;
+    mikai::gui::uiprofile::noteChromeCacheHeld(0);
     addSubtree(root, watcher);
 }
 
@@ -278,6 +279,7 @@ void ChromeList::dropCache(Entry& entry) {
     entry.cache = QPixmap();
     entry.valid = false;
     entry.stamp = 0;
+    mikai::gui::uiprofile::noteChromeCacheHeld(cachedBytes_);
 }
 
 void ChromeList::invalidate(const QWidget* widget) {
@@ -362,7 +364,8 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                     entry.painted->paintChrome(cachePainter);
                 }
                 cachedBytes_ += bytes - held;
-                mikai::gui::uiprofile::noteChromeCacheRender(bytes);
+                mikai::gui::uiprofile::noteChromeCacheRender();
+                mikai::gui::uiprofile::noteChromeCacheHeld(cachedBytes_);
                 entry.cache = buffer;
                 entry.box = box;
                 entry.devicePixelRatio = ratio;
@@ -372,8 +375,9 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                 painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
                 painter.drawPixmap(box.topLeft(), entry.cache);
                 painter.restore();
+                // Painted, but NOT a hit: this control was just rasterised, and
+                // counting it as cached would make entries - cached a fake zero.
                 ++painted;
-                ++cached;
                 continue;
             }
             dropCache(entry);
