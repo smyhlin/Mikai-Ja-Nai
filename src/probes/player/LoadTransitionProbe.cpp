@@ -26,6 +26,7 @@
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
 #include <QPointer>
+#include <QScopeGuard>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QThread>
@@ -616,8 +617,14 @@ int sweepChrome(QWidget* first, QWidget* second, QWidget* scrub, int durationMs)
 /// retention exists for: is the picture still on screen, and is the source still
 /// paused where the viewer left it.
 /// Answers 0 measured, 1 failed, 3 unobservable.
-int runContextLoss(PlayerDialog* dialog, VideoSurface* surface, const Baseline& baseline) {
+int runContextLoss(PlayerDialog* dialog, VideoSurface* surface, const Baseline& baseline,
+                   const QElapsedTimer& runClock) {
     if (dialog == nullptr || surface == nullptr) return 3;
+    const bool wasPlaying = surface->isPlaying();
+    const QPointer<VideoSurface> guardedSurface(surface);
+    const auto restorePlayback = qScopeGuard([guardedSurface, wasPlaying] {
+        if (guardedSurface && wasPlaying) guardedSurface->setPaused(false);
+    });
     surface->setPaused(true);
     if (!waitFor([surface] { return !surface->isPlaying(); }, 4000)) return 3;
     pump(320);
@@ -632,6 +639,10 @@ int runContextLoss(PlayerDialog* dialog, VideoSurface* surface, const Baseline& 
         return pause.has_value() && pause->kind == ProbePropertyValue::Kind::Flag && pause->flag;
     };
     const bool pausedBefore = corePaused();
+    if (!pausedBefore) {
+        metric(QStringLiteral("context recreation: the initial pause was not acknowledged"));
+        return 3;
+    }
 
     QWidget* shell = surface->parentWidget();
     QWidget host;
@@ -653,11 +664,7 @@ int runContextLoss(PlayerDialog* dialog, VideoSurface* surface, const Baseline& 
     dialog->resize(dialog->size());
     pump(700);
     const quint64 generationBack = surface->renderContextGeneration();
-    // A lost render context costs a reload, and the reload needs the source's own
-    // time to report a position again: judging at a fixed 700 ms measures the
-    // load's latency, not whether the position was kept. Wait for the core to
-    // reach it, bounded, and report the wait - a source that never gets there is
-    // the real loss.
+    // Wait for the asynchronous reload's seek before judging retained position.
     const qint64 reloadClockStart = runClock.elapsed();
     bool positionRestored = positionBefore <= 0.0 ||
                             surface->position() + 1.5 >= positionBefore;
@@ -700,12 +707,6 @@ int runContextLoss(PlayerDialog* dialog, VideoSurface* surface, const Baseline& 
                               "recreation (waited %1 ms for the reload to report it)")
                    .arg(reloadWaitMs));
         ++failures;
-    }
-    // The stage leaves the surface as it found it, so later stages measure the
-    // source they opened rather than this one's paused pose.
-    if (!pausedBefore) {
-        surface->setPaused(false);
-        waitFor([surface] { return surface->isPlaying(); }, 4000);
     }
     // Display proof, not memory proof: a CPU copy that never reaches the surface
     // is not "the picture survived", so the framebuffer has to carry it.
@@ -1245,7 +1246,7 @@ int run(int argc, char** argv) {
 
     // ── retention across a real context recreation ──────────────────────────
     if (contextLoss) {
-        const int result = runContextLoss(dialog, surface, baseline);
+        const int result = runContextLoss(dialog, surface, baseline, runClock);
         // 0 measured, 1 failed, 3 unobservable. Unobservable is not a pass: the
         // environment could not recreate the context, so nothing supports the
         // retention claim.
