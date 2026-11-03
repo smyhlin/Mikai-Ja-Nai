@@ -214,7 +214,7 @@ void ChromeList::addSubtree(QWidget* root, QObject* watcher) {
                     child->installEventFilter(watcher);
                 }
             }
-            entries_.append(Entry{child, painted, {}, {}});
+            entries_.append(Entry{child, painted, {}, {}, {}});
             Entry& added = entries_.last();
             added.className = child->metaObject()->className();
             added.index = static_cast<int>(entries_.size()) - 1;
@@ -251,12 +251,9 @@ void chromeRepaintEvent(ChromeHost* host, QObject* watched, QEvent* event) {
         case QEvent::FontChange:
         case QEvent::PaletteChange:
         case QEvent::StyleChange:
-            // These change what the control looks like: its pixels are stale.
             host->chromeDirty(widget, QRect());
             break;
         case QEvent::Move:
-            // A translation keeps the control's own pixels; only its damage moved.
-            // Resize does not: the visible rect can change with it.
             host->chromeMoved(widget);
             break;
         case QEvent::Resize:
