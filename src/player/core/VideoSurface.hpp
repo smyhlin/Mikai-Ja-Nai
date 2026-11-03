@@ -429,6 +429,10 @@ public:
     /// a stop nobody could see. True when the surface still exists and the
     /// controller has no transition left in flight.
     bool settleNativeForTeardown(int timeoutMs = kTeardownSettleBudgetMs);
+    /// True when the last settleNativeForTeardown() stopped waiting on its own
+    /// budget instead of getting an acknowledgement. The stop is still running;
+    /// only the GUI-side wait ended.
+    bool nativeTeardownSettleAbandoned() const { return nativeTeardownSettleAbandoned_; }
 
     // ── native plan lock ──────────────────────────────────────────────────
     //
@@ -700,6 +704,10 @@ private:
     /// Set for the whole of settleNativeForTeardown: the bounded wait spins the
     /// event loop, so a reentrant close must not start a second settlement.
     bool nativeTeardownSettling_ = false;
+    /// The last settlement gave up waiting on its budget. Read by a close path
+    /// that has to decide between refusing and closing with the stop still
+    /// unacknowledged.
+    bool nativeTeardownSettleAbandoned_ = false;
     qint64 nativePlaybackNowMs() const { return nativePlaybackClock_.elapsed(); }
     /// Ends a capture that can no longer be answered because the source moved.
     void abandonNativeReferenceFrame(const QString& reasonKey, const QString& reason);

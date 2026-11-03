@@ -2432,13 +2432,29 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
         processingOverlay_->setStage(-1, 0, QString(), tr("Finishing enhancement…"));
     });
     finishingNotice.start();
+    // The settle spins the loop below, so the float's surface is guarded across it;
+    // it is also how the abandoned-wait verdict is read back.
+    QPointer<VideoSurface> parkedSurfaceAtClose;
+    if (PipFloat* parked = pip_ != nullptr ? pip_ : pipPool_) {
+        parkedSurfaceAtClose = parked->videoSurface();
+    }
     const bool parkedSettled = settleParkedNative();
     finishingNotice.stop();
     if (self.isNull()) return;
     const bool coreSettled = surface_ == nullptr || surface_->settleNativeForTeardown();
     finishingNotice.stop();
     if (self.isNull()) return;
-    if (!parkedSettled || !coreSettled) {
+    // A settle that gave up waiting on its own budget is not a stop this close can
+    // ask the viewer to retry: the budget is spent, the window must come back, and
+    // the surface is going away anyway. A stop the native side actually named keeps
+    // the player open exactly as before.
+    const bool parkedAbandoned =
+        !parkedSurfaceAtClose.isNull() && parkedSurfaceAtClose->nativeTeardownSettleAbandoned();
+    const bool coreAbandoned =
+        surface_ != nullptr && surface_->nativeTeardownSettleAbandoned();
+    const bool unsettled = !parkedSettled || !coreSettled;
+    const bool refusalNamed = (!parkedSettled && !parkedAbandoned) || (!coreSettled && !coreAbandoned);
+    if (unsettled && refusalNamed) {
         // Nothing is torn down: both cores and their render contexts stay alive so
         // the stop can be retried, and no stream or core is closed on a stop that
         // was never acknowledged.
@@ -2498,6 +2514,15 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
         }
         event->ignore();
         return;
+    }
+    if (unsettled) {
+        // The bounded wait is over and the stop has not answered: the close goes
+        // on rather than freezing the window for the controller's own timeout.
+        // The surface is destroyed with the dialog, its own shutdown is what the
+        // controller's watchdog keeps naming, and nothing here waits on it.
+        qWarning().noquote()
+            << "mikai: native stop unacknowledged (native.playback.teardownUnsettled); closing "
+               "after the bounded settle";
     }
     // A refused native stop keeps the ongoing AnimeJaNai operation alive.
     ++animeJanaiSequence_;

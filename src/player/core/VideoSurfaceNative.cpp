@@ -507,6 +507,7 @@ bool VideoSurface::settleNativeForTeardown(int timeoutMs) {
         return false;
     }
     nativeTeardownSettling_ = true;
+    nativeTeardownSettleAbandoned_ = false;
     // The frozen capture is over: a plan lock would only queue the stop below and
     // time it out.
     nativePlayback_.abandonPlanLock();
@@ -559,9 +560,10 @@ bool VideoSurface::settleNativeForTeardown(int timeoutMs) {
     nativeTeardownSettling_ = false;
     if (!stopped && !guard.isNull()) {
         // The wait is over; the stop itself is not. The controller's own watchdog
-        // names its failure, the surface is left holding whatever the core has
-        // not acknowledged, and the caller refuses a teardown it cannot prove -
-        // what must not continue is this function occupying the GUI thread.
+        // names its failure, and what must not continue is this function
+        // occupying the GUI thread. The flag is what lets a close path proceed
+        // with the stop still unacknowledged instead of refusing to close.
+        nativeTeardownSettleAbandoned_ = true;
         const qint64 waitedMs = clock.elapsed();
         qWarning().noquote() << QStringLiteral(
                                     "mikai: native teardown settle abandoned after %1 ms "
