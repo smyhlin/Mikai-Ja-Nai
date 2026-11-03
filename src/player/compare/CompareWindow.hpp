@@ -253,6 +253,9 @@ private:
     bool flickerShowA_ = true;
 
     std::optional<mplayer::VideoSurface::NativePlanLock> nativeLock_;
+    /// Held while the window owns the captured picture: the panes must be
+    /// comparable whatever display mode the viewer saved (GOAL-H2).
+    std::optional<mplayer::VideoScaleFitLock> scaleFitLock_;
     QString lockError_;
     bool lockRetryArmed_ = false;
     bool rendering_ = false;

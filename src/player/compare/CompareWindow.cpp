@@ -721,6 +721,10 @@ bool CompareWindow::ensurePlanLock() {
         surface_->acquireNativePlanLock(&reasonKey, &reason);
     if (lock.has_value()) {
         nativeLock_ = std::move(lock);
+        // Fit for as long as the capture owns the picture: a Fill crop or a
+        // Stretch distortion would make two panes of the same frame differ for
+        // a reason the comparison is not about.
+        scaleFitLock_ = surface_->acquireVideoScaleFitLock();
         lockError_.clear();
         lockRetryArmed_ = false;
         return true;
@@ -741,6 +745,9 @@ bool CompareWindow::ensurePlanLock() {
 }
 
 void CompareWindow::releasePlanLock() {
+    // The fit hold goes first, so the viewer's mode is back on the surface
+    // before playback resumes through it.
+    scaleFitLock_.reset();
     // Reset runs the scoped token's destructor, submitting any queued transition.
     nativeLock_.reset();
     lockRetryArmed_ = false;
