@@ -111,6 +111,17 @@ inline std::atomic<qint64> g_lastActivationToPaintMs{-1};
 inline std::atomic<quint64> g_renderTargetProbes{0};
 inline std::atomic<quint64> g_renderTargetFormatResets{0};
 inline std::atomic<quint64> g_chromeCacheRenders{0};
+/// Where the chrome pass spends its time, and why a control was rasterised again.
+/// A cache meant to replace rasterisation has to prove which half of the cost it
+/// moved: blitting a cached pixmap and rasterising a control are different
+/// symptoms, and a miss has a reason.
+inline std::atomic<quint64> g_chromeBlitMicros{0};
+inline std::atomic<quint64> g_chromeRasterMicros{0};
+inline std::atomic<quint64> g_chromeCacheMissDirty{0};
+inline std::atomic<quint64> g_chromeCacheMissGeometry{0};
+inline std::atomic<quint64> g_chromeCacheMissRatio{0};
+inline std::atomic<quint64> g_chromeCacheMissGeneration{0};
+inline std::atomic<quint64> g_chromeCacheMissBudget{0};
 /// Occupancy of the ChromeList that published LAST, not a process total. Each
 /// list has its own 8 MiB budget, and the shipping player plus the pooled float
 /// can both hold a cache at once (up to 16 MiB), so this is one list's number and
@@ -159,6 +170,30 @@ inline void noteRenderTargetFormatReset() {
 inline void noteChromeCacheRender() {
     if (!countersEnabled()) return;
     g_chromeCacheRenders.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline void noteChromeCacheBlit(qint64 micros) {
+    if (!countersEnabled()) return;
+    g_chromeBlitMicros.fetch_add(static_cast<quint64>(std::max<qint64>(micros, 0)),
+                                 std::memory_order_relaxed);
+}
+
+inline void noteChromeCacheRaster(qint64 micros) {
+    if (!countersEnabled()) return;
+    g_chromeRasterMicros.fetch_add(static_cast<quint64>(std::max<qint64>(micros, 0)),
+                                   std::memory_order_relaxed);
+}
+
+/// Why a control could not be served from cache: 1 geometry, 2 ratio,
+/// 3 generation, 4 budget, anything else an explicit invalidation.
+inline void noteChromeCacheMiss(int reason) {
+    if (!countersEnabled()) return;
+    std::atomic<quint64>* counter = &g_chromeCacheMissDirty;
+    if (reason == 1) counter = &g_chromeCacheMissGeometry;
+    else if (reason == 2) counter = &g_chromeCacheMissRatio;
+    else if (reason == 3) counter = &g_chromeCacheMissGeneration;
+    else if (reason == 4) counter = &g_chromeCacheMissBudget;
+    counter->fetch_add(1, std::memory_order_relaxed);
 }
 
 /// That list's occupancy in device pixels after an add, drop or adopt - not the
@@ -306,6 +341,13 @@ struct Snapshot {
     quint64 renderTargetFormatResets = 0;
     quint64 chromeCacheRenders = 0;
     quint64 chromeCacheBytes = 0;
+    quint64 chromeBlitMicros = 0;
+    quint64 chromeRasterMicros = 0;
+    quint64 chromeCacheMissDirty = 0;
+    quint64 chromeCacheMissGeometry = 0;
+    quint64 chromeCacheMissRatio = 0;
+    quint64 chromeCacheMissGeneration = 0;
+    quint64 chromeCacheMissBudget = 0;
     quint64 awayStackingStops = 0;
     quint64 raiseRetriesAborted = 0;
     quint64 teardownPicturesCaptured = 0;
@@ -332,6 +374,13 @@ inline Snapshot snapshot() {
     out.renderTargetFormatResets = g_renderTargetFormatResets.load(std::memory_order_relaxed);
     out.chromeCacheRenders = g_chromeCacheRenders.load(std::memory_order_relaxed);
     out.chromeCacheBytes = g_chromeCacheBytes.load(std::memory_order_relaxed);
+    out.chromeBlitMicros = g_chromeBlitMicros.load(std::memory_order_relaxed);
+    out.chromeRasterMicros = g_chromeRasterMicros.load(std::memory_order_relaxed);
+    out.chromeCacheMissDirty = g_chromeCacheMissDirty.load(std::memory_order_relaxed);
+    out.chromeCacheMissGeometry = g_chromeCacheMissGeometry.load(std::memory_order_relaxed);
+    out.chromeCacheMissRatio = g_chromeCacheMissRatio.load(std::memory_order_relaxed);
+    out.chromeCacheMissGeneration = g_chromeCacheMissGeneration.load(std::memory_order_relaxed);
+    out.chromeCacheMissBudget = g_chromeCacheMissBudget.load(std::memory_order_relaxed);
     out.awayStackingStops = g_awayStackingStops.load(std::memory_order_relaxed);
     out.raiseRetriesAborted = g_raiseRetriesAborted.load(std::memory_order_relaxed);
     out.teardownPicturesCaptured = g_teardownPicturesCaptured.load(std::memory_order_relaxed);
@@ -357,6 +406,13 @@ inline void resetCounters() {
     g_renderTargetFormatResets.store(0, std::memory_order_relaxed);
     g_chromeCacheRenders.store(0, std::memory_order_relaxed);
     g_chromeCacheBytes.store(0, std::memory_order_relaxed);
+    g_chromeBlitMicros.store(0, std::memory_order_relaxed);
+    g_chromeRasterMicros.store(0, std::memory_order_relaxed);
+    g_chromeCacheMissDirty.store(0, std::memory_order_relaxed);
+    g_chromeCacheMissGeometry.store(0, std::memory_order_relaxed);
+    g_chromeCacheMissRatio.store(0, std::memory_order_relaxed);
+    g_chromeCacheMissGeneration.store(0, std::memory_order_relaxed);
+    g_chromeCacheMissBudget.store(0, std::memory_order_relaxed);
     g_awayStackingStops.store(0, std::memory_order_relaxed);
     g_raiseRetriesAborted.store(0, std::memory_order_relaxed);
     g_teardownPicturesCaptured.store(0, std::memory_order_relaxed);

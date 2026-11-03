@@ -326,6 +326,15 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
         if (box.isEmpty() || !box.intersects(clip)) {
             continue;
         }
+        // Why this control cannot be served, decided before the attempt: a hit
+        // ratio hides whether the cache is thrashing on geometry, ratio, a full
+        // invalidation or its budget, and those are different defects.
+        int missReason = 0;
+        if (entry.valid) {
+            if (entry.box != box) missReason = 1;
+            else if (entry.devicePixelRatio != ratio) missReason = 2;
+            else if (entry.stamp != generation_) missReason = 3;
+        }
         const bool reusable = chromeCacheEnabled() && entry.valid && entry.box == box &&
                               entry.devicePixelRatio == ratio && entry.stamp == generation_;
         if (reusable) {
@@ -334,7 +343,13 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
             // ratio on the target device must blend rather than snap.
             painter.save();
             painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+            const bool timed = mikai::gui::uiprofile::countersEnabled();
+            const qint64 blitStart = timed ? mikai::gui::uiprofile::nowNs() : 0;
             painter.drawPixmap(box.topLeft(), entry.cache);
+            if (timed) {
+                mikai::gui::uiprofile::noteChromeCacheBlit(
+                    (mikai::gui::uiprofile::nowNs() - blitStart) / 1000);
+            }
             painter.restore();
             ++painted;
             ++cached;
@@ -361,7 +376,16 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                     cachePainter.setRenderHint(QPainter::SmoothPixmapTransform, true);
                     cachePainter.translate(at - box.topLeft());
                     cachePainter.setClipRect(box.translated(-at), Qt::IntersectClip);
+                    const bool timed = mikai::gui::uiprofile::countersEnabled();
+                    const qint64 rasterStart = timed ? mikai::gui::uiprofile::nowNs() : 0;
                     entry.painted->paintChrome(cachePainter);
+                    if (timed) {
+                        mikai::gui::uiprofile::noteChromeCacheRaster(
+                            (mikai::gui::uiprofile::nowNs() - rasterStart) / 1000);
+                    }
+                }
+                if (mikai::gui::uiprofile::countersEnabled()) {
+                    mikai::gui::uiprofile::noteChromeCacheMiss(missReason);
                 }
                 cachedBytes_ += bytes - held;
                 mikai::gui::uiprofile::noteChromeCacheRender();
@@ -379,6 +403,9 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                 // counting it as cached would make entries - cached a fake zero.
                 ++painted;
                 continue;
+            }
+            if (mikai::gui::uiprofile::countersEnabled()) {
+                mikai::gui::uiprofile::noteChromeCacheMiss(4);
             }
             dropCache(entry);
         }
