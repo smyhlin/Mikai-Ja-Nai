@@ -58,6 +58,7 @@
 #include "TestMediaInformation.hpp"
 #include "TestHdrRenderContracts.hpp"
 #include "TestPacingContract.hpp"
+#include "TestVideoScaling.hpp"
 #include "TestHoverPreview.hpp"
 #include "TestNativeTypes.hpp"
 #include "TestRuntimeSelection.hpp"
@@ -102,7 +103,7 @@ constexpr const char* kSuites[] = {
     "TestNativePreparationReferences", "TestNativeComponents", "TestNativeStoredModels", "TestNativePreparedPlan", "TestNativePlaybackController", "TestNativeStatus",
     "TestPlaybackDiagnostics", "TestPlaybackControls", "TestSkipSegments", "TestTimelineMarks",
     "TestMediaInformation",
-    "TestHdrRenderContracts", "TestHoverPreview",
+    "TestHdrRenderContracts", "TestVideoScaling", "TestHoverPreview",
     "TestNativePrefs",
     "TestNativeMenu", "TestNativeUserRecipes", "TestNativeAssets", "TestMpvAsync", "TestCompareGif",
     "TestCompareClip", "TestCompareLoading",
@@ -250,6 +251,7 @@ int main(int argc, char** argv) {
   TestMediaInformation mediaInformation;
   TestHdrRenderContracts hdrRenderContracts;
   TestPacingContract pacingContract;
+  TestVideoScaling videoScaling;
   TestHoverPreview hoverPreview;
   TestNativePrefs nativePrefs;
   TestNativeMenu nativeMenu;
@@ -366,6 +368,7 @@ int main(int argc, char** argv) {
   run("TestMediaInformation", &mediaInformation, true);
   run("TestHdrRenderContracts", &hdrRenderContracts, true);
   run("TestPacingContract", &pacingContract, true);
+  run("TestVideoScaling", &videoScaling, true);
   run("TestHoverPreview", &hoverPreview, true);
   run("TestNativePrefs", &nativePrefs, true);
   run("TestNativeMenu", &nativeMenu, true);

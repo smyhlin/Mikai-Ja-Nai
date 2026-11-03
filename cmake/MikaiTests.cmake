@@ -175,6 +175,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/player/TestHdrRenderContracts.cpp
     tests/cpp/player/TestPacingContract.hpp
     tests/cpp/player/TestPacingContract.cpp
+    tests/cpp/player/TestVideoScaling.hpp
+    tests/cpp/player/TestVideoScaling.cpp
     tests/cpp/player/TestHoverPreview.hpp
     tests/cpp/player/TestHoverPreview.cpp
     # Native bundle, component, model, preparation & status suites
@@ -345,6 +347,7 @@ if(MIKAI_BUILD_PROBES)
     TestMediaInformation
     TestHdrRenderContracts
     TestPacingContract
+    TestVideoScaling
     TestHoverPreview
     TestNativePrefs
     TestNativeMenu
