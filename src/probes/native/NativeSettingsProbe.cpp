@@ -53,7 +53,6 @@
 #include <QToolButton>
 #include <QThread>
 #include <QTemporaryDir>
-#include <QTabWidget>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QWindow>
@@ -193,50 +192,50 @@ QToolButton* clearActionFor(QLineEdit& input) {
     return action != nullptr && action->isVisibleTo(&input) ? action : nullptr;
 }
 
+/// The navigation entry a Settings page id owns. `pageIds()` is the public,
+/// stable order the entries were built in, so the entry for an id is found
+/// without depending on a caption or a widget type the page happens to use.
+QPushButton* navEntryFor(SettingsDialog& dialog, const QString& id) {
+    const QStringList ids = dialog.pageIds();
+    const int index = ids.indexOf(id);
+    if (index < 0) return nullptr;
+    const QList<QPushButton*> entries =
+        dialog.findChildren<QPushButton*>(QStringLiteral("settingsNavItem"));
+    return index < entries.size() ? entries.at(index) : nullptr;
+}
+
 QKeySequenceEdit* presetField(SettingsDialog& dialog) {
-    auto* tabs = dialog.findChild<QTabWidget*>();
-    if (tabs == nullptr) return nullptr;
     const QStringList parts =
         SettingsDialog::tr("Shortcut for %1").split(QStringLiteral("%1"));
     if (parts.size() != 2) return nullptr;
-    for (int index = 0; index < tabs->count(); ++index) {
-        if (tabs->tabText(index) != SettingsDialog::tr("Keyboard shortcuts")) continue;
-        for (QKeySequenceEdit* field : tabs->widget(index)->findChildren<QKeySequenceEdit*>()) {
-            const QString name = field->accessibleName();
-            if (name.startsWith(parts.at(0)) && name.endsWith(parts.at(1)) &&
-                name.size() > parts.at(0).size() + parts.at(1).size()) {
-                return field;
-            }
+    for (QKeySequenceEdit* field : dialog.findChildren<QKeySequenceEdit*>()) {
+        const QString name = field->accessibleName();
+        if (name.startsWith(parts.at(0)) && name.endsWith(parts.at(1)) &&
+            name.size() > parts.at(0).size() + parts.at(1).size()) {
+            return field;
         }
     }
     return nullptr;
 }
 
-QWidget* shortcutTabPage(QTabWidget& tabs, QWidget& field) {
-    for (int index = 0; index < tabs.count(); ++index) {
-        QWidget* page = tabs.widget(index);
-        if (page == &field || page->isAncestorOf(&field)) return page;
-    }
-    return nullptr;
-}
-
 bool showShortcutField(SettingsDialog& dialog, QKeySequenceEdit* field) {
-    auto* tabs = dialog.findChild<QTabWidget*>();
-    if (tabs == nullptr || field == nullptr) return false;
-    QWidget* page = shortcutTabPage(*tabs, *field);
-    if (page == nullptr) return false;
-    tabs->setCurrentWidget(page);
+    if (field == nullptr) return false;
+    const bool navigated = dialog.showPage(QStringLiteral("shortcuts"));
     dialog.show();
     QApplication::processEvents();
-    if (page->layout() != nullptr) page->layout()->activate();
+    // The current page is laid out only once it is on screen; settle it before
+    // the field's geometry is measured.
+    if (auto* stack = dialog.findChild<QStackedWidget*>(QStringLiteral("settingsStack"))) {
+        QWidget* page = stack->currentWidget();
+        if (page != nullptr && page->layout() != nullptr) page->layout()->activate();
+    }
     mikai::probes::revealWidget(field);
     QApplication::processEvents();
-    return tabs->currentWidget() == page && page->isVisibleTo(&dialog) &&
+    return navigated && dialog.currentPageId() == QStringLiteral("shortcuts") &&
            field->isVisibleTo(&dialog);
 }
 
 void shortcutDiagnostics(SettingsDialog& dialog, QKeySequenceEdit& field) {
-    auto* tabs = dialog.findChild<QTabWidget*>();
     QLineEdit* input = field.findChild<QLineEdit*>();
     if (input == nullptr) return;
     QStyleOptionFrame frame;
@@ -246,11 +245,14 @@ void shortcutDiagnostics(SettingsDialog& dialog, QKeySequenceEdit& field) {
     QToolButton* clear = clearActionFor(*input);
     const QFontMetrics metrics(input->font());
     const QString binding = input->text();
-    const QString tabCaption = tabs != nullptr
-        ? tabs->tabText(tabs->currentIndex()) : QStringLiteral("<no tabs>");
+    const QString pageId = dialog.currentPageId();
+    QPushButton* entry = navEntryFor(dialog, pageId);
+    const QString pageCaption =
+        entry != nullptr ? entry->text() : QStringLiteral("<no navigation entry>");
     std::fprintf(stderr,
-                 "[native_settings_probe] preset shortcut name=%s tab=%s visible=%d field=%d,%d %dx%d line-edit=%d,%d %dx%d contents=%d,%d %dx%d clear=%s rect=%d,%d %dx%d font=%s text-width=%d capture=native-settings-preset-shortcut-failure.png\n",
-                 qPrintable(field.accessibleName()), qPrintable(tabCaption),
+                 "[native_settings_probe] preset shortcut name=%s page=%s caption=%s visible=%d field=%d,%d %dx%d line-edit=%d,%d %dx%d contents=%d,%d %dx%d clear=%s rect=%d,%d %dx%d font=%s text-width=%d capture=native-settings-preset-shortcut-failure.png\n",
+                 qPrintable(field.accessibleName()), qPrintable(pageId),
+                 qPrintable(pageCaption),
                  field.isVisibleTo(&dialog) ? 1 : 0, field.x(), field.y(),
                  field.width(), field.height(), input->x(), input->y(),
                  input->width(), input->height(), contents.x(), contents.y(),
@@ -1092,18 +1094,7 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
           "the imported custom model is published through AnimeJaNai preset catalogue");
 
     SettingsDialog benchmarkDialog(client, runner);
-    auto* benchmarkTabs = benchmarkDialog.findChild<QTabWidget*>();
-    QWidget* benchmarkPage = nullptr;
-    if (benchmarkTabs != nullptr) {
-        for (QWidget* page : benchmarkDialog.findChildren<QWidget*>(
-                 QStringLiteral("benchmarkPage"))) {
-            if (benchmarkTabs->indexOf(page) >= 0) {
-                benchmarkPage = page;
-                break;
-            }
-        }
-        if (benchmarkPage != nullptr) benchmarkTabs->setCurrentWidget(benchmarkPage);
-    }
+    const bool benchmarkNavigated = benchmarkDialog.showPage(QStringLiteral("benchmark"));
     QApplication::processEvents();
     auto* benchmarkTree = benchmarkDialog.findChild<QTreeWidget*>(
         QStringLiteral("benchmarkModelTree"));
@@ -1120,7 +1111,9 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
             }
         }
     }
-    check(benchmarkTree != nullptr && benchmarkCustomPresent && benchmarkSlotPresent,
+    check(benchmarkTree != nullptr && benchmarkNavigated &&
+              benchmarkDialog.currentPageId() == QStringLiteral("benchmark") &&
+              benchmarkCustomPresent && benchmarkSlotPresent,
           "Benchmark's public catalogue includes custom spatial models and custom slots");
 
     const auto selectedRuntime = mplayer::native::selectStandardRuntime(
@@ -1461,18 +1454,7 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
           "the manager holds an unsaved profile, chain and external-folder draft");
 
     SettingsDialog benchmarkDialog(client, runner);
-    auto* benchmarkTabs = benchmarkDialog.findChild<QTabWidget*>();
-    QWidget* benchmarkPage = nullptr;
-    if (benchmarkTabs != nullptr) {
-        for (QWidget* page : benchmarkDialog.findChildren<QWidget*>(
-                 QStringLiteral("benchmarkPage"))) {
-            if (benchmarkTabs->indexOf(page) >= 0) {
-                benchmarkPage = page;
-                break;
-            }
-        }
-        if (benchmarkPage != nullptr) benchmarkTabs->setCurrentWidget(benchmarkPage);
-    }
+    const bool benchmarkNavigated = benchmarkDialog.showPage(QStringLiteral("benchmark"));
     benchmarkDialog.resize(managerWindowSize);
     benchmarkDialog.show();
     QApplication::processEvents();
@@ -1480,8 +1462,10 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
         benchmarkDialog.findChild<QTreeWidget*>(QStringLiteral("benchmarkModelTree"));
     auto* benchmarkSearch =
         benchmarkDialog.findChild<QLineEdit*>(QStringLiteral("benchmarkModelSearch"));
-    check(benchmarkTree != nullptr && benchmarkSearch != nullptr &&
-              benchmarkPage != nullptr && benchmarkPage->isVisibleTo(&benchmarkDialog),
+    check(benchmarkTree != nullptr && benchmarkTree->isVisibleTo(&benchmarkDialog) &&
+              benchmarkSearch != nullptr && benchmarkSearch->isVisibleTo(&benchmarkDialog) &&
+              benchmarkNavigated &&
+              benchmarkDialog.currentPageId() == QStringLiteral("benchmark"),
           "Benchmark's catalogue exists and is visible before the graph is pasted");
     if (benchmarkTree == nullptr || benchmarkSearch == nullptr) return;
     QTreeWidgetItem* stableBenchmarkRow = benchmarkItem(benchmarkTree, QStringLiteral("builtin1001"));
@@ -4352,9 +4336,7 @@ int main(int argc, char** argv) {
         const QSize requestedSize =
             fitSettingsDialogSize(dialog, mikai::probes::windowSize(QSize(760, 780)));
         dialog.resize(requestedSize);
-        if (auto* tabs = dialog.findChild<QTabWidget*>()) {
-            tabs->setCurrentIndex(tabs->count() - 1);
-        }
+        dialog.showPage(QStringLiteral("benchmark"));
         dialog.show();
         QApplication::processEvents();
         check(mikai::probes::dialogActionsFit(dialog, requestedSize),
@@ -4632,11 +4614,12 @@ int main(int argc, char** argv) {
             const QString englishSave = QCoreApplication::translate(
                 "mikai::app::SettingsDialog", "Save");
             const auto languageSurface = [](SettingsDialog& dialog) {
-                auto* tabs = dialog.findChild<QTabWidget*>(QStringLiteral("settingsTabs"));
-                const QString processing =
-                    tabs != nullptr && tabs->count() > 2 ? tabs->tabText(2) : QString();
+                // The navigation entry is the caption a user sees for the page;
+                // its id is the stable key, never the translated text.
+                QPushButton* processing = navEntryFor(dialog, QStringLiteral("processing"));
                 QPushButton* save = acceptButton(dialog.findChild<QDialogButtonBox*>());
-                return qMakePair(processing, save != nullptr ? save->text() : QString());
+                return qMakePair(processing != nullptr ? processing->text() : QString(),
+                                 save != nullptr ? save->text() : QString());
             };
             const auto storedLanguage = [] {
                 QSettings settings;
@@ -4647,7 +4630,7 @@ int main(int argc, char** argv) {
                 SettingsDialog dialog(client, runner);
                 dialog.resize(fitSettingsDialogSize(
                     dialog, mikai::probes::windowSize(QSize(760, 780))));
-                if (auto* tabs = dialog.findChild<QTabWidget*>()) tabs->setCurrentIndex(0);
+                dialog.showPage(QStringLiteral("customization/general"));
                 dialog.show();
                 QApplication::processEvents();
                 const auto englishSurface = languageSurface(dialog);
@@ -4705,7 +4688,7 @@ int main(int argc, char** argv) {
                 SettingsDialog dialog(client, runner);
                 dialog.resize(fitSettingsDialogSize(
                     dialog, mikai::probes::windowSize(QSize(760, 780))));
-                if (auto* tabs = dialog.findChild<QTabWidget*>()) tabs->setCurrentIndex(0);
+                dialog.showPage(QStringLiteral("customization/general"));
                 dialog.show();
                 QApplication::processEvents();
                 const auto englishSurface = languageSurface(dialog);
@@ -4735,7 +4718,7 @@ int main(int argc, char** argv) {
                 SettingsDialog dialog(client, runner);
                 dialog.resize(fitSettingsDialogSize(
                     dialog, mikai::probes::windowSize(QSize(760, 780))));
-                if (auto* tabs = dialog.findChild<QTabWidget*>()) tabs->setCurrentIndex(0);
+                dialog.showPage(QStringLiteral("customization/general"));
                 dialog.show();
                 QApplication::processEvents();
                 const auto englishSurface = languageSurface(dialog);
@@ -4763,7 +4746,7 @@ int main(int argc, char** argv) {
                 SettingsDialog dialog(client, runner);
                 dialog.resize(fitSettingsDialogSize(
                     dialog, mikai::probes::windowSize(QSize(760, 780))));
-                if (auto* tabs = dialog.findChild<QTabWidget*>()) tabs->setCurrentIndex(0);
+                dialog.showPage(QStringLiteral("customization/general"));
                 dialog.show();
                 QApplication::processEvents();
                 auto* language =
@@ -4787,8 +4770,7 @@ int main(int argc, char** argv) {
                 SettingsDialog reopened(client, runner);
                 reopened.resize(fitSettingsDialogSize(
                     reopened, mikai::probes::windowSize(QSize(760, 780))));
-                if (auto* tabs = reopened.findChild<QTabWidget*>())
-                    tabs->setCurrentIndex(0);
+                reopened.showPage(QStringLiteral("customization/general"));
                 reopened.show();
                 QApplication::processEvents();
                 const QString ukrainianProcessing = QCoreApplication::translate(
