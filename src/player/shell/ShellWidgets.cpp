@@ -549,22 +549,29 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                 mix(static_cast<quint64>(draw.box.width()));
                 mix(static_cast<quint64>(draw.box.height()));
             }
+            const QSize device(static_cast<int>(std::ceil(cluster.box.width() * ratio)),
+                               static_cast<int>(std::ceil(cluster.box.height() * ratio)));
             Sheet* sheet = nullptr;
+            Sheet* spare = nullptr;
             for (Sheet& candidate : sheets_) {
+                if (candidate.lastUsed == sheetSerial_) continue;
                 if (candidate.fingerprint == fingerprint && candidate.box == cluster.box) {
                     sheet = &candidate;
                     break;
                 }
+                if (spare == nullptr && candidate.image.size() == device) spare = &candidate;
             }
             if (sheet == nullptr) {
-                const QSize device(static_cast<int>(std::ceil(cluster.box.width() * ratio)),
-                                   static_cast<int>(std::ceil(cluster.box.height() * ratio)));
-                Sheet built;
-                built.image = QPixmap(device);
-                built.image.setDevicePixelRatio(ratio);
-                built.image.fill(Qt::transparent);
+                if (spare == nullptr) {
+                    Sheet built;
+                    built.image = QPixmap(device);
+                    sheets_.append(std::move(built));
+                    spare = &sheets_.last();
+                }
+                spare->image.setDevicePixelRatio(ratio);
+                spare->image.fill(Qt::transparent);
                 {
-                    QPainter sheetPainter(&built.image);
+                    QPainter sheetPainter(&spare->image);
                     // 1:1 copy of rasters that were already antialiased. Filtering
                     // here would blur an edge the per-control blit did not.
                     sheetPainter.setRenderHint(QPainter::SmoothPixmapTransform, false);
@@ -574,10 +581,9 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                                                 entries_[draw.index].cache);
                     }
                 }
-                built.box = cluster.box;
-                built.fingerprint = fingerprint;
-                sheets_.append(std::move(built));
-                sheet = &sheets_.last();
+                spare->box = cluster.box;
+                spare->fingerprint = fingerprint;
+                sheet = spare;
             }
             sheet->lastUsed = sheetSerial_;
             const qint64 blitStart = counted ? mikai::gui::uiprofile::nowNs() : 0;
