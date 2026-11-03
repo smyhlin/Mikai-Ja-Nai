@@ -2051,6 +2051,7 @@ private:
         BackPaint,
         BackSample,
         Cooldown,
+        Teardown,
         Finished
     };
 
@@ -2063,6 +2064,7 @@ private:
     void logCycle(bool valid, bool stillBuilding);
     void fail(const QString& reason);
     void finish();
+    void completeTeardown();
     void enter(Phase phase) {
         phase_ = phase;
         phaseClock_.start();
@@ -2599,6 +2601,12 @@ void FocusDuringBuildRunner::step() {
     case Phase::BackSample:
         recordSample();
         return;
+    case Phase::Teardown: {
+        // Bounded: the build normally settles within a few seconds of the last
+        // cycle, and a hung build must not leave the runner alive forever.
+        if (!buildActive_() || phaseClock_.elapsed() >= 15000) completeTeardown();
+        return;
+    }
     case Phase::Cooldown: {
         if (phaseClock_.elapsed() < 150) return;
         if (evidence_.cyclesCompleted >= evidence_.cyclesRequested ||
@@ -2619,21 +2627,21 @@ void FocusDuringBuildRunner::fail(const QString& reason) {
     evidence_.unavailableReason = reason;
     std::fprintf(stderr, "FAIL [focus-build] %s\n", qPrintable(reason));
     finish();
+    // No PASS is claimed from this run, so the observer window no longer needs
+    // protecting and the helper is reaped immediately.
+    if (phase_ == Phase::Teardown) completeTeardown();
 }
 
 void FocusDuringBuildRunner::finish() {
-    if (phase_ == Phase::Finished) return;
-    phase_ = Phase::Finished;
-    timer_.stop();
+    if (phase_ == Phase::Finished || phase_ == Phase::Teardown) return;
     if (swapConnection_) {
         QObject::disconnect(swapConnection_);
         swapConnection_ = QMetaObject::Connection();
     }
-    // ForegroundPeer::stop() kills and reaps the helper on the GUI thread (up to
-    // 2 s). At this point both the engine-pause proof and the focus evidence are
-    // complete, so the teardown cannot change any measurement; main's bounded
-    // wait for finished() covers it.
-    peer_.stop();
+    // The peer's black window leaves the foreground as soon as the run is done;
+    // killing the helper is the blocking part, so it waits for the build to
+    // settle. Nothing measured after this point depends on the peer.
+    peer_.sendToBack();
     dialog_->raise();
     dialog_->activateWindow();
     if (!nativeForegroundAllowsInput(dialog_))
@@ -2644,6 +2652,21 @@ void FocusDuringBuildRunner::finish() {
                  evidence_.cyclesRequested, evidence_.cyclesCompleted,
                  evidence_.cyclesAbandoned, evidence_.attempts,
                  buildActive_() ? 1 : 0);
+    if (buildActive_()) {
+        // ForegroundPeer::stop() kills and reaps the helper on the GUI thread
+        // (up to 2 s), so it must not overlap the build the engine-pause proof
+        // is still observing. The bound below keeps the deferral finite.
+        enter(Phase::Teardown);
+        timer_.start(100);
+        return;
+    }
+    completeTeardown();
+}
+
+void FocusDuringBuildRunner::completeTeardown() {
+    peer_.stop();
+    phase_ = Phase::Finished;
+    timer_.stop();
     deleteLater();
 }
 #endif
@@ -3105,9 +3128,20 @@ int main(int argc, char** argv) {
                     [&] { return buildActive; },
                     [&] { return buildPlayback.held && buildPlayback.framebufferAt >= 0; },
                     [&] {
-                        return buildPlayback.framebufferAt >= 0 &&
+                        // The fields that make the engine-pause proof pass, as far
+                        // as they exist before completion: a cleared hold or a late
+                        // acknowledgement must not let the blocking peer start land
+                        // inside a measurement that cannot pass.
+                        return buildPlayback.originallyPlaying && buildPlayback.started &&
+                               buildPlayback.held && buildPlayback.acknowledgedAt >= 0 &&
+                               buildPlayback.acknowledgedAt <= 2000 &&
+                               buildPlayback.identityConfirmed &&
+                               buildPlayback.framebufferMismatches == 0 &&
+                               buildPlayback.heldSamples >= 4 &&
                                buildPlayback.framebufferSamples >= 3 &&
-                               buildPlayback.lastHeldAt - buildPlayback.framebufferAt >= 1000;
+                               buildPlayback.framebufferAt >= 0 &&
+                               buildPlayback.lastHeldAt - buildPlayback.framebufferAt >= 1000 &&
+                               buildPlayback.heldImageSaved;
                     });
                 focusRunner->begin();
 #endif
