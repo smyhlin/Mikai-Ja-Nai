@@ -379,6 +379,10 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                 mikai::gui::uiprofile::noteChromeCacheBlit(
                     (mikai::gui::uiprofile::nowNs() - blitStart) / 1000);
             }
+            // The blit is where this control was most recently painted: without
+            // this, reuse keeps damage pointed at where it was first rendered and
+            // a second move leaves a stale island behind.
+            entry.paintedBox = box;
             ++painted;
             ++cached;
             continue;

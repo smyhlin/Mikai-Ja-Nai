@@ -318,14 +318,16 @@ void TestChromeCache::aSameAreaReshapeRepaintsTheNewBox() {
 }
 
 /// A move is not a content change: the pixels are reused and only the two boxes
-/// are repainted. Read from the image, because only the image can show it.
+/// are repainted. The moves are deliberately non-monotonic and diagonal, because
+/// a reuse that forgets where it last blitted leaves the intermediate position
+/// painted - an island the next damage rect does not cover.
 void TestChromeCache::aMoveReusesThePixelsItAlreadyHolds() {
   const QColor frame(18, 18, 24, 255);
   const QColor fill(20, 200, 90, 255);
 
   auto* root = new QWidget;
   root->setAttribute(Qt::WA_DontShowOnScreen, true);
-  root->resize(60, 40);
+  root->resize(80, 60);
   root->show();
 
   auto* control = new QuietChrome(root);
@@ -340,27 +342,31 @@ void TestChromeCache::aMoveReusesThePixelsItAlreadyHolds() {
   QImage scratch = painted(chrome, root, 1.0, frame);
   QVERIFY(near(scratch.pixelColor(8, 6), fill));
 
-  control->move(20, 0);
-  const QRect damage = chrome.damage(control).united(QRect(control->pos(), control->size()));
-  QVERIFY(!damage.isEmpty());
-  {
-    QPainter painter(&scratch);
-    painter.fillRect(damage, frame);
-    chrome.paint(painter, root, damage);
-  }
-  QVERIFY(near(scratch.pixelColor(20 + 8, 6), fill));
+  const auto moveToAndRepaint = [&](const QPoint& target) {
+    const QRect damage = chrome.damage(control).united(QRect(target, control->size()));
+    control->move(target);
+    {
+      QPainter painter(&scratch);
+      painter.fillRect(damage, frame);
+      chrome.paint(painter, root, damage);
+    }
+    return damage;
+  };
+
+  // 0,0 -> 30,20 : the first move is a miss and renders the buffer.
+  moveToAndRepaint(QPoint(30, 20));
+  QVERIFY(near(scratch.pixelColor(30 + 8, 20 + 6), fill));
   QVERIFY(near(scratch.pixelColor(8, 6), frame));
 
-  // The control's own pixels are unchanged, so the buffer was reusable: a paint
-  // without an invalidation must still serve the control's fill.
-  control->move(40, 0);
-  const QRect second = chrome.damage(control).united(QRect(control->pos(), control->size()));
-  {
-    QPainter painter(&scratch);
-    painter.fillRect(second, frame);
-    chrome.paint(painter, root, second);
-  }
-  QVERIFY(near(scratch.pixelColor(40 + 8, 6), fill));
+  // 30,20 -> 0,30 : same size and ratio, so this one is a reuse. Its damage must
+  // include 30,20 or the old position survives.
+  moveToAndRepaint(QPoint(0, 30));
+  QVERIFY2(near(scratch.pixelColor(0 + 8, 30 + 6), fill),
+           qPrintable(QStringLiteral("the reused control did not draw at 0,30: %1")
+                          .arg(scratch.pixelColor(8, 36).name(QColor::HexArgb))));
+  QVERIFY2(near(scratch.pixelColor(30 + 8, 20 + 6), frame),
+           qPrintable(QStringLiteral("the intermediate position is still painted: %1")
+                          .arg(scratch.pixelColor(38, 26).name(QColor::HexArgb))));
 
   chrome.invalidateAll();
   delete root;
