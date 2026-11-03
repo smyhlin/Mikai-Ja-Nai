@@ -78,8 +78,6 @@ class Host : public QWidget, public ChromeHost {
 };
 
 void QuietChrome::paintChrome(QPainter& painter) { painter.fillRect(rect(), fill_); }
-/// Paints on or off colour from the widget's own enabled state: an EnabledChange
-/// is a content change that must invalidate, and the image shows whether it did.
 class EnabledChrome : public QuietChrome {
  public:
   explicit EnabledChrome(QWidget* parent) : QuietChrome(parent) {}
@@ -484,16 +482,13 @@ void TestChromeCache::aContentChangeAfterAMoveIsNotServedStale() {
   delete root;
 }
 
-/// A content event that arrives through the event filter must invalidate, and it
-/// must keep doing so after the control has moved: the move path and the content
-/// path are different, and sharing one of them leaves a disabled control looking
-/// enabled. Driven by a real QEvent, read from the image.
 void TestChromeCache::anEnabledChangeInvalidatesEvenAfterAMove() {
   const QColor frame(18, 18, 24, 255);
   const QColor enabled(20, 200, 90, 255);
   const QColor disabled(200, 40, 40, 255);
 
-  auto* root = new QWidget;
+  Host host;
+  auto* root = &host;
   root->setAttribute(Qt::WA_DontShowOnScreen, true);
   root->resize(60, 40);
   root->show();
@@ -505,9 +500,7 @@ void TestChromeCache::anEnabledChangeInvalidatesEvenAfterAMove() {
   control->show();
   QVERIFY(control->isVisible());
 
-  ChromeList chrome;
-  // The watcher is the host itself, exactly as the shell installs it, so a real
-  // widget event reaches chromeRepaintEvent.
+  ChromeList& chrome = root->chrome;
   chrome.adopt(root, root);
 
   QImage scratch = painted(chrome, root, 1.0, frame);
@@ -523,7 +516,7 @@ void TestChromeCache::anEnabledChangeInvalidatesEvenAfterAMove() {
   }
   QVERIFY(near(scratch.pixelColor(28, 6), enabled));
 
-  control->setEnabled(false);  // EnabledChange through the filter
+  control->setEnabled(false);
   {
     QPainter painter(&scratch);
     const QRect damage =
@@ -535,7 +528,4 @@ void TestChromeCache::anEnabledChangeInvalidatesEvenAfterAMove() {
            qPrintable(QStringLiteral("the disabled control was served its cached enabled "
                                      "pixels: %1")
                           .arg(scratch.pixelColor(28, 6).name(QColor::HexArgb))));
-
-  chrome.invalidateAll();
-  delete root;
 }
