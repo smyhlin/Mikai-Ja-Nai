@@ -621,9 +621,12 @@ int runContextLoss(PlayerDialog* dialog, VideoSurface* surface, const Baseline& 
                               "recreation"));
         ++failures;
     }
-    if (!retained && !baseline.present(after)) {
-        metric(QStringLiteral("context recreation: neither a retained picture nor a framebuffer "
-                              "picture survived the recreation"));
+    // Display proof, not memory proof: a CPU copy that never reaches the surface
+    // is not "the picture survived", so the framebuffer has to carry it.
+    if (!baseline.present(after)) {
+        metric(QStringLiteral("context recreation: the framebuffer does not carry the picture "
+                              "after the recreation (retained_bytes=%1 is only a memory sample)")
+                   .arg(surface->retainedPictureBytes()));
         ++failures;
     }
     return failures == 0 ? 0 : 1;
@@ -746,8 +749,11 @@ TransitionOutcome measureTransition(PlayerDialog* dialog, VideoSurface* surface,
         // "Real output of the new source": the epoch moved, the surface reports
         // a visible output frame of it, and the framebuffer band carries the
         // calibrated content. All three, so a held picture cannot answer for it.
+        // A held picture is lit too, so it must NOT count as the new output: the
+        // first output is the first sample that is lit, of the new epoch, and no
+        // longer showing the retained snapshot.
         if (sample.epoch != outcome.epochBefore && sample.hasVisibleOutput &&
-            sample.framebufferPicture) {
+            sample.framebufferPicture && !sample.retained) {
             outcome.firstOutputMs = sample.ms;
             outcome.epochAfter = sample.epoch;
             outcome.framebufferPictureAfter = true;
@@ -1174,6 +1180,10 @@ int run(int argc, char** argv) {
                   .arg(label));
         check(reported.epochAfter != reported.epochBefore,
               QStringLiteral("%1: the source epoch advanced").arg(label));
+        check(reported.framebufferMoved,
+              QStringLiteral("%1: the new output actually moves, so a frozen retained image "
+                             "cannot answer for it")
+                  .arg(label));
         check(reported.samples >= 3,
               QStringLiteral("%1: sampling covered the request-to-output window").arg(label));
         if (reported.samples >= 3) {
