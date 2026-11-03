@@ -379,10 +379,10 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                                           qint64(entry.cache.height()) * 4;
             if (!deviceSize.isEmpty() && cachedBytes_ - held + bytes <= kChromeCacheBudgetBytes) {
                 // A dirty entry is a repaint, not an eviction: render into the
-                // pixmap it already owns when the device size is unchanged, so a
-                // state change is not a fresh device-pixel allocation per miss.
-                // QPainter detaches it, so the key still changes: no stale blit.
-                if (held != bytes) {
+                // pixmap it already owns when the device size matches, so a state
+                // change is not a device-pixel allocation per miss. QPainter
+                // detaches it, so the key still changes: no stale blit.
+                if (entry.cache.isNull() || entry.cache.size() != deviceSize) {
                     dropCache(entry);
                     entry.cache = QPixmap(deviceSize);
                     cachedBytes_ += bytes;
@@ -408,8 +408,6 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                 if (counted) {
                     mikai::gui::uiprofile::noteChromeCacheMiss(missReason);
                 }
-                // The buffer's bytes are accounted where it is allocated or
-                // reused above, so a reused buffer adds nothing here.
                 mikai::gui::uiprofile::noteChromeCacheRender();
                 mikai::gui::uiprofile::noteChromeCacheHeld(cachedBytes_);
                 entry.box = box;
@@ -427,7 +425,7 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
             }
             dropCache(entry);
         }
-        // Over the memory budget, or caching switched off: pay the rasterisation.
+        // Over the memory budget: pay the rasterisation.
         // The anti-aliasing hints are the pass's, so only the frame moves here.
         painter.save();
         painter.translate(at);

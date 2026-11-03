@@ -270,3 +270,46 @@ void TestChromeCache::anOverBudgetControlLeavesNoBandBehindWhenItMoves() {
   chrome.invalidateAll();
   delete root;
 }
+
+/// A control can keep its area and change its shape (40x20 -> 20x40): reusing the
+/// old image because the byte count matched clips everything outside it. The
+/// device size, not the area, decides whether the buffer can be repainted in
+/// place.
+void TestChromeCache::aSameAreaReshapeRepaintsTheNewBox() {
+  const QColor frame(18, 18, 24, 255);
+  const QColor fill(20, 200, 90, 255);
+
+  auto* root = new QWidget;
+  root->setAttribute(Qt::WA_DontShowOnScreen, true);
+  root->resize(40, 40);
+  root->show();
+
+  auto* control = new QuietChrome(root);
+  control->resize(16, 12);  // 192 px
+  control->move(0, 0);
+  control->setFillQuietly(fill);
+  QVERIFY(presented(control));
+
+  ChromeList chrome;
+  chrome.adopt(root, nullptr);
+
+  QImage scratch = painted(chrome, root, 1.0, frame);
+  QVERIFY(near(scratch.pixelColor(15, 11), fill));
+
+  control->resize(12, 16);  // same area, different shape
+  const QRect vacated = chrome.invalidate(control);
+  const QRect damage = vacated.united(QRect(control->pos(), control->size()));
+  {
+    QPainter painter(&scratch);
+    painter.fillRect(damage, frame);
+    chrome.paint(painter, root, damage);
+  }
+
+  QVERIFY2(near(scratch.pixelColor(11, 15), fill),
+           qPrintable(QStringLiteral("the taller box was clipped: %1")
+                          .arg(scratch.pixelColor(11, 15).name(QColor::HexArgb))));
+  QVERIFY(near(scratch.pixelColor(14, 2), frame));
+
+  chrome.invalidateAll();
+  delete root;
+}
