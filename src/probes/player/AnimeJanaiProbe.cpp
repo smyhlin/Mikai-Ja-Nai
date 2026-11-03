@@ -2757,15 +2757,9 @@ int runCloseDuringBuild(PlayerDialog* dialog, VideoSurface* surface,
                      "FAIL [close-build] the player went away before any build state was observed\n");
         return 1;
     }
-    const QString buildDetail = surfaceGuard->animeJanaiEngineBuildDetail();
-    const QString buildStatus = surfaceGuard->animeJanaiStatus();
-    auto* overlay = dialogGuard->findChild<shell::ProcessingOverlay*>();
-    const bool overlayVisible = overlay != nullptr && overlay->isVisible();
-    // The gate above is the fork's own started event, its own active flag and the
-    // dialog's own preparation window. The trtexec log beside the graph is
-    // corroboration rather than a gate: a shell redirect creates it at a moment
-    // this process cannot pin, and a missing file here would say nothing about
-    // whether a build is running.
+    // The trtexec log beside the graph is corroboration rather than a gate: a
+    // shell redirect creates it at a moment this process cannot pin, and a missing
+    // file here would say nothing about whether a build is running.
     QStringList buildLogs;
     const bool buildLogSeen = waitUntil([&] {
         buildLogs = freshEngineBuildLogs(modelDirectory, requestedAtUtc);
@@ -2773,10 +2767,34 @@ int runCloseDuringBuild(PlayerDialog* dialog, VideoSurface* surface,
     }, 10000);
     for (const QString& log : buildLogs)
         std::fprintf(stderr, "[close-build] build-log=%s\n", qPrintable(log));
-    const bool buildProved = buildStarted && !buildDetail.isEmpty() && overlayVisible;
+    // That wait spun the event loop for up to ten seconds, so both guards and every
+    // fact the verdict and the close depend on are read again here. A guard that was
+    // valid before it is not evidence that it still is, and a build that ended
+    // during it must not be reported as the build this close happened during.
+    if (surfaceGuard.isNull() || dialogGuard.isNull()) {
+        std::fprintf(stderr,
+                     "FAIL [close-build] the player went away while waiting for the build log; "
+                     "no close was requested and nothing is claimed\n");
+        return 1;
+    }
+    const QString buildDetail = surfaceGuard->animeJanaiEngineBuildDetail();
+    const QString buildStatus = surfaceGuard->animeJanaiStatus();
+    auto* overlay = dialogGuard->findChild<shell::ProcessingOverlay*>();
+    const bool overlayVisible = overlay != nullptr && overlay->isVisible();
+    // Contemporaneous with the close below: the fork's started event, the live
+    // active flag, the dialog's visible preparation window and the backend detail.
+    const bool buildActiveAtClose = buildActive && surfaceGuard->animeJanaiEngineBuildActive();
+    const bool buildProved =
+        buildStarted && buildActiveAtClose && !buildDetail.isEmpty() && overlayVisible;
+    if (buildStarted && !buildActiveAtClose) {
+        std::fprintf(stderr,
+                     "[close-build] the fork-reported build ended before the close was requested; "
+                     "the timing below describes an ordinary close and is not close-during-build "
+                     "evidence\n");
+    }
     {
         result(buildProved,
-               "a fork-reported TensorRT engine build was really running when the close was "
+               "a fork-reported TensorRT engine build was still running when the close was "
                "requested (surface active, preparation window visible, backend detail present)");
         if (!buildProved) ++failures;
     }
@@ -2827,20 +2845,29 @@ int runCloseDuringBuild(PlayerDialog* dialog, VideoSurface* surface,
             line.contains(QStringLiteral("teardown settle abandoned"));
         refusalLogged |= line.contains(QStringLiteral("close refused"));
     }
-    // The dialog is owned by WA_DeleteOnClose, so its destruction is the deferred
-    // delete the close event scheduled - measured from the same request.
-    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    QCoreApplication::processEvents();
+    // The dialog is owned by WA_DeleteOnClose: its destruction is the deferred
+    // delete the close event scheduled. The flush is targeted at that dialog and the
+    // clock is read the moment it returns - the dialog's own children are destroyed
+    // inside that call, so their teardown is included, and nothing queued for other
+    // receivers is billed to the close. The close request starts this span, so the
+    // number is request-to-destruction with no post-destruction work inside it.
+    if (!dialogGuard.isNull()) {
+        QCoreApplication::sendPostedEvents(dialogGuard.data(), QEvent::DeferredDelete);
+    }
     const qint64 destroyedMs = closeClock.elapsed();
     const bool destroyed = dialogGuard.isNull() && surfaceGuard.isNull();
+    // Outside the measured span: whatever else was queued (timers, fork log events)
+    // runs now, so the process leaves the way any other run would.
+    QCoreApplication::processEvents();
 
     std::fprintf(stderr,
-                 "[close-build] summary build-started=%d build-ms=%lld build-log=%d "
-                 "overlay-visible=%d close-accepted=%d close-return-ms=%lld "
+                 "[close-build] summary build-started=%d build-active-at-close=%d build-ms=%lld "
+                 "build-log=%d overlay-visible=%d close-accepted=%d close-return-ms=%lld "
                  "dialog-destroyed-ms=%lld destroyed=%d finishing-notice=%d "
                  "settle-abandoned=%d abandoned-logged=%d refused=%d budget-ms=%d "
                  "notice-text=%s status=%s\n",
-                 buildStarted ? 1 : 0, static_cast<long long>(buildStartMs),
+                 buildStarted ? 1 : 0, buildActiveAtClose ? 1 : 0,
+                 static_cast<long long>(buildStartMs),
                  buildLogSeen ? 1 : 0, overlayVisible ? 1 : 0, acceptedClose ? 1 : 0,
                  static_cast<long long>(closeReturnMs),
                  static_cast<long long>(destroyedMs), destroyed ? 1 : 0,
@@ -2878,6 +2905,7 @@ int runCloseDuringBuild(PlayerDialog* dialog, VideoSurface* surface,
         {"buildStartMs", static_cast<qint64>(buildStartMs)},
         {"buildDetail", buildDetail},
         {"buildStatusAtClose", buildStatus},
+        {"buildActiveAtClose", buildActiveAtClose},
         {"overlayVisibleAtClose", overlayVisible},
         {"buildLogs", QJsonArray::fromStringList(buildLogs)},
         {"finishingNoticeText", finishingText},
