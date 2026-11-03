@@ -2250,12 +2250,14 @@ void TestPublicApiUi::wrappedScoreLinesFillTheirTextColumn() {
   auto* facts = page.findChild<QLabel*>(QStringLiteral("titleFacts"));
   QVERIFY(hero != nullptr && facts != nullptr && facts->isVisible());
 
-  // The details sheet only counts on screen: open it through its real toggle.
+  // The details sheet only counts on screen, so its opener must be on screen
+  // too: wait for it, then click it like a viewer.
   auto* meta = button(page, "titleDetailsToggle");
   auto* overlay = page.findChild<QWidget*>(QStringLiteral("titleDetailsOverlay"));
   auto* detailsTitle = page.findChild<QLabel*>(QStringLiteral("titleDetailsTitle"));
   QVERIFY(meta != nullptr && overlay != nullptr && detailsTitle != nullptr);
-  meta->setChecked(true);
+  QTRY_VERIFY_WITH_TIMEOUT(meta->isVisible(), 20000);
+  QTest::mouseClick(meta, Qt::LeftButton);
   QTRY_VERIFY_WITH_TIMEOUT(overlay->isVisible(), 5000);
   QTRY_VERIFY_WITH_TIMEOUT(detailsTitle->isVisible(), 5000);
   QLabel* detailsScores = nullptr;
