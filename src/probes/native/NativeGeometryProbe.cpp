@@ -645,6 +645,56 @@ int main(int argc, char** argv) {
     // Record the observed bounds so a failure is a measurement, not a claim.
     reportBounds("native controls", minimum, dialog.devicePixelRatioF(), nativeControls);
 
+    // GOAL-C: the AnimeJaNai manager's action rows are measured on the running
+    // dialog, one width per row and the one control height. A row whose members
+    // paint at different widths is the defect the user reported as neighbouring
+    // buttons of unequal size.
+    struct ManagerRow {
+        const char* label;
+        QStringList names;
+    };
+    const QList<ManagerRow> managerRows{
+        {"onnx models",
+         {QStringLiteral("ajiImportModelButton"), QStringLiteral("ajiRemoveModelButton"),
+          QStringLiteral("ajiOpenModelsFolderButton")}},
+        {"external folder",
+         {QStringLiteral("ajiBrowseExternalDirButton"), QStringLiteral("ajiClearExternalDirButton")}},
+        {"configuration file",
+         {QStringLiteral("ajiImportConfButton"), QStringLiteral("ajiExportConfButton"),
+          QStringLiteral("ajiResetDefaultsButton")}},
+        {"profile slot",
+         {QStringLiteral("ajiCreateSlotButton"), QStringLiteral("ajiCloneSlotButton"),
+          QStringLiteral("ajiDeleteSlotButton"), QStringLiteral("ajiImportPconfButton"),
+          QStringLiteral("ajiExportPconfButton")}},
+        {"profile chain",
+         {QStringLiteral("ajiAddChainButton"), QStringLiteral("ajiRemoveChainButton"),
+          QStringLiteral("ajiMoveChainUpButton"), QStringLiteral("ajiMoveChainDownButton")}},
+    };
+    for (const ManagerRow& row : managerRows) {
+        QList<QWidget*> members;
+        for (const QString& name : row.names) {
+            auto* control = dialog.findChild<QPushButton*>(name);
+            if (control != nullptr && control->isVisibleTo(processingPage)) members.append(control);
+        }
+        if (members.size() < 2) {
+            std::fprintf(stderr, "  manager row %s: not measurable on this page\n", row.label);
+            continue;
+        }
+        int rowWidth = -1;
+        bool equal = true;
+        bool oneHeight = true;
+        for (QWidget* member : members) {
+            if (rowWidth < 0) rowWidth = member->width();
+            equal = equal && member->width() == rowWidth;
+            oneHeight = oneHeight && member->height() == mikai::app::theme::kControlHeight;
+        }
+        const QByteArray label = QByteArray("manager actions: ") + row.label;
+        check(equal, QStringLiteral("the %1 row shares one width").arg(QString::fromLatin1(row.label)));
+        check(oneHeight,
+              QStringLiteral("the %1 row is one control height").arg(QString::fromLatin1(row.label)));
+        reportBounds(label.constData(), minimum, dialog.devicePixelRatioF(), members);
+    }
+
     // GOAL-C: the components page's action row and card headers at the dialog's
     // own minimum width. Bounds are printed so a failure is a measurement.
     if (dialog.showPage(QStringLiteral("components"))) {

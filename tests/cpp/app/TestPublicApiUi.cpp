@@ -2,6 +2,7 @@
 
 #include <backend/MikaiClient.hpp>
 #include <backend/Models.hpp>
+#include <dialogs/AnimeJanaiManagerPanel.hpp>
 #include <dialogs/ComponentStoreTab.hpp>
 #include <dialogs/SettingsDialog.hpp>
 #include <dialogs/settings/SettingsUi.hpp>
@@ -61,7 +62,9 @@
 #include <QtWidgets/QMessageBox>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QScrollArea>
+#include <QtWidgets/QScrollBar>
 #include <QtWidgets/QSpinBox>
+#include <QtWidgets/QStackedWidget>
 #include <QtWidgets/QSlider>
 #include <QtWidgets/QTabBar>
 #include <QtWidgets/QTabWidget>
@@ -114,6 +117,40 @@ bool primeBuiltCatalogForSwitching() {
   }
   return mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), catalog) &&
          mikai::app::applyInterfaceLanguage(QStringLiteral("en"));
+}
+
+/// Polishes and lays out a whole page with the style applied, so the geometry
+/// read below is the one the style produces rather than the pre-style one.
+void settleLayout(QWidget* page) {
+  page->ensurePolished();
+  const QList<QWidget*> widgets = page->findChildren<QWidget*>();
+  for (QWidget* widget : widgets) {
+    widget->ensurePolished();
+  }
+  for (int round = 0; round < 3; ++round) {
+    for (QWidget* widget : widgets) {
+      if (QLayout* layout = widget->layout()) layout->activate();
+    }
+    if (QLayout* layout = page->layout()) layout->activate();
+    QCoreApplication::processEvents();
+  }
+}
+
+/// Any scroll area on the surface that needs a horizontal bar: a page wider
+/// than its own viewport can only be read by panning it sideways.
+QString horizontalOverflow(QWidget* surface) {
+  QList<QScrollArea*> scrolls = surface->findChildren<QScrollArea*>();
+  if (auto* self = qobject_cast<QScrollArea*>(surface)) scrolls.prepend(self);
+  for (QScrollArea* scroll : scrolls) {
+    if (scroll != surface && !scroll->isVisibleTo(surface)) continue;
+    QScrollBar* bar = scroll->horizontalScrollBar();
+    if (bar->minimum() == bar->maximum()) continue;
+    return QStringLiteral("%1 needs %2 px of horizontal panning")
+        .arg(scroll->objectName().isEmpty() ? QStringLiteral("a scroll area")
+                                            : scroll->objectName())
+        .arg(bar->maximum() - bar->minimum());
+  }
+  return QString();
 }
 
 QJsonObject imageSet(const QString& url) {
@@ -2223,6 +2260,21 @@ void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
     QVERIFY2(control->width() >= control->fontMetrics().horizontalAdvance(control->text()),
              qPrintable(QStringLiteral("%1 clips its caption").arg(control->objectName())));
   }
+
+  // A row is only equal if the width it agreed on is at least what every member
+  // paints at: the style rounds its own box model for the device, so a control
+  // can ask for a pixel more than the row measured from the font alone, and
+  // then paints wider than its equals.
+  QList<QPushButton*> equalRow{back,     home,     watch,  heroWatch, watched,
+                               episodes, filters,  teams,  action};
+  equalRow += settingsActions;
+  for (QPushButton* control : equalRow) {
+    QVERIFY2(control->sizeHint().width() <= control->width(),
+             qPrintable(QStringLiteral("%1 paints %2 px wide inside its %3 px row")
+                            .arg(control->objectName())
+                            .arg(control->sizeHint().width())
+                            .arg(control->width())));
+  }
 }
 
 void TestPublicApiUi::wrappedScoreLinesFillTheirTextColumn() {
@@ -2388,6 +2440,137 @@ void TestPublicApiUi::componentCardsKeepASingleLineBadgeAndASeparateCountLine() 
            qPrintable(QStringLiteral("the spatial count line is %1").arg(spatialCounts->text())));
   QVERIFY2(spatialCounts->geometry().top() >= spatialDescription->geometry().bottom(),
            "the spatial counts share the description line");
+}
+
+void TestPublicApiUi::settingsPagesFitTheDialogMinimum() {
+  const QString savedStyle = qApp->style() != nullptr ? qApp->style()->objectName() : QString();
+  const QString savedSheet = qApp->styleSheet();
+  const auto restoreStyle = qScopeGuard([savedStyle, savedSheet] {
+    if (!savedStyle.isEmpty()) qApp->setStyle(savedStyle);
+    qApp->setStyleSheet(savedSheet);
+  });
+  qApp->setStyle(QStringLiteral("Fusion"));
+  qApp->setStyleSheet(mikai::app::theme::buildStylesheet());
+  IsolatedSettings settings;
+  MikaiClient client(QString(), QStringLiteral("http://127.0.0.1:1"));
+  Runner runner;
+  const auto drain = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Settings workers did not stop");
+  });
+  SettingsDialog dialog(client, runner);
+  dialog.resize(dialog.minimumSize());
+  dialog.show();
+  QCoreApplication::processEvents();
+
+  auto* stack = dialog.findChild<QStackedWidget*>(QStringLiteral("settingsStack"));
+  QVERIFY2(stack != nullptr, "the settings stack is missing");
+
+  const QStringList pages{QStringLiteral("customization/general"), QStringLiteral("components"),
+                          QStringLiteral("benchmark")};
+  const auto auditPages = [&](const QString& language) {
+    for (const QString& id : pages) {
+      QVERIFY2(dialog.showPage(id), qPrintable(QStringLiteral("%1 is not a page").arg(id)));
+      QCoreApplication::processEvents();
+      QWidget* host = stack->currentWidget();
+      QVERIFY2(host != nullptr, qPrintable(QStringLiteral("%1 has no host").arg(id)));
+      settleLayout(host);
+      const QString overflow = horizontalOverflow(host);
+      QVERIFY2(overflow.isEmpty(),
+               qPrintable(QStringLiteral("%1 in %2: %3").arg(id, language, overflow)));
+    }
+  };
+  auditPages(QStringLiteral("en"));
+
+  // The five component actions used to be one equal width wider than the page
+  // they live on, so the row could only be read by panning sideways.
+  QVERIFY(dialog.showPage(QStringLiteral("components")));
+  QCoreApplication::processEvents();
+  auto* componentsScroll = dialog.findChild<QScrollArea*>(QStringLiteral("componentsScroll"));
+  QVERIFY2(componentsScroll != nullptr, "the components page exposes no scroll");
+  if (QWidget* page = componentsScroll->widget()) settleLayout(page);
+  for (const QString& name : {QStringLiteral("componentDownloadButton"),
+                              QStringLiteral("refreshComponentsButton"),
+                              QStringLiteral("nativeComponentVerifyButton"),
+                              QStringLiteral("nativeComponentImportAnimeJanaiButton"),
+                              QStringLiteral("nativeComponentTabCancelButton")}) {
+    auto* control = dialog.findChild<QPushButton*>(name);
+    QVERIFY2(control != nullptr, qPrintable(QStringLiteral("%1 is missing").arg(name)));
+    QVERIFY2(control->width() <= componentsScroll->viewport()->width(),
+             qPrintable(QStringLiteral("%1 is %2 px wide inside a %3 px viewport")
+                            .arg(name)
+                            .arg(control->width())
+                            .arg(componentsScroll->viewport()->width())));
+  }
+
+  // A whole-sentence check box caption only fits when it is allowed to wrap:
+  // the box must then stand as tall as its own wrapped caption needs.
+  QVERIFY(dialog.showPage(QStringLiteral("customization/general")));
+  QCoreApplication::processEvents();
+  auto* general = dialog.findChild<QWidget*>(QStringLiteral("customizationGeneralPage"));
+  QVERIFY2(general != nullptr, "the general page is missing");
+  settleLayout(general);
+  for (const QString& name : {QStringLiteral("systemStartupCheck"),
+                              QStringLiteral("systemContextMenuCheck")}) {
+    auto* check = dialog.findChild<QWidget*>(name);
+    QVERIFY2(check != nullptr, qPrintable(QStringLiteral("%1 is missing").arg(name)));
+    QVERIFY2(check->height() >= check->heightForWidth(check->width()),
+             qPrintable(QStringLiteral("%1 is %2 px tall, %3 px needed at width %4")
+                            .arg(name)
+                            .arg(check->height())
+                            .arg(check->heightForWidth(check->width()))
+                            .arg(check->width())));
+  }
+
+  if (!primeBuiltCatalogForSwitching()) return;
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
+  const auto restoreEnglish =
+      qScopeGuard([] { mikai::app::applyInterfaceLanguage(QStringLiteral("en")); });
+  QCoreApplication::processEvents();
+  auditPages(QStringLiteral("uk"));
+}
+
+void TestPublicApiUi::managerActionRowsShareOneWidth() {
+  const QString savedSheet = qApp->styleSheet();
+  const auto restoreStyle = qScopeGuard([savedSheet] { qApp->setStyleSheet(savedSheet); });
+  IsolatedSettings settings;
+  Runner runner;
+  const auto drain = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Manager workers did not stop");
+  });
+  mikai::app::AnimeJanaiManagerPanel panel(nullptr, &runner);
+  panel.setStyleSheet(mikai::app::settingsStylesheet(mikai::app::currentAppearance()));
+  panel.resize(320, 1200);
+  panel.show();
+  QCoreApplication::processEvents();
+
+  const QList<QStringList> rows{
+      {QStringLiteral("ajiImportModelButton"), QStringLiteral("ajiRemoveModelButton"),
+       QStringLiteral("ajiOpenModelsFolderButton")},
+      {QStringLiteral("ajiBrowseExternalDirButton"), QStringLiteral("ajiClearExternalDirButton")},
+      {QStringLiteral("ajiImportConfButton"), QStringLiteral("ajiExportConfButton"),
+       QStringLiteral("ajiResetDefaultsButton")},
+      {QStringLiteral("ajiCreateSlotButton"), QStringLiteral("ajiCloneSlotButton"),
+       QStringLiteral("ajiDeleteSlotButton"), QStringLiteral("ajiImportPconfButton"),
+       QStringLiteral("ajiExportPconfButton")},
+  };
+  // The active-chain row lives in the slot editor, which stays hidden until a
+  // saved slot exists; the native probe measures it on a configured profile.
+  for (const QStringList& row : rows) {
+    int width = -1;
+    for (const QString& name : row) {
+      auto* control = panel.findChild<QPushButton*>(name);
+      QVERIFY2(control != nullptr, qPrintable(QStringLiteral("%1 is missing").arg(name)));
+      QCOMPARE(control->height(), mikai::app::theme::kControlHeight);
+      if (width < 0) width = control->width();
+      QVERIFY2(control->width() == width,
+               qPrintable(QStringLiteral("%1 is %2 px wide beside %3 px in its row")
+                              .arg(name)
+                              .arg(control->width())
+                              .arg(width)));
+    }
+  }
 }
 
 int runTestPublicApiUi(int argc, char** argv) {

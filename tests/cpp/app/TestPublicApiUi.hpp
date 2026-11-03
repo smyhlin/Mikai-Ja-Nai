@@ -34,6 +34,8 @@ class TestPublicApiUi : public QObject {
   void actionRowsShareOneControlHeightAndEqualWidths();
   void wrappedScoreLinesFillTheirTextColumn();
   void componentCardsKeepASingleLineBadgeAndASeparateCountLine();
+  void settingsPagesFitTheDialogMinimum();
+  void managerActionRowsShareOneWidth();
 };
 
 int runTestPublicApiUi(int argc, char** argv);
