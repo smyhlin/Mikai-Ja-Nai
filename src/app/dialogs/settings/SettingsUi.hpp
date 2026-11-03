@@ -498,6 +498,14 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background-color: %31;
             border-color: %24;
         }
+        QPushButton:checked {
+            background-color: rgba(%10, 0.14);
+            border-color: %33;
+            color: %22;
+        }
+        QPushButton:focus {
+            border-color: %24;
+        }
         QPushButton:disabled {
             background-color: %20;
             color: rgba(%36, 0.55);
@@ -518,6 +526,13 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
         QPushButton[actionRole="primary"]:pressed {
             background-color: %33;
             border-color: %34;
+        }
+        QPushButton[actionRole="primary"]:checked {
+            background-color: %48;
+            border-color: %47;
+        }
+        QPushButton[actionRole="primary"]:focus {
+            border-color: %47;
         }
         QPushButton[actionRole="primary"]:disabled {
             background-color: %20;
@@ -541,6 +556,14 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
         QPushButton[actionRole="ghost"]:pressed {
             background-color: rgba(%10, 0.20);
         }
+        QPushButton[actionRole="ghost"]:checked {
+            background-color: rgba(%10, 0.18);
+            border-color: %33;
+            color: %48;
+        }
+        QPushButton[actionRole="ghost"]:focus {
+            border-color: %33;
+        }
         QPushButton[actionRole="ghost"]:disabled {
             color: rgba(%36, 0.55);
             border-color: %46;
@@ -553,6 +576,17 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
         }
         QPushButton[actionRole="danger"]:hover {
             background-color: rgba(%16, 0.14);
+        }
+        QPushButton[actionRole="danger"]:pressed {
+            background-color: rgba(%16, 0.22);
+        }
+        QPushButton[actionRole="danger"]:checked {
+            background-color: rgba(%16, 0.18);
+            border-color: %44;
+        }
+        QPushButton[actionRole="danger"]:focus {
+            background-color: rgba(%16, 0.10);
+            border-color: %44;
         }
         QPushButton[actionRole="danger"]:disabled {
             color: rgba(%36, 0.55);

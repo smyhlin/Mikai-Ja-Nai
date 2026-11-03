@@ -223,6 +223,7 @@ QPushButton[actionRole="primary"] {
 }
 QPushButton[actionRole="primary"]:hover { background: %12; border-color: %12; }
 QPushButton[actionRole="primary"]:pressed { background: %11; border-color: %12; }
+QPushButton[actionRole="primary"]:checked { background: %12; border-color: %27; }
 QPushButton[actionRole="primary"]:focus { border-color: %27; }
 QPushButton[actionRole="primary"]:disabled {
     background: %5; color: rgba(%23, 0.55); border-color: %26;
@@ -241,6 +242,10 @@ QPushButton[actionRole="ghost"]:hover {
     color: %12;
     background: rgba(%24, 0.16);
     border-color: rgba(%24, 0.45);
+}
+QPushButton[actionRole="ghost"]:pressed {
+    background: rgba(%24, 0.24);
+    border-color: rgba(%24, 0.60);
 }
 QPushButton[actionRole="ghost"]:checked {
     background: rgba(%24, 0.18);
@@ -261,6 +266,10 @@ QPushButton[actionRole="danger"] {
 }
 QPushButton[actionRole="danger"]:hover { background: rgba(%28, 0.14); }
 QPushButton[actionRole="danger"]:pressed { background: rgba(%28, 0.22); }
+QPushButton[actionRole="danger"]:checked {
+    background: rgba(%28, 0.18);
+    border-color: %22;
+}
 /* The triplet marker is for a wash; a bare border takes the colour itself.
    Focus keeps the danger identity and adds a wash, or a keyboard user would see
    no focus at all on a destructive action. */
