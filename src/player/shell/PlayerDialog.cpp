@@ -2420,7 +2420,8 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
     // A settle that outlives a third of a second is long enough for the window to
     // look frozen, so it says what it is doing while it waits. The settle spins
     // the dialog's own event loop, which is what makes this timer fire inside it;
-    // it is stopped on every path below, before the dialog can act on the result.
+    // it is stopped once both waits are behind the dialog, before it acts on the
+    // result, so a single 300 ms window covers the whole close.
     QTimer finishingNotice;
     finishingNotice.setSingleShot(true);
     finishingNotice.setInterval(300);
@@ -2439,8 +2440,12 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
         parkedSurfaceAtClose = parked->videoSurface();
     }
     const bool parkedSettled = settleParkedNative();
-    finishingNotice.stop();
     if (self.isNull()) return;
+    // The notice is deliberately not stopped between the two waits. From the
+    // viewer's side a close is one wait, so the 300 ms rule has to cover whichever
+    // settle is actually running - and without a PiP float the parked settle returns
+    // at once, which is exactly the case where stopping it here left the long core
+    // settle of an engine build with no notice at all.
     const bool coreSettled = surface_ == nullptr || surface_->settleNativeForTeardown();
     finishingNotice.stop();
     if (self.isNull()) return;
