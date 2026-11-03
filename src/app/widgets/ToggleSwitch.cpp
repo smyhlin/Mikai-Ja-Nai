@@ -30,11 +30,7 @@ void ToggleSwitch::paintEvent(QPaintEvent*) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    // A widget painter is already in logical coordinates with the window's
-    // device pixel ratio applied: multiplying the world transform by the DPR
-    // again scales every entry of the matrix - including m33 - which both
-    // doubles the drawing at any DPR > 1 and turns the transform into a
-    // projective TxProject that corrupts pens, gradients and AA coverage.
+    // Qt already applies DPR; scalar matrix multiplication also changes m33.
 
     const int height = theme::kSettingsSwitchHeight;
     const int width = theme::kSettingsSwitchWidth;
@@ -48,9 +44,6 @@ void ToggleSwitch::paintEvent(QPaintEvent*) {
     painter.setBrush(fill);
     painter.drawRoundedRect(track, track.height() / 2.0, track.height() / 2.0);
 
-    // The knob carries the accent when the switch is off so an inactive track
-    // still shows where the control is; on a light bed a white knob would
-    // vanish into the track.
     const double knob = height - 6.0;
     const double left = isChecked() ? track.right() - knob - 2.0 : track.left() + 2.0;
     painter.setBrush(isChecked() ? QColor(Qt::white) : QColor(palette.muted));
