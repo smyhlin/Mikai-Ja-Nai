@@ -4,6 +4,7 @@
 
 #include "PlayerDialog.hpp"
 
+#include "OpeningOverlay.hpp"
 #include "PipFloat.hpp"
 #include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
@@ -873,6 +874,11 @@ void PlayerDialog::showRuntimePendingStatus() {
     runtimePendingVisible_ = true;
     statusLabel_->setText(text);
     statusLabel_->setToolTip(text);
+    // The window is still opening; the runtime's own sentence is the most
+    // truthful thing it can say about why nothing plays yet.
+    if (openingOverlay_ != nullptr && openingOverlay_->isOpening()) {
+        openingOverlay_->setDetail(text);
+    }
     // The wait can outlast any status timeout, so it is held without one: an
     // informational line must not vanish while the resolution is still running
     // and the viewer is still waiting for the reason nothing plays yet.

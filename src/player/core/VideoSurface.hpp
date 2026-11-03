@@ -326,6 +326,10 @@ public:
     int videoHeight() const;
     bool hasVideo() const;
     bool hasVisibleOutputFrame() const { return hasVideo_ && hasVisibleOutputFrame_; }
+    /// A source is open and no frame of it has been presented yet. False before a
+    /// load, false once the picture is really on screen, and false after an error
+    /// or a close - a window must never claim to be opening something it is not.
+    bool isOpening() const { return opening_; }
     /// Current mpv source epoch; changes whenever the loaded source is replaced.
     uint64_t sourceEpoch() const;
     QString sourceUrl() const { return url_; }
@@ -567,6 +571,10 @@ signals:
     /// restored and before the painter is ended: the painter is active and in
     /// logical widget coordinates. The receiver paints and does not keep it.
     void paintOverlay(QPainter* painter);
+    /// This surface started or finished waiting for its first presented frame.
+    /// Consumers show and retract the opening state on this, never on a load
+    /// request, a fileLoaded event or a thumbnail.
+    void openingChanged(bool opening);
 
 protected:
     void initializeGL() override;
@@ -593,6 +601,13 @@ private:
     void cancelAnimeJanaiOperation();
     void processAnimeJanaiPlan();
     void animeJanaiFail(const QString& reasonKey, const QString& reason);
+    /// Records the opening state and announces a change. Every transition goes
+    /// through here, because a consumer's overlay can only follow what it was told.
+    void setOpening(bool opening);
+    void updatePlaceholderAnimation();
+    /// The no-engine paint while a source is opening: a neutral field and a
+    /// sweeping arc. Replaced by the picture as soon as one is presented.
+    void paintOpeningPlaceholder(QPainter& painter);
     void setAnimeJanaiStatus(const QString& status);
     void resetAnimeJanaiObservation();
     bool animeJanaiBackendLogsNeeded() const;
@@ -1022,6 +1037,9 @@ private:
     // Client pacing remains nonblocking; the timer is canceled on direct paint
     // and source/context teardown.
     QTimer pacingTimer_;
+    /// Animates the no-engine placeholder; stopped whenever it cannot be seen.
+    QTimer placeholderTimer_;
+    int placeholderPhase_ = 0;
     /// Raw target_time in the loaded API's units; 0 with no timer armed, and also
     /// for a grace retry, which deliberately has no mpv slot behind it.
     qint64 pacingTargetTime_ = 0;
@@ -1124,7 +1142,14 @@ private:
     PlaybackDiagnostics diagnostics_;
 
     bool contextReady_ = false;
+    /// A load is queued because there is no GL context yet. Only that: see
+    /// opening_ for the viewer-facing state this surface is actually in.
     bool pendingOpen_ = false;
+    /// A source has been opened and its first frame has not been presented yet.
+    /// This is the truthful opening state: it survives the load, and it only
+    /// ends when a frame from the current epoch has actually swapped - never on
+    /// fileLoaded, which says the headers were read and nothing more.
+    bool opening_ = false;
     bool framePending_ = false;   // set by mpv's update callback
     /// Bumped whenever a render context is created or released, so a hop queued
     /// by a released context's callback finds a different generation.

@@ -150,8 +150,13 @@ signals:
     /// press that seeks, and not while the duration is unknown - there is no
     /// time under the pointer to report.
     void hoverTimeChanged(double seconds, const QPoint& globalPosition);
-    /// The pointer left the timeline.
+    /// The pointer left the timeline. A consumer that positions something around
+    /// the bar may keep it for a moment: leaving a bar is not always leaving the
+    /// control the bar opened.
     void hoverLeft();
+    /// The timeline itself went away - the dock hid under the pointer - so there
+    /// is nowhere for a pointer to have travelled to.
+    void hoverVanished();
 
 protected:
     /// The played part is the pushed accent, read when the bar paints: the
@@ -234,6 +239,10 @@ public:
     bool isMuted() const { return muted_; }
 
     bool isDragging() const;
+    /// Whether the pointer is over the group or its track, or the level is being
+    /// dragged. A resting pointer on the volume control is interaction for the
+    /// same reason a resting pointer on the timeline is.
+    bool isHovering() const;
 
     void paintChrome(QPainter& painter) override;
 

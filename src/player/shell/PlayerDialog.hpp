@@ -58,6 +58,7 @@ class MediaInformationDialog;
 
 class PlayerShell;
 class MenuPopup;
+class OpeningOverlay;
 class ProcessingOverlay;
 class SeriesDrawer;
 struct MenuEntry;
@@ -375,6 +376,19 @@ private:
     void retireProcessingRow();
     void retryPlayback();
     void watchPanels();
+    /// States the wait for a first frame above the video surface: what is
+    /// happening and which episode it is happening to. Shown the moment a stream
+    /// is opened - before any engine exists - and retracted only by a presented
+    /// frame, an error or a close.
+    void showOpeningOverlay();
+    /// Restates the opening overlay's detail from the states that outlive a
+    /// single call (the runtime resolution's own sentence), and places it over
+    /// the picture.
+    void syncOpeningOverlay();
+    void hideOpeningOverlay();
+    /// The runtime resolution's own sentence while it is why nothing plays yet;
+    /// empty for an ordinary load, so the overlay never invents a reason.
+    QString runtimeVisibleDetail() const;
     void placeWindowed();
     void rememberWindowedGeometry();
     void fillQualityMenu();
@@ -541,6 +555,9 @@ private:
     MenuPopup* subtitlesPopup_ = nullptr;
     SeriesDrawer* seriesDrawer_ = nullptr;
     ProcessingOverlay* processingOverlay_ = nullptr;
+    /// The "opening" card above the picture. Owned by the dialog, above the
+    /// surface's GL pass, and never painted by the shell.
+    OpeningOverlay* openingOverlay_ = nullptr;
     QPointer<VideoSurface> animeJanaiBuildingSurface_;
     QPointer<VideoSurface> animeJanaiPlanWaitSurface_;
     /// The core the running engine operation holds paused, and the source epoch

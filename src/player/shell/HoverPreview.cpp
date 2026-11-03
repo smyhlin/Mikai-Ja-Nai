@@ -3,6 +3,7 @@
 #include "FramePreviewService.hpp"
 #include "ShellTheme.hpp"
 
+#include <QCoreApplication>
 #include <QFontMetrics>
 #include <QLinearGradient>
 #include <QPainter>
@@ -28,6 +29,9 @@ constexpr double kFallbackAspect = 16.0 / 9.0;
 constexpr int kCardWidthPercent = 28;
 /// Two instants this close are the same frame.
 constexpr double kSameInstantSec = 0.04;
+/// How far a stale picture is dimmed. Enough that it cannot be mistaken for the
+/// instant under the pointer, not so much that it stops being a preview.
+constexpr int kStaleDimAlpha = 130;
 
 bool plausibleAspect(double aspect) {
     return std::isfinite(aspect) && aspect >= 0.4 && aspect <= 4.5;
@@ -73,10 +77,20 @@ bool previewReplyMatches(quint64 replyToken, quint64 currentToken, double replyS
     return std::abs(replySeconds - currentSeconds) <= kSameInstantSec;
 }
 
+bool hoverCardKeepsPointer(const QRect& bar, const QRect& card, const QPoint& cursor) {
+    if (bar.contains(cursor) || card.contains(cursor)) return true;
+    if (bar.isEmpty() || card.isEmpty()) return false;
+    // The band the two rects span: the gap between the bar and the card is part
+    // of the journey, and a pointer crossing it is not a pointer that left.
+    return bar.united(card).contains(cursor);
+}
+
 HoverPreview::HoverPreview(QWidget* host)
     : QWidget(host), service_(new FramePreviewService(this)) {
     setObjectName(QStringLiteral("playerHoverPreview"));
     // Translucent backing store plus rounded clipping: corners without a mask.
+    // The card is therefore never an opaque widget: it paints its own rounded
+    // fill and lets the window show through the corners.
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAutoFillBackground(false);
     // The pointer belongs to the timeline underneath.
@@ -91,10 +105,10 @@ HoverPreview::HoverPreview(QWidget* host)
 
 HoverPreview::~HoverPreview() { release(); }
 
-void HoverPreview::setSource(const QString& url) {
+void HoverPreview::setSource(const QString& url, quint64 sourceEpoch) {
     if (released_ || service_ == nullptr) return;
-    if (url == service_->source()) return;
-    service_->setSource(url);
+    if (url == service_->source() && sourceEpoch == service_->sourceEpoch()) return;
+    service_->setSource(url, sourceEpoch);
     // A frame of the previous source must never describe the new one.
     dismiss();
     aspect_ = kFallbackAspect;
@@ -113,14 +127,6 @@ void HoverPreview::present(double seconds, const QPoint& anchorGlobal, const QRe
     anchor_ = host->mapFromGlobal(anchorGlobal);
     bar_ = QRect(host->mapFromGlobal(barGlobal.topLeft()), barGlobal.size());
 
-    // A frame decoded for another instant is not this one's; the timestamp and
-    // label are known immediately, so the card waits instead of showing them.
-    if (!frame_.isNull() && std::abs(frameSeconds_ - seconds) > kSameInstantSec) {
-        frame_ = {};
-        frameSeconds_ = -1.0;
-        status_.clear();
-    }
-
     ++token_;
     place();
     if (!isVisible()) {
@@ -129,15 +135,38 @@ void HoverPreview::present(double seconds, const QPoint& anchorGlobal, const QRe
         show();
         raise();
     }
-    chromeUpdate(this);
 
     if (!allowFrame) {
         // A scrub is a decode per pixel of travel with nothing to show for it.
         service_->cancel();
+        frame_ = {};
+        frameSeconds_ = -1.0;
+        status_.clear();
+        detail_.clear();
+        refused_ = false;
+        chromeUpdate(this);
         return;
     }
-    if (!frame_.isNull()) return;  // this instant is already on the card
+
+    // A frame decoded for another instant stays on the card, dimmed and named as
+    // stale, instead of being replaced by a grey void for the length of the
+    // decode. A picture whose own timestamp is this instant's needs nothing.
+    if (!frame_.isNull() && std::abs(frameSeconds_ - seconds) <= kSameInstantSec) {
+        status_.clear();
+        detail_.clear();
+        chromeUpdate(this);
+        return;
+    }
+    status_ = tr("Decoding preview…");
+    detail_.clear();
+    refused_ = false;
+    chromeUpdate(this);
     service_->requestFrame(token_, seconds);
+}
+
+void HoverPreview::prewarm(double seconds) {
+    if (released_ || service_ == nullptr) return;
+    service_->prewarm(seconds);
 }
 
 void HoverPreview::dismiss() {
@@ -146,6 +175,8 @@ void HoverPreview::dismiss() {
     frame_ = {};
     frameSeconds_ = -1.0;
     status_.clear();
+    detail_.clear();
+    refused_ = false;
     label_.clear();
     hide();
 }
@@ -157,14 +188,35 @@ void HoverPreview::release() {
     if (service_ != nullptr) service_->shutdown();
 }
 
-void HoverPreview::applyFrame(quint64 token, double seconds, const QImage& frame) {
+FramePreviewStats HoverPreview::previewStats() const {
+    return service_ != nullptr ? service_->stats() : FramePreviewStats{};
+}
+
+void HoverPreview::applyFrame(quint64 token, double requestedSeconds, double decodedSeconds,
+                              const QImage& frame) {
     if (released_ || frame.isNull() || !isVisible()) return;
-    if (!previewReplyMatches(token, token_, seconds, seconds_)) return;
+    // A picture already closer to the instant under the pointer than this one is
+    // the better placeholder; a decode that finished late must not walk the card
+    // backwards to an older instant.
+    if (!frame_.isNull() && std::isfinite(decodedSeconds) &&
+        std::abs(frameSeconds_ - seconds_) <= std::abs(decodedSeconds - seconds_)) {
+        return;
+    }
     frame_ = frame;
-    frameSeconds_ = seconds;
-    status_.clear();
+    // The decoder's own reading, never the pointer's instant: this is the time
+    // the caption prints and the only claim the picture makes.
+    frameSeconds_ = decodedSeconds;
     if (frame.width() > 0 && frame.height() > 0) {
         aspect_ = static_cast<double>(frame.width()) / static_cast<double>(frame.height());
+    }
+    if (previewReplyMatches(token, token_, requestedSeconds, seconds_)) {
+        status_.clear();
+        detail_.clear();
+        refused_ = false;
+    } else {
+        status_ = tr("Decoding preview…");
+        detail_.clear();
+        refused_ = false;
     }
     place();
     chromeUpdate(this);
@@ -176,7 +228,9 @@ void HoverPreview::applyUnavailable(quint64 token, double seconds, const QString
     // Nothing is coming: no older frame may stay behind as if it were this one.
     frame_ = {};
     frameSeconds_ = -1.0;
-    status_ = reason;
+    status_ = tr("Preview unavailable");
+    detail_ = reason;
+    refused_ = true;
     place();
     chromeUpdate(this);
 }
@@ -185,7 +239,14 @@ void HoverPreview::place() {
     QWidget* host = parentWidget();
     if (host == nullptr) return;
     const QRect card = previewCardRect(host->rect(), anchor_, bar_, aspect_);
-    if (card.isValid() && card != geometry()) setGeometry(card);
+    if (!card.isValid() || card == geometry()) return;
+    const QRect vacated = geometry();
+    const bool wasVisible = isVisible();
+    setGeometry(card);
+    // The card is a translucent child: the area it covered is not repainted by
+    // moving it, so the parent is asked for it explicitly. Without this a moved
+    // card leaves the band it used to occupy behind.
+    if (wasVisible && !vacated.isEmpty()) host->update(vacated);
 }
 
 void HoverPreview::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
@@ -202,10 +263,16 @@ void HoverPreview::paintChrome(QPainter& painter) {
     painter.setClipPath(shape, Qt::IntersectClip);
 
     const bool hasFrame = !frame_.isNull();
+    const bool stale = hasFrame && !status_.isEmpty() && !refused_;
+    // The whole rect gets a defined fill before anything else is drawn, so no
+    // pixel of the card is left to whatever the parent last had there.
     painter.fillRect(rect(), hasFrame ? QColor(0, 0, 0) : flyout());
     if (hasFrame) {
         // The card is sized to the frame's aspect, so this covers it exactly.
         painter.drawImage(rect(), frame_);
+        if (stale) {
+            painter.fillRect(rect(), QColor(0, 0, 0, kStaleDimAlpha));
+        }
         // A frame can be bright where the caption sits; the shade keeps the
         // timestamp readable without tinting the picture.
         QLinearGradient shade(0, height() * 0.5, 0, height());
@@ -214,7 +281,10 @@ void HoverPreview::paintChrome(QPainter& painter) {
         painter.fillRect(QRectF(0, height() * 0.5, width(), height() * 0.5), shade);
     }
 
-    const QString timeText = formatTime(seconds_);
+    // The time on the card is the picture's own: an instant decoded for another
+    // pointer position keeps that instant's clock rather than borrowing this
+    // one's.
+    const QString timeText = formatTime(hasFrame && frameSeconds_ >= 0.0 ? frameSeconds_ : seconds_);
     const QFont timeFont = monoFont(13, true);
     const QFont labelFont = uiFont(11, true);
     const int pad = 10;
@@ -226,7 +296,7 @@ void HoverPreview::paintChrome(QPainter& painter) {
     painter.setFont(timeFont);
     painter.setPen(QColor(0, 0, 0, 150));
     painter.drawText(timeRect.translated(0, 1), Qt::AlignCenter, timeText);
-    painter.setPen(white(255));
+    painter.setPen(white(stale ? 205 : 255));
     painter.drawText(timeRect, Qt::AlignCenter, timeText);
 
     if (!label_.isEmpty()) {
@@ -239,12 +309,23 @@ void HoverPreview::paintChrome(QPainter& painter) {
         painter.drawText(labelRect, Qt::AlignCenter, label_);
     }
 
-    if (!hasFrame && !status_.isEmpty()) {
-        painter.setFont(uiFont(9));
-        painter.setPen(w45());
-        const int statusHeight = std::max(1, timeTop - 20);
+    if (!status_.isEmpty()) {
+        // The state is text, not a shade: "a decode is running" and "there will
+        // never be a frame" must not look the same, and neither may look like a
+        // picture that is simply not there.
+        painter.setFont(uiFont(9, true));
+        painter.setPen(stale ? white(200) : w45());
+        const int statusHeight = std::max(1, timeTop - 16);
         painter.drawText(QRectF(10, 10, width() - 20, statusHeight),
                          Qt::AlignHCenter | Qt::AlignTop | Qt::TextWordWrap, status_);
+        if (!detail_.isEmpty() && !stale) {
+            painter.setFont(uiFont(8));
+            painter.setPen(w35());
+            const int detailHeight = std::max(1, statusHeight - QFontMetrics(uiFont(9, true)).height() - 2);
+            painter.drawText(QRectF(10, 10 + QFontMetrics(uiFont(9, true)).height() + 2,
+                                    width() - 20, detailHeight),
+                             Qt::AlignHCenter | Qt::AlignTop | Qt::TextWordWrap, detail_);
+        }
     }
 
     painter.restore();

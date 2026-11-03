@@ -31,10 +31,20 @@
 namespace {
 
 using mplayer::shell::FramePreviewService;
+using mplayer::shell::hoverCardKeepsPointer;
 using mplayer::shell::HoverPreview;
+using mplayer::shell::PreviewFrame;
+using mplayer::shell::PreviewFrameCache;
 using mplayer::shell::previewCardRect;
 using mplayer::shell::previewFrameFromRaw;
 using mplayer::shell::previewReplyMatches;
+
+/// A 2x2 picture, distinct per call, so a stored frame can be told from another.
+QImage storedImage(int shade) {
+    QImage image(2, 2, QImage::Format_RGBA8888);
+    image.fill(QColor(shade % 256, (shade * 7) % 256, (shade * 13) % 256));
+    return image;
+}
 
 /// A host the size of a windowed player. The bar sits where the dock puts it.
 QRect barIn(const QRect& host) { return QRect(host.left() + 160, host.bottom() - 90, 640, 18); }
@@ -115,7 +125,10 @@ bool settleUntil(Predicate done, int timeoutMs) {
 
 struct FrameReply {
     quint64 token = 0;
-    double seconds = 0.0;
+    /// The instant the request named.
+    double requestedSeconds = 0.0;
+    /// The timestamp the decoder reported for `image`.
+    double decodedSeconds = -1.0;
     QImage image;
 };
 
@@ -377,7 +390,7 @@ void TestHoverPreview::aHoverCardShowsTheDecodedFrameOfItsInstant() {
     QCoreApplication::processEvents();
 
     HoverPreview card(&host);
-    card.setSource(clip);
+    card.setSource(clip, 1);
     const QRect bar(120, 500, 760, 18);
     const QPoint anchor(520, bar.center().y());
 
@@ -387,8 +400,9 @@ void TestHoverPreview::aHoverCardShowsTheDecodedFrameOfItsInstant() {
              "the card never received the frame of the hovered instant");
     QVERIFY2(inside(card.geometry(), host.rect()), "the card stays inside the host");
 
-    // The frame described the source it was decoded from.
-    card.setSource(absentClip());
+    // The frame described the source it was decoded from. A new epoch is a new
+    // source even when the URL is the one the card already holds.
+    card.setSource(absentClip(), 2);
     QVERIFY(!card.hasFrame());
 }
 
@@ -402,8 +416,9 @@ void TestHoverPreview::aHoveredInstantIsDecodedAndOnlyTheNewestServes() {
     QList<MissReply> misses;
     FramePreviewService service;
     QObject::connect(&service, &FramePreviewService::frameReady, &service,
-                     [&frames](quint64 token, double seconds, const QImage& image) {
-                         frames.append(FrameReply{token, seconds, image});
+                     [&frames](quint64 token, double requestedSeconds, double decodedSeconds,
+                               const QImage& image) {
+                         frames.append(FrameReply{token, requestedSeconds, decodedSeconds, image});
                      });
     QObject::connect(&service, &FramePreviewService::frameUnavailable, &service,
                      [&misses](quint64 token, double seconds, const QString& reason) {
@@ -425,7 +440,7 @@ void TestHoverPreview::aHoveredInstantIsDecodedAndOnlyTheNewestServes() {
         return FrameReply{};
     };
 
-    service.setSource(clip);
+    service.setSource(clip, 1);
 
     // The first hover of a fresh service: the core, its event pump and their
     // timer are created by this request, so a tick that never starts is silence
@@ -437,7 +452,13 @@ void TestHoverPreview::aHoveredInstantIsDecodedAndOnlyTheNewestServes() {
     const FrameReply first = frameFor(1);
     QVERIFY2(!first.image.isNull(), "the first hover must decode a real frame");
     QVERIFY(std::abs(double(first.image.width()) / first.image.height() - 16.0 / 9.0) < 0.02);
-    QCOMPARE(first.seconds, 1.0);
+    QCOMPARE(first.requestedSeconds, 1.0);
+    // The identity is the request's instant; the picture's own timestamp is the
+    // decoder's reading of where it landed, which is what a caption may print.
+    QVERIFY2(std::isfinite(first.decodedSeconds) && first.decodedSeconds >= 0.0,
+             "the reply carries the decoder's own timestamp");
+    QVERIFY2(std::abs(first.decodedSeconds - 1.0) < 0.25,
+             "an exact seek lands within a frame or two of the asked instant");
     QVERIFY2(!isUniform(first.image), "a decoded frame is picture, not a blank buffer");
 
     // A second, distinct instant on the same source: no reload, one seek.
@@ -446,25 +467,25 @@ void TestHoverPreview::aHoveredInstantIsDecodedAndOnlyTheNewestServes() {
              "the decoder never answered the second hover");
     const FrameReply second = frameFor(2);
     QVERIFY2(!second.image.isNull(), "the second hover must decode a real frame");
-    QCOMPARE(second.seconds, 6.0);
+    QCOMPARE(second.requestedSeconds, 6.0);
     QVERIFY2(second.image != first.image, "1 s and 6 s must not decode to the same picture");
 
-    // Two hovers before the worker can serve either: the first is obsolete and
-    // must never surface.
+    // Two hovers of instants the store cannot answer, issued before the worker
+    // can serve either: the first is obsolete and must never surface.
     const qsizetype before = frames.size();
-    service.requestFrame(3, 1.0);
-    service.requestFrame(4, 6.0);
+    service.requestFrame(3, 2.0);
+    service.requestFrame(4, 4.0);
     QVERIFY2(settleUntil([&] { return replied(4); }, 20000),
              "the newest hover never answered");
     QVERIFY2(!replied(3), "an obsolete request surfaced");
     QCOMPARE(frames.size(), before + 1);
-    QCOMPARE(frameFor(4).seconds, 6.0);
+    QCOMPARE(frameFor(4).requestedSeconds, 4.0);
 
     // A hover racing a media change: the frame belongs to the source the card
     // has left, so it must not reach it at all.
     const qsizetype settled = frames.size();
     service.requestFrame(5, 1.0);
-    service.setSource(absentClip());
+    service.setSource(absentClip(), 2);
     QVERIFY2(!settleUntil([&] { return frames.size() > settled; }, 2000),
              "a frame of the replaced source survived the media change");
     QVERIFY(!replied(5));
@@ -473,4 +494,339 @@ void TestHoverPreview::aHoveredInstantIsDecodedAndOnlyTheNewestServes() {
     service.shutdown();
     service.requestFrame(6, 1.0);
     QVERIFY(!settleUntil([&] { return replied(6); }, 500));
+}
+
+void TestHoverPreview::theStoreKeepsSixtyFourInstantsAndEvictsTheOldest() {
+    PreviewFrameCache store;
+    for (int index = 0; index < PreviewFrameCache::kCapacity; ++index) {
+        store.insert(1, PreviewFrame{double(index) * 0.5, double(index) * 0.5,
+                                     storedImage(index)});
+    }
+    QCOMPARE(store.size(), PreviewFrameCache::kCapacity);
+    QCOMPARE(store.evictions(), quint64(0));
+
+    // Use the oldest entry: it is now the newest, so it must survive the pass
+    // that drops its neighbours.
+    QVERIFY(store.lookup(1, 0.0).has_value());
+
+    store.insert(1, PreviewFrame{0.5 * PreviewFrameCache::kCapacity,
+                                 0.5 * PreviewFrameCache::kCapacity,
+                                 storedImage(PreviewFrameCache::kCapacity)});
+    QCOMPARE(store.size(), PreviewFrameCache::kCapacity);
+    QCOMPARE(store.evictions(), quint64(1));
+    QVERIFY2(store.lookup(1, 0.0).has_value(), "a used entry was evicted before an idle one");
+    QVERIFY2(!store.lookup(1, 0.5).has_value(), "the least recently used instant is the one dropped");
+    QVERIFY(store.lookup(1, 0.5 * PreviewFrameCache::kCapacity).has_value());
+
+    // Sixty-four is the bound: a longer sweep keeps the newest work and drops the
+    // oldest at the same rate.
+    for (int index = 0; index < 10; ++index) {
+        store.insert(1, PreviewFrame{100.0 + index, 100.0 + index, storedImage(index)});
+    }
+    QCOMPARE(store.size(), PreviewFrameCache::kCapacity);
+    QCOMPARE(store.evictions(), quint64(11));
+}
+
+void TestHoverPreview::aStoredInstantIsBucketedByHalfSecondsAndBySourceEpoch() {
+    QCOMPARE(PreviewFrameCache::bucketOf(12.0), qint64(24));
+    QCOMPARE(PreviewFrameCache::bucketOf(12.2), qint64(24));
+    QCOMPARE(PreviewFrameCache::bucketOf(12.3), qint64(25));
+    QCOMPARE(PreviewFrameCache::bucketOf(-1.0), qint64(-1));
+
+    PreviewFrameCache store;
+    store.insert(7, PreviewFrame{12.0, 12.041, storedImage(1)});
+    const auto sameBucket = store.lookup(7, 12.2);
+    QVERIFY2(sameBucket.has_value(), "a hover inside the decoded half second is the same frame");
+    QCOMPARE(sameBucket->decodedSeconds, 12.041);
+    QVERIFY2(!store.lookup(8, 12.0).has_value(),
+             "another source epoch must not inherit a frame keyed to the previous one");
+    QVERIFY(!store.lookup(7, 12.6).has_value());
+
+    // A store with no image is not a frame a card could show.
+    store.insert(7, PreviewFrame{13.0, 13.0, QImage()});
+    QVERIFY(!store.lookup(7, 13.0).has_value());
+}
+
+void TestHoverPreview::aRepeatedInstantIsServedWithoutAskingTheDecoder() {
+    if (!requireRuntime()) return;
+    const QString clip = fixtureClip();
+    QVERIFY2(QFileInfo::exists(clip), qPrintable(clip));
+
+    QList<FrameReply> frames;
+    FramePreviewService service;
+    QObject::connect(&service, &FramePreviewService::frameReady, &service,
+                     [&frames](quint64 token, double requestedSeconds, double decodedSeconds,
+                               const QImage& image) {
+                         frames.append(FrameReply{token, requestedSeconds, decodedSeconds, image});
+                     });
+    const auto replyFor = [&frames](quint64 token) {
+        for (const FrameReply& reply : frames) {
+            if (reply.token == token) return reply;
+        }
+        return FrameReply{};
+    };
+
+    service.setSource(clip, 1);
+    service.requestFrame(1, 3.0);
+    QVERIFY2(settleUntil([&] { return replyFor(1).token == 1; }, 20000),
+             "the decoder never answered the first hover");
+    const FramePreviewStats afterMiss = service.stats();
+    QCOMPARE(afterMiss.workerRequests, quint64(1));
+    QCOMPARE(afterMiss.cacheHits, quint64(0));
+
+    // The same instant again: answered from the store, inside the call, with no
+    // worker round trip and no seek.
+    QElapsedTimer clock;
+    clock.start();
+    service.requestFrame(2, 3.0);
+    const qint64 servedUs = clock.nsecsElapsed() / 1000;
+    const FramePreviewStats afterHit = service.stats();
+    QCOMPARE(replyFor(2).token, quint64(2));
+    QCOMPARE(afterHit.cacheHits, quint64(1));
+    QCOMPARE(afterHit.workerRequests, afterMiss.workerRequests);
+    QVERIFY2(afterHit.lastHitLatencyUs >= 0 && afterHit.lastHitLatencyUs < 5000,
+             "a cache hit is a lookup and a signal, not a decode");
+    QVERIFY2(servedUs < 5000, "the repeated instant was answered without an event loop turn");
+    // The stored picture keeps the timestamp it was decoded at, not the instant
+    // the pointer happens to name now.
+    QCOMPARE(replyFor(2).decodedSeconds, replyFor(1).decodedSeconds);
+    QCOMPARE(replyFor(2).image, replyFor(1).image);
+
+    service.shutdown();
+}
+
+void TestHoverPreview::aDecodeThatFinishesAfterThePointerMovedIsKept() {
+    if (!requireRuntime()) return;
+    const QString clip = fixtureClip();
+    QVERIFY2(QFileInfo::exists(clip), qPrintable(clip));
+
+    QList<FrameReply> frames;
+    FramePreviewService service;
+    QObject::connect(&service, &FramePreviewService::frameReady, &service,
+                     [&frames](quint64 token, double requestedSeconds, double decodedSeconds,
+                               const QImage& image) {
+                         frames.append(FrameReply{token, requestedSeconds, decodedSeconds, image});
+                     });
+    const auto replyFor = [&frames](quint64 token) {
+        for (const FrameReply& reply : frames) {
+            if (reply.token == token) return reply;
+        }
+        return FrameReply{};
+    };
+
+    service.setSource(clip, 1);
+    service.requestFrame(1, 1.0);
+    QVERIFY2(settleUntil([&] { return replyFor(1).token == 1; }, 20000),
+             "the decoder never answered the first hover");
+
+    // A miss leaves the worker, and a return to an instant already stored is
+    // answered inside the call - so token 2 necessarily finishes after the
+    // pointer has moved on to token 3.
+    service.requestFrame(2, 8.0);
+    service.requestFrame(3, 1.0);
+    QCOMPARE(replyFor(3).token, quint64(3));
+    QVERIFY2(replyFor(2).token == 0, "the swept instant had already finished");
+    QVERIFY2(settleUntil([&] { return replyFor(2).token == 2; }, 20000),
+             "a decode that finished after the pointer moved on was thrown away");
+    QVERIFY2(!replyFor(2).image.isNull(), "the late reply carries a real frame");
+
+    // And it is stored under its own instant, so returning to it is a hit.
+    const FramePreviewStats before = service.stats();
+    service.requestFrame(4, 8.0);
+    QCOMPARE(replyFor(4).token, quint64(4));
+    QCOMPARE(service.stats().cacheHits, before.cacheHits + 1);
+
+    service.shutdown();
+}
+
+void TestHoverPreview::theCardKeepsAnOlderPictureAsExplicitlyStale() {
+    if (!requireRuntime()) return;
+    const QString clip = fixtureClip();
+    QVERIFY2(QFileInfo::exists(clip), qPrintable(clip));
+
+    QWidget host;
+    host.resize(1000, 620);
+    host.show();
+    QCoreApplication::processEvents();
+
+    HoverPreview card(&host);
+    card.setSource(clip, 1);
+    const QRect bar(120, 500, 760, 18);
+    const QPoint anchor(520, bar.center().y());
+    const QRect barGlobal(host.mapToGlobal(bar.topLeft()), bar.size());
+
+    card.present(1.0, host.mapToGlobal(anchor), barGlobal, QString(), /*allowFrame=*/true);
+    QVERIFY2(settleUntil([&] { return card.hasFrame() && card.statusText().isEmpty(); }, 20000),
+             "the card never settled on the first instant");
+    const double pictureTime = card.frameSeconds();
+    QVERIFY2(std::abs(pictureTime - 1.0) < 0.25, "the card prints the picture's own instant");
+
+    // The pointer jumps far away. The previous picture must stay, marked stale,
+    // and must keep its own timestamp rather than borrowing the new one.
+    card.present(9.0, host.mapToGlobal(anchor), barGlobal, QString(), /*allowFrame=*/true);
+    QVERIFY2(card.hasFrame(), "the card dropped its picture for a grey void");
+    QVERIFY2(card.isFrameStale(), "a picture of another instant must be marked stale");
+    QVERIFY2(!card.statusText().isEmpty(), "a stale card says what it is waiting for");
+    QCOMPARE(card.frameSeconds(), pictureTime);
+    QVERIFY2(std::abs(card.frameSeconds() - 9.0) > 1.0,
+             "the stale picture must not be relabelled as the pointer's instant");
+
+    QVERIFY2(settleUntil([&] { return !card.isFrameStale(); }, 20000),
+             "the card never received the frame of the new instant");
+    QVERIFY2(std::abs(card.frameSeconds() - 9.0) < 0.3, "the new picture names its own instant");
+
+    card.dismiss();
+}
+
+void TestHoverPreview::aDecodingCardNamesTheWaitAndARefusalStaysNamed() {
+    if (!requireRuntime()) return;
+    const QString clip = fixtureClip();
+    QVERIFY2(QFileInfo::exists(clip), qPrintable(clip));
+
+    QWidget host;
+    host.resize(1000, 620);
+    host.show();
+    QCoreApplication::processEvents();
+
+    HoverPreview card(&host);
+    card.setSource(clip, 1);
+    const QRect bar(120, 500, 760, 18);
+    const QPoint anchor(520, bar.center().y());
+
+    // Asked for an instant it does not hold yet: no picture, and the wait is
+    // stated instead of being left as an empty card.
+    card.present(4.0, host.mapToGlobal(anchor), QRect(host.mapToGlobal(bar.topLeft()), bar.size()),
+                 QString(), /*allowFrame=*/true);
+    QVERIFY(!card.hasFrame());
+    QVERIFY2(!card.statusText().isEmpty(), "a decoding card names what it is waiting for");
+    QVERIFY2(card.statusDetail().isEmpty(), "a wait is not a refusal and carries no reason");
+
+    QVERIFY2(settleUntil([&] { return card.hasFrame(); }, 20000), "the card never decoded");
+
+    // A source that can never answer: the refusal is named, once, and no frame
+    // is left behind claiming to be the instant.
+    card.setSource(absentClip(), 2);
+    card.present(4.0, host.mapToGlobal(anchor), QRect(host.mapToGlobal(bar.topLeft()), bar.size()),
+                 QString(), /*allowFrame=*/true);
+    QVERIFY2(settleUntil([&] { return !card.statusText().isEmpty() && !card.hasFrame(); }, 20000),
+             "a refused preview must say so instead of staying blank");
+    QVERIFY2(!card.statusDetail().isEmpty(), "the refusal keeps the decoder's own reason");
+    QVERIFY2(!card.isFrameStale(), "a refusal is not a stale picture");
+    card.dismiss();
+}
+
+void TestHoverPreview::aSameUrlReloadInvalidatesTheStoredFrames() {
+    if (!requireRuntime()) return;
+    const QString clip = fixtureClip();
+    QVERIFY2(QFileInfo::exists(clip), qPrintable(clip));
+
+    QList<FrameReply> frames;
+    FramePreviewService service;
+    QObject::connect(&service, &FramePreviewService::frameReady, &service,
+                     [&frames](quint64 token, double requestedSeconds, double decodedSeconds,
+                               const QImage& image) {
+                         frames.append(FrameReply{token, requestedSeconds, decodedSeconds, image});
+                     });
+    service.setSource(clip, 1);
+    service.requestFrame(1, 5.0);
+    QVERIFY2(settleUntil([&] { return !frames.isEmpty(); }, 20000),
+             "the decoder never answered the first hover");
+    const quint64 requestsAfterFirst = service.stats().workerRequests;
+
+    // The same URL, a new source epoch: the stored picture describes a source
+    // that is no longer loaded and must not answer for this one.
+    service.setSource(clip, 2);
+    service.requestFrame(2, 5.0);
+    QVERIFY2(frames.size() == 1, "a frame of the replaced epoch answered the new request");
+    QVERIFY2(settleUntil([&] { return frames.size() == 2; }, 20000),
+             "the new epoch never decoded its own frame");
+    QCOMPARE(service.stats().cacheHits, quint64(0));
+    QCOMPARE(service.stats().workerRequests, requestsAfterFirst + 1);
+
+    // The card drops its picture when the epoch moves, even under one URL.
+    QWidget host;
+    host.resize(800, 500);
+    host.show();
+    QCoreApplication::processEvents();
+    HoverPreview card(&host);
+    card.setSource(clip, 1);
+    const QRect bar(120, 400, 560, 18);
+    card.present(5.0, host.mapToGlobal(QPoint(400, 400)),
+                 QRect(host.mapToGlobal(bar.topLeft()), bar.size()), QString(), true);
+    QVERIFY2(settleUntil([&] { return card.hasFrame(); }, 20000), "the card never decoded");
+    card.setSource(clip, 2);
+    QVERIFY2(!card.hasFrame(), "a same-URL reload kept the previous source's picture");
+    card.dismiss();
+    service.shutdown();
+}
+
+void TestHoverPreview::aPointerBetweenTheBarAndTheCardKeepsIt() {
+    const QRect bar(100, 600, 800, 18);
+    const QRect card(300, 470, 340, 120);
+    QVERIFY2(hoverCardKeepsPointer(bar, card, QPoint(500, 609)),
+             "a pointer on the bar belongs to the card the bar opened");
+    QVERIFY2(hoverCardKeepsPointer(bar, card, QPoint(500, 530)),
+             "a pointer on the card belongs to it");
+    QVERIFY2(hoverCardKeepsPointer(bar, card, QPoint(500, 590)),
+             "a pointer crossing the gap on its way to the card must not end it");
+    QVERIFY(!hoverCardKeepsPointer(bar, card, QPoint(50, 590)));
+    QVERIFY(!hoverCardKeepsPointer(bar, card, QPoint(1150, 700)));
+    QVERIFY2(!hoverCardKeepsPointer(QRect(), card, QPoint(500, 530)),
+             "a hidden bar leaves no band for a pointer to be in");
+}
+
+void TestHoverPreview::aParkedTimelineHoverKeepsTheChromeAwake() {
+    mplayer::shell::PlayerShell shell;
+    shell.resize(1000, 620);
+    shell.setMedia(QStringLiteral("parked-hover-fixture.mp4"));
+    shell.setDuration(120.0);
+    shell.show();
+    shell.enterFullscreen();
+    QCoreApplication::processEvents();
+
+    auto* bar = shell.findChild<mplayer::shell::ScrubBar*>(QStringLiteral("playerScrubBar"));
+    auto* card = shell.findChild<HoverPreview*>(QStringLiteral("playerHoverPreview"));
+    QVERIFY(bar != nullptr && card != nullptr);
+    // A pointer resting on the bar with no button held: the move is what a
+    // viewer's hand produces, and it is consumed by the bar itself.
+    QMouseEvent move(QEvent::MouseMove, QPointF(bar->rect().center()),
+                     QPointF(bar->mapToGlobal(bar->rect().center())), Qt::NoButton, Qt::NoButton,
+                     Qt::NoModifier);
+    QCoreApplication::sendEvent(bar, &move);
+    QVERIFY(bar->isHovering());
+    QVERIFY(card->isVisible());
+
+    // Longer than kAutohideMs: the chrome under a pointer that never left must
+    // not hide and take the card with it.
+    for (int waited = 0; waited < 3200; waited += 100) {
+        QCoreApplication::processEvents();
+        QThread::msleep(100);
+    }
+    QVERIFY2(shell.stateName() != QLatin1String("FULLSCREEN_AUTO_HIDDEN"),
+             "the chrome auto-hid underneath a pointer parked on the timeline");
+    QVERIFY2(card->isVisible(), "the hover card vanished under a resting pointer");
+}
+
+void TestHoverPreview::aVanishedTimelineEndsTheCardWithoutGrace() {
+    mplayer::shell::PlayerShell shell;
+    shell.resize(1000, 620);
+    shell.setMedia(QStringLiteral("vanished-hover-fixture.mp4"));
+    shell.setDuration(120.0);
+    shell.show();
+    QCoreApplication::processEvents();
+
+    auto* bar = shell.findChild<mplayer::shell::ScrubBar*>(QStringLiteral("playerScrubBar"));
+    auto* card = shell.findChild<HoverPreview*>(QStringLiteral("playerHoverPreview"));
+    QVERIFY(bar != nullptr && card != nullptr);
+    QMouseEvent move(QEvent::MouseMove, QPointF(bar->rect().center()),
+                     QPointF(bar->mapToGlobal(bar->rect().center())), Qt::NoButton, Qt::NoButton,
+                     Qt::NoModifier);
+    QCoreApplication::sendEvent(bar, &move);
+    QVERIFY(card->isVisible());
+
+    // The control the card describes is gone: the card goes with it, not after a
+    // grace period that only makes sense for a journey to somewhere.
+    bar->hide();
+    QCoreApplication::processEvents();
+    QVERIFY2(!card->isVisible(), "the card outlived the timeline it belongs to");
 }

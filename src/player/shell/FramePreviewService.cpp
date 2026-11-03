@@ -37,13 +37,22 @@ constexpr qint64 kCaptureTimeoutMs = 5000;
 // A failing source is answered from memory instead of being retried per pixel.
 constexpr qint64 kRetryAfterFailureMs = 2500;
 // A loaded source nobody hovers holds a demuxer cache and, for a stream, a
-// connection; the next hover pays a reload instead.
-constexpr qint64 kIdleDropMs = 30000;
+// connection; the next hover pays a reload instead. Five minutes: a viewer who
+// steps away and comes back with the pointer should not pay a reopen, and any
+// hover or capture in between resets the clock, so this is idleness and not the
+// length of the session.
+constexpr qint64 kIdleDropMs = 300000;
 
 // Within one frame time is the same frame: a pointer nudging must not throw.
 constexpr double kSameInstantSec = 0.04;
 // A sweep would be a seek per pixel; the decode waits for the pointer to rest.
-constexpr qint64 kHoverSettleMs = 70;
+// Twenty milliseconds is one frame at 50 Hz: enough to coalesce a move, short
+// enough that the card answers the instant the pointer stopped on.
+constexpr qint64 kHoverSettleMs = 20;
+// A jump further than this is crossed by a keyframe seek first, then refined to
+// the exact instant. Two and a half seconds is roughly one GOP on the sources
+// this player sees: below it an exact seek is already the cheaper path.
+constexpr double kKeyframeJumpSec = 2.5;
 // `absolute+exact` lands on the requested frame, so a larger miss is a refused
 // seek dressed as a success rather than ordinary rounding.
 constexpr double kPositionToleranceSec = 0.75;
@@ -88,7 +97,13 @@ std::vector<std::pair<std::string, std::string>> previewOptions() {
         {"sid", "no"},
         {"keep-open", "yes"},
         {"screenshot-sw", "yes"},
+        // The capture reads the software chain, so no hardware decoder can be
+        // substituted: these are the speed options the paused preview core may
+        // take without changing what the picture is.
         {"hwdec", "no"},
+        {"vd-lavc-fast", "yes"},
+        {"vd-lavc-skiploopfilter", "all"},
+        {"hr-seek-framedrop", "yes"},
         {"terminal", "no"},
         {"config", "no"},
         {"idle", "yes"},
@@ -169,6 +184,52 @@ QImage previewFrameFromRaw(const QByteArray& format, qint64 width, qint64 height
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  cache
+// ═══════════════════════════════════════════════════════════════════════════
+
+qint64 PreviewFrameCache::bucketOf(double seconds) {
+    if (!std::isfinite(seconds) || seconds < 0.0) return -1;
+    return static_cast<qint64>(std::llround(seconds * 2.0));
+}
+
+void PreviewFrameCache::clear() {
+    entries_.clear();
+    recency_.clear();
+}
+
+void PreviewFrameCache::insert(quint64 epoch, const PreviewFrame& frame) {
+    const qint64 bucket = bucketOf(frame.requestedSeconds);
+    if (bucket < 0 || frame.image.isNull()) return;
+    const Key key(epoch, bucket);
+    if (!entries_.contains(key)) {
+        while (recency_.size() >= kCapacity) {
+            // Oldest first: the instant a pointer is least likely to return to.
+            const Key victim = recency_.takeFirst();
+            entries_.remove(victim);
+            ++evictions_;
+        }
+        recency_.append(key);
+    } else {
+        recency_.removeAll(key);
+        recency_.append(key);
+    }
+    entries_.insert(key, frame);
+}
+
+std::optional<PreviewFrame> PreviewFrameCache::lookup(quint64 epoch,
+                                                      double requestedSeconds) {
+    const qint64 bucket = bucketOf(requestedSeconds);
+    if (bucket < 0) return std::nullopt;
+    const Key key(epoch, bucket);
+    const auto found = entries_.constFind(key);
+    if (found == entries_.constEnd()) return std::nullopt;
+    // A hit is a use: the instant the pointer came back to is now the newest.
+    recency_.removeAll(key);
+    recency_.append(key);
+    return found.value();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  worker
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -187,7 +248,8 @@ public slots:
     void shutdown();
 
 signals:
-    void frameReady(quint64 token, double seconds, const QImage& frame);
+    void frameReady(quint64 token, double requestedSeconds, double decodedSeconds,
+                    const QImage& frame);
     void frameUnavailable(quint64 token, double seconds, const QString& reason);
 
 private:
@@ -211,7 +273,8 @@ private:
     void confirmSeek();
     void captureFrame();
 
-    void finishWithFrame(quint64 token, double seconds, const QImage& frame);
+    void finishWithFrame(quint64 token, double requestedSeconds, double decodedSeconds,
+                         const QImage& frame);
     void fail(const QString& reason);
     void abandon();
 
@@ -234,6 +297,14 @@ private:
     double activeSeconds_ = 0.0;
     quint64 requestedToken_ = 0;
     double requestedSeconds_ = 0.0;
+
+    /// Where the core said the picture it just captured actually is. Reported by
+    /// the seek's own position read, never assumed from the request: the card
+    /// prints this time and the cache describes its picture by it.
+    double decodedSeconds_ = -1.0;
+    /// Where the last completed seek landed. A jump further than
+    /// kKeyframeJumpSec from it is crossed by keyframes first.
+    double settledSeconds_ = -1.0;
 
     /// Baselines are taken when a step is issued, so an event from the previous
     /// step is never read as this one's completion.
@@ -293,6 +364,8 @@ void FramePreviewWorker::setSource(const QString& url, quint64 generation) {
     confirming_ = false;
     seekRetried_ = false;
     idleDropDone_ = false;
+    settledSeconds_ = -1.0;
+    decodedSeconds_ = -1.0;
     positionRequest_ = AsyncRequestId{};
     captureRequest_ = AsyncRequestId{};
     if (core_ != nullptr) {
@@ -327,6 +400,9 @@ void FramePreviewWorker::requestFrame(quint64 token, double seconds) {
     requestedToken_ = token;
     requestedSeconds_ = seconds;
     startAfterMs_ = nowMs() + kHoverSettleMs;
+    // A hover is activity: the five-minute idle release counts a decoder nobody
+    // asked anything of, not a session that has been open for five minutes.
+    idleSinceMs_ = startAfterMs_;
     pump();
     updateTimer();
 }
@@ -461,6 +537,10 @@ void FramePreviewWorker::confirmSeek() {
                 fail(tr("The player could not report the position of the requested frame."));
                 return;
             }
+            // The decoder's own reading of where it landed. It is what the card
+            // prints and what the cache describes the picture by, so it is taken
+            // before anything else can move.
+            decodedSeconds_ = reply.number;
             if (activeToken_ != requestedToken_ ||
                 std::abs(requestedSeconds_ - activeSeconds_) > kSameInstantSec) {
                 // Still moving: the newest instant is left to pump() once the
@@ -479,6 +559,8 @@ void FramePreviewWorker::confirmSeek() {
             }
             if (std::abs(reply.number - activeSeconds_) > kPositionToleranceSec) {
                 if (!seekRetried_) {
+                    // The keyframe pass landed on a neighbouring frame; one
+                    // exact seek is what refines it.
                     seekRetried_ = true;
                     startSeek();
                     return;
@@ -486,6 +568,7 @@ void FramePreviewWorker::confirmSeek() {
                 fail(tr("The source would not settle on the hovered position."));
                 return;
             }
+            settledSeconds_ = reply.number;
             captureFrame();
         });
     if (!positionRequest_.valid()) {
@@ -606,11 +689,19 @@ void FramePreviewWorker::startSeek() {
     restartBaseline_ = restartCount_;
     endBaseline_ = endCount_;
     deadlineMs_ = nowMs() + kSeekTimeoutMs;
-    // `absolute+exact`, not `absolute`: a keyframe seek shows the frame nearest
-    // the instant rather than the frame at it.
+    // A long jump is crossed by keyframes first: `absolute+exact` on the far side
+    // of a two-hour file decodes everything it crosses, which is what made a
+    // first hover on a late instant take seconds. The position read that follows
+    // proves where it landed, and a miss is refined by one exact seek - so the
+    // frame the card gets is still the frame at the instant, never the keyframe's
+    // neighbour presented as it.
+    const bool farJump =
+        !seekRetried_ && (settledSeconds_ < 0.0 ||
+                          std::abs(activeSeconds_ - settledSeconds_) > kKeyframeJumpSec);
+    const char* mode = farJump ? "absolute+keyframes" : "absolute+exact";
     const quint64 token = activeToken_;
     const AsyncRequestId request = core_->commandAsync(
-        {"seek", mpvNumber(activeSeconds_), "absolute+exact"},
+        {"seek", mpvNumber(activeSeconds_), mode},
         [this, token](const AsyncReply& reply) {
             if (phase_ != Phase::Seek) return;
             // A refusal for a superseded seek says nothing about its replacement.
@@ -626,14 +717,16 @@ void FramePreviewWorker::captureFrame() {
     phase_ = Phase::Capture;
     deadlineMs_ = nowMs() + kCaptureTimeoutMs;
     const quint64 token = activeToken_;
-    const double seconds = activeSeconds_;
+    const double requested = activeSeconds_;
+    const double decoded = decodedSeconds_;
     const AsyncRequestId request = core_->commandAsync(
         {"screenshot-raw", "video", "rgba"},
-        [this, token, seconds](const AsyncReply& reply) {
+        [this, token, requested, decoded](const AsyncReply& reply) {
             captureRequest_ = AsyncRequestId{};
             if (phase_ != Phase::Capture) return;
-            if (token != activeToken_ || token != requestedToken_) {
-                // Real frame, wrong instant: the pointer moved on.
+            if (token != activeToken_) {
+                // The state machine has moved to another instant: this capture
+                // describes neither the request in flight nor one still wanted.
                 abandon();
                 return;
             }
@@ -667,7 +760,7 @@ void FramePreviewWorker::captureFrame() {
                          : reason);
                 return;
             }
-            finishWithFrame(token, seconds, frame);
+            finishWithFrame(token, requested, decoded, frame);
         });
     if (!request.valid()) {
         fail(tr("The player would not take the capture request."));
@@ -678,16 +771,19 @@ void FramePreviewWorker::captureFrame() {
 
 // ── terminal states ───────────────────────────────────────────────────────
 
-void FramePreviewWorker::finishWithFrame(quint64 token, double seconds, const QImage& frame) {
+void FramePreviewWorker::finishWithFrame(quint64 token, double requestedSeconds,
+                                         double decodedSeconds, const QImage& frame) {
     phase_ = Phase::Idle;
     activeToken_ = 0;
     idleSinceMs_ = nowMs();
     failure_.clear();
     retryAfterMs_ = 0;
-    if (token != 0 && token == requestedToken_) {
-        requestedToken_ = 0;
-        emit frameReady(token, seconds, frame);
-    }
+    // A finished decode is never thrown away. The pointer may already be on a
+    // newer instant - the card then holds this picture as an explicitly stale
+    // one and the store keeps it for a return - and the newest request is served
+    // by the next pump().
+    if (requestedToken_ == token) requestedToken_ = 0;
+    if (token != 0) emit frameReady(token, requestedSeconds, decodedSeconds, frame);
 }
 
 void FramePreviewWorker::fail(const QString& reason) {
@@ -779,29 +875,73 @@ FramePreviewService::FramePreviewService(QObject* parent) : QObject(parent) {}
 
 FramePreviewService::~FramePreviewService() { shutdown(); }
 
-void FramePreviewService::setSource(const QString& url) {
-    if (stopped_ || url == source_) return;
+void FramePreviewService::setSource(const QString& url, quint64 sourceEpoch) {
+    if (stopped_) return;
+    // Both halves are identity: the same URL republished for a reloaded source
+    // is a different picture, and treating it as "unchanged" is how a stale
+    // frame ends up describing the new media.
+    if (url == source_ && sourceEpoch == sourceEpoch_) return;
     source_ = url;
+    sourceEpoch_ = sourceEpoch;
     pendingToken_ = 0;
+    prewarmToken_ = 0;
+    // Everything stored describes a source that is no longer loaded.
+    cache_.clear();
     ++generation_;
     if (worker_ != nullptr) emit sourceChanged(source_, generation_);
 }
 
 void FramePreviewService::requestFrame(quint64 token, double seconds) {
-    if (stopped_ || token == 0 || !std::isfinite(seconds) || seconds < 0.0) return;
+    if (stopped_ || token == 0 || isInternal(token) || !std::isfinite(seconds) || seconds < 0.0) {
+        return;
+    }
+    ++stats_.requests;
+    // A card's request outranks a warm-up; the warm-up is asked again by its
+    // owner when the pointer is gone.
+    prewarmToken_ = 0;
     pendingToken_ = token;
+    pendingSince_.start();
     if (source_.isEmpty()) {
         pendingToken_ = 0;
+        stats_.lastSettleLatencyMs = pendingSince_.elapsed();
         emit frameUnavailable(token, seconds,
                               tr("No media is loaded, so there is no frame to preview."));
         return;
     }
+    if (const std::optional<PreviewFrame> cached = cache_.lookup(sourceEpoch_, seconds)) {
+        // The store answers instead of the decoder: no settle delay, no seek and
+        // nothing on the worker thread. The reply keeps the two times apart, so
+        // the card never prints this request's instant over that picture.
+        QElapsedTimer timer;
+        timer.start();
+        ++stats_.cacheHits;
+        pendingToken_ = 0;
+        stats_.lastHitLatencyUs = timer.nsecsElapsed() / 1000;
+        stats_.lastSettleLatencyMs = timer.elapsed();
+        emit frameReady(token, seconds, cached->decodedSeconds, cached->image);
+        return;
+    }
+    ++stats_.workerRequests;
+    // The epoch is part of the request's identity: a reply is only ever a
+    // picture of the source this request was made against.
+    if (requestEpochs_.size() > 128) requestEpochs_.clear();
+    requestEpochs_.insert(token, sourceEpoch_);
     ensureWorker();
     emit frameRequested(token, seconds);
 }
 
+void FramePreviewService::prewarm(double seconds) {
+    if (stopped_ || source_.isEmpty() || !std::isfinite(seconds) || seconds < 0.0) return;
+    if (prewarmToken_ != 0 || pendingToken_ != 0) return;
+    if (cache_.lookup(sourceEpoch_, seconds).has_value()) return;
+    prewarmToken_ = nextInternalToken_++;
+    ensureWorker();
+    emit frameRequested(prewarmToken_, seconds);
+}
+
 void FramePreviewService::cancel() {
     pendingToken_ = 0;
+    prewarmToken_ = 0;
     if (worker_ != nullptr) emit cancelRequested();
 }
 
@@ -845,15 +985,40 @@ void FramePreviewService::ensureWorker() {
     connect(this, &FramePreviewService::cancelRequested, worker, &FramePreviewWorker::cancelPending,
             Qt::QueuedConnection);
     connect(worker, &FramePreviewWorker::frameReady, this,
-            [this](quint64 token, double seconds, const QImage& frame) {
-                if (token != pendingToken_) return;
-                pendingToken_ = 0;
-                emit frameReady(token, seconds, frame);
+            [this](quint64 token, double requestedSeconds, double decodedSeconds,
+                   const QImage& frame) {
+                if (stopped_) return;
+                if (isInternal(token)) {
+                    // A warm-up: it fills the store for the next hover and is
+                    // never published as if the card had asked for it.
+                    if (token != prewarmToken_) return;
+                    prewarmToken_ = 0;
+                    cache_.insert(sourceEpoch_,
+                                  PreviewFrame{requestedSeconds, decodedSeconds, frame});
+                    return;
+                }
+                const quint64 epoch = requestEpochs_.take(token);
+                if (epoch != sourceEpoch_) {
+                    // The source changed while this reply was crossing threads:
+                    // it describes a picture that is no longer loaded.
+                    return;
+                }
+                cache_.insert(epoch, PreviewFrame{requestedSeconds, decodedSeconds, frame});
+                if (token == pendingToken_) {
+                    pendingToken_ = 0;
+                    stats_.lastSettleLatencyMs = pendingSince_.elapsed();
+                }
+                // Delivered even when a newer request is already outstanding: the
+                // card holds it as an explicitly stale picture, and its own token
+                // check decides whether this is the instant under the pointer.
+                emit frameReady(token, requestedSeconds, decodedSeconds, frame);
             });
     connect(worker, &FramePreviewWorker::frameUnavailable, this,
             [this](quint64 token, double seconds, const QString& reason) {
+                if (stopped_ || isInternal(token)) return;
                 if (token != pendingToken_) return;
                 pendingToken_ = 0;
+                stats_.lastSettleLatencyMs = pendingSince_.elapsed();
                 emit frameUnavailable(token, seconds, reason);
             });
     thread_->start();

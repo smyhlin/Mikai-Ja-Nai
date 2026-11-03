@@ -14,6 +14,7 @@
 #include "CompareWindow.hpp"
 #include "PlayerDialog.hpp"
 #include "MediaInformationDialog.hpp"
+#include "OpeningOverlay.hpp"
 
 #include <QSettings>
 
@@ -303,6 +304,21 @@ PlayerDialog::PlayerDialog(const QString& caption,
 
     buildStrip();
     buildStatus();
+    // Above the picture, above the video surface's own GL pass: the wait for a
+    // first frame is a widget the dialog owns, so it can be shown before any
+    // frontend exists and retracted on the frame that proves the wait is over.
+    openingOverlay_ = new OpeningOverlay(this);
+    openingOverlay_->setObjectName(QStringLiteral("playerOpeningOverlay"));
+    openingOverlay_->hide();
+    connect(surface_, &VideoSurface::openingChanged, this, [this](bool opening) {
+        if (!opening) {
+            hideOpeningOverlay();
+            return;
+        }
+        syncOpeningOverlay();
+    });
+    connect(surface_, &VideoSurface::errorOccurred, this,
+            [this](const QString&) { hideOpeningOverlay(); });
 
     seriesDrawer_ = new SeriesDrawer(this);
     audioPopup_ = new MenuPopup(tr("AUDIO"), this);
@@ -880,6 +896,10 @@ bool PlayerDialog::openStream(const QString& url, int height, bool resume) {
     if (closed_ || url.isEmpty()) {
         return false;
     }
+    // The window states the wait before it can possibly have a picture. Doing it
+    // here rather than on a timer is what makes "no bare dark window" true on the
+    // very first frame the viewer sees.
+    showOpeningOverlay();
     ++animeJanaiSequence_;
     if (animeJanaiCancellation_) animeJanaiCancellation_->store(true);
     // A new source supersedes the failed one, so the chip it left is retired
@@ -1851,6 +1871,9 @@ void PlayerDialog::showErrorStatus(const QString& message) {
     }
     errorActive_ = true;
     statusTimer_->stop();
+    // The window is no longer opening anything: the failure is the state now, and
+    // two overlays claiming different things is how a window lies about itself.
+    hideOpeningOverlay();
     statusLabel_->setText(message);
     retryButton_->show();
     // A media failure raises its own chip. It never clears processingActive_, so a
@@ -2007,6 +2030,43 @@ void PlayerDialog::layoutPanels() {
             panel->raise();
         }
     }
+    // The opening card follows the picture: a resize while it is up must not
+    // leave it behind the old geometry or under a raised panel.
+    syncOpeningOverlay();
+}
+
+void PlayerDialog::showOpeningOverlay() {
+    if (closed_ || openingOverlay_ == nullptr) return;
+    // The episode is named because "opening" with no subject is exactly the
+    // ambiguity a dark window already had.
+    const QString headline = tr("Opening stream…");
+    const QString detail = runtimeVisibleDetail();
+    if (!openingOverlay_->isOpening() || openingOverlay_->headline() != headline) {
+        openingOverlay_->showOpening(headline, detail.isEmpty() ? caption_ : detail);
+    } else {
+        openingOverlay_->setDetail(detail.isEmpty() ? caption_ : detail);
+    }
+    syncOpeningOverlay();
+}
+
+void PlayerDialog::syncOpeningOverlay() {
+    if (closed_ || openingOverlay_ == nullptr || surface_ == nullptr) return;
+    if (!openingOverlay_->isOpening()) return;
+    // Over the picture and nowhere else: the chrome below it keeps its own
+    // space, and the card is what a viewer reads while the picture is absent.
+    const QRect picture = surface_->geometry();
+    if (picture.isValid()) openingOverlay_->setGeometry(picture);
+    openingOverlay_->raise();
+}
+
+void PlayerDialog::hideOpeningOverlay() {
+    if (openingOverlay_ != nullptr) openingOverlay_->hideOpening();
+}
+
+QString PlayerDialog::runtimeVisibleDetail() const {
+    // The runtime layer's own sentence, verbatim, while it is the reason there
+    // is no picture yet. Empty when the wait is an ordinary load.
+    return runtimePendingVisible_ ? statusLabel_->text() : QString();
 }
 
 void PlayerDialog::watchPanels() {
@@ -2017,7 +2077,14 @@ void PlayerDialog::watchPanels() {
     // panel subtrees now reports activity back to the shell's wake, and the
     // watcher list is rebuilt whenever the drawer's rows are rebuilt.
     panelWatchers_.clear();
-    const QVector<QWidget*> roots = {strip_, statusPanel_, seriesDrawer_};
+    // The dock is the third panel that consumes its own pointer: the timeline,
+    // the volume track and the transport buttons all handle their moves, so a
+    // pointer resting on any of them produced nothing the shell could see and
+    // the idle timer hid the very control under it. It is watched by its own
+    // identity (the shell names it) because the dialog does not own it.
+    QWidget* dock = shell_ != nullptr ? shell_->findChild<QWidget*>(QStringLiteral("playerDock"))
+                                      : nullptr;
+    const QVector<QWidget*> roots = {strip_, statusPanel_, seriesDrawer_, dock};
     for (QWidget* root : roots) {
         if (root == nullptr) {
             continue;
@@ -2289,6 +2356,7 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
         ownerAtClose != nullptr && ownerAtClose->nativePlaybackStatus().confirmed;
     shuttingDown_ = true;
     closed_ = true;
+    hideOpeningOverlay();
     finishCompareLoading();
     closeMediaInformation();
     // A window hand-off may still be waiting for a picture. The float it was

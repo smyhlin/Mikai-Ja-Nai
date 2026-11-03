@@ -315,7 +315,18 @@ private:
     /// in; while the playhead is being dragged it stays a time-and-label card,
     /// because a decode per pixel of travel is work nobody asked for.
     void onTimelineHover(double seconds, const QPoint& globalPosition);
+    /// The pointer left the timeline. The card is not dismissed here: a pointer
+    /// travelling from the bar to the card it just opened crosses the band
+    /// between them, and only a pointer that is really elsewhere ends the card.
+    void onTimelineHoverLeft();
+    /// The timeline itself went away (the dock hid under the pointer), which is
+    /// not a journey to anywhere: the card ends with the control it describes.
+    void onTimelineHoverVanished();
     void dismissHoverPreview();
+    /// Starts a low-priority warm-up of the preview decoder once a source is
+    /// genuinely on screen and playing, so the first hover does not pay a second
+    /// decoder's load. Never from a preference, a load request or a thumbnail.
+    void schedulePreviewPrewarm();
     /// Chrome that is nobody's widget - the chevron discs and the empty-state
     /// hint - plus the adopted controls. `clip` separates the two callers: the
     /// surface's painter passes the whole shell, the shell's paintEvent passes
@@ -490,6 +501,10 @@ private:
     HoverPreview* hoverPreview_ = nullptr;
 
     QTimer hideTimer_;
+    /// The bar-to-card grace. One shot, restarted by every leave.
+    QTimer hoverLeaveTimer_;
+    /// The source epoch the preview decoder was warmed for; 0 until it is.
+    quint64 previewPrewarmEpoch_ = 0;
     QTimer enhancementHoverTimer_;
     QPointer<MenuPopup> pendingEnhancementHoverPanel_;
     QPointer<QWidget> pendingEnhancementHoverRow_;

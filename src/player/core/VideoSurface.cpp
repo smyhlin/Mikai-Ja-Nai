@@ -386,6 +386,7 @@ void VideoSurface::ensureEngine() {
             if (entrySourceEpoch_ != mpv_->sourceEpoch()) return;
             // An ended file is not an open source to replay on GL recreation.
             url_.clear();
+            setOpening(false);
             animeJanaiSourceRequested_ = false;
             diagnosticsActive_ = false;
             if (entryLoadReported_) emit mediaEnded(entryMediaToken_);
@@ -423,6 +424,9 @@ void VideoSurface::ensureEngine() {
         }
         url_.clear();
         pendingOpen_ = false;
+        // The wait ended in a failure; an overlay that kept claiming to open
+        // something would be the only thing left on screen.
+        setOpening(false);
         animeJanaiSourceRequested_ = false;
         diagnosticsActive_ = false;
         emit errorOccurred(tr("Could not play the video (mpv: %1)").arg(ended->error));
@@ -542,6 +546,14 @@ VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
     pacingTimer_.setSingleShot(true);
     pacingTimer_.setTimerType(Qt::PreciseTimer);
     connect(&pacingTimer_, &QTimer::timeout, this, [this] { onPacingTick(); });
+    // A placeholder that never moves is a frozen frame to a viewer. It only runs
+    // while the surface is opening and has no engine to paint with, so it costs
+    // nothing during playback or on an idle surface.
+    placeholderTimer_.setInterval(90);
+    connect(&placeholderTimer_, &QTimer::timeout, this, [this] {
+        ++placeholderPhase_;
+        update();
+    });
     // Keep a replayable snapshot ahead of external listeners: a dialog that
     // reconnects after missing the original signal can synchronize from these
     // typed getters without dynamic properties or a second event source.
@@ -789,6 +801,9 @@ bool VideoSurface::open(const QString& url, quint64 mediaToken) {
         setAnimeJanaiStatus(QStringLiteral("Configured; waiting for a loaded source"));
     }
     url_ = url;
+    // The viewer-facing wait starts here, not at the load command: a window with
+    // a URL and no picture is opening, whether or not a core has taken it yet.
+    setOpening(!url_.isEmpty());
     networkBytesPerSecond_ = 0.0;
     streamFramesPerSecond_ = 0.0;
     streamFpsSource_ = StreamFpsSource::Unknown;
@@ -831,6 +846,7 @@ bool VideoSurface::open(const QString& url, quint64 mediaToken) {
         url_.clear();
         animeJanaiSourceRequested_ = false;
         pendingOpen_ = false;
+        setOpening(false);
         diagnosticsActive_ = false;
         if (mpv_ != nullptr) {
             try {
@@ -891,6 +907,8 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
     pacingMeasurePending_ = false;
     framePending_ = false;
     if (url_.isEmpty() || mpv_ == nullptr) {
+        // There is nothing left to wait for.
+        setOpening(false);
         animeJanaiSourceRequested_ = false;
         return false;
     }
@@ -990,6 +1008,7 @@ void VideoSurface::close() {
     framePending_ = false;
     // pooled surface's last URL.
     url_.clear();
+    setOpening(false);
     invalidateEngineFrameHold();
     observedColorProfile_ = {};
     sourceColorProfile_ = {};
@@ -1335,6 +1354,51 @@ void VideoSurface::setPlaying(bool playing) {
     playing_ = playing;
     publishPlayingState(playing_);
 }
+
+void VideoSurface::setOpening(bool opening) {
+    if (opening == opening_) return;
+    opening_ = opening;
+    updatePlaceholderAnimation();
+    emit openingChanged(opening_);
+}
+
+void VideoSurface::updatePlaceholderAnimation() {
+    // The placeholder is only ever painted by the no-engine branch, so the
+    // animation exists exactly while that branch is what the viewer sees.
+    const bool needed = opening_ && (!contextReady_ || render_ == nullptr);
+    if (needed == placeholderTimer_.isActive()) return;
+    if (needed) {
+        placeholderPhase_ = 0;
+        placeholderTimer_.start();
+    } else {
+        placeholderTimer_.stop();
+    }
+    update();
+}
+
+void VideoSurface::paintOpeningPlaceholder(QPainter& painter) {
+    // A backdrop, not a frame. Defined enough that the window cannot be mistaken
+    // for a failed black rectangle, neutral enough that the dialog's own words
+    // stay the thing being read.
+    painter.fillRect(rect(), QColor(9, 10, 14));
+    const QPointF centre(width() / 2.0, height() / 2.0);
+    const double radius = std::max(10.0, std::min(width(), height()) * 0.035);
+    const QRectF ring(centre.x() - radius, centre.y() - radius, radius * 2.0, radius * 2.0);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    QPen pen(QColor(255, 255, 255, 45));
+    pen.setWidthF(std::max(2.0, radius * 0.18));
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawEllipse(ring);
+    // One sweeping arc, advanced by the timer: an indeterminate wait says
+    // "working", never a percentage this surface does not know.
+    QPen sweep(QColor(255, 255, 255, 190));
+    sweep.setWidthF(pen.widthF());
+    sweep.setCapStyle(Qt::RoundCap);
+    painter.setPen(sweep);
+    const int startAngle = (placeholderPhase_ * 24) % 360;
+    painter.drawArc(ring, startAngle * 16, 100 * 16);
+}
 double VideoSurface::position() const { return position_; }
 
 double VideoSurface::duration() const { return duration_; }
@@ -1442,6 +1506,9 @@ void VideoSurface::createRenderContext() {
     // is upside down - which a non-black pixel check happily passes.
     render_->setFlipY(true);
     contextReady_ = true;
+    // The engine path paints from now on; the placeholder's timer has nothing
+    // left to animate even if the first frame has not arrived yet.
+    updatePlaceholderAnimation();
 }
 
 void VideoSurface::resizeGL(int width, int height) {
@@ -1510,10 +1577,17 @@ void VideoSurface::paintGL() {
     QOpenGLWidget::paintGL();
     if (!contextReady_ || !render_) {
         // No engine, so there is no frame to render - but NoPartialUpdate leaves
-        // whatever is in this buffer visible, so it still gets a defined black
-        // and the overlay, which belongs to the widget rather than to the core.
+        // whatever is in this buffer visible, so this pass always defines every
+        // pixel. While a source is opening the defined pixels are the opening
+        // placeholder; defined black is reserved for a surface that is idle and
+        // has nothing to wait for. The overlay belongs to the widget rather than
+        // to the core and is painted over either.
         QPainter unrendered(this);
-        unrendered.fillRect(rect(), Qt::black);
+        if (opening_) {
+            paintOpeningPlaceholder(unrendered);
+        } else {
+            unrendered.fillRect(rect(), Qt::black);
+        }
         if (!overlaySuppressed_) emit paintOverlay(&unrendered);
         if (mikai::gui::uiprofile::enabled()) {
             const qint64 elapsedUs = profilePaint
@@ -1643,6 +1717,9 @@ void VideoSurface::paintGL() {
     }
     if (renderResult == 0 && freshOutputFrame && !retainedPictureVisible) {
         hasVisibleOutputFrame_ = true;
+        // A frame of the current epoch reached the screen: the opening wait is
+        // over, and the placeholder must give way to the picture.
+        setOpening(false);
         engineFrameHoldAwaitingOutput_ = false;
         // The fresh output has replaced the transition snapshot. Release its
         // GPU storage now; normal playback retains no extra video framebuffer.
@@ -1658,6 +1735,7 @@ void VideoSurface::paintGL() {
     // once", which a failed render does not undo.
     if (newOutputFrame && renderResult == 0 && presentedFrame) {
         hasVisibleOutputFrame_ = true;
+        setOpening(false);
         ++diagnostics_.renderedOutputFrames;
     }
     if (renderResult < 0) {
