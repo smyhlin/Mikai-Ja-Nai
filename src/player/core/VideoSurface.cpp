@@ -2541,11 +2541,14 @@ void VideoSurface::paintGL() {
         const qint64 totalMicros =
             (mikai::gui::uiprofile::nowNs() - profilePaintStartNs) / 1000;
         mikai::gui::uiprofile::recordPaintPass(pass, totalMicros);
+        // The class the pass was just given is what the phase split is kept
+        // against: a paused chrome-only repaint's overlay cost must not be read
+        // as an active frame's engine cost, and the global sums cannot say.
         mikai::gui::uiprofile::notePaintPhase(
-            0, engineMicros,
+            pass, 0, engineMicros,
             totalMicros - engineMicros - retentionMicros - overlayMicros);
-        mikai::gui::uiprofile::notePaintPhase(1, retentionMicros, 0);
-        mikai::gui::uiprofile::notePaintPhase(2, overlayMicros, 0);
+        mikai::gui::uiprofile::notePaintPhase(pass, 1, retentionMicros, 0);
+        mikai::gui::uiprofile::notePaintPhase(pass, 2, overlayMicros, 0);
     }
     if (mikai::gui::uiprofile::enabled()) {
         const qint64 elapsedUs =

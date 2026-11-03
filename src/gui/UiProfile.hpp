@@ -181,24 +181,6 @@ inline void noteChromeCacheRender() {
     g_chromeCacheRenders.fetch_add(1, std::memory_order_relaxed);
 }
 
-inline void notePaintPhase(int phase, qint64 micros, qint64 marginMicros) {
-    if (!countersEnabled()) return;
-    const quint64 value = static_cast<quint64>(std::max<qint64>(micros, 0));
-    switch (phase) {
-        case 0:
-            g_paintPhaseEngineMicros.fetch_add(value, std::memory_order_relaxed);
-            break;
-        case 1:
-            g_paintPhaseRetentionMicros.fetch_add(value, std::memory_order_relaxed);
-            break;
-        default:
-            g_paintPhaseOverlayMicros.fetch_add(value, std::memory_order_relaxed);
-            break;
-    }
-    g_paintPhaseMargins.fetch_add(static_cast<quint64>(std::max<qint64>(marginMicros, 0)),
-                                  std::memory_order_relaxed);
-}
-
 inline void noteChromeCacheBlit(qint64 micros) {
     if (!countersEnabled()) return;
     g_chromeBlitMicros.fetch_add(static_cast<quint64>(std::max<qint64>(micros, 0)),
@@ -347,11 +329,65 @@ inline quint64 paintPassSamples(int pass) {
     return g_paintPass[static_cast<std::size_t>(pass)].samples;
 }
 
+/// The same segments as the global phase counters, attributed to the pass class
+/// that paid them. The globals answer "what did the surface spend"; this answers
+/// "what did a paused chrome-only repaint spend in the engine blit, the retained
+/// picture, the chrome overlay and the bookkeeping", which is the only form that
+/// can rank a fix. Fixed size, relaxed atomics, written once per classified pass:
+/// no allocation and no container growth on the paint path.
+inline constexpr int kPaintPhaseCount = 3;
+
+struct PaintPhaseTotals {
+    std::array<std::atomic<quint64>, kPaintPhaseCount> micros{};
+    std::atomic<quint64> margins{0};
+    /// Classified passes this class recorded; the divisor for its segment means.
+    std::atomic<quint64> passes{0};
+};
+
+inline std::array<PaintPhaseTotals, kPaintPassCount> g_paintPhaseByPass{};
+
+/// Records one phase of one classified pass. The global totals keep exactly the
+/// meaning they had; the class totals are the same numbers with the pass that
+/// paid them attached. A negative duration is clamped rather than stored, and the
+/// per-pass margin is attached to the engine segment the call site passes it
+/// with, so one pass still contributes exactly one margin.
+inline void notePaintPhase(int pass, int phase, qint64 micros, qint64 marginMicros) {
+    if (!countersEnabled()) return;
+    const quint64 value = static_cast<quint64>(std::max<qint64>(micros, 0));
+    std::atomic<quint64>* global = &g_paintPhaseOverlayMicros;
+    if (phase == 0) global = &g_paintPhaseEngineMicros;
+    else if (phase == 1) global = &g_paintPhaseRetentionMicros;
+    global->fetch_add(value, std::memory_order_relaxed);
+    g_paintPhaseMargins.fetch_add(static_cast<quint64>(std::max<qint64>(marginMicros, 0)),
+                                  std::memory_order_relaxed);
+    if (pass < 0 || pass >= kPaintPassCount) return;
+    PaintPhaseTotals& totals = g_paintPhaseByPass[static_cast<std::size_t>(pass)];
+    if (phase == 0) {
+        totals.passes.fetch_add(1, std::memory_order_relaxed);
+        totals.margins.fetch_add(static_cast<quint64>(std::max<qint64>(marginMicros, 0)),
+                                 std::memory_order_relaxed);
+    }
+    const int slot = phase == 0 ? 0 : (phase == 1 ? 1 : 2);
+    totals.micros[static_cast<std::size_t>(slot)].fetch_add(value, std::memory_order_relaxed);
+}
+
 inline void resetPaintPassProfile() {
     for (PaintPassProfile& profile : g_paintPass) {
         profile = PaintPassProfile{};
     }
 }
+
+/// One pass class's share of the phase counters. `passes` is the number of
+/// classified passes of that class that contributed, so a per-pass mean is only
+/// ever computed from a non-zero divisor - and a class that never painted reads
+/// as absent rather than as a fast zero.
+struct PaintPhaseClassSummary {
+    quint64 passes = 0;
+    quint64 engineMicros = 0;
+    quint64 retentionMicros = 0;
+    quint64 overlayMicros = 0;
+    quint64 marginsMicros = 0;
+};
 
 /// Counters a probe reports. -1 means the value was never measured in this run.
 struct Snapshot {
@@ -379,6 +415,9 @@ struct Snapshot {
     quint64 paintPhaseRetentionMicros = 0;
     quint64 paintPhaseOverlayMicros = 0;
     quint64 paintPhaseMargins = 0;
+    /// The same phases split by the pass class that paid them, indexed by
+    /// PaintPass. The sum over the classes equals the global fields above.
+    std::array<PaintPhaseClassSummary, kPaintPassCount> paintPhaseByPass{};
     quint64 awayStackingStops = 0;
     quint64 raiseRetriesAborted = 0;
     quint64 teardownPicturesCaptured = 0;
@@ -416,6 +455,15 @@ inline Snapshot snapshot() {
     out.paintPhaseRetentionMicros = g_paintPhaseRetentionMicros.load(std::memory_order_relaxed);
     out.paintPhaseOverlayMicros = g_paintPhaseOverlayMicros.load(std::memory_order_relaxed);
     out.paintPhaseMargins = g_paintPhaseMargins.load(std::memory_order_relaxed);
+    for (int pass = 0; pass < kPaintPassCount; ++pass) {
+        const PaintPhaseTotals& totals = g_paintPhaseByPass[static_cast<std::size_t>(pass)];
+        PaintPhaseClassSummary& summary = out.paintPhaseByPass[static_cast<std::size_t>(pass)];
+        summary.passes = totals.passes.load(std::memory_order_relaxed);
+        summary.engineMicros = totals.micros[0].load(std::memory_order_relaxed);
+        summary.retentionMicros = totals.micros[1].load(std::memory_order_relaxed);
+        summary.overlayMicros = totals.micros[2].load(std::memory_order_relaxed);
+        summary.marginsMicros = totals.margins.load(std::memory_order_relaxed);
+    }
     out.awayStackingStops = g_awayStackingStops.load(std::memory_order_relaxed);
     out.raiseRetriesAborted = g_raiseRetriesAborted.load(std::memory_order_relaxed);
     out.teardownPicturesCaptured = g_teardownPicturesCaptured.load(std::memory_order_relaxed);
@@ -452,6 +500,13 @@ inline void resetCounters() {
     g_paintPhaseRetentionMicros.store(0, std::memory_order_relaxed);
     g_paintPhaseOverlayMicros.store(0, std::memory_order_relaxed);
     g_paintPhaseMargins.store(0, std::memory_order_relaxed);
+    for (PaintPhaseTotals& totals : g_paintPhaseByPass) {
+        for (std::atomic<quint64>& micros : totals.micros) {
+            micros.store(0, std::memory_order_relaxed);
+        }
+        totals.margins.store(0, std::memory_order_relaxed);
+        totals.passes.store(0, std::memory_order_relaxed);
+    }
     g_awayStackingStops.store(0, std::memory_order_relaxed);
     g_raiseRetriesAborted.store(0, std::memory_order_relaxed);
     g_teardownPicturesCaptured.store(0, std::memory_order_relaxed);

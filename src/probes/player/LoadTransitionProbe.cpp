@@ -28,6 +28,7 @@
 #include <QPointer>
 #include <QScopeGuard>
 #include <QSettings>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QWidget>
@@ -447,6 +448,121 @@ void noteObserverRead(qint64 micros) {
     g_observerMicros.push_back(micros);
 }
 
+/// One class's share of the phase counters. `passes` is the divisor for every
+/// mean, so a class the window never painted reports -1 rather than a fast zero;
+/// the raw totals are kept beside the means because a share of a stage is not a
+/// per-paint cost.
+QJsonObject phaseClassObject(int pass, quint64 passes, quint64 engineMicros,
+                             quint64 retentionMicros, quint64 overlayMicros,
+                             quint64 marginsMicros) {
+    const auto perPass = [passes](quint64 micros) {
+        return passes > 0 ? double(micros) / double(passes) : -1.0;
+    };
+    return QJsonObject{{"pass", QString::fromLatin1(passName(pass))},
+                       {"passes", static_cast<qint64>(passes)},
+                       {"engineUs", static_cast<qint64>(engineMicros)},
+                       {"retentionUs", static_cast<qint64>(retentionMicros)},
+                       {"overlayUs", static_cast<qint64>(overlayMicros)},
+                       {"marginsUs", static_cast<qint64>(marginsMicros)},
+                       {"engineUsPerPass", perPass(engineMicros)},
+                       {"retentionUsPerPass", perPass(retentionMicros)},
+                       {"overlayUsPerPass", perPass(overlayMicros)},
+                       {"marginsUsPerPass", perPass(marginsMicros)}};
+}
+
+QJsonArray phaseByPassArray(const mikai::gui::uiprofile::Snapshot& counters) {
+    QJsonArray classes;
+    for (int pass = 0; pass < mikai::gui::uiprofile::kPaintPassCount; ++pass) {
+        const auto& summary = counters.paintPhaseByPass[static_cast<std::size_t>(pass)];
+        classes.append(phaseClassObject(pass, summary.passes, summary.engineMicros,
+                                        summary.retentionMicros, summary.overlayMicros,
+                                        summary.marginsMicros));
+    }
+    return classes;
+}
+
+/// Prints the attribution itself, so a run states which pass class spent the time
+/// instead of leaving the reader to derive it from a mixed global sum.
+void reportPhaseClasses(const QString& window,
+                        const std::array<mikai::gui::uiprofile::PaintPhaseClassSummary,
+                                         mikai::gui::uiprofile::kPaintPassCount>& classes) {
+    for (int pass = 0; pass < mikai::gui::uiprofile::kPaintPassCount; ++pass) {
+        const auto& summary = classes[static_cast<std::size_t>(pass)];
+        if (summary.passes == 0) continue;
+        const auto perPass = [&summary](quint64 micros) {
+            return double(micros) / double(summary.passes);
+        };
+        metric(QStringLiteral("%1 phases %2: passes=%3 engine=%4us/%5 retention=%6us/%7 "
+                              "overlay=%8us/%9 margins=%10us/%11")
+                   .arg(window, QString::fromLatin1(passName(pass)))
+                   .arg(summary.passes)
+                   .arg(perPass(summary.engineMicros), 0, 'f', 1)
+                   .arg(summary.engineMicros)
+                   .arg(perPass(summary.retentionMicros), 0, 'f', 1)
+                   .arg(summary.retentionMicros)
+                   .arg(perPass(summary.overlayMicros), 0, 'f', 1)
+                   .arg(summary.overlayMicros)
+                   .arg(perPass(summary.marginsMicros), 0, 'f', 1)
+                   .arg(summary.marginsMicros));
+    }
+}
+
+/// One class's share of one measurement stage: a difference of two snapshots, so
+/// the stage is not contaminated by the passes that ran before it.
+mikai::gui::uiprofile::PaintPhaseClassSummary phaseWindowClass(
+    const mikai::gui::uiprofile::Snapshot& before,
+    const mikai::gui::uiprofile::Snapshot& after, int pass) {
+    mikai::gui::uiprofile::PaintPhaseClassSummary out;
+    if (pass < 0 || pass >= mikai::gui::uiprofile::kPaintPassCount) return out;
+    const auto& from = before.paintPhaseByPass[static_cast<std::size_t>(pass)];
+    const auto& to = after.paintPhaseByPass[static_cast<std::size_t>(pass)];
+    const auto delta = [](quint64 first, quint64 second) {
+        return second >= first ? second - first : 0;
+    };
+    out.passes = delta(from.passes, to.passes);
+    out.engineMicros = delta(from.engineMicros, to.engineMicros);
+    out.retentionMicros = delta(from.retentionMicros, to.retentionMicros);
+    out.overlayMicros = delta(from.overlayMicros, to.overlayMicros);
+    out.marginsMicros = delta(from.marginsMicros, to.marginsMicros);
+    return out;
+}
+
+/// The same window as one line, so the run states its own attribution.
+QString phaseWindowSummary(const mikai::gui::uiprofile::Snapshot& before,
+                           const mikai::gui::uiprofile::Snapshot& after) {
+    QStringList parts;
+    for (int pass = 0; pass < mikai::gui::uiprofile::kPaintPassCount; ++pass) {
+        const mikai::gui::uiprofile::PaintPhaseClassSummary summary =
+            phaseWindowClass(before, after, pass);
+        if (summary.passes == 0) continue;
+        parts << QStringLiteral("%1 passes=%2 engine=%3us retention=%4us overlay=%5us "
+                                "margins=%6us")
+                     .arg(QString::fromLatin1(passName(pass)))
+                     .arg(summary.passes)
+                     .arg(summary.engineMicros)
+                     .arg(summary.retentionMicros)
+                     .arg(summary.overlayMicros)
+                     .arg(summary.marginsMicros);
+    }
+    return parts.isEmpty() ? QStringLiteral("no classified pass") : parts.join(QStringLiteral("; "));
+}
+
+/// What one measurement stage paid, by class: a difference of two snapshots, so
+/// the stage is not contaminated by the passes that ran before it.
+QJsonObject phaseWindowReport(const mikai::gui::uiprofile::Snapshot& before,
+                              const mikai::gui::uiprofile::Snapshot& after,
+                              const QString& window) {
+    QJsonArray classes;
+    for (int pass = 0; pass < mikai::gui::uiprofile::kPaintPassCount; ++pass) {
+        const mikai::gui::uiprofile::PaintPhaseClassSummary summary =
+            phaseWindowClass(before, after, pass);
+        classes.append(phaseClassObject(pass, summary.passes, summary.engineMicros,
+                                        summary.retentionMicros, summary.overlayMicros,
+                                        summary.marginsMicros));
+    }
+    return QJsonObject{{"window", window}, {"classes", classes}};
+}
+
 /// The profile counters the verdicts lean on, averaged per painted pass and
 /// printed once per window: a class p95 with no phase split names no cost, and a
 /// cache hit ratio with no miss reason names no defect.
@@ -488,6 +604,7 @@ QJsonObject profileReport(const mikai::gui::uiprofile::Snapshot& counters,
                .arg(counters.chromeCacheMissGeneration)
                .arg(counters.chromeCacheMissBudget)
                .arg(counters.chromeCacheBytes));
+    reportPhaseClasses(window, counters.paintPhaseByPass);
     return QJsonObject{
         {"window", window},
         {"paints", paints},
@@ -511,7 +628,8 @@ QJsonObject profileReport(const mikai::gui::uiprofile::Snapshot& counters,
         {"missRatio", static_cast<qint64>(counters.chromeCacheMissRatio)},
         {"missGeneration", static_cast<qint64>(counters.chromeCacheMissGeneration)},
         {"missBudget", static_cast<qint64>(counters.chromeCacheMissBudget)},
-        {"chromeCacheBytes", static_cast<qint64>(counters.chromeCacheBytes)}};
+        {"chromeCacheBytes", static_cast<qint64>(counters.chromeCacheBytes)},
+        {"phaseByPass", phaseByPassArray(counters)}};
 }
 
 QJsonObject observerObject() {
@@ -1073,8 +1191,14 @@ int run(int argc, char** argv) {
             readPicture(surface, baseline.device, baseline.videoWidth, baseline.videoHeight);
         noteObserverRead(pausedBefore.micros);
         mikai::gui::uiprofile::resetPaintPassProfile();
+        // The phase counters are not reset by the pass ring, so the window is a
+        // difference of two snapshots: what this paused sweep paid, by class.
+        const mikai::gui::uiprofile::Snapshot pausedPhaseBefore =
+            mikai::gui::uiprofile::snapshot();
         const int hoverMoves =
             sweepChrome(playToggle, settingsButton, scrub, hoverSeconds * 1000);
+        const mikai::gui::uiprofile::Snapshot pausedPhaseAfter =
+            mikai::gui::uiprofile::snapshot();
         const PassSummary chromeOnly = summarize(mikai::gui::uiprofile::kPaintChromeOnly);
         const PassSummary retained = summarize(mikai::gui::uiprofile::kPaintRetained);
         const PassSummary videoFrame = summarize(mikai::gui::uiprofile::kPaintVideoFrame);
@@ -1110,6 +1234,19 @@ int run(int argc, char** argv) {
                    .arg(changedVisible)
                    .arg(compared));
         reportPasses(QStringLiteral("paused-hover"));
+        const QJsonObject pausedPhases =
+            phaseWindowReport(pausedPhaseBefore, pausedPhaseAfter,
+                              QStringLiteral("paused-hover"));
+        const mikai::gui::uiprofile::PaintPhaseClassSummary pausedChromePhase =
+            phaseWindowClass(pausedPhaseBefore, pausedPhaseAfter,
+                             mikai::gui::uiprofile::kPaintChromeOnly);
+        metric(QStringLiteral("paused-hover phase window: chrome-only passes=%1 engine=%2us "
+                              "retention=%3us overlay=%4us margins=%5us")
+                   .arg(pausedChromePhase.passes)
+                   .arg(pausedChromePhase.engineMicros)
+                   .arg(pausedChromePhase.retentionMicros)
+                   .arg(pausedChromePhase.overlayMicros)
+                   .arg(pausedChromePhase.marginsMicros));
         check(hoverMoves > 0, "the paused measurement actually moved the pointer over chrome");
         check(chromeOnly.samples > 0,
               "a paused chrome repaint is classified as a chrome-only pass");
@@ -1135,7 +1272,8 @@ int run(int argc, char** argv) {
                                     {"regionHashesAfter", hashesAfter},
                                     {"chromeOnly", passObject(chromeOnly)},
                                     {"retained", passObject(retained)},
-                                    {"videoFrame", passObject(videoFrame)}});
+                                    {"videoFrame", passObject(videoFrame)},
+                                    {"phaseByPass", pausedPhases}});
         if (!g_outputDir.isEmpty()) {
             dialog->grab().save(artifactPath(QStringLiteral("load-transition-paused.png")));
         }
@@ -1148,8 +1286,12 @@ int run(int argc, char** argv) {
     // ── active hover: the same sweep against a moving picture ───────────────
     {
         mikai::gui::uiprofile::resetPaintPassProfile();
+        const mikai::gui::uiprofile::Snapshot activePhaseBefore =
+            mikai::gui::uiprofile::snapshot();
         const int hoverMoves =
             sweepChrome(playToggle, settingsButton, scrub, hoverSeconds * 1000);
+        const mikai::gui::uiprofile::Snapshot activePhaseAfter =
+            mikai::gui::uiprofile::snapshot();
         const PassSummary chromeOnly = summarize(mikai::gui::uiprofile::kPaintChromeOnly);
         const PassSummary videoFrame = summarize(mikai::gui::uiprofile::kPaintVideoFrame);
         metric(QStringLiteral("active hover: moves=%1 chrome_paints=%2 p95=%3us video_p95=%4us")
@@ -1158,10 +1300,15 @@ int run(int argc, char** argv) {
                    .arg(chromeOnly.p95, 0, 'f', 1)
                    .arg(videoFrame.p95, 0, 'f', 1));
         reportPasses(QStringLiteral("active-hover"));
+        metric(QStringLiteral("active-hover phase window: %1")
+                   .arg(phaseWindowSummary(activePhaseBefore, activePhaseAfter)));
         evidence.insert(QStringLiteral("activeHover"),
                         QJsonObject{{"moves", hoverMoves},
                                     {"chromeOnly", passObject(chromeOnly)},
-                                    {"videoFrame", passObject(videoFrame)}});
+                                    {"videoFrame", passObject(videoFrame)},
+                                    {"phaseByPass", phaseWindowReport(activePhaseBefore,
+                                                                      activePhaseAfter,
+                                                                      QStringLiteral("active-hover"))}});
     }
 
     // ── format probe: a resize must not re-query the render target ──────────
