@@ -23,7 +23,8 @@ QWidget* SettingsDialog::buildComponentsTab() {
     root->setSpacing(0);
 
     ComponentStoreTab* tab = nullptr;
-    if (adoptedComponents_ != nullptr) {
+    const bool adopted = adoptedComponents_ != nullptr;
+    if (adopted) {
         adoptedComponentsTab_ = true;
         adoptedComponentsHome_ = adoptedComponents_->parentWidget();
         tab = adoptedComponents_;
@@ -31,11 +32,14 @@ QWidget* SettingsDialog::buildComponentsTab() {
         tab->show();
     } else {
         tab = new ComponentStoreTab(page);
-        tab->setRunner(&runner_);
         tab->setClient(&client_);
     }
     componentStoreTab_ = tab;
     if (componentProvisioner_ != nullptr) tab->setComponentProvisioner(componentProvisioner_);
+    // The runner is bound last: binding it is what starts the tab's first
+    // inventory scan, and any later setter bumps the run generation, which
+    // cancels that scan without a replacement.
+    if (!adopted) tab->setRunner(&runner_);
     root->addWidget(tab);
 
     scroll->setWidget(page);

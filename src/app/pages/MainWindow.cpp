@@ -148,9 +148,12 @@ MainWindow::MainWindow(backend::MikaiClient& client, StartupMode startupMode, QW
     // it and hands it back on close, so Cancel/X there does not stop a download.
     componentsTab_ = new ComponentStoreTab(this);
     componentsTab_->hide();
-    componentsTab_->setRunner(runner_);
+    // The runner is bound last: binding it is what starts the tab's first
+    // inventory scan, and any later setter bumps the run generation, which
+    // cancels that scan without a replacement.
     componentsTab_->setClient(&client_);
     componentsTab_->setComponentProvisioner(componentProvisioner_);
+    componentsTab_->setRunner(runner_);
     connect(componentsTab_, &ComponentStoreTab::inventoryUpdated, this, [this] {
         if (!automaticSetupAllowed_ || setupDeclined_ || setupPromptOffered_ ||
             componentsTab_ == nullptr || !componentsTab_->inventoryReady() ||

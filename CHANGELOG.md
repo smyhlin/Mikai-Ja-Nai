@@ -8,6 +8,7 @@ Published changes are recorded with their downloads on the [GitHub releases page
 - Add opt-in presentation profiling and a cross-process focus/composition probe.
 - Retire Runner work and dispatch references without destroying thread pools on their own workers.
 - Preserve PQ/BT.2020 and BT.709 frame metadata in generated acceptance media.
+- Show the installed component inventory as soon as Settings opens instead of waiting for a manual Refresh.
 
 - Offer MoonAnime opening, ending and recap skips, with accent-tinted timeline ranges.
 - Show frame previews and segment labels on timeline hover.

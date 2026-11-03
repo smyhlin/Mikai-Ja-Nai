@@ -26,6 +26,7 @@
 #include <QtCore/QMetaObject>
 #include <QtCore/QPointer>
 #include <QtCore/QStringList>
+#include <QtCore/QTimer>
 #include <QtCore/QVariantMap>
 #include <QtGui/QFont>
 #include <QtGui/QMouseEvent>
@@ -286,6 +287,15 @@ void ComponentStoreTab::bumpRunGeneration(const QString& reason) {
     // One invalidation path. Every queued delivery compares the generation it
     // captured, so raising it once is what makes a stale progress tick, settle
     // or verification result a no-op instead of a render.
+    //
+    // An inventory snapshot in flight is cancelled by the same bump. That is
+    // correct for the discarded delivery but not for the state it would have
+    // published: a setter that invalidates the only scan (client and
+    // provisioner replacement both bump) must not leave the tab unable to
+    // report the store, so the scan is re-requested once the caller returns.
+    // Deferring coalesces a burst of setters into one scan, and
+    // `scheduleInventoryRefresh` itself skips a request while one is running.
+    const bool inventoryScanInterrupted = inventoryScanning_;
     ++runGeneration_;
     ++presenceGeneration_;
     // (a) cancel pending units.
@@ -338,6 +348,12 @@ void ComponentStoreTab::bumpRunGeneration(const QString& reason) {
         renderCards();
         renderAllCardProgress();
         updateControls();
+    }
+    if (inventoryScanInterrupted) {
+        QTimer::singleShot(0, this, [this] {
+            if (alive_ == nullptr || !alive_->load()) return;
+            scheduleInventoryRefresh();
+        });
     }
 }
 
