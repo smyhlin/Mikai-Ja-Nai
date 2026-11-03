@@ -93,6 +93,7 @@ struct Arguments {
     QString error;
     bool help = false;
     bool accentSweep = false;
+    bool radiusSweep = false;
 };
 
 Arguments parseArguments(const QStringList& arguments) {
@@ -105,6 +106,10 @@ Arguments parseArguments(const QStringList& arguments) {
         }
         if (option == QLatin1String("--accent-sweep")) {
             result.accentSweep = true;
+            continue;
+        }
+        if (option == QLatin1String("--radius-sweep")) {
+            result.radiusSweep = true;
             continue;
         }
         QString* value = nullptr;
@@ -749,7 +754,8 @@ public:
           offlineClient_(QString(), QStringLiteral("http://127.0.0.1:1")) {
         evidence_ = QJsonObject{
             {QStringLiteral("schema"), 1},
-            {QStringLiteral("mode"), QStringLiteral("accent-sweep")},
+            {QStringLiteral("mode"), arguments_.radiusSweep ? QStringLiteral("radius-sweep")
+                                                           : QStringLiteral("accent-sweep")},
             {QStringLiteral("startedUtc"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
             {QStringLiteral("applicationVersion"), QCoreApplication::applicationVersion()},
             {QStringLiteral("qtVersion"), QString::fromLatin1(qVersion())},
@@ -789,6 +795,10 @@ public:
                          [this] { dismissForeignModals(); });
         modalGuard.start(200);
         if (!buildSurfaces()) return finish(false);
+        if (arguments_.radiusSweep) {
+            if (!sweepRadii()) return finish(false);
+            return finish(failed_ == 0);
+        }
         if (!sweepAccents()) return finish(false);
         sweepGradientSource();
         if (!sweepPip()) return finish(false);
@@ -1080,6 +1090,160 @@ private:
                            .arg(dialog->objectName()));
             dialog->reject();
         }
+    }
+
+    /// The ink a control paints in its own top-left block: a square step fills
+    /// it and a rounded one leaves it to the bed, so these pixels are the
+    /// evidence that a radius step reached the surface.
+    static int cornerInk(const Pixels& pixels) {
+        int ink = 0;
+        for (int y = 0; y < 6; ++y) {
+            for (int x = 0; x < 6; ++x) {
+                if (pixels.at(x, y).alpha() > 0) ++ink;
+            }
+        }
+        return ink;
+    }
+
+    /// The shipped corner-radius steps on the three real surfaces, wide and at
+    /// each surface's own minimum width. Each stage is applied through the same
+    /// look the application uses and the step is proven by the pixels a real
+    /// control paints, never by a sheet token or a widget property.
+    bool sweepRadii() {
+        if (settings_ != nullptr) {
+            settings_->showPage(QStringLiteral("customization/appearance"));
+            QTest::qWait(120);
+        }
+        struct Target {
+            const char* surface;
+            QWidget* host;
+            QAbstractButton* control;
+        };
+        auto* saveButton = settings_ != nullptr
+                               ? settings_->findChild<QPushButton*>(
+                                     QStringLiteral("settingsSaveButton"))
+                               : nullptr;
+        QList<Target> targets;
+        if (window_ != nullptr && searchAction_ != nullptr) {
+            targets.push_back({"search", window_.get(), searchAction_});
+        }
+        if (titlePage_ != nullptr && titleWatch_ != nullptr) {
+            targets.push_back({"title", titlePage_.get(), titleWatch_});
+        }
+        if (settings_ != nullptr && saveButton != nullptr) {
+            targets.push_back({"settings", settings_.get(), saveButton});
+        }
+        if (targets.size() < 3) {
+            check(QStringLiteral("radius-surfaces"), false,
+                  QStringLiteral("the real search, title and settings surfaces are not all up"));
+            return false;
+        }
+
+        struct Stage {
+            const char* name;
+            int step;
+        };
+        const Stage stages[] = {{"none", 0}, {"xs", 1}, {"xl", 5}};
+        struct SurfaceInk {
+            QString surface;
+            QJsonObject byStage;
+        };
+        QJsonArray rows;
+        QList<SurfaceInk> inks;
+        for (const Stage& stage : stages) {
+            Appearance look = mikai::app::currentAppearance();
+            look.radiusStep = stage.step;
+            applyLook(look);
+            const int small = mikai::app::theme::radiusSmall(look);
+            const int medium = mikai::app::theme::radiusMedium(look);
+            const int pill = mikai::app::theme::radiusPill(look);
+            for (const Target& target : targets) {
+                const int minimum =
+                    qBound(480, target.host->minimumSizeHint().width(), kWidth);
+                QList<int> widths{kWidth};
+                if (minimum != kWidth) widths.append(minimum);
+                for (const int width : widths) {
+                    place(target.host, width, kHeight);
+                    QTest::qWait(140);
+                    const QString shot =
+                        QStringLiteral("radius-%1-%2-%3")
+                            .arg(QString::fromLatin1(stage.name),
+                                 QString::fromLatin1(target.surface))
+                            .arg(width);
+                    if (!capture(target.host, shot,
+                                 QJsonObject{
+                                     {QStringLiteral("radiusStage"),
+                                      QString::fromLatin1(stage.name)},
+                                     {QStringLiteral("radiusStep"), stage.step},
+                                     {QStringLiteral("radiusSmall"), small},
+                                     {QStringLiteral("radiusMedium"), medium},
+                                     {QStringLiteral("radiusPill"), pill},
+                                     {QStringLiteral("requestedWidth"), width}})) {
+                        return false;
+                    }
+                    const Pixels control = pixelsOf(target.control);
+                    const int ink = cornerInk(control);
+                    const int advance =
+                        target.control->fontMetrics().horizontalAdvance(target.control->text());
+                    rows.append(QJsonObject{
+                        {QStringLiteral("stage"), QString::fromLatin1(stage.name)},
+                        {QStringLiteral("radiusStep"), stage.step},
+                        {QStringLiteral("radiusSmall"), small},
+                        {QStringLiteral("radiusMedium"), medium},
+                        {QStringLiteral("radiusPill"), pill},
+                        {QStringLiteral("surface"), QString::fromLatin1(target.surface)},
+                        {QStringLiteral("control"), target.control->objectName()},
+                        {QStringLiteral("requestedWidth"), width},
+                        {QStringLiteral("hostWidth"), target.host->width()},
+                        {QStringLiteral("controlSize"),
+                         QJsonArray{target.control->width(), target.control->height()}},
+                        {QStringLiteral("captionAdvance"), advance},
+                        {QStringLiteral("captionFits"), target.control->width() >= advance},
+                        {QStringLiteral("cornerInk"), ink},
+                        {QStringLiteral("cornerAlpha"), control.at(0, 0).alpha()}});
+                    if (width != kWidth) continue;
+                    const QString surface = QString::fromLatin1(target.surface);
+                    SurfaceInk* inkEntry = nullptr;
+                    for (SurfaceInk& candidate : inks) {
+                        if (candidate.surface == surface) inkEntry = &candidate;
+                    }
+                    if (inkEntry == nullptr) {
+                        inks.push_back({surface, QJsonObject{}});
+                        inkEntry = &inks.back();
+                    }
+                    inkEntry->byStage.insert(QString::fromLatin1(stage.name), ink);
+                }
+            }
+        }
+
+        bool captionsFit = true;
+        for (const QJsonValue value : rows) {
+            captionsFit =
+                captionsFit && value.toObject().value(QStringLiteral("captionFits")).toBool();
+        }
+        check(QStringLiteral("radius-captions"), captionsFit,
+              QStringLiteral("every measured control keeps its whole caption at both ends"));
+        for (const SurfaceInk& entry : inks) {
+            const int square = entry.byStage.value(QStringLiteral("none")).toInt(-1);
+            const int smallest = entry.byStage.value(QStringLiteral("xs")).toInt(-1);
+            const int largest = entry.byStage.value(QStringLiteral("xl")).toInt(-1);
+            check(QStringLiteral("radius-corner/") + entry.surface, square > largest,
+                  QStringLiteral("the square step paints %1 of 36 corner pixels, the largest "
+                                 "step %2")
+                      .arg(square)
+                      .arg(largest));
+            check(QStringLiteral("radius-corner-step/") + entry.surface, smallest < square,
+                  QStringLiteral("the smallest step paints %1 of 36 corner pixels against %2 at "
+                                 "square")
+                      .arg(smallest)
+                      .arg(square));
+        }
+        QJsonArray steps;
+        for (const int radius : mikai::app::theme::radiusSteps()) steps.append(radius);
+        evidence_.insert(QStringLiteral("radiusStages"), rows);
+        evidence_.insert(QStringLiteral("radiusSteps"), steps);
+        applyLook(Appearance{});
+        return failed_ == 0;
     }
 
     void applyLook(const Appearance& appearance) {
@@ -2017,7 +2181,10 @@ private:
         evidence_.insert(QStringLiteral("failureCauses"), failures_);
         evidence_.insert(QStringLiteral("screenshots"), shots_);
         const QByteArray json = QJsonDocument(evidence_).toJson(QJsonDocument::Indented);
-        QSaveFile file(QDir(arguments_.output).filePath(QStringLiteral("accent-sweep-evidence.json")));
+        QSaveFile file(QDir(arguments_.output)
+                           .filePath(arguments_.radiusSweep
+                                         ? QStringLiteral("radius-sweep-evidence.json")
+                                         : QStringLiteral("accent-sweep-evidence.json")));
         const bool written = file.open(QIODevice::WriteOnly) && file.write(json) == json.size() &&
                              file.commit();
         // The interim write is a crash guard for the file; only the final report
@@ -2132,7 +2299,7 @@ int main(int argc, char** argv) {
         std::fprintf(arguments.help ? stdout : stderr,
             "release_gallery_probe --output-dir <NEW-directory> --video <original-demo.mp4>\n"
             "  --video-credit <authorship-and-license> [--video-source <description-or-URL>]\n"
-            "  [--accent-sweep] [--translations <mikai_uk.qm>]\n"
+            "  [--accent-sweep] [--radius-sweep] [--translations <mikai_uk.qm>]\n"
             "Requires an active desktop (at least 1280x800 plus window borders), an original\n"
             "bright demo of at least 8 seconds, and absolute MIKAI_MPV_MODULE pointing to an\n"
             "installed Standard mpv runtime. Never selects/downloads AI. Output must not exist.\n"
@@ -2141,6 +2308,11 @@ int main(int argc, char** argv) {
             "  --output-dir; Compare and the preparation window stay open across accent changes.\n"
             "  Preparation/title/benchmark states that need service data are presentation-only\n"
             "  and are labelled presentationOnly=true, inferenceProven=false.\n"
+            "--radius-sweep runs the focused corner-radius sweep instead of the gallery: the\n"
+            "  shipped steps none/xs/xl on the real search page, title page and settings dialog\n"
+            "  at the wide and the minimum width, capturing each surface and the corner pixels a\n"
+            "  real control paints (square corners fill the corner, rounded ones leave it to the\n"
+            "  bed). It writes radius-sweep-evidence.json and the screenshots.\n"
             "--translations defaults to <probe-dir>/mikai_uk.qm for the EN/UK geometry pass.\n");
         if (!arguments.error.isEmpty()) diagnostic(arguments.error);
         return arguments.help ? 0 : 2;
@@ -2242,7 +2414,7 @@ int main(int argc, char** argv) {
         diagnostic(QStringLiteral("ERROR: cannot hash the scratch demo or create the fresh output directory."));
         return 2;
     }
-    if (arguments.accentSweep) {
+    if (arguments.accentSweep || arguments.radiusSweep) {
         AccentSweep sweep(app, std::move(arguments), demo, digest);
         return sweep.run();
     }
