@@ -258,13 +258,15 @@ void chromeRepaintEvent(ChromeHost* host, QObject* watched, QEvent* event) {
         case QEvent::FontChange:
         case QEvent::PaletteChange:
         case QEvent::StyleChange:
-            host->chromeDirty(widget, QRect());
-            break;
-        // A move or a resize also leaves stale pixels where the widget was, and
-        // no rect in the widget's own coordinates describes those.
+        // A move or a resize is this control's pixels plus the translucent area
+        // it vacated. It was escalated to chromeDirtyAll(), which made one
+        // widget settling under the pointer - a hover card following it - drop
+        // every cached control on every one of its moves. chromeDirty() hands
+        // the vacated box back (see ChromeList::invalidate) so the host can ask
+        // for exactly those pixels instead.
         case QEvent::Move:
         case QEvent::Resize:
-            host->chromeDirtyAll();
+            host->chromeDirty(widget, QRect());
             break;
         default:
             break;
@@ -282,10 +284,14 @@ void ChromeList::dropCache(Entry& entry) {
     mikai::gui::uiprofile::noteChromeCacheHeld(cachedBytes_);
 }
 
-void ChromeList::invalidate(const QWidget* widget) {
+QRect ChromeList::invalidate(const QWidget* widget) {
+    QRect vacated;
     for (Entry& entry : entries_) {
-        if (entry.widget == widget) dropCache(entry);
+        if (entry.widget != widget) continue;
+        if (entry.valid) vacated = entry.box;
+        dropCache(entry);
     }
+    return vacated;
 }
 
 void ChromeList::invalidateAll() {
@@ -304,6 +310,18 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
         painter.device() != nullptr ? painter.device()->devicePixelRatio() : qreal(1.0);
     quint64 painted = 0;
     quint64 cached = 0;
+    const bool counted = mikai::gui::uiprofile::countersEnabled();
+    // One state change for the whole pass. Every entry wants the same three
+    // hints, and a save/restore plus three setRenderHint() calls per control was
+    // per-paint churn the direct path never paid - on the GL device each hint is
+    // a paint-engine state update, i.e. a batch flush. A reuse below is now a
+    // single drawPixmap that changes nothing.
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    // The blit is 1:1 in device pixels whenever the ratios matched, so this is
+    // only here to blend rather than snap a fractional ratio.
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
     for (Entry& entry : entries_) {
         QWidget* widget = entry.widget;
         if (widget == nullptr || !widget->isVisible()) {
@@ -338,19 +356,14 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
         const bool reusable = chromeCacheEnabled() && entry.valid && entry.box == box &&
                               entry.devicePixelRatio == ratio && entry.stamp == generation_;
         if (reusable) {
-            // The hint is set here rather than left to the caller: the blit is
-            // a straight copy only when the ratio matched, and a fractional
-            // ratio on the target device must blend rather than snap.
-            painter.save();
-            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-            const bool timed = mikai::gui::uiprofile::countersEnabled();
-            const qint64 blitStart = timed ? mikai::gui::uiprofile::nowNs() : 0;
+            // A reuse is the entire per-control cost: the pass already carries
+            // the hint this blit needs, so there is no save/restore around it.
+            const qint64 blitStart = counted ? mikai::gui::uiprofile::nowNs() : 0;
             painter.drawPixmap(box.topLeft(), entry.cache);
-            if (timed) {
+            if (counted) {
                 mikai::gui::uiprofile::noteChromeCacheBlit(
                     (mikai::gui::uiprofile::nowNs() - blitStart) / 1000);
             }
-            painter.restore();
             ++painted;
             ++cached;
             continue;
@@ -384,7 +397,7 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                             (mikai::gui::uiprofile::nowNs() - rasterStart) / 1000);
                     }
                 }
-                if (mikai::gui::uiprofile::countersEnabled()) {
+                if (counted) {
                     mikai::gui::uiprofile::noteChromeCacheMiss(missReason);
                 }
                 cachedBytes_ += bytes - held;
@@ -395,30 +408,27 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                 entry.devicePixelRatio = ratio;
                 entry.stamp = generation_;
                 entry.valid = true;
-                painter.save();
-                painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
                 painter.drawPixmap(box.topLeft(), entry.cache);
-                painter.restore();
                 // Painted, but NOT a hit: this control was just rasterised, and
                 // counting it as cached would make entries - cached a fake zero.
                 ++painted;
                 continue;
             }
-            if (mikai::gui::uiprofile::countersEnabled()) {
+            if (counted) {
                 mikai::gui::uiprofile::noteChromeCacheMiss(4);
             }
             dropCache(entry);
         }
         // Over the memory budget, or caching switched off: pay the rasterisation.
+        // The anti-aliasing hints are the pass's, so only the frame moves here.
         painter.save();
-        painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setRenderHint(QPainter::TextAntialiasing, true);
         painter.translate(at);
         painter.setClipRect(box.translated(-at), Qt::IntersectClip);
         entry.painted->paintChrome(painter);
         painter.restore();
         ++painted;
     }
+    painter.restore();
     if (timer.measured()) {
         mikai::gui::uiprofile::noteChromePaint(painted, cached, timer.micros());
         if (mikai::gui::uiprofile::enabled()) {

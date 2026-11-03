@@ -80,8 +80,9 @@ public:
     virtual ~ChromeHost() = default;
 
     virtual void chromeDirty(QWidget* widget, const QRect& rect) = 0;
-    /// A move or a resize leaves stale pixels where the widget was, which no
-    /// widget-shaped rect describes.
+    /// Drops every cached control: a font, palette, language, accent or
+    /// device-pixel-ratio change can alter any of them. A move or a resize is
+    /// one control's business and goes through `chromeDirty()` instead.
     virtual void chromeDirtyAll() = 0;
 };
 
@@ -136,10 +137,16 @@ public:
     /// glyphs were the jagged ones. One image per control, not one for the
     /// union of their rects: the chrome sits in the corners of a 4K window, and
     /// a union-sized buffer would be a full-frame allocation per paint.
+    ///
+    /// The painter state this pass needs is set once around the walk: a reuse
+    /// is then a single drawPixmap with no state change of its own.
     void paint(QPainter& painter, QWidget* root, const QRect& clip);
 
-    /// Drops one control's cached pixels: its own state changed.
-    void invalidate(const QWidget* widget);
+    /// Drops one control's cached pixels: its own state changed. Returns the box
+    /// it was last blitted into, in `root` coordinates (empty if it was never
+    /// painted), because an adopted control is translucent and Qt does not
+    /// repaint the area one vacates - the host has to ask for those pixels.
+    QRect invalidate(const QWidget* widget);
     /// Drops every cached control: a font, palette, language, accent or
     /// device-pixel-ratio change can alter any of them.
     void invalidateAll();

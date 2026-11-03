@@ -1635,8 +1635,11 @@ void PlayerShell::onTimelineHover(double seconds, const QPoint& globalPosition) 
                            !scrub_->isDragging());
     if (!wasVisible && hoverPreview_->isVisible()) {
         hoverPreview_->raise();
-        chrome_.adopt(this, this);
-        chromeDirtyAll();
+        // The card was adopted with the rest of the chrome: buildOverlays() runs
+        // before the shell's first adopt(). Re-adopting here dropped every
+        // entry and wiped every cached control, so a card the pointer re-opened
+        // cost the whole overlay a full re-rasterisation per visit.
+        chromeDirty(hoverPreview_, QRect());
     }
 }
 
@@ -2697,10 +2700,15 @@ void PlayerShell::chromeDirty(QWidget* widget, const QRect& rect) {
         return;
     }
     // Exactly this control's cached pixels are stale; the rest of the overlay is
-    // still what it last drew.
-    chrome_.invalidate(widget);
+    // still what it last drew. The box it was last blitted into comes back with
+    // it: an adopted control is translucent, so Qt does not repaint the area one
+    // vacates, and no rect in its own coordinates describes those pixels.
+    const QRect vacated = chrome_.invalidate(widget);
     const QRect local = rect.isNull() ? widget->rect() : rect;
-    const QRect dirty(widget->mapTo(this, local.topLeft()), local.size());
+    QRect dirty(widget->mapTo(this, local.topLeft()), local.size());
+    if (!vacated.isEmpty()) {
+        dirty = dirty.united(vacated);
+    }
     const QRect picture = surface_->geometry();
     // The picture carries the chrome that stands over it; this window carries
     // what falls beside it - and the dock straddles the two, which is why the
