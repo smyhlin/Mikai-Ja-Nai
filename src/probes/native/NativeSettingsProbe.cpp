@@ -522,32 +522,21 @@ QString managerStatusText(mikai::app::AnimeJanaiManagerPanel& panel) {
     return label != nullptr ? label->text().trimmed() : QString();
 }
 
-bool managerIsRegistering(mikai::app::AnimeJanaiManagerPanel& panel) {
-    const QString status = managerStatusText(panel);
-    return status ==
-               mikai::app::AnimeJanaiManagerPanel::tr("Registering external ONNX model…") ||
-           status == mikai::app::AnimeJanaiManagerPanel::tr("Registering owned ONNX model…");
-}
-
-/// Waits for the manager's own registration to settle.
+/// Waits for a model operation to reach its public terminal state.
 ///
-/// The row is asked for its settled state while the manager still reports the
-/// import as running, so a completion that lands after the caller's budget is
-/// waited out instead of being reported as a refusal. The budget stays the
-/// caller's, and only while the banner names the running import may the wait
-/// outlive it: the app's own line, not a guessed duration, is what says the
-/// import really ended. The cap is a probe hang guard, never a verdict.
-bool waitForImportSettle(mikai::app::AnimeJanaiManagerPanel& panel, const auto& settled,
-                         int budgetMs) {
-    constexpr int kHangGuardMs = 60000;
+/// The manager has no busy or sensitive control to synchronize on: its model
+/// table, Import and Remove actions stay enabled for the whole worker run, and
+/// the only in-flight statement is the banner's wording. So the wait is bounded
+/// by a hang guard instead of an early budget: a slow worker is never called a
+/// refusal, and a genuine failure costs the guard once. The caller's detail
+/// still quotes the banner, but only as the failure's cause, never as the
+/// signal that the worker ended.
+bool waitForTerminalModelState(const auto& settled, int hangGuardMs = 60000) {
     QElapsedTimer clock;
     clock.start();
-    while (true) {
+    while (clock.elapsed() < hangGuardMs) {
         QApplication::processEvents();
         if (settled()) return true;
-        const int elapsed = static_cast<int>(clock.elapsed());
-        if (elapsed >= kHangGuardMs) break;
-        if (elapsed >= budgetMs && !managerIsRegistering(panel)) break;
         QThread::msleep(10);
     }
     QApplication::processEvents();
@@ -607,35 +596,6 @@ bool clickImportForCandidate(QTableWidget* table, QPushButton* button,
     }
     button->click();
     return true;
-}
-
-/// The manager's own line for the removal worker. Unlike a registration, a
-/// removal has no separate "started" signal the probe can subscribe to, so the
-/// banner is what says the worker is still running.
-bool managerIsRemoving(mikai::app::AnimeJanaiManagerPanel& panel) {
-    return managerStatusText(panel) ==
-           mikai::app::AnimeJanaiManagerPanel::tr("Removing custom ONNX model…");
-}
-
-/// Waits for the manager's removal to settle. A table row can be rebuilt by a
-/// background refresh before the worker has finished, so absence or a flag
-/// alone is not the outcome: while the banner still names the running removal
-/// the wait outlives its budget, up to a hang guard.
-bool waitForRemovalSettle(mikai::app::AnimeJanaiManagerPanel& panel, const auto& settled,
-                          int budgetMs) {
-    constexpr int kHangGuardMs = 60000;
-    QElapsedTimer clock;
-    clock.start();
-    while (true) {
-        QApplication::processEvents();
-        if (settled()) return true;
-        const int elapsed = static_cast<int>(clock.elapsed());
-        if (elapsed >= kHangGuardMs) break;
-        if (elapsed >= budgetMs && !managerIsRemoving(panel)) break;
-        QThread::msleep(10);
-    }
-    QApplication::processEvents();
-    return settled();
 }
 
 /// What the manager says about a removal, and the row and registry it left, so
@@ -867,17 +827,14 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
             "the external_smoke candidate was selected as the candidate to register");
     }
     const bool externalRegistered = externalRegistrationClicked &&
-                                    waitForImportSettle(
-                                        panel,
-                                        [&] {
-                                            const int row = customModelRow(
-                                                modelTable, QStringLiteral("external_smoke"));
-                                            return row >= 0 &&
-                                                   !modelTable->item(row, 0)
-                                                        ->data(Qt::UserRole + 1)
-                                                        .toBool();
-                                        },
-                                        15000);
+                                    waitForTerminalModelState([&] {
+                                        const int row = customModelRow(
+                                            modelTable, QStringLiteral("external_smoke"));
+                                        return row >= 0 &&
+                                               !modelTable->item(row, 0)
+                                                    ->data(Qt::UserRole + 1)
+                                                    .toBool();
+                                    });
     check(externalRegistered,
           "the external candidate is registered through the real Import action",
           externalRegistered ? QString()
@@ -1367,20 +1324,19 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
     const bool externalRemovalStarted =
         clickRemoveForRow(modelTableForRemoval, removeModel, QStringLiteral("external_smoke"),
                           QStringLiteral("external"), &externalRemovalProblem);
+    // The terminal state is the public synchronisation signal: the registry is
+    // committed before either callback or a catalogue refresh can present the
+    // borrowed graph as unregistered, so reaching it proves the worker wrote.
     const bool externalRemoved =
         externalRemovalStarted &&
-        waitForRemovalSettle(
-            *reloadedPanel,
-            [&] {
-                // The row must be the borrowed graph itself and present its
-                // external provenance as unregistered, not merely carry a flag.
-                const CatalogueRowView row =
-                    catalogueRowForPath(modelTableForRemoval, externalPath);
-                return row.row >= 0 && row.id == QStringLiteral("external_smoke") &&
-                       row.origin == QStringLiteral("external") &&
-                       row.state == QStringLiteral("unregistered") && row.candidate;
-            },
-            15000);
+        waitForTerminalModelState([&] {
+            // The row must be the borrowed graph itself and present its
+            // external provenance as unregistered, not merely carry a flag.
+            const CatalogueRowView row = catalogueRowForPath(modelTableForRemoval, externalPath);
+            return row.row >= 0 && row.id == QStringLiteral("external_smoke") &&
+                   row.origin == QStringLiteral("external") &&
+                   row.state == QStringLiteral("unregistered") && row.candidate;
+        });
     check(externalRemoved && QFileInfo(externalPath).isFile(),
           "removing an external registration preserves the graph and presents it as unregistered",
           externalRemoved ? QString()
@@ -1392,12 +1348,13 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
     const bool ownedRemovalStarted =
         clickRemoveForRow(modelTableForRemoval, removeModel, QStringLiteral("smoke_model"),
                           QStringLiteral("owned"), &ownedRemovalProblem);
+    // Absence is the terminal public state: the managed graph is deleted before
+    // the row can disappear, so the inventory below cannot still list it.
     const bool removedInUi =
         ownedRemovalStarted &&
-        waitForRemovalSettle(
-            *reloadedPanel,
-            [&] { return customModelRow(modelTableForRemoval, QStringLiteral("smoke_model")) < 0; },
-            15000);
+        waitForTerminalModelState([&] {
+            return customModelRow(modelTableForRemoval, QStringLiteral("smoke_model")) < 0;
+        });
     check(removedInUi, "asynchronous removal cleared the imported model from the manager",
           removedInUi ? QString()
                       : (ownedRemovalProblem.isEmpty()
@@ -1727,17 +1684,13 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
     check(QApplication::activeModalWidget() == nullptr,
           "registering a selected owned candidate needs no copy chooser");
     const bool ownedRegistered = ownedImportClicked &&
-                                 waitForImportSettle(
-                                     panel,
-                                     [&] {
-                                         const auto row =
-                                             catalogueRowForPath(modelTable, rawPath);
-                                         return row.row >= 0 &&
-                                                row.origin == QStringLiteral("owned") &&
-                                                row.state == QStringLiteral("registered") &&
-                                                !row.candidate;
-                                     },
-                                     20000);
+                                 waitForTerminalModelState([&] {
+                                     const auto row = catalogueRowForPath(modelTable, rawPath);
+                                     return row.row >= 0 &&
+                                            row.origin == QStringLiteral("owned") &&
+                                            row.state == QStringLiteral("registered") &&
+                                            !row.candidate;
+                                 });
     check(ownedRegistered, "the Import action registered the raw paste in place",
           ownedRegistered ? QString() : importOutcomeDetail(panel, modelTable, rawPath));
     check(QFileInfo(rawPath).isFile() && QFileInfo(rawPath).size() == modelProto.size() &&
@@ -1852,30 +1805,17 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
     const bool externalImportClicked = clickImportForCandidate(
         modelTable, importModel, externalPath,
         "the borrowed external paste was selected as the candidate to pin");
-    // The click either entered the registration branch - which publishes the
-    // running line synchronously - or it fell through to the modal chooser this
-    // headless probe cannot drive. Ask the manager which one it was before any
-    // completion predicate is waited on, so a click that never started an
-    // import is reported instead of being read as a refused import.
-    const bool externalImportStarted = externalImportClicked && managerIsRegistering(panel);
-    check(externalImportStarted,
-          "the Import action started the external registration it was clicked for",
-          externalImportStarted ? QString()
-                                : importOutcomeDetail(panel, modelTable, externalPath));
-    const bool externalRegistered = externalImportStarted &&
-                                    waitForImportSettle(
-                                        panel,
-                                        [&] {
-                                            const auto row = catalogueRowForPath(
-                                                modelTable, externalPath);
-                                            return row.row >= 0 &&
-                                                   row.origin ==
-                                                       QStringLiteral("external") &&
-                                                   row.state ==
-                                                       QStringLiteral("registered") &&
-                                                   !row.candidate;
-                                        },
-                                        20000);
+    // The row precondition above is the click's proof: with no busy control to
+    // observe, the terminal registered state - and its full status detail when
+    // it never arrives - is what distinguishes a started import from a click
+    // that never reached the registration branch.
+    const bool externalRegistered =
+        externalImportClicked &&
+        waitForTerminalModelState([&] {
+            const auto row = catalogueRowForPath(modelTable, externalPath);
+            return row.row >= 0 && row.origin == QStringLiteral("external") &&
+                   row.state == QStringLiteral("registered") && !row.candidate;
+        });
     check(externalRegistered, "the Import action pinned the external graph explicitly",
           externalRegistered ? QString()
                              : importOutcomeDetail(panel, modelTable, externalPath));
@@ -1998,25 +1938,13 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
         const bool repinClicked = clickImportForCandidate(
             modelTable, importModel, externalPath,
             "the replaced external model was selected as the candidate to re-pin");
-        const bool repinImportStarted = repinClicked && managerIsRegistering(panel);
-        check(repinImportStarted,
-              "the Import action started the external re-pin it was clicked for",
-              repinImportStarted ? QString()
-                                 : importOutcomeDetail(panel, modelTable, externalPath));
-        const bool externalRepinned = repinImportStarted &&
-                                      waitForImportSettle(
-                                          panel,
-                                          [&] {
-                                              const auto row = catalogueRowForPath(
-                                                  modelTable, externalPath);
-                                              return row.row >= 0 &&
-                                                     row.origin ==
-                                                         QStringLiteral("external") &&
-                                                     row.state ==
-                                                         QStringLiteral("registered") &&
-                                                     !row.candidate;
-                                          },
-                                          20000);
+        const bool externalRepinned =
+            repinClicked &&
+            waitForTerminalModelState([&] {
+                const auto row = catalogueRowForPath(modelTable, externalPath);
+                return row.row >= 0 && row.origin == QStringLiteral("external") &&
+                       row.state == QStringLiteral("registered") && !row.candidate;
+            });
         check(externalRepinned,
               "the Import action explicitly re-pinned the atomically replaced graph",
               externalRepinned ? QString()
