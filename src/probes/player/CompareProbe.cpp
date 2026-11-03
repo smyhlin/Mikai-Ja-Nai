@@ -48,6 +48,15 @@
 #include "ProbeRuntime.hpp"
 #include "ProbePicture.hpp"
 
+// Last, like the window it exercises: winsock/windows macros must not reach the
+// project headers above.
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 using namespace mplayer;
 using namespace mplayer::shell;
 
@@ -783,6 +792,56 @@ qsizetype visibleComparePanes(CompareWindow* compare) {
     return visible;
 }
 
+/// The platform's own window identity and stacking band. Windows owns both.
+/// Elsewhere the same struct compiles but reports the identity unavailable, so
+/// a run cannot claim HWND stability it never observed.
+struct NativeWindowIdentity {
+    quintptr windowId = 0;
+    bool windowAlive = false;
+    bool topmost = false;
+    bool observable = false;
+};
+
+NativeWindowIdentity nativeWindowIdentity(QWidget* widget) {
+    NativeWindowIdentity identity;
+    if (widget == nullptr) return identity;
+    const WId wid = widget->winId();
+    identity.windowId = static_cast<quintptr>(wid);
+#ifdef Q_OS_WIN
+    const HWND hwnd = reinterpret_cast<HWND>(wid);
+    identity.observable = hwnd != nullptr;
+    identity.windowAlive = hwnd != nullptr && IsWindow(hwnd) != FALSE;
+    identity.topmost = identity.windowAlive &&
+                       (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
+#endif
+    return identity;
+}
+
+/// One observation of the pin transition. The identity, render context, source
+/// epoch and held picture are read together so a recreate between two of them
+/// cannot pass as a stable window.
+struct PinContinuitySample {
+    const char* phase = "";
+    bool compareAlive = false;
+    bool playerAlive = false;
+    quintptr compareWindowId = 0;
+    quintptr playerWindowId = 0;
+    bool topmost = false;
+    bool topmostObservable = false;
+    quint64 contextGeneration = 0;
+    quint64 sourceEpoch = 0;
+    bool pinned = false;
+    bool expectedPinned = false;
+    bool fullscreen = false;
+    bool held = false;
+    bool playing = false;
+    bool paneAlive = false;
+    std::optional<double> frozenTimestamp;
+    QImage frozenFrame;
+    QImage paneImage;
+    QImage playerFrame;
+};
+
 bool visibleSideMatches(CompareWindow* compare, int side, const QString& id,
                         const QImage& output, VideoSurface* surface) {
     QList<ComparePane*> visible;
@@ -878,6 +937,11 @@ int main(int argc, char** argv) {
     const bool loadingOnly =
         argc > 1 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--loading-only");
     const bool ajiMode = argc > 1 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--aji");
+    // The pin-continuity run exists so the ordinary (non-native-backend) mode can
+    // prove the pin/held-playback corepresentation too, without a staged Aji
+    // build. It only opts in: the default run keeps its settled-still contract.
+    const bool pinContinuityMode =
+        argc > 1 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--pin-continuity");
     if (loadingOnly && argc > 3) {
         std::fprintf(stderr, "usage: compare_probe.exe --loading-only [video]\n");
         return 2;
@@ -886,17 +950,33 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "usage: compare_probe.exe --aji <video>\n");
         return 2;
     }
+    if (pinContinuityMode && argc > 3) {
+        std::fprintf(stderr, "usage: compare_probe.exe --pin-continuity [video]\n");
+        return 2;
+    }
     if (ajiMode) {
         std::fprintf(stderr, "CLI: compare_probe --aji <video>\n");
     }
+    if (pinContinuityMode) {
+        std::fprintf(stderr, "CLI: compare_probe --pin-continuity [video]\n");
+    }
+    // Both modes that hold a moving source are the ones that can prove the pin
+    // never disturbs playback; the plain run starts paused and cannot.
+    const bool pinContinuity = ajiMode || pinContinuityMode;
     static StubHost host;
-    const QString url = ajiMode ? QString::fromLocal8Bit(argv[2])
-                                : (loadingOnly
-                                       ? (argc == 3
-                                              ? QString::fromLocal8Bit(argv[2])
-                                              : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25"))
-                                       : (argc > 1 ? QString::fromLocal8Bit(argv[1])
-                                                   : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25")));
+    const QString url =
+        ajiMode ? QString::fromLocal8Bit(argv[2])
+                : (loadingOnly
+                       ? (argc == 3
+                              ? QString::fromLocal8Bit(argv[2])
+                              : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25"))
+                       : (pinContinuityMode
+                              ? (argc == 3
+                                     ? QString::fromLocal8Bit(argv[2])
+                                     : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25"))
+                              : (argc > 1
+                                     ? QString::fromLocal8Bit(argv[1])
+                                     : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25"))));
     const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};
 
     auto* dialog = new PlayerDialog(QStringLiteral("compare probe"), url, qualities, 720, &host);
@@ -1197,6 +1277,7 @@ int main(int argc, char** argv) {
                 return;
             }
         }
+        bool sourceAdvancingBeforeCompare = false;
         if (ajiMode) {
             surface->setPaused(false);
             PlaybackTimestampSample beforePlayback;
@@ -1205,6 +1286,7 @@ int main(int argc, char** argv) {
                                          waitForPlaybackProgress(
                                              surface, beforePlayback.sourceEpoch,
                                              beforePlayback.timestamp, &playbackAdvanced);
+            sourceAdvancingBeforeCompare = actuallyStarted;
             check(actuallyStarted,
                   "the Aji probe begins Compare with observable active playback");
             if (!actuallyStarted) {
@@ -1216,6 +1298,32 @@ int main(int argc, char** argv) {
                                  ? qPrintable(QString::number(*beforePlayback.timestamp, 'f', 6))
                                  : "(unavailable)",
                              surface->isPlaying(), qPrintable(surface->animeJanaiStatus()));
+                app.exit(1);
+                return;
+            }
+        }
+        // A held frame says nothing about a source the caller had already
+        // paused, so the pin-continuity run has to open Compare from real
+        // moving playback. The default (settled-still) run keeps its pause.
+        if (pinContinuityMode && !ajiMode) {
+            surface->setPaused(false);
+            PlaybackTimestampSample beforePlayback;
+            PlaybackTimestampSample playbackAdvanced;
+            sourceAdvancingBeforeCompare =
+                requestPlaybackTimestamp(surface, &beforePlayback) &&
+                waitForPlaybackProgress(surface, beforePlayback.sourceEpoch,
+                                        beforePlayback.timestamp, &playbackAdvanced);
+            check(sourceAdvancingBeforeCompare,
+                  "the pin-continuity source advances before Compare opens");
+            if (!sourceAdvancingBeforeCompare) {
+                std::fprintf(stderr,
+                             "FAIL --pin-continuity playback start: epoch=%llu, timestamp=%s, "
+                             "playingFlag=%d\n",
+                             static_cast<unsigned long long>(beforePlayback.sourceEpoch),
+                             beforePlayback.timestamp.has_value()
+                                 ? qPrintable(QString::number(*beforePlayback.timestamp, 'f', 6))
+                                 : "(unavailable)",
+                             surface->isPlaying());
                 app.exit(1);
                 return;
             }
@@ -1244,9 +1352,12 @@ int main(int argc, char** argv) {
         check(compare->isVisible(), "the compare window is on screen");
         check(surface->sourceEpoch() == comparisonSourceEpoch,
               "opening Compare preserves the source epoch");
-        const std::optional<double> frozenTimestamp = compare->frozenPlaybackTimestamp();
+        // Refreshed by the pin-continuity cycle below, which closes and reopens
+        // the comparison on the same source epoch: every later check reads the
+        // hold that is actually on screen, not the first one.
+        std::optional<double> frozenTimestamp = compare->frozenPlaybackTimestamp();
         PlaybackTimestampSample settledAfterCapture;
-        const bool captureTimestampStable =
+        bool captureTimestampStable =
             waitForStablePlaybackTimestamp(surface, comparisonSourceEpoch, &settledAfterCapture);
         check(compare->frozenSourceEpoch() == comparisonSourceEpoch &&
                   frozenTimestamp.has_value() && captureTimestampStable &&
@@ -1269,6 +1380,175 @@ int main(int argc, char** argv) {
                    compare->selectedCandidateId(0) == fullscreenSelectionA &&
                    compare->selectedCandidateId(1) == fullscreenSelectionB &&
                    compare->playbackHeld() && !surface->isPlaying();
+        };
+        // ── pin continuity sampling ─────────────────────────────────
+        // The pin is a z-order change, so a recreated HWND, a reset render
+        // context, a black composition or a lost hold has to be visible at the
+        // instant of the toggle, not only once the platform settled. Both the
+        // fullscreen transition and the normal-window cycle read this state.
+        QList<PinContinuitySample> pinSamples;
+        // No event pump here: the reading is the state the toggle produced,
+        // which is exactly where a recreate would already have happened.
+        const auto samplePinState = [&](const char* phase) {
+            PinContinuitySample sample;
+            sample.phase = phase;
+            const NativeWindowIdentity compareIdentity = nativeWindowIdentity(compare);
+            const NativeWindowIdentity playerIdentity = nativeWindowIdentity(surface);
+            sample.compareWindowId = compareIdentity.windowId;
+            sample.playerWindowId = playerIdentity.windowId;
+            sample.compareAlive = compareIdentity.windowAlive;
+            sample.playerAlive = playerIdentity.windowAlive;
+            sample.topmost = compareIdentity.topmost;
+            sample.topmostObservable = compareIdentity.observable;
+            sample.contextGeneration = surface->renderContextGeneration();
+            sample.sourceEpoch = surface->sourceEpoch();
+            sample.pinned = compare->isPinned();
+            sample.fullscreen = compare->isFullScreen();
+            sample.held = compare->playbackHeld();
+            sample.playing = surface->isPlaying();
+            sample.frozenTimestamp = compare->frozenPlaybackTimestamp();
+            sample.frozenFrame = compare->frozenFrame();
+            // Panes are re-found, never cached: losing the hold deletes them, and
+            // a cached pointer would be read after free before the pixel checks
+            // could report the failure.
+            QPointer<ComparePane> pane;
+            for (ComparePane* candidate : compare->findChildren<ComparePane*>()) {
+                if (candidate->isVisible()) {
+                    pane = candidate;
+                    break;
+                }
+            }
+            sample.paneAlive = !pane.isNull();
+            sample.paneImage = pane.isNull() ? QImage() : pane->viewport()->grab().toImage();
+            sample.playerFrame = surface->grabVideoFramebuffer();
+            return sample;
+        };
+        const auto recordPinPhase = [&](const char* phase, bool expectedPinned) {
+            pinSamples.append(samplePinState(phase));
+            pinSamples.last().expectedPinned = expectedPinned;
+        };
+        const auto togglePinSampled = [&](bool pinned) {
+            QTest::mouseClick(pinControl, Qt::LeftButton);
+            // The default run keeps the old settled-still path: no sampling, no
+            // wait, no native winId promotion or framebuffer readback.
+            if (!pinContinuity) return;
+            recordPinPhase(pinned ? "pin-immediate" : "unpin-immediate", pinned);
+            QCoreApplication::processEvents();
+            recordPinPhase(pinned ? "pin-event" : "unpin-event", pinned);
+            QTest::qWait(200);
+            recordPinPhase(pinned ? "pin-settled" : "unpin-settled", pinned);
+        };
+        const auto evaluatePinCycle = [&](const char* label) {
+            const PinContinuitySample base = pinSamples.first();
+            bool identityStable = base.compareAlive && base.playerAlive &&
+                                  base.compareWindowId != 0 && base.playerWindowId != 0;
+            bool contextStable = true;
+            bool epochStable = true;
+            bool holdStable = true;
+            bool paneStable = true;
+            double paneWorst = 0.0;
+            bool paneLit = true;
+            bool playerLit = true;
+            bool bandHonest = true;
+            quint64 recreated = 0;
+            quint64 contextResets = 0;
+            for (const PinContinuitySample& sample : pinSamples) {
+                if (!sample.compareAlive || !sample.playerAlive ||
+                    sample.compareWindowId != base.compareWindowId ||
+                    sample.playerWindowId != base.playerWindowId) {
+                    identityStable = false;
+                    ++recreated;
+                    std::fprintf(stderr,
+                                 "DIAG pin-continuity %s %s: compareWinId=%p playerWinId=%p "
+                                 "alive=%d/%d\n",
+                                 label, sample.phase,
+                                 reinterpret_cast<void*>(sample.compareWindowId),
+                                 reinterpret_cast<void*>(sample.playerWindowId),
+                                 sample.compareAlive, sample.playerAlive);
+                }
+                if (sample.contextGeneration != base.contextGeneration) {
+                    contextStable = false;
+                    ++contextResets;
+                    std::fprintf(stderr,
+                                 "DIAG pin-continuity %s %s: contextGeneration=%llu base=%llu\n",
+                                 label, sample.phase,
+                                 static_cast<unsigned long long>(sample.contextGeneration),
+                                 static_cast<unsigned long long>(base.contextGeneration));
+                }
+                epochStable &= sample.sourceEpoch == base.sourceEpoch;
+                if (sample.pinned != sample.expectedPinned ||
+                    sample.fullscreen != base.fullscreen) {
+                    bandHonest = false;
+                }
+                if (sample.topmostObservable) {
+                    bandHonest &= sample.topmost == sample.expectedPinned;
+                }
+                holdStable &= sample.held && !sample.playing &&
+                              sample.frozenFrame == base.frozenFrame &&
+                              sample.frozenTimestamp == base.frozenTimestamp;
+                paneStable &= sample.paneAlive;
+                if (sample.paneAlive && !sample.paneImage.isNull() &&
+                    !base.paneImage.isNull()) {
+                    // The pane is re-rendered per frame, so the band comparison
+                    // uses the same noise floor as the still-picture checks
+                    // instead of demanding byte-identical painting.
+                    const double paneDelta = meanDifference(sample.paneImage, base.paneImage);
+                    paneWorst = std::max(paneWorst, paneDelta);
+                    paneStable &= paneDelta >= 0.0 && paneDelta <= 0.01;
+                }
+                paneLit &= sample.paneAlive && !sample.paneImage.isNull() &&
+                           !mplayer::probes::measurePicture(sample.paneImage, surface->videoWidth(),
+                                                            surface->videoHeight()).isMostlyBlack();
+                playerLit &= !sample.playerFrame.isNull() &&
+                             !mplayer::probes::measurePicture(sample.playerFrame, surface->videoWidth(),
+                                                              surface->videoHeight()).isMostlyBlack();
+            }
+            std::fprintf(stderr,
+                         "DIAG pin-continuity %s: samples=%d compareWinId=%llu "
+                         "playerWinId=%llu contextGeneration=%llu sourceEpoch=%llu "
+                         "recreated=%llu contextResets=%llu paneWorstDelta=%.3f "
+                         "fullscreen=%d heldTimestamp=%s\n",
+                         label, static_cast<int>(pinSamples.size()),
+                         static_cast<unsigned long long>(base.compareWindowId),
+                         static_cast<unsigned long long>(base.playerWindowId),
+                         static_cast<unsigned long long>(base.contextGeneration),
+                         static_cast<unsigned long long>(base.sourceEpoch),
+                         static_cast<unsigned long long>(recreated),
+                         static_cast<unsigned long long>(contextResets), paneWorst,
+                         base.fullscreen ? 1 : 0,
+                         base.frozenTimestamp.has_value()
+                             ? qPrintable(QString::number(*base.frozenTimestamp, 'f', 6))
+                             : "(unavailable)");
+            const QString prefix = QString::fromLatin1(label) + QStringLiteral(": ");
+            // A platform that cannot show its native identity must not report a
+            // pass for it: the observation is mandatory, not optional.
+            check(base.topmostObservable,
+                  qPrintable(prefix + QStringLiteral(
+                                            "the native window identity (HWND) is observable")));
+            check(identityStable,
+                  qPrintable(prefix + QStringLiteral(
+                                            "the pin never recreates the Compare or player window")));
+            check(contextStable,
+                  qPrintable(prefix + QStringLiteral(
+                                            "the pin never resets the player's render context")));
+            check(epochStable,
+                  qPrintable(prefix + QStringLiteral("the pin never replaces the source epoch")));
+            check(bandHonest,
+                  qPrintable(prefix + QStringLiteral(
+                                            "native topmost band, pin and fullscreen state agree")));
+            check(holdStable,
+                  qPrintable(prefix + QStringLiteral(
+                                            "the held frame, timestamp and pause survive every toggle")));
+            check(paneStable,
+                  qPrintable(prefix + QStringLiteral(
+                                            "the visible comparison pane survives every toggle")));
+            check(paneLit,
+                  qPrintable(prefix + QStringLiteral(
+                                            "the comparison pane never composes black")));
+            check(playerLit,
+                  qPrintable(prefix + QStringLiteral(
+                                            "the player's own framebuffer never composes black")));
+            pinSamples.clear();
         };
         const QRect initialNormalGeometry = compare->geometry();
         check(fullscreenButton != nullptr && pinControl != nullptr &&
@@ -1311,22 +1591,107 @@ int main(int argc, char** argv) {
             QCoreApplication::processEvents();
             QTest::keyClick(pinControl, Qt::Key_F11);
             QCoreApplication::processEvents();
-            QTest::mouseClick(pinControl, Qt::LeftButton);
+            // Pinning while fullscreen is the transition most likely to rebuild
+            // the native window, so it is sampled at the moment of the toggle
+            // rather than only after the window settled.
+            if (pinContinuity) {
+                // The fullscreen resize is not the pin: let its layout and paint
+                // land first, so the cycle measures the toggle, not the entry.
+                QTest::qWait(150);
+                recordPinPhase("fullscreen-baseline", false);
+                check(visibleComparePanes(compare) == 2,
+                      "the fullscreen pin cycle starts with two visible panes");
+            }
+            togglePinSampled(true);
             QCoreApplication::processEvents();
             check(compare->isFullScreen() && compare->isPinned() &&
                       fullscreenStatePreserved(),
                   "pinning in fullscreen preserves fullscreen and playback state");
-            QTest::mouseClick(pinControl, Qt::LeftButton);
+            togglePinSampled(false);
             QCoreApplication::processEvents();
             check(compare->isFullScreen() && !compare->isPinned() &&
                       fullscreenStatePreserved(),
                   "unpinning in fullscreen preserves fullscreen and playback state");
+            if (pinContinuity) {
+                check(pinSamples.first().fullscreen,
+                      "the fullscreen pin cycle is measured while fullscreen");
+                evaluatePinCycle("fullscreen");
+            }
             QTest::keyClick(pinControl, Qt::Key_F11);
             QCoreApplication::processEvents();
             check(!compare->isFullScreen() && compare->geometry() == initialNormalGeometry &&
                       fullscreenStatePreserved(),
                   "fullscreen restores normal geometry and keeps the original hold");
             pinControl->setFocusPolicy(originalPinFocusPolicy);
+        }
+        // ── pin continuity: a z-order change, never a new window ─────
+        // The fullscreen pair above is sampled at the moment of its toggle; this
+        // cycle repeats it five times on the normal window. Both read the same
+        // sampled state, so a recreated HWND, a reset render context, a black
+        // composition or a lost hold cannot hide behind a settled screenshot.
+        if (pinContinuity && pinControl != nullptr) {
+            pinSamples.clear();
+            // The fullscreen exit resized the window; that is not the pin.
+            QTest::qWait(150);
+            recordPinPhase("window-baseline", false);
+            check(visibleComparePanes(compare) == 2,
+                  "the window pin cycle starts with two visible panes");
+            const PinContinuitySample baseline = pinSamples.first();
+            check(sourceAdvancingBeforeCompare && baseline.held && !baseline.playing &&
+                      baseline.frozenTimestamp.has_value() && !baseline.frozenFrame.isNull(),
+                  "the pinned cycle starts from a source that was advancing and is now held");
+            const int pinPairs = 5;
+            for (int pair = 0; pair < pinPairs; ++pair) {
+                togglePinSampled(true);
+                togglePinSampled(false);
+            }
+            evaluatePinCycle("window");
+
+            // The hold is Compare's, not the player's: closing the window has to
+            // hand the original playing intent back, advancing again.
+            const std::optional<double> heldWhileOpen = baseline.frozenTimestamp;
+            compare->close();
+            PlaybackTimestampSample resumed;
+            const bool resumedPlaying =
+                waitForPlaybackProgress(surface, comparisonSourceEpoch, heldWhileOpen, &resumed);
+            check(!compare->isVisible() && resumedPlaying && surface->isPlaying(),
+                  "closing the pinned-cycle Compare restores the original playing intent");
+            if (!resumedPlaying) {
+                std::fprintf(stderr,
+                             "FAIL pin-continuity resume: epoch=%llu held=%s playing=%d "
+                             "visible=%d\n",
+                             static_cast<unsigned long long>(surface->sourceEpoch()),
+                             heldWhileOpen.has_value()
+                                 ? qPrintable(QString::number(*heldWhileOpen, 'f', 6))
+                                 : "(unavailable)",
+                             surface->isPlaying(), compare->isVisible());
+                app.exit(1);
+                return;
+            }
+            // Reopen so the remaining sections keep the comparison they expect,
+            // now holding the newer position the resumed playback reached.
+            emit shell->compareRequested();
+            QElapsedTimer reopenWait;
+            reopenWait.start();
+            while (reopenWait.elapsed() < 120000 &&
+                   (!compare->isVisible() || compare->captureInProgress() ||
+                    compare->comparisonPending() || compare->frozenFrame().isNull())) {
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+                QThread::msleep(50);
+            }
+            check(compare->isVisible() && compare->captureError().isEmpty() &&
+                      !compare->frozenFrame().isNull() &&
+                      compare->frozenSourceEpoch() == comparisonSourceEpoch &&
+                      compare->playbackHeld() && !surface->isPlaying(),
+                  "Compare recaptures the moving source after the pin cycle");
+            frozenTimestamp = compare->frozenPlaybackTimestamp();
+            captureTimestampStable =
+                waitForStablePlaybackTimestamp(surface, comparisonSourceEpoch, &settledAfterCapture);
+            check(captureTimestampStable && frozenTimestamp.has_value() &&
+                      settledAfterCapture.timestamp.has_value() &&
+                      std::abs(*frozenTimestamp - *settledAfterCapture.timestamp) <= 1e-6 &&
+                      playbackTimestampMatches(surface, comparisonSourceEpoch, frozenTimestamp),
+                  "the reopened comparison holds the new stable timestamp");
         }
         check(QDir().mkpath(QStringLiteral(".probe-out")) &&
                   compare->grab().save(comparisonPng),
