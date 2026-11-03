@@ -2427,7 +2427,9 @@ void TestPublicApiUi::componentCardsKeepASingleLineBadgeAndASeparateCountLine() 
              qPrintable(QStringLiteral("%1 badge is %2 px wide")
                             .arg(cardId)
                             .arg(badge->width())));
-    QVERIFY2(!badge->geometry().intersects(title->geometry()),
+    const QRect badgeRect(badge->mapTo(&tab, QPoint(0, 0)), badge->size());
+    const QRect titleRect(title->mapTo(&tab, QPoint(0, 0)), title->size());
+    QVERIFY2(!badgeRect.intersects(titleRect),
              qPrintable(QStringLiteral("%1 badge covers its title").arg(cardId)));
   }
 
@@ -2441,6 +2443,52 @@ void TestPublicApiUi::componentCardsKeepASingleLineBadgeAndASeparateCountLine() 
            qPrintable(QStringLiteral("the spatial count line is %1").arg(spatialCounts->text())));
   QVERIFY2(spatialCounts->geometry().top() >= spatialDescription->geometry().bottom(),
            "the spatial counts share the description line");
+
+  // A heading is a label, so no action-row check covered it: at the wide width
+  // it shows its whole first line, and at the components viewport of the 580 px
+  // dialog it still shows its widest word and every wrapped line, inside its
+  // card, with the badge moved to its own row beneath.
+  for (const int width : {860, 312}) {
+    tab.resize(width, 900);
+    QCoreApplication::processEvents();
+    for (const QString& cardId : cardIds) {
+      auto* title = tab.findChild<QLabel*>(cardId + QStringLiteral("Title"));
+      auto* badge = tab.findChild<QLabel*>(cardId + QStringLiteral("State"));
+      QVERIFY2(title != nullptr && badge != nullptr,
+               qPrintable(QStringLiteral("%1 is missing a heading").arg(cardId)));
+      QVERIFY2(title->width() >= title->minimumSizeHint().width(),
+               qPrintable(QStringLiteral("%1 heading is %2 px wide, its widest word needs %3")
+                              .arg(cardId)
+                              .arg(title->width())
+                              .arg(title->minimumSizeHint().width())));
+      QVERIFY2(title->height() >= title->heightForWidth(title->width()),
+               qPrintable(QStringLiteral("%1 heading is %2 px tall, %3 px needed at width %4")
+                              .arg(cardId)
+                              .arg(title->height())
+                              .arg(title->heightForWidth(title->width()))
+                              .arg(title->width())));
+      QWidget* cardHost = title->parentWidget() != nullptr
+                              ? title->parentWidget()->parentWidget()
+                              : nullptr;
+      QVERIFY2(cardHost != nullptr, qPrintable(QStringLiteral("%1 has no card").arg(cardId)));
+      const QRect titleInCard(title->mapTo(cardHost, QPoint(0, 0)), title->size());
+      QVERIFY2(cardHost->rect().contains(titleInCard),
+               qPrintable(QStringLiteral("%1 heading leaves its card: %2,%3 %4x%5 in %6x%7")
+                              .arg(cardId)
+                              .arg(titleInCard.x())
+                              .arg(titleInCard.y())
+                              .arg(titleInCard.width())
+                              .arg(titleInCard.height())
+                              .arg(cardHost->width())
+                              .arg(cardHost->height())));
+      if (width > 400) continue;
+      const QRect badgeInCard(badge->mapTo(cardHost, QPoint(0, 0)), badge->size());
+      QVERIFY2(badgeInCard.top() >= titleInCard.bottom(),
+               qPrintable(QStringLiteral("%1 keeps its badge beside the heading at %2 px")
+                              .arg(cardId)
+                              .arg(width)));
+    }
+  }
 }
 
 void TestPublicApiUi::settingsPagesFitTheDialogMinimum() {

@@ -36,6 +36,7 @@
 #include <QtGui/QPalette>
 #include <QtGui/QResizeEvent>
 #include <QtWidgets/QFrame>
+#include <QtWidgets/QGridLayout>
 #include <QtWidgets/QStyle>
 #include <QtCore/QVariant>
 #include <QtCore/QVariantMap>
@@ -532,37 +533,34 @@ void ComponentStoreTab::buildUi() {
         card->setProperty("componentCardId", objectName);
         card->setCursor(Qt::PointingHandCursor);
         card->installEventFilter(this);
-        auto* cardLayout = new QHBoxLayout(card);
+        auto* cardLayout = new QGridLayout(card);
         cardLayout->setContentsMargins(theme::kSpacingMedium, theme::kSpacingMedium,
                                        theme::kSpacingMedium, theme::kSpacingMedium);
         cardLayout->setSpacing(theme::kSpacingMedium);
-        // The header grid: [check 40] [title/description stretch] [badge 120]
-        // [size 72], so the badge sits at the trailing edge of the text block
-        // instead of wrapping over the title.
         *checkBox = new QCheckBox(card);
         (*checkBox)->setObjectName(objectName + QStringLiteral("Check"));
         (*checkBox)->setMinimumSize(theme::kComponentCheckColumn,
                                     theme::kComponentCheckColumn);
-        cardLayout->addWidget(*checkBox, 0, Qt::AlignVCenter);
+        cardLayout->addWidget(*checkBox, 0, 0, 1, 1, Qt::AlignVCenter);
         auto* details = new QWidget(card);
+        details->setObjectName(objectName + QStringLiteral("Details"));
         details->installEventFilter(this);
         auto* detailsLayout = new QVBoxLayout(details);
         detailsLayout->setContentsMargins(0, 0, 0, 0);
         detailsLayout->setSpacing(theme::kSpacingXs);
-        auto* titleRow = new QHBoxLayout();
-        titleRow->setSpacing(theme::kSpacingSmall);
         auto* title = new QLabel(details);
         title->setObjectName(objectName + QStringLiteral("Title"));
-        // The card header keeps its fixed check/badge/size columns and its
-        // margins; the two caption blocks yield so the sum still fits the
-        // dialog's own minimum width.
-        yieldCaptionWidth(title);
+        // A heading wraps, but its longest word stays a floor: the card reflow
+        // moves the badge and the size to their own row before this column can
+        // be squeezed under a readable width.
+        title->setWordWrap(true);
+        title->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
         title->installEventFilter(this);
         QFont titleFont = title->font();
         titleFont.setBold(true);
         title->setFont(titleFont);
-        titleRow->addWidget(title, 1);
-        *stateLabel = new QLabel(details);
+        detailsLayout->addWidget(title);
+        *stateLabel = new QLabel(card);
         (*stateLabel)->setObjectName(objectName + QStringLiteral("State"));
         // One line, one width: a longer state elides into its tooltip rather
         // than growing a second line over the title.
@@ -570,8 +568,7 @@ void ComponentStoreTab::buildUi() {
         (*stateLabel)->setFixedWidth(theme::kComponentBadgeWidth);
         (*stateLabel)->setAlignment(Qt::AlignCenter);
         (*stateLabel)->installEventFilter(this);
-        titleRow->addWidget(*stateLabel, 0, Qt::AlignVCenter);
-        detailsLayout->addLayout(titleRow);
+        cardLayout->addWidget(*stateLabel, 0, 2, 1, 1, Qt::AlignVCenter);
         auto* description = new QLabel(details);
         description->setObjectName(objectName + QStringLiteral("Description"));
         description->setProperty("textRole", QStringLiteral("muted"));
@@ -604,7 +601,7 @@ void ComponentStoreTab::buildUi() {
         detailsLayout->addWidget(cardProgressStatus);
         cardProgressBars_.insert(objectName, cardProgress);
         cardProgressStatusLabels_.insert(objectName, cardProgressStatus);
-        cardLayout->addWidget(details, 1);
+        cardLayout->addWidget(details, 0, 1, 1, 1);
         auto* size = new QLabel(card);
         size->setObjectName(objectName + QStringLiteral("Size"));
         size->setProperty("textRole", QStringLiteral("muted"));
@@ -615,7 +612,8 @@ void ComponentStoreTab::buildUi() {
         QFont sizeFont = size->font();
         sizeFont.setBold(true);
         size->setFont(sizeFont);
-        cardLayout->addWidget(size, 0, Qt::AlignVCenter);
+        cardLayout->addWidget(size, 0, 3, 1, 1, Qt::AlignVCenter);
+        cardLayout->setColumnStretch(1, 1);
         root->addWidget(card);
         return card;
     };
@@ -811,9 +809,18 @@ void ComponentStoreTab::retranslateUi() {
     recommendationBanner_->setText(
         QStringLiteral("!  ") +
         tr("Components recommended for this PC are not installed. Check the highlighted items below, then click Apply changes to install them."));
+    reflowComponentHeaders();
 }
 
 bool ComponentStoreTab::eventFilter(QObject* watched, QEvent* event) {
+    if (event->type() == QEvent::Resize) {
+        if (auto* card = qobject_cast<QGroupBox*>(watched);
+            card != nullptr &&
+            card->objectName() == QStringLiteral("nativeComponentPackCard")) {
+            reflowComponentHeaders();
+        }
+        return QWidget::eventFilter(watched, event);
+    }
     if (event->type() == QEvent::MouseButtonRelease) {
         const auto* mouseEvent = static_cast<const QMouseEvent*>(event);
         if (mouseEvent->button() == Qt::LeftButton) {
@@ -851,11 +858,52 @@ void ComponentStoreTab::changeEvent(QEvent* event) {
                event->type() == QEvent::DevicePixelRatioChange ||
                event->type() == QEvent::ScreenChangeInternal) {
         if (actionGrid_ != nullptr) actionGrid_->recalculate();
+        reflowComponentHeaders();
     }
 }
 
 void ComponentStoreTab::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
+    reflowComponentHeaders();
+}
+
+void ComponentStoreTab::reflowComponentHeaders() {
+    for (QGroupBox* card : findChildren<QGroupBox*>(QStringLiteral("nativeComponentPackCard"))) {
+        const QString id = card->property("componentCardId").toString();
+        auto* grid = qobject_cast<QGridLayout*>(card->layout());
+        auto* details = card->findChild<QWidget*>(id + QStringLiteral("Details"));
+        auto* title = card->findChild<QLabel*>(id + QStringLiteral("Title"));
+        auto* badge = card->findChild<QLabel*>(id + QStringLiteral("State"));
+        auto* size = card->findChild<QLabel*>(id + QStringLiteral("Size"));
+        if (grid == nullptr || details == nullptr || title == nullptr || badge == nullptr ||
+            size == nullptr) {
+            continue;
+        }
+        // The heading keeps its own row while it can still show its longest word
+        // beside the fixed columns; below that the badge and the size move down
+        // so the heading owns the text column instead of collapsing under it.
+        const QMargins margins = grid->contentsMargins();
+        const int fixed = margins.left() + margins.right() +
+                          theme::kComponentCheckColumn + theme::kComponentBadgeWidth +
+                          theme::kComponentSizeWidth + 2 * grid->horizontalSpacing();
+        const bool compact = card->width() - fixed < title->minimumSizeHint().width();
+        if (card->property("compactHeader").toBool() == compact) continue;
+        card->setProperty("compactHeader", compact);
+        grid->removeWidget(details);
+        grid->removeWidget(badge);
+        grid->removeWidget(size);
+        if (compact) {
+            grid->addWidget(details, 0, 1, 1, 3);
+            grid->addWidget(badge, 1, 2, 1, 1, Qt::AlignVCenter);
+            grid->addWidget(size, 1, 3, 1, 1, Qt::AlignVCenter);
+        } else {
+            grid->addWidget(details, 0, 1, 1, 1);
+            grid->addWidget(badge, 0, 2, 1, 1, Qt::AlignVCenter);
+            grid->addWidget(size, 0, 3, 1, 1, Qt::AlignVCenter);
+        }
+        grid->setColumnStretch(1, 1);
+        grid->invalidate();
+    }
 }
 
 void ComponentStoreTab::setRunner(Runner* runner) {

@@ -138,6 +138,10 @@ private:
     void buildUi();
     void retranslateUi();
     void renderCards();
+    /// Keeps each card heading readable: while the title fits beside the fixed
+    /// badge and size it keeps one row, and below that the badge and the size
+    /// take their own row so the heading owns the text column.
+    void reflowComponentHeaders();
     void updateControls();
     mplayer::native::Backend selectedBackend() const;
     /// One app-owned status reason: an explicit kind plus the raw values that

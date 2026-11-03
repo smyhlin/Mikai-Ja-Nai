@@ -732,6 +732,8 @@ int main(int argc, char** argv) {
 
             bool badgeLines = true;
             bool countLines = true;
+            bool headingsLegible = true;
+            QStringList crampedHeadings;
             for (const QString& card :
                  {QStringLiteral("tensorRtRuntimeCard"), QStringLiteral("animeJanaiModelsCard"),
                   QStringLiteral("rifeModelsCard"), QStringLiteral("tensorRtKernelsCard")}) {
@@ -741,14 +743,33 @@ int main(int argc, char** argv) {
                 if (badge == nullptr || title == nullptr || counts == nullptr) {
                     badgeLines = false;
                     countLines = false;
+                    headingsLegible = false;
                     continue;
                 }
                 geometryTargets.append(badge);
                 geometryTargets.append(counts);
+                const QRect badgeRect(badge->mapTo(componentsPage, QPoint(0, 0)), badge->size());
+                const QRect titleRect(title->mapTo(componentsPage, QPoint(0, 0)), title->size());
                 badgeLines = badgeLines &&
                              badge->height() <= mikai::app::theme::kBadgeHeight &&
                              badge->width() <= mikai::app::theme::kComponentBadgeWidth &&
-                             !badge->geometry().intersects(title->geometry());
+                             !badgeRect.intersects(titleRect);
+                // A heading is a label, not an action, so the actionable audit
+                // never sees it: it must still show its widest word and hold
+                // every wrapped line it needs.
+                const bool legible = title->width() >= title->minimumSizeHint().width() &&
+                                     title->height() >= title->heightForWidth(title->width());
+                if (!legible) {
+                    headingsLegible = false;
+                    crampedHeadings.append(
+                        QStringLiteral("%1 heading %2x%3 needs %4x%5")
+                            .arg(card)
+                            .arg(title->width())
+                            .arg(title->height())
+                            .arg(title->minimumSizeHint().width())
+                            .arg(title->heightForWidth(title->width())));
+                }
+                geometryTargets.append(title);
                 auto* description =
                     dialog.findChild<QLabel*>(card + QStringLiteral("Description"));
                 const bool belowDescription =
@@ -760,6 +781,9 @@ int main(int argc, char** argv) {
             }
             check(badgeLines, QStringLiteral("every component badge is one 24 px line"));
             check(countLines, QStringLiteral("component counts have their own line"));
+            check(headingsLegible,
+                  QStringLiteral("every component heading shows its widest word and every line"));
+            report("cramped headings", crampedHeadings);
             reportBounds("goals geometry", minimum, dialog.devicePixelRatioF(), geometryTargets);
         }
     }
