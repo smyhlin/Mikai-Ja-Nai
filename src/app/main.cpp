@@ -17,6 +17,8 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QIcon>
@@ -377,15 +379,27 @@ int main(int argc, char** argv) {
         app.exec();
         // The window is still open here only when the loop ended another way, so
         // its own teardown ran before anything a worker may still referenced.
-        // The client stays alive until it leaves this scope.
+        // Anything the loop left in flight is retired HERE, while the borrowed
+        // client and the window are both still alive: shutdownAll's completion is
+        // posted to the GUI thread, so a call made after this scope would both
+        // answer a client that no longer exists and wait for a loop that has
+        // already returned.
+        bool workerDrainDone = false;
+        mikai::app::Runner::shutdownAll([&workerDrainDone] { workerDrainDone = true; });
+        QElapsedTimer workerDrainClock;
+        workerDrainClock.start();
+        while (!workerDrainDone && workerDrainClock.elapsed() < 5000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        }
+        if (!workerDrainDone) {
+            qWarning("mikai: the runner drain did not finish before shutdown");
+        }
+        // Pending history writes belong to the same lifetime: they read state the
+        // window owns, so they are flushed before that scope goes.
+        mikai::app::WatchHistory::flushHistoryWrites();
+        // The client stays alive until it leaves this scope, after every pool has
+        // retired.
     }
 
-    // Drain pending history writes before teardown.
-    mikai::app::WatchHistory::flushHistoryWrites();
-
-    // The loop is done and the backend objects are gone, so no pool a worker
-    // used can still reference them. This last call retires anything left from a
-    // loop that ended without the window ever closing.
-    mikai::app::Runner::shutdownAll([] {});
     return 0;
 }

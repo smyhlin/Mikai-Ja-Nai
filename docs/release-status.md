@@ -12,6 +12,16 @@ Published packages, release-specific changes and checksums are available on the 
 
 HDR dark-scene instability and periodic frame substitution (KB-29 and KB-30) remain under measurement. Rendering fixes and bounded tests do not establish that every black flash is resolved; see [known bugs](../known_bugs.md). A historical Linux stock-runtime hour run ended with black, frozen output; its cause was not established.
 
+Pacing causality for "very fast, then very slow" playback is also still under measurement
+(KB-30). GOAL-F removed one confirmed static aggravator — an armed presentation slot could be
+disarmed and its frame presented by a repaint Qt asked for, which is the burst-then-stall
+signature — and corrected what the log says about it: `disarm` now counts only passes that really
+stop an armed timer, and `lead_ms` is measured at the swap rather than at the end of `paintGL`, so
+it includes FBO composition and the vsync wait. The canonical before-side stays
+[`GOAL-E`](ai/reports/GOAL-E.md): paused chrome-only p50 410 µs / p95 490 µs. No after-side run has
+been recorded on this branch, so no pacing fix and no paint-cost improvement is claimed here; the
+goal report records that gap as a gap.
+
 ## Presentation baseline (Windows before-side)
 
 The presentation path is instrumented for a recorded before/after baseline of
