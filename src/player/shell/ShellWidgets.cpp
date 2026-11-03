@@ -244,19 +244,15 @@ void chromeRepaintEvent(ChromeHost* host, QObject* watched, QEvent* event) {
         case QEvent::Show:
         case QEvent::Hide:
         case QEvent::EnabledChange:
-        // A font, a palette or a stylesheet change redraws chrome pixels that
-        // no widget update would carry.
         case QEvent::FontChange:
         case QEvent::PaletteChange:
         case QEvent::StyleChange:
-        // A move or a resize is this control's pixels plus the translucent area
-        // it vacated. It was escalated to chromeDirtyAll(), which made one
-        // widget settling under the pointer - a hover card following it - drop
-        // every cached control on every one of its moves. chromeDirty() hands
-        // the vacated box back (see ChromeList::invalidate) so the host can ask
-        // for exactly those pixels instead.
+            // These change what the control looks like: its pixels are stale.
+            host->chromeDirty(widget, QRect());
+            break;
         case QEvent::Move:
             // A translation keeps the control's own pixels; only its damage moved.
+            // Resize does not: the visible rect can change with it.
             host->chromeMoved(widget);
             break;
         case QEvent::Resize:

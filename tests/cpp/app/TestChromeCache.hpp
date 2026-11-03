@@ -19,4 +19,5 @@ class TestChromeCache : public QObject {
   void aMoveReusesThePixelsItAlreadyHolds();
   void anAncestorClipChangeReRendersTheVisibleRect();
   void aContentChangeAfterAMoveIsNotServedStale();
+  void anEnabledChangeInvalidatesEvenAfterAMove();
 };

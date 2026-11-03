@@ -141,8 +141,9 @@ public:
     /// device re-rasterised every glyph and stroked button on every video frame,
     /// and the GL paint engine has no multisampling - which is why the overlay
     /// glyphs were the jagged ones. One image per control, not one for the
-    /// union of their rects: the chrome sits in the corners of a 4K window, and
-    /// a union-sized buffer would be a full-frame allocation per paint.
+    /// union of their rects: the chrome sits in the corners of a 4K window, so a
+    /// union would be a near-full-frame buffer, and every changed control would
+    /// cost a re-upload of it.
     ///
     /// The painter state this pass needs is set once around the walk: a reuse
     /// is then a single drawPixmap with no state change of its own.
