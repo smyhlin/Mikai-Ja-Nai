@@ -1172,6 +1172,13 @@ private:
             return false;
         }
         place(player_.get(), kWidth, kHeight);
+        // Windowed, the aspect-fitted canvas leaves the dock outside the
+        // surface, where the shell's own raster paints it. The real fullscreen
+        // presentation is where the surface owns the whole HUD, so the sweep
+        // stages that state through the public call and records it.
+        player_->showFullScreen();
+        QTest::qWait(250);
+        evidence_.insert(QStringLiteral("playerFullscreen"), player_->isFullScreen());
         shell_ = player_->findChild<PlayerShell*>();
         surface_ = player_->findChild<mplayer::VideoSurface*>();
         if (!waitFor([this] { return surface_ != nullptr && shell_ != nullptr; }, 5000,
