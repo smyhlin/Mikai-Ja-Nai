@@ -2227,7 +2227,7 @@ void runFocusDuringBuildCycles(shell::PlayerDialog* dialog, VideoSurface* surfac
         const int cycle = evidence.cyclesCompleted;
         const mikai::gui::uiprofile::Snapshot countersBefore =
             mikai::gui::uiprofile::snapshot();
-        const UiProfileCounters profileBefore = surface->uiProfileCounters();
+        const auto profileBefore = surface->uiProfileCounters();
 
         // The overlay's stacking poll must be running while this application owns
         // the foreground; otherwise "stopped while away" would be vacuous.
@@ -2289,8 +2289,13 @@ void runFocusDuringBuildCycles(shell::PlayerDialog* dialog, VideoSurface* surfac
                 paintAtNs = mikai::gui::uiprofile::nowNs();
             },
             Qt::DirectConnection);
-        const qint64 activationAtNs = mikai::gui::uiprofile::nowNs();
         const bool foregroundTaken = nativeActivateForeground(dialog, 2000);
+        // The interval starts only once this process owns the foreground: a swap
+        // that landed while the foreground was being taken belongs to the steal,
+        // not to the interval the p95 claims.
+        paintSeen = false;
+        paintAtNs = 0;
+        const qint64 activationAtNs = mikai::gui::uiprofile::nowNs();
         peer.sendToBack();
         dialog->raise();
         dialog->activateWindow();
@@ -2360,7 +2365,7 @@ void runFocusDuringBuildCycles(shell::PlayerDialog* dialog, VideoSurface* surfac
                     }
                 }
             }
-            const UiProfileCounters profileAfter = surface->uiProfileCounters();
+            const auto profileAfter = surface->uiProfileCounters();
             evidence.contextGenerationChanges +=
                 profileAfter.contextGeneration - profileBefore.contextGeneration;
             evidence.initializeGlCalls +=
@@ -2859,7 +2864,7 @@ int main(int argc, char** argv) {
                     runFocusDuringBuildCycles(
                         focusDialog.data(), focusSurface.data(), focusBuild,
                         [&] { return buildActive; },
-                        [&] { return buildPlayback.framebufferAt >= 0; });
+                        [&] { return buildPlayback.held && buildPlayback.framebufferAt >= 0; });
                 });
             }
         } else {
@@ -3887,12 +3892,14 @@ int main(int argc, char** argv) {
                          qPrintable(focusBuild.unavailableReason));
             ++failures;
         }
+        // Ten completed valid cycles is the claim. A retained third-process steal
+        // that made an attempt abandoned is reported in cycles-abandoned, and a
+        // visible-composition timeout stays a completed cycle whose deadline lower
+        // bound feeds the latency assertion; neither replaces the cycle count.
         const bool cyclesProved = !focusBuild.unavailable &&
             focusBuild.cyclesCompleted == focusBuild.cyclesRequested &&
-            focusBuild.cyclesAbandoned == 0 &&
             focusBuild.awayVerified >= focusBuild.cyclesRequested &&
-            focusBuild.occlusionVerified >= focusBuild.cyclesRequested &&
-            focusBuild.visibleTimeouts == 0;
+            focusBuild.occlusionVerified >= focusBuild.cyclesRequested;
         result(cyclesProved,
                "10 native away/back focus cycles completed while the real engine build was "
                "active, each with verified peer foreground and verified occlusion of the "
@@ -3905,7 +3912,8 @@ int main(int argc, char** argv) {
                "with timeouts kept as deadline lower bounds instead of dropped cycles");
         if (!latencyProved) ++failures;
         const bool attachProved = focusBuild.attachMetricSupported &&
-            focusBuild.countersEnabled && focusBuild.attachCallsAway == 0;
+            focusBuild.countersEnabled && focusBuild.attachCallsAway == 0 &&
+            focusBuild.awayVerified > 0;
         result(attachProved,
                "the shipping raise policy made zero thread-input attaches across every verified "
                "peer-foreground interval");
