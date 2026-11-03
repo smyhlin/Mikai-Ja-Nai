@@ -101,6 +101,15 @@ bool nearColor(const QColor& actual, const QColor& expected) {
            nearChannel(actual.alpha(), expected.alpha());
 }
 
+/// The hue a translucent wash resolves to, ignoring the alpha the wash adds on
+/// purpose: a gradient's top row is the accent at a bounded opacity, so the
+/// colour is the contract and the alpha is measured on its own.
+bool sameRgb(const QColor& actual, const QColor& expected, int tolerance = kColorTolerance) {
+    return nearChannel(actual.red(), expected.red(), tolerance) &&
+           nearChannel(actual.green(), expected.green(), tolerance) &&
+           nearChannel(actual.blue(), expected.blue(), tolerance);
+}
+
 QString texture(const QColor& color) {
     return QStringLiteral("#%1%2%3 a%4")
         .arg(color.red(), 2, 16, QLatin1Char('0'))
@@ -741,7 +750,15 @@ void TestThemeRoles::pageGlowFollowsTheGradientSourceWithoutAColourEdit() {
     };
 
     // Auto resolves to the accent even though a pink custom colour is stored.
-    QVERIFY(nearColor(topPixel(), mikai::app::theme::accentColor(appearance)));
+    // The wash carries the intensity's bounded alpha, so the colour is compared
+    // on its own and the alpha only has to exist.
+    {
+        const QColor wash = topPixel();
+        QVERIFY2(wash.alpha() > 0, "the wash must paint at a non-zero opacity");
+        QVERIFY2(sameRgb(wash, mikai::app::theme::accentColor(appearance)),
+                 qPrintable(failure("auto wash", wash,
+                                    mikai::app::theme::accentColor(appearance))));
+    }
 
     Appearance custom = appearance;
     custom.gradientMode = mikai::app::theme::GradientMode::Custom;
@@ -749,13 +766,25 @@ void TestThemeRoles::pageGlowFollowsTheGradientSourceWithoutAColourEdit() {
     QApplication::processEvents(QEventLoop::AllEvents, 50);
     QVERIFY2(counter.paints > 0,
              "switching the gradient source must ask the wash to repaint");
-    QVERIFY(nearColor(topPixel(), QColor(QStringLiteral("#f27bb0"))));
+    {
+        const QColor wash = topPixel();
+        QVERIFY(wash.alpha() > 0);
+        QVERIFY2(sameRgb(wash, QColor(QStringLiteral("#f27bb0"))),
+                 qPrintable(failure("custom wash", wash,
+                                    QColor(QStringLiteral("#f27bb0")))));
+    }
 
     counter.paints = 0;
     mikai::app::setCurrentAppearance(appearance);
     QApplication::processEvents(QEventLoop::AllEvents, 50);
     QVERIFY2(counter.paints > 0, "returning to Auto must ask the wash to repaint");
-    QVERIFY(nearColor(topPixel(), mikai::app::theme::accentColor(appearance)));
+    {
+        const QColor wash = topPixel();
+        QVERIFY(wash.alpha() > 0);
+        QVERIFY2(sameRgb(wash, mikai::app::theme::accentColor(appearance)),
+                 qPrintable(failure("auto wash again", wash,
+                                    mikai::app::theme::accentColor(appearance))));
+    }
 
     glow->removeEventFilter(&counter);
     host.hide();
