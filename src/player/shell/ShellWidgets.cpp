@@ -222,7 +222,7 @@ void ChromeList::addSubtree(QWidget* root, QObject* watcher) {
                     child->installEventFilter(watcher);
                 }
             }
-            entries_.append(Entry{child, painted});
+            entries_.append(Entry{child, painted, {}, {}});
         }
         addSubtree(child, watcher);
     }

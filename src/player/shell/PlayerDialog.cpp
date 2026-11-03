@@ -1361,11 +1361,7 @@ void PlayerDialog::applyEpisode(const QString& label,
                                 int index,
                                 const QList<QualityEntry>& qualities,
                                 const QVector<QVariantMap>& variants) {
-    // Consume the stored offset even when this episode is refused below: a
-    // value left behind would resume the NEXT episode at the wrong place. It is
-    // armed only once the new stream actually loaded, so a duration reported by
-    // the outgoing file cannot swallow the seek.
-    const double resumeSeconds = episodeResumeSeconds_;
+    // A refused episode change must also discard the prior episode's pending resume.
     episodeResumeSeconds_ = 0.0;
     if (closed_ || directMedia_ || qualities.isEmpty()) {
         return;

@@ -687,8 +687,10 @@ QString seedEntry(const QString& path, int daysOld) {
         const QString inner = path + QStringLiteral("/inner.bin");
         QDir().mkpath(path);
         QFile file(inner);
-        file.open(QIODevice::WriteOnly);
-        file.write("x");
+        if (!file.open(QIODevice::WriteOnly) || file.write("x") != 1) {
+            qFatal("Cannot seed pruning fixture %s: %s", qPrintable(inner),
+                   qPrintable(file.errorString()));
+        }
         file.close();
         stamp(inner, daysOld);
         stamp(path, daysOld);
@@ -696,8 +698,10 @@ QString seedEntry(const QString& path, int daysOld) {
     }
     QDir().mkpath(QFileInfo(path).absolutePath());
     QFile file(path);
-    file.open(QIODevice::WriteOnly);
-    file.write("stale");
+    if (!file.open(QIODevice::WriteOnly) || file.write("stale") != 5) {
+        qFatal("Cannot seed pruning fixture %s: %s", qPrintable(path),
+               qPrintable(file.errorString()));
+    }
     file.close();
     stamp(path, daysOld);
     return path;
