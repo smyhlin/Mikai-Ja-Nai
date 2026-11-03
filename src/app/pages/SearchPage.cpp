@@ -211,6 +211,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     keysButton_->setObjectName(QStringLiteral("settingsChip"));
     keysButton_->setIcon(theme::keyboardIcon());
     keysButton_->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
+    keysButton_->setFixedSize(theme::kControlHeight, theme::kControlHeight);
     keysButton_->setToolTip(tr("Keyboard shortcuts (?)"));
     keysButton_->setAccessibleName(tr("Keyboard shortcuts"));
     connect(keysButton_, &QPushButton::clicked, this, [this] {
@@ -226,6 +227,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     settingsButton_->setObjectName(QStringLiteral("settingsChip"));
     settingsButton_->setIcon(theme::outlineGearIcon());
     settingsButton_->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
+    settingsButton_->setFixedSize(theme::kControlHeight, theme::kControlHeight);
     settingsButton_->setToolTip(tr("API token settings"));
     settingsButton_->setAccessibleName(tr("API token settings"));
     connect(settingsButton_, &QPushButton::clicked, this, &SearchPage::settingsRequested);
