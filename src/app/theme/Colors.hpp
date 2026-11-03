@@ -60,8 +60,6 @@ inline constexpr const char* kSurfaceInputFocus = "#141120";
 inline constexpr const char* kSurfaceTileHover = "#211c30";
 inline constexpr const char* kTableAlternateRow = "#14111f";
 
-inline constexpr const char* kAccentOnFill = "#f8f7fc";
-
 inline constexpr const char* kTextPrimary = "#f3f1f8";
 inline constexpr const char* kTextSecondary = "#c4bdd6";
 inline constexpr const char* kTextLabel = "#d8d2e8";

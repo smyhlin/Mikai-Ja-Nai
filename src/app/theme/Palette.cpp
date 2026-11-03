@@ -186,7 +186,6 @@ Palette paletteFor(const Appearance& appearance) {
     p.accentSoftBright = hexOf(blend(accent, p.light ? QColor(Qt::black) : QColor(Qt::white),
                                      p.light ? 0.32 : 0.5));
     p.accentFocus = p.accentSoftBright;
-    p.accentOnFill = p.light ? QStringLiteral("#ffffff") : text(kAccentOnFill);
     p.accentRgb = rgb(accent);
     p.accentSolidRgb = rgb(accent);
     p.accentDeepRgb = rgb(QColor(p.accentDeep));

@@ -67,7 +67,6 @@ struct Palette {
     QString accentDeepest;
     QString accentSoft;
     QString accentSoftBright;
-    QString accentOnFill;
     QString accentRgb;
     QString accentSolidRgb;
     QString accentDeepRgb;

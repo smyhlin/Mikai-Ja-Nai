@@ -498,12 +498,10 @@ QWidget* SettingsDialog::buildAppearanceTab() {
         if (gradientMode_ == nullptr || index < 0) return;
         appearanceDraft_.gradientMode =
             theme::gradientModeFromId(gradientMode_->itemData(index).toString());
-        // In Auto the picker follows the accent, so the preview never shows the
-        // last custom mix beside an accent it no longer belongs to. The stored
-        // custom colour survives until the viewer saves a Custom choice.
-        if (appearanceDraft_.gradientMode == theme::GradientMode::Auto) {
-            appearanceDraft_.gradientColor = theme::hexOf(theme::accentColor(appearanceDraft_));
-        }
+        // The draft keeps the last custom colour even while Auto is selected:
+        // gradientColor() resolves Auto to the accent at paint time, so the
+        // preview already shows the accent, and overwriting the stored choice
+        // here would destroy the colour the viewer can still switch back to.
         applyAppearancePreview();
     });
 
