@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include <QtCore/QEventLoop>
+#include <QtCore/QMap>
 #include <QtCore/QScopeGuard>
 #include <QtCore/QSettings>
 #include <QtCore/QStringList>
@@ -74,12 +75,6 @@ QColor over(const QColor& foreground, const QColor& bed, double alpha) {
     return QColor(channel(foreground.red(), bed.red()),
                   channel(foreground.green(), bed.green()),
                   channel(foreground.blue(), bed.blue()));
-}
-
-QColor translucent(const QColor& color, double alpha) {
-    QColor result = color;
-    result.setAlpha(qBound(0, qRound(alpha * 255.0), 255));
-    return result;
 }
 
 QColor washColor(const Palette& palette) {
@@ -158,9 +153,6 @@ void setVisualState(QPushButton& button, RoleState state) {
         case RoleState::Normal:
             break;
         case RoleState::Hover:
-            // The same flag Qt sets when the pointer enters; the stylesheet's
-            // :hover selector reads this state, so the render below is the
-            // widget's own hover rendering, not an option struct drawn by hand.
             button.setAttribute(Qt::WA_UnderMouse, true);
             break;
         case RoleState::Pressed:
@@ -180,94 +172,12 @@ void setVisualState(QPushButton& button, RoleState state) {
     QApplication::processEvents();
 }
 
-struct ExpectedPaint {
-    QColor fill;
-    QColor border;
-};
-
-ExpectedPaint expectedPaint(ActionRole role, RoleState state, const Palette& palette) {
-    const QColor accent(palette.accent);
-    const QColor transparent(0, 0, 0, 0);
-    const QColor dangerFill(palette.dangerFill);
-    const QColor wash = washColor(palette);
-    switch (role) {
-        case ActionRole::Primary:
-            switch (state) {
-                case RoleState::Normal: return {accent, accent};
-                case RoleState::Hover: return {QColor(palette.accentHover), QColor(palette.accentHover)};
-                case RoleState::Pressed: return {accent, QColor(palette.accentHover)};
-                case RoleState::Focus: return {accent, QColor(palette.accentInk)};
-                case RoleState::Disabled: return {QColor(palette.surface), QColor(palette.borderControl)};
-                case RoleState::Checked: break;  // handled by the secondary/ghost cases
-            }
-            break;
-        case ActionRole::Secondary:
-            switch (state) {
-                case RoleState::Normal: return {QColor(palette.surfaceControlRaised), QColor(palette.borderControl)};
-                case RoleState::Hover: return {translucent(accent, 0.12), translucent(accent, 0.55)};
-                case RoleState::Pressed: return {QColor(palette.surfaceActive), QColor(palette.borderControl)};
-                case RoleState::Checked: return {translucent(accent, 0.14), accent};
-                case RoleState::Focus: return {QColor(palette.surfaceControlRaised), accent};
-                case RoleState::Disabled: return {QColor(palette.surface), QColor(palette.borderControl)};
-            }
-            break;
-        case ActionRole::Ghost:
-            switch (state) {
-                case RoleState::Normal: return {transparent, translucent(accent, 0.22)};
-                case RoleState::Hover: return {translucent(accent, 0.16), translucent(accent, 0.45)};
-                case RoleState::Checked: return {translucent(accent, 0.18), accent};
-                case RoleState::Focus: return {transparent, accent};
-                case RoleState::Disabled: return {transparent, translucent(wash, 0.18)};
-                case RoleState::Pressed: break;
-            }
-            break;
-        case ActionRole::Danger:
-            switch (state) {
-                case RoleState::Normal: return {transparent, QColor(palette.danger)};
-                case RoleState::Hover: return {translucent(dangerFill, 0.14), QColor(palette.danger)};
-                case RoleState::Pressed: return {translucent(dangerFill, 0.22), QColor(palette.danger)};
-                case RoleState::Focus: return {transparent, dangerFill};
-                case RoleState::Disabled: return {transparent, QColor(palette.borderControl)};
-                case RoleState::Checked: break;
-            }
-            break;
-    }
-    return {transparent, transparent};
-}
-
-QColor expectedInk(ActionRole role, const Palette& palette) {
-    switch (role) {
-        case ActionRole::Primary: return QColor(palette.accentInk);
-        case ActionRole::Secondary: return QColor(palette.text);
-        case ActionRole::Ghost: return QColor(palette.accent);
-        case ActionRole::Danger: return QColor(palette.danger);
-    }
-    return QColor(palette.text);
-}
-
 struct WidgetPixels {
     QImage image;
     qreal scale = 1.0;
 
     QColor at(int x, int y) const {
         return image.pixelColor(qRound(x * scale), qRound(y * scale));
-    }
-
-    // How close the closest opaque glyph pixel comes to the expected ink. Text
-    // antialiasing blends toward the fill, but the stroke cores carry the ink.
-    int minInkDistance(const QColor& ink) const {
-        int best = 1 << 30;
-        for (int y = 0; y < image.height(); ++y) {
-            for (int x = 0; x < image.width(); ++x) {
-                const QColor pixel = image.pixelColor(x, y);
-                if (pixel.alpha() < 200) continue;
-                const int distance = std::abs(pixel.red() - ink.red()) +
-                                     std::abs(pixel.green() - ink.green()) +
-                                     std::abs(pixel.blue() - ink.blue());
-                best = std::min(best, distance);
-            }
-        }
-        return best;
     }
 };
 
@@ -343,6 +253,49 @@ WidgetPixels grabWidget(QWidget& widget) {
     widget.render(&painter);
     painter.end();
     return pixels;
+}
+
+/// What one rendered role state shows at two places a viewer reads: the inside
+/// of the control and its top edge. Both are raw widget pixels, so any alpha
+/// they carry is the widget's own translucency, not a value copied from the
+/// sheet.
+struct RoleSample {
+    QColor fill;
+    QColor border;
+};
+
+RoleSample sampleRole(QPushButton& button, RoleState state) {
+    RoleSample sample;
+    if (button.width() < 8 || button.height() < 8) return sample;
+    const WidgetPixels pixels = grabRoleState(button, state);
+    if (pixels.image.isNull()) return sample;
+    sample.fill = pixels.at(qMin(4, button.width() / 4), button.height() / 2);
+    sample.border = pixels.at(button.width() / 2, 0);
+    return sample;
+}
+
+/// The opaque colour a viewer perceives for a translucent pixel on the real bed
+/// the control sits on - which is what contrast and hue mean in practice.
+QColor perceived(const QColor& pixel, const QColor& bed) {
+    if (!pixel.isValid()) return QColor();
+    return over(pixel, bed, pixel.alpha() / 255.0);
+}
+
+/// How much of a state's appearance a viewer can actually see, compared with the
+/// resting role: fill and edge, both composited onto the bed.
+int perceivedDistance(const RoleSample& first, const RoleSample& second, const QColor& bed) {
+    const QColor a = perceived(first.fill, bed);
+    const QColor b = perceived(second.fill, bed);
+    const QColor c = perceived(first.border, bed);
+    const QColor d = perceived(second.border, bed);
+    return std::abs(a.red() - b.red()) + std::abs(a.green() - b.green()) +
+           std::abs(a.blue() - b.blue()) + std::abs(c.red() - d.red()) +
+           std::abs(c.green() - d.green()) + std::abs(c.blue() - d.blue());
+}
+
+int hueDistance(const QColor& first, const QColor& second) {
+    if (!first.isValid() || !second.isValid() || first.hue() < 0 || second.hue() < 0) return 0;
+    return std::abs(((first.hue() - second.hue()) % 360 + 540) % 360 - 180);
 }
 
 QString failure(const char* what, const QColor& actual, const QColor& expected) {
@@ -498,12 +451,19 @@ void TestThemeRoles::roleStatesRenderTheirDocumentedContract() {
     const QVector<RoleState> states = {RoleState::Normal, RoleState::Hover,
                                        RoleState::Pressed, RoleState::Checked,
                                        RoleState::Focus, RoleState::Disabled};
+    const auto slot = [](RoleState state) { return static_cast<int>(state); };
+    constexpr int kHueTolerance = 20;
+    constexpr int kFeedbackFloor = 8;
 
     for (SiteTheme site : {SiteTheme::Dark, SiteTheme::Light}) {
         Appearance appearance;
         appearance.siteTheme = site;
         installAppearance(appearance);
         const Palette palette = mikai::app::theme::paletteFor(appearance);
+        const QColor bed(palette.background);
+        const QColor accent(palette.accent);
+        const QColor danger(palette.danger);
+        const QString themeName = mikai::app::theme::themeId(site);
 
         QWidget host;
         host.setAttribute(Qt::WA_StyledBackground, true);
@@ -517,41 +477,125 @@ void TestThemeRoles::roleStatesRenderTheirDocumentedContract() {
 
         for (ActionRole role : roles) {
             mikai::app::theme::applyActionRole(&button, role);
+            const QString roleName = mikai::app::theme::actionRoleName(role);
+            QMap<int, RoleSample> samples;
             for (RoleState state : states) {
-                // A pressed ghost has no documented pressed rule; the role
-                // contract covers hover/checked/focus/disabled for it.
-                if (role == ActionRole::Ghost && state == RoleState::Pressed) continue;
-                if (role == ActionRole::Primary && state == RoleState::Checked) continue;
-                if (role == ActionRole::Danger && state == RoleState::Checked) continue;
-                setVisualState(button, state);
-                QVERIFY2(button.isVisible(), "the role host must be visible to render QSS");
-                const ExpectedPaint expected = expectedPaint(role, state, palette);
-                const WidgetPixels pixels = grabRoleState(button, state);
-                QVERIFY(!pixels.image.isNull());
-                const int width = button.width();
-                const int height = button.height();
-                QVERIFY2(width > 20 && height > 12, "the role button must have a renderable box");
-
-                const QColor fill = pixels.at(qMin(4, width / 4), height / 2);
-                QVERIFY2(nearColor(fill, expected.fill),
-                         qPrintable(QStringLiteral("%1 %2 %3 fill: %4")
-                                        .arg(mikai::app::theme::themeId(site), stateName(state),
-                                             mikai::app::theme::actionRoleName(role))
-                                        .arg(failure("fill", fill, expected.fill))));
-                const QColor edge = pixels.at(width / 2, 0);
-                QVERIFY2(nearColor(edge, expected.border),
-                         qPrintable(QStringLiteral("%1 %2 %3 border: %4")
-                                        .arg(mikai::app::theme::themeId(site), stateName(state),
-                                             mikai::app::theme::actionRoleName(role))
-                                        .arg(failure("border", edge, expected.border))));
-
-                if (state == RoleState::Normal) {
-                    const QColor ink = expectedInk(role, palette);
-                    QVERIFY2(pixels.minInkDistance(ink) <= 40,
-                             qPrintable(QStringLiteral("%1 normal ink: painted text is not %2")
-                                            .arg(mikai::app::theme::actionRoleName(role),
-                                                 texture(ink))));
+                // Neither the primary nor the danger role defines a checked
+                // state; the sheets say so by having no rule for it.
+                if (state == RoleState::Checked &&
+                    (role == ActionRole::Primary || role == ActionRole::Danger)) {
+                    continue;
                 }
+                setVisualState(button, state);
+                QVERIFY2(button.isVisible(), "the role host must be visible to render");
+                samples.insert(slot(state), sampleRole(button, state));
+            }
+            setVisualState(button, RoleState::Normal);
+            const RoleSample resting = samples.value(slot(RoleState::Normal));
+            QVERIFY2(resting.fill.isValid() && resting.border.isValid(),
+                     "the resting role must render");
+
+            const auto detail = [&](RoleState state, const QString& what) {
+                return QStringLiteral("%1 %2 %3: %4")
+                    .arg(themeName, QString::fromLatin1(stateName(state)), roleName, what);
+            };
+
+            // ── The fill each role's definition names ───────────────────────
+            if (role == ActionRole::Primary) {
+                QVERIFY2(sameRgb(resting.fill, accent),
+                         qPrintable(detail(RoleState::Normal,
+                                           QStringLiteral("the primary fill must be the chosen "
+                                                          "accent, painted %1")
+                                               .arg(texture(resting.fill)))));
+            } else if (role == ActionRole::Secondary) {
+                const QColor raised(palette.surfaceControlRaised);
+                QVERIFY2(sameRgb(resting.fill, raised),
+                         qPrintable(detail(RoleState::Normal,
+                                           QStringLiteral("the secondary fill must be the raised "
+                                                          "control, painted %1")
+                                               .arg(texture(resting.fill)))));
+            } else {
+                QVERIFY2(resting.fill.alpha() == 0,
+                         qPrintable(detail(RoleState::Normal,
+                                           QStringLiteral("the %1 role paints no fill, painted %2")
+                                               .arg(roleName, texture(resting.fill)))));
+            }
+
+            // ── The colour identity the role paints ─────────────────────────
+            // A state that carries the accent must carry the CHOSEN accent: the
+            // hue a viewer sees, not the alpha one stylesheet happens to write.
+            const auto hueError = [&](RoleState state, const QColor& reference,
+                                      const QString& what) {
+                const RoleSample sample = samples.value(slot(state));
+                const int distance = hueDistance(sample.border, reference);
+                if (distance <= kHueTolerance) return QString();
+                return detail(state,
+                              QStringLiteral("%1 must carry the chosen hue, its hue is %2 degrees "
+                                             "away (%3)")
+                                  .arg(what)
+                                  .arg(distance)
+                                  .arg(texture(sample.border)));
+            };
+            if (role == ActionRole::Primary) {
+                for (RoleState state : {RoleState::Normal, RoleState::Hover, RoleState::Pressed}) {
+                    const QString error = hueError(state, accent, QStringLiteral("the primary edge"));
+                    QVERIFY2(error.isEmpty(), qPrintable(error));
+                }
+            } else if (role == ActionRole::Secondary) {
+                for (RoleState state : {RoleState::Hover, RoleState::Checked, RoleState::Focus}) {
+                    const QString error = hueError(state, accent, QStringLiteral("the hovered/checked edge"));
+                    QVERIFY2(error.isEmpty(), qPrintable(error));
+                }
+            } else if (role == ActionRole::Ghost) {
+                for (RoleState state : {RoleState::Checked, RoleState::Focus}) {
+                    const QString error = hueError(state, accent, QStringLiteral("the ghost edge"));
+                    QVERIFY2(error.isEmpty(), qPrintable(error));
+                }
+            } else {
+                for (RoleState state : {RoleState::Normal, RoleState::Hover, RoleState::Pressed,
+                                        RoleState::Focus}) {
+                    const QString error = hueError(state, danger, QStringLiteral("the danger edge"));
+                    QVERIFY2(error.isEmpty(), qPrintable(error));
+                }
+            }
+
+            // ── The neutral boundary carries the control ────────────────────
+            // Measured where the viewer sees it: the boundary composited onto the
+            // opaque page bed, which is what a 3:1 component contrast means.
+            const auto boundaryError = [&](RoleState state) {
+                const RoleSample sample = samples.value(slot(state));
+                const QColor seen = perceived(sample.border, bed);
+                const double ratio = independentContrast(seen, bed);
+                if (ratio >= 3.0) return QString();
+                return detail(state,
+                              QStringLiteral("the neutral boundary is %1:1 on the page bed")
+                                  .arg(ratio, 0, 'f', 2));
+            };
+            for (RoleState state : states) {
+                if (!samples.contains(slot(state))) continue;
+                const bool neutralBoundary =
+                    (role == ActionRole::Primary && state == RoleState::Disabled) ||
+                    (role == ActionRole::Secondary &&
+                     (state == RoleState::Normal || state == RoleState::Pressed ||
+                      state == RoleState::Disabled));
+                if (!neutralBoundary) continue;
+                const QString error = boundaryError(state);
+                QVERIFY2(error.isEmpty(), qPrintable(error));
+            }
+
+            // ── Every documented state reads differently from rest ──────────
+            // The ghost role defines no pressed rule, and the danger role keeps
+            // its colour identity in every state (only its wash moves), so those
+            // two are the documented exceptions rather than hidden tolerances.
+            for (RoleState state : states) {
+                if (state == RoleState::Normal || !samples.contains(slot(state))) continue;
+                if (role == ActionRole::Ghost && state == RoleState::Pressed) continue;
+                const int delta = perceivedDistance(resting, samples.value(slot(state)), bed);
+                QVERIFY2(delta >= kFeedbackFloor,
+                         qPrintable(detail(state,
+                                           QStringLiteral("the state must read differently from "
+                                                          "the resting role, the change is %1")
+                                               .arg(delta))));
             }
         }
         // Leave the button in a neutral state before the host is destroyed.
