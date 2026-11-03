@@ -22,7 +22,9 @@ it includes FBO composition and the vsync wait. The canonical before-side stays
 `docs/ai/GOAL-E/windows-load-after-pacing` passed its 23 load/context checks, but paused chrome-only
 p95 was 899 µs (p50 676 µs). That is not a 30 percent reduction. The same run still recorded 3429
 dirty chrome-cache misses and 543 ms of chrome raster, so the remaining cost is the dirty overlay,
-not an unmeasured pacing slot. No pacing-cost fix is claimed.
+not an unmeasured pacing slot. `659af02` then sheets nearby controls into one upload and skips the
+clear when that blit covers the buffer. That change is not in the 899 µs number. No pacing-cost fix
+is claimed.
 
 ## Presentation baseline (Windows before-side)
 
