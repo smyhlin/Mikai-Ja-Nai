@@ -31,6 +31,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
+#include <QScopeGuard>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -660,7 +661,9 @@ int runScreenshotReview(QApplication& app, TitlePage* page, const QString& ref,
     }
 
     for (const ReviewCase& reviewCase : cases) {
-        if (!mikai::app::applyInterfaceLanguage(QString::fromLatin1(reviewCase.language))) {
+        if (!mikai::app::applyInterfaceLanguage(
+                QString::fromLatin1(reviewCase.language),
+                qEnvironmentVariable("MIKAI_PROBE_TRANSLATION"))) {
             std::fprintf(stderr, "TITLE-REVIEW: unable to install %s interface language\n",
                          reviewCase.language);
             return 1;
@@ -952,6 +955,10 @@ int main(int argc, char** argv) {
 
     MikaiClient client(qEnvironmentVariable("MIKAI_API_KEY"));
     Runner runner;
+    const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+        runner.cancel();
+        if (!runner.waitForDone(30000)) qFatal("Title probe workers did not stop");
+    });
     QualityCache cache;
     auto* page = new TitlePage(runner, client, cache, ref);
     if (disposeEarly) {
