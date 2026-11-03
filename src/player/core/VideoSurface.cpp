@@ -2107,15 +2107,30 @@ void VideoSurface::paintGL() {
     }
     // A context that has not received anything from the core yet was just
     // cleared to black. The picture read back from the lost context stands in
-    // there, exactly as the hold does for a load, until the core delivers.
+    // there, exactly as the hold does for a load, until the core delivers - and
+    // NoPartialUpdate means it has to be drawn in full on every such pass, so its
+    // cost belongs to the same retention segment as the held blit. Painting it
+    // once per target would leave the buffer holding whatever the next pass
+    // cleared it to.
     if (renderResult == 0 && !retainedPictureVisible && !newOutputFrame && !framePending_) {
+        const qint64 fallbackStart = phaseTimed ? mikai::gui::uiprofile::nowNs() : 0;
         paintTeardownPicture(painter);
+        if (phaseTimed) {
+            retentionMicros += (mikai::gui::uiprofile::nowNs() - fallbackStart) / 1000;
+        }
     }
     if (reattachPending_ && renderResult == 0 && newOutputFrame) {
         // The live core delivered output on its own after the context came back:
         // the source never had to be reloaded.
         reattachPending_ = false;
         reattachTimer_.stop();
+    }
+    if (renderResult == 0 && newOutputFrame && presentedFrame) {
+        // A frame the current source really rendered is on the buffer now: the CPU
+        // fallback has nothing left to stand in for, so it is retired at once
+        // instead of being re-blitted for the rest of the session.
+        teardownPicture_ = QImage();
+        teardownPictureFormat_ = 0;
     }
     if (renderResult == 0 && freshOutputFrame && !retainedPictureVisible) {
         hasVisibleOutputFrame_ = true;

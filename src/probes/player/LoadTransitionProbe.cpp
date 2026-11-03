@@ -446,6 +446,73 @@ void noteObserverRead(qint64 micros) {
     g_observerMicros.push_back(micros);
 }
 
+/// The profile counters the verdicts lean on, averaged per painted pass and
+/// printed once per window: a class p95 with no phase split names no cost, and a
+/// cache hit ratio with no miss reason names no defect.
+QJsonObject profileReport(const mikai::gui::uiprofile::Snapshot& counters,
+                          const QString& window) {
+    qint64 paints = 0;
+    for (int pass = 0; pass < mikai::gui::uiprofile::kPaintPassCount; ++pass) {
+        paints += static_cast<qint64>(mikai::gui::uiprofile::paintPassSamples(pass));
+    }
+    const auto perPaint = [paints](quint64 micros) {
+        return paints > 0 ? double(micros) / double(paints) : -1.0;
+    };
+    const quint64 misses = counters.chromeCacheMissDirty + counters.chromeCacheMissGeometry +
+                           counters.chromeCacheMissRatio + counters.chromeCacheMissGeneration +
+                           counters.chromeCacheMissBudget;
+    metric(QStringLiteral("profile[%1]: paints=%2 engine=%3us retention=%4us overlay=%5us "
+                          "margins=%6us chrome_paint_calls=%7 chrome_micros_avg=%8 "
+                          "blit=%9us raster=%10us hit=%11 entries=%12 misses(dirty=%13 "
+                          "geom=%14 ratio=%15 gen=%16 budget=%17) cache_bytes=%18")
+               .arg(window)
+               .arg(paints)
+               .arg(perPaint(counters.paintPhaseEngineMicros), 0, 'f', 1)
+               .arg(perPaint(counters.paintPhaseRetentionMicros), 0, 'f', 1)
+               .arg(perPaint(counters.paintPhaseOverlayMicros), 0, 'f', 1)
+               .arg(perPaint(counters.paintPhaseMargins), 0, 'f', 1)
+               .arg(counters.chromePaintCalls)
+               .arg(counters.chromePaintCalls > 0
+                        ? double(counters.chromePaintMicrosTotal) /
+                              double(counters.chromePaintCalls)
+                        : -1.0,
+                    0, 'f', 1)
+               .arg(counters.chromeBlitMicros)
+               .arg(counters.chromeRasterMicros)
+               .arg(counters.chromePaintCached)
+               .arg(counters.chromePaintEntries)
+               .arg(counters.chromeCacheMissDirty)
+               .arg(counters.chromeCacheMissGeometry)
+               .arg(counters.chromeCacheMissRatio)
+               .arg(counters.chromeCacheMissGeneration)
+               .arg(counters.chromeCacheMissBudget)
+               .arg(counters.chromeCacheBytes));
+    return QJsonObject{
+        {"window", window},
+        {"paints", paints},
+        {"engineUsPerPaint", perPaint(counters.paintPhaseEngineMicros)},
+        {"retentionUsPerPaint", perPaint(counters.paintPhaseRetentionMicros)},
+        {"overlayUsPerPaint", perPaint(counters.paintPhaseOverlayMicros)},
+        {"marginsUsPerPaint", perPaint(counters.paintPhaseMargins)},
+        {"chromePaintCalls", static_cast<qint64>(counters.chromePaintCalls)},
+        {"chromePaintUsPerCall",
+         counters.chromePaintCalls > 0
+             ? double(counters.chromePaintMicrosTotal) / double(counters.chromePaintCalls)
+             : -1.0},
+        {"chromePaintUsMax", static_cast<qint64>(counters.chromePaintMicrosMax)},
+        {"chromeBlitUs", static_cast<qint64>(counters.chromeBlitMicros)},
+        {"chromeRasterUs", static_cast<qint64>(counters.chromeRasterMicros)},
+        {"chromeCached", static_cast<qint64>(counters.chromePaintCached)},
+        {"chromeEntries", static_cast<qint64>(counters.chromePaintEntries)},
+        {"misses", static_cast<qint64>(misses)},
+        {"missDirty", static_cast<qint64>(counters.chromeCacheMissDirty)},
+        {"missGeometry", static_cast<qint64>(counters.chromeCacheMissGeometry)},
+        {"missRatio", static_cast<qint64>(counters.chromeCacheMissRatio)},
+        {"missGeneration", static_cast<qint64>(counters.chromeCacheMissGeneration)},
+        {"missBudget", static_cast<qint64>(counters.chromeCacheMissBudget)},
+        {"chromeCacheBytes", static_cast<qint64>(counters.chromeCacheBytes)}};
+}
+
 QJsonObject observerObject() {
     QJsonObject out;
     out.insert(QStringLiteral("framebufferReads"), static_cast<int>(g_observerMicros.size()));
@@ -1108,6 +1175,12 @@ int run(int argc, char** argv) {
         const QSize base = dialog->size();
         const bool countersOn = mikai::gui::uiprofile::countersEnabled();
         const QSize surfaceBefore = surface->size();
+        // The paused and active stages are the profile window this run exists
+        // for; the format stage below resets the counters, so that window is read
+        // out here rather than lost.
+        const QJsonObject pausedActiveProfile =
+            profileReport(mikai::gui::uiprofile::snapshot(), QStringLiteral("paused+active"));
+        evidence.insert(QStringLiteral("profilePausedActive"), pausedActiveProfile);
         // These counters describe this stage only; the earlier stages keep
         // their own numbers.
         mikai::gui::uiprofile::resetCounters();
@@ -1312,6 +1385,9 @@ int run(int argc, char** argv) {
                .arg(observer.value(QStringLiteral("readP95Us")).toDouble(), 0, 'f', 1)
                .arg(observer.value(QStringLiteral("readMaxUs")).toDouble(), 0, 'f', 1));
     evidence.insert(QStringLiteral("observerCost"), observer);
+    evidence.insert(QStringLiteral("profileAfterFormatReset"),
+                    profileReport(mikai::gui::uiprofile::snapshot(),
+                                  QStringLiteral("after format reset")));
     if (!g_outputDir.isEmpty()) {
         QFile out(artifactPath(QStringLiteral("load-transition-evidence.json")));
         if (out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
