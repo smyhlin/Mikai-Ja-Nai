@@ -273,7 +273,8 @@ QPushButton[actionRole="danger"]:disabled {
 QPushButton#accentSwatch, QPushButton#gradientSwatch,
 QPushButton#customAccentSwatch, QPushButton#customGradientSwatch {
     background: transparent; border: none; padding: 0;
-    min-width: 0; min-height: 0; border-radius: 0;
+    min-width: %29px; max-width: %29px;
+    min-height: %29px; max-height: %29px; border-radius: 0;
 }
 QPushButton#settingsChip { padding: 0; min-width: %13px;
     max-width: %13px; min-height: %13px; max-height: %13px; border: 1px solid transparent; }
@@ -1253,7 +1254,8 @@ QString buildStylesheet(const Appearance& appearance) {
             .arg(p.surfaceControlRaised, 25)
             .arg(p.borderControl, 26)
             .arg(p.accentInk, 27)
-            .arg(p.dangerRgb, 28);
+            .arg(p.dangerRgb, 28)
+            .arg(kSettingsSwatchSize, 29);
     return application + titlePage(p, appearance) + searchPageSheet(searchHeaderPalette(appearance));
 }
 
@@ -1304,7 +1306,10 @@ void applyPalette(const Appearance& appearance) {
     pal.setColor(QPalette::ButtonText, QColor(p.text));
     pal.setColor(QPalette::BrightText, QColor(p.accentSoftBright));
     pal.setColor(QPalette::Highlight, QColor(p.accentValue));
-    pal.setColor(QPalette::HighlightedText, QColor(p.accentOnFill));
+    // The selected-text ink is contrast-derived from the same accent the
+    // highlight is painted with; a fixed near-white dissolved into a light
+    // accent, and into a white custom one.
+    pal.setColor(QPalette::HighlightedText, QColor(p.accentInk));
     pal.setColor(QPalette::ToolTipBase, QColor(p.surfaceHover));
     pal.setColor(QPalette::ToolTipText, QColor(p.text));
     pal.setColor(QPalette::PlaceholderText, QColor(p.muted));

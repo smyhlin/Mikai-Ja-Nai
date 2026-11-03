@@ -512,12 +512,12 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             font-weight: 600;
         }
         QPushButton[actionRole="primary"]:hover {
-            background-color: %21;
-            border-color: %24;
+            background-color: %48;
+            border-color: %48;
         }
         QPushButton[actionRole="primary"]:pressed {
-            background-color: %34;
-            border-color: %21;
+            background-color: %33;
+            border-color: %34;
         }
         QPushButton[actionRole="primary"]:disabled {
             background-color: %20;
@@ -534,9 +534,9 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             font-weight: 500;
         }
         QPushButton[actionRole="ghost"]:hover {
-            background-color: rgba(%10, 0.12);
-            border-color: rgba(%10, 0.35);
-            color: %21;
+            background-color: rgba(%10, 0.16);
+            border-color: rgba(%10, 0.45);
+            color: %48;
         }
         QPushButton[actionRole="ghost"]:pressed {
             background-color: rgba(%10, 0.20);
@@ -558,15 +558,19 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             color: rgba(%36, 0.55);
             border-color: %46;
         }
-        /* A colour chip paints its own disc and the caller fixes its size; the
-           generic button box model would inflate it past that size. */
+        /* A chip paints its own disc at one fixed size. The size is stated in
+           all four directions because the generic button rule above sets a
+           minimum height that would otherwise replace the caller's fixed size
+           and leave the chip at its bare hint. */
         QPushButton#accentSwatch, QPushButton#gradientSwatch,
         QPushButton#customAccentSwatch, QPushButton#customGradientSwatch {
             background: transparent;
             border: none;
             padding: 0;
-            min-width: 0;
-            min-height: 0;
+            min-width: %49px;
+            max-width: %49px;
+            min-height: %49px;
+            max-height: %49px;
             border-radius: 0;
         }
 
@@ -763,12 +767,13 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
         .arg(p.surfaceControl)
         .arg(p.surfaceControlHover)
         .arg(p.surfaceControlPressed)
-        .arg(p.surfaceControlRgb)
+        /* Three rules were deleted with the old button styles. Their arguments
+           went with them here: leaving the values in place shifted every later
+           marker by three, so the role rules painted a table-row colour as a
+           control border and a success fill as a primary label ink. */
         .arg(p.accentSolid)
         .arg(p.accentDeepest)
-        .arg(p.accentDeepRgb)
         .arg(p.textPrimaryRgb)
-        .arg(p.dangerTextSoft)
         .arg(p.textCheckLabel)
         .arg(p.surfaceTag)
         .arg(p.surfaceTileHover)
@@ -778,7 +783,9 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
         .arg(p.dangerFill)
         .arg(p.surfaceControlRaised)
         .arg(p.borderControl)
-        .arg(p.accentInk);
+        .arg(p.accentInk)
+        .arg(p.accentHover)
+        .arg(theme::kSettingsSwatchSize);
     // Literal corners use the 8 px design baseline, not the saved default.
     return theme::scaleRadii(sheet, theme::radiusSmall(appearance) / 8.0);
 }

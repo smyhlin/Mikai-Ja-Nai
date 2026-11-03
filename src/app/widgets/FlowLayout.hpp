@@ -73,14 +73,17 @@ private:
         const QSize hint = item->sizeHint();
         const QSize minimum = item->minimumSize();
         const QSize maximum = item->maximumSize();
-        // A widget can report a minimum above its maximum when a style raised
-        // one and the caller capped the other; the cap is the author's decision,
-        // so the interval is normalized onto it rather than left inverted.
-        const int width = qBound(qMin(minimum.width(), maximum.width()), hint.width(),
-                                 qMax(minimum.width(), maximum.width()));
-        const int height = qBound(qMin(minimum.height(), maximum.height()), hint.height(),
-                                  qMax(minimum.height(), maximum.height()));
-        return QSize(width, height);
+        // A style can raise an item's minimum above the maximum its caller
+        // fixed (a 36 px button box model on a 34 px chip). The cap is the
+        // author's decision, so the minimum is pulled down to it instead of
+        // letting the hint climb past the cap: the interval stays closed and
+        // the item lands on the cap, not two pixels above it.
+        const int widest = maximum.width() > 0 ? maximum.width() : QLAYOUTSIZE_MAX;
+        const int tallest = maximum.height() > 0 ? maximum.height() : QLAYOUTSIZE_MAX;
+        const int narrowest = qMin(minimum.width(), widest);
+        const int shortest = qMin(minimum.height(), tallest);
+        return QSize(qBound(narrowest, hint.width(), widest),
+                     qBound(shortest, hint.height(), tallest));
     }
 
     int doLayout(const QRect& rect, bool testOnly) const {
