@@ -1947,13 +1947,9 @@ void TestPublicApiUi::anExplicitProviderChoiceOutlivesTheReleaseRebuild() {
   QPushButton* moonChip = chipForTeam(page, QStringLiteral("Moon Team"));
   QPushButton* ashdiChip = chipForTeam(page, QStringLiteral("Ashdi Team"));
   QVERIFY(moonChip != nullptr && ashdiChip != nullptr);
-  // Both releases carry Moon, so the first release wins the tie; the tab still
-  // opens on Moon because the release's own tabs are ordered by preference.
+  // Both releases carry Moon; stable release order wins the tie.
   QTRY_VERIFY_WITH_TIMEOUT(ashdiChip->isChecked(), 5000);
 
-  // Reaching another provider with the keyboard is the same intent as a click,
-  // so it has to stick too. The bar walks to the neighbouring tab and stops at
-  // the ends, so one step right of the opening tab is always index 1.
   tabs->tabBar()->setFocus(Qt::OtherFocusReason);
   QTest::keyClick(tabs->tabBar(), Qt::Key_Right);
   QTRY_VERIFY_WITH_TIMEOUT(tabs->currentIndex() == 1, 5000);
@@ -1961,8 +1957,6 @@ void TestPublicApiUi::anExplicitProviderChoiceOutlivesTheReleaseRebuild() {
   QVERIFY2(keyboardChoice != QStringLiteral("MoonAnime"),
            "one tab right of the opening tab is still the preferred provider");
 
-  // A different release rebuilds the tabs from scratch; the provider the
-  // viewer picked has to survive that rebuild for this title.
   QTest::mouseClick(moonChip, Qt::LeftButton);
   QTRY_VERIFY_WITH_TIMEOUT(moonChip->isChecked(), 5000);
   QTRY_COMPARE_WITH_TIMEOUT(tabs->tabText(tabs->currentIndex()), keyboardChoice, 10000);

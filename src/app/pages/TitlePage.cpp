@@ -2842,11 +2842,7 @@ void TitlePage::fillEpisodes(int index) {
     tabs_->setVisible(tabs_->count() > 0);
 
     if (tabs_->count() > 0) {
-        // Adding the tabs already made the first one current, so a "nothing is
-        // selected yet" guard never fires and the choice has to be applied
-        // here instead. The viewer's own tab choice survives a release switch;
-        // otherwise the preferred source opens, and a title without it falls
-        // back to the first tab deterministically.
+        // insertTab() already selected index 0; restore intent under the signal blocker.
         const QString wanted = labels::providerKey(
             chosenProvider_.isEmpty() ? preferredProvider : chosenProvider_);
         int index = 0;
