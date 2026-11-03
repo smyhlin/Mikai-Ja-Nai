@@ -19,9 +19,11 @@
 #include <QFile>
 #include <QImage>
 #include <QFileInfo>
+#include <QFontInfo>
 #include <QFontMetrics>
 #include <QGuiApplication>
 #include <QGroupBox>
+#include <QHash>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QMenu>
@@ -34,7 +36,10 @@
 #include <QJsonObject>
 #include <QPair>
 #include <QPushButton>
+#include <QPalette>
+#include <QPixmap>
 #include <QProgressBar>
+#include <QRegion>
 #include <QScreen>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -51,6 +56,7 @@
 #include <QTabWidget>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QWindow>
 #include <QTest>
 #include "ProbeIsolation.hpp"
 #include "ProbeUi.hpp"
@@ -69,6 +75,8 @@
 #include "dialogs/SettingsDialog.hpp"
 #include "dialogs/AnimeJanaiManagerPanel.hpp"
 #include "dialogs/ComponentStoreTab.hpp"
+#include "widgets/SwatchButton.hpp"
+#include "widgets/ToggleSwitch.hpp"
 #include "player/compare/CompareCanvas.hpp"
 #include "player/compare/CompareWindow.hpp"
 #include "player/core/VideoSurface.hpp"
@@ -3311,6 +3319,674 @@ bool clearActionInside(QKeySequenceEdit& field) {
     return true;
 }
 
+void settlePaint(QWidget* widget, int milliseconds) {
+    if (widget != nullptr) widget->update();
+    QElapsedTimer clock;
+    clock.start();
+    while (clock.elapsed() < milliseconds) {
+        QApplication::processEvents();
+        QThread::msleep(10);
+    }
+    QApplication::processEvents();
+}
+
+void keepWindowOnScreen(QWidget& window) {
+    QScreen* screen = window.screen();
+    if (screen == nullptr) return;
+    const QRect available = screen->availableGeometry();
+    const QRect frame = window.frameGeometry();
+    QPoint shift;
+    if (frame.left() < available.left()) shift.setX(available.left() - frame.left());
+    if (frame.top() < available.top()) shift.setY(available.top() - frame.top());
+    if (frame.right() > available.right()) {
+        shift.setX(shift.x() - (frame.right() - available.right()));
+    }
+    if (frame.bottom() > available.bottom()) {
+        shift.setY(shift.y() - (frame.bottom() - available.bottom()));
+    }
+    if (shift.isNull()) return;
+    window.move(window.pos() + shift);
+    settlePaint(&window, 120);
+}
+
+QJsonObject rectJson(const QRect& rect) {
+    QJsonObject object;
+    object.insert(QStringLiteral("x"), rect.x());
+    object.insert(QStringLiteral("y"), rect.y());
+    object.insert(QStringLiteral("width"), rect.width());
+    object.insert(QStringLiteral("height"), rect.height());
+    return object;
+}
+
+struct TextLabelSnapshot {
+    QString objectName;
+    QString className;
+    QString text;
+    QString accessibleName;
+    QString stylesheet;
+    QString family;
+    QString resolvedFamily;
+    qreal pointSize = 0.0;
+    int pixelSize = 0;
+    bool bold = false;
+    QRect geometry;
+    QRect globalBounds;
+    bool autoFillBackground = false;
+    QColor windowColor;
+    QColor baseColor;
+    bool translucent = false;
+    bool noSystemBackground = false;
+    bool opaquePaint = false;
+    bool fullyVisible = false;
+};
+
+TextLabelSnapshot snapshotTextLabel(QLabel* label) {
+    TextLabelSnapshot snapshot;
+    if (label == nullptr) return snapshot;
+    const QFont font = label->font();
+    const QFontInfo info(font);
+    snapshot.objectName = label->objectName();
+    snapshot.className = QString::fromLatin1(label->metaObject()->className());
+    snapshot.text = label->text();
+    snapshot.accessibleName = label->accessibleName();
+    snapshot.stylesheet = label->styleSheet();
+    snapshot.family = font.family();
+    snapshot.resolvedFamily = info.family();
+    snapshot.pointSize = font.pointSizeF();
+    snapshot.pixelSize = font.pixelSize();
+    snapshot.bold = font.bold();
+    snapshot.geometry = label->geometry();
+    snapshot.globalBounds = QRect(label->mapToGlobal(QPoint()), label->size());
+    snapshot.autoFillBackground = label->autoFillBackground();
+    snapshot.windowColor = label->palette().color(QPalette::Window);
+    snapshot.baseColor = label->palette().color(QPalette::Base);
+    snapshot.translucent = label->testAttribute(Qt::WA_TranslucentBackground);
+    snapshot.noSystemBackground = label->testAttribute(Qt::WA_NoSystemBackground);
+    snapshot.opaquePaint = label->testAttribute(Qt::WA_OpaquePaintEvent);
+    snapshot.fullyVisible =
+        label->isVisible() && label->visibleRegion().contains(label->rect());
+    return snapshot;
+}
+
+bool labelIsOnTop(QLabel* label, QWidget& window) {
+    if (label == nullptr || !label->isVisible()) return false;
+    QWidget* hit = QApplication::widgetAt(label->mapToGlobal(label->rect().center()));
+    return hit != nullptr && (hit == &window || window.isAncestorOf(hit));
+}
+
+template <typename Widget>
+QJsonArray widgetGeometryJson(QWidget& root, const QString& kind) {
+    QJsonArray array;
+    for (Widget* widget : root.findChildren<Widget*>()) {
+        QJsonObject object;
+        object.insert(QStringLiteral("kind"), kind);
+        object.insert(QStringLiteral("objectName"), widget->objectName());
+        object.insert(QStringLiteral("className"),
+                      QString::fromLatin1(widget->metaObject()->className()));
+        object.insert(QStringLiteral("width"), widget->width());
+        object.insert(QStringLiteral("height"), widget->height());
+        object.insert(QStringLiteral("physicalWidth"),
+                      qRound(widget->width() * widget->devicePixelRatioF()));
+        object.insert(QStringLiteral("physicalHeight"),
+                      qRound(widget->height() * widget->devicePixelRatioF()));
+        object.insert(QStringLiteral("sizeHintWidth"), widget->sizeHint().width());
+        object.insert(QStringLiteral("sizeHintHeight"), widget->sizeHint().height());
+        object.insert(QStringLiteral("minimumWidth"), widget->minimumWidth());
+        object.insert(QStringLiteral("minimumHeight"), widget->minimumHeight());
+        object.insert(QStringLiteral("maximumWidth"), widget->maximumWidth());
+        object.insert(QStringLiteral("maximumHeight"), widget->maximumHeight());
+        object.insert(QStringLiteral("devicePixelRatio"), widget->devicePixelRatioF());
+        object.insert(QStringLiteral("visible"), widget->isVisible());
+        object.insert(QStringLiteral("fullyVisible"),
+                      widget->isVisible() &&
+                          widget->visibleRegion().contains(widget->rect()));
+        object.insert(QStringLiteral("visibleRegion"),
+                      rectJson(widget->visibleRegion().boundingRect()));
+        array.append(object);
+    }
+    return array;
+}
+
+bool sameTextLabelConfiguration(const TextLabelSnapshot& left,
+                                const TextLabelSnapshot& right) {
+    return left.text == right.text && left.family == right.family &&
+           left.resolvedFamily == right.resolvedFamily &&
+           left.pointSize == right.pointSize && left.pixelSize == right.pixelSize &&
+           left.bold == right.bold && left.geometry == right.geometry &&
+           left.globalBounds == right.globalBounds &&
+           left.autoFillBackground == right.autoFillBackground &&
+           left.windowColor == right.windowColor && left.baseColor == right.baseColor &&
+           left.stylesheet == right.stylesheet &&
+           left.translucent == right.translucent &&
+           left.noSystemBackground == right.noSystemBackground &&
+           left.opaquePaint == right.opaquePaint;
+}
+
+QJsonObject textLabelJson(const TextLabelSnapshot& snapshot) {
+    QJsonObject object;
+    object.insert(QStringLiteral("objectName"), snapshot.objectName);
+    object.insert(QStringLiteral("className"), snapshot.className);
+    object.insert(QStringLiteral("text"), snapshot.text);
+    object.insert(QStringLiteral("accessibleName"), snapshot.accessibleName);
+    object.insert(QStringLiteral("fontFamily"), snapshot.family);
+    object.insert(QStringLiteral("fontFamilyResolved"), snapshot.resolvedFamily);
+    object.insert(QStringLiteral("fontPointSize"), snapshot.pointSize);
+    object.insert(QStringLiteral("fontPixelSize"), snapshot.pixelSize);
+    object.insert(QStringLiteral("fontBold"), snapshot.bold);
+    object.insert(QStringLiteral("logicalBoundsInWindow"), rectJson(snapshot.geometry));
+    object.insert(QStringLiteral("globalLogicalBounds"), rectJson(snapshot.globalBounds));
+    object.insert(QStringLiteral("autoFillBackground"), snapshot.autoFillBackground);
+    object.insert(QStringLiteral("paletteWindowColor"),
+                  snapshot.windowColor.name(QColor::HexArgb));
+    object.insert(QStringLiteral("paletteBaseColor"),
+                  snapshot.baseColor.name(QColor::HexArgb));
+    object.insert(QStringLiteral("stylesheetEmpty"), snapshot.stylesheet.isEmpty());
+    object.insert(QStringLiteral("translucentAttribute"), snapshot.translucent);
+    object.insert(QStringLiteral("noSystemBackgroundAttribute"),
+                  snapshot.noSystemBackground);
+    object.insert(QStringLiteral("opaquePaintAttribute"), snapshot.opaquePaint);
+    object.insert(QStringLiteral("fullyVisible"), snapshot.fullyVisible);
+    return object;
+}
+
+struct TextCropMetrics {
+    int width = 0;
+    int height = 0;
+    int uniqueColors = 0;
+    int minLuminance = 0;
+    int maxLuminance = 0;
+    double inkFraction = 0.0;
+    bool valid = false;
+};
+
+TextCropMetrics measureTextCrop(const QImage& crop) {
+    TextCropMetrics metrics;
+    if (crop.isNull() || crop.width() <= 0 || crop.height() <= 0) return metrics;
+    QImage image = crop.convertToFormat(QImage::Format_RGB32);
+    image.setDevicePixelRatio(1.0);
+    metrics.width = image.width();
+    metrics.height = image.height();
+    QHash<QRgb, int> histogram;
+    int minimum = 255;
+    int maximum = 0;
+    for (int y = 0; y < image.height(); ++y) {
+        const auto* line = reinterpret_cast<const QRgb*>(image.constScanLine(y));
+        for (int x = 0; x < image.width(); ++x) {
+            const QRgb pixel = line[x];
+            ++histogram[pixel];
+            const int luminance = qGray(pixel);
+            minimum = qMin(minimum, luminance);
+            maximum = qMax(maximum, luminance);
+        }
+    }
+    int modalCount = 0;
+    for (auto it = histogram.constBegin(); it != histogram.constEnd(); ++it) {
+        modalCount = qMax(modalCount, it.value());
+    }
+    const qint64 total = static_cast<qint64>(image.width()) * image.height();
+    metrics.uniqueColors = histogram.size();
+    metrics.minLuminance = minimum;
+    metrics.maxLuminance = maximum;
+    metrics.inkFraction =
+        total > 0 ? 1.0 - static_cast<double>(modalCount) / static_cast<double>(total) : 0.0;
+    metrics.valid = metrics.uniqueColors >= 3 && metrics.maxLuminance - metrics.minLuminance >= 16 &&
+                    metrics.inkFraction > 0.002 && minimum < 64;
+    return metrics;
+}
+
+QJsonObject metricsJson(const TextCropMetrics& metrics) {
+    QJsonObject object;
+    object.insert(QStringLiteral("width"), metrics.width);
+    object.insert(QStringLiteral("height"), metrics.height);
+    object.insert(QStringLiteral("uniqueColors"), metrics.uniqueColors);
+    object.insert(QStringLiteral("minLuminance"), metrics.minLuminance);
+    object.insert(QStringLiteral("maxLuminance"), metrics.maxLuminance);
+    object.insert(QStringLiteral("luminanceRange"), metrics.maxLuminance - metrics.minLuminance);
+    object.insert(QStringLiteral("inkFraction"), metrics.inkFraction);
+    object.insert(QStringLiteral("valid"), metrics.valid);
+    return object;
+}
+
+struct TextRasterCapture {
+    bool available = false;
+    QString error;
+    QString surfaceFile;
+    QString cropFile;
+    QRect logicalGlobal;
+    QRect physicalCrop;
+    QRect physicalSurface;
+    QSize screenImageSize;
+    qreal devicePixelRatio = 0.0;
+    double scaleX = 0.0;
+    double scaleY = 0.0;
+    QImage crop;
+    TextCropMetrics metrics;
+};
+
+struct CropDifference {
+    bool comparable = false;
+    int totalPixels = 0;
+    int differingPixels = 0;
+    int totalBytes = 0;
+    int differingBytes = 0;
+    int maxChannelDelta = 0;
+    double meanChannelDelta = 0.0;
+    double differingPixelPercent = 0.0;
+    double differingBytePercent = 0.0;
+};
+
+CropDifference compareTextCrops(const QImage& left, const QImage& right) {
+    CropDifference difference;
+    if (left.isNull() || right.isNull() || left.size() != right.size()) return difference;
+    const QImage first = left.convertToFormat(QImage::Format_RGB32);
+    const QImage second = right.convertToFormat(QImage::Format_RGB32);
+    if (first.size() != second.size()) return difference;
+    difference.comparable = true;
+    difference.totalPixels = first.width() * first.height();
+    difference.totalBytes = difference.totalPixels * 4;
+    qint64 channelSum = 0;
+    for (int y = 0; y < first.height(); ++y) {
+        const auto* leftLine = reinterpret_cast<const QRgb*>(first.constScanLine(y));
+        const auto* rightLine = reinterpret_cast<const QRgb*>(second.constScanLine(y));
+        for (int x = 0; x < first.width(); ++x) {
+            const QRgb leftPixel = leftLine[x];
+            const QRgb rightPixel = rightLine[x];
+            if (leftPixel == rightPixel) continue;
+            ++difference.differingPixels;
+            const int channels[3] = {
+                qAbs(qRed(leftPixel) - qRed(rightPixel)),
+                qAbs(qGreen(leftPixel) - qGreen(rightPixel)),
+                qAbs(qBlue(leftPixel) - qBlue(rightPixel)),
+            };
+            for (int channel = 0; channel < 3; ++channel) {
+                const int delta = channels[channel];
+                if (delta > difference.maxChannelDelta) difference.maxChannelDelta = delta;
+                channelSum += delta;
+                if (delta != 0) ++difference.differingBytes;
+            }
+        }
+    }
+    if (difference.totalPixels > 0) {
+        difference.differingPixelPercent =
+            100.0 * difference.differingPixels / difference.totalPixels;
+        difference.meanChannelDelta =
+            static_cast<double>(channelSum) /
+            (static_cast<double>(difference.totalPixels) * 3.0);
+    }
+    if (difference.totalBytes > 0) {
+        difference.differingBytePercent =
+            100.0 * difference.differingBytes / difference.totalBytes;
+    }
+    return difference;
+}
+
+QJsonObject differenceJson(const CropDifference& difference) {
+    QJsonObject object;
+    object.insert(QStringLiteral("comparable"), difference.comparable);
+    object.insert(QStringLiteral("totalPixels"), difference.totalPixels);
+    object.insert(QStringLiteral("differingPixels"), difference.differingPixels);
+    object.insert(QStringLiteral("differingPixelPercent"), difference.differingPixelPercent);
+    object.insert(QStringLiteral("totalBytes"), difference.totalBytes);
+    object.insert(QStringLiteral("differingBytes"), difference.differingBytes);
+    object.insert(QStringLiteral("differingBytePercent"), difference.differingBytePercent);
+    object.insert(QStringLiteral("maxChannelDelta"), difference.maxChannelDelta);
+    object.insert(QStringLiteral("meanChannelDelta"), difference.meanChannelDelta);
+    return object;
+}
+
+bool grabNativeSurface(QScreen* screen, QWidget* window, const QString& file, QImage& surface,
+                       QString& error) {
+    if (screen == nullptr || window == nullptr) {
+        error = QStringLiteral("no screen or window");
+        return false;
+    }
+    QPixmap grab = screen->grabWindow(0);
+    if (grab.isNull()) {
+        error = QStringLiteral("QScreen::grabWindow(0) returned no pixels");
+        return false;
+    }
+    const QImage desktop = grab.toImage();
+    const QSize screenLogical = screen->geometry().size();
+    if (desktop.isNull() || screenLogical.isEmpty()) {
+        error = QStringLiteral("the screen capture cannot be mapped");
+        return false;
+    }
+    const double scaleX = static_cast<double>(desktop.width()) / screenLogical.width();
+    const double scaleY = static_cast<double>(desktop.height()) / screenLogical.height();
+    if (qAbs(scaleX - screen->devicePixelRatio()) > 0.02 ||
+        qAbs(scaleY - screen->devicePixelRatio()) > 0.02) {
+        error = QStringLiteral("the capture scale does not match the screen device pixel ratio");
+        return false;
+    }
+    const QPoint local = window->mapToGlobal(QPoint()) - screen->geometry().topLeft();
+    const QRect physical(qRound(local.x() * scaleX), qRound(local.y() * scaleY),
+                         qRound(window->width() * scaleX), qRound(window->height() * scaleY));
+    if (!QRect(QPoint(), desktop.size()).contains(physical)) {
+        error = QStringLiteral("the Settings surface is not fully on screen");
+        return false;
+    }
+    surface = desktop.copy(physical);
+    if (surface.isNull() || !surface.save(file)) {
+        error = QStringLiteral("the Settings surface could not be saved");
+        return false;
+    }
+    return true;
+}
+
+bool grabLabelPair(QScreen* screen, QWidget* window, QLabel* label,
+                   const QString& surfaceFile, const QString& cropFile,
+                   TextRasterCapture& capture) {
+    capture.surfaceFile = surfaceFile;
+    capture.cropFile = cropFile;
+    if (screen == nullptr || window == nullptr || label == nullptr) {
+        capture.error = QStringLiteral("no screen, window or label");
+        return false;
+    }
+    QPixmap grab = screen->grabWindow(0);
+    if (grab.isNull()) {
+        capture.error = QStringLiteral("QScreen::grabWindow(0) returned no pixels");
+        return false;
+    }
+    const QImage desktop = grab.toImage();
+    const QSize screenLogical = screen->geometry().size();
+    if (desktop.isNull() || screenLogical.isEmpty()) {
+        capture.error = QStringLiteral("the screen capture cannot be mapped");
+        return false;
+    }
+    const double scaleX = static_cast<double>(desktop.width()) / screenLogical.width();
+    const double scaleY = static_cast<double>(desktop.height()) / screenLogical.height();
+    if (qAbs(scaleX - screen->devicePixelRatio()) > 0.02 ||
+        qAbs(scaleY - screen->devicePixelRatio()) > 0.02) {
+        capture.error =
+            QStringLiteral("the capture scale does not match the screen device pixel ratio");
+        return false;
+    }
+    const QPoint windowLocal = window->mapToGlobal(QPoint()) - screen->geometry().topLeft();
+    const QPoint labelLocal = label->mapToGlobal(QPoint()) - screen->geometry().topLeft();
+    capture.logicalGlobal = QRect(label->mapToGlobal(QPoint()), label->size());
+    capture.screenImageSize = desktop.size();
+    capture.devicePixelRatio = label->devicePixelRatioF();
+    capture.scaleX = scaleX;
+    capture.scaleY = scaleY;
+    const QRect physicalSurface(qRound(windowLocal.x() * scaleX),
+                                qRound(windowLocal.y() * scaleY),
+                                qRound(window->width() * scaleX),
+                                qRound(window->height() * scaleY));
+    capture.physicalCrop = QRect(qRound(labelLocal.x() * scaleX),
+                                 qRound(labelLocal.y() * scaleY),
+                                 qRound(label->width() * scaleX),
+                                 qRound(label->height() * scaleY));
+    capture.physicalSurface = physicalSurface;
+    const QRect desktopRect(QPoint(), desktop.size());
+    if (!desktopRect.contains(physicalSurface)) {
+        capture.error = QStringLiteral("the Settings surface is not fully on screen");
+        return false;
+    }
+    if (!desktopRect.contains(capture.physicalCrop) ||
+        !physicalSurface.contains(capture.physicalCrop)) {
+        capture.error = QStringLiteral("the label is not fully inside the Settings surface");
+        return false;
+    }
+    const QImage surface = desktop.copy(physicalSurface);
+    const QImage crop = desktop.copy(capture.physicalCrop);
+    capture.crop = crop;
+    capture.metrics = measureTextCrop(crop);
+    if (crop.isNull() || crop.width() != capture.physicalCrop.width() ||
+        crop.height() != capture.physicalCrop.height()) {
+        capture.error = QStringLiteral("the label crop has unexpected dimensions");
+        return false;
+    }
+    if (!capture.metrics.valid) {
+        capture.error = QStringLiteral("the label crop is blank or carries no text contrast");
+        return false;
+    }
+    if (!surface.save(surfaceFile)) {
+        capture.error = QStringLiteral("the Settings surface could not be saved");
+        return false;
+    }
+    if (!crop.save(cropFile)) {
+        capture.error = QStringLiteral("the label crop could not be saved");
+        return false;
+    }
+    capture.available = true;
+    return true;
+}
+
+QJsonObject textRasterScenario(mikai::backend::MikaiClient& client, Runner& runner,
+                               bool& comparable, bool& drained) {
+    QJsonObject evidence;
+    evidence.insert(QStringLiteral("probe"), QStringLiteral("native_settings_probe"));
+    evidence.insert(QStringLiteral("scenario"), QStringLiteral("text_raster_only"));
+    evidence.insert(QStringLiteral("networkAccess"), false);
+    evidence.insert(QStringLiteral("modelAcquisition"), false);
+    evidence.insert(QStringLiteral("runtimeAcquisition"), false);
+    evidence.insert(QStringLiteral("inference"), false);
+    evidence.insert(QStringLiteral("captureMethod"),
+                    QStringLiteral("QScreen::grabWindow(0) after visible paint, cropped by "
+                                   "measured physical/logical screen scale"));
+    QJsonArray outputs;
+    comparable = false;
+    drained = false;
+    QString appearanceFile = QStringLiteral("native-text-raster-appearance.png");
+    {
+        SettingsDialog dialog(client, runner);
+        const QSize requested = fitSettingsDialogSize(
+            dialog, mikai::probes::windowSize(
+                        QSize(mikai::app::theme::kSettingsDialogDefaultWidth,
+                              mikai::app::theme::kSettingsDialogDefaultHeight)));
+        dialog.resize(requested);
+        dialog.show();
+        dialog.raise();
+        dialog.activateWindow();
+        keepWindowOnScreen(dialog);
+        QApplication::processEvents();
+        const bool exposed = waitForUi(
+            [&dialog] {
+                return dialog.isVisible() && dialog.windowHandle() != nullptr &&
+                       dialog.windowHandle()->isExposed();
+            },
+            10000);
+        check(exposed, "the Settings surface is visible and exposed before capture");
+
+        QScreen* screen = dialog.screen();
+        QImage appearance;
+        QString appearanceError;
+        check(dialog.showPage(QStringLiteral("customization/appearance")),
+              "the real Appearance page is shown");
+        settlePaint(&dialog, 250);
+        check(screen != nullptr && grabNativeSurface(screen, &dialog, appearanceFile, appearance,
+                                                     appearanceError),
+              "the Appearance Settings surface was captured", appearanceError);
+        if (!appearance.isNull()) outputs.append(appearanceFile);
+        evidence.insert(QStringLiteral("appearanceSurface"), appearanceFile);
+        evidence.insert(QStringLiteral("appearanceSwatches"),
+                        widgetGeometryJson<mikai::app::SwatchButton>(
+                            dialog, QStringLiteral("SwatchButton")));
+        evidence.insert(QStringLiteral("appearanceToggles"),
+                        widgetGeometryJson<mikai::app::ToggleSwitch>(
+                            dialog, QStringLiteral("ToggleSwitch")));
+
+        check(dialog.showPage(QStringLiteral("components")),
+              "the real Components page is shown");
+        auto* tab = dialog.findChild<mikai::app::ComponentStoreTab*>();
+        QLabel* label = tab != nullptr
+                            ? tab->findChild<QLabel*>(
+                                  QStringLiteral("animeJanaiModelsCardState"))
+                            : nullptr;
+        check(tab != nullptr && label != nullptr,
+              "the Components inventory and its model-card text label exist");
+
+        bool settled = false;
+        if (tab != nullptr && label != nullptr) {
+            QElapsedTimer clock;
+            clock.start();
+            QString lastText;
+            QRect lastRect;
+            while (clock.elapsed() < 30000) {
+                QApplication::processEvents();
+                if (tab->inventoryReady() && !tab->acquisitionRunning() &&
+                    label->isVisible() && !label->text().isEmpty()) {
+                    if (label->text() == lastText && label->rect() == lastRect) {
+                        settled = true;
+                        break;
+                    }
+                    lastText = label->text();
+                    lastRect = label->rect();
+                } else {
+                    lastText.clear();
+                }
+                QThread::msleep(50);
+            }
+            QApplication::processEvents();
+        }
+        check(settled, "the Components inventory and text surface settled before capture");
+
+        if (label != nullptr) {
+            mikai::probes::revealWidget(label);
+            waitForUi(
+                [&label] {
+                    return label->isVisible() &&
+                           label->visibleRegion().contains(label->rect());
+                },
+                5000);
+        }
+        const TextLabelSnapshot before = snapshotTextLabel(label);
+        check(before.fullyVisible, "the model-card text label is fully visible");
+        const bool unoccluded = labelIsOnTop(label, dialog);
+        check(unoccluded, "the model-card text label is not occluded at capture time");
+        check(!before.translucent,
+              "the model-card text label starts without WA_TranslucentBackground");
+        evidence.insert(QStringLiteral("label"), textLabelJson(before));
+        evidence.insert(QStringLiteral("actualDpr"), label != nullptr
+                                                         ? label->devicePixelRatioF()
+                                                         : 0.0);
+        if (screen != nullptr) {
+            evidence.insert(QStringLiteral("screenDevicePixelRatio"),
+                            screen->devicePixelRatio());
+            evidence.insert(QStringLiteral("screenLogicalGeometry"),
+                            rectJson(screen->geometry()));
+        }
+
+        TextRasterCapture normal;
+        TextRasterCapture translucent;
+        screen = dialog.screen();
+        const bool normalOk =
+            label != nullptr && screen != nullptr &&
+            grabLabelPair(screen, &dialog, label,
+                          QStringLiteral("native-text-raster-components-normal.png"),
+                          QStringLiteral("native-text-raster-label-normal.png"), normal);
+        check(normalOk, "the normal-attribute label capture is comparable", normal.error);
+        if (normalOk) outputs.append(normal.surfaceFile);
+        if (normalOk) outputs.append(normal.cropFile);
+        settlePaint(&dialog, 80);
+
+        bool attributeApplied = false;
+        bool attributeRestored = false;
+        bool noSystemBackgroundForced = false;
+        if (label != nullptr) {
+            label->setAttribute(Qt::WA_TranslucentBackground, true);
+            label->update();
+            settlePaint(&dialog, 150);
+            attributeApplied = label->testAttribute(Qt::WA_TranslucentBackground);
+            noSystemBackgroundForced =
+                label->testAttribute(Qt::WA_NoSystemBackground) &&
+                !before.noSystemBackground;
+            const bool unoccludedForSecond = labelIsOnTop(label, dialog);
+            check(unoccludedForSecond,
+                  "the model-card text label stayed unoccluded for the second capture");
+            screen = dialog.screen();
+            const bool translucentOk =
+                screen != nullptr &&
+                grabLabelPair(screen, &dialog, label,
+                              QStringLiteral("native-text-raster-components-translucent.png"),
+                              QStringLiteral("native-text-raster-label-translucent.png"),
+                              translucent);
+            check(translucentOk, "the translucent-attribute label capture is comparable",
+                  translucent.error);
+            if (translucentOk) outputs.append(translucent.surfaceFile);
+            if (translucentOk) outputs.append(translucent.cropFile);
+            label->setAttribute(Qt::WA_TranslucentBackground, before.translucent);
+            label->setAttribute(Qt::WA_NoSystemBackground, before.noSystemBackground);
+            label->update();
+            settlePaint(&dialog, 150);
+            attributeRestored =
+                label->testAttribute(Qt::WA_TranslucentBackground) == before.translucent &&
+                label->testAttribute(Qt::WA_NoSystemBackground) ==
+                    before.noSystemBackground;
+        }
+        check(attributeApplied, "WA_TranslucentBackground was applied for the second capture");
+        check(attributeRestored,
+              "the original WA_TranslucentBackground and WA_NoSystemBackground were restored");
+        evidence.insert(QStringLiteral("translucentForcedNoSystemBackground"),
+                        noSystemBackgroundForced);
+        const TextLabelSnapshot after = snapshotTextLabel(label);
+
+        QJsonObject normalJson;
+        normalJson.insert(QStringLiteral("available"), normal.available);
+        normalJson.insert(QStringLiteral("error"), normal.error);
+        normalJson.insert(QStringLiteral("surfaceFile"), normal.surfaceFile);
+        normalJson.insert(QStringLiteral("cropFile"), normal.cropFile);
+        normalJson.insert(QStringLiteral("logicalGlobalBounds"), rectJson(normal.logicalGlobal));
+        normalJson.insert(QStringLiteral("physicalCropBounds"), rectJson(normal.physicalCrop));
+        normalJson.insert(QStringLiteral("physicalSurfaceBounds"),
+                          rectJson(normal.physicalSurface));
+        normalJson.insert(QStringLiteral("screenImageSize"), rectJson(
+            QRect(QPoint(), normal.screenImageSize)));
+        normalJson.insert(QStringLiteral("devicePixelRatio"), normal.devicePixelRatio);
+        normalJson.insert(QStringLiteral("measuredScaleX"), normal.scaleX);
+        normalJson.insert(QStringLiteral("measuredScaleY"), normal.scaleY);
+        normalJson.insert(QStringLiteral("metrics"), metricsJson(normal.metrics));
+        QJsonObject translucentJson;
+        translucentJson.insert(QStringLiteral("available"), translucent.available);
+        translucentJson.insert(QStringLiteral("error"), translucent.error);
+        translucentJson.insert(QStringLiteral("surfaceFile"), translucent.surfaceFile);
+        translucentJson.insert(QStringLiteral("cropFile"), translucent.cropFile);
+        translucentJson.insert(QStringLiteral("logicalGlobalBounds"),
+                               rectJson(translucent.logicalGlobal));
+        translucentJson.insert(QStringLiteral("physicalCropBounds"),
+                               rectJson(translucent.physicalCrop));
+        translucentJson.insert(QStringLiteral("physicalSurfaceBounds"),
+                               rectJson(translucent.physicalSurface));
+        translucentJson.insert(QStringLiteral("screenImageSize"), rectJson(
+            QRect(QPoint(), translucent.screenImageSize)));
+        translucentJson.insert(QStringLiteral("devicePixelRatio"),
+                               translucent.devicePixelRatio);
+        translucentJson.insert(QStringLiteral("measuredScaleX"), translucent.scaleX);
+        translucentJson.insert(QStringLiteral("measuredScaleY"), translucent.scaleY);
+        translucentJson.insert(QStringLiteral("metrics"), metricsJson(translucent.metrics));
+        evidence.insert(QStringLiteral("normalCapture"), normalJson);
+        evidence.insert(QStringLiteral("translucentCapture"), translucentJson);
+
+        const bool samePosition = normal.logicalGlobal == translucent.logicalGlobal;
+        const bool sameCropSize = normal.physicalCrop.size() == translucent.physicalCrop.size();
+        const bool configurationHeld = sameTextLabelConfiguration(before, after);
+        check(samePosition, "both captures address the same screen position");
+        check(sameCropSize, "both label crops have identical dimensions");
+        check(configurationHeld,
+              "the label text, font, background and geometry stayed unchanged");
+        evidence.insert(QStringLiteral("labelAfter"), textLabelJson(after));
+        evidence.insert(QStringLiteral("labelConfigurationHeld"), configurationHeld);
+
+        const CropDifference cropDifference =
+            compareTextCrops(normal.crop, translucent.crop);
+        comparable = normal.available && translucent.available && samePosition &&
+                     sameCropSize && configurationHeld && normal.metrics.valid &&
+                     translucent.metrics.valid && attributeApplied && attributeRestored &&
+                     cropDifference.comparable;
+        evidence.insert(QStringLiteral("difference"), differenceJson(cropDifference));
+        evidence.insert(QStringLiteral("comparable"), comparable);
+
+        dialog.reject();
+        QApplication::processEvents();
+    }
+    runner.cancel();
+    drained = runner.waitForDone(30000);
+    check(drained, "the text-raster runner drained while its client was still alive");
+    evidence.insert(QStringLiteral("runnerDrained"), drained);
+    evidence.insert(QStringLiteral("outputs"), outputs);
+    return evidence;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -3351,11 +4027,17 @@ int main(int argc, char** argv) {
         QStringLiteral("spatial-acquisition-only"),
         QStringLiteral("Run only the real spatial-model acquisition from the empty owned store."));
     parser.addOption(spatialAcquisitionOnlyOption);
+    QCommandLineOption textRasterOnlyOption(
+        QStringLiteral("text-raster-only"),
+        QStringLiteral("Capture the real Settings Components label twice: normal child "
+                       "attributes and WA_TranslucentBackground."));
+    parser.addOption(textRasterOnlyOption);
     parser.process(app);
     const bool installRuntime = parser.isSet(installRuntimeOption);
     const bool componentProgressOnly = parser.isSet(componentProgressOnlyOption);
     const bool hdrSettingsOnly = parser.isSet(hdrSettingsOnlyOption);
     const bool spatialAcquisitionOnly = parser.isSet(spatialAcquisitionOnlyOption);
+    const bool textRasterOnly = parser.isSet(textRasterOnlyOption);
     QCoreApplication::setOrganizationName(QStringLiteral("MikaiNativeSettingsProbe"));
     QCoreApplication::setApplicationName(QStringLiteral("NativeSettingsProbe"));
 
@@ -3417,13 +4099,55 @@ int main(int argc, char** argv) {
     mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
     Runner runner;
 
+    if (textRasterOnly) {
+        bool comparable = false;
+        bool drained = false;
+        QJsonObject evidence = textRasterScenario(client, runner, comparable, drained);
+        const QJsonObject normalCapture =
+            evidence.value(QStringLiteral("normalCapture")).toObject();
+        const QJsonObject translucentCapture =
+            evidence.value(QStringLiteral("translucentCapture")).toObject();
+        evidence.insert(QStringLiteral("captureAvailable"),
+                        normalCapture.value(QStringLiteral("available")).toBool() &&
+                            translucentCapture.value(QStringLiteral("available")).toBool());
+        const bool passed = failures == 0 && comparable && drained;
+        evidence.insert(QStringLiteral("passed"), passed);
+        evidence.insert(QStringLiteral("checks"), checks);
+        evidence.insert(QStringLiteral("failures"), failures);
+        QFile evidenceFile(QStringLiteral("native-text-raster-evidence.json"));
+        bool evidenceWritten = false;
+        if (evidenceFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            const QByteArray payload =
+                QJsonDocument(evidence).toJson(QJsonDocument::Indented);
+            evidenceWritten = evidenceFile.write(payload) == payload.size();
+            evidenceFile.close();
+        }
+        if (!evidenceWritten) {
+            std::fprintf(stderr, "FAIL the text-raster evidence was written\n");
+        }
+        std::fprintf(stderr,
+                     "[native_settings_probe text-raster-only] %s (%d failures) "
+                     "comparable=%d drained=%d evidence=%d\n",
+                     passed ? "PASS" : "FAIL", failures, comparable ? 1 : 0,
+                     drained ? 1 : 0, evidenceWritten ? 1 : 0);
+        if (!drained) {
+            std::fprintf(stderr,
+                         "[native_settings_probe text-raster-only] the runner did not "
+                         "drain; exiting without unwinding the borrowed client\n");
+            std::fflush(stderr);
+            std::_Exit(1);
+        }
+        return passed && evidenceWritten ? 0 : 1;
+    }
+
     const QString hdrLanguageBefore = mikai::app::activeInterfaceLanguage();
     const QSize hdrCompact(mikai::app::theme::kSettingsDialogMinWidth,
                            mikai::app::theme::kSettingsDialogDefaultHeight);
     const QSize hdrWide(mikai::app::theme::kSettingsDialogDefaultWidth,
                         mikai::app::theme::kSettingsDialogDefaultHeight);
     const QString hdrCatalog = qEnvironmentVariable("MIKAI_PROBE_TRANSLATION");
-    if (hdrSettingsOnly || (!componentProgressOnly && !spatialAcquisitionOnly)) {
+    if (hdrSettingsOnly ||
+        (!componentProgressOnly && !spatialAcquisitionOnly && !textRasterOnly)) {
         for (const QString& language : {QStringLiteral("en"), QStringLiteral("uk")}) {
             exerciseHdrPresentation(client, runner, hdrCompact, language, hdrCatalog);
             exerciseHdrPresentation(client, runner, hdrWide, language, hdrCatalog);
