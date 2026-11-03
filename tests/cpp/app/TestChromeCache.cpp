@@ -1,16 +1,22 @@
 #include "TestChromeCache.hpp"
 
+#include <player/shell/EpisodeNavButton.hpp>
+#include <player/shell/ShellSliders.hpp>
 #include <player/shell/ShellWidgets.hpp>
 
 #include <QtCore/QByteArray>
+#include <QtCore/QCoreApplication>
 #include <QtCore/QEvent>
 #include <QtCore/QPoint>
+#include <QtCore/QPointF>
 #include <QtCore/QRect>
 #include <QtCore/QSize>
 #include <QtCore/QString>
 #include <QtCore/QtGlobal>
 #include <QtGui/QColor>
+#include <QtGui/QEnterEvent>
 #include <QtGui/QImage>
+#include <QtGui/QMouseEvent>
 #include <QtGui/QPainter>
 #include <QtWidgets/QWidget>
 
@@ -558,5 +564,113 @@ void TestChromeCache::hidingANeighborDoesNotShiftAnotherControl() {
                              qCeil(14 * ratio) + 2, qCeil(14 * ratio) + 2);
   QVERIFY2(before.copy(targetWithEdge) == after.copy(targetWithEdge),
            "hiding a separate control moved or resampled the unchanged control");
+  host.hide();
+}
+
+namespace {
+
+/// A pointer gesture delivered to the control itself: the hover state is the
+/// widget's own, so the event is what a real pointer produces, not a field write.
+void enterHover(QWidget* widget) {
+  const QPointF local(widget->width() / 2.0, widget->height() / 2.0);
+  QEnterEvent event(local, local, widget->mapToGlobal(local.toPoint()));
+  QCoreApplication::sendEvent(widget, &event);
+}
+
+void leaveHover(QWidget* widget) {
+  QEvent event(QEvent::Leave);
+  QCoreApplication::sendEvent(widget, &event);
+}
+
+void movePointer(QWidget* widget, const QPointF& local) {
+  QMouseEvent event(QEvent::MouseMove, local, widget->mapToGlobal(local.toPoint()),
+                    Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+  QCoreApplication::sendEvent(widget, &event);
+}
+
+}  // namespace
+
+/// A hover that goes away and comes back is two state changes, not zero: the
+/// second entry must repaint the hovered control, or it keeps serving the pixels
+/// of the state it left behind. A repeated entry with no leave in between is the
+/// opposite - it changes nothing, and the hovered picture stands.
+void TestChromeCache::aHoverThatLeavesAndComesBackRepaintsBothStates() {
+  const QColor frame(18, 18, 24, 255);
+  Host host;
+  auto* icon = new IconButton([](QPainter&, qreal, qreal, qreal, const QColor&) {}, QString(),
+                              24, 16, &host);
+  icon->move(4, 4);
+  host.chrome.adopt(&host, nullptr);
+  QVERIFY(presented(&host));
+
+  // Inside the button's box, away from its rounded corners and its glyph.
+  const QPoint probe(8, 8);
+  const QImage idle = painted(host.chrome, &host, 1.0, frame);
+  QCOMPARE(idle.pixelColor(probe), frame);
+
+  enterHover(icon);
+  const QImage hovered = painted(host.chrome, &host, 1.0, frame);
+  QVERIFY2(hovered.pixelColor(probe) != idle.pixelColor(probe),
+           qPrintable(QStringLiteral("an entry did not paint the hover fill: %1")
+                          .arg(hovered.pixelColor(probe).name(QColor::HexArgb))));
+
+  // Second entry, same state: nothing to paint, and nothing may be lost.
+  enterHover(icon);
+  QVERIFY(painted(host.chrome, &host, 1.0, frame) == hovered);
+
+  leaveHover(icon);
+  const QImage left = painted(host.chrome, &host, 1.0, frame);
+  QCOMPARE(left.pixelColor(probe), idle.pixelColor(probe));
+
+  // The entry after a leave is a real change, so an unchanged-state guard must
+  // not confuse it with the repeated one above.
+  enterHover(icon);
+  const QImage back = painted(host.chrome, &host, 1.0, frame);
+  QCOMPARE(back.pixelColor(probe), hovered.pixelColor(probe));
+  host.hide();
+}
+
+/// A slider move whose fraction really moved is a repaint; the same fraction
+/// again is not. Read from the hover wash's own pixels, because a guard that
+/// throws away a real move shows up as a wash that never reached its position.
+void TestChromeCache::aSliderMoveThatChangesTheFractionRepaintsIt() {
+  const QColor frame(18, 18, 24, 255);
+  QWidget host;
+  host.setAttribute(Qt::WA_DontShowOnScreen, true);
+  host.resize(220, 26);
+  host.show();
+
+  auto* slider = new RangeSlider(QColor(30, 120, 200), 4, &host);
+  slider->setGeometry(0, 0, 200, 26);
+  // A played value past every hover below, so the wash over the track is what
+  // the pointer position changes and the knob stays clear of the probe.
+  slider->setValue(0.9, false);
+  ChromeList chrome;
+  chrome.adopt(&host, nullptr);
+  QVERIFY(presented(&host));
+
+  const int y = slider->height() / 2;
+  const QPoint probe(70, y);
+  const QImage idle = painted(chrome, &host, 1.0, frame);
+  const QColor played = idle.pixelColor(probe);
+
+  // Narrow enough to stop before the probe.
+  movePointer(slider, QPointF(44.0, y));
+  const QImage near = painted(chrome, &host, 1.0, frame);
+  QCOMPARE(near.pixelColor(probe), played);
+
+  // Past the probe: the wash now covers it, so the pixels have to move with it.
+  movePointer(slider, QPointF(118.0, y));
+  const QImage farther = painted(chrome, &host, 1.0, frame);
+  QVERIFY2(farther.pixelColor(probe) != played,
+           qPrintable(QStringLiteral("the hover wash did not reach the new fraction: %1")
+                          .arg(farther.pixelColor(probe).name(QColor::HexArgb))));
+
+  // The same fraction again is not a state change: the picture stands.
+  movePointer(slider, QPointF(118.0, y));
+  QVERIFY(painted(chrome, &host, 1.0, frame) == farther);
+
+  leaveHover(slider);
+  QCOMPARE(painted(chrome, &host, 1.0, frame).pixelColor(probe), played);
   host.hide();
 }

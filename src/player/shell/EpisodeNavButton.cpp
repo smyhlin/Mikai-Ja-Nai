@@ -60,14 +60,21 @@ void EpisodeNavButton::paintChrome(QPainter& painter) {
 }
 
 void EpisodeNavButton::enterEvent(QEnterEvent* event) {
-    hover_ = true;
-    chromeUpdate(this);
+    // The chevron's tint and its wash read hover_ and isEnabled() only, so an
+    // entry that leaves hover_ where it already was is not a repaint: re-rastering
+    // identical pixels is the cost this guard exists to remove, not a hover effect.
+    if (!hover_) {
+        hover_ = true;
+        chromeUpdate(this);
+    }
     QPushButton::enterEvent(event);
 }
 
 void EpisodeNavButton::leaveEvent(QEvent* event) {
-    hover_ = false;
-    chromeUpdate(this);
+    if (hover_) {
+        hover_ = false;
+        chromeUpdate(this);
+    }
     QPushButton::leaveEvent(event);
 }
 

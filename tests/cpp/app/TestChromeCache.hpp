@@ -22,4 +22,6 @@ class TestChromeCache : public QObject {
   void anEnabledChangeInvalidatesEvenAfterAMove();
   void hidingANeighborDoesNotShiftAnotherControl_data();
   void hidingANeighborDoesNotShiftAnotherControl();
+  void aHoverThatLeavesAndComesBackRepaintsBothStates();
+  void aSliderMoveThatChangesTheFractionRepaintsIt();
 };

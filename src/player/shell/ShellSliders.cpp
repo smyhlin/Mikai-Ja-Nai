@@ -57,7 +57,12 @@ void RangeSlider::mousePressEvent(QMouseEvent* event) {
 }
 
 void RangeSlider::mouseMoveEvent(QMouseEvent* event) {
-    hover_ = at(event->position().x());
+    const double hover = at(event->position().x());
+    // The hover wash is a function of the fraction, so a move that reports the
+    // fraction already recorded - the pointer stopped, or the same pixel came
+    // back - has nothing to paint. setValue() invalidates for its own change.
+    bool stateChanged = hover != hover_;
+    hover_ = hover;
     // A move with the left button up is not scrubbing: the release happened
     // where this widget could not see it. Ending the drag here, without taking
     // the pointer's position as a value, is what keeps an ordinary hover from
@@ -66,11 +71,14 @@ void RangeSlider::mouseMoveEvent(QMouseEvent* event) {
         if ((event->buttons() & Qt::LeftButton) != 0) {
             setValue(hover_);
         } else {
+            // The drag is over even when the fraction did not move, so this is a
+            // state change of its own.
             drag_ = false;
+            stateChanged = true;
             emit released();
         }
     }
-    chromeUpdate(this);
+    if (stateChanged) chromeUpdate(this);
 }
 
 void RangeSlider::mouseReleaseEvent(QMouseEvent* event) {
@@ -89,8 +97,12 @@ void RangeSlider::mouseReleaseEvent(QMouseEvent* event) {
 }
 
 void RangeSlider::leaveEvent(QEvent* event) {
-    hover_ = -1.0;
-    chromeUpdate(this);
+    // A leave that has no hover to drop is the second of two leaves for the same
+    // exit; the wash it would re-rasterise is already gone.
+    if (hover_ >= 0.0) {
+        hover_ = -1.0;
+        chromeUpdate(this);
+    }
 }
 
 void RangeSlider::setAccent(const QColor& accent) {

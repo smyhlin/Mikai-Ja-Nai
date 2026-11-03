@@ -481,14 +481,23 @@ void IconButton::setButtonChrome(const ButtonChrome& chrome) {
 }
 
 void IconButton::enterEvent(QEnterEvent* event) {
-    hover_ = true;
-    chromeUpdate(this);
+    // The look is a pure function of hover_, isChecked() and isEnabled(), none of
+    // which this event changed if the button was already hovered. A repeated
+    // entry - a pointer sweeping back over a control whose leave never arrived, a
+    // re-enter after a popup - asked for pixels that are already on screen, and a
+    // cache miss for them costs a full re-raster of the control.
+    if (!hover_) {
+        hover_ = true;
+        chromeUpdate(this);
+    }
     QPushButton::enterEvent(event);
 }
 
 void IconButton::leaveEvent(QEvent* event) {
-    hover_ = false;
-    chromeUpdate(this);
+    if (hover_) {
+        hover_ = false;
+        chromeUpdate(this);
+    }
     QPushButton::leaveEvent(event);
 }
 
@@ -549,14 +558,21 @@ QSize SkipButton::sizeHint() const {
 }
 
 void SkipButton::enterEvent(QEnterEvent* event) {
-    hover_ = true;
-    chromeUpdate(this);
+    // Same rule as IconButton: only a real hover change is a repaint. The pill,
+    // its text colour and its chevron all read hover_ and nothing else that this
+    // event touched.
+    if (!hover_) {
+        hover_ = true;
+        chromeUpdate(this);
+    }
     QPushButton::enterEvent(event);
 }
 
 void SkipButton::leaveEvent(QEvent* event) {
-    hover_ = false;
-    chromeUpdate(this);
+    if (hover_) {
+        hover_ = false;
+        chromeUpdate(this);
+    }
     QPushButton::leaveEvent(event);
 }
 
