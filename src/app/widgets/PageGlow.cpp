@@ -19,10 +19,14 @@ PageGlow::PageGlow(QWidget* parent) : QWidget(parent) {
     connect(&appearanceNotifier(), &AppearanceNotifier::changed, this,
             [this](const theme::Appearance& previous) {
                 const auto& appearance = currentAppearance();
+                // Compared through the resolved colour, not the stored field:
+                // Auto paints the accent while the stored custom colour sits
+                // untouched, so a source-only change leaves the fields equal and
+                // the wash would keep the previous source's colour.
                 if (previous.backgroundGradient != appearance.backgroundGradient ||
                     previous.gradientIntensity != appearance.gradientIntensity ||
                     previous.gradientHeight != appearance.gradientHeight ||
-                    previous.gradientColor != appearance.gradientColor) {
+                    theme::gradientColor(previous) != theme::gradientColor(appearance)) {
                     refresh();
                 }
             });

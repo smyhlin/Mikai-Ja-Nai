@@ -484,10 +484,15 @@ void TitlePage::buildUi() {
     connect(&appearanceNotifier(), &AppearanceNotifier::changed, this,
             [this](const theme::Appearance& previous) {
                 const auto& appearance = currentAppearance();
+                // The backdrop caches a composite, so it is rebuilt from the
+                // resolved wash colour: switching the gradient source alone
+                // changes what is painted without touching the stored custom
+                // colour, and comparing the stored field would leave the cached
+                // hero wash on the previous source.
                 if (backdrop_ != nullptr &&
                     (previous.siteTheme != appearance.siteTheme ||
                      previous.accent != appearance.accent ||
-                     previous.gradientColor != appearance.gradientColor ||
+                     theme::gradientColor(previous) != theme::gradientColor(appearance) ||
                      previous.backgroundGradient != appearance.backgroundGradient ||
                      previous.gradientIntensity != appearance.gradientIntensity ||
                      previous.gradientHeight != appearance.gradientHeight)) {
