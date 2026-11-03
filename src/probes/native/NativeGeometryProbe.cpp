@@ -34,6 +34,7 @@
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLayout>
@@ -42,9 +43,8 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
+#include <QStackedWidget>
 #include <QSize>
-#include <QTabBar>
-#include <QTabWidget>
 #include <QTemporaryDir>
 #include <QToolButton>
 #include <QWidget>
@@ -275,25 +275,6 @@ QWidget* scrollPage(QWidget* host) {
     return host;
 }
 
-/// The settings tab that carries the shortcut bindings. It is found by its
-/// content, never by its caption, because the caption is translated: the
-/// bindings tab is the one holding the catalogue of key-sequence fields, and
-/// the Processing tab's single field is not that catalogue. Returns -1 when no
-/// tab holds a catalogue, which is a defect the caller reports rather than
-/// skips.
-int shortcutTabIndex(QTabWidget* tabs) {
-    int best = -1;
-    int bestFields = 1;
-    for (int i = 0; i < tabs->count(); ++i) {
-        const int fields = tabs->widget(i)->findChildren<QKeySequenceEdit*>().size();
-        if (fields > bestFields) {
-            bestFields = fields;
-            best = i;
-        }
-    }
-    return best;
-}
-
 /// The widgets a page's rows are declared on: the page itself plus every
 /// scrolled list inside it. The rows of a list live in the list's own content
 /// widget, so a page alone would miss them.
@@ -397,6 +378,26 @@ int main(int argc, char** argv) {
 
     const QString language = qEnvironmentVariable("MIKAI_PROBE_LANGUAGE", "en");
 
+    // Screenshots land in the caller's directory: the physical launcher stages
+    // its own tree and deletes it, so the default working directory is a trap.
+    QString outputDir;
+    const QStringList probeArgs = QCoreApplication::arguments();
+    for (int index = 1; index < probeArgs.size() - 1; ++index) {
+        if (probeArgs.at(index) == QLatin1String("--output-dir")) {
+            outputDir = probeArgs.at(index + 1);
+        }
+    }
+    if (outputDir.isEmpty()) outputDir = qEnvironmentVariable("MIKAI_PROBE_OUTPUT_DIR");
+    if (outputDir.isEmpty()) outputDir = QDir::currentPath();
+    if (!QDir::isAbsolutePath(outputDir) || !QDir().mkpath(outputDir)) {
+        std::fprintf(stderr, "FAIL the output directory is not an absolute, creatable path: %s\n",
+                     qUtf8Printable(outputDir));
+        return 1;
+    }
+    const auto shotPath = [&outputDir](const QString& name) {
+        return QDir(outputDir).filePath(name);
+    };
+
     QTemporaryDir settingsDir;
     if (!settingsDir.isValid()) {
         std::fprintf(stderr, "FAIL cannot create an isolated settings directory\n");
@@ -425,38 +426,27 @@ int main(int argc, char** argv) {
     check(mikai::probes::dialogActionsFit(dialog, minimum),
           QStringLiteral("Save and Cancel stay visible at the minimum size"));
 
-    auto* tabs = dialog.findChild<QTabWidget*>();
-    check(tabs != nullptr && tabs->count() >= 3, QStringLiteral("the settings tabs exist"));
-    if (tabs == nullptr) {
+    // The navigation the dialog actually ships: stable page ids over the
+    // settings stack, selected by id rather than by a translated caption.
+    const QStringList pageIds = dialog.pageIds();
+    check(!pageIds.isEmpty(), QStringLiteral("the settings navigation lists pages"));
+    auto* stack = dialog.findChild<QStackedWidget*>(QStringLiteral("settingsStack"));
+    check(stack != nullptr, QStringLiteral("the settings content stack exists"));
+    if (stack == nullptr) {
         return 1;
     }
+    const auto navEntries = dialog.findChildren<QPushButton*>(QStringLiteral("settingsNavItem"));
+    check(navEntries.size() == pageIds.size(),
+          QStringLiteral("each settings page has one navigation entry"));
 
-    // The tab bar itself must not clip a tab: a hidden tab is exactly the
-    // unreachable action this probe guards against.
-    QTabBar* bar = tabs->tabBar();
-    const QRect barRect(bar->mapToGlobal(QPoint(0, 0)), bar->size());
-    for (int i = 0; i < tabs->count(); ++i) {
-        QRect tabRect = bar->tabRect(i);
-        tabRect.translate(bar->mapToGlobal(QPoint(0, 0)));
-        check(barRect.contains(tabRect),
-              QStringLiteral("tab %1 (“%2”) is inside the tab bar").arg(i).arg(tabs->tabText(i)));
-    }
-
-    // The bindings tab is located before the walk so its screenshot carries the
-    // name the contract is written under, not the translated tab caption.
-    const int shortcuts = shortcutTabIndex(tabs);
-    check(shortcuts >= 0, QStringLiteral("a settings tab holds the shortcut bindings"));
-    QStringList tabNames = {QStringLiteral("general"), QStringLiteral("presets"),
-                            QStringLiteral("processing")};
-    if (shortcuts >= 0) {
-        tabNames[shortcuts] = QStringLiteral("shortcuts");
-    }
-
-    for (int i = 0; i < tabs->count(); ++i) {
-        tabs->setCurrentIndex(i);
+    for (const QString& pageId : pageIds) {
+        check(dialog.showPage(pageId),
+              QStringLiteral("the “%1” page is selectable by id").arg(pageId));
         QApplication::processEvents();
+        check(dialog.currentPageId() == pageId,
+              QStringLiteral("the “%1” page is the current page").arg(pageId));
 
-        QWidget* host = tabs->widget(i);
+        QWidget* host = stack->currentWidget();
         QWidget* page = scrollPage(host);
 
         // Settle the page before anything is measured: an offscreen run never
@@ -480,12 +470,11 @@ int main(int argc, char** argv) {
                                                                     : scroll->objectName()));
             }
         };
-        checkNoHorizontalRange(page, tabs->tabText(i));
+        checkNoHorizontalRange(page, pageId);
         if (auto* pageScroll = qobject_cast<QScrollArea*>(host)) {
             QScrollBar* horizontal = pageScroll->horizontalScrollBar();
             check(horizontal->minimum() == horizontal->maximum(),
-                  QStringLiteral("the “%1” tab has no horizontal scroll range")
-                      .arg(tabs->tabText(i)));
+                  QStringLiteral("the “%1” page has no horizontal scroll range").arg(pageId));
         }
         if (qEnvironmentVariableIsSet("MIKAI_PROBE_WIDTH_FLOOR")) {
             reportWidthFloor(page, qobject_cast<QScrollArea*>(host));
@@ -493,7 +482,7 @@ int main(int argc, char** argv) {
 
         const QList<QWidget*> controls = interactiveDescendants(page);
         check(!controls.isEmpty(),
-              QStringLiteral("the “%1” tab lists actionable controls").arg(tabs->tabText(i)));
+              QStringLiteral("the “%1” page lists actionable controls").arg(pageId));
 
         QStringList unreachable;
         for (QWidget* control : controls) {
@@ -503,8 +492,8 @@ int main(int argc, char** argv) {
             }
         }
         check(unreachable.isEmpty(),
-              QStringLiteral("every actionable control on the “%1” tab is reachable by scrolling")
-                  .arg(tabs->tabText(i)));
+              QStringLiteral("every actionable control on the “%1” page is reachable by scrolling")
+                  .arg(pageId));
         report("unreachable", unreachable);
 
         // Leave the page at its top so the screenshot shows its heading rather
@@ -516,47 +505,45 @@ int main(int argc, char** argv) {
         }
         QApplication::processEvents();
 
-        const QString file = QStringLiteral("native-geometry-%1-%2.png")
-                                 .arg(language)
-                                 .arg(i < tabNames.size() ? tabNames.at(i)
-                                                          : QString::number(i));
+        QString shotName = pageId;
+        shotName.replace(QLatin1Char('/'), QLatin1Char('-'));
+        const QString file = shotPath(QStringLiteral("native-geometry-%1-%2.png")
+                                          .arg(language, shotName));
         check(dialog.grab().save(file),
-              QStringLiteral("the “%1” tab screenshot is written to %2").arg(tabs->tabText(i), file));
+              QStringLiteral("the “%1” page screenshot is written to %2").arg(pageId, file));
     }
 
     auto* benchmarkScroll = dialog.findChild<QScrollArea*>(QStringLiteral("benchmarkScroll"));
-    int benchmark = -1;
+    check(benchmarkScroll != nullptr,
+          QStringLiteral("the Benchmark page exposes its scroll as benchmarkScroll"));
     if (benchmarkScroll != nullptr) {
-        for (int index = 0; index < tabs->count(); ++index) {
-            if (tabs->widget(index)->isAncestorOf(benchmarkScroll)) {
-                benchmark = index;
-                break;
-            }
-        }
-    }
-    check(benchmark >= 0, QStringLiteral("the Benchmark tab exposes its scroll via descendant benchmarkScroll"));
-    if (benchmark >= 0 && benchmarkScroll != nullptr) {
-        tabs->setCurrentIndex(benchmark);
-        benchmarkScroll->verticalScrollBar()->setValue(benchmarkScroll->verticalScrollBar()->minimum());
+        check(dialog.showPage(QStringLiteral("benchmark")),
+              QStringLiteral("the Benchmark page is selectable by id"));
         QApplication::processEvents();
-        QString file = QStringLiteral("native-geometry-%1-benchmark-top.png").arg(language);
-        check(dialog.grab().save(file), QStringLiteral("the Benchmark top screenshot is written to %1").arg(file));
+        benchmarkScroll->verticalScrollBar()->setValue(
+            benchmarkScroll->verticalScrollBar()->minimum());
+        QApplication::processEvents();
+        QString file = shotPath(QStringLiteral("native-geometry-%1-benchmark-top.png").arg(language));
+        check(dialog.grab().save(file),
+              QStringLiteral("the Benchmark top screenshot is written to %1").arg(file));
 
-        benchmarkScroll->verticalScrollBar()->setValue(benchmarkScroll->verticalScrollBar()->maximum());
+        benchmarkScroll->verticalScrollBar()->setValue(
+            benchmarkScroll->verticalScrollBar()->maximum());
         QApplication::processEvents();
-        file = QStringLiteral("native-geometry-%1-benchmark-bottom.png").arg(language);
-        check(dialog.grab().save(file), QStringLiteral("the Benchmark bottom screenshot is written to %1").arg(file));
+        file = shotPath(QStringLiteral("native-geometry-%1-benchmark-bottom.png").arg(language));
+        check(dialog.grab().save(file),
+              QStringLiteral("the Benchmark bottom screenshot is written to %1").arg(file));
     }
 
     // The bindings are audited on their own, in the same four combinations as
     // the walk, because a binding that is present but clipped, unnamed, under a
     // hit target or unbound from its label still reads as a finished settings
     // page. The tab is the one the catalogue was found on.
-    if (shortcuts >= 0) {
-        tabs->setCurrentIndex(shortcuts);
+    if (pageIds.contains(QStringLiteral("shortcuts"))) {
+        check(dialog.showPage(QStringLiteral("shortcuts")),
+              QStringLiteral("the shortcut bindings page is selectable by id"));
         QApplication::processEvents();
-        QWidget* shortcutsHost = tabs->widget(shortcuts);
-        QWidget* shortcutsPage = scrollPage(shortcutsHost);
+        QWidget* shortcutsPage = scrollPage(stack->currentWidget());
         settleLayout(shortcutsPage);
 
         for (QScrollArea* scroll : shortcutsPage->findChildren<QScrollArea*>()) {
@@ -613,21 +600,13 @@ int main(int argc, char** argv) {
     // The Processing tab carries the native controls this task owns. Its
     // accessibility and target contract is checked there and only there: the
     // borrowed assets panel is another surface with its own contract.
-    int processing = -1;
-    const QString processingLabel = SettingsDialog::tr("Processing");
-    for (int index = 0; index < tabs->count(); ++index) {
-        if (tabs->tabText(index) == processingLabel) {
-            processing = index;
-            break;
-        }
-    }
-    check(processing >= 0, QStringLiteral("the Processing settings tab exists"));
-    if (processing < 0) {
+    const bool hasProcessing = dialog.showPage(QStringLiteral("processing"));
+    check(hasProcessing, QStringLiteral("the Processing settings page is selectable by id"));
+    if (!hasProcessing) {
         return 1;
     }
-    tabs->setCurrentIndex(processing);
     QApplication::processEvents();
-    QWidget* processingPage = scrollPage(tabs->widget(processing));
+    QWidget* processingPage = scrollPage(stack->currentWidget());
 
     const QList<QWidget*> nativeControls = interactiveDescendants(processingPage);
     QStringList unnamed;
