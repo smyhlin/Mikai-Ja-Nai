@@ -111,6 +111,12 @@ inline std::atomic<qint64> g_lastActivationToPaintMs{-1};
 inline std::atomic<quint64> g_renderTargetProbes{0};
 inline std::atomic<quint64> g_renderTargetFormatResets{0};
 inline std::atomic<quint64> g_chromeCacheRenders{0};
+/// Occupancy of the ChromeList that published LAST, not a process total. Each
+/// list has its own 8 MiB budget, and the shipping player plus the pooled float
+/// can both hold a cache at once (up to 16 MiB), so this is one list's number and
+/// a historical sample: resetCounters() zeroes it without dropping any cache, so
+/// a reset only means something when a cache event follows it. A destroyed list
+/// never publishes, which leaves its last sample standing.
 inline std::atomic<quint64> g_chromeCacheBytes{0};
 inline std::atomic<quint64> g_awayStackingStops{0};
 inline std::atomic<quint64> g_raiseRetriesAborted{0};
@@ -155,9 +161,10 @@ inline void noteChromeCacheRender() {
     g_chromeCacheRenders.fetch_add(1, std::memory_order_relaxed);
 }
 
-/// The cache's CURRENT occupancy in device pixels, not the size of the control
-/// that was just rendered. Set on every add, drop and adopt, so a reader sees the
-/// live total against the budget and a zero after the last eviction.
+/// That list's occupancy in device pixels after an add, drop or adopt - not the
+/// size of the control just rendered, and not a sum over lists. Called only by
+/// ChromeList, which is the only place that knows its own total; per-list 8 MiB
+/// is the budget, so do not read this as a process-wide ceiling.
 inline void noteChromeCacheHeld(qint64 bytes) {
     if (!countersEnabled()) return;
     g_chromeCacheBytes.store(bytes > 0 ? static_cast<quint64>(bytes) : 0,
