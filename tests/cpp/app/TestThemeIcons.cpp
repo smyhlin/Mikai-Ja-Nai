@@ -185,6 +185,18 @@ QRect colorBounds(const QImage& image, const QColor& color) {
 /// so a widget's real QPainter commands and transform updates land here.
 class TraceEngine : public QPaintEngine {
  public:
+  // A recorder takes every command verbatim, so it accepts the three things
+  // QPainter otherwise emulates: an affine painter transform
+  // (PrimitiveTransform - the traced device carries the window's ratio), a
+  // non-solid pen such as the toggle's Qt::NoPen (BrushStroke), and a
+  // translucent fill or border (AlphaBlend). Without these QPainter reroutes
+  // each shape through QPainterPrivate::draw_helper, which rasterises it into a
+  // QImage and emits one drawImage, so the widget's own vector geometry would
+  // never reach the trace.
+  TraceEngine()
+      : QPaintEngine(QPaintEngine::PrimitiveTransform | QPaintEngine::BrushStroke |
+                     QPaintEngine::AlphaBlend) {}
+
   bool begin(QPaintDevice*) override { return true; }
   bool end() override { return true; }
 
@@ -197,6 +209,7 @@ class TraceEngine : public QPaintEngine {
   }
 
   void drawRects(const QRectF*, int) override { record(QStringLiteral("rects")); }
+  void drawLines(const QLineF*, int) override { record(QStringLiteral("lines")); }
   void drawEllipse(const QRectF&) override { record(QStringLiteral("ellipse")); }
   void drawPath(const QPainterPath&) override { record(QStringLiteral("path")); }
   void drawPolygon(const QPointF*, int, PolygonDrawMode) override {
@@ -223,6 +236,7 @@ class TraceEngine : public QPaintEngine {
   QTransform::TransformationType worstType() const { return worstType_; }
   bool unitM33() const { return unitM33_; }
   bool saw(const QString& kind) const { return kinds_.contains(kind); }
+  QStringList kinds() const { return kinds_; }
 
  private:
   void record(const QString& kind) {
@@ -747,30 +761,47 @@ void TestThemeIcons::nativeWindowPaintStaysAffineAtFractionalDpr() {
     widget->render(&device, QPoint(), QRegion(), QWidget::DrawChildren);
     const TraceEngine& trace = device.engine();
 
+    const QString kinds =
+        trace.kinds().isEmpty() ? QStringLiteral("none") : trace.kinds().join(QStringLiteral(", "));
+
     QVERIFY2(widget->windowHandle() != nullptr,
              qPrintable(QStringLiteral("%1 is not a shown native window").arg(target.first)));
     QVERIFY2(trace.commands() > 0,
              qPrintable(QStringLiteral("%1 emitted no paint commands").arg(target.first)));
+    // Non-vacuity: the control's own vector geometry reached the engine, so the
+    // transform checked below belongs to real drawing rather than to an empty
+    // stream. The primitive kind itself is not pinned - QPainter may hand a
+    // rounded rect or an ellipse over as a QPainterPath - only that some shape
+    // was emitted instead of nothing but a blit.
+    const QStringList vectorKinds = {QStringLiteral("path"), QStringLiteral("rects"),
+                                     QStringLiteral("ellipse"), QStringLiteral("polygon"),
+                                     QStringLiteral("lines")};
+    bool vectorGeometry = false;
+    for (const QString& kind : vectorKinds) {
+      if (trace.saw(kind)) {
+        vectorGeometry = true;
+        break;
+      }
+    }
+    QVERIFY2(vectorGeometry,
+             qPrintable(QStringLiteral("%1 emitted no vector geometry (kinds: %2)")
+                            .arg(target.first, kinds)));
     // The painter state is flushed before the first command, so a transform was
     // really observed. A DPR-multiplied world transform shows up as TxProject.
     QVERIFY2(trace.transformUpdates() > 0,
-             qPrintable(QStringLiteral("%1 emitted no transform update").arg(target.first)));
+             qPrintable(QStringLiteral("%1 emitted no transform update (kinds: %2)")
+                            .arg(target.first, kinds)));
     QVERIFY2(trace.worstType() < QTransform::TxProject,
-             qPrintable(QStringLiteral("%1 painted through a projective transform at %2")
+             qPrintable(QStringLiteral("%1 painted through a projective transform at %2 "
+                                       "(%3 updates, kinds: %4)")
                             .arg(target.first)
-                            .arg(ratio)));
+                            .arg(ratio)
+                            .arg(trace.transformUpdates())
+                            .arg(kinds)));
     QVERIFY2(trace.unitM33(),
-             qPrintable(QStringLiteral("%1 scaled the matrix' m33 at %2")
+             qPrintable(QStringLiteral("%1 scaled the matrix' m33 at %2 (kinds: %3)")
                             .arg(target.first)
-                            .arg(ratio)));
-    if (target.first == QStringLiteral("ToggleSwitch")) {
-      // The track is a rounded rect and the knob an ellipse.
-      QVERIFY2(trace.saw(QStringLiteral("ellipse")), "the toggle painted no ellipse");
-      QVERIFY2(trace.saw(QStringLiteral("path")) || trace.saw(QStringLiteral("rects")),
-               "the toggle painted no track");
-    } else {
-      QVERIFY2(trace.saw(QStringLiteral("path")) || trace.saw(QStringLiteral("rects")),
-               qPrintable(QStringLiteral("%1 painted no rounded rect").arg(target.first)));
-    }
+                            .arg(ratio)
+                            .arg(kinds)));
   }
 }
