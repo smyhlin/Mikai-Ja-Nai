@@ -2946,10 +2946,6 @@ void exerciseSpatialAcquisition(SettingsDialog& dialog, QSize requestedSize,
         return;
     }
 
-    // The tab is built before Settings hands it the runner and client, so its
-    // constructor-time refresh could not start. The real refresh is this call.
-    componentTab->refresh();
-    QApplication::processEvents();
     check(waitForUi(
               [componentTab] {
                   return componentTab->inventoryReady() && !componentTab->acquisitionRunning();
@@ -3495,6 +3491,7 @@ struct TextCropMetrics {
     int uniqueColors = 0;
     int minLuminance = 0;
     int maxLuminance = 0;
+    QRgb modalColor = 0;
     double inkFraction = 0.0;
     bool valid = false;
 };
@@ -3520,13 +3517,18 @@ TextCropMetrics measureTextCrop(const QImage& crop) {
         }
     }
     int modalCount = 0;
+    QRgb modalColor = 0;
     for (auto it = histogram.constBegin(); it != histogram.constEnd(); ++it) {
-        modalCount = qMax(modalCount, it.value());
+        if (it.value() > modalCount) {
+            modalCount = it.value();
+            modalColor = it.key();
+        }
     }
     const qint64 total = static_cast<qint64>(image.width()) * image.height();
     metrics.uniqueColors = histogram.size();
     metrics.minLuminance = minimum;
     metrics.maxLuminance = maximum;
+    metrics.modalColor = modalColor;
     metrics.inkFraction =
         total > 0 ? 1.0 - static_cast<double>(modalCount) / static_cast<double>(total) : 0.0;
     metrics.valid = metrics.uniqueColors >= 3 && metrics.maxLuminance - metrics.minLuminance >= 16 &&
@@ -3542,6 +3544,8 @@ QJsonObject metricsJson(const TextCropMetrics& metrics) {
     object.insert(QStringLiteral("minLuminance"), metrics.minLuminance);
     object.insert(QStringLiteral("maxLuminance"), metrics.maxLuminance);
     object.insert(QStringLiteral("luminanceRange"), metrics.maxLuminance - metrics.minLuminance);
+    object.insert(QStringLiteral("dominantColor"),
+                  QColor::fromRgb(metrics.modalColor).name(QColor::HexRgb));
     object.insert(QStringLiteral("inkFraction"), metrics.inkFraction);
     object.insert(QStringLiteral("valid"), metrics.valid);
     return object;
@@ -3814,12 +3818,10 @@ QJsonObject textRasterScenario(mikai::backend::MikaiClient& client, Runner& runn
         auto* tab = dialog.findChild<mikai::app::ComponentStoreTab*>();
         QLabel* label = tab != nullptr
                             ? tab->findChild<QLabel*>(
-                                  QStringLiteral("animeJanaiModelsCardState"))
+                                  QStringLiteral("animeJanaiModelsCardDescription"))
                             : nullptr;
         check(tab != nullptr && label != nullptr,
               "the Components inventory and its model-card text label exist");
-        if (tab != nullptr) tab->refresh();
-
         bool settled = false;
         if (tab != nullptr && label != nullptr) {
             QElapsedTimer clock;
@@ -3972,19 +3974,25 @@ QJsonObject textRasterScenario(mikai::backend::MikaiClient& client, Runner& runn
         const bool samePosition = normal.logicalGlobal == translucent.logicalGlobal;
         const bool sameCropSize = normal.physicalCrop.size() == translucent.physicalCrop.size();
         const bool configurationHeld = sameTextLabelConfiguration(before, after);
+        const bool dominantBackgroundSame =
+            normal.metrics.valid && translucent.metrics.valid &&
+            normal.metrics.modalColor == translucent.metrics.modalColor;
         check(samePosition, "both captures address the same screen position");
         check(sameCropSize, "both label crops have identical dimensions");
         check(configurationHeld,
               "the label text, font, background and geometry stayed unchanged");
+        check(dominantBackgroundSame,
+              "both captures show the same dominant painted background");
         evidence.insert(QStringLiteral("labelAfter"), textLabelJson(after));
         evidence.insert(QStringLiteral("labelConfigurationHeld"), configurationHeld);
+        evidence.insert(QStringLiteral("dominantBackgroundSame"), dominantBackgroundSame);
 
         const CropDifference cropDifference =
             compareTextCrops(normal.crop, translucent.crop);
         comparable = normal.available && translucent.available && samePosition &&
-                     sameCropSize && configurationHeld && normal.metrics.valid &&
-                     translucent.metrics.valid && attributeApplied && attributeRestored &&
-                     cropDifference.comparable;
+                     sameCropSize && configurationHeld && dominantBackgroundSame &&
+                     normal.metrics.valid && translucent.metrics.valid &&
+                     attributeApplied && attributeRestored && cropDifference.comparable;
         evidence.insert(QStringLiteral("difference"), differenceJson(cropDifference));
         evidence.insert(QStringLiteral("comparable"), comparable);
         }
