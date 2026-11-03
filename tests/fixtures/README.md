@@ -213,6 +213,20 @@ must be an absolute path in an existing directory. The spawned read phase writes
 was handed, and the writer embeds that object under `restart`, so the persistent
 file keeps the child's verdict after the store is deleted.
 
+The same mode is a permanent CTest entry, `VideoScalingPersistence`, registered
+when the probe target exists. It runs through the same launcher on the offscreen
+platform, with no evidence path and no external JSON: the probe's exit code is
+the verdict (its default evidence file lands in the launcher's disposable scratch
+and is discarded with it). The registration also adds the probe as a dependency
+of `mikai_tests`, so `cmake --build --preset tests` builds what the test runs.
+Manual runs keep the explicit absolute evidence path when per-field evidence is
+wanted.
+
+```powershell
+cmake --build (Join-Path $repo 'build/release') --preset tests
+ctest --test-dir (Join-Path $repo 'build/release') --output-on-failure -R '^VideoScalingPersistence$'
+```
+
 What it does **not** claim: no player, mpv core or surface is created, so the
 application player-startup path is not exercised, and the dialogs are never
 shown, so this is not visible layout/typography or flyout/PiP/Compare evidence.

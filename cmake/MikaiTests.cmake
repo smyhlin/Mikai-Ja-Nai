@@ -424,4 +424,30 @@ if(MIKAI_BUILD_PROBES)
     TIMEOUT 180
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
   )
+
+  # GOAL-H2: the Settings Save/Cancel/reopen/restart persistence path is a
+  # permanent regression gate, not only a manual probe mode. Registering it here
+  # keeps the coverage in the ordinary `ctest` run, and the dependency below
+  # makes `cmake --build --preset tests` build the probe that the test launches.
+  # The entry runs on the offscreen platform (no desktop, no pointer, no
+  # activation) and needs no exported JSON: the probe's exit code is the verdict.
+  # A manual run still passes an absolute --video-scaling-evidence file.
+  if(TARGET native_settings_probe)
+    add_dependencies(mikai_tests native_settings_probe)
+    add_test(NAME VideoScalingPersistence
+      COMMAND mikai_test_launcher
+        "$<TARGET_FILE:native_settings_probe>"
+        "${CMAKE_SOURCE_DIR}/shaders"
+        "${MIKAI_SELECTED_MPV_MODULE}"
+        "$<TARGET_FILE_DIR:Qt6::Core>"
+        "${MIKAI_TEST_QT_PLUGIN_DIR}"
+        "${CMAKE_BINARY_DIR}/_test-runs"
+        --video-scaling-smoke
+    )
+    set_tests_properties(VideoScalingPersistence PROPERTIES
+      TIMEOUT 300
+      ENVIRONMENT "QT_QPA_PLATFORM=offscreen;MIKAI_PROBE_LANGUAGE=en"
+      ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+  endif()
 endif()
