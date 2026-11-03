@@ -2835,17 +2835,14 @@ void VideoSurface::releaseRenderContextCurrent(QOpenGLContext* previous) {
 void VideoSurface::releaseRenderContext() {
     // Captured before the render context goes: freeing it kills the old video
     // output, which then reports 0 for a file it no longer decodes. `position_`
-    // is the value the viewer left behind and only the pump writes it, so it is
-    // what a reload resumes at; the raw observation stands in before the first
-    // publish, and covers a release while paused. One still standing belongs to a
-    // reload that has painted nothing yet, so a second loss keeps it rather than
-    // resuming a core that was just handed that same offset.
-    if (!pendingResumePositionValid_) {
-        const double lastGoodPosition = position_ > 0.0 ? position_ : observedPosition_;
-        if (lastGoodPosition > 0.0) {
-            pendingResumePosition_ = lastGoodPosition;
-            pendingResumePositionValid_ = true;
-        }
+    // is what the viewer and the context probe saw, so it is what a reload
+    // resumes at. A snapshot still standing belongs to a reload that has painted
+    // nothing yet, so a second loss keeps it rather than resuming a core that was
+    // just handed that same offset.
+    if (!pendingResumePositionValid_ && std::isfinite(position_) && position_ >= 0.0) {
+        // 0.0 is a real offset: a loss at the very start must resume at the start.
+        pendingResumePosition_ = position_;
+        pendingResumePositionValid_ = true;
     }
     clearPacingProfile();
     pacingTimer_.stop();
