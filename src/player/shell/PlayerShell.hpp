@@ -166,6 +166,9 @@ public:
     void setSourceSize(int width, int height);
     void setEpisodeStepping(bool hasPrevious, bool hasNext);
     void setEpisodeLabel(const QString& label);
+    /// True while the engine holds playback paused for a transition or a build.
+    /// The chrome says so; it never presents the hold as the viewer's own pause.
+    void setEnginePauseHold(bool held);
     QString episodeLabel() const { return episodeLabel_; }
 
     // ── skip segments (provider metadata) ───────────────────────────
@@ -389,6 +392,9 @@ private:
     /// from setAnimeJanaiSelection() so a language change re-derives the chip
     /// without re-announcing a selection to the filter.
     void updateAnimeJanaiChip();
+    /// Re-derives the held-pause chip's words from the retained hold state, so a
+    /// language change rewords it without the engine saying anything.
+    void updatePauseHoldChip();
     void updateInfoChip();
     void retranslateUi();
     void openKeys();
@@ -508,6 +514,12 @@ private:
     ChromeLabel* lblEpisode_ = nullptr;
     ChromeLabel* lblNetworkStats_ = nullptr;
     ChromeLabel* lblEnhancement_ = nullptr;
+    /// Shown only while the engine holds playback paused for its own work: a
+    /// frozen picture with no explanation is otherwise indistinguishable from a
+    /// stall.
+    ChromeLabel* lblPauseHold_ = nullptr;
+    /// The hold state the chip's words are derived from.
+    bool enginePauseHold_ = false;
     /// Video metadata badges (HDR, Dolby Vision, Dolby Atmos, codec).
     QHBoxLayout* videoInfoLayout_ = nullptr;
     ChromeLabel* lblHdrBadge_ = nullptr;

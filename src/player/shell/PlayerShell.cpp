@@ -843,6 +843,15 @@ void PlayerShell::buildFooter() {
     lblEnhancement_->hide();
     info->addWidget(lblEnhancement_);
 
+    // The held-pause chip: the engine is holding playback paused for its own
+    // work, which the viewer must not have to guess from a still picture.
+    // The accent, not one of the enhancement chips' fixed hues: this is the
+    // viewer's own chrome saying what the engine is doing, not a chain's status.
+    lblPauseHold_ = new ChromeLabel(QString(), monoFont(8), accent(), footerLeft_);
+    lblPauseHold_->setObjectName(QStringLiteral("playerPauseHoldChip"));
+    lblPauseHold_->hide();
+    info->addWidget(lblPauseHold_);
+
     // The native status chip. It is a sibling of the Anime4K chip rather than a
     // replacement: the shader chain and the native pipeline are separate, and
     // one must never be read as the other. It is shown only for the loaded
@@ -1374,6 +1383,29 @@ void PlayerShell::setEpisodeStepping(bool hasPrevious, bool hasNext) {
     btnPrev_->setVisible(hasPrevious && !hudHidden_);
     btnNext_->setVisible(hasNext && !hudHidden_);
     update();
+}
+
+void PlayerShell::setEnginePauseHold(bool held) {
+    enginePauseHold_ = held;
+    updatePauseHoldChip();
+}
+
+void PlayerShell::updatePauseHoldChip() {
+    if (lblPauseHold_ == nullptr) return;
+    const bool wasVisible = !lblPauseHold_->isHidden();
+    if (!enginePauseHold_) {
+        lblPauseHold_->hide();
+    } else {
+        lblPauseHold_->setText(QStringLiteral("│ ") +
+                               tr("Preparing enhancement — playback paused"));
+        lblPauseHold_->setToolTip(tr("Playback is paused while the engine prepares its work."));
+        lblPauseHold_->setAccessibleName(tr("Preparing enhancement — playback paused"));
+        lblPauseHold_->show();
+    }
+    if (footerLeft_ != nullptr) footerLeft_->adjustSize();
+    // The chip is painted into the picture, not a window of its own: nothing else
+    // asks for the pass that would show it, and a hold has no frame to present.
+    if (wasVisible != !lblPauseHold_->isHidden()) chromeDirtyAll();
 }
 
 void PlayerShell::setEpisodeLabel(const QString& label) {
@@ -2681,6 +2713,7 @@ void PlayerShell::retranslateUi() {
     // The AnimeJaNai chip carries our own wording around the host's status
     // text, so it is re-derived here; the status itself is not re-requested.
     updateAnimeJanaiChip();
+    updatePauseHoldChip();
     // A skip offer names its segment in our words, so the installed language is
     // re-derived from the retained typed segments. The offer itself is not
     // changed and the position is not read.
