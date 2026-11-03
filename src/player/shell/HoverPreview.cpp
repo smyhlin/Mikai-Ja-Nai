@@ -259,9 +259,17 @@ void HoverPreview::place() {
     const bool wasVisible = isVisible();
     setGeometry(card);
     // The card is a translucent child: the area it covered is not repainted by
-    // moving it, so the parent is asked for it explicitly. Without this a moved
-    // card leaves the band it used to occupy behind.
-    if (wasVisible && !vacated.isEmpty()) host->update(vacated);
+    // moving it, so somebody has to be asked for it. A plain parent update() is
+    // clipped away wherever the card stood over the picture, so the paint goes
+    // through the chrome host, which owns both devices - expressed as the
+    // widget-local rect that maps onto the vacated one.
+    if (wasVisible && !vacated.isEmpty()) {
+        if (ChromeHost* chromeHost = chromeHostOf(this)) {
+            chromeHost->chromeDirty(this, QRect(vacated.topLeft() - pos(), vacated.size()));
+        } else {
+            host->update(vacated);
+        }
+    }
 }
 
 void HoverPreview::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }

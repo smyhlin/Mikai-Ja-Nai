@@ -48,6 +48,7 @@ private slots:
     void aCardRescuedInTheBandIsDismissedWhenThePointerLeavesIt();
     void aCacheHitSpendsNoSeekAndADecodeCountsItsOwn();
     void shellActivityWithoutAHoverStartsNoPreviewDecoder();
+    void theOpeningCardPaintsEveryLetterOfItsWords();
 
 private:
     // True when a runtime is selected. Without a module it skips; a selection

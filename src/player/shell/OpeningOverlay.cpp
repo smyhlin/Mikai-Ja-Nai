@@ -18,8 +18,68 @@ namespace {
 constexpr int kPanelMaxWidth = 420;
 constexpr int kPanelPadding = 18;
 constexpr int kRingRadius = 13;
+// The gap between the ring and the first letter, part of the column the words
+// must be laid out beside rather than under.
+constexpr int kRingGap = 12;
+constexpr int kDetailGap = 4;
+constexpr int kPanelMinWidth = 200;
 constexpr int kTickMs = 90;
+
+/// The card one headline and detail need, measured from the words themselves.
+///
+/// `availableWidth` is the window the card stands in, or 0 for the intrinsic
+/// size. The width carries the ring column and the padding on both sides before
+/// the words get what is left, which is the whole point: a width taken from the
+/// text advance alone leaves the words about a hundred pixels short and cuts
+/// the end off a headline.
+struct CardMeasure {
+    QSize size;
+    int textWidth = 0;
+    int headlineHeight = 0;
+    int detailHeight = 0;
+};
+
+CardMeasure measureCard(const QString& headline, const QString& detail, int availableWidth) {
+    const QFontMetrics headlineMetrics(uiFont(12, true));
+    const QFontMetrics detailMetrics(uiFont(10));
+    const int ringColumn = kRingRadius * 2 + kRingGap;
+    const int naturalText =
+        std::max(headlineMetrics.horizontalAdvance(headline),
+                 detail.isEmpty() ? 0 : detailMetrics.horizontalAdvance(detail));
+    int width = kPanelPadding * 2 + ringColumn + naturalText;
+    width = std::min(width, kPanelMaxWidth);
+    if (availableWidth > 0) width = std::min(width, availableWidth);
+    width = std::max(width, kPanelMinWidth);
+
+    CardMeasure measure;
+    measure.textWidth = std::max(1, width - kPanelPadding * 2 - ringColumn);
+    // A tall bound on purpose: the question is how many lines the words take at
+    // this width, and a bound that could clip would answer with its own height.
+    constexpr int kAnyHeight = 10000;
+    measure.headlineHeight =
+        headlineMetrics
+            .boundingRect(QRect(0, 0, measure.textWidth, kAnyHeight), Qt::TextWordWrap, headline)
+            .height();
+    measure.detailHeight =
+        detail.isEmpty()
+            ? 0
+            : detailMetrics
+                  .boundingRect(QRect(0, 0, measure.textWidth, kAnyHeight), Qt::TextWordWrap, detail)
+                  .height();
+    const int textHeight = measure.detailHeight > 0
+                               ? measure.headlineHeight + kDetailGap + measure.detailHeight
+                               : measure.headlineHeight;
+    measure.size = QSize(width, kPanelPadding * 2 + std::max(textHeight, kRingRadius * 2));
+    return measure;
+}
 }  // namespace
+
+QSize OpeningOverlay::sizeHint() const {
+    // The card's own size for the words on it: the number a caller would need to
+    // place this overlay, and the one paintEvent centres inside the window. Both
+    // come from the same measurement, so they cannot drift apart.
+    return measureCard(headline_, detail_, 0).size;
+}
 
 OpeningOverlay::OpeningOverlay(QWidget* parent) : QWidget(parent) {
     // Above the picture, never in front of the pointer: a viewer may still
@@ -76,19 +136,12 @@ void OpeningOverlay::paintEvent(QPaintEvent*) {
 
     const QFont headlineFont = uiFont(12, true);
     const QFont detailFont = uiFont(10);
-    const QFontMetrics headlineMetrics(headlineFont);
-    const QFontMetrics detailMetrics(detailFont);
-    int textWidth = headlineMetrics.horizontalAdvance(headline_);
-    if (!detail_.isEmpty()) {
-        textWidth = std::max(textWidth, detailMetrics.horizontalAdvance(detail_));
-    }
-    const int width = std::clamp(textWidth, 120, std::max(120, kPanelMaxWidth));
-    const int headlineHeight = headlineMetrics.height();
-    const int detailHeight = detail_.isEmpty() ? 0 : detailMetrics.height() + 4;
-    const int height = kPanelPadding * 2 + std::max(headlineHeight + detailHeight,
-                                                    kRingRadius * 2 + 4);
-    const QRectF panel((this->width() - width) / 2.0, (this->height() - height) / 2.0, width,
-                       height);
+    // Measured from the words, inside the window the card stands in: past the
+    // card's own limit the lines wrap, they are never elided or cut.
+    const CardMeasure measure = measureCard(headline_, detail_, width());
+    const QRectF panel((this->width() - measure.size.width()) / 2.0,
+                       (this->height() - measure.size.height()) / 2.0, measure.size.width(),
+                       measure.size.height());
 
     const double radius = std::clamp(cornerRadius() > 0.0 ? cornerRadius() : 12.0, 4.0, 20.0);
     QPainterPath shape;
@@ -115,19 +168,25 @@ void OpeningOverlay::paintEvent(QPaintEvent*) {
     painter.setPen(sweep);
     painter.drawArc(ring, (phase_ * 12) * 16, 100 * 16);
 
-    const double textLeft = ring.right() + kPanelPadding * 0.75;
-    const double textWidthAvailable = panel.right() - kPanelPadding - textLeft;
+    // The column the measurement reserved: the ring, the gap and the padding
+    // leave the words exactly this much, and the same numbers decided the card's
+    // width - so a line either fits or wraps, and neither is cut.
+    const double textLeft = panel.left() + kPanelPadding + kRingRadius * 2.0 + kRingGap;
+    const double textWidth = measure.textWidth;
     painter.setPen(white(235));
     painter.setFont(headlineFont);
-    painter.drawText(QRectF(textLeft, panel.top() + kPanelPadding, textWidthAvailable,
-                            headlineHeight),
-                     Qt::AlignLeft | Qt::AlignVCenter, headline_);
+    painter.drawText(QRectF(textLeft, panel.top() + kPanelPadding, textWidth,
+                            measure.headlineHeight + 2),
+                     Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, headline_);
     if (!detail_.isEmpty()) {
         painter.setPen(w55());
         painter.setFont(detailFont);
-        painter.drawText(QRectF(textLeft, panel.top() + kPanelPadding + headlineHeight + 4,
-                                textWidthAvailable, detailHeight),
-                         Qt::AlignLeft | Qt::AlignVCenter, detail_);
+        // Two pixels of slack into the padding: a hinting difference between the
+        // measuring and the drawing path must not cost a descender.
+        painter.drawText(QRectF(textLeft,
+                                panel.top() + kPanelPadding + measure.headlineHeight + kDetailGap,
+                                textWidth, measure.detailHeight + 2),
+                         Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, detail_);
     }
 }
 

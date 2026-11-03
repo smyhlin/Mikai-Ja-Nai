@@ -44,6 +44,12 @@ public:
     QString headline() const { return headline_; }
     QString detail() const { return detail_; }
 
+    /// The card's own size for the words it carries: the ring column, the padding
+    /// on both sides and the wrapped height of both lines. The painted card is
+    /// this size, so a caller can lay one out without guessing, and a headline
+    /// that no longer fits its card is a size disagreement rather than a clip.
+    QSize sizeHint() const override;
+
 protected:
     void paintEvent(QPaintEvent* event) override;
 

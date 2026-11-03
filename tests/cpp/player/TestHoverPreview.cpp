@@ -2,8 +2,10 @@
 
 #include <player/shell/FramePreviewService.hpp>
 #include <player/shell/HoverPreview.hpp>
+#include <player/shell/OpeningOverlay.hpp>
 #include <player/shell/PlayerShell.hpp>
 #include <player/shell/ShellSliders.hpp>
+#include <player/shell/ShellTheme.hpp>
 
 #include "MpvApi.hpp"
 
@@ -14,6 +16,8 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFileInfo>
+#include <QFont>
+#include <QFontMetrics>
 #include <QImage>
 #include <QList>
 #include <QMouseEvent>
@@ -72,6 +76,25 @@ QByteArray paddedCapture() {
 /// Answers the question so the caller asserts: a void helper would let a failed
 /// QVERIFY continue the body after it.
 bool inside(const QRect& card, const QRect& host) { return host.contains(card); }
+
+/// Pixels that read as a bright line: the headline is white on the card's dark
+/// panel, so a pixel that is both opaque enough and bright enough is a letter
+/// (or its antialiased edge), and the dimmer detail line is not.
+int brightInk(const QImage& image) {
+    if (image.isNull()) return 0;
+    const QImage rgba = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    int ink = 0;
+    for (int y = 0; y < rgba.height(); ++y) {
+        const QRgb* row = reinterpret_cast<const QRgb*>(rgba.constScanLine(y));
+        for (int x = 0; x < rgba.width(); ++x) {
+            const QRgb pixel = row[x];
+            if (qAlpha(pixel) < 128) continue;
+            if (qGray(pixel) < 190) continue;
+            ++ink;
+        }
+    }
+    return ink;
+}
 
 /// A real decode of a real clip carries picture, not one repeated colour.
 bool isUniform(const QImage& image) {
@@ -950,6 +973,65 @@ void TestHoverPreview::aCacheHitSpendsNoSeekAndADecodeCountsItsOwn() {
              "a stored answer is a lookup and a signal, not a decode");
 
     service.shutdown();
+}
+
+void TestHoverPreview::theOpeningCardPaintsEveryLetterOfItsWords() {
+    QWidget host;
+    host.resize(1280, 720);
+    mplayer::shell::OpeningOverlay overlay(&host);
+    overlay.setGeometry(QRect(QPoint(0, 0), host.size()));
+    host.show();
+    QCoreApplication::processEvents();
+
+    // The wait's own sentences, English and Ukrainian: the card is measured from
+    // whatever words it is handed, so both have to reach it whole.
+    struct Sentence {
+        QString headline;
+        QString detail;
+    };
+    const Sentence sentences[] = {
+        {QStringLiteral("Opening stream…"), QStringLiteral("probe opening")},
+        {QStringLiteral("Відкриття потоку…"), QStringLiteral("Серія 1 · 720p")},
+    };
+    const QFont headlineFont = mplayer::shell::uiFont(12, true);
+    const QFontMetrics metrics(headlineFont);
+    for (const Sentence& sentence : sentences) {
+        overlay.showOpening(sentence.headline, sentence.detail);
+        QCoreApplication::processEvents();
+
+        // The same words drawn by Qt at their own natural width, in the card's own
+        // font and colour: that is the ink the card has to carry. Nothing here
+        // knows the card's geometry, so a cut headline shows up as ink that never
+        // reached it rather than as a number copied from the layout.
+        const int naturalWidth = metrics.horizontalAdvance(sentence.headline) + 8;
+        QImage reference(naturalWidth, metrics.height() + 4, QImage::Format_ARGB32_Premultiplied);
+        reference.fill(Qt::transparent);
+        {
+            QPainter painter(&reference);
+            painter.setFont(headlineFont);
+            painter.setPen(mplayer::shell::white(235));
+            painter.drawText(QRect(0, 0, reference.width(), reference.height()),
+                             Qt::AlignLeft | Qt::AlignVCenter, sentence.headline);
+        }
+        const int wanted = brightInk(reference);
+        QVERIFY2(wanted > 100, "the reference words carry ink to compare against");
+
+        const QImage card = overlay.grab().toImage();
+        QVERIFY(!card.isNull());
+        const int painted = brightInk(card);
+        QVERIFY2(painted * 10 >= wanted * 8,
+                 qPrintable(QStringLiteral("\"%1\" painted %2 of the %3 ink pixels it needs: "
+                                           "the card cut the words")
+                                .arg(sentence.headline)
+                                .arg(painted)
+                                .arg(wanted)));
+        const QSize cardSize = overlay.sizeHint();
+        QVERIFY2(cardSize.width() > 0 && cardSize.height() > 0,
+                 "the card reports the size it paints");
+        QVERIFY2(cardSize.width() <= host.width(),
+                 "the card stays inside the window it stands in");
+    }
+    overlay.hideOpening();
 }
 
 void TestHoverPreview::shellActivityWithoutAHoverStartsNoPreviewDecoder() {

@@ -2696,7 +2696,11 @@ void PlayerShell::chromeDirty(QWidget* widget, const QRect& rect) {
     // rect is split rather than sent whole to either side.
     const QRect over = dirty.intersected(picture);
     if (!over.isEmpty()) {
-        surface_->update(over.translated(-surface_->pos()));
+        // Whole widget, not `over`: a QOpenGLWidget repaints its entire buffer
+        // whatever rect it is handed, so the partial form buys nothing - and a
+        // request Qt coalesces away or rounds empty takes the chrome with it
+        // until the next video frame, which on a paused picture is never.
+        surface_->update();
     }
     const QRegion beside = QRegion(dirty) - QRegion(picture);
     if (!beside.isEmpty()) {
