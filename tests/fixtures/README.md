@@ -622,6 +622,55 @@ supplies the required shaders, mpv DLL, Qt runtime/plugins and disposable
 scratch parent. See the [safe PowerShell invocation](../../AGENTS.md#running-individual-test-suites). Test startup refuses an existing populated or unsafe adjacent
 native tree; isolation does not make arbitrary manually launched binaries safe.
 
+## Close during a real engine build (Windows)
+
+`animejanai_probe --close-during-build` answers GOAL-F's teardown bound: a close that arrives
+while the player is waiting on a real AnimeJaNai engine build must return control in <= 2.2 s, say
+what it is doing, and then really destroy the dialog.
+
+It is opt-in and cannot run on its own:
+
+```bat
+cmake --build build/release --target animejanai_probe --parallel 4
+python .probe-out/goals/aji-runtime-prep/run_natural.py ^
+    windows-close-during-build ^
+    docs/ai/GOAL-E/windows-aji-runtime-stage/stage-context.json ^
+    --close-during-build
+```
+
+`run_natural.py` already supplies `--natural-player --backend tensorrt --preset
+spatial:sha256:7b804d87… --require-engine-build --probe-app-name <name>`, points
+`MIKAI_NATIVE_ROOT` at the owned store in `stage-context.json`, and appends every extra argument,
+so `--close-during-build` is the only addition. Run it from the repository root: the script
+resolves paths from its own location.
+
+What the mode does, exactly:
+
+1. Prepares the plan on a worker (`prepareAnimeJanaiPlan`) and submits it through
+   `VideoSurface::setAnimeJanaiPlan` - the call the dialog itself makes. There is no menu walk, no
+   `SetCursorPos`, no foreground activation, and no synthetic `animeJanaiEngineBuildChanged`.
+2. Waits for a build the fork reports: `animeJanaiEngineBuildChanged(true)`,
+   `animeJanaiEngineBuildActive()`, the dialog's own preparation window, and a non-empty backend
+   detail. A cached engine starts no build, so the run fails after 120 s instead of timing a wait.
+   A `*.engine.build.log` newer than the request is recorded as corroboration.
+3. Runs the dialog's real `closeEvent` and samples the overlay while that settle spins the dialog's
+   own event loop, so the `Finishing enhancement…` notice is observed, not injected.
+4. Measures the close request to the dialog's destruction (the deferred delete `WA_DeleteOnClose`
+   schedules) and writes `animejanai-close-during-build.json` under the owned native root.
+
+Read these keys from that JSON: `buildStarted`, `buildStartMs`, `buildDetail`,
+`overlayVisibleAtClose`, `buildLogs`, `finishingNoticeObserved`, `closeReturnMs`,
+`dialogDestroyedMs`, `budgetMs`, `settleAbandoned`, `abandonedLogged`, `closeRefused`,
+`statusAfterClose`, `passes`. The stderr lines `[close-build] summary …` and
+`PASS close-during-build: …` carry the same numbers for the run log.
+
+Scope, stated rather than implied: this proves teardown during a build, not that the build
+completed, and it is not native inference or throughput evidence. It needs a store where the
+selected graph has no engine for the source resolution; the owned store from
+`stage-context.json` is safe for the user's tree, and the run never addresses the application's
+own models. A close that reports itself refused is a FAIL here - that is the path the close keeps
+for a stop the native side named - so read `closeRefused` and `settleAbandoned` together.
+
 ## Native scaling framebuffer regression
 
 `TestVideoScaling hiddenPlaybackChangesThePicturePerMode` exercises six display modes, 150% size
