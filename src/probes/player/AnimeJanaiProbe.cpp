@@ -2021,9 +2021,11 @@ public:
     FocusDuringBuildRunner(shell::PlayerDialog* dialog, VideoSurface* surface,
                            FocusDuringBuildEvidence& evidence,
                            std::function<bool()> buildActive,
-                           std::function<bool()> frameHeld)
+                           std::function<bool()> frameHeld,
+                           std::function<bool()> samplingSettled)
         : QObject(dialog), dialog_(dialog), surface_(surface), evidence_(evidence),
-          buildActive_(std::move(buildActive)), frameHeld_(std::move(frameHeld)) {
+          buildActive_(std::move(buildActive)), frameHeld_(std::move(frameHeld)),
+          samplingSettled_(std::move(samplingSettled)) {
         timer_.setInterval(5);
         QObject::connect(&timer_, &QTimer::timeout, this, [this] { step(); });
     }
@@ -2041,6 +2043,7 @@ private:
         Warmup,
         Restore,
         HeldWait,
+        SamplingSettled,
         ForegroundPoll,
         AwayHold,
         BackOwn,
@@ -2071,6 +2074,7 @@ private:
     FocusDuringBuildEvidence& evidence_;
     std::function<bool()> buildActive_;
     std::function<bool()> frameHeld_;
+    std::function<bool()> samplingSettled_;
     QTimer timer_;
     mikai::probes::ForegroundPeer peer_;
     QScreen* screen_ = nullptr;
@@ -2400,6 +2404,10 @@ void FocusDuringBuildRunner::step() {
         return;
     }
     case Phase::Warmup: {
+        // A freshly activated peer needs a compositor dwell: sampling its band
+        // in the same millisecond it took the foreground would read the player's
+        // own bright picture and exhaust the attempts.
+        if (phaseClock_.elapsed() < 250) return;
         if (peer_.ownsForeground()) {
             const double luma = focusMeanLuma(focusDesktopCrop(screen_, evidence_.crop));
             const bool settled = evidence_.baselineLuma >= kFocusBrightBandLuma &&
@@ -2463,9 +2471,10 @@ void FocusDuringBuildRunner::step() {
                          static_cast<long long>(phaseClock_.elapsed()),
                          buildActive_() ? 1 : 0);
             // The peer starts only after the build's own hold and framebuffer
-            // sample are observable: its startup wait must not delay the pause
-            // acknowledgement the engine-pause proof measures.
-            enter(Phase::PeerStart);
+            // sampling are settled: ForegroundPeer::start() is a blocking helper
+            // call, so it must not be able to land inside the sampling window
+            // the engine-pause proof measures.
+            enter(Phase::SamplingSettled);
             return;
         }
         if (!buildActive_()) {
@@ -2476,6 +2485,21 @@ void FocusDuringBuildRunner::step() {
             fail(QStringLiteral("the build's held frame was not observable within 3000 ms; "
                                 "its pause/framebuffer proof would be invalid"));
             return;
+        }
+        return;
+    }
+    case Phase::SamplingSettled: {
+        if (samplingSettled_()) {
+            enter(Phase::PeerStart);
+            return;
+        }
+        if (!buildActive_()) {
+            fail(QStringLiteral("the build settled before its held-framebuffer sampling settled"));
+            return;
+        }
+        if (phaseClock_.elapsed() >= 5000) {
+            fail(QStringLiteral("the build's held-framebuffer sampling did not settle within "
+                                "5000 ms; its pause/framebuffer proof would be invalid"));
         }
         return;
     }
@@ -2497,8 +2521,12 @@ void FocusDuringBuildRunner::step() {
     case Phase::AwayHold: {
         if (phaseClock_.elapsed() < kFocusAwayHoldMs) return;
         awayHeldMs_ = phaseClock_.elapsed();
-        stillAway_ = peer_.ownsForeground();
+        // Native ownership is the truth that the peer switch happened; Qt's own
+        // inactive state is required as well, because it is the state the
+        // overlay's poll reacts to, and it is logged captured at this instant
+        // (never re-read after the return, where it would read active again).
         awayQtInactive_ = QGuiApplication::applicationState() != Qt::ApplicationActive;
+        stillAway_ = peer_.ownsForeground() && awayQtInactive_;
         awayLuma_ = focusMeanLuma(focusDesktopCrop(screen_, evidence_.crop));
         occluded_ = stillAway_ && cycleBaseline_ >= kFocusBrightBandLuma &&
             awayLuma_ >= 0.0 && awayLuma_ < cycleBaseline_ * 0.5;
@@ -2522,6 +2550,7 @@ void FocusDuringBuildRunner::step() {
     case Phase::BackOwn: {
         if (nativeForegroundAllowsInput(dialog_)) {
             // The interval starts only once this process owns the foreground.
+            foregroundTaken_ = true;
             paintSeen_ = false;
             paintAtNs_ = 0;
             activationAtNs_ = mikai::gui::uiprofile::nowNs();
@@ -2600,6 +2629,10 @@ void FocusDuringBuildRunner::finish() {
         QObject::disconnect(swapConnection_);
         swapConnection_ = QMetaObject::Connection();
     }
+    // ForegroundPeer::stop() kills and reaps the helper on the GUI thread (up to
+    // 2 s). At this point both the engine-pause proof and the focus evidence are
+    // complete, so the teardown cannot change any measurement; main's bounded
+    // wait for finished() covers it.
     peer_.stop();
     dialog_->raise();
     dialog_->activateWindow();
@@ -3070,7 +3103,12 @@ int main(int argc, char** argv) {
                 focusRunner = new FocusDuringBuildRunner(
                     naturalDialog, surface, focusBuild,
                     [&] { return buildActive; },
-                    [&] { return buildPlayback.held && buildPlayback.framebufferAt >= 0; });
+                    [&] { return buildPlayback.held && buildPlayback.framebufferAt >= 0; },
+                    [&] {
+                        return buildPlayback.framebufferAt >= 0 &&
+                               buildPlayback.framebufferSamples >= 3 &&
+                               buildPlayback.lastHeldAt - buildPlayback.framebufferAt >= 1000;
+                    });
                 focusRunner->begin();
 #endif
             }
