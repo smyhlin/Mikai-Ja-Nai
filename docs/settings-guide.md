@@ -30,6 +30,7 @@ In **Customization → Appearance**:
 - Choose a corner radius. This affects the app's rounded controls, including title-page buttons, and player chrome as well as the rest of the interface.
 - Toggle **Background gradient** to show or hide the accent glow at the top of the page. When it is off, its intensity, height, source and color controls are disabled. When on, adjust intensity and height with the sliders.
 - **Gradient source** decides where the glow's colour comes from. **Auto (follow accent)** paints the glow with the chosen accent, so the page wash can never disagree with the buttons. **Custom color** reveals the preset swatches and the custom picker and paints the stored colour. Switching back to Auto does not overwrite the stored custom colour: it is kept until you save a different Custom choice, so you can return to it.
+- A profile created by an older version, which stored a gradient colour separately and had no source setting, keeps that colour as a **Custom** choice. The app cannot tell a deliberately chosen colour from the old default, so it never discards one; pick **Auto (follow accent)** once to join the accent.
 - **Reset** resets the appearance-page choices (accent, radius and background-gradient settings, including the gradient source) to the shipped values. It does not reset the separate General-page choices.
 
 Appearance and site/content display changes preview while Settings is open. **Save** keeps them; **Cancel**, Escape, or closing the dialog restores the appearance from when that Settings session opened.
