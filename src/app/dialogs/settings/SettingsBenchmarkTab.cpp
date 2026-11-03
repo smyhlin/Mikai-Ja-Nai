@@ -500,7 +500,7 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     benchmarkRunButton_->setObjectName(QStringLiteral("benchmarkRunButton"));
     benchmarkRunButton_->setProperty("benchmarkRunAction", true);
     theme::applyActionRole(benchmarkRunButton_, theme::ActionRole::Primary);
-    polishInteractiveControl(benchmarkRunButton_, theme::kPrimaryControlSize);
+    polishInteractiveControl(benchmarkRunButton_, theme::kControlHeight);
     connect(benchmarkRunButton_, &QPushButton::clicked, this, &SettingsDialog::runBenchmark);
     barLayout->addWidget(benchmarkRunButton_, 0, Qt::AlignVCenter);
 

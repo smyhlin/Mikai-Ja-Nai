@@ -527,7 +527,7 @@ void TitlePage::buildHeader() {
     header_ = new QWidget(this);
     header_->setObjectName(QStringLiteral("titleHeader"));
     header_->setAttribute(Qt::WA_StyledBackground, true);
-    header_->setFixedHeight(theme::kTitleControlHeight + 2 * theme::kSpacingMedium);
+    header_->setFixedHeight(theme::kControlHeight + 2 * theme::kSpacingMedium);
     // The header spans the window so its surface can, while the row inside it
     // carries the same content cap as the body. Side margins are the centring
     // mechanism: a stretch pair would only ever give the row a third.
@@ -546,15 +546,24 @@ void TitlePage::buildHeader() {
                                          theme::kTitlePageInset, theme::kSpacingMedium);
     headerRowLayout_->setSpacing(theme::kSpacingMedium);
 
-    backButton_ = new QPushButton(tr("← Back"), headerRow_);
+    backButton_ = new QPushButton(tr("Back"), headerRow_);
     backButton_->setObjectName(QStringLiteral("titleBack"));
     theme::applyActionRole(backButton_, theme::ActionRole::Secondary);
+    backButton_->setIcon(theme::chevronLeftIcon(theme::kIconSize));
+    backButton_->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
+    // The glyph carries the direction; the caption is the accessible name and
+    // the label, so the button reads the same at every DPI.
+    backButton_->setAccessibleName(tr("Back"));
     backButton_->setCursor(Qt::PointingHandCursor);
+    // Opening the page must not paint a focus ring on a control nobody focused:
+    // Tab reaches it, a page load does not.
+    backButton_->setFocusPolicy(Qt::TabFocus);
     connect(backButton_, &QPushButton::clicked, this, &TitlePage::backRequested);
 
     homeButton_ = new QPushButton(tr("Home"), headerRow_);
     homeButton_->setObjectName(QStringLiteral("titleHome"));
     homeButton_->setCursor(Qt::PointingHandCursor);
+    homeButton_->setFocusPolicy(Qt::TabFocus);
     connect(homeButton_, &QPushButton::clicked, this, &TitlePage::homeRequested);
 
     status_ = new QLabel(headerRow_);
@@ -571,7 +580,8 @@ void TitlePage::buildHeader() {
 
     settingsButton_ = new QPushButton(headerRow_);
     settingsButton_->setObjectName(QStringLiteral("settingsChip"));
-    settingsButton_->setIcon(theme::gearIcon());
+    // The same outline gear the main page uses for the same action.
+    settingsButton_->setIcon(theme::outlineGearIcon());
     settingsButton_->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
     settingsButton_->setToolTip(tr("API token settings"));
     settingsButton_->setAccessibleName(tr("API token settings"));
@@ -582,9 +592,9 @@ void TitlePage::buildHeader() {
     // gear read as a single bar whatever the font does to their text.
     QPushButton* const headerControls[] = {backButton_, homeButton_, settingsButton_};
     for (QPushButton* control : headerControls) {
-        control->setMinimumHeight(theme::kTitleControlHeight);
+        control->setMinimumHeight(theme::kControlHeight);
     }
-    settingsButton_->setMinimumWidth(theme::kTitleControlHeight);
+    settingsButton_->setMinimumWidth(theme::kControlHeight);
 
     rateLabel_ = new RateLimitLabel(client_, headerRow_);
     headerRowLayout_->addWidget(backButton_);
@@ -683,8 +693,11 @@ void TitlePage::buildHero() {
     scores_ = new QLabel(hero_);
     scores_->setObjectName(QStringLiteral("titleScores"));
     wrapLabel(scores_);
+    scores_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     scores_->hide();
-    textColumn->addWidget(scores_, 0, Qt::AlignLeft);
+    // Added without an alignment flag: an aligned item keeps its single-line
+    // size hint, which is what clipped a wrapped score line.
+    textColumn->addWidget(scores_);
 
     // Genre and tag chips: wrapped like the disclosure actions, filled from the
     // retained detail, hidden until there is one.
@@ -699,8 +712,6 @@ void TitlePage::buildHero() {
     heroWatchButton_ = new QPushButton(tr("Watch"), hero_);
     heroWatchButton_->setObjectName(QStringLiteral("titleHeroWatchButton"));
     theme::applyActionRole(heroWatchButton_, theme::ActionRole::Primary);
-    heroWatchButton_->setMinimumHeight(48);
-    heroWatchButton_->setMinimumWidth(180);
     heroWatchButton_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
     heroWatchButton_->setCursor(Qt::PointingHandCursor);
     heroWatchButton_->setEnabled(false);
@@ -718,13 +729,11 @@ void TitlePage::buildHero() {
     auto* heroActions = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
     heroActionsHost->setLayout(heroActions);
 
-    heroWatchButton_->setMinimumHeight(48);
     heroActions->addWidget(heroWatchButton_);
     heroActions->setAlignment(heroWatchButton_, Qt::AlignVCenter);
     episodesButton_ = new QPushButton(tr("Episodes"), heroActionsHost);
     episodesButton_->setObjectName(QStringLiteral("titleEpisodesAnchor"));
     theme::applyActionRole(episodesButton_, theme::ActionRole::Secondary);
-    episodesButton_->setMinimumHeight(40);
     episodesButton_->setCursor(Qt::PointingHandCursor);
     episodesButton_->setToolTip(tr("Jump to episodes"));
     episodesButton_->setAccessibleDescription(
@@ -736,7 +745,6 @@ void TitlePage::buildHero() {
     metaButton_ = new QPushButton(tr("More details"), heroActionsHost);
     metaButton_->setObjectName(QStringLiteral("titleDetailsToggle"));
     theme::applyActionRole(metaButton_, theme::ActionRole::Ghost);
-    metaButton_->setMinimumHeight(40);
     metaButton_->hide();
     metaButton_->setCheckable(true);
     metaButton_->setToolTip(tr("Show title details"));
@@ -745,6 +753,9 @@ void TitlePage::buildHero() {
     connect(metaButton_, &QPushButton::toggled, this, &TitlePage::toggleMetadata);
     heroActions->addWidget(metaButton_);
     heroActions->setAlignment(metaButton_, Qt::AlignVCenter);
+    // The three hero actions are one group: one width, measured from whichever
+    // of the three captions is widest, and the 148 px floor the design names.
+    theme::equalizeWidths({heroWatchButton_, episodesButton_, metaButton_}, 148);
     QWidget::setTabOrder(heading_, subtitle_);
     QWidget::setTabOrder(subtitle_, heroWatchButton_);
     QWidget::setTabOrder(heroWatchButton_, episodesButton_);
@@ -786,7 +797,6 @@ void TitlePage::buildHero() {
     descriptionButton_ = new QPushButton(tr("Read more"), disclosureRow_);
     descriptionButton_->setObjectName(QStringLiteral("titleSynopsisToggle"));
     theme::applyActionRole(descriptionButton_, theme::ActionRole::Ghost);
-    descriptionButton_->setMinimumHeight(40);
     descriptionButton_->setCursor(Qt::PointingHandCursor);
     descriptionButton_->hide();
     connect(descriptionButton_, &QPushButton::clicked, this, &TitlePage::toggleDescription);
@@ -971,7 +981,6 @@ void TitlePage::buildEpisodeWorkspace() {
     watchWatchedButton_->setObjectName(QStringLiteral("titleWatchWatchedToggle"));
     theme::applyActionRole(watchWatchedButton_, theme::ActionRole::Secondary);
     watchWatchedButton_->setCheckable(true);
-    watchWatchedButton_->setMinimumHeight(theme::kTitleControlHeight);
     watchWatchedButton_->setCursor(Qt::PointingHandCursor);
     connect(watchWatchedButton_, &QPushButton::toggled, this, [this](bool checked) {
         if (watchEntry_ == nullptr || !entryIsPlayable(watchEntry_)) {
@@ -982,7 +991,6 @@ void TitlePage::buildEpisodeWorkspace() {
     watchButton_ = new QPushButton(tr("Watch"), watchPanel_);
     watchButton_->setObjectName(QStringLiteral("titleWatchButton"));
     theme::applyActionRole(watchButton_, theme::ActionRole::Primary);
-    watchButton_->setMinimumHeight(theme::kPrimaryControlSize);
     watchButton_->setCursor(Qt::PointingHandCursor);
     connect(watchButton_, &QPushButton::clicked, this, [this] {
         if (watchEntry_ != nullptr) {
@@ -999,6 +1007,7 @@ void TitlePage::buildEpisodeWorkspace() {
     watchActions->setLayout(watchActionsLayout);
     watchActionsLayout->addWidget(watchWatchedButton_);
     watchActionsLayout->addWidget(watchButton_);
+    theme::equalizeWidths({watchWatchedButton_, watchButton_});
     watchLayout_->addWidget(watchActions, 0, Qt::AlignVCenter);
     watchPanel_->hide();
 
@@ -1155,9 +1164,10 @@ void TitlePage::buildDetailsSheet() {
     detailsScore_ = new QLabel(metaHost_);
     detailsScore_->setObjectName(QStringLiteral("titleScores"));
     wrapLabel(detailsScore_);
+    detailsScore_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     identityText->addWidget(detailsTitle_);
     identityText->addWidget(detailsOriginal_);
-    identityText->addWidget(detailsScore_, 0, Qt::AlignLeft);
+    identityText->addWidget(detailsScore_);
     identityText->addStretch(1);
     identity->addWidget(detailsThumb_, 0, Qt::AlignTop);
     identity->addLayout(identityText, 1);
@@ -2641,7 +2651,7 @@ void TitlePage::rebuildReleaseChips() {
         kindLabel->setObjectName(QStringLiteral("releaseKind"));
         // The caption centres on the chip row beside it rather than hanging from
         // the top of it.
-        kindLabel->setFixedHeight(theme::kTitleControlHeight);
+        kindLabel->setFixedHeight(theme::kControlHeight);
         kindLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         // Keyed by the raw kind so a language switch re-words the row's caption
         // in place rather than rebuilding the chips and their selection.
@@ -2658,7 +2668,7 @@ void TitlePage::rebuildReleaseChips() {
             chip->setCheckable(true);
             chip->setCursor(Qt::PointingHandCursor);
             chip->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-            chip->setFixedHeight(theme::kTitleControlHeight);
+            chip->setFixedHeight(theme::kControlHeight);
             setReleaseChipText(chip, releaseChipLabel(releases_.at(index)));
             releaseGroup_->addButton(chip, index);
             releaseChips_[index] = chip;
@@ -3146,6 +3156,12 @@ void TitlePage::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
+    } else if (event->type() == QEvent::FontChange ||
+               event->type() == QEvent::ApplicationFontChange ||
+               event->type() == QEvent::StyleChange) {
+        // A new font changes every advance the two groups were measured from.
+        theme::equalizeWidths({heroWatchButton_, episodesButton_, metaButton_}, 148);
+        theme::equalizeWidths({watchWatchedButton_, watchButton_});
     } else if (event->type() == QEvent::DevicePixelRatioChange ||
                event->type() == QEvent::ScreenChangeInternal) {
         // Frames are painted at the ratio they will be shown at: a window that
@@ -3913,7 +3929,8 @@ void TitlePage::retranslateUi() {
     const int detailsScrollValue =
         detailsScroll_ != nullptr ? detailsScroll_->verticalScrollBar()->value() : 0;
     if (backButton_ != nullptr) {
-        backButton_->setText(tr("← Back"));
+        backButton_->setText(tr("Back"));
+        backButton_->setAccessibleName(tr("Back"));
     }
     if (homeButton_ != nullptr) {
         homeButton_->setText(tr("Home"));
@@ -4014,6 +4031,10 @@ void TitlePage::retranslateUi() {
     refreshRelatedTexts();
     refreshReleaseTexts();
     refreshEpisodeTexts();
+    // The action captions changed, so both groups are measured again from the
+    // font they now render in; a longer translation widens the group.
+    theme::equalizeWidths({heroWatchButton_, episodesButton_, metaButton_}, 148);
+    theme::equalizeWidths({watchWatchedButton_, watchButton_});
     updateEpisodeSummary();
     if (hasDetail_) {
         updateLicenseInfo(player_);

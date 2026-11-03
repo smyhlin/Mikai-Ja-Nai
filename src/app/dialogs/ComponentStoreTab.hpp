@@ -30,6 +30,7 @@ class QCheckBox;
 
 namespace mikai::app {
 
+class ActionGrid;
 class Runner;
 
 }  // namespace mikai::app
@@ -344,6 +345,8 @@ private:
     QPushButton* downloadButton_ = nullptr;
     QPushButton* importAnimeJanaiButton_ = nullptr;
     QPushButton* cancelButton_ = nullptr;
+    /// The tab's one action row: equal widths, re-flowed by available width.
+    ActionGrid* actionGrid_ = nullptr;
     QLabel* status_ = nullptr;
     struct ProgressItem {
         enum class Outcome { Active, Installed, Failed, Cancelled };

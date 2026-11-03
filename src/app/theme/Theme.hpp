@@ -4,6 +4,9 @@
 
 #include <QString>
 
+#include <initializer_list>
+#include <span>
+
 class QAbstractButton;
 
 namespace mikai::app::theme {
@@ -27,6 +30,23 @@ QString actionRoleName(ActionRole role);
 /// fixed. The sheet paints the role; a caller must not also set a private
 /// stylesheet.
 void applyActionRole(QAbstractButton* button, ActionRole role);
+
+/// The width every button of one action group needs: the widest label at its
+/// own font, plus that button's icon box and the symmetric inset pair, rounded
+/// up to an even pixel. A translation therefore changes the row's width instead
+/// of breaking the equality of its buttons.
+int equalizedWidth(std::span<QAbstractButton* const> buttons, int minimum = 0);
+
+/// Gives one action group one width and one fixed-height policy. Call after
+/// construction, after every retranslation and when the font or the device
+/// ratio changes; the reading is the font's, never a cached constant.
+void equalizeWidths(std::span<QAbstractButton* const> buttons, int minimum = 0);
+
+/// The same for a call-site list; the braced form is stack backed, so a resize
+/// or a language change allocates nothing.
+inline void equalizeWidths(std::initializer_list<QAbstractButton*> buttons, int minimum = 0) {
+    equalizeWidths(std::span<QAbstractButton* const>(buttons.begin(), buttons.size()), minimum);
+}
 
 /// The application-wide Qt stylesheet for one appearance.
 QString buildStylesheet(const Appearance& appearance);

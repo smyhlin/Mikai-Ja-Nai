@@ -120,6 +120,7 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     theme::applyActionRole(saveButton_, theme::ActionRole::Primary);
     connect(cancelButton_, &QPushButton::clicked, this, &QDialog::reject);
     connect(saveButton_, &QPushButton::clicked, this, &SettingsDialog::save);
+    theme::equalizeWidths({cancelButton_, saveButton_});
     footerLayout->addWidget(buttonBox_);
     root->addWidget(footer);
 
@@ -288,6 +289,10 @@ void SettingsDialog::changeEvent(QEvent* event) {
     QDialog::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
+    } else if (event->type() == QEvent::FontChange ||
+               event->type() == QEvent::ApplicationFontChange ||
+               event->type() == QEvent::StyleChange) {
+        theme::equalizeWidths({cancelButton_, saveButton_});
     }
 }
 
@@ -371,6 +376,7 @@ void SettingsDialog::retranslateUi() {
     retranslateNavigation();
     cancelButton_->setText(tr("Cancel"));
     saveButton_->setText(tr("Save"));
+    theme::equalizeWidths({cancelButton_, saveButton_});
 
     retranslateGeneralTab();
     retranslateCustomizationTabs();

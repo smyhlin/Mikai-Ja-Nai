@@ -180,8 +180,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     mediaButton_->setAccessibleName(tr("Open video"));
     theme::applyActionRole(mediaButton_, theme::ActionRole::Secondary);
     mediaButton_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    mediaButton_->setIconSize(QSize(theme::kSearchIconSize + theme::kSearchIconGlyphPad,
-                                    theme::kSearchIconSize));
+    mediaButton_->setIconSize(QSize(theme::kIconSize + theme::kIconGlyphPad, theme::kIconSize));
     // The menu and its actions are owned by the button; the actions are kept
     // because their captions are this page's to restate.
     auto* mediaMenu = new QMenu(mediaButton_);
@@ -202,7 +201,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     mediaChevron_->setFocusPolicy(Qt::NoFocus);
     mediaChevron_->setAttribute(Qt::WA_TransparentForMouseEvents);
     auto* chevronRow = new QHBoxLayout(mediaButton_);
-    chevronRow->setContentsMargins(0, 0, theme::kSearchActionPaddingH, 0);
+    chevronRow->setContentsMargins(0, 0, theme::kControlInsetH, 0);
     chevronRow->setSpacing(0);
     chevronRow->addStretch(1);
     chevronRow->addWidget(mediaChevron_, 0, Qt::AlignVCenter);
@@ -250,11 +249,11 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     auto* fieldLayout = new QHBoxLayout(searchField_);
     fieldLayout->setContentsMargins(theme::kSearchFieldInset, 0,
                                     theme::kSearchFieldTrailingInset, 0);
-    fieldLayout->setSpacing(theme::kSearchIconTextGap);
+    fieldLayout->setSpacing(theme::kIconTextGap);
 
     searchGlyph_ = new QLabel(searchField_);
     searchGlyph_->setObjectName(QStringLiteral("searchFieldGlyph"));
-    searchGlyph_->setFixedSize(theme::kSearchIconSize, theme::kSearchIconSize);
+    searchGlyph_->setFixedSize(theme::kIconSize, theme::kIconSize);
     searchGlyph_->setFocusPolicy(Qt::NoFocus);
     searchGlyph_->setAttribute(Qt::WA_TransparentForMouseEvents);
     fieldLayout->addWidget(searchGlyph_, 0, Qt::AlignVCenter);
@@ -279,18 +278,15 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     filtersButton_ = new QPushButton(tr("Filters"), header);
     filtersButton_->setObjectName(QStringLiteral("catalogueFiltersButton"));
     theme::applyActionRole(filtersButton_, theme::ActionRole::Secondary);
-    filtersButton_->setIconSize(QSize(theme::kSearchIconSize + theme::kSearchIconGlyphPad,
-                                      theme::kSearchIconSize));
+    filtersButton_->setIconSize(QSize(theme::kIconSize + theme::kIconGlyphPad, theme::kIconSize));
     teamsButton_ = new QPushButton(tr("Teams…"), header);
     teamsButton_->setObjectName(QStringLiteral("catalogueTeamsButton"));
     theme::applyActionRole(teamsButton_, theme::ActionRole::Secondary);
-    teamsButton_->setIconSize(QSize(theme::kSearchIconSize + theme::kSearchIconGlyphPad,
-                                    theme::kSearchIconSize));
+    teamsButton_->setIconSize(QSize(theme::kIconSize + theme::kIconGlyphPad, theme::kIconSize));
     searchButton_ = new QPushButton(tr("Search"), header);
     searchButton_->setObjectName(QStringLiteral("searchActionButton"));
     theme::applyActionRole(searchButton_, theme::ActionRole::Primary);
-    searchButton_->setIconSize(QSize(theme::kSearchIconSize + theme::kSearchIconGlyphPad,
-                                     theme::kSearchIconSize));
+    searchButton_->setIconSize(QSize(theme::kIconSize + theme::kIconGlyphPad, theme::kIconSize));
     connect(query_, &QLineEdit::returnPressed, this, &SearchPage::search);
     connect(searchButton_, &QPushButton::clicked, this, &SearchPage::search);
     connect(query_, &QLineEdit::textChanged, this, [this](const QString& text) {
@@ -318,6 +314,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     connect(filtersButton_, &QPushButton::clicked, this, &SearchPage::showCatalogueFilters);
     connect(teamsButton_, &QPushButton::clicked, this, &SearchPage::openTeamPicker);
     refreshHeaderIcons();
+    equalizeHeaderActions();
     loadDictionaries();
 
     resultsHeading_ = new QLabel(tr("Currently airing · sorted by newest episode"), this);
@@ -466,6 +463,13 @@ QString SearchPage::feedDayLabel(const QString& dayKey) const {
 
 void SearchPage::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
+    if (event->type() == QEvent::FontChange || event->type() == QEvent::ApplicationFontChange ||
+        event->type() == QEvent::StyleChange ||
+        event->type() == QEvent::DevicePixelRatioChange) {
+        // A new font changes every advance the row was measured from, so the
+        // equality is recomputed from the font rather than re-scaled.
+        equalizeHeaderActions();
+    }
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
     } else if (event->type() == QEvent::PaletteChange ||
@@ -509,20 +513,19 @@ void SearchPage::refreshHeaderIcons() {
     const QColor ink = pagePalette.color(QPalette::ButtonText);
     const QColor muted = pagePalette.color(QPalette::PlaceholderText);
     const QColor onPrimary(theme::searchHeaderPalette(currentAppearance()).onPrimary);
-    const int trailing = theme::kSearchIconGlyphPad;
+    const int trailing = theme::kIconGlyphPad;
 
     if (mediaButton_ != nullptr) {
-        mediaButton_->setIcon(theme::playIcon(theme::kSearchIconSize, ink.name(), trailing));
+        mediaButton_->setIcon(theme::playIcon(theme::kIconSize, ink.name(), trailing));
     }
     if (filtersButton_ != nullptr) {
-        filtersButton_->setIcon(theme::filterIcon(theme::kSearchIconSize, ink.name(), trailing));
+        filtersButton_->setIcon(theme::filterIcon(theme::kIconSize, ink.name(), trailing));
     }
     if (teamsButton_ != nullptr) {
-        teamsButton_->setIcon(theme::teamsIcon(theme::kSearchIconSize, ink.name(), trailing));
+        teamsButton_->setIcon(theme::teamsIcon(theme::kIconSize, ink.name(), trailing));
     }
     if (searchButton_ != nullptr) {
-        searchButton_->setIcon(
-            theme::searchIcon(theme::kSearchIconSize, onPrimary.name(), trailing));
+        searchButton_->setIcon(theme::searchIcon(theme::kIconSize, onPrimary.name(), trailing));
     }
     if (keysButton_ != nullptr) {
         keysButton_->setIcon(theme::keyboardIcon(theme::kIconSize, ink.name()));
@@ -532,8 +535,8 @@ void SearchPage::refreshHeaderIcons() {
     }
     if (searchGlyph_ != nullptr) {
         searchGlyph_->setPixmap(
-            theme::searchIcon(theme::kSearchIconSize, muted.name())
-                .pixmap(QSize(theme::kSearchIconSize, theme::kSearchIconSize),
+            theme::searchIcon(theme::kIconSize, muted.name())
+                .pixmap(QSize(theme::kIconSize, theme::kIconSize),
                         searchGlyph_->devicePixelRatioF()));
     }
     if (mediaChevron_ != nullptr) {
@@ -542,6 +545,12 @@ void SearchPage::refreshHeaderIcons() {
                 .pixmap(QSize(theme::kSearchMenuChevronSize, theme::kSearchMenuChevronSize),
                         mediaChevron_->devicePixelRatioF()));
     }
+}
+
+void SearchPage::equalizeHeaderActions() {
+    // The row reads as a row only when its buttons share one width; the home
+    // button joins the group so a returned-to-home bar keeps the same rhythm.
+    theme::equalizeWidths({filtersButton_, teamsButton_, searchButton_, homeButton_});
 }
 
 void SearchPage::retranslateUi() {
@@ -625,6 +634,9 @@ void SearchPage::retranslateUi() {
             }
         }
     }
+    // The captions moved, so the row's width is measured again: a longer
+    // translation widens the bar instead of breaking its equality.
+    equalizeHeaderActions();
 }
 
 void SearchPage::renderCarouselLine(CarouselSection& section) {
@@ -1593,6 +1605,9 @@ void SearchPage::showFeedRows(
         auto* row = new QWidget(section->rowsHost);
         row->setObjectName(QStringLiteral("homeFeedRow"));
         row->setContextMenuPolicy(Qt::CustomContextMenu);
+        // Every row is one height, so a feed scans as a list whatever its rows
+        // carry.
+        row->setFixedHeight(theme::kRowHeight);
         auto* rowLayout = new QHBoxLayout(row);
         rowLayout->setContentsMargins(theme::kSpacingSmall + 2, theme::kSpacingXs,
                                       theme::kSpacingSmall + 2, theme::kSpacingXs);
@@ -1606,8 +1621,19 @@ void SearchPage::showFeedRows(
             poster->setAttribute(Qt::WA_TransparentForMouseEvents);
             posters.append({thumb, poster, {}});
             rowLayout->addWidget(poster, 0, Qt::AlignVCenter);
+        } else {
+            // The poster slot is reserved even when there is no artwork, or the
+            // titled rows and the untitled ones would start at different x.
+            auto* slot = new QWidget(row);
+            slot->setObjectName(QStringLiteral("homeFeedPosterSlot"));
+            slot->setFixedSize(theme::kHomeFeedPosterWidth, theme::kHomeFeedPosterHeight);
+            slot->setAttribute(Qt::WA_TransparentForMouseEvents);
+            rowLayout->addWidget(slot, 0, Qt::AlignVCenter);
         }
-        const QString name = labels::titleName(anime.titles);
+        const QString titleText = labels::titleName(anime.titles);
+        // A row never renders as a bare metadata strip: a summary without a
+        // title still names the title it belongs to.
+        const QString name = titleText.isEmpty() ? tr("Untitled") : titleText;
         auto* title = new QPushButton(name, row);
         title->setObjectName(QStringLiteral("homeFeedTitle"));
         title->setToolTip(name);

@@ -7,7 +7,9 @@
 
 #include <QAbstractButton>
 #include <QApplication>
+#include <QFontMetrics>
 #include <QPalette>
+#include <QSizePolicy>
 #include <QStyle>
 #include <QVector>
 
@@ -154,6 +156,8 @@ QLabel[textRole="recommendation"], QGroupBox#nativeComponentPackCard QLabel[text
     background: rgba(%24, 0.14);
     border: 1px solid rgba(%24, 0.35);
     border-radius: %21px;
+    min-height: %30px;
+    max-height: %30px;
     padding: 2px %3px;
     font-size: 12px;
     font-weight: 600;
@@ -163,6 +167,8 @@ QLabel[badgeRole="installed"], QGroupBox#nativeComponentPackCard QLabel[badgeRol
     background: rgba(%24, 0.12);
     border: 1px solid rgba(%24, 0.30);
     border-radius: %21px;
+    min-height: %30px;
+    max-height: %30px;
     padding: 2px %3px;
     font-size: 12px;
     font-weight: 600;
@@ -172,6 +178,8 @@ QLabel[badgeRole="optional"], QGroupBox#nativeComponentPackCard QLabel[badgeRole
     background: rgba(%23, 0.05);
     border: 1px solid %10;
     border-radius: %21px;
+    min-height: %30px;
+    max-height: %30px;
     padding: 2px %3px;
     font-size: 12px;
 }
@@ -282,6 +290,16 @@ QPushButton[actionRole="danger"]:disabled {
     background: transparent;
     border-color: %26;
 }
+/* A control that states an action role sits on the one action height and the
+   symmetric inset pair, whatever its role's fill is. The compact ID-scoped
+   widgets below keep the sizes their own rules fix. */
+QPushButton[actionRole] {
+    min-height: %31px;
+    max-height: %31px;
+    padding: 0 %32px;
+    text-align: center;
+}
+QPushButton[actionRole="primary"] { padding: 0 %33px; }
 /* A colour chip paints its own disc and the caller fixes its size; the generic
    button box model (padding, border, minimum height) would inflate the size hint
    past that fixed size, so it is cleared for the chips only. */
@@ -526,6 +544,7 @@ QWidget#titlePage QWidget#titleHeader QPushButton {
     padding: 0 %37px;
     font-size: %26px;
     font-weight: 500;
+    text-align: center;
 }
 QWidget#titlePage QWidget#titleHeader QPushButton:hover:enabled { border-color: %4; }
 QWidget#titlePage QWidget#titleHeader QPushButton:pressed { background: %3; }
@@ -585,7 +604,8 @@ QWidget#titlePage QLabel#titleDescription { color: %6; font-size: %24px; }
 QWidget#titlePage QPushButton#titleSynopsisToggle,
 QWidget#titlePage QPushButton#titleDetailsToggle,
 QWidget#titlePage QPushButton#titleDiscoveryToggle {
-    min-height: 32px;
+    min-height: %47px;
+    max-height: %47px;
 }
 QWidget#titlePage QLabel#titleLinks { color: %6; font-size: %26px; }
 
@@ -597,10 +617,12 @@ QWidget#titlePage QPushButton[actionRole="ghost"] {
     color: %4;
     border: 1px solid %8;
     border-radius: %42px;
-    min-height: 32px;
+    min-height: %47px;
+    max-height: %47px;
     padding: 0 %37px;
     font-size: %26px;
     font-weight: 500;
+    text-align: center;
 }
 QWidget#titlePage QPushButton[actionRole="ghost"]:hover:enabled {
     background: rgba(%9, 0.16); border-color: rgba(%9, 0.45); color: %5;
@@ -625,9 +647,11 @@ QWidget#titlePage QPushButton#titleEpisodesAnchor {
     color: %6;
     border: 1px solid %44;
     border-radius: %42px;
-    min-height: 32px;
+    min-height: %47px;
+    max-height: %47px;
     padding: 0 %37px;
     font-size: %26px;
+    text-align: center;
 }
 QWidget#titlePage QPushButton#titleEpisodesAnchor:hover:enabled {
     background: %3; border-color: rgba(%9, 0.60);
@@ -670,10 +694,11 @@ QWidget#titlePage QPushButton#titleHeroWatchButton {
     color: %39;
     border: 1px solid %4;
     border-radius: %42px;
-    min-height: 44px;
-    padding: 0 20px;
+    min-height: %45px;
+    padding: 0 %46px;
     font-size: %24px;
     font-weight: 600;
+    text-align: center;
 }
 QWidget#titlePage QPushButton#titleWatchButton:hover:enabled,
 QWidget#titlePage QPushButton#titleHeroWatchButton:hover:enabled {
@@ -886,10 +911,12 @@ QWidget#titlePage QPushButton#titleWatchWatchedToggle {
     color: %7;
     border: 1px solid %44;
     border-radius: %42px;
-    min-height: 40px;
+    min-height: %47px;
+    max-height: %47px;
     padding: 0 %37px;
     font-size: %26px;
     font-weight: 500;
+    text-align: center;
 }
 QWidget#titlePage QPushButton#titleWatchWatchedToggle:hover:enabled {
     color: %6;
@@ -981,7 +1008,7 @@ QWidget#titlePage QPushButton#titleDetailsClose:focus { border-color: %4; }
         .arg(p.titleAccentRgb)
         .arg(p.titleMutedRgb)
         .arg(p.titleBackgroundRgb)
-        .arg(kTitleControlHeight)
+        .arg(kControlContentHeight)
         .arg(scaled(kTitlePillRadiusRound))
         .arg(scaled(kTitleCardRadius))
         .arg(scaled(kTitlePosterRadius))
@@ -1011,13 +1038,16 @@ QWidget#titlePage QPushButton#titleDetailsClose:focus { border-color: %4; }
         .arg(kTitleHeroTitlePixelSizeNarrow)
         .arg(radiusSmall(a))
         .arg(p.surfaceControlRaised)
-        .arg(p.borderControl);
+        .arg(p.borderControl)
+        .arg(kWatchCtaContentHeight)   // %45
+        .arg(kWatchCtaInsetH)          // %46
+        .arg(kControlContentHeight);   // %47
 }
 
 // The main page's header: two aligned rows with their own quiet surfaces. Every
 // rule is scoped to QWidget#searchPage, so the shared RateLimitLabel keeps its
 // catalogue/title-page line and no other surface inherits these fills.
-QString searchPageSheet(const SearchHeaderPalette& roles) {
+QString searchPageSheet(const Appearance& appearance, const SearchHeaderPalette& roles) {
     QString sheet = QStringLiteral(R"QSS(
 QWidget#searchPage QWidget#searchField {
     background: @input;
@@ -1059,8 +1089,9 @@ QWidget#searchPage QPushButton[actionRole="secondary"] {
     border-radius: %1px;
     min-height: %2px;
     max-height: %2px;
-    padding: 0 %12px 0 %6px;
+    padding: 0 %6px;
     font-weight: 500;
+    text-align: center;
 }
 QWidget#searchPage QPushButton#openMediaButton { padding: 0 %7px 0 %6px; }
 QWidget#searchPage QPushButton[actionRole="secondary"]:hover {
@@ -1074,6 +1105,25 @@ QWidget#searchPage QPushButton[actionRole="secondary"]:disabled {
     background: @secondary;
     border-color: @border;
 }
+/* The team browser's way back is a secondary action, not a bare chip: it takes
+   the same height, boundary and radius as the header's other actions. */
+QWidget#searchPage QPushButton#teamBackButton {
+    background: @secondary;
+    color: @text;
+    border: 1px solid @border;
+    border-radius: %1px;
+    min-height: %2px;
+    max-height: %2px;
+    padding: 0 %6px;
+    font-weight: 500;
+    text-align: center;
+}
+QWidget#searchPage QPushButton#teamBackButton:hover {
+    background: @secondaryHover;
+    border-color: @primary;
+}
+QWidget#searchPage QPushButton#teamBackButton:pressed { background: @input; }
+QWidget#searchPage QPushButton#teamBackButton:focus { border-color: @primary; }
 QWidget#searchPage QPushButton#openMediaButton::menu-indicator {
     image: none;
     width: 0px;
@@ -1091,8 +1141,9 @@ QWidget#searchPage QPushButton[actionRole="primary"] {
     border-radius: %1px;
     min-height: %2px;
     max-height: %2px;
-    padding: 0 %13px 0 %8px;
+    padding: 0 %8px;
     font-weight: 600;
+    text-align: center;
 }
 QWidget#searchPage QPushButton[actionRole="primary"]:hover,
 QWidget#searchPage QPushButton[actionRole="primary"]:pressed { background: @primaryHover; }
@@ -1146,19 +1197,17 @@ QWidget#searchPage QLabel#rateDot[tone="low"] { background: @dotLow; }
 QWidget#searchPage QLabel#rateDot[tone="exhausted"] { background: @dotExhausted; }
 QWidget#searchPage QLabel#rateDot[tone="unknown"] { background: @dotUnknown; }
 )QSS")
-        .arg(kSearchHeaderRadius)          // %1
-        .arg(kSearchHeaderContentHeight)   // %2
+        .arg(radiusSmall(appearance))      // %1
+        .arg(kControlContentHeight)        // %2
         .arg(kSearchKeycapRadius)          // %3
         .arg(kSearchKeycapPaddingV)        // %4
         .arg(kSearchKeycapPaddingH)        // %5
-        .arg(kSearchActionPaddingH)        // %6
+        .arg(kControlInsetH)               // %6
         .arg(kSearchMenuPaddingRight)      // %7
-        .arg(kSearchPrimaryPaddingH)       // %8
+        .arg(kControlInsetHPrimary)        // %8
         .arg(kSearchDotRadius)             // %9
         .arg(kSearchDotSize)               // %10
-        .arg(kSearchKeycapContentHeight)   // %11
-        .arg(kSearchActionPaddingRight)    // %12
-        .arg(kSearchPrimaryPaddingRight);  // %13
+        .arg(kSearchKeycapContentHeight);  // %11
     // Longest name first where one token is a prefix of another (@border and
     // @borderStrong, @secondary and @secondaryHover, @primary and
     // @primaryHover), or the shorter replacement would eat the longer name.
@@ -1270,8 +1319,15 @@ QString buildStylesheet(const Appearance& appearance) {
             .arg(p.borderControl, 26)
             .arg(p.accentInk, 27)
             .arg(p.dangerRgb, 28)
-            .arg(kSettingsSwatchSize, 29);
-    return application + titlePage(p, appearance) + searchPageSheet(searchHeaderPalette(appearance));
+            .arg(kSettingsSwatchSize, 29)
+            // The trailing numbers are place markers, not field widths: arg()
+            // substitutes in call order.
+            .arg(kBadgeHeight - 2 * 2 - 2)  // %30
+            .arg(kControlContentHeight)     // %31
+            .arg(kControlInsetH)            // %32
+            .arg(kControlInsetHPrimary);    // %33
+    return application + titlePage(p, appearance) +
+           searchPageSheet(appearance, searchHeaderPalette(appearance));
 }
 
 QString buildStylesheet() { return buildStylesheet(Appearance{}); }
@@ -1301,6 +1357,35 @@ void applyActionRole(QAbstractButton* button, ActionRole role) {
     // row glyph, a self-painted chip); the sheets carry the height, so one
     // metric owns it instead of two.
     if (button->style() != nullptr) button->style()->polish(button);
+}
+
+int equalizedWidth(std::span<QAbstractButton* const> buttons, int minimum) {
+    int width = qMax(0, minimum);
+    for (QAbstractButton* button : buttons) {
+        if (button == nullptr) continue;
+        const QFontMetrics metrics(button->font());
+        int need = metrics.horizontalAdvance(button->text());
+        if (!button->icon().isNull()) {
+            need += button->iconSize().width() + kIconTextGap;
+        }
+        // The sheet's inset pair plus the 1 px boundary on each side; the wider
+        // pair covers a primary and a secondary in the same row.
+        need += 2 * (kControlInsetHPrimary + 1);
+        width = qMax(width, need);
+    }
+    return width + (width % 2);
+}
+
+void equalizeWidths(std::span<QAbstractButton* const> buttons, int minimum) {
+    const int width = equalizedWidth(buttons, minimum);
+    for (QAbstractButton* button : buttons) {
+        if (button == nullptr) continue;
+        button->setMinimumWidth(width);
+        QSizePolicy policy = button->sizePolicy();
+        policy.setHorizontalPolicy(QSizePolicy::MinimumExpanding);
+        policy.setVerticalPolicy(QSizePolicy::Fixed);
+        button->setSizePolicy(policy);
+    }
 }
 
 void applyPalette(const Appearance& appearance) {

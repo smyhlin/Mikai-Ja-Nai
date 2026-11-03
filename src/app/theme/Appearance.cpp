@@ -1,7 +1,6 @@
 #include "theme/Appearance.hpp"
 
 #include <QCoreApplication>
-#include <QRegularExpression>
 #include <QStringList>
 
 namespace mikai::app::theme {
@@ -136,24 +135,6 @@ QColor gradientColor(const Appearance& appearance) {
     if (appearance.gradientMode != GradientMode::Custom) return accentColor(appearance);
     const QColor stored(appearance.gradientColor);
     return stored.isValid() ? stored : accentColor(appearance);
-}
-
-QString scaleRadii(const QString& sheet, double scale) {
-    if (qFuzzyCompare(scale, 1.0)) return sheet;
-    static const QRegularExpression corner(QStringLiteral("border-radius:\\s*(\\d+)px"));
-    QString scaled;
-    scaled.reserve(sheet.size());
-    qsizetype offset = 0;
-    QRegularExpressionMatchIterator matches = corner.globalMatch(sheet);
-    while (matches.hasNext()) {
-        const QRegularExpressionMatch match = matches.next();
-        scaled += sheet.mid(offset, match.capturedStart() - offset);
-        const int radius = qMax(0, qRound(match.captured(1).toInt() * scale));
-        scaled += QStringLiteral("border-radius: %1px").arg(radius);
-        offset = match.capturedEnd();
-    }
-    scaled += sheet.mid(offset);
-    return scaled;
 }
 
 QString hexOf(const QColor& color) { return color.name(QColor::HexRgb); }

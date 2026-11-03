@@ -12,7 +12,38 @@ inline constexpr int kSpacingLarge = 20;
 
 inline constexpr int kRadiusSmall = 8;
 
-inline constexpr int kPrimaryControlSize = 44;
+// ── Control geometry ────────────────────────────────────────────────────────
+// One height for every action, filter and settings action, and one inset pair
+// for their text. Qt's stylesheet box model adds the border to a min-height, so
+// the sheets always receive the content height and every surface measures 40.
+inline constexpr int kControlHeight = 40;
+inline constexpr int kControlContentHeight = kControlHeight - 2;
+// A watch CTA is the one action allowed to stand taller, and its height is
+// stated here rather than at its call site.
+inline constexpr int kWatchCtaHeight = 44;
+inline constexpr int kWatchCtaContentHeight = kWatchCtaHeight - 2;
+inline constexpr int kWatchCtaInsetH = 20;
+// Symmetric horizontal insets: a centred label must not sit off-axis.
+inline constexpr int kControlInsetH = 12;
+inline constexpr int kControlInsetHPrimary = 14;
+// The gap between a control's glyph and its label, shared by the buttons and
+// the search field. The widget style owns part of that gap and offers no knob
+// for it, so the glyph pads its own box with the remainder; the pad is part of
+// the icon's planned device box (Icons.cpp), so it stays inside the logical
+// size the layout reserved and never widens the icon at a fractional ratio.
+inline constexpr int kIconTextGap = 8;
+inline constexpr int kIconGlyphPad = kIconTextGap / 2;
+// The height every home/feed list row keeps, thumbnail or not.
+inline constexpr int kRowHeight = 56;
+// A status badge is one line; its counts live on the progress line below.
+inline constexpr int kBadgeHeight = 24;
+// The component card header grid: [check] [title/description stretch]
+// [badge] [size].
+inline constexpr int kComponentCheckColumn = kControlHeight;
+inline constexpr int kComponentBadgeWidth = 120;
+inline constexpr int kComponentSizeWidth = 72;
+
+// Non-action rows: table rows, switches and tabs keep the compact step.
 inline constexpr int kSecondaryControlSize = 36;
 inline constexpr int kSettingsControlSize = 36;
 // A settings form's label column: wide enough for the longest translated label
@@ -96,7 +127,6 @@ inline constexpr int kTitleCompactCoverHeight = 252;
 inline constexpr int kTitleNarrowCoverWidth = 120;
 inline constexpr int kTitleNarrowCoverHeight = 180;
 
-inline constexpr int kTitleControlHeight = 40;
 inline constexpr int kTitleDetailsWidth = 460;
 inline constexpr int kTitleDetailsCloseSize = 36;
 inline constexpr int kTitleDetailsThumbRadius = 8;
@@ -134,12 +164,12 @@ inline constexpr int kTitleBackdropSourceHeight = 128;
 inline constexpr int kTitleBackdropBlurRadius = 18;
 
 // Decorative label pills and content surfaces keep their independent geometry.
-inline constexpr int kTitlePillRadiusRound = kTitleControlHeight / 2;
+inline constexpr int kTitlePillRadiusRound = kControlHeight / 2;
 inline constexpr int kTitleCardRadius = 16;
 inline constexpr int kTitlePosterRadius = 12;
 inline constexpr int kTitleCircleControlSize = 36;
 inline constexpr int kTitleChipPaddingH = 14;
-inline constexpr int kTitleButtonPaddingH = 16;
+inline constexpr int kTitleButtonPaddingH = kControlInsetHPrimary;
 inline constexpr int kTitleTabPaddingV = 10;
 inline constexpr int kTitleTabPaddingH = 16;
 inline constexpr int kTitleTabSpacing = 8;
@@ -174,45 +204,30 @@ inline constexpr int kCarouselCardSpacing = 10;
 // ── Search page header ──────────────────────────────────────────────────────
 // The main page's header is two aligned rows: the brand with the passive quota
 // pill and the icon actions above, the title search with its actions below.
-// These dimensions and radii are search-header-only, like the title page's
-// block above; the rest of the page keeps the shared spacing scale.
-inline constexpr int kSearchHeaderControlHeight = 40;
-// A 1px hairline is the only vertical padding a control carries, so the sheet
-// asks for a content height one border short of the row height.
-inline constexpr int kSearchHeaderContentHeight = kSearchHeaderControlHeight - 2;
+// The height, inset and radius are the shared control tokens; only the header's
+// own rhythm and the keycap stay search-header-only.
 inline constexpr int kSearchHeaderSpacing = kSpacingSmall;
 inline constexpr int kSearchHeaderRowGap = kSpacingMedium;
-inline constexpr int kSearchHeaderRadius = 8;
 inline constexpr int kSearchKeycapRadius = 6;
-inline constexpr int kSearchActionPaddingH = 12;
-inline constexpr int kSearchActionPaddingRight = 14;
-inline constexpr int kSearchPrimaryPaddingH = 14;
-inline constexpr int kSearchPrimaryPaddingRight = 16;
 inline constexpr int kSearchFieldInset = 12;
 inline constexpr int kSearchFieldTrailingInset = 6;
 inline constexpr int kSearchKeycapPaddingH = 8;
 inline constexpr int kSearchKeycapPaddingV = 0;
-inline constexpr int kSearchKeycapContentHeight = 24;
+inline constexpr int kSearchKeycapContentHeight = kBadgeHeight;
 inline constexpr int kSearchKeycapMinFieldWidth = 240;
-inline constexpr int kSearchIconSize = 18;
 // The quota pill's status dot: a small filled disc, never an icon.
 inline constexpr int kSearchDotSize = 6;
 inline constexpr int kSearchDotRadius = kSearchDotSize / 2;
 inline constexpr int kSearchDotSpacing = 6;
 inline constexpr int kSearchPillPaddingLeft = 10;
-inline constexpr int kSearchPillPaddingRight = 12;
+inline constexpr int kSearchPillPaddingRight = kSearchPillPaddingLeft;
 // The chevron the Open video menu carries past its label. Below 12 the glyph's
 // 2.4-unit stroke falls under a device pixel and single columns round away, so
 // the menu reads as a dashed line at 100 % scaling.
 inline constexpr int kSearchMenuChevronSize = 12;
+// The Open-video button is the one control whose right inset differs: its menu
+// chevron lives in that inset, and the sheet states it as this one exception.
 inline constexpr int kSearchMenuPaddingRight =
-    kSearchActionPaddingH + kSearchMenuChevronSize + kSpacingSmall;
-// The spacing the header wants between a button's glyph and its label. The
-// widget style owns part of that gap and offers no knob for it, so the glyph
-// pads its own box with the remainder. The pad is part of the icon's planned
-// device box (Icons.cpp), so it stays inside the logical size the layout
-// reserved and never widens the icon at a fractional ratio.
-inline constexpr int kSearchIconTextGap = 8;
-inline constexpr int kSearchIconGlyphPad = kSearchIconTextGap / 2;
+    kControlInsetH + kSearchMenuChevronSize + kSpacingSmall;
 
 }  // namespace mikai::app::theme

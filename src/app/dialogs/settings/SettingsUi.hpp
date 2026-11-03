@@ -231,8 +231,8 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background: transparent;
             color: %9;
             border: 1px solid transparent;
-            border-radius: 10px;
-            padding: 0 12px;
+            border-radius: %50px;
+            padding: 0 %52px;
             text-align: left;
             font-weight: 500;
         }
@@ -253,8 +253,8 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background-color: %20;
             color: %9;
             border: 1px solid rgba(%4, 0.14);
-            border-radius: 8px;
-            padding: 0 14px;
+            border-radius: %50px;
+            padding: 0 %53px;
             font-weight: 500;
         }
         QPushButton#radiusChip:hover { background-color: %30; color: %6; }
@@ -302,7 +302,7 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
         QFrame#settingsCard {
             background-color: %3;
             border: 1px solid rgba(%4, 0.12);
-            border-radius: 16px;
+            border-radius: %54px;
         }
         QFrame#settingsCard:hover {
             border-color: rgba(%4, 0.20);
@@ -310,13 +310,13 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
         QFrame#settingsSubCard {
             background-color: %5;
             border: 1px solid rgba(%4, 0.10);
-            border-radius: 12px;
+            border-radius: %54px;
         }
         QFrame#settingsPageHeader,
         QFrame#benchmarkHeader {
             background-color: %3;
             border: 1px solid rgba(%4, 0.12);
-            border-radius: 16px;
+            border-radius: %54px;
         }
         QFrame#settingsDivider {
             background-color: rgba(%4, 0.10);
@@ -355,7 +355,7 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background-color: %5;
             color: %9;
             border: 1px solid rgba(%4, 0.12);
-            border-radius: 10px;
+            border-radius: %54px;
             padding: 10px 12px;
             font-size: 12px;
         }
@@ -363,7 +363,7 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background-color: rgba(%10, 0.08);
             color: %11;
             border: 1px solid rgba(%10, 0.22);
-            border-radius: 8px;
+            border-radius: %54px;
             padding: 8px 12px;
             font-size: 12px;
         }
@@ -396,7 +396,7 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background-color: rgba(%10, 0.12);
             color: %18;
             border: 1px solid rgba(%10, 0.24);
-            border-radius: 6px;
+            border-radius: %55px;
             padding: 3px 9px;
             font-size: 11px;
             font-weight: 600;
@@ -425,7 +425,7 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background-color: %20;
             color: %2;
             border: 1px solid rgba(%4, 0.16);
-            border-radius: 8px;
+            border-radius: %50px;
             padding: 5px 11px;
             selection-background-color: %21;
             selection-color: %22;
@@ -455,8 +455,8 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             subcontrol-position: top right;
             width: 26px;
             border-left: 1px solid rgba(%4, 0.10);
-            border-top-right-radius: 8px;
-            border-bottom-right-radius: 8px;
+            border-top-right-radius: %50px;
+            border-bottom-right-radius: %50px;
             background: transparent;
         }
         /* No combo-arrow image: the rule above belongs to the application sheet
@@ -467,7 +467,7 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background-color: %28;
             color: %2;
             border: 1px solid rgba(%10, 0.28);
-            border-radius: 8px;
+            border-radius: %50px;
             padding: 4px;
             selection-background-color: rgba(%19, 0.28);
             selection-color: %22;
@@ -485,9 +485,12 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background-color: %45;
             color: %7;
             border: 1px solid %46;
-            border-radius: 8px;
-            padding: 6px 14px;
+            border-radius: %50px;
+            min-height: %51px;
+            max-height: %51px;
+            padding: 0 %52px;
             font-weight: 500;
+            text-align: center;
         }
         QPushButton:hover {
             background-color: rgba(%10, 0.12);
@@ -515,8 +518,8 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background-color: %33;
             color: %47;
             border: 1px solid %33;
-            border-radius: 8px;
-            padding: 7px 18px;
+            border-radius: %50px;
+            padding: 0 %53px;
             font-weight: 600;
         }
         QPushButton[actionRole="primary"]:hover {
@@ -543,8 +546,10 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background-color: transparent;
             color: %33;
             border: 1px solid rgba(%10, 0.22);
-            border-radius: 7px;
-            padding: 4px 10px;
+            border-radius: %50px;
+            min-height: %51px;
+            max-height: %51px;
+            padding: 0 %52px;
             font-size: 12px;
             font-weight: 500;
         }
@@ -622,7 +627,7 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
         QCheckBox[tileCheck="true"] {
             background-color: %39;
             border: 1px solid rgba(%4, 0.12);
-            border-radius: 8px;
+            border-radius: %50px;
             padding: 6px 10px;
             font-weight: 500;
         }
@@ -656,7 +661,7 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
         QWidget#presetShortcutRow {
             background-color: %41;
             border: 1px solid rgba(%4, 0.09);
-            border-radius: 10px;
+            border-radius: %54px;
         }
         QWidget#presetShortcutRow:hover {
             background-color: %29;
@@ -676,7 +681,7 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background-color: %20;
             color: %2;
             border: 1px solid rgba(%4, 0.14);
-            border-radius: 10px;
+            border-radius: %54px;
             padding: 6px;
             outline: 0;
         }
@@ -692,7 +697,7 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             alternate-background-color: %42;
             color: %2;
             border: 1px solid rgba(%4, 0.14);
-            border-radius: 10px;
+            border-radius: %54px;
             selection-background-color: rgba(%19, 0.24);
             selection-color: %22;
             outline: 0;
@@ -710,14 +715,14 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background-color: %20;
             color: %8;
             border: 1px dashed rgba(%4, 0.18);
-            border-radius: 10px;
+            border-radius: %54px;
             padding: 20px;
         }
         QLabel#benchmarkResultDetail {
             background-color: rgba(%16, 0.10);
             color: %17;
             border: 1px solid rgba(%16, 0.28);
-            border-radius: 8px;
+            border-radius: %50px;
             padding: 8px 12px;
         }
 
@@ -819,9 +824,16 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
         .arg(p.borderControl)
         .arg(p.accentInk)
         .arg(p.accentHover)
-        .arg(theme::kSettingsSwatchSize);
-    // Literal corners use the 8 px design baseline, not the saved default.
-    return theme::scaleRadii(sheet, theme::radiusSmall(appearance) / 8.0);
+        .arg(theme::kSettingsSwatchSize)
+        .arg(theme::radiusSmall(appearance))   // %50
+        .arg(theme::kControlContentHeight)     // %51
+        .arg(theme::kControlInsetH)            // %52
+        .arg(theme::kControlInsetHPrimary)     // %53
+        .arg(theme::radiusMedium(appearance))  // %54
+        .arg(theme::radiusPill(appearance));   // %55
+    // The page's control and card corners are the appearance's own radius
+    // steps, not a second scale computed here.
+    return sheet;
 }
 
 }  // namespace mikai::app

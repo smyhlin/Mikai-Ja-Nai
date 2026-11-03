@@ -198,6 +198,11 @@ private:
     /// the logo is re-tinted, so an icon can never stay on the previous theme's
     /// ink while its button moves.
     void refreshHeaderIcons();
+    /// One width for the header's text actions, read from their fonts. Called
+    /// after construction, after every retranslation and when the font or the
+    /// device ratio changes, so a wider translation widens the row instead of
+    /// making one button longer than its neighbours.
+    void equalizeHeaderActions();
     void retranslateUi();
     /// The heading of the block `key` names, in the active language. Both the
     /// constructor and a retranslate pass take it from here, so the two can

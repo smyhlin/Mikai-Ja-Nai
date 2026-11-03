@@ -3942,14 +3942,12 @@ If a portable folder was moved, disable startup from the old location before mov
         <translation>Просторові моделі не пройшли перевірку: %1.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1140"/>
-        <source>%1/%2 installed; %3/%2 verified</source>
+        <source>%1/%2 installed · %3/%2 verified</source>
         <translation>%1/%2 встановлено · %3/%2 перевірено</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1139"/>
-        <source>not installed (0/%1)</source>
-        <translation>не встановлено (0/%1)</translation>
+        <source>not installed</source>
+        <translation>не встановлено</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1146"/>
@@ -5516,6 +5514,10 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
 </context>
 <context>
     <name>mikai::app::SearchPage</name>
+    <message>
+        <source>Untitled</source>
+        <translation>Без назви</translation>
+    </message>
     <message numerus="yes">
         <location filename="../src/app/pages/SearchPage.cpp" line="774"/>
         <source>%n episode(s)</source>
@@ -7292,10 +7294,8 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mikai::app::TitlePage</name>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="544"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3911"/>
-        <source>← Back</source>
-        <translation>← Назад</translation>
+        <source>Back</source>
+        <translation>Назад</translation>
     </message>
     <message>
         <location filename="../src/app/pages/TitlePage.cpp" line="550"/>

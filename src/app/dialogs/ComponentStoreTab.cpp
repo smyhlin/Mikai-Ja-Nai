@@ -5,6 +5,7 @@
 #include "workers/Runner.hpp"
 #include "theme/Metrics.hpp"
 #include "theme/Theme.hpp"
+#include "widgets/ActionGrid.hpp"
 
 #include <backend/MikaiClient.hpp>
 #include <backend/Cancellation.hpp>
@@ -48,7 +49,6 @@
 #include <QtWidgets/QProgressBar>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QScrollArea>
-#include "widgets/FlowLayout.hpp"
 #include <QtWidgets/QVBoxLayout>
 
 #include <stdexcept>
@@ -527,9 +527,13 @@ void ComponentStoreTab::buildUi() {
         cardLayout->setContentsMargins(theme::kSpacingMedium, theme::kSpacingMedium,
                                        theme::kSpacingMedium, theme::kSpacingMedium);
         cardLayout->setSpacing(theme::kSpacingMedium);
+        // The header grid: [check 40] [title/description stretch] [badge 120]
+        // [size 72], so the badge sits at the trailing edge of the text block
+        // instead of wrapping over the title.
         *checkBox = new QCheckBox(card);
         (*checkBox)->setObjectName(objectName + QStringLiteral("Check"));
-        (*checkBox)->setMinimumSize(theme::kSettingsControlSize, theme::kSettingsControlSize);
+        (*checkBox)->setMinimumSize(theme::kComponentCheckColumn,
+                                    theme::kComponentCheckColumn);
         cardLayout->addWidget(*checkBox, 0, Qt::AlignVCenter);
         auto* details = new QWidget(card);
         details->installEventFilter(this);
@@ -545,13 +549,16 @@ void ComponentStoreTab::buildUi() {
         QFont titleFont = title->font();
         titleFont.setBold(true);
         title->setFont(titleFont);
-        titleRow->addWidget(title);
+        titleRow->addWidget(title, 1);
         *stateLabel = new QLabel(details);
         (*stateLabel)->setObjectName(objectName + QStringLiteral("State"));
-        (*stateLabel)->setWordWrap(true);
+        // One line, one width: a longer state elides into its tooltip rather
+        // than growing a second line over the title.
+        (*stateLabel)->setWordWrap(false);
+        (*stateLabel)->setFixedWidth(theme::kComponentBadgeWidth);
+        (*stateLabel)->setAlignment(Qt::AlignCenter);
         (*stateLabel)->installEventFilter(this);
-        titleRow->addWidget(*stateLabel);
-        titleRow->addStretch();
+        titleRow->addWidget(*stateLabel, 0, Qt::AlignVCenter);
         detailsLayout->addLayout(titleRow);
         auto* description = new QLabel(details);
         description->setObjectName(objectName + QStringLiteral("Description"));
@@ -559,6 +566,15 @@ void ComponentStoreTab::buildUi() {
         description->setWordWrap(true);
         description->installEventFilter(this);
         detailsLayout->addWidget(description);
+        // The counts a badge used to carry live on their own line under the
+        // description, where they cannot crowd the state.
+        auto* counts = new QLabel(details);
+        counts->setObjectName(objectName + QStringLiteral("Count"));
+        counts->setProperty("textRole", QStringLiteral("muted"));
+        counts->setWordWrap(false);
+        counts->setMinimumWidth(0);
+        counts->hide();
+        detailsLayout->addWidget(counts);
         auto* cardProgress = new QProgressBar(details);
         cardProgress->setObjectName(objectName + QStringLiteral("Progress"));
         cardProgress->setRange(0, 100);
@@ -580,7 +596,9 @@ void ComponentStoreTab::buildUi() {
         auto* size = new QLabel(card);
         size->setObjectName(objectName + QStringLiteral("Size"));
         size->setProperty("textRole", QStringLiteral("muted"));
-        size->setWordWrap(true);
+        size->setWordWrap(false);
+        size->setFixedWidth(theme::kComponentSizeWidth);
+        size->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         size->installEventFilter(this);
         QFont sizeFont = size->font();
         sizeFont.setBold(true);
@@ -657,31 +675,33 @@ void ComponentStoreTab::buildUi() {
     actions->setContentsMargins(theme::kSpacingMedium, theme::kSpacingMedium,
                                 theme::kSpacingMedium, theme::kSpacingMedium);
     actions->setSpacing(theme::kSpacingSmall);
-    auto* primaryActions = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
+    // One grid for every action of the tab: equal widths measured from the
+    // captions, wrapped into extra rows at the dialog's minimum width instead
+    // of clipping a translated label.
+    actionGrid_ = new ActionGrid(theme::kSpacingSmall);
     downloadButton_ = new QPushButton(actionsCard);
     downloadButton_->setObjectName(QStringLiteral("componentDownloadButton"));
     theme::applyActionRole(downloadButton_, theme::ActionRole::Primary);
-    primaryActions->addWidget(downloadButton_);
+    actionGrid_->addButton(downloadButton_);
     auto* refreshButton = new QPushButton(actionsCard);
     refreshButton->setObjectName(QStringLiteral("refreshComponentsButton"));
     theme::applyActionRole(refreshButton, theme::ActionRole::Secondary);
-    primaryActions->addWidget(refreshButton);
-    actions->addLayout(primaryActions);
-    auto* utilityActions = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
+    actionGrid_->addButton(refreshButton);
     verifyButton_ = new QPushButton(actionsCard);
     verifyButton_->setObjectName(QStringLiteral("nativeComponentVerifyButton"));
     theme::applyActionRole(verifyButton_, theme::ActionRole::Secondary);
-    utilityActions->addWidget(verifyButton_);
+    actionGrid_->addButton(verifyButton_);
     importAnimeJanaiButton_ = new QPushButton(actionsCard);
     importAnimeJanaiButton_->setObjectName(QStringLiteral("nativeComponentImportAnimeJanaiButton"));
     theme::applyActionRole(importAnimeJanaiButton_, theme::ActionRole::Secondary);
-    utilityActions->addWidget(importAnimeJanaiButton_);
+    actionGrid_->addButton(importAnimeJanaiButton_);
     cancelButton_ = new QPushButton(actionsCard);
     cancelButton_->setObjectName(QStringLiteral("nativeComponentTabCancelButton"));
     theme::applyActionRole(cancelButton_, theme::ActionRole::Secondary);
     cancelButton_->setEnabled(false);
-    utilityActions->addWidget(cancelButton_);
-    actions->addLayout(utilityActions);
+    actionGrid_->addButton(cancelButton_);
+    actionGrid_->recalculate();
+    actions->addLayout(actionGrid_);
 
     status_ = new QLabel(actionsCard);
     status_->setObjectName(QStringLiteral("nativeComponentStatus"));
@@ -764,6 +784,8 @@ void ComponentStoreTab::retranslateUi() {
         tr("Choose a local AnimeJaNai runtime directory and install its selected backend closure"));
     cancelButton_->setText(tr("Cancel"));
     cancelButton_->setAccessibleName(tr("Cancel the running download"));
+    // The captions moved: one width for the tab's actions, measured again.
+    if (actionGrid_ != nullptr) actionGrid_->recalculate();
     status_->setAccessibleName(tr("Components status"));
     animeJanaiBackendCombo_->setAccessibleName(
         tr("AnimeJaNai backend used by Apply changes and Verify"));
@@ -811,6 +833,10 @@ void ComponentStoreTab::changeEvent(QEvent* event) {
         // in the live language and let the existing notification restate it
         // outside this tab. No run, progress, selection or timer is touched.
         restateStatus();
+    } else if (event->type() == QEvent::FontChange ||
+               event->type() == QEvent::ApplicationFontChange ||
+               event->type() == QEvent::StyleChange) {
+        if (actionGrid_ != nullptr) actionGrid_->recalculate();
     }
 }
 
@@ -1121,7 +1147,13 @@ void ComponentStoreTab::updateCardStates() {
                                     kernelsRecommended_;
 
     auto setState = [](QLabel* label, const QString& state) {
-        if (label != nullptr) label->setText(state);
+        if (label == nullptr) return;
+        // The badge is one line inside its fixed width: the full wording stays
+        // in the tooltip and the accessible name, the ink elides.
+        const int available = theme::kComponentBadgeWidth - 2 * theme::kSpacingSmall;
+        label->setText(label->fontMetrics().elidedText(state, Qt::ElideRight, available));
+        label->setToolTip(state);
+        label->setAccessibleName(state);
     };
     const qint64 runtimeBytes = runtimePack != nullptr ? runtimePack->assetBytes : 0;
     findChild<QLabel*>(QStringLiteral("tensorRtRuntimeCardSize"))
@@ -1134,11 +1166,18 @@ void ComponentStoreTab::updateCardStates() {
 
     findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardSize"))
         ->setText(QLocale().formattedDataSize(spatialBytes));
+    // The badge states the presence; the counts it used to carry moved to the
+    // card's own line, where a 0/5 can never read as an installed card.
     setState(spatialState_,
-             installedSpatial == 0
-                 ? tr("not installed (0/%1)").arg(spatialCatalog.size())
-                 : tr("%1/%2 installed; %3/%2 verified")
-                       .arg(installedSpatial).arg(spatialCatalog.size()).arg(verifiedSpatial));
+             installedSpatial == 0 ? tr("not installed") : tr("installed"));
+    if (auto* counts = findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardCount"));
+        counts != nullptr) {
+        counts->setText(tr("%1/%2 installed · %3/%2 verified")
+                            .arg(installedSpatial)
+                            .arg(spatialCatalog.size())
+                            .arg(verifiedSpatial));
+        counts->setVisible(!spatialCatalog.isEmpty());
+    }
 
     // "recommended for this PC" is an offer, never a substitute for the truth
     // about what is installed. Both facts are shown when both are true.

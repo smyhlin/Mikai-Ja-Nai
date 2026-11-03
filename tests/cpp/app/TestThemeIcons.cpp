@@ -342,12 +342,12 @@ void TestThemeIcons::glyphBoxIsPhysicalAtEveryScale() {
   // stretch it, and the pad is the only extra width.
   const QList<qreal> scales = {1.0, 1.25, 1.5, 1.75, 2.0};
   const QColor ink(QStringLiteral("#ffffff"));
-  const int pad = mikai::app::theme::kSearchIconGlyphPad;
+  const int pad = mikai::app::theme::kIconGlyphPad;
   // The boxes the application really asks for: the padded header action, the
   // unpadded square, and the menu chevron.
   const QList<QPair<QSize, int>> requests = {
-      {QSize(mikai::app::theme::kSearchIconSize + pad, mikai::app::theme::kSearchIconSize), pad},
-      {QSize(mikai::app::theme::kSearchIconSize, mikai::app::theme::kSearchIconSize), 0},
+      {QSize(mikai::app::theme::kIconSize + pad, mikai::app::theme::kIconSize), pad},
+      {QSize(mikai::app::theme::kIconSize, mikai::app::theme::kIconSize), 0},
       {QSize(mikai::app::theme::kSearchMenuChevronSize,
              mikai::app::theme::kSearchMenuChevronSize),
        0},
@@ -358,7 +358,7 @@ void TestThemeIcons::glyphBoxIsPhysicalAtEveryScale() {
       const QSize box = request.first;
       const int gap = request.second;
       const QIcon icon =
-          mikai::app::theme::searchIcon(mikai::app::theme::kSearchIconSize, ink.name(), gap);
+          mikai::app::theme::searchIcon(mikai::app::theme::kIconSize, ink.name(), gap);
       QCOMPARE(icon.actualSize(box), box);
 
       const QPixmap pixmap = icon.pixmap(box, scale);
@@ -393,11 +393,10 @@ void TestThemeIcons::glyphBoxIsPhysicalAtEveryScale() {
 }
 
 void TestThemeIcons::trailingPadStaysOutsideTheGlyph() {
-  const int gap = mikai::app::theme::kSearchIconGlyphPad;
-  const QSize box(mikai::app::theme::kSearchIconSize + gap,
-                  mikai::app::theme::kSearchIconSize);
+  const int gap = mikai::app::theme::kIconGlyphPad;
+  const QSize box(mikai::app::theme::kIconSize + gap, mikai::app::theme::kIconSize);
   const QIcon icon = mikai::app::theme::searchIcon(
-      mikai::app::theme::kSearchIconSize, QStringLiteral("#ffffff"), gap);
+      mikai::app::theme::kIconSize, QStringLiteral("#ffffff"), gap);
 
   for (const qreal scale : {1.0, 1.25, 1.5, 2.0}) {
     const QPixmap pixmap = icon.pixmap(box, scale);
@@ -418,8 +417,8 @@ void TestThemeIcons::trailingPadStaysOutsideTheGlyph() {
 
 void TestThemeIcons::glyphEdgesStayAntialiasedAtFractionalRatio() {
   const QIcon icon =
-      mikai::app::theme::playIcon(mikai::app::theme::kSearchIconSize, QStringLiteral("#ffffff"));
-  const QSize box(mikai::app::theme::kSearchIconSize, mikai::app::theme::kSearchIconSize);
+      mikai::app::theme::playIcon(mikai::app::theme::kIconSize, QStringLiteral("#ffffff"));
+  const QSize box(mikai::app::theme::kIconSize, mikai::app::theme::kIconSize);
   for (const qreal scale : {1.25, 1.75}) {
     const QImage image = icon.pixmap(box, scale).toImage();
     QVERIFY2(intermediateAlphaCount(image) > 4,

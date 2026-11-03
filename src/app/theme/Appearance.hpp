@@ -87,10 +87,6 @@ QColor accentColor(const Appearance& appearance);
 /// with the accent it is supposed to follow.
 QColor gradientColor(const Appearance& appearance);
 
-/// Scales every `border-radius: Npx` in `sheet` by `scale`, keeping a sheet
-/// written with literal corners in step with the chosen radius step.
-QString scaleRadii(const QString& sheet, double scale);
-
 QString hexOf(const QColor& color);
 /// "167, 139, 250" — the form `rgba(%1, 0.12)` needs.
 QString rgbTriplet(const QColor& color);
