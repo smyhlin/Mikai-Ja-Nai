@@ -176,13 +176,6 @@ private:
         qreal devicePixelRatio = 0.0;
         quint64 stamp = 0;
         bool valid = false;
-        // TEMPORARY profile: which control pays for dirty rasters, and how much.
-        // Filled only while uiprofile counters are on; removed after one profile.
-        const char* className = nullptr;
-        int index = 0;
-        quint64 missCount = 0;
-        quint64 paintChromeUs = 0;
-        quint64 fullMissUs = 0;
     };
 
     void addSubtree(QWidget* root, QObject* watcher);
@@ -192,13 +185,6 @@ private:
 
     QVector<Entry> entries_;
 
-public:
-    /// TEMPORARY profile: logs one histogram of per-control dirty cost when the
-    /// list goes away, under the existing profile counter flag. Reads only what
-    /// the entries already cached - no widget is dereferenced during destruction.
-    ~ChromeList();
-
-private:
     /// Bumped by invalidateAll(), so every entry is stale without walking them.
     quint64 generation_ = 0;
     qint64 cachedBytes_ = 0;

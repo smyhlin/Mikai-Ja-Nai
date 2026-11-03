@@ -17,7 +17,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 
 #include "ShellSliders.hpp"
 #include "gui/SystemDefaultPlayer.hpp"
@@ -215,9 +214,6 @@ void ChromeList::addSubtree(QWidget* root, QObject* watcher) {
                 }
             }
             entries_.append(Entry{child, painted, {}, {}, {}});
-            Entry& added = entries_.last();
-            added.className = child->metaObject()->className();
-            added.index = static_cast<int>(entries_.size()) - 1;
         }
         addSubtree(child, watcher);
     }
@@ -261,25 +257,6 @@ void chromeRepaintEvent(ChromeHost* host, QObject* watched, QEvent* event) {
             break;
         default:
             break;
-    }
-}
-
-ChromeList::~ChromeList() {
-    if (!mikai::gui::uiprofile::countersEnabled()) return;
-    for (const Entry& entry : entries_) {
-        if (entry.missCount == 0 && entry.paintChromeUs == 0) continue;
-        // Printed rather than logged: the counters can be forced on without the
-        // logging flag, and this one histogram is the whole point of the run.
-        std::fprintf(stderr,
-                     "[chrome-profile] index=%d class=%s box=%d,%d %dx%d misses=%llu "
-                     "miss_us=%llu paint_us=%llu\n",
-                     entry.index,
-                     entry.className != nullptr ? entry.className : "?",
-                     entry.paintedBox.x(), entry.paintedBox.y(), entry.paintedBox.width(),
-                     entry.paintedBox.height(),
-                     static_cast<unsigned long long>(entry.missCount),
-                     static_cast<unsigned long long>(entry.fullMissUs),
-                     static_cast<unsigned long long>(entry.paintChromeUs));
     }
 }
 
@@ -418,8 +395,6 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                 // pixmap it already owns when the device size matches, so a state
                 // change is not a device-pixel allocation per miss. QPainter
                 // detaches it, so the key still changes: no stale blit.
-                const bool timedMiss = mikai::gui::uiprofile::countersEnabled();
-                const qint64 missStart = timedMiss ? mikai::gui::uiprofile::nowNs() : 0;
                 if (entry.cache.isNull() || entry.cache.size() != deviceSize) {
                     dropCache(entry);
                     entry.cache = QPixmap(deviceSize);
@@ -439,9 +414,8 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                     const qint64 rasterStart = timed ? mikai::gui::uiprofile::nowNs() : 0;
                     entry.painted->paintChrome(cachePainter);
                     if (timed) {
-                        const qint64 rasterUs = (mikai::gui::uiprofile::nowNs() - rasterStart) / 1000;
-                        mikai::gui::uiprofile::noteChromeCacheRaster(rasterUs);
-                        entry.paintChromeUs += static_cast<quint64>(rasterUs < 0 ? 0 : rasterUs);
+                        mikai::gui::uiprofile::noteChromeCacheRaster(
+                            (mikai::gui::uiprofile::nowNs() - rasterStart) / 1000);
                     }
                 }
                 if (counted) {
@@ -457,11 +431,6 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                 painter.drawPixmap(box.topLeft(), entry.cache);
                 // Painted, but NOT a hit: this control was just rasterised, and
                 // counting it as cached would make entries - cached a fake zero.
-                if (timedMiss) {
-                    entry.missCount += 1;
-                    entry.fullMissUs +=
-                        static_cast<quint64>((mikai::gui::uiprofile::nowNs() - missStart) / 1000);
-                }
                 ++painted;
                 continue;
             }
