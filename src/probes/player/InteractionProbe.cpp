@@ -18,6 +18,7 @@
 #include <QAbstractButton>
 #include <QApplication>
 #include <QByteArray>
+#include <QColor>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QCursor>
@@ -2219,6 +2220,58 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
     evidence.insert(QStringLiteral("parkedCardVisible"), parkedCardVisible);
     evidence.insert(QStringLiteral("parkedHudVisible"), parkedHudVisible);
     evidence.insert(QStringLiteral("parkedFrame"), parkedFrame);
+
+    // ── what the surface's own device holds where the card stands ─────────
+    // isVisible() is the widget's opinion; the picture is the window's, and the
+    // chrome is painted into the surface's buffer, so the last rendered content
+    // of that buffer is the only in-process view of the card that is not a
+    // widget property. A card that is "visible" and absent here was never drawn.
+    QJsonObject cardPixels;
+    int cardInk = -1;
+    if (surface != nullptr && card != nullptr && card->isVisible()) {
+        const QRect cardInSurface(card->mapTo(surface, QPoint(0, 0)), card->size());
+        const QImage rendered = surface->grabFramebuffer();
+        if (!rendered.isNull() && !cardInSurface.isEmpty() && surface->width() > 0 &&
+            surface->height() > 0) {
+            const double scaleX = double(rendered.width()) / surface->width();
+            const double scaleY = double(rendered.height()) / surface->height();
+            const QRect onDevice(qRound(cardInSurface.x() * scaleX),
+                                 qRound(cardInSurface.y() * scaleY),
+                                 qRound(cardInSurface.width() * scaleX),
+                                 qRound(cardInSurface.height() * scaleY));
+            // The caption band: the card prints its timestamp in pure white there,
+            // and the motion fixture is a saturated pattern with no white in it,
+            // so these pixels can only be the card's.
+            const QRect band =
+                QRect(onDevice.left(), onDevice.top() + onDevice.height() * 2 / 3,
+                      onDevice.width(), onDevice.height() / 3)
+                    .intersected(rendered.rect());
+            cardInk = 0;
+            for (int y = band.top(); y <= band.bottom(); ++y) {
+                for (int x = band.left(); x <= band.right(); ++x) {
+                    const QColor pixel = rendered.pixelColor(x, y);
+                    if (pixel.red() > 235 && pixel.green() > 235 && pixel.blue() > 235) ++cardInk;
+                }
+            }
+        }
+        cardPixels.insert(QStringLiteral("x"), cardInSurface.x());
+        cardPixels.insert(QStringLiteral("y"), cardInSurface.y());
+        cardPixels.insert(QStringLiteral("width"), cardInSurface.width());
+        cardPixels.insert(QStringLiteral("height"), cardInSurface.height());
+        cardPixels.insert(QStringLiteral("deviceWidth"), rendered.width());
+        cardPixels.insert(QStringLiteral("deviceHeight"), rendered.height());
+    } else {
+        cardPixels.insert(QStringLiteral("present"), false);
+    }
+    cardPixels.insert(QStringLiteral("captionInk"), cardInk);
+    evidence.insert(QStringLiteral("cardDevicePixels"), cardPixels);
+    std::fprintf(stderr, "     card device pixels: %dx%d at (%d,%d) ink=%d\n",
+                 cardPixels.value(QStringLiteral("width")).toInt(),
+                 cardPixels.value(QStringLiteral("height")).toInt(),
+                 cardPixels.value(QStringLiteral("x")).toInt(),
+                 cardPixels.value(QStringLiteral("y")).toInt(), cardInk);
+    check(cardInk > 40,
+          "the card's caption reached the surface's own pixels, not only its isVisible()");
     std::fprintf(stderr, "     parked 12 s: samples=%d card=%d hud=%d frame=%d\n", parkedSamples,
                  parkedCardVisible, parkedHudVisible, parkedFrame);
     saveShot(dialog, QStringLiteral("hover-motion-parked-hud.png"), &screenshots);
