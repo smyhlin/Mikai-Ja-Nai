@@ -589,9 +589,15 @@ void PipFloat::updateVolumeChip() {
 
 void PipFloat::setOverlayOpacity(double value) {
     overlayOpacity_ = std::clamp(value, 0.0, 1.0);
-    // A tick of the fade is a repaint of the picture with a new alpha, not a
-    // re-composite of an offscreen buffer holding the overlay.
-    chromeDirtyAll();
+    // A tick of the fade is a repaint of the picture with a new alpha: the cached
+    // chrome pixels are unchanged because the opacity is applied by the painter
+    // over their blits. Wiping the cache here re-rasterised every control on every
+    // fade tick - the same defect the shell had on every pointer move.
+    if (surface_ == nullptr) {
+        update();
+    } else {
+        surface_->update();
+    }
     // Faded out means hidden as widgets too, or the controls would still be
     // there to swallow the press that was meant for the picture: the play
     // button under the pointer is what toggles playback.
