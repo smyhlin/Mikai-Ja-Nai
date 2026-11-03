@@ -213,3 +213,60 @@ void TestChromeCache::aTranslucentControlLeavesNoBlackFringe() {
   }
   host.hide();
 }
+
+/// The budget fallback is a shipping path, not an off switch: a control too big
+/// for the 8 MiB budget is painted directly every pass, and it still has to leave
+/// no band behind when it moves. The vacated rect can only come from the list's
+/// paint history, because such an entry is never cache-valid.
+void TestChromeCache::anOverBudgetControlLeavesNoBandBehindWhenItMoves() {
+  // 2049x1024 = 2 098 176 px, just over the 2 097 152 px (8 MiB) budget, so this
+  // control can never be cached and every pass rasterises it directly.
+  const QSize controlSize(2049, 1024);
+  const QColor frame(18, 18, 24, 255);
+  const QColor fill(20, 200, 90, 255);
+  const int shift = 20;
+
+  auto* root = new QWidget;
+  root->setAttribute(Qt::WA_DontShowOnScreen, true);
+  root->resize(controlSize.width() + shift, controlSize.height());
+  root->show();
+
+  auto* control = new QuietChrome(root);
+  control->resize(controlSize);
+  control->move(0, 0);
+  control->setFillQuietly(fill);
+  QVERIFY(presented(control));
+
+  ChromeList chrome;
+  chrome.adopt(root, nullptr);
+
+  QImage scratch = painted(chrome, root, 1.0, frame);
+  QVERIFY(near(scratch.pixelColor(5, 500), fill));
+  QVERIFY(near(scratch.pixelColor(controlSize.width() - 1, 500), fill));
+
+  // Move it, then repaint ONLY the damage the move causes: the box it was
+  // painted into, united with where it is now. Nothing else is repainted, so a
+  // band left at the old position stays there.
+  control->move(shift, 0);
+  const QRect vacated = chrome.invalidate(control);
+  QVERIFY2(!vacated.isEmpty(),
+           "an over-budget control's last painted box is paint history even though "
+           "the entry is not cache-valid");
+  const QRect damage = vacated.united(QRect(control->pos(), controlSize));
+  {
+    QPainter painter(&scratch);
+    // The frame here is the shell's picture, which paintGL repaints before the
+    // chrome: the assertion is that the damage rect tells it to repaint the band
+    // the control vacated, not that the chrome draws background itself.
+    painter.fillRect(damage, frame);
+    chrome.paint(painter, root, damage);
+  }
+
+  QVERIFY2(near(scratch.pixelColor(5, 500), frame),
+           qPrintable(QStringLiteral("the vacated band is still painted: %1")
+                          .arg(scratch.pixelColor(5, 500).name(QColor::HexArgb))));
+  QVERIFY(near(scratch.pixelColor(shift + controlSize.width() - 1, 500), fill));
+
+  chrome.invalidateAll();
+  delete root;
+}

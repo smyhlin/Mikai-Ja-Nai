@@ -14,4 +14,5 @@ class TestChromeCache : public QObject {
   void aSecondPaintServesTheCachedPixels();
   void aDevicePixelRatioChangeReRendersAtTheNewRatio();
   void aTranslucentControlLeavesNoBlackFringe();
+  void anOverBudgetControlLeavesNoBandBehindWhenItMoves();
 };
