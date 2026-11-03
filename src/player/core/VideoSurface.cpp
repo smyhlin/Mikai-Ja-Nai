@@ -355,6 +355,15 @@ void VideoSurface::ensureEngine() {
                         if (havePlaylistEntryId_ && currentPlaylistEntryId_ == *entryId) {
                             entryMediaToken_ = load.token;
                             entrySourceEpoch_ = load.epoch;
+                            // FILE_LOADED usually precedes this reply, so the
+                            // landing is latched here as well: the event arrived
+                            // while the entry was still unnamed, and a hold that
+                            // waited for `entryMediaToken_` would otherwise never
+                            // see its load land.
+                            if (engineFrameHoldNeedsLoadLanding_ &&
+                                (mediaToken_ == 0 || mediaToken_ == load.token)) {
+                                engineFrameHoldLandingSeen_ = true;
+                            }
                             if (entryLoadReported_ && load.epoch == mpv_->sourceEpoch()) {
                                 mediaTracksLoaded_ = true;
                                 mediaTracksDirty_ = true;
@@ -398,15 +407,21 @@ void VideoSurface::ensureEngine() {
             // says the file is loaded.
             if (!entryLoadReported_) {
                 entryLoadReported_ = true;
+                // The landing is latched BEFORE the naming guard: FILE_LOADED
+                // routinely arrives before the command reply that tells this
+                // surface which entry it was, so at this instant the entry is
+                // unnamed (epoch and token both zero). Waiting for a match there
+                // would leave the hold gated forever; and an event this soon
+                // after our own submission is the file we submitted, because the
+                // outgoing source was loaded long ago.
+                if (engineFrameHoldNeedsLoadLanding_ &&
+                    (entrySourceEpoch_ == 0 || mediaToken_ == 0 ||
+                     mediaToken_ == entryMediaToken_)) {
+                    engineFrameHoldLandingSeen_ = true;
+                }
                 if (entrySourceEpoch_ == mpv_->sourceEpoch()) {
                     mediaTracksLoaded_ = true;
                     mediaTracksDirty_ = true;
-                    // This surface's own request has landed, so a hold waiting on
-                    // it may now be replaced by the new source's real frame.
-                    if (engineFrameHoldNeedsLoadLanding_ &&
-                        (mediaToken_ == 0 || mediaToken_ == entryMediaToken_)) {
-                        engineFrameHoldLandingSeen_ = true;
-                    }
                     emit mediaLoaded(entryMediaToken_);
                 }
             }
@@ -461,6 +476,10 @@ void VideoSurface::ensureEngine() {
         }
         url_.clear();
         pendingOpen_ = false;
+        // A load that failed may never report FILE_LOADED, so the gate it armed
+        // is dropped here: the held picture stays with the error overlay instead
+        // of being stranded behind a latch nothing can satisfy.
+        engineFrameHoldNeedsLoadLanding_ = false;
         // The wait ended in a failure; an overlay that kept claiming to open
         // something would be the only thing left on screen.
         setOpening(false);
@@ -703,6 +722,10 @@ void VideoSurface::setEngineFrameHold(bool active) {
 void VideoSurface::holdPictureAcrossLoad() {
     if (engineFrameHoldActive_) return;              // a freeze transition owns it
     if (engineFrameHoldFbo_ && engineFrameHoldAwaitingOutput_) {
+        // The snapshot is already the right one, but the gate belongs to the
+        // load about to be issued, not to the last one that landed.
+        engineFrameHoldNeedsLoadLanding_ = true;
+        engineFrameHoldLandingSeen_ = false;
         update();
         return;
     }
@@ -1238,6 +1261,15 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
     }
     load.push_back(std::move(options));
     issueCoreCommand(std::move(load), "loadfile", /*reportRefusal=*/true, mediaToken_);
+    // Every submission re-arms the landing gate on whatever picture is being
+    // held. A rapid second load reuses the previous hold, and a gate that was
+    // already satisfied by the first load's landing would let the outgoing
+    // source's last in-flight frame clear this one. An engine freeze keeps its
+    // hold regardless: it is not waiting for a load.
+    if (engineFrameHoldFbo_ && !engineFrameHoldActive_) {
+        engineFrameHoldNeedsLoadLanding_ = true;
+        engineFrameHoldLandingSeen_ = false;
+    }
     // mpv also comes up paused when a render context is its only consumer: it
     // has no window of its own to drive playback. Without this the core decodes
     // one frame, hands it over and stops, which reads as a black surface and a
@@ -2756,7 +2788,9 @@ void VideoSurface::releaseRenderContext() {
     // rendered into a private snapshot first, because Qt has already destroyed
     // the widget's framebuffers by the time this slot runs. Read back at the
     // target's own precision, one copy per context, never per paint.
-    if (current && !engineFrameHoldFbo_ && hasVisibleOutputFrame_) captureEngineFrameHold();
+    if (current && !destroying_ && !engineFrameHoldFbo_ && hasVisibleOutputFrame_) {
+        captureEngineFrameHold();
+    }
     if (current) captureTeardownPicture();
     if (current) engineFrameHoldFbo_.reset();
     // The probe answered for a framebuffer this context owned, so it is reset
