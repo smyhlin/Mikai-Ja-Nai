@@ -3775,10 +3775,13 @@ QJsonObject textRasterScenario(mikai::backend::MikaiClient& client, Runner& runn
                         QSize(mikai::app::theme::kSettingsDialogDefaultWidth,
                               mikai::app::theme::kSettingsDialogDefaultHeight)));
         dialog.resize(requested);
+        dialog.setWindowFlag(Qt::WindowStaysOnTopHint, true);
         dialog.show();
         dialog.raise();
         dialog.activateWindow();
         keepWindowOnScreen(dialog);
+        dialog.raise();
+        dialog.activateWindow();
         QApplication::processEvents();
         const bool exposed = waitForUi(
             [&dialog] {
@@ -3815,6 +3818,7 @@ QJsonObject textRasterScenario(mikai::backend::MikaiClient& client, Runner& runn
                             : nullptr;
         check(tab != nullptr && label != nullptr,
               "the Components inventory and its model-card text label exist");
+        if (tab != nullptr) tab->refresh();
 
         bool settled = false;
         if (tab != nullptr && label != nullptr) {
@@ -3822,7 +3826,7 @@ QJsonObject textRasterScenario(mikai::backend::MikaiClient& client, Runner& runn
             clock.start();
             QString lastText;
             QRect lastRect;
-            while (clock.elapsed() < 30000) {
+            while (clock.elapsed() < 20000) {
                 QApplication::processEvents();
                 if (tab->inventoryReady() && !tab->acquisitionRunning() &&
                     label->isVisible() && !label->text().isEmpty()) {
@@ -3840,7 +3844,15 @@ QJsonObject textRasterScenario(mikai::backend::MikaiClient& client, Runner& runn
             QApplication::processEvents();
         }
         check(settled, "the Components inventory and text surface settled before capture");
+        evidence.insert(QStringLiteral("inventorySettled"), settled);
 
+        const bool captureReady = settled && tab != nullptr && label != nullptr;
+        if (!captureReady) {
+            evidence.insert(QStringLiteral("captureAvailable"), false);
+            evidence.insert(QStringLiteral("captureUnavailable"),
+                            settled ? QStringLiteral("the model-card text label is unavailable")
+                                    : QStringLiteral("the Components inventory did not settle"));
+        } else {
         if (label != nullptr) {
             mikai::probes::revealWidget(label);
             waitForUi(
@@ -3975,6 +3987,7 @@ QJsonObject textRasterScenario(mikai::backend::MikaiClient& client, Runner& runn
                      cropDifference.comparable;
         evidence.insert(QStringLiteral("difference"), differenceJson(cropDifference));
         evidence.insert(QStringLiteral("comparable"), comparable);
+        }
 
         dialog.reject();
         QApplication::processEvents();
