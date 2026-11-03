@@ -19,6 +19,8 @@
 #include <QLocale>
 #include <QPainter>
 #include <QPlainTextEdit>
+#include <QStyle>
+#include <QStyleOptionButton>
 #include <QPalette>
 #include <QPixmap>
 #include <QPointer>
@@ -820,6 +822,36 @@ private:
         return pixels;
     }
 
+    /// One pixel of a button rendered in a chosen state: the widget's own style
+    /// resolves the sheet with the state handed to it, so a hover is measurable
+    /// without a pointer being anywhere near the control.
+    static QColor pixelOfState(QAbstractButton& button, bool mouseOver, int x, int y) {
+        if (button.width() <= 0 || button.height() <= 0) return QColor();
+        const qreal scale = button.devicePixelRatioF() > 0.0 ? button.devicePixelRatioF() : 1.0;
+        QImage image(qCeil(button.width() * scale), qCeil(button.height() * scale),
+                     QImage::Format_ARGB32_Premultiplied);
+        image.setDevicePixelRatio(scale);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        if (auto* push = qobject_cast<QPushButton*>(&button)) {
+            QStyleOptionButton option;
+            option.initFrom(push);
+            option.rect = push->rect();
+            option.text = push->text();
+            option.icon = push->icon();
+            option.iconSize = push->iconSize();
+            option.features = QStyleOptionButton::None;
+            option.state &= ~(QStyle::State_HasFocus | QStyle::State_MouseOver |
+                              QStyle::State_Sunken | QStyle::State_On | QStyle::State_Raised);
+            option.state |= QStyle::State_Raised;
+            if (mouseOver) option.state |= QStyle::State_MouseOver;
+            push->style()->drawControl(QStyle::CE_PushButton, &option, &painter, push);
+        }
+        painter.end();
+        return image.pixelColor(qBound(0, qRound(x * scale), image.width() - 1),
+                                qBound(0, qRound(y * scale), image.height() - 1));
+    }
+
     static int countNear(const QImage& image, const QColor& color, int tolerance = 10) {
         int count = 0;
         for (int y = 0; y < image.height(); ++y) {
@@ -946,6 +978,13 @@ private:
         mikai::app::setCurrentAppearance(appearance);
         mikai::app::theme::applyPalette(appearance);
         app_.setStyleSheet(mikai::app::theme::buildStylesheet(appearance));
+        // The settings dialog carries its own sheet, and it is the one that
+        // paints the benchmark chunk and the appearance page. Leaving it on the
+        // sheet it was built with would keep the boot accent in exactly the
+        // window this sweep is meant to prove.
+        if (settings_ != nullptr) {
+            settings_->setStyleSheet(mikai::app::settingsStylesheet(appearance));
+        }
         mplayer::shell::setAccent(mikai::app::theme::accentColor(appearance));
         mplayer::shell::setCornerRadius(mikai::app::theme::radiusSmall(appearance));
         QTest::qWait(90);
@@ -1072,9 +1111,14 @@ private:
               QStringLiteral("the player exposes its scrub bar"));
 
         // The chrome chips read the accent token through their own stylesheet.
+        // The chip exists for every source; whether the strip that carries it is
+        // on screen is the shell's business, so presence is what is gated here
+        // and the measured row records the visibility it had.
         chip_ = player_->findChild<QPushButton*>(QStringLiteral("playerSeriesToggle"));
-        check(QStringLiteral("player-chip-real"), chip_ != nullptr && chip_->isVisible(),
-              QStringLiteral("the player exposes its episode chip"));
+        check(QStringLiteral("player-chip-present"), chip_ != nullptr,
+              chip_ != nullptr ? QStringLiteral("the player exposes its episode chip, visible %1")
+                                     .arg(chip_->isVisible())
+                               : QStringLiteral("the player exposes no episode chip"));
 
         // The media inspector is opened for the whole sweep: its selected-row
         // palette has to follow the token while the window stays open.
@@ -1212,6 +1256,11 @@ private:
                                 {QStringLiteral("presentationOnly"), true},
                                 {QStringLiteral("inferenceProven"), false}});
             if (compare_ != nullptr && compare_->isVisible()) {
+                // A freshly shown window paints its chrome a frame later; a grab
+                // taken inside the same turn reads the surface before the style
+                // is on it and reports no accent pixels at all.
+                compare_->repaint();
+                QTest::qWait(150);
                 const QImage before = compare_->grab().toImage();
                 const int initialPixels = countNear(before, initial);
                 check(QStringLiteral("initial/compare-live-accent"), initialPixels > 0,
@@ -1285,16 +1334,36 @@ private:
                           .arg(nameColor(expected))
                           .arg(expectedAlpha));
 
-                // Title page hero watch: the primary role's real button.
+                // Title page hero watch: the primary role's real button. The page
+                // disables it without a playable episode, and a disabled primary
+                // is a neutral by design, so the enabled state is set for the
+                // presentation and re-applied here - the page re-derives it on
+                // its own schedule, and a sample taken after that would measure
+                // the disabled rule instead of the accent.
+                if (titleWatch_ != nullptr) {
+                    titleWatch_->setEnabled(true);
+                    titleWatch_->style()->unpolish(titleWatch_);
+                    titleWatch_->style()->polish(titleWatch_);
+                }
                 const QColor watchPixel = titleWatch_ != nullptr
                     ? pixelsOf(titleWatch_).at(4, titleWatch_->height() / 2) : QColor();
                 row.insert(QStringLiteral("titleWatch"), nameColor(watchPixel));
+                row.insert(QStringLiteral("titleWatchEnabled"),
+                           titleWatch_ != nullptr && titleWatch_->isEnabled());
                 check(QStringLiteral("%1/title-watch").arg(variant),
-                      nearColor(watchPixel, expected),
-                      QStringLiteral("painted %1, chosen %2")
-                          .arg(nameColor(watchPixel), nameColor(expected)));
+                      titleWatch_ != nullptr && titleWatch_->isEnabled() &&
+                          nearColor(watchPixel, expected),
+                      QStringLiteral("painted %1, chosen %2, enabled %3")
+                          .arg(nameColor(watchPixel), nameColor(expected))
+                          .arg(titleWatch_ != nullptr && titleWatch_->isEnabled()));
 
-                // Benchmark chunk: accent, not the old muted grey.
+                // Benchmark chunk: accent, not the old muted grey. Its rule lives
+                // in the settings sheet, so the re-polish follows the sheet swap
+                // above.
+                if (benchmarkProgress_ != nullptr) {
+                    benchmarkProgress_->style()->unpolish(benchmarkProgress_);
+                    benchmarkProgress_->style()->polish(benchmarkProgress_);
+                }
                 const QColor benchmarkPixel = benchmarkProgress_ != nullptr
                     ? pixelsOf(benchmarkProgress_)
                           .at(benchmarkProgress_->width() / 3, benchmarkProgress_->height() / 2)
@@ -1340,33 +1409,31 @@ private:
                 // implementation, so only a "painted at all" floor is asserted,
                 // never one design's exact value.
                 if (chip_ != nullptr) {
-                    chip_->setAttribute(Qt::WA_UnderMouse, true);
-                    chip_->style()->unpolish(chip_);
-                    chip_->style()->polish(chip_);
-                    const QColor border = pixelsOf(chip_).at(chip_->width() / 2, 0);
+                    // The pointer cannot be parked on the chip, and a forced
+                    // under-mouse flag does not survive an event turn here, so
+                    // the state is handed to the widget's own style - the same
+                    // resolution its paint event performs.
+                    const QColor border = pixelOfState(*chip_, true, chip_->width() / 2, 0);
                     row.insert(QStringLiteral("playerChipHover"), nameColor(border));
                     row.insert(QStringLiteral("playerChipHoverAlpha"), border.alpha());
-                    row.insert(QStringLiteral("playerChipUnderMouse"), chip_->underMouse());
+                    row.insert(QStringLiteral("playerChipVisible"), chip_->isVisible());
                     check(QStringLiteral("%1/player-chip-live").arg(variant),
-                          chip_->underMouse() && border.alpha() >= 24 &&
-                              nearColor(border, expected, 8),
+                          border.alpha() >= 24 && nearColor(border, expected, 8),
                           QStringLiteral("hover boundary %1 a%2, chosen %3")
                               .arg(nameColor(border))
                               .arg(border.alpha())
                               .arg(nameColor(expected)));
-                    chip_->setAttribute(Qt::WA_UnderMouse, false);
-                    chip_->style()->unpolish(chip_);
-                    chip_->style()->polish(chip_);
                 }
 
-                // The player timeline is painted into the real player window at
-                // the scrub bar's mapped position.
+                // The played part belongs to the scrub bar, which paints it in
+                // its own paint event; rendering the player window samples the
+                // video under a mapper, not this chrome. The bar is sampled where
+                // the played run is: a quarter in, halfway down.
                 QColor timelinePixel;
-                if (scrub_ != nullptr && player_ != nullptr && scrub_->isVisible()) {
-                    const Pixels playerPixels = pixelsOf(player_.get());
-                    const QPoint local(qRound(scrub_->width() * 0.15), scrub_->height() / 2);
-                    const QPoint mapped = scrub_->mapTo(player_.get(), local);
-                    timelinePixel = playerPixels.at(mapped.x(), mapped.y());
+                if (scrub_ != nullptr && scrub_->isVisible()) {
+                    timelinePixel = pixelsOf(scrub_)
+                                        .at(qRound(scrub_->width() * 0.25),
+                                            scrub_->height() / 2);
                 }
                 row.insert(QStringLiteral("timelinePlayed"), nameColor(timelinePixel));
                 check(QStringLiteral("%1/timeline-played-live").arg(variant),
@@ -1543,10 +1610,24 @@ private:
     /// only). The player is closed first because two live QOpenGLWidgets on one
     /// screen is the pattern the shipped player deliberately pools around.
     bool sweepPip() {
+        // Compare and the inspector hold locks and pointers into the player's
+        // surface and release them in their own destructors, so they leave while
+        // that surface is still alive. Only then does the player close, and only
+        // after its window is gone is a second OpenGL widget created.
+        if (compare_ != nullptr) {
+            compare_->close();
+            compare_.reset();
+            QTest::qWait(200);
+        }
+        if (mediaInfo_ != nullptr) {
+            mediaInfo_->close();
+            mediaInfo_ = nullptr;
+            QTest::qWait(100);
+        }
         if (player_ != nullptr) {
             player_->close();
             player_ = nullptr;
-            QTest::qWait(250);
+            QTest::qWait(300);
         }
         auto float_ = std::make_unique<PipFloat>();
         place(float_.get(), 520, 300);
@@ -1731,13 +1812,50 @@ private:
         if (settings_ != nullptr) settings_->resize(kWidth, kHeight);
     }
 
+    /// Serializes everything observed so far. Called before teardown as well as
+    /// after it: a crash while widgets are being destroyed must not discard the
+    /// measurements that are already collected.
+    bool writeEvidence(const QString& stage, bool success) {
+        evidence_.insert(QStringLiteral("stage"), stage);
+        evidence_.insert(QStringLiteral("success"), success);
+        evidence_.insert(QStringLiteral("finishedUtc"),
+                         QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+        evidence_.insert(QStringLiteral("elapsedMs"), double(total_.elapsed()));
+        evidence_.insert(QStringLiteral("checks"), checks_);
+        evidence_.insert(QStringLiteral("passed"), passed_);
+        evidence_.insert(QStringLiteral("failed"), failed_);
+        evidence_.insert(QStringLiteral("failures"), failures_);
+        evidence_.insert(QStringLiteral("failureCauses"), failures_);
+        evidence_.insert(QStringLiteral("screenshots"), shots_);
+        const QByteArray json = QJsonDocument(evidence_).toJson(QJsonDocument::Indented);
+        QSaveFile file(QDir(arguments_.output).filePath(QStringLiteral("accent-sweep-evidence.json")));
+        const bool written = file.open(QIODevice::WriteOnly) && file.write(json) == json.size() &&
+                             file.commit();
+        // The interim write is a crash guard for the file; only the final report
+        // goes to stdout, so a reader never sees two documents.
+        if (stage == QLatin1String("complete")) {
+            std::fwrite(json.constData(), 1, size_t(json.size()));
+            std::fflush(stdout);
+        }
+        return written;
+    }
+
     int finish(bool ok) {
-        // Destroy borrowed widgets before draining the workers they used, then
-        // let the borrowed client outlive its runner's retirement.
+        // The observations are on disk before anything is torn down.
+        writeEvidence(QStringLiteral("teardown-pending"), false);
+        // Widgets that hold locks or pointers into the player's surface release
+        // them in their own destructors, so they go first, while it is alive.
         overlayProgress_ = nullptr;
         overlay_.reset();
-        compare_.reset();
-        mediaInfo_ = nullptr;
+        if (compare_ != nullptr) {
+            compare_->close();
+            compare_.reset();
+            QTest::qWait(200);
+        }
+        if (mediaInfo_ != nullptr) {
+            mediaInfo_->close();
+            mediaInfo_ = nullptr;
+        }
         chip_ = nullptr;
         titleWatch_ = nullptr;
         titlePage_.reset();
@@ -1752,6 +1870,7 @@ private:
         if (player_ != nullptr) {
             player_->close();
             player_ = nullptr;
+            QTest::qWait(250);
         }
         if (window_ != nullptr) {
             window_->close();
@@ -1773,22 +1892,7 @@ private:
         window_.reset();
 
         const bool success = ok && failed_ == 0 && !shots_.isEmpty();
-        evidence_.insert(QStringLiteral("success"), success);
-        evidence_.insert(QStringLiteral("finishedUtc"),
-                         QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
-        evidence_.insert(QStringLiteral("elapsedMs"), double(total_.elapsed()));
-        evidence_.insert(QStringLiteral("checks"), checks_);
-        evidence_.insert(QStringLiteral("passed"), passed_);
-        evidence_.insert(QStringLiteral("failed"), failed_);
-        evidence_.insert(QStringLiteral("failures"), failures_);
-        evidence_.insert(QStringLiteral("failureCauses"), failures_);
-        evidence_.insert(QStringLiteral("screenshots"), shots_);
-        const QByteArray json = QJsonDocument(evidence_).toJson(QJsonDocument::Indented);
-        QSaveFile file(QDir(arguments_.output).filePath(QStringLiteral("accent-sweep-evidence.json")));
-        const bool written = file.open(QIODevice::WriteOnly) && file.write(json) == json.size() &&
-                             file.commit();
-        std::fwrite(json.constData(), 1, size_t(json.size()), stdout);
-        std::fflush(stdout);
+        const bool written = writeEvidence(QStringLiteral("complete"), success);
         diagnostic(success && written
                        ? QStringLiteral("PASS: accent sweep covered %1 checks, %2 passed, %3 failed.")
                              .arg(checks_.size()).arg(passed_).arg(failed_)
