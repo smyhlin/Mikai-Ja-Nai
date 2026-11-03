@@ -103,7 +103,7 @@ constexpr const char* kSuites[] = {
     "TestNativePreparationReferences", "TestNativeComponents", "TestNativeStoredModels", "TestNativePreparedPlan", "TestNativePlaybackController", "TestNativeStatus",
     "TestPlaybackDiagnostics", "TestPlaybackControls", "TestSkipSegments", "TestTimelineMarks",
     "TestMediaInformation",
-    "TestHdrRenderContracts", "TestVideoScaling", "TestHoverPreview",
+    "TestHdrRenderContracts", "TestPacingContract", "TestVideoScaling", "TestHoverPreview",
     "TestNativePrefs",
     "TestNativeMenu", "TestNativeUserRecipes", "TestNativeAssets", "TestMpvAsync", "TestCompareGif",
     "TestCompareClip", "TestCompareLoading",
