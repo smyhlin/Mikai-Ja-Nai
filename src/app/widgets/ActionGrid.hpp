@@ -9,17 +9,11 @@
 #include <QLayoutItem>
 #include <QSize>
 #include <QWidget>
-#include <QWidgetItem>
 
 namespace mikai::app {
 
-/// A responsive grid for one group of actions.
-///
-/// Every button of the group keeps the one width `theme::equalizeWidths`
-/// derives from the widest caption, and the group re-flows into as many columns
-/// as the available width holds. A translation that cannot fit at the dialog's
-/// minimum width adds a row instead of clipping a label, and the cell heights
-/// come from the buttons' own size hints, so the sheet still owns the height.
+/// One group of actions on one width, re-flowed into as many columns as the
+/// available width holds so a long translation adds a row instead of clipping.
 class ActionGrid final : public QLayout {
  public:
     explicit ActionGrid(int spacing = theme::kSpacingSmall, QWidget* parent = nullptr)
@@ -30,14 +24,13 @@ class ActionGrid final : public QLayout {
         while (!items_.isEmpty()) delete items_.takeFirst();
     }
 
-    /// Adds one action and keeps it in the group the widths are measured over.
+    /// Registers the button like QLayout::addWidget does, so a button built
+    /// against another parent is reparented and its item reaches addItem once.
     void addButton(QAbstractButton* button) {
-        addItem(new QWidgetItem(button));
-        if (button != nullptr) buttons_.append(button);
+        if (button != nullptr) addWidget(button);
     }
 
-    /// States one width for the whole group from the font the captions render
-    /// in. Call after construction, after a retranslation and on a font change.
+    /// Measures the group again from the font its captions now render in.
     void recalculate(int minimum = 0) {
         theme::equalizeWidths(std::span<QAbstractButton* const>(buttons_.data(), buttons_.size()),
                               minimum);
@@ -91,18 +84,13 @@ class ActionGrid final : public QLayout {
         if (items_.isEmpty()) return;
         const QRect area = contentsRect();
         const int columns = columnCount(area.width());
-        const int rows = (count() + columns - 1) / columns;
-        const int cellWidth =
-            qMax(0, (area.width() - (columns - 1) * spacing_) / columns);
+        const int cellWidth = qMax(0, (area.width() - (columns - 1) * spacing_) / columns);
         const int cellHeight = rowHeight();
-        Q_UNUSED(rows);
         for (int index = 0; index < items_.size(); ++index) {
             QLayoutItem* item = items_.at(index);
             if (item == nullptr) continue;
-            const int row = index / columns;
-            const int column = index % columns;
-            const int x = area.x() + column * (cellWidth + spacing_);
-            const int y = area.y() + row * (cellHeight + spacing_);
+            const int x = area.x() + (index % columns) * (cellWidth + spacing_);
+            const int y = area.y() + (index / columns) * (cellHeight + spacing_);
             item->setGeometry(QRect(QPoint(x, y), QSize(cellWidth, cellHeight)));
         }
     }
@@ -116,8 +104,8 @@ class ActionGrid final : public QLayout {
         return qMax(height, theme::kControlHeight);
     }
 
-    /// The widest caption's minimum width: below it the group wraps rather
-    /// than squeezing a button under the text it has to show.
+    /// The widest caption's minimum: below it the group wraps instead of
+    /// squeezing a button under the text it has to show.
     int minimumColumnWidth() const {
         int width = 0;
         for (const QAbstractButton* button : buttons_) {

@@ -13,32 +13,26 @@ inline constexpr int kSpacingLarge = 20;
 inline constexpr int kRadiusSmall = 8;
 
 // ── Control geometry ────────────────────────────────────────────────────────
-// One height for every action, filter and settings action, and one inset pair
-// for their text. Qt's stylesheet box model adds the border to a min-height, so
-// the sheets always receive the content height and every surface measures 40.
+// One height for every action, filter and settings action. Qt's box model adds
+// the border to a min-height, so the sheets receive the content height.
 inline constexpr int kControlHeight = 40;
 inline constexpr int kControlContentHeight = kControlHeight - 2;
-// A watch CTA is the one action allowed to stand taller, and its height is
-// stated here rather than at its call site.
+// A watch CTA is the one action allowed to stand taller.
 inline constexpr int kWatchCtaHeight = 44;
 inline constexpr int kWatchCtaContentHeight = kWatchCtaHeight - 2;
 inline constexpr int kWatchCtaInsetH = 20;
-// Symmetric horizontal insets: a centred label must not sit off-axis.
+// Symmetric insets: a centred label must not sit off-axis.
 inline constexpr int kControlInsetH = 12;
 inline constexpr int kControlInsetHPrimary = 14;
-// The gap between a control's glyph and its label, shared by the buttons and
-// the search field. The widget style owns part of that gap and offers no knob
-// for it, so the glyph pads its own box with the remainder; the pad is part of
-// the icon's planned device box (Icons.cpp), so it stays inside the logical
-// size the layout reserved and never widens the icon at a fractional ratio.
+// The style owns part of the glyph/label gap and pads the icon's planned box
+// with the rest, inside the size the layout already reserved.
 inline constexpr int kIconTextGap = 8;
 inline constexpr int kIconGlyphPad = kIconTextGap / 2;
 // The height every home/feed list row keeps, thumbnail or not.
 inline constexpr int kRowHeight = 56;
 // A status badge is one line; its counts live on the progress line below.
 inline constexpr int kBadgeHeight = 24;
-// The component card header grid: [check] [title/description stretch]
-// [badge] [size].
+// Component card header: [check][title/description stretch][badge][size].
 inline constexpr int kComponentCheckColumn = kControlHeight;
 inline constexpr int kComponentBadgeWidth = 120;
 inline constexpr int kComponentSizeWidth = 72;
