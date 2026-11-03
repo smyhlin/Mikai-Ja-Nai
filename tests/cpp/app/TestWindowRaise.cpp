@@ -58,6 +58,38 @@ bool isAbove(HWND candidate, HWND other) {
     }
     return false;
 }
+
+/// Makes `target` the foreground window of this process. A plain
+/// SetForegroundWindow is refused once this process no longer owns the
+/// foreground, so a failed request borrows the foreground thread's input queue
+/// - the same supported route the shipping policy uses - and reports whether the
+/// foreground actually moved instead of assuming it did.
+bool takeForeground(HWND target) {
+    if (target == nullptr || !IsWindow(target)) return false;
+    const auto settled = [target] {
+        for (int turn = 0; turn < 20; ++turn) {
+            if (GetForegroundWindow() == target) return true;
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        }
+        return GetForegroundWindow() == target;
+    };
+    for (int attempt = 0; attempt < 6; ++attempt) {
+        if (GetForegroundWindow() == target) return true;
+        SetForegroundWindow(target);
+        if (settled()) return true;
+        const HWND current = GetForegroundWindow();
+        const DWORD currentThread =
+            current != nullptr ? GetWindowThreadProcessId(current, nullptr) : 0;
+        const DWORD thisThread = GetCurrentThreadId();
+        if (currentThread == 0 || currentThread == thisThread) continue;
+        if (AttachThreadInput(currentThread, thisThread, TRUE)) {
+            SetForegroundWindow(target);
+            AttachThreadInput(currentThread, thisThread, FALSE);
+        }
+        if (settled()) return true;
+    }
+    return GetForegroundWindow() == target;
+}
 #endif
 
 }  // namespace
@@ -120,6 +152,22 @@ void TestWindowRaise::processingOverlayReassertsWindowsTopmostWithoutActivation(
     QWidget owner;
     owner.setAttribute(Qt::WA_ShowWithoutActivating);
     owner.show();
+    pump();
+
+    // The overlay reasserts its stacking only for the foreground application, so
+    // this suite has to own the foreground for the reassertion to be observable
+    // at all. A platform that refuses is named rather than silently unmeasured.
+    const HWND ownerHandle = reinterpret_cast<HWND>(owner.winId());
+    QVERIFY(ownerHandle != nullptr);
+    if (!takeForeground(ownerHandle)) {
+        QSKIP("the platform refused to give this process the foreground; the overlay's "
+              "foreground-only stacking poll cannot be observed here");
+    }
+    pump();
+    if (QGuiApplication::applicationState() != Qt::ApplicationActive) {
+        QSKIP("this application still reports itself inactive after being given the "
+              "foreground");
+    }
 
     QWidget blocker;
     blocker.setWindowFlags(blocker.windowFlags() | Qt::WindowStaysOnTopHint);
@@ -133,10 +181,8 @@ void TestWindowRaise::processingOverlayReassertsWindowsTopmostWithoutActivation(
 
     const HWND blockerHandle = reinterpret_cast<HWND>(blocker.winId());
     const HWND overlayHandle = reinterpret_cast<HWND>(overlay.winId());
-    const HWND ownerHandle = reinterpret_cast<HWND>(owner.winId());
     QVERIFY(blockerHandle != nullptr);
     QVERIFY(overlayHandle != nullptr);
-    QVERIFY(ownerHandle != nullptr);
 
     // Force a real competing topmost raise after the overlay's initial show.
     QVERIFY(SetWindowPos(blockerHandle, HWND_TOPMOST, 0, 0, 0, 0,
@@ -146,6 +192,10 @@ void TestWindowRaise::processingOverlayReassertsWindowsTopmostWithoutActivation(
     QVERIFY(GetForegroundWindow() != overlayHandle);
 
     owner.showFullScreen();
+    if (!takeForeground(ownerHandle)) {
+        QSKIP("the platform refused to keep this process in the foreground during the "
+              "fullscreen phase");
+    }
     QVERIFY(SetWindowPos(blockerHandle, HWND_TOPMOST, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE));
     QTRY_VERIFY_WITH_TIMEOUT(isAbove(overlayHandle, blockerHandle), 3000);
@@ -157,6 +207,10 @@ void TestWindowRaise::processingOverlayReassertsWindowsTopmostWithoutActivation(
     QVERIFY(overlay.isVisible());
     QVERIFY(IsWindowVisible(overlayHandle));
     owner.show();
+    if (!takeForeground(ownerHandle)) {
+        QSKIP("the platform refused to give this process the foreground back after the "
+              "owner was hidden and shown again");
+    }
     QVERIFY(overlay.isVisible());
     QVERIFY(IsWindowVisible(overlayHandle));
     QVERIFY(SetWindowPos(blockerHandle, HWND_TOPMOST, 0, 0, 0, 0,
@@ -164,6 +218,50 @@ void TestWindowRaise::processingOverlayReassertsWindowsTopmostWithoutActivation(
     QTRY_VERIFY_WITH_TIMEOUT(isAbove(blockerHandle, overlayHandle), 1000);
     QTRY_VERIFY_WITH_TIMEOUT(isAbove(overlayHandle, blockerHandle), 3000);
     QVERIFY(GetForegroundWindow() != overlayHandle);
+
+    // The negative half of the same contract: while another application owns the
+    // foreground the poll must stay off, so a competing topmost window keeps the
+    // tool behind it instead of the app fighting the switch every 250 ms. The
+    // desktop shell is a real other-process window; driving it through the
+    // foreground is what makes this an inactive application and not a guess.
+    const HWND shellHandle = GetShellWindow();
+    QVERIFY2(shellHandle != nullptr, "the desktop shell window was not found");
+    if (!SetForegroundWindow(shellHandle)) {
+        QSKIP("the shell refused the foreground switch; the background-poll case is "
+              "unobservable in this session");
+    }
+    bool wentAway = false;
+    for (int turn = 0; turn < 40 && !wentAway; ++turn) {
+        wentAway = QGuiApplication::applicationState() != Qt::ApplicationActive;
+        if (!wentAway) QTest::qWait(50);
+    }
+    if (!wentAway) {
+        QVERIFY2(takeForeground(ownerHandle), "could not take the foreground back");
+        QSKIP("this application never observed itself inactive after the foreground was "
+              "given to another window");
+    }
+    QVERIFY(SetWindowPos(blockerHandle, HWND_TOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE));
+    QTRY_VERIFY_WITH_TIMEOUT(isAbove(blockerHandle, overlayHandle), 1000);
+    QTest::qWait(1200);
+    const bool stillAway = QGuiApplication::applicationState() != Qt::ApplicationActive;
+    QVERIFY2(stillAway, "this application took the foreground back during the background "
+                        "poll window, so the negative case was not observed");
+    QVERIFY2(isAbove(blockerHandle, overlayHandle),
+             "the overlay reasserted topmost while another application owned the "
+             "foreground; the stacking poll must stay stopped while away");
+    QVERIFY2(IsWindowVisible(overlayHandle),
+             "the overlay hid itself while another application owned the foreground");
+
+    // Back to this process: the poll starts again, which the blocker re-raise has
+    // to lose again - otherwise "stopped while away" could just be a dead timer.
+    QVERIFY2(takeForeground(ownerHandle),
+             "could not take this process's foreground back after the away poll");
+    QTRY_VERIFY_WITH_TIMEOUT(QGuiApplication::applicationState() == Qt::ApplicationActive,
+                             2000);
+    QVERIFY(SetWindowPos(blockerHandle, HWND_TOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE));
+    QTRY_VERIFY_WITH_TIMEOUT(isAbove(overlayHandle, blockerHandle), 3000);
 
     overlay.hide();
     QTest::qWait(300);

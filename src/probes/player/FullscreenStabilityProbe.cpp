@@ -1,5 +1,6 @@
 #include "Anime4K.hpp"
 #include "PlayerDialog.hpp"
+#include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
 #include "ProbeIsolation.hpp"
 #include "ProbeRuntime.hpp"
@@ -917,6 +918,89 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
     spinFor(600);
     runs.append(runActivationCycles(dialog, surface, peer, QStringLiteral("engine-overlay"),
                                     std::max(1, std::min(5, seconds / 6)), knownBright, record));
+
+    // The overlay's stacking poll must be on while this application owns the
+    // foreground and off the moment another application does: reasserting a tool
+    // window from the background only fights the switch, and a raise retry from
+    // the background must not borrow the other process's input queue.
+    {
+        const QString platform = QGuiApplication::platformName();
+        const bool pollSupported = platform == QStringLiteral("windows") ||
+                                   platform == QStringLiteral("xcb");
+        auto* overlay = dialog->findChild<mplayer::shell::ProcessingOverlay*>();
+        const bool overlayVisible = overlay != nullptr && overlay->isVisible();
+        const bool pollActiveWhileForeground = overlay != nullptr && overlay->stackingPollActive();
+        const quint64 stopsBefore = mikai::gui::uiprofile::snapshot().awayStackingStops;
+        const quint64 abortsBefore = mikai::gui::uiprofile::snapshot().raiseRetriesAborted;
+        const bool peerActivated = peer.activate();
+        spinFor(400);
+        const bool awayOwned = peerActivated && peer.ownsForeground() &&
+                               QGuiApplication::applicationState() != Qt::ApplicationActive;
+        // Measured inside the away interval only: a raise retry that attached
+        // before the switch away is not a background cost.
+        const quint64 attachesBefore = mikai::gui::uiprofile::snapshot().threadInputAttaches;
+        spinFor(1000);
+        const bool pollActiveWhileAway = overlay != nullptr && overlay->stackingPollActive();
+        const mikai::gui::uiprofile::Snapshot countersAway =
+            mikai::gui::uiprofile::snapshot();
+        const qint64 attachesWhileAway =
+            static_cast<qint64>(countersAway.threadInputAttaches - attachesBefore);
+        record(QJsonObject{{"event", "focusOverlayStacking"},
+                           {"pollSupported", pollSupported},
+                           {"overlayVisible", overlayVisible},
+                           {"pollActiveWhileForeground", pollActiveWhileForeground},
+                           {"foregroundOwnedByPeer", peer.ownsForeground()},
+                           {"awayQtInactive",
+                            QGuiApplication::applicationState() != Qt::ApplicationActive},
+                           {"pollActiveWhileAway", pollActiveWhileAway},
+                           {"attachCallsWhileAway", attachesWhileAway},
+                           {"awayStackingStops",
+                            static_cast<qint64>(countersAway.awayStackingStops - stopsBefore)},
+                           {"raiseRetriesAborted",
+                            static_cast<qint64>(countersAway.raiseRetriesAborted -
+                                                abortsBefore)},
+                           {"awayWindowMs", 1400}});
+        const QString failure =
+            !overlayVisible
+                ? QStringLiteral("the engine overlay was not visible for the away check")
+            : !pollSupported
+                ? QStringLiteral("no stacking poll exists on this platform, so the away "
+                                 "check is unobservable")
+            : !pollActiveWhileForeground
+                ? QStringLiteral("the overlay's stacking poll was not running while this "
+                                 "application owned the foreground")
+            : !awayOwned
+                ? QStringLiteral("the foreground helper did not hold the foreground for the "
+                                 "overlay check")
+            : pollActiveWhileAway
+                ? QStringLiteral("the overlay kept its stacking poll running while another "
+                                 "application owned the foreground")
+            : attachesWhileAway != 0
+                ? QStringLiteral("the overlay contacted another process's input queue while "
+                                 "away (attaches=%1)")
+                      .arg(attachesWhileAway)
+                : QString();
+        if (!failure.isEmpty()) {
+            *error = failure;
+            record(QJsonObject{{"event", "focusSwitchResult"},
+                               {"result", "INCOMPLETE"},
+                               {"reason", failure},
+                               {"surfaceState", surfaceState(surface)}});
+            peer.stop();
+            return 3;
+        }
+        if (!ensureForeground(dialog)) {
+            *error = QStringLiteral(
+                "the player did not take the foreground back after the overlay away check");
+            record(QJsonObject{{"event", "focusSwitchResult"},
+                               {"result", "INCOMPLETE"},
+                               {"reason", *error},
+                               {"surfaceState", surfaceState(surface)}});
+            peer.stop();
+            return 3;
+        }
+        spinFor(300);
+    }
     dialog->endEnginePreparation(true, QString());
     spinFor(300);
 

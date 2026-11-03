@@ -5,6 +5,7 @@
 
 #include "gui/Clipboard.hpp"
 #include "gui/ImageDecode.hpp"
+#include "gui/UiProfile.hpp"
 #include "Labels.hpp"
 #include "dialogs/CoverViewer.hpp"
 #include "state/AppearanceStore.hpp"
@@ -1210,12 +1211,15 @@ void TitlePage::applyResponsiveLayout() {
                     : Qt::Alignment(Qt::AlignLeft | Qt::AlignTop);
     heroLayout_->setAlignment(heroPosterHost_, posterAlignment);
     studio_->setAlignment((stackedHero ? Qt::AlignHCenter : Qt::AlignLeft) | Qt::AlignTop);
+    // Both properties are written before the one restyle they need: a crossing
+    // of both thresholds is one repolish pass, not two.
+    bool restyleHeading = false;
     if (compact != compact_) {
         compact_ = compact;
         // Theme-owned type sizes key off this property, so the switch has to
-        // re-resolve the scoped sheet once rather than set fonts here.
+        // re-resolve the scoped sheet rather than set fonts here.
         setProperty("compact", compact);
-        repolishTitleSubtree();
+        restyleHeading = true;
         heroLayout_->setContentsMargins(0, 0, 0, 0);
         const int coverWidth = narrow ? theme::kTitleNarrowCoverWidth
                                       : compact ? theme::kTitleCompactCoverWidth
@@ -1246,8 +1250,9 @@ void TitlePage::applyResponsiveLayout() {
     if (narrow_ != narrow) {
         narrow_ = narrow;
         setProperty("narrow", narrow);
-        repolishTitleSubtree();
+        restyleHeading = true;
     }
+    if (restyleHeading) repolishTitleSubtree();
     const int inset = compact ? theme::kTitlePageCompactInset : theme::kTitlePageInset;
     columnLayout_->setContentsMargins(inset, theme::kTitlePageInset, inset,
                                       theme::kTitlePageInset);
@@ -1324,14 +1329,19 @@ void TitlePage::repolishTitleSubtree() {
     if (pageStyle == nullptr) {
         return;
     }
-    const QList<QWidget*> descendants = findChildren<QWidget*>();
-    for (QWidget* widget : descendants) {
-        pageStyle->unpolish(widget);
-        pageStyle->polish(widget);
-        widget->updateGeometry();
-    }
+    // Despite the name kept from the first pass, the scoped sheet carries
+    // exactly two rules keyed on `compact`/`narrow` and both restyle the
+    // heading's font size: re-resolving every descendant re-polished the whole
+    // release grid on each width crossing, and these two widgets are the entire
+    // effect.
     pageStyle->unpolish(this);
     pageStyle->polish(this);
+    if (heading_ != nullptr) {
+        pageStyle->unpolish(heading_);
+        pageStyle->polish(heading_);
+        heading_->updateGeometry();
+    }
+    mikai::gui::uiprofile::noteTitleRepolishWidgets(2);
     update();
 }
 

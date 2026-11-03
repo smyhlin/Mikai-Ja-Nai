@@ -1,7 +1,10 @@
 #include "PlayerPopups.hpp"
 #include "ShellTheme.hpp"
 
+#include "gui/UiProfile.hpp"
+
 #include <QAction>
+#include <QApplication>
 #include <QCursor>
 #include <QDebug>
 #include <QEvent>
@@ -696,6 +699,10 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
         stackingTimer_ = new QTimer(this);
         stackingTimer_->setInterval(250);
         connect(stackingTimer_, &QTimer::timeout, this, &ProcessingOverlay::maintainTopmost);
+        // The application-level signal, not a widget event: this window never
+        // takes activation, so activation events for it never arrive.
+        connect(qApp, &QGuiApplication::applicationStateChanged, this,
+                [this] { syncStackingTimer(); });
     }
 
     cancel_ = new QPushButton(this);
@@ -740,10 +747,7 @@ void ProcessingOverlay::begin(const QString& title) {
     adjustSize();
     show();
     raise();
-    if (stackingTimer_ != nullptr) {
-        maintainTopmost();
-        stackingTimer_->start();
-    }
+    syncStackingTimer();
 }
 
 void ProcessingOverlay::setStage(int stageIndex, int stageCount, const QString& phase,
@@ -814,26 +818,18 @@ void ProcessingOverlay::showEvent(QShowEvent* event) {
 }
 
 void ProcessingOverlay::hideEvent(QHideEvent* event) {
-    if (stackingTimer_ != nullptr) stackingTimer_->stop();
+    stopStackingTimer(false);
     QFrame::hideEvent(event);
 }
 
-bool ProcessingOverlay::event(QEvent* event) {
-    switch (event->type()) {
-        // The poll exists to keep a tool window above the player. While another
-        // application is foreground it can only push against that switch, so the
-        // application's own activation state is what turns it on and off.
-        case QEvent::ApplicationActivate:
-        case QEvent::ApplicationDeactivate:
-        case QEvent::ApplicationStateChange:
-        case QEvent::WindowActivate:
-        case QEvent::WindowDeactivate:
-            syncStackingTimer();
-            break;
-        default:
-            break;
-    }
-    return QFrame::event(event);
+bool ProcessingOverlay::stackingPollActive() const {
+    return stackingTimer_ != nullptr && stackingTimer_->isActive();
+}
+
+void ProcessingOverlay::stopStackingTimer(bool away) {
+    if (stackingTimer_ == nullptr || !stackingTimer_->isActive()) return;
+    stackingTimer_->stop();
+    if (away) mikai::gui::uiprofile::noteAwayStackingStop();
 }
 
 void ProcessingOverlay::syncStackingTimer() {
@@ -844,18 +840,18 @@ void ProcessingOverlay::syncStackingTimer() {
         if (!stackingTimer_->isActive()) stackingTimer_->start();
         return;
     }
-    if (stackingTimer_->isActive()) stackingTimer_->stop();
+    stopStackingTimer(!foreground);
 }
 
 void ProcessingOverlay::maintainTopmost() {
     if (!isVisible()) {
-        if (stackingTimer_ != nullptr) stackingTimer_->stop();
+        stopStackingTimer(false);
         return;
     }
     // A background application has nothing to reassert: the window the viewer
     // switched to is the one that must stay above this tool.
     if (QGuiApplication::applicationState() != Qt::ApplicationActive) {
-        if (stackingTimer_ != nullptr) stackingTimer_->stop();
+        stopStackingTimer(true);
         return;
     }
 #ifdef Q_OS_WIN

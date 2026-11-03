@@ -133,6 +133,11 @@ private:
     void finishIsolatedBuild(BuildSummaryKind kind, const QString& detail = QString());
     QString buildSummaryText() const;
     void togglePin(bool pinned);
+#ifdef Q_OS_WIN
+    /// Moves the native window's topmost band to match `pinned_` without
+    /// recreating the window, touching the Qt flag or replaying a show.
+    void applyNativeTopmost();
+#endif
     void toggleFullscreen();
     void syncFullscreenButton();
     void swapSides();

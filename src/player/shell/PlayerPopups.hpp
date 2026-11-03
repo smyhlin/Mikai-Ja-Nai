@@ -213,11 +213,14 @@ public:
     /// Centres the window near the top of `anchor`'s screen.
     void anchorTo(const QWidget* anchor);
 
+    /// True while the stacking poll is running. Read by the focus probe, which
+    /// asserts the poll is off while another application owns the foreground.
+    bool stackingPollActive() const;
+
 signals:
     void cancelRequested();
 
 protected:
-    bool event(QEvent* event) override;
     void changeEvent(QEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
@@ -228,6 +231,9 @@ private:
     /// the foreground one. Reasserting a tool window from the background is a
     /// 250 ms fight with the switch the viewer is performing.
     void syncStackingTimer();
+    /// Stops the poll, counting the stop when the reason is a switch away: a
+    /// hide or a finished run stops the same timer for another reason.
+    void stopStackingTimer(bool away);
 
     /// What the window is showing, never a copy of the words showing it: a
     /// language switch restates the chrome from this and leaves the run alone.

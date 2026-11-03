@@ -100,9 +100,14 @@ void requestForeground(QPointer<QWidget> window, int attempt) {
         // process's input thread here would fight the switch the viewer is
         // performing. The launch case is served by attempt 0, which is not
         // gated: that window did appear behind the shell and still needs raising.
-        if (QGuiApplication::applicationState() != Qt::ApplicationActive) return;
+        const bool anotherApplicationIsForeground =
+            QGuiApplication::applicationState() != Qt::ApplicationActive;
         QWidget* active = QApplication::activeWindow();
-        if (active == nullptr || active->window() != window) return;
+        const bool ownsThisWindow = active != nullptr && active->window() == window.data();
+        if (anotherApplicationIsForeground || !ownsThisWindow) {
+            mikai::gui::uiprofile::noteRaiseRetryAborted();
+            return;
+        }
     }
 
     window->raise();

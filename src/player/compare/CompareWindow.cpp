@@ -344,6 +344,12 @@ CompareWindow::~CompareWindow() {
 
 void CompareWindow::showEvent(QShowEvent* event) {
     QDialog::showEvent(event);
+#ifdef Q_OS_WIN
+    // The pin lives in the native topmost band while visible, so a hide/show has
+    // to re-apply it: the Qt flag was deliberately left alone and hiding does
+    // not clear the window's topmost style.
+    applyNativeTopmost();
+#endif
     if (togglingPin_ || presentationTransition_) {
         return;
     }
@@ -369,6 +375,23 @@ void CompareWindow::togglePin(bool pinned) {
         pinButton_->setAccessibleName(pinned_ ? tr("Pinned") : tr("Pin"));
     }
     const bool wasVisible = isVisible();
+#ifdef Q_OS_WIN
+    // A visible window changes topmost in place. Re-setting the Qt flag would
+    // destroy and recreate the native window under the picture (the same
+    // replay of showFullScreen/showMaximized/showNormal does), so the pin never
+    // leaves the platform's hands while the viewer is watching it. While
+    // hidden only the flag is synced, and showEvent re-applies the band.
+    if (wasVisible) {
+        applyNativeTopmost();
+    } else {
+        setWindowFlag(Qt::WindowStaysOnTopHint, pinned_);
+    }
+#else
+    // Off Windows the pin goes through Qt: the flag changes and the window is
+    // re-shown in its current state, which is where the other backends apply the
+    // stacking hint. On Wayland that is a request only - the compositor owns
+    // global stacking and may refuse it - so the pin cannot promise to stay above
+    // other applications there.
     const bool wasFullscreen = isFullScreen();
     const bool wasMaximized = isMaximized();
     const QRect normalGeometry = geometry();
@@ -387,16 +410,28 @@ void CompareWindow::togglePin(bool pinned) {
         raise();
         activateWindow();
     }
-#ifdef Q_OS_WIN
-    if (const HWND hwnd = reinterpret_cast<HWND>(winId()); hwnd != nullptr && IsWindow(hwnd)) {
-        SetWindowPos(hwnd, pinned_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-    }
-#endif
     presentationTransition_ = false;
     togglingPin_ = false;
+#endif
     syncFullscreenButton();
 }
+
+#ifdef Q_OS_WIN
+/// Moves the native window's topmost band without touching the Qt flag, layout
+/// or activation: Win32 owns the band and the window keeps its identity.
+void CompareWindow::applyNativeTopmost() {
+    const HWND hwnd = reinterpret_cast<HWND>(winId());
+    if (hwnd == nullptr || !IsWindow(hwnd)) return;
+    // A z-order call is not free and HWND_*TOPMOST reorders the window, so an
+    // already-matching band is left alone; this is what makes the show-time
+    // re-assertion cost nothing when the pin never changed.
+    const bool topmostNow =
+        (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
+    if (topmostNow == pinned_) return;
+    SetWindowPos(hwnd, pinned_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+}
+#endif
 
 void CompareWindow::toggleFullscreen() {
     if (!isVisible()) {
