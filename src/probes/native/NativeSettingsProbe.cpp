@@ -609,6 +609,89 @@ bool clickImportForCandidate(QTableWidget* table, QPushButton* button,
     return true;
 }
 
+/// The manager's own line for the removal worker. Unlike a registration, a
+/// removal has no separate "started" signal the probe can subscribe to, so the
+/// banner is what says the worker is still running.
+bool managerIsRemoving(mikai::app::AnimeJanaiManagerPanel& panel) {
+    return managerStatusText(panel) ==
+           mikai::app::AnimeJanaiManagerPanel::tr("Removing custom ONNX model…");
+}
+
+/// Waits for the manager's removal to settle. A table row can be rebuilt by a
+/// background refresh before the worker has finished, so absence or a flag
+/// alone is not the outcome: while the banner still names the running removal
+/// the wait outlives its budget, up to a hang guard.
+bool waitForRemovalSettle(mikai::app::AnimeJanaiManagerPanel& panel, const auto& settled,
+                          int budgetMs) {
+    constexpr int kHangGuardMs = 60000;
+    QElapsedTimer clock;
+    clock.start();
+    while (true) {
+        QApplication::processEvents();
+        if (settled()) return true;
+        const int elapsed = static_cast<int>(clock.elapsed());
+        if (elapsed >= kHangGuardMs) break;
+        if (elapsed >= budgetMs && !managerIsRemoving(panel)) break;
+        QThread::msleep(10);
+    }
+    QApplication::processEvents();
+    return settled();
+}
+
+/// What the manager says about a removal, and the row and registry it left, so
+/// a refusal is reported with the app's own words instead of only the verdict
+/// the probe expected.
+QString removeOutcomeDetail(mikai::app::AnimeJanaiManagerPanel& panel, QTableWidget* table,
+                            const QString& id) {
+    const CatalogueRowView row = catalogueRowAt(table, customModelRow(table, id));
+    return QStringLiteral("manager status '%1'; row %2; registry %3")
+        .arg(managerStatusText(panel),
+             row.row < 0
+                 ? QStringLiteral("absent")
+                 : QStringLiteral("origin %1, state %2, candidate %3, id %4, path %5")
+                       .arg(row.origin, row.state,
+                            row.candidate ? QStringLiteral("yes") : QStringLiteral("no"),
+                            row.id, row.path),
+             registeredModelHasId(id) ? QStringLiteral("holds %1").arg(id)
+                                      : QStringLiteral("does not hold %1").arg(id));
+}
+
+/// Selects the row the manager would act on and proves it is the intended
+/// registration before clicking. The action reads `currentRow()`, so the
+/// selection uses the same cell operation the consumer reads and the row's id
+/// and provenance are checked after that selection, never a stale index.
+bool clickRemoveForRow(QTableWidget* table, QPushButton* button, const QString& id,
+                       const QString& expectedOrigin, QString* problemOut) {
+    const auto problem = [problemOut](const QString& text) {
+        if (problemOut != nullptr) *problemOut = text;
+        return false;
+    };
+    if (table == nullptr || button == nullptr) return problem(QStringLiteral("action missing"));
+    const int row = customModelRow(table, id);
+    if (row < 0) return problem(QStringLiteral("row for '%1' is absent").arg(id));
+    table->setCurrentCell(row, 0);
+    QApplication::processEvents();
+    const CatalogueRowView selected = catalogueRowAt(table, table->currentRow());
+    if (selected.id != id) {
+        return problem(QStringLiteral("selected row carries id '%1', not '%2'")
+                           .arg(selected.id.isEmpty() ? QStringLiteral("(none)") : selected.id, id));
+    }
+    if (selected.origin != expectedOrigin) {
+        return problem(QStringLiteral("selected row origin is '%1', not '%2'")
+                           .arg(selected.origin.isEmpty() ? QStringLiteral("(none)")
+                                                          : selected.origin,
+                                expectedOrigin));
+    }
+    if (selected.state != QLatin1String("registered")) {
+        return problem(QStringLiteral("selected row state is '%1', not registered")
+                           .arg(selected.state));
+    }
+    if (!button->isEnabled()) return problem(QStringLiteral("the removal action is disabled"));
+    button->click();
+    QApplication::processEvents();
+    return true;
+}
+
 QString customPresetId(const QString& stem) {
     return QStringLiteral("spatial:custom:") + stem;
 }
@@ -1280,37 +1363,47 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
         *reloadedPanel, mikai::app::AnimeJanaiManagerPanel::tr("Remove Selected"));
     check(modelTableForRemoval != nullptr && removeModel != nullptr,
           "the custom model removal action is available");
-    if (removeModel != nullptr) {
-        const int externalRow =
-            customModelRow(modelTableForRemoval, QStringLiteral("external_smoke"));
-        if (externalRow >= 0) {
-            modelTableForRemoval->selectRow(externalRow);
-            removeModel->click();
-        }
-    }
-    const bool externalRemoved = waitForUi(
-        [&] {
-            const int row =
-                customModelRow(modelTableForRemoval, QStringLiteral("external_smoke"));
-            return row >= 0 &&
-                   modelTableForRemoval->item(row, 0)->data(Qt::UserRole + 1).toBool();
-        },
-        15000);
+    QString externalRemovalProblem;
+    const bool externalRemovalStarted =
+        clickRemoveForRow(modelTableForRemoval, removeModel, QStringLiteral("external_smoke"),
+                          QStringLiteral("external"), &externalRemovalProblem);
+    const bool externalRemoved =
+        externalRemovalStarted &&
+        waitForRemovalSettle(
+            *reloadedPanel,
+            [&] {
+                // The row must be the borrowed graph itself and present its
+                // external provenance as unregistered, not merely carry a flag.
+                const CatalogueRowView row =
+                    catalogueRowForPath(modelTableForRemoval, externalPath);
+                return row.row >= 0 && row.id == QStringLiteral("external_smoke") &&
+                       row.origin == QStringLiteral("external") &&
+                       row.state == QStringLiteral("unregistered") && row.candidate;
+            },
+            15000);
     check(externalRemoved && QFileInfo(externalPath).isFile(),
-          "removing an external registration preserves the graph and presents it as unregistered");
-    if (removeModel != nullptr) {
-        const int importedRow = customModelRow(modelTableForRemoval, QStringLiteral("smoke_model"));
-        if (importedRow >= 0) {
-            modelTableForRemoval->selectRow(importedRow);
-            removeModel->click();
-        }
-    }
-    const bool removedInUi = waitForUi(
-        [&] {
-            return customModelRow(modelTableForRemoval, QStringLiteral("smoke_model")) < 0;
-        },
-        15000);
-    check(removedInUi, "asynchronous removal cleared the imported model from the manager");
+          "removing an external registration preserves the graph and presents it as unregistered",
+          externalRemoved ? QString()
+                          : (externalRemovalProblem.isEmpty()
+                                 ? removeOutcomeDetail(*reloadedPanel, modelTableForRemoval,
+                                                       QStringLiteral("external_smoke"))
+                                 : externalRemovalProblem));
+    QString ownedRemovalProblem;
+    const bool ownedRemovalStarted =
+        clickRemoveForRow(modelTableForRemoval, removeModel, QStringLiteral("smoke_model"),
+                          QStringLiteral("owned"), &ownedRemovalProblem);
+    const bool removedInUi =
+        ownedRemovalStarted &&
+        waitForRemovalSettle(
+            *reloadedPanel,
+            [&] { return customModelRow(modelTableForRemoval, QStringLiteral("smoke_model")) < 0; },
+            15000);
+    check(removedInUi, "asynchronous removal cleared the imported model from the manager",
+          removedInUi ? QString()
+                      : (ownedRemovalProblem.isEmpty()
+                             ? removeOutcomeDetail(*reloadedPanel, modelTableForRemoval,
+                                                   QStringLiteral("smoke_model"))
+                             : ownedRemovalProblem));
     auto removedInventory = std::async(std::launch::async, [] {
         return mplayer::native::listCustomAnimeJanaiModels();
     });
@@ -1319,8 +1412,16 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
     const auto remainingModels = removalReady
                                      ? removedInventory.get()
                                      : QVector<mplayer::native::CustomAnimeJanaiModel>{};
+    QStringList remainingIds;
+    for (const auto& model : remainingModels) remainingIds.append(model.id);
     check(removalReady && remainingModels.isEmpty(),
-          "background inventory confirms the imported model was removed");
+          "background inventory confirms the imported model was removed",
+          !removalReady
+              ? QStringLiteral("the inventory did not finish within 15 s")
+              : (remainingIds.isEmpty()
+                     ? QString()
+                     : QStringLiteral("still registered: %1")
+                           .arg(remainingIds.join(QStringLiteral(", ")))));
 }
 
 /// Filesystem discovery seen through the public surfaces the viewer actually
