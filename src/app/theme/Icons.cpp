@@ -329,10 +329,13 @@ QPixmap renderPlay(int size, const QColor& color) {
     painter.setPen(pen);
     painter.setBrush(Qt::NoBrush);
 
+    // Centred on the 24-grid: the triangle spans 7.5..17.5, so its ink starts
+    // at the same optical inset as the other header glyphs instead of 1.8
+    // units right-heavy.
     QPainterPath triangle;
-    triangle.moveTo(8.8, 5.8);
-    triangle.lineTo(18.8, 12.0);
-    triangle.lineTo(8.8, 18.2);
+    triangle.moveTo(7.5, 5.8);
+    triangle.lineTo(17.5, 12.0);
+    triangle.lineTo(7.5, 18.2);
     triangle.closeSubpath();
     painter.drawPath(triangle);
 
