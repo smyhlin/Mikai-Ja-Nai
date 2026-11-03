@@ -1078,8 +1078,8 @@ private:
 
         // The media inspector is opened for the whole sweep: its selected-row
         // palette has to follow the token while the window stays open.
-        player_->openMediaInformation();
-        mediaInfo_ = player_->findChild<MediaInformationDialog*>();
+        mediaInfo_ = new MediaInformationDialog(surface_.data(), player_.data());
+        mediaInfo_->show();
         if (!waitFor([this] { return mediaInfo_ != nullptr && mediaInfo_->isVisible(); }, 6000,
                      QStringLiteral("media-information-real"))) {
             return false;
