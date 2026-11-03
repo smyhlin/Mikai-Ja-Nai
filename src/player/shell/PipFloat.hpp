@@ -111,6 +111,7 @@ protected:
     /// A move or a resize leaves stale pixels the new geometry does not
     /// describe, so everything the surface carries is redrawn.
     void chromeDirtyAll() override;
+    void chromeMoved(QWidget* widget) override;
 
 private:
     void buildChrome();

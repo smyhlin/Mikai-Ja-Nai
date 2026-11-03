@@ -63,6 +63,9 @@ class Host : public QWidget, public ChromeHost {
 
   void chromeDirty(QWidget* widget, const QRect&) override { chrome.invalidate(widget); }
   void chromeDirtyAll() override { chrome.invalidateAll(); }
+  /// A move damages the old and new box and keeps the pixels - the tests paint
+  /// with an explicit damage rect, so nothing has to be requested here.
+  void chromeMoved(QWidget*) override {}
 
   ChromeList chrome;
 };
@@ -309,6 +312,149 @@ void TestChromeCache::aSameAreaReshapeRepaintsTheNewBox() {
            qPrintable(QStringLiteral("the taller box was clipped: %1")
                           .arg(scratch.pixelColor(11, 15).name(QColor::HexArgb))));
   QVERIFY(near(scratch.pixelColor(14, 2), frame));
+
+  chrome.invalidateAll();
+  delete root;
+}
+
+/// A move is not a content change: the pixels are reused and only the two boxes
+/// are repainted. Read from the image, because only the image can show it.
+void TestChromeCache::aMoveReusesThePixelsItAlreadyHolds() {
+  const QColor frame(18, 18, 24, 255);
+  const QColor fill(20, 200, 90, 255);
+
+  auto* root = new QWidget;
+  root->setAttribute(Qt::WA_DontShowOnScreen, true);
+  root->resize(60, 40);
+  root->show();
+
+  auto* control = new QuietChrome(root);
+  control->resize(16, 12);
+  control->move(0, 0);
+  control->setFillQuietly(fill);
+  QVERIFY(presented(control));
+
+  ChromeList chrome;
+  chrome.adopt(root, nullptr);
+
+  QImage scratch = painted(chrome, root, 1.0, frame);
+  QVERIFY(near(scratch.pixelColor(8, 6), fill));
+
+  control->move(20, 0);
+  const QRect damage = chrome.damage(control).united(QRect(control->pos(), control->size()));
+  QVERIFY(!damage.isEmpty());
+  {
+    QPainter painter(&scratch);
+    painter.fillRect(damage, frame);
+    chrome.paint(painter, root, damage);
+  }
+  QVERIFY(near(scratch.pixelColor(20 + 8, 6), fill));
+  QVERIFY(near(scratch.pixelColor(8, 6), frame));
+
+  // The control's own pixels are unchanged, so the buffer was reusable: a paint
+  // without an invalidation must still serve the control's fill.
+  control->move(40, 0);
+  const QRect second = chrome.damage(control).united(QRect(control->pos(), control->size()));
+  {
+    QPainter painter(&scratch);
+    painter.fillRect(second, frame);
+    chrome.paint(painter, root, second);
+  }
+  QVERIFY(near(scratch.pixelColor(40 + 8, 6), fill));
+
+  chrome.invalidateAll();
+  delete root;
+}
+
+/// An ancestor that clips the control changes the part of it that is visible, so
+/// the same widget position is a different cache entry: the widened part has to
+/// be rendered, not served from the old clip.
+void TestChromeCache::anAncestorClipChangeReRendersTheVisibleRect() {
+  const QColor frame(18, 18, 24, 255);
+  const QColor fill(20, 200, 90, 255);
+
+  auto* root = new QWidget;
+  root->setAttribute(Qt::WA_DontShowOnScreen, true);
+  root->resize(60, 40);
+  root->show();
+  auto* clip = new QWidget(root);
+  clip->setAttribute(Qt::WA_DontShowOnScreen, true);
+  clip->resize(8, 12);
+  clip->move(0, 0);
+  clip->show();
+
+  auto* control = new QuietChrome(clip);
+  control->resize(16, 12);
+  control->move(0, 0);
+  control->setFillQuietly(fill);
+  QVERIFY(presented(control));
+
+  ChromeList chrome;
+  chrome.adopt(root, nullptr);
+
+  QImage scratch = painted(chrome, root, 1.0, frame);
+  QVERIFY(near(scratch.pixelColor(6, 6), fill));
+  QVERIFY(near(scratch.pixelColor(12, 6), frame));  // clipped away
+
+  clip->resize(16, 12);
+  chrome.invalidate(control);
+  {
+    QPainter painter(&scratch);
+    painter.fillRect(QRect(0, 0, 16, 12), frame);
+    chrome.paint(painter, root, QRect(0, 0, 16, 12));
+  }
+  QVERIFY2(near(scratch.pixelColor(12, 6), fill),
+           qPrintable(QStringLiteral("the widened clip was served from the old rect: %1")
+                          .arg(scratch.pixelColor(12, 6).name(QColor::HexArgb))));
+
+  chrome.invalidateAll();
+  delete root;
+}
+
+/// After a move, a real content change must still be re-rendered: reuse is keyed
+/// on the local rect, not on "nothing happened".
+void TestChromeCache::aContentChangeAfterAMoveIsNotServedStale() {
+  const QColor frame(18, 18, 24, 255);
+  const QColor first(20, 200, 90, 255);
+  const QColor second(200, 40, 40, 255);
+
+  auto* root = new QWidget;
+  root->setAttribute(Qt::WA_DontShowOnScreen, true);
+  root->resize(60, 40);
+  root->show();
+
+  auto* control = new QuietChrome(root);
+  control->resize(16, 12);
+  control->move(0, 0);
+  control->setFillQuietly(first);
+  QVERIFY(presented(control));
+
+  ChromeList chrome;
+  chrome.adopt(root, nullptr);
+
+  QImage scratch = painted(chrome, root, 1.0, frame);
+  control->move(20, 0);
+  {
+    QPainter painter(&scratch);
+    const QRect damage =
+        chrome.damage(control).united(QRect(control->pos(), control->size()));
+    painter.fillRect(damage, frame);
+    chrome.paint(painter, root, damage);
+  }
+  QVERIFY(near(scratch.pixelColor(20 + 8, 6), first));
+
+  control->setFillQuietly(second);
+  chrome.invalidate(control);
+  {
+    QPainter painter(&scratch);
+    const QRect damage =
+        chrome.damage(control).united(QRect(control->pos(), control->size()));
+    painter.fillRect(damage, frame);
+    chrome.paint(painter, root, damage);
+  }
+  QVERIFY2(near(scratch.pixelColor(20 + 8, 6), second),
+           qPrintable(QStringLiteral("the changed content was served stale: %1")
+                          .arg(scratch.pixelColor(20 + 8, 6).name(QColor::HexArgb))));
 
   chrome.invalidateAll();
   delete root;

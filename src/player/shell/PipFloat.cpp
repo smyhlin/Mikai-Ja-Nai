@@ -416,6 +416,20 @@ void PipFloat::chromeDirty(QWidget* widget, const QRect& rect) {
     surface_->update(region);
 }
 
+void PipFloat::chromeMoved(QWidget* widget) {
+    if (widget == nullptr || surface_ == nullptr) return;
+    // A translation keeps the control's pixels; only its damage moved.
+    QRect dirty(widget->mapTo(this, QPoint(0, 0)), widget->size());
+    const QRect vacated = chrome_.damage(widget);
+    if (!vacated.isEmpty()) dirty = dirty.united(vacated);
+    const QRect region(dirty.intersected(surface_->geometry()));
+    if (region.isEmpty()) {
+        surface_->update();
+        return;
+    }
+    surface_->update(region);
+}
+
 void PipFloat::chromeDirtyAll() {
     chrome_.invalidateAll();
     if (surface_ == nullptr) {

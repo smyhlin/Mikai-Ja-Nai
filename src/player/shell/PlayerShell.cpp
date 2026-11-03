@@ -2728,6 +2728,20 @@ void PlayerShell::chromeDirty(QWidget* widget, const QRect& rect) {
     mikai::gui::uiprofile::noteChromeDirtyApplied();
 }
 
+void PlayerShell::chromeMoved(QWidget* widget) {
+    if (widget == nullptr || surface_ == nullptr) return;
+    // A translation: the cached pixels are still right, so only the two boxes it
+    // spans are repainted - the one it left and the one it now occupies.
+    const QRect vacated = chrome_.damage(widget);
+    QRect dirty(widget->mapTo(this, QPoint(0, 0)), widget->size());
+    if (!vacated.isEmpty()) dirty = dirty.united(vacated);
+    const QRect picture = surface_->geometry();
+    if (!dirty.intersected(picture).isEmpty()) surface_->update();
+    const QRegion beside = QRegion(dirty) - QRegion(picture);
+    if (!beside.isEmpty()) update(beside);
+    mikai::gui::uiprofile::noteChromeDirtyApplied();
+}
+
 void PlayerShell::chromeDirtyAll() {
     // A move or a resize leaves stale pixels where the widget was, and no
     // widget-shaped rect describes those.

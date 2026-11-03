@@ -117,6 +117,7 @@ public:
     // notifications are routed to (see ShellWidgets.hpp).
     void chromeDirty(QWidget* widget, const QRect& rect) override;
     void chromeDirtyAll() override;
+    void chromeMoved(QWidget* widget) override;
 
     /// The widget mpv renders into. It is a plain QOpenGLWidget child: the host
     /// hands the URL to VideoSurface::open(), there is no winId() handshake.

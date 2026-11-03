@@ -257,6 +257,8 @@ void HoverPreview::place() {
     if (!card.isValid() || card == geometry()) return;
     const QRect vacated = geometry();
     const bool wasVisible = isVisible();
+    // Only a translation keeps the card's own pixels; a size change re-lays it.
+    const bool onlyMoved = vacated.size() == card.size();
     setGeometry(card);
     // The card is a translucent child: the area it covered is not repainted by
     // moving it, so somebody has to be asked for it. A plain parent update() is
@@ -265,7 +267,11 @@ void HoverPreview::place() {
     // widget-local rect that maps onto the vacated one.
     if (wasVisible && !vacated.isEmpty()) {
         if (ChromeHost* chromeHost = chromeHostOf(this)) {
-            chromeHost->chromeDirty(this, QRect(vacated.topLeft() - pos(), vacated.size()));
+            if (onlyMoved) {
+                chromeHost->chromeMoved(this);
+            } else {
+                chromeHost->chromeDirty(this, QRect(vacated.topLeft() - pos(), vacated.size()));
+            }
         } else {
             host->update(vacated);
         }

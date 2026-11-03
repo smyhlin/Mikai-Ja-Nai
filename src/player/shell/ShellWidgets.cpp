@@ -256,6 +256,9 @@ void chromeRepaintEvent(ChromeHost* host, QObject* watched, QEvent* event) {
         // the vacated box back (see ChromeList::invalidate) so the host can ask
         // for exactly those pixels instead.
         case QEvent::Move:
+            // A translation keeps the control's own pixels; only its damage moved.
+            host->chromeMoved(widget);
+            break;
         case QEvent::Resize:
             host->chromeDirty(widget, QRect());
             break;
@@ -281,13 +284,20 @@ void ChromeList::markStale(Entry& entry) {
     entry.valid = false;
 }
 
+QRect ChromeList::damage(const QWidget* widget) const {
+    for (const Entry& entry : entries_) {
+        if (entry.widget == widget) return entry.paintedBox;
+    }
+    return QRect();
+}
+
 QRect ChromeList::invalidate(const QWidget* widget) {
     QRect vacated;
     for (Entry& entry : entries_) {
         if (entry.widget != widget) continue;
         // The box is paint history, not cache validity: a control painted
         // directly (budget fallback) still leaves pixels behind when it moves.
-        vacated = entry.box;
+        vacated = entry.paintedBox;
         markStale(entry);
     }
     return vacated;
@@ -346,14 +356,20 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
         }
         // The miss reason, not just the miss: geometry, ratio, a full
         // invalidation and the budget are different defects.
+        // The key is what the control looks like in its own coordinates: a move
+        // changes where it sits, not a pixel of it.
+        const QRect local = box.translated(-at);
+        const QSize deviceSizeOf(static_cast<int>(std::ceil(box.width() * ratio)),
+                                 static_cast<int>(std::ceil(box.height() * ratio)));
         int missReason = 0;
         if (entry.valid) {
-            if (entry.box != box) missReason = 1;
+            if (entry.localBox != local || entry.cache.size() != deviceSizeOf) missReason = 1;
             else if (entry.devicePixelRatio != ratio) missReason = 2;
             else if (entry.stamp != generation_) missReason = 3;
         }
-        const bool reusable = entry.valid && entry.box == box && entry.devicePixelRatio == ratio &&
-                              entry.stamp == generation_;
+        const bool reusable = entry.valid && entry.localBox == local &&
+                              entry.cache.size() == deviceSizeOf &&
+                              entry.devicePixelRatio == ratio && entry.stamp == generation_;
         if (reusable) {
             // A reuse is the entire per-control cost: the pass already carries
             // the hint this blit needs, so there is no save/restore around it.
@@ -410,7 +426,8 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                 }
                 mikai::gui::uiprofile::noteChromeCacheRender();
                 mikai::gui::uiprofile::noteChromeCacheHeld(cachedBytes_);
-                entry.box = box;
+                entry.paintedBox = box;
+                entry.localBox = local;
                 entry.devicePixelRatio = ratio;
                 entry.stamp = generation_;
                 entry.valid = true;
@@ -433,7 +450,8 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
         entry.painted->paintChrome(painter);
         painter.restore();
         // Last actually painted box, whether or not this control is cached.
-        entry.box = box;
+        entry.paintedBox = box;
+        entry.localBox = local;
         ++painted;
     }
     painter.restore();

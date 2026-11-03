@@ -84,6 +84,10 @@ public:
     /// device-pixel-ratio change can alter any of them. A move or a resize is
     /// one control's business and goes through `chromeDirty()` instead.
     virtual void chromeDirtyAll() = 0;
+    /// The control moved without changing its content: repaint the box it left
+    /// and the box it now occupies, but keep its cached pixels - a translation
+    /// does not change what the control looks like.
+    virtual void chromeMoved(QWidget* widget) = 0;
 };
 
 ChromeHost* chromeHostOf(QWidget* widget);
@@ -150,6 +154,9 @@ public:
     /// painted), because an adopted control is translucent and Qt does not
     /// repaint the area one vacates - the host has to ask for those pixels.
     QRect invalidate(const QWidget* widget);
+    /// The same box, without clearing anything: the control's pixels are still
+    /// good, only where they sit on screen changed.
+    QRect damage(const QWidget* widget) const;
     /// Marks every cached control stale: a font, palette, language, accent or
     /// device-pixel-ratio change can alter any of them. Buffers are kept.
     void invalidateAll();
@@ -159,7 +166,12 @@ private:
         QWidget* widget = nullptr;
         ChromePaint* painted = nullptr;
         QPixmap cache;
-        QRect box;
+        /// Where it was last painted, in root coordinates: paint history for
+        /// damage, never the cache key.
+        QRect paintedBox;
+        /// The visible rect in the control's own coordinates - the cache key, so
+        /// a pure move reuses the pixels it already holds.
+        QRect localBox;
         qreal devicePixelRatio = 0.0;
         quint64 stamp = 0;
         bool valid = false;

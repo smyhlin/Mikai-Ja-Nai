@@ -16,4 +16,7 @@ class TestChromeCache : public QObject {
   void aTranslucentControlLeavesNoBlackFringe();
   void anOverBudgetControlLeavesNoBandBehindWhenItMoves();
   void aSameAreaReshapeRepaintsTheNewBox();
+  void aMoveReusesThePixelsItAlreadyHolds();
+  void anAncestorClipChangeReRendersTheVisibleRect();
+  void aContentChangeAfterAMoveIsNotServedStale();
 };
