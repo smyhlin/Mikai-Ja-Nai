@@ -2119,7 +2119,10 @@ void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
                             .arg(header->height())));
   }
   QVERIFY2(settingsChip->width() <= 40,
-           "the settings chip is wider than the header row is tall");
+           qPrintable(QStringLiteral("the settings chip is %1x%2 inside a %3 px track")
+                          .arg(settingsChip->width())
+                          .arg(settingsChip->height())
+                          .arg(header->height())));
 
   // Hero and watch actions: one control height, the documented CTA height, and
   // one width per pair.
