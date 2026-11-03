@@ -276,8 +276,10 @@ $env:MIKAI_PROBE_LANGUAGE = 'en'
 Exit code 0 requires every check, the fresh-process read and the evidence write
 to succeed. The JSON records `observations` (per state), `settingsCard` (per
 width), `artifacts` (each screen grab's size and `windowExposed`), the language
-and the device pixel ratio. Screen grabs of an occluded window are flagged, so
-they cannot read as visible evidence.
+and the device pixel ratio. The rendered framebuffer capture is the authoritative
+picture; the window grab is this process's own composition, its flyout is
+dismissed first, and a grab whose window is not exposed is flagged so it cannot
+read as visible evidence.
 
 What it does **not** claim: Compare remains a separate lock proof; the mode does
 not open Compare. Visible Settings typography is proven only in the language the

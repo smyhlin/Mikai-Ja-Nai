@@ -524,6 +524,10 @@ bool verifyMode(LiveContext& context, const QString& label, VideoScaleMode mode,
     if (spanOut != nullptr) *spanOut = observation.span;
     check(matched, label + QStringLiteral(": the rendered picture reaches this mode's span"),
           QStringLiteral("span=%1 grab=%2x%3").arg(observation.span).arg(observation.grab.width()).arg(observation.grab.height()));
+    // Keep our own flyout out of the window grab; the rendered framebuffer above
+    // is the authoritative picture either way.
+    context.shell->dismissOverlay();
+    QApplication::processEvents();
     captureArtifacts(context, label);
     return matched;
 }
