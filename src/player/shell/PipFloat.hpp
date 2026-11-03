@@ -175,6 +175,10 @@ private:
     QVariantAnimation* overlayFade_ = nullptr;
     QTimer* hideTimer_ = nullptr;
 
+    /// The corner mask installed on the float, in its LOCAL coordinates: an
+    /// unchanged shape is left alone rather than re-applied on every resize.
+    CornerMask cornerMask_;
+
     /// Retained display state: what the last setPlaying() reported and the last
     /// clock setTime() rendered. A language change re-derives the labels and
     /// the clocks from these rather than reading the float's core.

@@ -223,6 +223,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/app/TestBenchmarkReport.cpp
     tests/cpp/app/TestFeedRender.hpp
     tests/cpp/app/TestFeedRender.cpp
+    tests/cpp/app/TestChromeCache.hpp
+    tests/cpp/app/TestChromeCache.cpp
     tests/cpp/app/TestPublicApiUi.hpp
     tests/cpp/app/TestPublicApiUi.cpp
     tests/cpp/app/TestI18n.hpp
@@ -365,6 +367,7 @@ if(MIKAI_BUILD_PROBES)
     TestDiagnostics
     TestApiClient
     TestFeedRender
+    TestChromeCache
     TestUpdateFeed
     TestPublicApiUi
     TestRunner

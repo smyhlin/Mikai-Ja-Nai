@@ -37,6 +37,7 @@
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPointF>
+#include <QPixmap>
 #include <QPointer>
 #include <QResizeEvent>
 #include <QShowEvent>
@@ -335,6 +336,13 @@ private:
     /// surface's painter passes the whole shell, the shell's paintEvent passes
     /// the window with the picture taken out.
     void paintChrome(QPainter& painter, const QRect& clip);
+    /// The window's field behind the picture: bg0() in fullscreen, the radial
+    /// wash otherwise. Rasterised into a pixmap and reused until its key
+    /// changes, because a gradient per expose is the cost of a paused hover.
+    void paintBackground(QPainter& p);
+    /// A theme token moved. The chrome's cached pixels and the field are both
+    /// derived from it, so neither can survive the change.
+    void themeChanged();
 
     void enterAutoHidden();
     void updateCenterGlyph();
@@ -410,6 +418,23 @@ private:
     mikai::gui::VideoDropTarget* videoDrop_ = nullptr;
     /// Filled once, where the chrome is built; a frame only walks it.
     ChromeList chrome_;
+
+    /// The field behind the picture. The key is every input the fill reads -
+    /// the size, the device ratio it was rasterised at, the flat colour and the
+    /// accent in force, and the theme revision - so a mismatch is a stale
+    /// picture rather than something to rescale.
+    QPixmap backgroundCache_;
+    QSize backgroundCacheSize_;
+    qreal backgroundCacheRatio_ = 0.0;
+    bool backgroundCacheFullscreen_ = false;
+    QColor backgroundCacheColor_;
+    QColor backgroundCacheAccent_;
+    /// Bumped by themeChanged(): a palette, style, font or accent change moves
+    /// tokens the fill and the chrome both read. The rendered value is kept
+    /// beside it, so the revision is part of the cache key rather than a second
+    /// invalidation path that could fall out of step with it.
+    quint64 backgroundRevision_ = 0;
+    quint64 backgroundRenderedRevision_ = 0;
 
     MenuPopup* pictureMenu_ = nullptr;
     /// Where the picture menu was opened, in shell coordinates: an open menu is
@@ -521,14 +546,12 @@ private:
     QPointer<QWindow> profileEventWindow_;
 
     QVector<QPointer<QWidget>> overlays_;
-    /// Whether a corner mask is currently installed on the surface. Tracked
-    /// rather than read back from QWidget::mask(), which returns by value.
-    bool hasMask_ = false;
-    /// The shape the installed mask describes, in the surface's LOCAL
-    /// coordinates. Re-applying an unchanged region on every input event is a
-    /// backing-store change for no new pixels, so the shape is what is compared.
-    QRect maskRect_;
-    int maskRadius_ = 0;
+    /// The corner mask installed on the surface: the shape and radius last
+    /// applied, in the surface's LOCAL coordinates. Tracked rather than read
+    /// back from QWidget::mask(), which returns by value, and compared before
+    /// re-applying because an unchanged region is a backing-store change for no
+    /// new pixels.
+    CornerMask surfaceMask_;
 
     // canvas / fsm
     bool fullscreen_ = false;

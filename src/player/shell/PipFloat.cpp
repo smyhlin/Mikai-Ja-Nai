@@ -18,10 +18,8 @@
 #include <QLinearGradient>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPainterPath>
 #include <QPixmap>
 #include <QPointer>
-#include <QRegion>
 #include <QResizeEvent>
 #include <QScreen>
 #include <QShowEvent>
@@ -134,9 +132,10 @@ PipFloat::PipFloat(QWidget* parent)
     // recorded in paint order, so a frame is a walk of that list.
     chrome_.adopt(this, this);
 
-    // The timeline's played part is the pushed accent, read at paint time; the
-    // float only needs to be told the token moved so it repaints.
-    connect(&accentNotifier(), &AccentNotifier::changed, this, [this] { update(); });
+    // The accent and the chrome's cached pixels are both read at paint time, so
+    // a token change has to drop the caches, not merely ask for a repaint - a
+    // repaint that blits the old images is the stale-pixel case.
+    connect(&accentNotifier(), &AccentNotifier::changed, this, [this] { chromeDirtyAll(); });
 
     overlayFade_ = new QVariantAnimation(this);
     overlayFade_->setDuration(kPipBarFadeMs);
@@ -715,6 +714,15 @@ void PipFloat::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
+    } else if (event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange ||
+               event->type() == QEvent::FontChange ||
+               event->type() == QEvent::ApplicationPaletteChange ||
+               event->type() == QEvent::ApplicationFontChange ||
+               event->type() == QEvent::LayoutDirectionChange) {
+        // The float's controls take their colours, shape and metrics from the
+        // application's theme; leaving their cached pixels standing would keep
+        // the previous revision on screen.
+        chromeDirtyAll();
     }
 }
 
@@ -1039,12 +1047,11 @@ void PipFloat::applyCornerMask() {
     // Round the window itself, not just its background: a styled border-radius
     // only clips the widget's own painting, and the video is a child that
     // paints square corners straight over the rounded background otherwise.
-    if (width() <= 0 || height() <= 0) {
-        return;
-    }
-    QPainterPath path;
-    path.addRoundedRect(QRectF(rect()), kPipCornerRadiusPx, kPipCornerRadiusPx);
-    setMask(QRegion(path.toFillPolygon().toPolygon()));
+    //
+    // The helper cuts it in this widget's LOCAL coordinates and leaves an
+    // unchanged shape alone: the float is the top level, so its local rect is
+    // the whole mask, and a resize is the only thing that moves it.
+    applyRoundedMask(this, kPipCornerRadiusPx, &cornerMask_);
 }
 
 void PipFloat::resizeEvent(QResizeEvent* event) {

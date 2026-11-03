@@ -27,6 +27,7 @@
 #include "TestDiagnostics.hpp"
 #include "TestApiClient.hpp"
 #include "TestFeedRender.hpp"
+#include "TestChromeCache.hpp"
 #include "TestRunner.hpp"
 #include "TestStreams.hpp"
 #include "TestMpvAsync.hpp"
@@ -113,7 +114,8 @@ constexpr const char* kSuites[] = {
     "TestThemeRoles",
     "TestStreams", "TestPagers",
     "TestQualityCache", "TestRateLimiter", "TestWatchHistory", "TestDownloads", "TestDiagnostics",
-    "TestApiClient", "TestFeedRender", "TestUpdateFeed", "TestPublicApiUi", "TestRunner",
+    "TestApiClient", "TestFeedRender", "TestChromeCache", "TestUpdateFeed", "TestPublicApiUi",
+    "TestRunner",
     "TestLayering", "TestWindowRaise", "TestSystemIntegration", "TestClipboard", "TestLiveOracle"};
 
 bool nativeFixtureRootIsSafe() {
@@ -266,6 +268,7 @@ int main(int argc, char** argv) {
   TestI18n i18n;
   TestThemeIcons themeIcons;
   TestThemeRoles themeRoles;
+  TestChromeCache chromeCache;
   TestStreams streams;
   TestPagers pagers;
   TestQualityCache qualityCache;
@@ -387,6 +390,7 @@ int main(int argc, char** argv) {
   run("TestI18n", &i18n, true);
   run("TestThemeIcons", &themeIcons, true);
   run("TestThemeRoles", &themeRoles, true);
+  run("TestChromeCache", &chromeCache, true);
   run("TestStreams", &streams, true);
   run("TestPagers", &pagers, true);
   run("TestQualityCache", &qualityCache, true);

@@ -8,8 +8,10 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPointF>
 #include <QPushButton>
+#include <QRegion>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -126,8 +128,6 @@ void ChromePaint::paintOwnBackingStore(QWidget* widget) {
     }
     QPainter painter(widget);
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.setRenderHint(QPainter::SmoothPixmapTransform);
-    // Qt already applies DPR; scalar matrix multiplication also changes m33.
     paintChrome(painter);
 }
 
@@ -139,6 +139,34 @@ ChromeHost* chromeHostOf(QWidget* widget) {
         }
     }
     return nullptr;
+}
+
+void applyRoundedMask(QWidget* widget, int radius, CornerMask* state) {
+    if (widget == nullptr || state == nullptr) {
+        return;
+    }
+    // Local coordinates: the shape is the widget's own rect, so a parent that
+    // laid it out somewhere else cannot shift where the corners are cut.
+    const QRect shape(QPoint(0, 0), widget->size());
+    if (radius <= 0 || shape.isEmpty()) {
+        if (state->shape.isEmpty() && state->radius <= 0) {
+            return;
+        }
+        mikai::gui::uiprofile::noteSetMask();
+        widget->clearMask();
+        state->shape = QRect();
+        state->radius = 0;
+        return;
+    }
+    if (state->shape == shape && state->radius == radius) {
+        return;
+    }
+    QPainterPath path;
+    path.addRoundedRect(QRectF(shape), radius, radius);
+    mikai::gui::uiprofile::noteSetMask();
+    widget->setMask(QRegion(path.toFillPolygon().toPolygon()));
+    state->shape = shape;
+    state->radius = radius;
 }
 
 void chromeUpdate(QWidget* widget, const QRect& rect) {
@@ -299,7 +327,13 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
         const bool reusable = chromeCacheEnabled() && entry.valid && entry.box == box &&
                               entry.devicePixelRatio == ratio && entry.stamp == generation_;
         if (reusable) {
+            // The hint is set here rather than left to the caller: the blit is
+            // a straight copy only when the ratio matched, and a fractional
+            // ratio on the target device must blend rather than snap.
+            painter.save();
+            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
             painter.drawPixmap(box.topLeft(), entry.cache);
+            painter.restore();
             ++painted;
             ++cached;
             continue;
@@ -328,12 +362,16 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                     entry.painted->paintChrome(cachePainter);
                 }
                 cachedBytes_ += bytes - held;
+                mikai::gui::uiprofile::noteChromeCacheRender(bytes);
                 entry.cache = buffer;
                 entry.box = box;
                 entry.devicePixelRatio = ratio;
                 entry.stamp = generation_;
                 entry.valid = true;
+                painter.save();
+                painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
                 painter.drawPixmap(box.topLeft(), entry.cache);
+                painter.restore();
                 ++painted;
                 ++cached;
                 continue;
@@ -342,6 +380,8 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
         }
         // Over the memory budget, or caching switched off: pay the rasterisation.
         painter.save();
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setRenderHint(QPainter::TextAntialiasing, true);
         painter.translate(at);
         painter.setClipRect(box.translated(-at), Qt::IntersectClip);
         entry.painted->paintChrome(painter);

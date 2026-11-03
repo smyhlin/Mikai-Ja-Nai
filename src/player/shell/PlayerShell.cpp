@@ -17,7 +17,6 @@
 #include <QMap>
 #include <QMessageBox>
 #include <QWindow>
-#include <QPainterPath>
 #include <QRegion>
 #include <QShowEvent>
 #include <QStyle>
@@ -500,6 +499,9 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
         }
         chromeDirtyAll();
     });
+    // The accent is read at paint time by the adopted controls and by the
+    // window's field, so a token change is stale cached pixels, not a repaint.
+    connect(&accentNotifier(), &AccentNotifier::changed, this, [this] { themeChanged(); });
 }
 
 PlayerShell::~PlayerShell() {
@@ -1036,33 +1038,13 @@ void PlayerShell::applyState() {
     setStateCursor();
 
 
-    // QOpenGLWidget ignores stylesheets, so corner rounding is a real mask.
-    //
-    // setMask() takes the widget's LOCAL coordinates; surface_->geometry() is in
-    // this shell's. A path built from the parent rect therefore clipped the
-    // surface wherever the shell's own layout displaced it. The shape is also
-    // compared before it is applied: applyState() runs on every input event, and
-    // re-setting an identical 1-bit region churns the widget's backing store.
+    // QOpenGLWidget ignores stylesheets, so corner rounding is a real mask. The
+    // shape it tracks is the surface's own rect and radius, and it is
+    // re-applied only when it changes: applyState() runs on every input event,
+    // and re-setting an identical 1-bit region churns the widget's backing
+    // store. The helper cuts it in the surface's own coordinates.
     const int radius = (rounded_ && !fullscreen_ && frameless_) ? 12 : 0;
-    const QRect maskShape(QPoint(0, 0), surface_->size());
-    if (radius > 0) {
-        if (!hasMask_ || maskRect_ != maskShape || maskRadius_ != radius) {
-            QPainterPath path;
-            path.addRoundedRect(QRectF(maskShape), radius, radius);
-            mikai::gui::uiprofile::noteSetMask();
-            surface_->setMask(QRegion(path.toFillPolygon().toPolygon()));
-            hasMask_ = true;
-            maskRect_ = maskShape;
-            maskRadius_ = radius;
-        }
-    } else if (hasMask_) {
-        // Tracked rather than asked of the widget: QWidget::mask() hands back a
-        // QRegion by value, and this branch runs on every input event.
-        surface_->clearMask();
-        hasMask_ = false;
-        maskRect_ = QRect();
-        maskRadius_ = 0;
-    }
+    applyRoundedMask(surface_, radius, &surfaceMask_);
 
     if (name != lastState_) {
         lastState_ = name;
@@ -2638,6 +2620,15 @@ void PlayerShell::changeEvent(QEvent* event) {
         profileActivationChanged(isActiveWindow());
     } else if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
+    } else if (event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange ||
+               event->type() == QEvent::FontChange ||
+               event->type() == QEvent::ApplicationPaletteChange ||
+               event->type() == QEvent::ApplicationFontChange ||
+               event->type() == QEvent::LayoutDirectionChange) {
+        // Every cached control takes its colours, shape and metrics from the
+        // application's theme; a revision that leaves the caches standing is
+        // stale pixels that nothing else would repaint.
+        themeChanged();
     }
 }
 
@@ -2740,6 +2731,15 @@ void PlayerShell::chromeDirtyAll() {
     mikai::gui::uiprofile::noteChromeDirtyApplied();
 }
 
+void PlayerShell::themeChanged() {
+    // Not a second cache to invalidate: the field's key carries this revision,
+    // so the next paint of either device rebuilds what depends on it. The one
+    // route a caller pushes a corner radius through is chromeDirtyAll() - every
+    // rounded surface reads cornerRadius() at paint time.
+    ++backgroundRevision_;
+    chromeDirtyAll();
+}
+
 void PlayerShell::paintSurfaceOverlay(QPainter* painter) {
     if (painter == nullptr || surface_ == nullptr) {
         return;
@@ -2805,31 +2805,95 @@ void PlayerShell::paintEvent(QPaintEvent* event) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    const mikai::gui::uiprofile::ScopedTimer gradientTimer;
-    if (fullscreen_) {
-        p.fillRect(rect(), bg0());
-    } else {
-        QRadialGradient g(QPointF(width() / 2.0, height() * 0.40),
-                          std::max(width(), height()) * 0.75);
-        g.setColorAt(0.0, QColor(5, 6, 10, 165));
-        g.setColorAt(1.0, QColor(5, 6, 10, 250));
-        p.fillRect(rect(), g);
+    // Only what this device can carry: the picture's own painter draws the
+    // chrome that stands over it, so a field filled under the surface is pixels
+    // nothing can see. The clip goes on before the fill for the same reason.
+    const QRect picture = (surface_ != nullptr) ? surface_->geometry() : QRect();
+    const QRegion update =
+        event->region().isEmpty() ? QRegion(event->rect()) : event->region();
+    const QRegion beside = update - QRegion(picture);
+    if (beside.isEmpty()) {
+        return;
     }
-    const qint64 gradientUs = gradientTimer.micros();
+    p.setClipRegion(beside);
+
+    const mikai::gui::uiprofile::ScopedTimer fieldTimer;
+    paintBackground(p);
+    const qint64 fieldUs = fieldTimer.micros();
 
     // The half of the chrome the surface cannot carry: same routine, one clip
     // per paint device, so nothing is painted twice and nothing is left out.
-    p.setClipRegion(event->region().intersected(QRegion(rect()) - QRegion(surface_->geometry())));
     const mikai::gui::uiprofile::ScopedTimer chromeTimer;
-    paintChrome(p, QRect(QPoint(0, 0), size()));
+    paintChrome(p, beside.boundingRect());
     if (mikai::gui::uiprofile::enabled()) {
+        // field_us is a blit on a reused frame and a gradient only when the key
+        // moved, which is what makes the two numbers tellable apart.
         mikai::gui::uiprofile::log(
             "shell.paintEvent",
-            QStringLiteral("gradient_us=%1 chrome_us=%2 fullscreen=%3")
-                .arg(gradientUs)
+            QStringLiteral("field_us=%1 chrome_us=%2 fullscreen=%3")
+                .arg(fieldUs)
                 .arg(chromeTimer.micros())
                 .arg(static_cast<int>(fullscreen_)));
     }
+}
+
+void PlayerShell::paintBackground(QPainter& p) {
+    const QSize size = this->size();
+    if (size.isEmpty()) {
+        return;
+    }
+    // A field pixmap at device resolution would be a 50 MB allocation on a 4K
+    // window, so past the budget it is rasterised at a reduced ratio and drawn
+    // back up: a radial wash carries no detail a smooth scale can lose.
+    constexpr qint64 kBackgroundCacheBudgetBytes = 8 * 1024 * 1024;
+    const qreal ratio = devicePixelRatioF();
+    const double logicalPixels = static_cast<double>(size.width()) * size.height();
+    qreal scale = ratio;
+    if (logicalPixels > 0.0 &&
+        logicalPixels * ratio * ratio * 4.0 > kBackgroundCacheBudgetBytes) {
+        scale = std::sqrt(kBackgroundCacheBudgetBytes / (4.0 * logicalPixels));
+    }
+    const QColor fill = fullscreen_ ? bg0() : QColor();
+    const QColor accentNow = accent();
+    const bool reusable = !backgroundCache_.isNull() && backgroundCacheSize_ == size &&
+                          backgroundCacheRatio_ == scale &&
+                          backgroundCacheFullscreen_ == fullscreen_ &&
+                          backgroundCacheColor_ == fill &&
+                          backgroundCacheAccent_ == accentNow &&
+                          backgroundRevision_ == backgroundRenderedRevision_;
+    if (!reusable) {
+        const QSize deviceSize(qMax(1, static_cast<int>(std::ceil(size.width() * scale))),
+                               qMax(1, static_cast<int>(std::ceil(size.height() * scale))));
+        QPixmap buffer(deviceSize);
+        buffer.setDevicePixelRatio(scale);
+        buffer.fill(Qt::transparent);
+        {
+            QPainter field(&buffer);
+            field.setRenderHint(QPainter::Antialiasing);
+            const QRectF extent(0.0, 0.0, size.width(), size.height());
+            if (fullscreen_) {
+                field.fillRect(extent, bg0());
+            } else {
+                QRadialGradient g(QPointF(size.width() / 2.0, size.height() * 0.40),
+                                  std::max(size.width(), size.height()) * 0.75);
+                g.setColorAt(0.0, QColor(5, 6, 10, 165));
+                g.setColorAt(1.0, QColor(5, 6, 10, 250));
+                field.fillRect(extent, g);
+            }
+        }
+        backgroundCache_ = buffer;
+        backgroundCacheSize_ = size;
+        backgroundCacheRatio_ = scale;
+        backgroundCacheFullscreen_ = fullscreen_;
+        backgroundCacheColor_ = fill;
+        backgroundCacheAccent_ = accentNow;
+        backgroundRenderedRevision_ = backgroundRevision_;
+        mikai::gui::uiprofile::noteBackgroundRender();
+    }
+    // Smooth is a no-op on the 1:1 case and the only correct filter when the
+    // field was rasterised below the device ratio.
+    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    p.drawPixmap(0, 0, backgroundCache_);
 }
 
 void PlayerShell::resizeEvent(QResizeEvent* event) {

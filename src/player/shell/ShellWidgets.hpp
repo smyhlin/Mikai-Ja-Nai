@@ -18,6 +18,7 @@
 #include <QColor>
 #include <QFrame>
 #include <QLabel>
+#include <QPixmap>
 #include <QRect>
 #include <utility>
 #include <QPoint>
@@ -86,6 +87,24 @@ public:
 
 ChromeHost* chromeHostOf(QWidget* widget);
 
+/// What a widget's corner mask currently describes: the shape, in the widget's
+/// own LOCAL coordinates, and the radius it was cut at. An empty shape means no
+/// mask stands.
+struct CornerMask {
+    QRect shape;
+    int radius = 0;
+};
+
+/// Rounds `widget`'s corner by cutting a mask out of it, in `widget`'s LOCAL
+/// coordinates - never its parent's, which is what a path built from the parent
+/// rect got wrong. A radius of zero or less clears the mask.
+///
+/// This is the only setMask() call site in the shell, and `state` is why: an
+/// identical region is not re-applied, because re-setting one churns the
+/// widget's backing store for no new pixels, and the callers run on every input
+/// event and every resize.
+void applyRoundedMask(QWidget* widget, int radius, CornerMask* state);
+
 /// What an adopted widget calls where it used to call update(): its own
 /// update() covers only the part of it that falls outside the picture.
 void chromeUpdate(QWidget* widget, const QRect& rect = QRect());
@@ -124,10 +143,6 @@ public:
     /// Drops every cached control: a font, palette, language, accent or
     /// device-pixel-ratio change can alter any of them.
     void invalidateAll();
-
-    /// Device pixels the caches hold, so a probe can report the cost instead of
-    /// asserting it is small.
-    qint64 cachedBytes() const { return cachedBytes_; }
 
 private:
     struct Entry {
