@@ -81,6 +81,17 @@ The **HDR playback** controls are on **Application → Access**:
 
 These settings are separate: HDR tone mapping describes how HDR video is mapped to a display, while Native enhancement is a processing choice. Saved HDR changes reach a running player shortly after saving.
 
+## Video scaling
+
+**Video scaling** is the card immediately after **HDR playback**, on the same page. It controls how the picture is mapped into the window and which mpv scalers resample it. It does not change AnimeJaNai's own resolution.
+
+- **Fit to window** is the default. **Fill (crop edges)** crops to fill the picture area. **Stretch** distorts to fill it and ignores the stored zoom while it is selected. **16:9** and **4:3** force that aspect. **Original size (1:1)** shows physical pixels, centered and cropped when they do not fit.
+- **Zoom** runs from −50% to +100%. It is a viewing preference and is not reset when the source changes. Stretch and original size keep the stored percentage but do not apply it.
+- **Upscaler** and **Downscaler** choose the display resample. Downscaler **Auto (recommended)** restores the running core's own default after the player has initialized; it does not send the literal `auto`, which this runtime rejects. If that default cannot be read, the player says so and the previous downscaler stays until you choose one or reopen the player.
+- The player settings flyout has the same mode list, without the zoom and scaler rows. Compare always uses Fit while a comparison owns the picture, so the panes stay comparable. Picture-in-picture follows the saved setting.
+
+Saved changes reach a running player on the next event pump. Changing mode rewrites keep-aspect, panscan, aspect override, unscaled, zoom, scale and downscale together, so an old crop or override cannot survive the switch.
+
 ## Anime4K preset keyboard shortcuts
 
 Open **Application → Keyboard shortcuts**. Focus a shortcut field and press a key or a combination using Ctrl, Alt or Shift. Use the field's clear button to remove one binding. **Clear all** clears all preset bindings in the page; the filter matches preset names and key text and does not change bindings.

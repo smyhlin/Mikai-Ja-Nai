@@ -71,6 +71,10 @@ PiP behavior is window-manager dependent. On Wayland, the compositor controls in
 
 In **Settings → Application → Access → HDR playback**, choose **Auto (recommended)**, **Stable – no per-frame adaptation**, or **Vivid – Mobius curve**. Saved tone-mapping changes reach a running player shortly afterward. This controls how HDR is mapped to the display; it is separate from Native enhancement.
 
+**Video scaling**, on the card below, and the **SCALING** section of the player settings flyout, choose Fit, Fill, Stretch, 16:9, 4:3 or original size. Zoom and the display scalers are on the settings card. A running player adopts a saved change without a restart. Compare ignores that choice and uses Fit until it closes.
+
+While an engine build holds playback, the player shows **Preparing enhancement — playback paused** instead of an unexplained frozen picture. Closing the player during that build shows **Finishing enhancement…** if the stop takes more than a third of a second, and does not keep the window up for the old eleven-second settle. A source change keeps the last presented picture until the new source produces a frame; that is a visual hold, not proof that playback is still advancing.
+
 The separate **Native enhancement for HDR** checkbox permits processing that is normally skipped on HDR sources. The required stages use 8-bit NV12; enabling the override does not convert the source to SDR and may reduce HDR image quality. Unknown transfer metadata is not proof that a source is SDR, so this override should not be described as enabling processing for unknown sources.
 
 Player badges such as **HDR**, **DV**, **ATMOS**, and the codec name reflect metadata reported by the source. A missing badge means the container did not report that metadata; a badge does not verify the display’s output. Processing chains are not guaranteed to preserve HDR; see the [processing guide](processing-guide.md) for processing limitations.

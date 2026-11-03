@@ -13,6 +13,10 @@ Published changes are recorded with their downloads on the [GitHub releases page
 - Offer MoonAnime opening, ending and recap skips, with accent-tinted timeline ranges.
 - Show frame previews and segment labels on timeline hover.
 - Redesign the Home/Search header and its RPM indicator.
+- Prefer MoonAnime when that provider is present; an explicit choice still wins, and a title without it keeps its first provider.
+- Keep a presented picture across source changes and ordinary chrome repaints instead of clearing to black. A chrome-only repaint no longer consumes an armed presentation slot.
+- Show "Preparing enhancement — playback paused" while an engine build holds playback, and "Finishing enhancement…" if closing that player takes more than a third of a second. The close wait is bounded at two seconds; if the native stop has not acknowledged by then, the close continues and the abandonment is logged.
+- Add **Video scaling** after HDR playback: Fit, Fill, Stretch, 16:9, 4:3, original size, zoom, upscaler and downscaler. The same modes are in the player settings flyout. Compare forces Fit while it owns the picture. Pixel proof for every mode is not yet recorded.
 
 ## 0.1.0 — Player and usability update
 
