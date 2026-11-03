@@ -63,6 +63,7 @@
 #include <cmath>
 #include <functional>
 
+using mikai::app::SettingsDialog;
 using mplayer::VideoScaleMode;
 using mplayer::VideoScalePolicy;
 using mplayer::VideoSurface;
@@ -87,12 +88,6 @@ void check(bool ok, const QString& what, const QString& detail) {
 }
 
 void check(bool ok, const QString& what) { check(ok, what, QString()); }
-
-void check(bool ok, const char* what) { check(ok, QString::fromLatin1(what), QString()); }
-
-void check(bool ok, const char* what, const QString& detail) {
-    check(ok, QString::fromLatin1(what), detail);
-}
 
 bool pumpUntil(const std::function<bool()>& done, int timeoutMs) {
     QElapsedTimer clock;
@@ -175,7 +170,7 @@ QSize fitBoxFor(double aspect, const QSize& area) {
     return {area.width(), static_cast<int>(area.width() / aspect)};
 }
 
-bool near(int measured, int expected, int tolerance) {
+bool withinPixelTolerance(int measured, int expected, int tolerance) {
     return expected > 0 && std::abs(measured - expected) <= tolerance;
 }
 
@@ -340,8 +335,6 @@ bool setScalingControls(SettingsDialog& dialog, const VideoScalePolicy& policy) 
     QApplication::processEvents();
     return true;
 }
-
-QString shotPath(const LiveContext& context, const QString& stem);
 
 struct LiveContext {
     PlayerDialog* player = nullptr;
@@ -840,7 +833,8 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
             std::lround(context.fitSize.height() * context.dpr * 4.0 / 3.0));
         verifyMode(context, QStringLiteral("aspect-4x3"), VideoScaleMode::Aspect4x3,
                    context.fitSize, [expectedFourThree](int span) {
-                       return near(span, expectedFourThree, std::max(10, expectedFourThree / 50));
+                       return withinPixelTolerance(span, expectedFourThree,
+                                                   std::max(10, expectedFourThree / 50));
                    });
     }
     // 16:9 override on a 16:9 source is pixel-identical to Fit; the option still
@@ -889,7 +883,7 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
         // The box changed, so the two paused frames have different sizes and a
         // direct difference is not meaningful; the repaint evidence is the new
         // box plus a picture that fills it.
-        check(!pausedFill.isNull() && near(litWidth(pausedFill), expectedFillSpan, 16),
+        check(!pausedFill.isNull() && withinPixelTolerance(litWidth(pausedFill), expectedFillSpan, 16),
               QStringLiteral("a paused surface repaints the picture after a live mode change"),
               QStringLiteral("span=%1 expected=%2").arg(litWidth(pausedFill)).arg(expectedFillSpan));
         check(!context.surface->isPlaying() && context.surface->pauseObserved(),
@@ -918,7 +912,8 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
         originalObservation.extra.insert(QStringLiteral("expectedUnscaledSpan"), expected);
         context.observations.append(originalObservation.json());
         if (expected < grabWidth - 8) {
-            check(near(originalObservation.span, expected, std::max(10, expected / 50)),
+            check(withinPixelTolerance(originalObservation.span, expected,
+                                       std::max(10, expected / 50)),
                   QStringLiteral("Original renders the picture at its own device-pixel width"),
                   QStringLiteral("span=%1 expected=%2 grab=%3")
                       .arg(originalObservation.span).arg(expected).arg(grabWidth));
@@ -1063,7 +1058,7 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
                                      ? -1
                                      : static_cast<int>(std::lround(pipFrame.height() * 4.0 / 3.0));
             const int span = litWidth(pipFrame);
-            check(near(span, expected, std::max(12, expected / 40)),
+            check(withinPixelTolerance(span, expected, std::max(12, expected / 40)),
                   QStringLiteral("the PiP float renders the current 4:3 policy"),
                   QStringLiteral("span=%1 expected=%2 grab=%3x%4")
                       .arg(span).arg(expected).arg(pipFrame.width()).arg(pipFrame.height()));
