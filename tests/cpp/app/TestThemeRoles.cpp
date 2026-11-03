@@ -1,0 +1,698 @@
+#include "TestThemeRoles.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+
+#include <QtCore/QEventLoop>
+#include <QtCore/QScopeGuard>
+#include <QtCore/QSettings>
+#include <QtCore/QStringList>
+#include <QtCore/QtMath>
+#include <QtGui/QColor>
+#include <QtGui/QImage>
+#include <QtGui/QPainter>
+#include <QtGui/QPalette>
+#include <QtGui/QPixmap>
+#include <QtGui/QRegion>
+#include <QtWidgets/QAbstractButton>
+#include <QtWidgets/QApplication>
+#include <QtWidgets/QHBoxLayout>
+#include <QtWidgets/QPushButton>
+#include <QtWidgets/QVBoxLayout>
+#include <QtWidgets/QWidget>
+
+#include "dialogs/settings/SettingsUi.hpp"
+#include "state/AppearanceStore.hpp"
+#include "theme/Appearance.hpp"
+#include "theme/Colors.hpp"
+#include "theme/Metrics.hpp"
+#include "theme/Palette.hpp"
+#include "theme/Theme.hpp"
+#include "widgets/FlowLayout.hpp"
+#include "widgets/SwatchButton.hpp"
+#include <player/shell/ShellTheme.hpp>
+
+namespace {
+
+using mikai::app::theme::ActionRole;
+using mikai::app::theme::Appearance;
+using mikai::app::theme::Palette;
+using mikai::app::theme::SiteTheme;
+
+constexpr int kColorTolerance = 3;
+
+// ── Independent math ────────────────────────────────────────────────────────
+// The gates below are recomputed here rather than delegated to the production
+// helper, so a change to theme::contrastRatio cannot silently move both the
+// rule and its proof. Qt composites QRgb values in sRGB space and rounds to the
+// nearest channel value; this is that operation, written out.
+double linearChannel(int value) {
+    const double channel = value / 255.0;
+    return channel <= 0.04045 ? channel / 12.92 : std::pow((channel + 0.055) / 1.055, 2.4);
+}
+
+double relativeLuminance(const QColor& color) {
+    return 0.2126 * linearChannel(color.red()) + 0.7152 * linearChannel(color.green()) +
+           0.0722 * linearChannel(color.blue());
+}
+
+double independentContrast(const QColor& a, const QColor& b) {
+    const double first = relativeLuminance(a);
+    const double second = relativeLuminance(b);
+    return (std::max(first, second) + 0.05) / (std::min(first, second) + 0.05);
+}
+
+QColor over(const QColor& foreground, const QColor& bed, double alpha) {
+    const double amount = alpha;
+    const auto channel = [&](int top, int bottom) {
+        return qBound(0, qRound(top * amount + bottom * (1.0 - amount)), 255);
+    };
+    return QColor(channel(foreground.red(), bed.red()),
+                  channel(foreground.green(), bed.green()),
+                  channel(foreground.blue(), bed.blue()));
+}
+
+QColor translucent(const QColor& color, double alpha) {
+    QColor result = color;
+    result.setAlpha(qBound(0, qRound(alpha * 255.0), 255));
+    return result;
+}
+
+QColor washColor(const Palette& palette) {
+    const QStringList parts = palette.wash.split(QStringLiteral(","));
+    if (parts.size() != 3) return QColor(Qt::white);
+    return QColor(parts.at(0).trimmed().toInt(), parts.at(1).trimmed().toInt(),
+                  parts.at(2).trimmed().toInt());
+}
+
+bool nearChannel(int actual, int expected, int tolerance = kColorTolerance) {
+    return std::abs(actual - expected) <= tolerance;
+}
+
+bool nearColor(const QColor& actual, const QColor& expected) {
+    if (expected.alpha() == 0) return actual.alpha() == 0;
+    return nearChannel(actual.red(), expected.red()) &&
+           nearChannel(actual.green(), expected.green()) &&
+           nearChannel(actual.blue(), expected.blue()) &&
+           nearChannel(actual.alpha(), expected.alpha());
+}
+
+QString texture(const QColor& color) {
+    return QStringLiteral("#%1%2%3 a%4")
+        .arg(color.red(), 2, 16, QLatin1Char('0'))
+        .arg(color.green(), 2, 16, QLatin1Char('0'))
+        .arg(color.blue(), 2, 16, QLatin1Char('0'))
+        .arg(color.alpha());
+}
+
+void installAppearance(const Appearance& appearance) {
+    mikai::app::setCurrentAppearance(appearance);
+    mikai::app::theme::applyPalette(appearance);
+    qApp->setStyleSheet(mikai::app::theme::buildStylesheet(appearance));
+    mplayer::shell::setAccent(mikai::app::theme::accentColor(appearance));
+    mplayer::shell::setCornerRadius(mikai::app::theme::radiusSmall(appearance));
+}
+
+enum class RoleState { Normal, Hover, Pressed, Checked, Focus, Disabled };
+
+const char* stateName(RoleState state) {
+    switch (state) {
+        case RoleState::Normal: return "normal";
+        case RoleState::Hover: return "hover";
+        case RoleState::Pressed: return "pressed";
+        case RoleState::Checked: return "checked";
+        case RoleState::Focus: return "focus";
+        case RoleState::Disabled: return "disabled";
+    }
+    return "normal";
+}
+
+void repolish(QWidget* widget) {
+    if (widget == nullptr || widget->style() == nullptr) return;
+    widget->style()->unpolish(widget);
+    widget->style()->polish(widget);
+    widget->update();
+}
+
+void setVisualState(QPushButton& button, RoleState state) {
+    button.setAttribute(Qt::WA_UnderMouse, false);
+    button.setDown(false);
+    button.setChecked(false);
+    button.setEnabled(true);
+    button.clearFocus();
+    button.setCheckable(state == RoleState::Checked);
+    switch (state) {
+        case RoleState::Normal:
+            break;
+        case RoleState::Hover:
+            // The same flag Qt sets when the pointer enters; the stylesheet's
+            // :hover selector reads this state, so the render below is the
+            // widget's own hover rendering, not an option struct drawn by hand.
+            button.setAttribute(Qt::WA_UnderMouse, true);
+            break;
+        case RoleState::Pressed:
+            button.setDown(true);
+            break;
+        case RoleState::Checked:
+            button.setChecked(true);
+            break;
+        case RoleState::Focus:
+            button.setFocus(Qt::TabFocusReason);
+            break;
+        case RoleState::Disabled:
+            button.setEnabled(false);
+            break;
+    }
+    repolish(&button);
+    QApplication::processEvents();
+}
+
+struct ExpectedPaint {
+    QColor fill;
+    QColor border;
+};
+
+ExpectedPaint expectedPaint(ActionRole role, RoleState state, const Palette& palette) {
+    const QColor accent(palette.accent);
+    const QColor transparent(0, 0, 0, 0);
+    const QColor dangerFill(palette.dangerFill);
+    const QColor wash = washColor(palette);
+    switch (role) {
+        case ActionRole::Primary:
+            switch (state) {
+                case RoleState::Normal: return {accent, accent};
+                case RoleState::Hover: return {QColor(palette.accentHover), QColor(palette.accentHover)};
+                case RoleState::Pressed: return {accent, QColor(palette.accentHover)};
+                case RoleState::Focus: return {accent, QColor(palette.accentInk)};
+                case RoleState::Disabled: return {QColor(palette.surface), QColor(palette.borderControl)};
+                case RoleState::Checked: break;  // handled by the secondary/ghost cases
+            }
+            break;
+        case ActionRole::Secondary:
+            switch (state) {
+                case RoleState::Normal: return {QColor(palette.surfaceControlRaised), QColor(palette.borderControl)};
+                case RoleState::Hover: return {translucent(accent, 0.12), translucent(accent, 0.55)};
+                case RoleState::Pressed: return {QColor(palette.surfaceActive), QColor(palette.borderControl)};
+                case RoleState::Checked: return {translucent(accent, 0.14), accent};
+                case RoleState::Focus: return {QColor(palette.surfaceControlRaised), accent};
+                case RoleState::Disabled: return {QColor(palette.surface), QColor(palette.borderControl)};
+            }
+            break;
+        case ActionRole::Ghost:
+            switch (state) {
+                case RoleState::Normal: return {transparent, translucent(accent, 0.22)};
+                case RoleState::Hover: return {translucent(accent, 0.16), translucent(accent, 0.45)};
+                case RoleState::Checked: return {translucent(accent, 0.18), accent};
+                case RoleState::Focus: return {transparent, accent};
+                case RoleState::Disabled: return {transparent, translucent(wash, 0.18)};
+                case RoleState::Pressed: break;
+            }
+            break;
+        case ActionRole::Danger:
+            switch (state) {
+                case RoleState::Normal: return {transparent, QColor(palette.danger)};
+                case RoleState::Hover: return {translucent(dangerFill, 0.14), QColor(palette.danger)};
+                case RoleState::Pressed: return {translucent(dangerFill, 0.22), QColor(palette.danger)};
+                case RoleState::Focus: return {transparent, dangerFill};
+                case RoleState::Disabled: return {transparent, QColor(palette.borderControl)};
+                case RoleState::Checked: break;
+            }
+            break;
+    }
+    return {transparent, transparent};
+}
+
+QColor expectedInk(ActionRole role, const Palette& palette) {
+    switch (role) {
+        case ActionRole::Primary: return QColor(palette.accentInk);
+        case ActionRole::Secondary: return QColor(palette.text);
+        case ActionRole::Ghost: return QColor(palette.accent);
+        case ActionRole::Danger: return QColor(palette.danger);
+    }
+    return QColor(palette.text);
+}
+
+struct WidgetPixels {
+    QImage image;
+    qreal scale = 1.0;
+
+    QColor at(int x, int y) const {
+        return image.pixelColor(qRound(x * scale), qRound(y * scale));
+    }
+
+    // How close the closest opaque glyph pixel comes to the expected ink. Text
+    // antialiasing blends toward the fill, but the stroke cores carry the ink.
+    int minInkDistance(const QColor& ink) const {
+        int best = 1 << 30;
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                const QColor pixel = image.pixelColor(x, y);
+                if (pixel.alpha() < 200) continue;
+                const int distance = std::abs(pixel.red() - ink.red()) +
+                                     std::abs(pixel.green() - ink.green()) +
+                                     std::abs(pixel.blue() - ink.blue());
+                best = std::min(best, distance);
+            }
+        }
+        return best;
+    }
+};
+
+WidgetPixels grabWidget(QWidget& widget) {
+    WidgetPixels pixels;
+    // Render onto an explicitly transparent surface: a widget's own grab leaves
+    // areas it does not paint unspecified, and the ghost/danger roles are
+    // defined by painting *nothing*, so the alpha has to be measurable.
+    pixels.scale = widget.devicePixelRatioF() > 0.0 ? widget.devicePixelRatioF() : 1.0;
+    pixels.image = QImage(qCeil(widget.width() * pixels.scale),
+                          qCeil(widget.height() * pixels.scale),
+                          QImage::Format_ARGB32_Premultiplied);
+    pixels.image.setDevicePixelRatio(pixels.scale);
+    pixels.image.fill(Qt::transparent);
+    QPainter painter(&pixels.image);
+    widget.render(&painter);
+    painter.end();
+    return pixels;
+}
+
+QString failure(const char* what, const QColor& actual, const QColor& expected) {
+    return QStringLiteral("%1: painted %2, expected %3")
+        .arg(QString::fromLatin1(what), texture(actual), texture(expected));
+}
+
+}  // namespace
+
+void TestThemeRoles::initTestCase() {
+    settingsDirectory_ = std::make_unique<QTemporaryDir>();
+    QVERIFY2(settingsDirectory_->isValid(), "cannot create the suite's isolated settings directory");
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDirectory_->path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDirectory_->path());
+}
+
+void TestThemeRoles::init() {
+    savedAppearance_ = mikai::app::currentAppearance();
+    savedPalette_ = qApp->palette();
+    savedStylesheet_ = qApp->styleSheet();
+    savedAccent_ = mplayer::shell::accent();
+    QSettings settings;
+    settings.clear();
+    settings.sync();
+}
+
+void TestThemeRoles::cleanup() {
+    QSettings settings;
+    settings.clear();
+    settings.sync();
+    if (QWidget* focused = QApplication::focusWidget()) focused->clearFocus();
+    mikai::app::setCurrentAppearance(savedAppearance_);
+    mikai::app::theme::applyPalette(savedAppearance_);
+    qApp->setStyleSheet(savedStylesheet_);
+    qApp->setPalette(savedPalette_);
+    mplayer::shell::setAccent(savedAccent_);
+    QApplication::processEvents();
+}
+
+void TestThemeRoles::actionRoleStatesOnePropertyAndNoSize() {
+    // No ambient sheet here: the assertion is about applyActionRole's own
+    // writes. A sheet's min-height is the sheet's business and is measured by
+    // the rendered geometry test instead.
+    qApp->setStyleSheet(QString());
+    const QVector<QPair<ActionRole, QString>> roles = {
+        {ActionRole::Primary, QStringLiteral("primary")},
+        {ActionRole::Secondary, QStringLiteral("secondary")},
+        {ActionRole::Ghost, QStringLiteral("ghost")},
+        {ActionRole::Danger, QStringLiteral("danger")}};
+
+    QPushButton button(QStringLiteral("Role"));
+    // A role must never resize a control whose caller already fixed it; the
+    // sheets own role heights so two metrics cannot fight.
+    button.setMinimumHeight(11);
+    button.setMaximumHeight(11);
+    for (const auto& role : roles) {
+        mikai::app::theme::applyActionRole(&button, role.first);
+        QCOMPARE(button.property("actionRole").toString(), role.second);
+        QCOMPARE(button.minimumHeight(), 11);
+        QCOMPARE(button.maximumHeight(), 11);
+    }
+}
+
+void TestThemeRoles::searchPrimaryFillIsTheRawAccent() {
+    // The property every ambient-accent fix depends on: the emitted primary is
+    // exactly the chosen accent, with no shipped-accent special case left.
+    QVector<QString> accents;
+    for (const mikai::app::theme::AccentPreset& preset : mikai::app::theme::accentPresets()) {
+        accents.append(preset.color);
+    }
+    accents.append(QStringLiteral("#123456"));  // dark custom
+    accents.append(QStringLiteral("#f8f8f8"));  // near-white custom
+
+    for (const QString& accent : accents) {
+        Appearance appearance;
+        appearance.accent = accent;
+        const mikai::app::theme::SearchHeaderPalette roles =
+            mikai::app::theme::searchHeaderPalette(appearance);
+        QCOMPARE(roles.primary, mikai::app::theme::hexOf(mikai::app::theme::accentColor(appearance)));
+        QCOMPARE(roles.primaryHover,
+                 mikai::app::theme::paletteFor(appearance).accentHover);
+    }
+
+    // Render the real header rule: the scoped search-page sheet is part of the
+    // application stylesheet, and the primary role's fill must be the accent
+    // pixel-for-pixel (only the ink may flip for readability).
+    QWidget page;
+    page.setObjectName(QStringLiteral("searchPage"));
+    page.setAttribute(Qt::WA_StyledBackground, true);
+    auto* layout = new QHBoxLayout(&page);
+    layout->setContentsMargins(12, 12, 12, 12);
+    auto* action = new QPushButton(QStringLiteral("Search"));
+    action->setObjectName(QStringLiteral("searchActionButton"));
+    mikai::app::theme::applyActionRole(action, ActionRole::Primary);
+    layout->addWidget(action);
+    page.resize(360, 90);
+    page.show();
+
+    for (SiteTheme site : {SiteTheme::Dark, SiteTheme::Light}) {
+        for (const QString& accent : accents) {
+            Appearance appearance;
+            appearance.siteTheme = site;
+            appearance.accent = accent;
+            installAppearance(appearance);
+            QApplication::processEvents();
+            const QColor expected = mikai::app::theme::accentColor(appearance);
+            QCOMPARE(mikai::app::theme::paletteFor(appearance).accent,
+                     mikai::app::theme::hexOf(expected));
+            const WidgetPixels pixels = grabWidget(*action);
+            QVERIFY(!pixels.image.isNull());
+            const QColor painted = pixels.at(4, action->height() / 2);
+            QVERIFY2(nearColor(painted, expected),
+                     qPrintable(failure("search primary fill", painted, expected)));
+        }
+    }
+}
+
+void TestThemeRoles::secondaryBoundaryPassesThreeToOneInBothThemes() {
+    for (SiteTheme site : {SiteTheme::Dark, SiteTheme::Light}) {
+        Appearance appearance;
+        appearance.siteTheme = site;
+        const Palette palette = mikai::app::theme::paletteFor(appearance);
+        const QColor border(palette.borderControl);
+        const QStringList beds = {palette.background, palette.surfacePage, palette.surfaceRaised};
+        for (const QString& bed : beds) {
+            const double ratio = independentContrast(border, QColor(bed));
+            QVERIFY2(ratio >= 3.0,
+                     qPrintable(QStringLiteral("%1 theme: borderControl on %2 is %3:1")
+                                    .arg(mikai::app::theme::themeId(site), bed)
+                                    .arg(ratio, 0, 'f', 2)));
+            // The production helper must report the same number the gate just
+            // computed, so a future "fix" cannot hide in the helper.
+            QVERIFY(std::abs(ratio - mikai::app::theme::contrastRatio(border, QColor(bed))) <
+                    0.005);
+        }
+        // Disabled body text keeps its distance from the disabled fill instead
+        // of dissolving into it.
+        const QColor disabledInk =
+            over(washColor(palette), QColor(palette.surface), 0.55);
+        const double disabledRatio =
+            independentContrast(disabledInk, QColor(palette.surface));
+        QVERIFY2(disabledRatio >= 4.5,
+                 qPrintable(QStringLiteral("%1 theme: disabled ink is %2:1")
+                                .arg(mikai::app::theme::themeId(site))
+                                .arg(disabledRatio, 0, 'f', 2)));
+    }
+}
+
+void TestThemeRoles::roleStatesRenderTheirDocumentedContract() {
+    const QVector<ActionRole> roles = {ActionRole::Primary, ActionRole::Secondary,
+                                       ActionRole::Ghost, ActionRole::Danger};
+    const QVector<RoleState> states = {RoleState::Normal, RoleState::Hover,
+                                       RoleState::Pressed, RoleState::Checked,
+                                       RoleState::Focus, RoleState::Disabled};
+
+    for (SiteTheme site : {SiteTheme::Dark, SiteTheme::Light}) {
+        Appearance appearance;
+        appearance.siteTheme = site;
+        installAppearance(appearance);
+        const Palette palette = mikai::app::theme::paletteFor(appearance);
+
+        QWidget host;
+        host.setAttribute(Qt::WA_StyledBackground, true);
+        auto* layout = new QVBoxLayout(&host);
+        layout->setContentsMargins(8, 8, 8, 8);
+        QPushButton button(QStringLiteral("Action"));
+        layout->addWidget(&button, 0, Qt::AlignLeft);
+        host.resize(280, 90);
+        host.show();
+        QApplication::processEvents();
+
+        for (ActionRole role : roles) {
+            mikai::app::theme::applyActionRole(&button, role);
+            for (RoleState state : states) {
+                // A pressed ghost has no documented pressed rule; the role
+                // contract covers hover/checked/focus/disabled for it.
+                if (role == ActionRole::Ghost && state == RoleState::Pressed) continue;
+                if (role == ActionRole::Primary && state == RoleState::Checked) continue;
+                if (role == ActionRole::Danger && state == RoleState::Checked) continue;
+                setVisualState(button, state);
+                QVERIFY2(button.isVisible(), "the role host must be visible to render QSS");
+                const ExpectedPaint expected = expectedPaint(role, state, palette);
+                const WidgetPixels pixels = grabWidget(button);
+                QVERIFY(!pixels.image.isNull());
+                const int width = button.width();
+                const int height = button.height();
+                QVERIFY2(width > 20 && height > 12, "the role button must have a renderable box");
+
+                const QColor fill = pixels.at(qMin(4, width / 4), height / 2);
+                QVERIFY2(nearColor(fill, expected.fill),
+                         qPrintable(QStringLiteral("%1 %2 %3 fill: %4")
+                                        .arg(mikai::app::theme::themeId(site), stateName(state),
+                                             mikai::app::theme::actionRoleName(role))
+                                        .arg(failure("fill", fill, expected.fill))));
+                const QColor edge = pixels.at(width / 2, 0);
+                QVERIFY2(nearColor(edge, expected.border),
+                         qPrintable(QStringLiteral("%1 %2 %3 border: %4")
+                                        .arg(mikai::app::theme::themeId(site), stateName(state),
+                                             mikai::app::theme::actionRoleName(role))
+                                        .arg(failure("border", edge, expected.border))));
+
+                if (state == RoleState::Normal) {
+                    const QColor ink = expectedInk(role, palette);
+                    QVERIFY2(pixels.minInkDistance(ink) <= 40,
+                             qPrintable(QStringLiteral("%1 normal ink: painted text is not %2")
+                                            .arg(mikai::app::theme::actionRoleName(role),
+                                                 texture(ink))));
+                }
+            }
+        }
+        // Leave the button in a neutral state before the host is destroyed.
+        setVisualState(button, RoleState::Normal);
+        host.hide();
+    }
+}
+
+void TestThemeRoles::primaryInkStaysReadableOnEveryAccent() {
+    QVector<QString> accents;
+    for (const mikai::app::theme::AccentPreset& preset : mikai::app::theme::accentPresets()) {
+        accents.append(preset.color);
+    }
+    accents.append(QStringLiteral("#123456"));
+    accents.append(QStringLiteral("#f8f8f8"));
+
+    for (const QString& accent : accents) {
+        Appearance appearance;
+        appearance.accent = accent;
+        const QColor chosen = mikai::app::theme::accentColor(appearance);
+        const Palette palette = mikai::app::theme::paletteFor(appearance);
+        // The fill is never adjusted to make the label fit.
+        QCOMPARE(QColor(palette.accent), chosen);
+        const QColor ink(palette.accentInk);
+        const QColor expectedInkColor =
+            independentContrast(chosen, QColor(Qt::black)) >=
+                    independentContrast(chosen, QColor(Qt::white))
+                ? QColor(Qt::black)
+                : QColor(Qt::white);
+        QCOMPARE(ink, expectedInkColor);
+        const double ratio = independentContrast(ink, chosen);
+        QVERIFY2(ratio >= 4.5,
+                 qPrintable(QStringLiteral("accent %1 ink %2 is %3:1")
+                                .arg(accent, texture(ink))
+                                .arg(ratio, 0, 'f', 2)));
+
+        // The player's own token must agree with the application's derived ink.
+        const QColor playerInk = mplayer::shell::inkOn(chosen);
+        QCOMPARE(playerInk, expectedInkColor);
+        QVERIFY(mplayer::shell::rgbaTriplet(chosen) ==
+                QStringLiteral("%1, %2, %3")
+                    .arg(chosen.red())
+                    .arg(chosen.green())
+                    .arg(chosen.blue()));
+    }
+}
+
+void TestThemeRoles::compareSideBStaysAmberOrRotatesToTheComplement() {
+    using mplayer::shell::compareSide;
+    using mplayer::shell::compareSideB;
+    const QColor amber(245, 158, 11);  // #f59e0b
+    const QColor saved = mplayer::shell::accent();
+    const auto restore = qScopeGuard([saved] { mplayer::shell::setAccent(saved); });
+
+    // Cool and violet accents keep the semantic amber for side B.
+    QCOMPARE(compareSideB(QColor(QStringLiteral("#6797e4"))), amber);
+    QCOMPARE(compareSideB(QColor(QStringLiteral("#bdacff"))), amber);
+    QCOMPARE(compareSideB(QColor(QStringLiteral("#123456"))), amber);
+
+    // Amber's hue is 37 degrees. When the accent is within +/-30 degrees, side B
+    // rotates to the documented 210-degree complement so the two seats cannot
+    // read as one colour. The boundary itself stays amber.
+    QCOMPARE(compareSideB(QColor::fromHsv(7, 200, 220)), amber);
+    QCOMPARE(compareSideB(QColor::fromHsv(67, 200, 220)), amber);
+    const QColor rotated = compareSideB(QColor::fromHsv(6, 200, 220));
+    QVERIFY(rotated != amber);
+    QCOMPARE(rotated.hue(), 210);
+    QVERIFY(rotated.saturationF() >= 0.45f && rotated.saturationF() <= 0.90f);
+    QVERIFY(rotated.valueF() >= 0.55f && rotated.valueF() <= 0.95f);
+
+    mplayer::shell::setAccent(QColor(QStringLiteral("#6797e4")));
+    QCOMPARE(compareSide(0), mplayer::shell::accent());
+    QCOMPARE(compareSide(1), amber);
+    mplayer::shell::setAccent(QColor::fromHsv(37, 200, 220));
+    QCOMPARE(compareSide(0), mplayer::shell::accent());
+    QCOMPARE(compareSide(1).hue(), 210);
+}
+
+void TestThemeRoles::gradientModeMigratesAndPreservesTheCustomChoice() {
+    QSettings settings;
+    settings.clear();
+    settings.sync();
+
+    // A profile that never chose anything joins the accent.
+    {
+        const Appearance fresh = mikai::app::loadAppearance();
+        QCOMPARE(fresh.gradientMode, mikai::app::theme::GradientMode::Auto);
+        QCOMPARE(mikai::app::theme::gradientColor(fresh),
+                 mikai::app::theme::accentColor(fresh));
+    }
+
+    // Old profiles stored an independent colour and no mode key: that colour
+    // was a deliberate choice, so it migrates to Custom instead of being
+    // silently replaced by the accent.
+    settings.clear();
+    settings.setValue(QStringLiteral("customization/gradientColor"), QStringLiteral("#abcdef"));
+    settings.sync();
+    {
+        const Appearance migrated = mikai::app::loadAppearance();
+        QCOMPARE(migrated.gradientMode, mikai::app::theme::GradientMode::Custom);
+        QCOMPARE(mikai::app::theme::gradientColor(migrated), QColor(QStringLiteral("#abcdef")));
+    }
+
+    // An explicit mode wins, and Auto never paints the stored custom colour.
+    settings.setValue(QStringLiteral("customization/gradientMode"), QStringLiteral("auto"));
+    settings.sync();
+    {
+        const Appearance automatic = mikai::app::loadAppearance();
+        QCOMPARE(automatic.gradientMode, mikai::app::theme::GradientMode::Auto);
+        QCOMPARE(mikai::app::theme::gradientColor(automatic),
+                 mikai::app::theme::accentColor(automatic));
+    }
+
+    // Saving a Custom choice persists both keys.
+    Appearance custom = mikai::app::loadAppearance();
+    custom.gradientMode = mikai::app::theme::GradientMode::Custom;
+    custom.gradientColor = QStringLiteral("#abcdef");
+    mikai::app::saveAppearance(custom);
+    settings.sync();
+    QCOMPARE(settings.value(QStringLiteral("customization/gradientMode")).toString(),
+             QStringLiteral("custom"));
+    QCOMPARE(settings.value(QStringLiteral("customization/gradientColor")).toString(),
+             QStringLiteral("#abcdef"));
+
+    // Returning to Auto saves the mode, changes the accent, and leaves the
+    // stored custom colour untouched: the viewer can switch back later.
+    custom.gradientMode = mikai::app::theme::GradientMode::Auto;
+    custom.accent = QStringLiteral("#123456");
+    mikai::app::saveAppearance(custom);
+    settings.sync();
+    QCOMPARE(settings.value(QStringLiteral("customization/gradientMode")).toString(),
+             QStringLiteral("auto"));
+    QCOMPARE(settings.value(QStringLiteral("customization/gradientColor")).toString(),
+             QStringLiteral("#abcdef"));
+    {
+        const Appearance reloaded = mikai::app::loadAppearance();
+        QCOMPARE(reloaded.gradientMode, mikai::app::theme::GradientMode::Auto);
+        QCOMPARE(mikai::app::theme::gradientColor(reloaded), QColor(QStringLiteral("#123456")));
+        Appearance back = reloaded;
+        back.gradientMode = mikai::app::theme::GradientMode::Custom;
+        QCOMPARE(mikai::app::theme::gradientColor(back), QColor(QStringLiteral("#abcdef")));
+    }
+
+    // A custom colour also survives a save/toggle cycle through the draft the
+    // settings page builds: Custom -> Auto -> Custom with no other edit.
+    Appearance cycling = mikai::app::loadAppearance();
+    for (int round = 0; round < 2; ++round) {
+        cycling.gradientMode = round == 0 ? mikai::app::theme::GradientMode::Auto
+                                          : mikai::app::theme::GradientMode::Custom;
+        mikai::app::saveAppearance(cycling);
+    }
+    settings.sync();
+    QCOMPARE(settings.value(QStringLiteral("customization/gradientColor")).toString(),
+             QStringLiteral("#abcdef"));
+    QCOMPARE(mikai::app::theme::gradientColor(mikai::app::loadAppearance()),
+             QColor(QStringLiteral("#abcdef")));
+}
+
+void TestThemeRoles::swatchKeepsItsFixedSizeInsideAFlowLayout() {
+    Appearance appearance;
+    appearance.siteTheme = SiteTheme::Dark;
+    installAppearance(appearance);
+
+    // The real composition the appearance card uses: an application sheet, the
+    // settings sheet on the page, a FlowLayout and a self-painted fixed chip.
+    QWidget page;
+    page.setObjectName(QStringLiteral("appearancePage"));
+    page.setAttribute(Qt::WA_StyledBackground, true);
+    page.setStyleSheet(mikai::app::settingsStylesheet(appearance));
+    auto* flow = new mikai::app::FlowLayout(mikai::app::theme::kSpacingSmall,
+                                           mikai::app::theme::kSpacingSmall);
+    page.setLayout(flow);
+
+    auto* swatch = new mikai::app::SwatchButton(QColor(QStringLiteral("#f27bb0")), &page);
+    swatch->setObjectName(QStringLiteral("accentSwatch"));
+    swatch->setFixedSize(mikai::app::theme::kSettingsSwatchSize,
+                         mikai::app::theme::kSettingsSwatchSize);
+    flow->addWidget(swatch);
+
+    page.resize(580, 240);
+    page.show();
+    // Two event turns: the first shows and polishes, the second lays the flow
+    // out against the final width. The original defect only appeared after the
+    // generic button box model was polished onto the chip.
+    QApplication::processEvents(QEventLoop::AllEvents, 50);
+    QApplication::processEvents(QEventLoop::AllEvents, 50);
+    swatch->ensurePolished();
+
+    const QSize expected(mikai::app::theme::kSettingsSwatchSize,
+                         mikai::app::theme::kSettingsSwatchSize);
+    // The author's cap and the final box are the contract; a stylesheet may
+    // raise or clear the *minimum* during polish, which is exactly how the old
+    // generic button rule made the body two pixels taller than its cap.
+    QCOMPARE(swatch->maximumSize(), expected);
+    QCOMPARE(swatch->size(), expected);
+    QVERIFY(swatch->isVisible());
+    QVERIFY2(swatch->visibleRegion().contains(swatch->rect()),
+             "the chip must be fully visible, not clipped by an inflated layout item");
+
+    const QLayoutItem* item = flow->itemAt(0);
+    QVERIFY(item != nullptr);
+    QCOMPARE(item->geometry().size(), expected);
+
+    // The painted chip must stay inside those bounds: the disc is inset for its
+    // selection ring, and a generic button fill would make the corner opaque.
+    const WidgetPixels chip = grabWidget(*swatch);
+    QCOMPARE(qRound(chip.image.width() / chip.scale), expected.width());
+    QCOMPARE(qRound(chip.image.height() / chip.scale), expected.height());
+    const QColor center = chip.at(expected.width() / 2, expected.height() / 2);
+    QVERIFY2(nearColor(center, QColor(QStringLiteral("#f27bb0"))),
+             qPrintable(failure("swatch fill", center, QColor(QStringLiteral("#f27bb0")))));
+    QCOMPARE(chip.at(0, 0).alpha(), 0);
+}

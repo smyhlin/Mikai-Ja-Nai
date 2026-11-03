@@ -229,6 +229,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/app/TestI18n.cpp
     tests/cpp/app/TestThemeIcons.hpp
     tests/cpp/app/TestThemeIcons.cpp
+    tests/cpp/app/TestThemeRoles.hpp
+    tests/cpp/app/TestThemeRoles.cpp
     tests/cpp/app/TestLayering.hpp
     tests/cpp/app/TestLayering.cpp
     tests/cpp/app/TestPagers.hpp

@@ -10,6 +10,7 @@
 #include "TestComponentState.hpp"
 #include "TestI18n.hpp"
 #include "TestThemeIcons.hpp"
+#include "TestThemeRoles.hpp"
 #include "TestLayering.hpp"
 #include "TestWatchHistory.hpp"
 #include "TestWindowRaise.hpp"
@@ -109,6 +110,7 @@ constexpr const char* kSuites[] = {
     "TestModels", "TestReleases", "TestAnime4K", "TestBenchmarkReport", "TestComponentState",
     "TestI18n",
     "TestThemeIcons",
+    "TestThemeRoles",
     "TestStreams", "TestPagers",
     "TestQualityCache", "TestRateLimiter", "TestWatchHistory", "TestDownloads", "TestDiagnostics",
     "TestApiClient", "TestFeedRender", "TestUpdateFeed", "TestPublicApiUi", "TestRunner",
@@ -263,6 +265,7 @@ int main(int argc, char** argv) {
   TestComponentState componentState;
   TestI18n i18n;
   TestThemeIcons themeIcons;
+  TestThemeRoles themeRoles;
   TestStreams streams;
   TestPagers pagers;
   TestQualityCache qualityCache;
@@ -383,6 +386,7 @@ int main(int argc, char** argv) {
   run("TestComponentState", &componentState, true);
   run("TestI18n", &i18n, true);
   run("TestThemeIcons", &themeIcons, true);
+  run("TestThemeRoles", &themeRoles, true);
   run("TestStreams", &streams, true);
   run("TestPagers", &pagers, true);
   run("TestQualityCache", &qualityCache, true);
