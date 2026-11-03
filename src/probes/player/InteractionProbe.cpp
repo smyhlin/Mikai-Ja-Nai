@@ -2521,11 +2521,6 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
         }
     }
     const bool capturedWhileWithheld = origin.replyAtMs() < 0;
-    const qint64 originReplyAtMs = origin.replyAtMs();
-    // The origin's own number moved onto this run's clock once, so no comparison
-    // below is between two unrelated origins.
-    const qint64 replyAtOpenClockMs =
-        originReplyAtMs < 0 ? -1 : originStartMs + originReplyAtMs;
 
     // The crop somebody will look at, taken while the wait is real. The full
     // window is saved too, but the crop is the evidence that the waiting state
@@ -2547,22 +2542,18 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
     evidence.insert(QStringLiteral("openingText"), openingText);
     evidence.insert(QStringLiteral("openingWhileWithheld"), capturedWhileWithheld);
     evidence.insert(QStringLiteral("openingSeenWhileWithheld"), openingSeenWhileWithheld);
-    // The two clocks, and the one number they make: `originReplyAtMs` is the
-    // origin's own count from its construction, `originStartMs` is where that
-    // construction fell on this run's clock, and `openingReplyMs` is the first
-    // response byte on the same clock as every other latency in this receipt.
-    evidence.insert(QStringLiteral("originReplyAtMs"), static_cast<double>(originReplyAtMs));
+    // Where the origin's own clock sits on this run's clock. The reply stamp
+    // itself is written after the wait: at this instant the origin has answered
+    // nothing, and a field frozen at -1 would describe the state, not the timing.
     evidence.insert(QStringLiteral("originStartMs"), static_cast<double>(originStartMs));
     evidence.insert(QStringLiteral("openingWindowCreatedMs"), static_cast<double>(windowCreatedMs));
-    evidence.insert(QStringLiteral("openingReplyMs"), static_cast<double>(replyAtOpenClockMs));
     evidence.insert(QStringLiteral("openingBrightPixels"), brightWhileWaiting);
     std::fprintf(stderr,
                  "     opening: present=%d visible_while_withheld=%d first_seen_ms=%lld "
-                 "withheld=%d window_ms=%lld reply_ms=%lld bright=%d text='%s'\n",
+                 "withheld=%d window_ms=%lld bright=%d text='%s'\n",
                  int(openingPresent), int(openingSeenWhileWithheld),
                  static_cast<long long>(openingVisibleMs), int(capturedWhileWithheld),
-                 static_cast<long long>(windowCreatedMs),
-                 static_cast<long long>(replyAtOpenClockMs), brightWhileWaiting,
+                 static_cast<long long>(windowCreatedMs), brightWhileWaiting,
                  qPrintable(openingText));
     check(withheld, "the delayed origin received the request before answering it");
     check(capturedWhileWithheld,
@@ -2582,21 +2573,31 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
             break;
         }
     }
+    // The wait is over, so the origin's own number exists now: `originReplyAtMs`
+    // is its count from its construction, `originStartMs` is where that
+    // construction fell on this run's clock, and `openingReplyMs` is the first
+    // response byte on the same clock as every other latency in this receipt.
+    // Both times below are read after the picture, so nothing is stamped from a
+    // state that has not happened yet.
+    const qint64 originReplyAtMs = origin.replyAtMs();
+    const qint64 replyAtOpenClockMs =
+        originReplyAtMs < 0 ? -1 : originStartMs + originReplyAtMs;
+    const bool openingBeforeFirstResponse =
+        openingVisibleMs >= 0 && replyAtOpenClockMs >= 0 && openingVisibleMs < replyAtOpenClockMs;
     evidence.insert(QStringLiteral("firstFrameMs"), static_cast<double>(firstFrameMs));
+    evidence.insert(QStringLiteral("originReplyAtMs"), static_cast<double>(originReplyAtMs));
+    evidence.insert(QStringLiteral("openingReplyMs"), static_cast<double>(replyAtOpenClockMs));
+    evidence.insert(QStringLiteral("openingBeforeFirstResponse"), openingBeforeFirstResponse);
     std::fprintf(stderr, "     opening: first_frame_ms=%lld connections=%d reply_ms=%lld\n",
                  static_cast<long long>(firstFrameMs), origin.connections(),
                  static_cast<long long>(replyAtOpenClockMs));
     check(origin.connections() > 0, "the delayed origin was actually asked for the stream");
+    check(originReplyAtMs >= 0, "the delayed origin answered the request it was given");
     // Both numbers are on the run's own clock now, so this is the claim it looks
     // like: the picture arrived after the byte that had to be decoded first.
     check(firstFrameMs > replyAtOpenClockMs, "the delayed source really made the window wait");
-    if (openingVisibleMs >= 0 && replyAtOpenClockMs >= 0) {
-        check(openingVisibleMs < replyAtOpenClockMs,
-              "the opening state appeared before the source sent its first response byte");
-        evidence.insert(QStringLiteral("openingBeforeFirstResponse"), true);
-    } else {
-        evidence.insert(QStringLiteral("openingBeforeFirstResponse"), false);
-    }
+    check(openingBeforeFirstResponse,
+          "the opening state appeared before the source sent its first response byte");
     qint64 retractedAfterMs = -1;
     if (openingPresent) {
         const QElapsedTimer retractClock = [] {
