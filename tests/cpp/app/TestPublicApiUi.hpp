@@ -31,6 +31,9 @@ class TestPublicApiUi : public QObject {
   void anExplicitProviderChoiceOutlivesTheReleaseRebuild();
   void theReleaseEmbedResolvesToTheMoonSource();
   void aViewerChoiceLeadsTheProgrammaticWatchEmbed();
+  void actionRowsShareOneControlHeightAndEqualWidths();
+  void wrappedScoreLinesFillTheirTextColumn();
+  void componentCardsKeepASingleLineBadgeAndASeparateCountLine();
 };
 
 int runTestPublicApiUi(int argc, char** argv);

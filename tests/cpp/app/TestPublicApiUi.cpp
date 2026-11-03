@@ -4,6 +4,7 @@
 #include <backend/Models.hpp>
 #include <dialogs/ComponentStoreTab.hpp>
 #include <dialogs/SettingsDialog.hpp>
+#include <dialogs/settings/SettingsUi.hpp>
 #include <widgets/PageGlow.hpp>
 #include <state/AppearanceStore.hpp>
 #include <state/NativeComponentProvisioner.hpp>
@@ -14,6 +15,7 @@
 #include <state/WatchHistory.hpp>
 #include <support/I18n.hpp>
 #include <support/Labels.hpp>
+#include <theme/Metrics.hpp>
 #include <theme/Theme.hpp>
 #include <workers/Runner.hpp>
 #include <gui/ImageDecode.hpp>
@@ -142,6 +144,13 @@ QJsonObject titlePayload(const QString& posterUrl, const QString& selectedPoster
                                                  {QStringLiteral("localized"), 0}}},
       {QStringLiteral("images"), posters},
       {QStringLiteral("uaPosters"), QJsonArray{selected}},
+      // The scores object the API serves, with the keys the parser reads, so a
+      // page under test renders the real two-source score line.
+      {QStringLiteral("scores"),
+       QJsonObject{{QStringLiteral("mikai"), 8.6},
+                   {QStringLiteral("mikaiCount"), 33},
+                   {QStringLiteral("mal"), 8.56},
+                   {QStringLiteral("malCount"), 158700}}},
       {QStringLiteral("episodeTypes"),
        QJsonObject{{QStringLiteral("animeCanon"), QJsonArray{QJsonObject{
                         {QStringLiteral("from"), 1}, {QStringLiteral("to"), 1}}}}}},
@@ -2059,6 +2068,259 @@ void TestPublicApiUi::aViewerChoiceLeadsTheProgrammaticWatchEmbed() {
            qPrintable(QStringLiteral("the session choice did not lead the embed: %1")
                           .arg(api.requests.join(QLatin1Char('|')))));
   QCOMPARE(tabs->tabText(tabs->currentIndex()), QStringLiteral("Tortuga"));
+}
+
+// The design contract these cases measure: every action sits on a 40 px row, a
+// watch CTA is the one documented 44 px action, a card badge is one 24 px line
+// no wider than 120 px, and the buttons of one action row share one width.
+void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
+  qApp->setStyle(QStringLiteral("Fusion"));
+  const QString savedSheet = qApp->styleSheet();
+  const auto restoreSheet = qScopeGuard([savedSheet] { qApp->setStyleSheet(savedSheet); });
+  qApp->setStyleSheet(mikai::app::theme::buildStylesheet());
+  IsolatedSettings settings;
+  ApiFixture api;
+  QVERIFY(api.start());
+  mikai::backend::MikaiClient client(kFixtureKey, api.base());
+  mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Geometry workers did not stop");
+  });
+
+  // The title header is one bar: every control sits on the control height and
+  // never grows past the track it is laid out in.
+  mikai::app::QualityCache cache;
+  mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"));
+  page.resize(1280, 900);
+  page.show();
+  QTRY_VERIFY_WITH_TIMEOUT(button(page, "titleWatchButton") != nullptr, 20000);
+  QTRY_VERIFY_WITH_TIMEOUT(button(page, "titleWatchButton")->isEnabled(), 20000);
+
+  auto* back = button(page, "titleBack");
+  auto* home = button(page, "titleHome");
+  auto* settingsChip = button(page, "settingsChip");
+  auto* header = page.findChild<QWidget*>(QStringLiteral("titleHeader"));
+  QVERIFY2(back != nullptr && home != nullptr && settingsChip != nullptr,
+           "the title header lost one of its controls");
+  QVERIFY2(header != nullptr, "the title header is missing");
+  QCOMPARE(header->height(),
+           40 + 2 * mikai::app::theme::kSpacingMedium);
+  for (QPushButton* control : {back, home, settingsChip}) {
+    QVERIFY2(control->height() == 40,
+             qPrintable(QStringLiteral("%1 is %2 px tall inside a %3 px track")
+                            .arg(control->objectName())
+                            .arg(control->height())
+                            .arg(header->height())));
+  }
+  QVERIFY2(settingsChip->width() <= 40,
+           "the settings chip is wider than the header row is tall");
+
+  // Hero and watch actions: one control height, the documented CTA height, and
+  // one width per pair.
+  auto* watch = button(page, "titleWatchButton");
+  auto* heroWatch = button(page, "titleHeroWatchButton");
+  auto* watched = button(page, "titleWatchWatchedToggle");
+  auto* episodes = button(page, "titleEpisodesAnchor");
+  QVERIFY(watch != nullptr && heroWatch != nullptr && watched != nullptr &&
+          episodes != nullptr);
+  QCOMPARE(watch->height(), 44);
+  QCOMPARE(heroWatch->height(), 44);
+  QCOMPARE(watched->height(), 40);
+  QCOMPARE(episodes->height(), 40);
+  QVERIFY2(watch->width() == watched->width(),
+           qPrintable(QStringLiteral("the watch pair is %1 / %2 px wide")
+                          .arg(watch->width())
+                          .arg(watched->width())));
+  QVERIFY2(heroWatch->width() == episodes->width(),
+           qPrintable(QStringLiteral("the hero actions are %1 / %2 px wide")
+                          .arg(heroWatch->width())
+                          .arg(episodes->width())));
+
+  // The search header: the field and its row share the control height, and the
+  // three action buttons share one width whatever their caption.
+  mikai::app::SearchPage search(runner, client);
+  search.resize(1280, 900);
+  search.show();
+  QTRY_VERIFY_WITH_TIMEOUT(button(search, "catalogueFiltersButton") != nullptr, 10000);
+  auto* field = search.findChild<QWidget*>(QStringLiteral("searchField"));
+  auto* filters = button(search, "catalogueFiltersButton");
+  auto* teams = button(search, "catalogueTeamsButton");
+  auto* action = button(search, "searchActionButton");
+  QVERIFY(field != nullptr && filters != nullptr && teams != nullptr && action != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(filters->isVisible() && action->isVisible(), 10000);
+  QCOMPARE(field->height(), 40);
+  for (QPushButton* control : {filters, teams, action}) {
+    QCOMPARE(control->height(), 40);
+  }
+  const auto rowIsEqual = [filters, teams, action] {
+    return filters->width() == teams->width() && teams->width() == action->width();
+  };
+  QVERIFY2(rowIsEqual(), qPrintable(QStringLiteral("the action row is %1 / %2 / %3 px wide")
+                                        .arg(filters->width())
+                                        .arg(teams->width())
+                                        .arg(action->width())));
+  for (QPushButton* control : {filters, teams, action}) {
+    QVERIFY2(control->width() >= control->minimumWidth(),
+             "an action button is narrower than the width its own text needs");
+  }
+
+  // A translation restates the captions; the row has to stay equal at the new
+  // advances instead of keeping the old width.
+  if (primeBuiltCatalogForSwitching()) {
+    QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
+    const auto restoreEnglish =
+        qScopeGuard([] { mikai::app::applyInterfaceLanguage(QStringLiteral("en")); });
+    QCoreApplication::processEvents();
+    QVERIFY2(rowIsEqual(), qPrintable(QStringLiteral(
+                               "the Ukrainian action row is %1 / %2 / %3 px wide")
+                               .arg(filters->width())
+                               .arg(teams->width())
+                               .arg(action->width())));
+    for (QPushButton* control : {filters, teams, action}) {
+      const int ink = control->fontMetrics().horizontalAdvance(control->text());
+      QVERIFY2(control->width() >= ink,
+               qPrintable(QStringLiteral("%1 clips its Ukrainian caption")
+                              .arg(control->objectName())));
+    }
+  }
+
+  // The settings action rows hold the same contract at the dialog minimum.
+  mikai::app::ComponentStoreTab tab;
+  tab.setRunner(&runner);
+  tab.setStyleSheet(mikai::app::settingsStylesheet(mikai::app::currentAppearance()));
+  tab.resize(mikai::app::theme::kSettingsDialogMinWidth, 900);
+  tab.show();
+  const QStringList actionNames{QStringLiteral("componentDownloadButton"),
+                                QStringLiteral("refreshComponentsButton"),
+                                QStringLiteral("nativeComponentVerifyButton"),
+                                QStringLiteral("nativeComponentImportAnimeJanaiButton"),
+                                QStringLiteral("nativeComponentTabCancelButton")};
+  QList<QPushButton*> settingsActions;
+  for (const QString& name : actionNames) {
+    auto* control = tab.findChild<QPushButton*>(name);
+    QVERIFY2(control != nullptr, qPrintable(QStringLiteral("missing %1").arg(name)));
+    settingsActions.append(control);
+  }
+  QCoreApplication::processEvents();
+  for (QPushButton* control : settingsActions) {
+    QCOMPARE(control->height(), 40);
+  }
+  const int settingsWidth = settingsActions.first()->width();
+  for (QPushButton* control : settingsActions) {
+    QVERIFY2(control->width() == settingsWidth,
+             qPrintable(QStringLiteral("%1 is %2 px wide beside %3 px")
+                            .arg(control->objectName())
+                            .arg(control->width())
+                            .arg(settingsWidth)));
+    QVERIFY2(control->width() >= control->fontMetrics().horizontalAdvance(control->text()),
+             qPrintable(QStringLiteral("%1 clips its caption").arg(control->objectName())));
+  }
+}
+
+void TestPublicApiUi::wrappedScoreLinesFillTheirTextColumn() {
+  qApp->setStyle(QStringLiteral("Fusion"));
+  const QString savedSheet = qApp->styleSheet();
+  const auto restoreSheet = qScopeGuard([savedSheet] { qApp->setStyleSheet(savedSheet); });
+  qApp->setStyleSheet(mikai::app::theme::buildStylesheet());
+  IsolatedSettings settings;
+  ApiFixture api;
+  QVERIFY(api.start());
+  mikai::backend::MikaiClient client(kFixtureKey, api.base());
+  mikai::app::Runner runner;
+  const auto drainBeforeClientDestruction = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Score workers did not stop");
+  });
+  mikai::app::QualityCache cache;
+  mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"));
+  page.resize(1120, 900);
+  page.show();
+
+  auto* heroScores = page.findChild<QLabel*>(QStringLiteral("titleScores"));
+  QVERIFY(heroScores != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(heroScores->isVisible(), 20000);
+  QVERIFY2(heroScores->text().contains(QStringLiteral("MAL")),
+           qPrintable(QStringLiteral("the fixture score line is %1").arg(heroScores->text())));
+  auto* facts = page.findChild<QLabel*>(QStringLiteral("titleFacts"));
+  QVERIFY(facts != nullptr && facts->isVisible());
+
+  // A wrapping line is added without an alignment flag, so it takes the column
+  // width its sibling metadata line takes and heightForWidth governs its height.
+  QVERIFY2(heroScores->width() == facts->width(),
+           qPrintable(QStringLiteral("the hero score line is %1 px beside a %2 px column")
+                          .arg(heroScores->width())
+                          .arg(facts->width())));
+  QVERIFY2(heroScores->height() >= heroScores->heightForWidth(heroScores->width()),
+           "the hero score line is shorter than its wrapped text");
+
+  // The same contract in the details sheet.
+  const auto scoreLabels = page.findChildren<QLabel*>(QStringLiteral("titleScores"));
+  QVERIFY(scoreLabels.size() >= 2);
+  auto* detailsTitle = page.findChild<QLabel*>(QStringLiteral("titleDetailsTitle"));
+  QVERIFY(detailsTitle != nullptr);
+  for (QLabel* scores : scoreLabels) {
+    if (scores == heroScores) continue;
+    QVERIFY2(scores->width() == detailsTitle->width(),
+             qPrintable(QStringLiteral("the details score line is %1 px beside a %2 px column")
+                            .arg(scores->width())
+                            .arg(detailsTitle->width())));
+    QVERIFY2(scores->height() >= scores->heightForWidth(scores->width()),
+             "the details score line is shorter than its wrapped text");
+  }
+}
+
+void TestPublicApiUi::componentCardsKeepASingleLineBadgeAndASeparateCountLine() {
+  qApp->setStyle(QStringLiteral("Fusion"));
+  const QString savedSheet = qApp->styleSheet();
+  const auto restoreSheet = qScopeGuard([savedSheet] { qApp->setStyleSheet(savedSheet); });
+  qApp->setStyleSheet(mikai::app::theme::buildStylesheet());
+  IsolatedSettings settings;
+  mikai::app::Runner runner;
+  const auto drain = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Component workers did not stop");
+  });
+  mikai::app::ComponentStoreTab tab;
+  tab.setRunner(&runner);
+  tab.setStyleSheet(mikai::app::settingsStylesheet(mikai::app::currentAppearance()));
+  tab.resize(860, 900);
+  tab.show();
+  QCoreApplication::processEvents();
+
+  const QStringList cardIds{QStringLiteral("tensorRtRuntimeCard"),
+                            QStringLiteral("animeJanaiModelsCard"),
+                            QStringLiteral("rifeModelsCard"),
+                            QStringLiteral("tensorRtKernelsCard")};
+  for (const QString& cardId : cardIds) {
+    auto* badge = tab.findChild<QLabel*>(cardId + QStringLiteral("State"));
+    auto* title = tab.findChild<QLabel*>(cardId + QStringLiteral("Title"));
+    auto* description = tab.findChild<QLabel*>(cardId + QStringLiteral("Description"));
+    auto* counts = tab.findChild<QLabel*>(cardId + QStringLiteral("Count"));
+    QVERIFY2(badge != nullptr && title != nullptr && description != nullptr,
+             qPrintable(QStringLiteral("%1 is missing a header element").arg(cardId)));
+    QVERIFY2(counts != nullptr,
+             qPrintable(QStringLiteral("%1 shows its counts inside the badge").arg(cardId)));
+    QTRY_VERIFY_WITH_TIMEOUT(!badge->text().isEmpty(), 10000);
+    QVERIFY2(badge->height() <= 24,
+             qPrintable(QStringLiteral("%1 badge is %2 px tall: %3")
+                            .arg(cardId)
+                            .arg(badge->height())
+                            .arg(badge->text())));
+    QVERIFY2(badge->width() <= 120,
+             qPrintable(QStringLiteral("%1 badge is %2 px wide")
+                            .arg(cardId)
+                            .arg(badge->width())));
+    QVERIFY2(!badge->geometry().intersects(title->geometry()),
+             qPrintable(QStringLiteral("%1 badge covers its title").arg(cardId)));
+    QVERIFY2(counts->geometry().top() >= description->geometry().bottom(),
+             qPrintable(QStringLiteral("%1 counts share the description line").arg(cardId)));
+  }
+
+  auto* spatialCounts = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardCount"));
+  QVERIFY(spatialCounts != nullptr);
+  QVERIFY2(spatialCounts->text().contains(QLatin1Char('/')),
+           qPrintable(QStringLiteral("the spatial count line is %1").arg(spatialCounts->text())));
 }
 
 int runTestPublicApiUi(int argc, char** argv) {
