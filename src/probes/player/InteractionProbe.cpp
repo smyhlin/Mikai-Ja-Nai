@@ -2438,24 +2438,20 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
                         static_cast<double>(slowCounters.cacheHits));
         evidence.insert(QStringLiteral("slowPreviewWorkerRequests"),
                         static_cast<double>(slowCounters.workerRequests));
-        evidence.insert(QStringLiteral("slowPreviewSeeks"),
-                        static_cast<double>(slowCounters.seeks));
-        std::fprintf(stderr,
-                     "     slow preview: explained=%d at_ms=%lld hits=%lld workers=%lld seeks=%lld\n",
+        std::fprintf(stderr, "     slow preview: explained=%d at_ms=%lld hits=%lld workers=%lld\n",
                      int(explained), static_cast<long long>(explainedMs),
                      static_cast<long long>(slowCounters.cacheHits),
-                     static_cast<long long>(slowCounters.workerRequests),
-                     static_cast<long long>(slowCounters.seeks));
+                     static_cast<long long>(slowCounters.workerRequests));
         check(explained,
               "a preview of a source that has not answered yet says what it is waiting for");
-        // The accepted seek is what proves a decode was really paid for; a
-        // request only says the card asked, and the store can answer without one.
-        if (slowCounters.seeks >= 0) {
-            check(slowCounters.seeks > 0 && slowCounters.cacheHits == 0,
-                  "the explanation belongs to a real decode, not to a stored frame");
-        } else if (slowCounters.workerRequests >= 0) {
+        // This instant is *before* the work: the state is read the moment the card
+        // names the wait, which is ahead of the settle and the 2.4 s origin reply,
+        // so no seek can have been accepted yet. Pending work is what has to be
+        // proved here - a request left the card and nothing came from the store -
+        // and the seek count is measured on the completed sweep passes instead.
+        if (slowCounters.workerRequests >= 0) {
             check(slowCounters.workerRequests > 0 && slowCounters.cacheHits == 0,
-                  "the explanation belongs to a real decode, not to a stored frame");
+                  "the explanation belongs to a pending decode, not to a stored frame");
         }
         saveShot(slowCard, QStringLiteral("hover-motion-loading-card.png"), &screenshots);
     }
