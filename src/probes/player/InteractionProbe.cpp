@@ -23,6 +23,7 @@
 #include <QCursor>
 #include <QDoubleSpinBox>
 #include <QDragEnterEvent>
+#include <QDir>
 #include <QDropEvent>
 #include <QEventLoop>
 #include <QElapsedTimer>
@@ -1008,8 +1009,18 @@ QJsonObject evidenceFromFacts(const PlaybackFacts& facts) {
     return object;
 }
 
+/// Where this run's artifacts go. The launcher resets the child's working
+/// directory to a disposable tree and deletes it afterwards, so a run that is
+/// meant to be read afterwards names an absolute directory it owns.
+QString g_outputDir;
+
+QString artifactPath(const QString& name) {
+    if (g_outputDir.isEmpty() || QFileInfo(name).isAbsolute()) return name;
+    return g_outputDir + QLatin1Char('/') + name;
+}
+
 void saveEvidenceJson(const QJsonObject& evidence) {
-    QFile file(QStringLiteral("interaction-language-evidence.json"));
+    QFile file(artifactPath(QStringLiteral("interaction-language-evidence.json")));
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         std::fprintf(stderr, "FAIL the language evidence JSON was written\n");
         ++failures;
@@ -1021,7 +1032,7 @@ void saveEvidenceJson(const QJsonObject& evidence) {
 
 bool saveShot(QWidget* widget, const QString& name, QJsonArray* screenshots) {
     if (widget == nullptr) return false;
-    const bool saved = widget->grab().save(name);
+    const bool saved = widget->grab().save(artifactPath(name));
     if (saved && screenshots != nullptr) screenshots->append(name);
     return saved;
 }
@@ -2359,7 +2370,7 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
     evidence.insert(QStringLiteral("passed"), failures == 0);
     evidence.insert(QStringLiteral("checks"), checks);
     evidence.insert(QStringLiteral("failures"), failures);
-    QFile out(QStringLiteral("interaction-hover-motion-evidence.json"));
+    QFile out(artifactPath(QStringLiteral("interaction-hover-motion-evidence.json")));
     if (out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         out.write(QJsonDocument(evidence).toJson(QJsonDocument::Indented));
         out.close();
@@ -2380,6 +2391,7 @@ int main(int argc, char** argv) {
     // quality reloads, pixel comparisons, PiP ownership ladder or Esc walk -
     // and a smoke that spends a minute on them is a smoke nobody runs.
     QString videoArgument;
+    QString outputDir;
     bool languageSmoke = false;
     bool hoverMotion = false;
     for (int index = 1; index < argc; ++index) {
@@ -2388,6 +2400,11 @@ int main(int argc, char** argv) {
             languageSmoke = true;
         } else if (argument == QLatin1String("--hover-motion")) {
             hoverMotion = true;
+        } else if (argument == QLatin1String("--output-dir") && index + 1 < argc) {
+            // Absolute and owned by the caller: the launcher deletes the working
+            // directory it gives a child, so an artifact written relative to it is
+            // gone before anybody can read the run.
+            outputDir = QString::fromLocal8Bit(argv[++index]);
         } else if (videoArgument.isEmpty()) {
             videoArgument = argument;
         }
@@ -2395,8 +2412,17 @@ int main(int argc, char** argv) {
     if (videoArgument.isEmpty() || !QFileInfo::exists(videoArgument)) {
         std::fprintf(stderr,
                      "Usage: InteractionProbe <known-duration-video-file> "
-                     "[--language-smoke | --hover-motion]\n");
+                     "[--language-smoke | --hover-motion] [--output-dir <absolute dir>]\n");
         return 3;
+    }
+    if (!outputDir.isEmpty()) {
+        if (!QFileInfo(outputDir).isAbsolute() || !QDir().mkpath(outputDir)) {
+            std::fprintf(stderr,
+                         "FAIL --output-dir must be an absolute directory this run may write: %s\n",
+                         qPrintable(outputDir));
+            return 3;
+        }
+        g_outputDir = outputDir;
     }
     // The last stage closes the last window, and Qt quits the loop when that
     // happens - which returned 0 from app.exec() before the runner could print
