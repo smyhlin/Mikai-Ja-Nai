@@ -2374,12 +2374,8 @@ int runHoverMotion(const QString& url, PlayerHost* host) {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
-    // Three ways in: the full interaction walk (the historical argument), a
-    // narrowly named live-language case, and the focused hover/loading case.
-    // Each narrow case exists because proving its contract does not need the
-    // quality reloads, pixel comparisons, PiP ownership ladder or Esc walk -
-    // and a smoke that spends a minute on them is a smoke nobody runs.
     QString videoArgument;
+    QString outputDirectory;
     bool languageSmoke = false;
     bool hoverMotion = false;
     for (int index = 1; index < argc; ++index) {
@@ -2388,6 +2384,12 @@ int main(int argc, char** argv) {
             languageSmoke = true;
         } else if (argument == QLatin1String("--hover-motion")) {
             hoverMotion = true;
+        } else if (argument == QLatin1String("--output-dir")) {
+            if (index + 1 >= argc) {
+                std::fprintf(stderr, "FAIL --output-dir needs a directory\n");
+                return 3;
+            }
+            outputDirectory = QString::fromLocal8Bit(argv[++index]);
         } else if (videoArgument.isEmpty()) {
             videoArgument = argument;
         }
@@ -2395,7 +2397,7 @@ int main(int argc, char** argv) {
     if (videoArgument.isEmpty() || !QFileInfo::exists(videoArgument)) {
         std::fprintf(stderr,
                      "Usage: InteractionProbe <known-duration-video-file> "
-                     "[--language-smoke | --hover-motion]\n");
+                     "[--language-smoke | --hover-motion] [--output-dir directory]\n");
         return 3;
     }
     // The last stage closes the last window, and Qt quits the loop when that
@@ -2423,6 +2425,12 @@ int main(int argc, char** argv) {
 
     static StubHost host;
     const QString url = QFileInfo(videoArgument).absoluteFilePath();
+    if (!outputDirectory.isEmpty() &&
+        (!QDir().mkpath(outputDirectory) || !QDir::setCurrent(outputDirectory))) {
+        std::fprintf(stderr, "FAIL cannot use output directory: %s\n",
+                     qPrintable(outputDirectory));
+        return 3;
+    }
     if (languageSmoke) {
         return runLanguageSmoke(url, &host);
     }
