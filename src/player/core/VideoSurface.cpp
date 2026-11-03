@@ -74,7 +74,6 @@ constexpr GLenum kGlRgba = 0x1908;
 constexpr GLenum kGlUnsignedByte = 0x1401;
 constexpr GLenum kGlUnsignedShort = 0x1403;
 constexpr GLenum kGlHalfFloat = 0x140B;                    // GL 3.0
-constexpr GLenum kGlUnsignedInt2101010Rev = 0x8368;        // GL 3.3
 constexpr GLenum kGlPackAlignment = 0x0D05;
 constexpr GLenum kGlReadFramebuffer = 0x8CA8;
 constexpr GLenum kGlColorAttachmentObjectType = 0x8CD0;
@@ -910,10 +909,12 @@ bool VideoSurface::captureTeardownPicture() {
             imageFormat = QImage::Format_RGBA64;
             break;
         case kGlInternalFormatRgb10A2:
-            // The packed 10:10:10:2 words stay packed: widening them to 16 bits
-            // per channel would be a second conversion of the same values.
-            readType = kGlUnsignedInt2101010Rev;
-            imageFormat = QImage::Format_A2BGR30_Premultiplied;
+            // Widened to 16 bits per channel rather than copied packed: the
+            // channel order of a packed 10:10:10:2 word is a Qt image-layout
+            // question this code would otherwise be guessing at, and widening is
+            // exact - no 8-bit step, no invented colour.
+            readType = kGlUnsignedShort;
+            imageFormat = QImage::Format_RGBA64;
             break;
         default:
             // Only a target whose attachment format could not be named at all
@@ -923,7 +924,8 @@ bool VideoSurface::captureTeardownPicture() {
 
     QImage picture(size, imageFormat);
     if (picture.isNull()) {
-        gl->glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(defaultFramebufferObject()));
+        gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousRead));
+        gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDraw));
         return false;
     }
     GLint previousPack = 4;
