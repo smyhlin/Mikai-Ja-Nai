@@ -107,6 +107,12 @@ bool g_animeJanaiHdrOverride = false;
 int g_animeJanaiHdrOverrideRevision = 1;
 QString g_frameTimingLogPath;
 
+// Display scaling is a viewing preference, not a per-window state: one policy
+// per process, adopted by every live surface on its own state pump, exactly
+// like the HDR policy above.
+VideoScalePolicy g_videoScalePolicy;
+int g_videoScalePolicyRevision = 1;
+
 int hdrToneMappingPolicyRevision() { return g_hdrToneMappingPolicyRevision; }
 
 int animeJanaiHdrOverrideRevision() { return g_animeJanaiHdrOverrideRevision; }
@@ -238,6 +244,75 @@ std::optional<int64_t> playlistEntryIdFromCommand(const mpv_event_command& comma
 
 }  // namespace
 
+int clampedVideoZoomPercent(int zoomPercent) {
+    return std::clamp(zoomPercent, -50, 100);
+}
+
+QString videoZoomArgument(int zoomPercent) {
+    // The percentage names a scale factor; mpv's video-zoom is its log2, so
+    // -50 % is -1.000000 and +100 % is 1.000000. Fixed six decimals with Qt's
+    // own formatting: std::to_string would emit a comma under uk_UA and the
+    // core would refuse the option.
+    const double factor = 1.0 + clampedVideoZoomPercent(zoomPercent) / 100.0;
+    return QString::number(std::log2(factor), 'f', 6);
+}
+
+int effectiveVideoZoomPercent(VideoScaleMode mode, int zoomPercent) {
+    if (mode == VideoScaleMode::Stretch || mode == VideoScaleMode::Original) return 0;
+    return clampedVideoZoomPercent(zoomPercent);
+}
+
+std::vector<VideoScaleOption> videoScaleOptions(const VideoScalePolicy& policy,
+                                                const std::string& downscaleDefault) {
+    // Every mode carries all seven: a mode that only wrote its own option would
+    // leave the previous mode's crop or aspect override in place.
+    const bool stretch = policy.mode == VideoScaleMode::Stretch;
+    const bool original = policy.mode == VideoScaleMode::Original;
+    const char* aspect = "no";
+    if (policy.mode == VideoScaleMode::Aspect16x9) {
+        aspect = "16:9";
+    } else if (policy.mode == VideoScaleMode::Aspect4x3) {
+        aspect = "4:3";
+    }
+    std::vector<VideoScaleOption> options;
+    options.push_back({"keepaspect", stretch ? "no" : "yes"});
+    options.push_back(
+        {"panscan", policy.mode == VideoScaleMode::Fill ? "1.000000" : "0.000000"});
+    options.push_back({"video-aspect-override", aspect});
+    options.push_back({"video-unscaled", original ? "yes" : "no"});
+    options.push_back(
+        {"video-zoom",
+         videoZoomArgument(effectiveVideoZoomPercent(policy.mode, policy.zoomPercent))
+             .toStdString()});
+    options.push_back(
+        {"scale", policy.upscale.isEmpty() ? std::string("lanczos")
+                                           : policy.upscale.toStdString()});
+    if (!policy.downscale.isEmpty()) {
+        options.push_back({"dscale", policy.downscale.toStdString()});
+    } else if (!downscaleDefault.empty()) {
+        options.push_back({"dscale", downscaleDefault});
+    }
+    return options;
+}
+
+QString videoScaleModeLabel(VideoScaleMode mode) {
+    switch (mode) {
+        case VideoScaleMode::Fit:
+            return QCoreApplication::translate("mplayer::videoscale", "Fit to window");
+        case VideoScaleMode::Fill:
+            return QCoreApplication::translate("mplayer::videoscale", "Fill (crop edges)");
+        case VideoScaleMode::Stretch:
+            return QCoreApplication::translate("mplayer::videoscale", "Stretch");
+        case VideoScaleMode::Aspect16x9:
+            return QCoreApplication::translate("mplayer::videoscale", "16:9");
+        case VideoScaleMode::Aspect4x3:
+            return QCoreApplication::translate("mplayer::videoscale", "4:3");
+        case VideoScaleMode::Original:
+            return QCoreApplication::translate("mplayer::videoscale", "Original size (1:1)");
+    }
+    return {};
+}
+
 bool VideoSurface::hdrRenderingFixesEnabled() {
     return hdrFixesEnabled();
 }
@@ -250,7 +325,7 @@ void VideoSurface::ensureEngine() {
     entryTokensById_.clear();
     // These are the options the Python player passed through python-mpv, which
     // spelled them with underscores; mpv itself takes dashes.
-    const std::vector<std::pair<std::string, std::string>> options{
+    std::vector<std::pair<std::string, std::string>> options{
         // Routes decoded frames into OUR render context. Without it mpv opens a
         // video output of its own, the render context never receives a frame
         // (update() stays at generation 0) and render() still returns success
@@ -266,7 +341,6 @@ void VideoSurface::ensureEngine() {
          "Chrome/142.0.0.0 Safari/537.36"},
         {"http-header-fields", "Accept-Language: uk-UA"},
         {"hwdec", "auto-safe"},
-        {"keepaspect", "yes"},
         {"volume", mpvNumber(requestedVolume_)},
         {"mute", requestedMuted_ ? "yes" : "no"},
         // The keyboard belongs to the shell: mpv's own bindings would consume
@@ -282,9 +356,20 @@ void VideoSurface::ensureEngine() {
         // client also schedules against target_time using mpv's own clock.
         {"video-timing-offset", "0"},
     };
+    // The display mode is applied before initialize so the first frame is
+    // already in it. An Auto downscale is left out here on purpose: dscale's
+    // real default can only be read from an initialized core, and the pinned
+    // runtime refuses the literal "auto". applyVideoScaleToEngine() below
+    // queries it and sets the whole set before any file is loaded.
+    for (const VideoScaleOption& option : videoScaleOptions(videoScalePolicy(), {})) {
+        options.emplace_back(option.name, option.value);
+    }
+    // The default belongs to the core that answered it, and this is a new one.
+    downscaleDefault_.reset();
     mpv_ = std::make_unique<MpvHandle>(options);
     mpvApiVersion_ = MpvHandle::apiVersion();
     applyHdrPolicyToEngine();
+    applyVideoScaleToEngine(/*queryCoreDefault=*/true);
     // A plan may have been selected before the core existed. Request its backend
     // reports before any source or official filter command reaches this core.
     mpv_->setBackendLogObservationEnabled(animeJanaiBackendLogsNeeded());
@@ -2965,6 +3050,87 @@ void VideoSurface::setDiagnosticsPolling(bool enabled) {
     }
 }
 
+void VideoSurface::setVideoScalePolicy(const VideoScalePolicy& policy) {
+    VideoScalePolicy normalized = policy;
+    normalized.zoomPercent = clampedVideoZoomPercent(policy.zoomPercent);
+    if (normalized == g_videoScalePolicy) return;
+    g_videoScalePolicy = normalized;
+    ++g_videoScalePolicyRevision;
+    // Every live surface adopts the new revision on its own pump tick, so this
+    // setter never has to know how many surfaces exist.
+}
+
+VideoSurface::VideoScalePolicy VideoSurface::videoScalePolicy() {
+    return g_videoScalePolicy;
+}
+
+void VideoSurface::setVideoScaleMode(VideoScaleMode mode) {
+    VideoScalePolicy policy = g_videoScalePolicy;
+    policy.mode = mode;
+    setVideoScalePolicy(policy);
+}
+
+int VideoSurface::videoScalePolicyRevision() { return g_videoScalePolicyRevision; }
+
+std::string VideoSurface::downscaleDefaultForCore() {
+    if (downscaleDefault_.has_value()) return *downscaleDefault_;
+    if (mpv_ == nullptr) return {};
+    try {
+        downscaleDefault_ = mpv_->getString("option-info/dscale/default-value");
+    } catch (const MpvError&) {
+        // Nothing cached: Auto then leaves mpv's own default untouched, which is
+        // what Auto means. A guessed id is the one thing it must not become.
+        return {};
+    }
+    return *downscaleDefault_;
+}
+
+void VideoSurface::applyVideoScaleToEngine(bool queryCoreDefault) {
+    appliedVideoScaleRevision_ = videoScalePolicyRevision();
+    if (mpv_ == nullptr) return;
+    VideoScalePolicy policy = g_videoScalePolicy;
+    if (compareFitActive_) {
+        // Compare compares the picture, not the viewer's window: Fit with no
+        // zoom keeps both panes the same shape whatever the saved mode is.
+        policy.mode = VideoScaleMode::Fit;
+        policy.zoomPercent = 0;
+    }
+    // Without a query the cached answer is all there is; an empty one leaves
+    // Auto as mpv's own value instead of blocking the pump on the core lock.
+    std::string downscaleDefault;
+    if (policy.downscale.isEmpty()) {
+        if (queryCoreDefault) {
+            downscaleDefault = downscaleDefaultForCore();
+        } else if (downscaleDefault_.has_value()) {
+            downscaleDefault = *downscaleDefault_;
+        }
+    }
+    for (const VideoScaleOption& option : videoScaleOptions(policy, downscaleDefault)) {
+        // Reported rather than tolerated: a runtime that refuses an option must
+        // name it, because silently keeping the previous value is a substituted
+        // mode the viewer never chose.
+        issueCoreCommand({"set", option.name, option.value}, option.name.c_str(),
+                         /*reportRefusal=*/true);
+    }
+    emit videoScaleApplied();
+}
+
+std::optional<VideoScaleFitLock> VideoSurface::acquireVideoScaleFitLock() {
+    if (compareFitActive_) return std::nullopt;
+    compareFitActive_ = true;
+    applyVideoScaleToEngine();
+    return VideoScaleFitLock(this, true);
+}
+
+void VideoScaleFitLock::release() {
+    if (!held_) return;
+    held_ = false;
+    auto* surface = static_cast<VideoSurface*>(surface_.data());
+    if (surface == nullptr) return;
+    surface->compareFitActive_ = false;
+    surface->applyVideoScaleToEngine();
+}
+
 void VideoSurface::setHdrToneMappingPolicy(HdrToneMappingPolicy policy) {
     if (policy == g_hdrToneMappingPolicy) return;
     g_hdrToneMappingPolicy = policy;
@@ -3345,6 +3511,9 @@ void VideoSurface::pumpEvents() {
     if (!mpv_) return;
     if (appliedHdrPolicyRevision_ != hdrToneMappingPolicyRevision()) {
         applyHdrPolicyToEngine();
+    }
+    if (appliedVideoScaleRevision_ != videoScalePolicyRevision()) {
+        applyVideoScaleToEngine();
     }
     if (appliedAnimeJanaiOverrideRevision_ != animeJanaiHdrOverrideRevision()) {
         appliedAnimeJanaiOverrideRevision_ = animeJanaiHdrOverrideRevision();

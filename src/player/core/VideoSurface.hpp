@@ -72,6 +72,51 @@ struct ProbePropertyValue {
     double asNumber() const { return kind == Kind::Integer ? static_cast<double>(integer) : number; }
 };
 
+/// Display-level video scaling (GOAL-H2). A mode owns all seven mpv options the
+/// picture geometry is made of, not just its own, so switching from Fill to Fit
+/// cannot keep the previous mode's crop alive.
+enum class VideoScaleMode : int {
+    Fit = 0,
+    Fill = 1,
+    Stretch = 2,
+    Aspect16x9 = 3,
+    Aspect4x3 = 4,
+    Original = 5
+};
+
+struct VideoScalePolicy {
+    VideoScaleMode mode = VideoScaleMode::Fit;
+    int zoomPercent = 0;
+    QString upscale = QStringLiteral("lanczos");
+    /// Empty means Auto: mpv's own default, read from the core, because the
+    /// pinned runtime refuses the literal "auto" for dscale.
+    QString downscale;
+    bool operator==(const VideoScalePolicy&) const = default;
+};
+
+/// One mpv option a display mode owns.
+struct VideoScaleOption {
+    std::string name;
+    std::string value;
+};
+
+/// mpv's video-zoom argument for a viewer-facing percentage: log2(1 + pct/100),
+/// rendered with Qt's locale-independent formatting. A comma decimal separator
+/// under uk_UA would make the core refuse the option.
+QString videoZoomArgument(int zoomPercent);
+/// The card's range, applied wherever a percentage enters the core.
+int clampedVideoZoomPercent(int zoomPercent);
+/// Stretch and Original 1:1 are unscaled pictures: their stored percentage is
+/// remembered but never reaches mpv.
+int effectiveVideoZoomPercent(VideoScaleMode mode, int zoomPercent);
+/// Every option a mode owns, in apply order. An empty `downscaleDefault` keeps
+/// Auto as "leave mpv's default alone" rather than guessing an id.
+std::vector<VideoScaleOption> videoScaleOptions(const VideoScalePolicy& policy,
+                                                const std::string& downscaleDefault);
+/// The name a viewer-facing control shows for a mode. Kept here because both
+/// the Settings card and the player flyout offer the same choice.
+QString videoScaleModeLabel(VideoScaleMode mode);
+
 /// Provenance for the legacy FPS value passed to the HUD; this is display
 /// metadata only and says nothing about whether a native filter ran.
 enum class StreamFpsSource : int {
@@ -134,6 +179,42 @@ inline bool nativeSnapshotKeepsPolling(native::NativeState state) {
     return state == native::NativeState::Active || state == native::NativeState::Preparing ||
            state == native::NativeState::Probe;
 }
+
+class VideoSurface;
+
+/// Holds a surface at Fit for as long as it lives. Compare borrows a surface to
+/// capture panes, and a comparison must not depend on the viewer's display
+/// mode; the surface's own policy is restored when the token is released. The
+/// surface is held weakly, so a token outliving its surface releases nothing.
+class VideoScaleFitLock {
+public:
+    VideoScaleFitLock() = default;
+    ~VideoScaleFitLock() { release(); }
+    VideoScaleFitLock(VideoScaleFitLock&& other) noexcept
+        : surface_(other.surface_), held_(other.held_) {
+        other.held_ = false;
+    }
+    VideoScaleFitLock& operator=(VideoScaleFitLock&& other) noexcept {
+        if (this == &other) return *this;
+        release();
+        surface_ = other.surface_;
+        held_ = other.held_;
+        other.held_ = false;
+        return *this;
+    }
+    VideoScaleFitLock(const VideoScaleFitLock&) = delete;
+    VideoScaleFitLock& operator=(const VideoScaleFitLock&) = delete;
+    explicit operator bool() const { return !surface_.isNull(); }
+
+private:
+    friend class VideoSurface;
+    explicit VideoScaleFitLock(QObject* surface, bool held) : surface_(surface), held_(held) {}
+    /// Returns the surface to its own policy, if it is still alive and this
+    /// token is the one holding it.
+    void release();
+    QPointer<QObject> surface_;
+    bool held_ = false;
+};
 
 class VideoSurface : public QOpenGLWidget {
     Q_OBJECT
@@ -250,6 +331,25 @@ public:
     /// writer spells them identically.
     inline static constexpr char kHdrToneMappingSettingKey[] = "playback/hdrToneMapping";
     inline static constexpr char kAnimeJanaiHdrOverrideSettingKey[] = "playback/nativeOnHdr";
+
+    /// Display scaling, adopted by every surface on its state pump exactly like
+    /// the HDR policy: one process-wide viewing preference, no per-window copy.
+    static void setVideoScalePolicy(const VideoScalePolicy& policy);
+    static VideoScalePolicy videoScalePolicy();
+    /// Changes the display mode only; zoom and scalers are separate preferences
+    /// and survive a mode change.
+    static void setVideoScaleMode(VideoScaleMode mode);
+    static int videoScalePolicyRevision();
+    inline static constexpr char kVideoScaleModeSettingKey[] = "playback/videoScaleMode";
+    inline static constexpr char kVideoZoomSettingKey[] = "playback/videoZoomPercent";
+    inline static constexpr char kVideoUpscaleSettingKey[] = "playback/videoScale";
+    inline static constexpr char kVideoDownscaleSettingKey[] = "playback/videoDownscale";
+
+    /// Compare captures its panes from a borrowed surface, so it holds Fit while
+    /// it owns the picture: what is compared must not depend on the viewer's
+    /// display mode. The previous policy is restored on release.
+    std::optional<VideoScaleFitLock> acquireVideoScaleFitLock();
+    bool compareFitHeld() const { return compareFitActive_; }
 
     /// The observed color profile of the current source (T-102). Read from
     /// mpv's own `video-params` notifications and reset at each source epoch.
@@ -565,6 +665,11 @@ signals:
     void videoMetadataChanged(const mplayer::VideoSurface::VideoMetadata& metadata);
     /// Notice emitted when a shader chain is gated by source transfer metadata.
     void anime4kGated(const QString& notice);
+    /// The display scaling this surface's engine now holds changed - a new
+    /// policy revision was adopted, or a Compare fit hold started/ended. The
+    /// picture area a Fill or Stretch mode needs is the layout's business, so
+    /// the shell re-runs it from here rather than polling the policy.
+    void videoScaleApplied();
     /// A seek intent can precede, or never change, the observed position.
     /// Carries no target: the request may have been absolute or relative, and a
     /// consumer's only safe reading is that a captured frame is now stale.
@@ -1049,6 +1154,14 @@ private:
     void enforceAnimeJanaiHdrGate();
     /// Applies the current process-wide HDR options to this core.
     void applyHdrPolicyToEngine();
+    /// Applies the display scaling to this core, all seven options at once.
+    /// `queryCoreDefault` is set only at engine creation, where no native stage
+    /// can hold the core lock: reading dscale's default is a synchronous core
+    /// read and must never happen from the state pump.
+    void applyVideoScaleToEngine(bool queryCoreDefault = false);
+    /// The core's own dscale default, queried once the core is initialized: an
+    /// Auto downscale must restore a real id, and "auto" is refused.
+    std::string downscaleDefaultForCore();
 
     // Held so the render context can be freed with it current at teardown.
     QOpenGLContext* context_ = nullptr;
@@ -1359,6 +1472,12 @@ private:
     bool renderFormatProbed_ = false;
     int appliedHdrPolicyRevision_ = 0;
     int appliedAnimeJanaiOverrideRevision_ = 0;
+    friend class VideoScaleFitLock;
+    int appliedVideoScaleRevision_ = 0;
+    /// Empty until the core answered; a core that never answers leaves Auto as
+    /// "mpv keeps its own default", which is what Auto means anyway.
+    std::optional<std::string> downscaleDefault_;
+    bool compareFitActive_ = false;
     SourceColorProfile sourceColorProfile_;
     VideoMetadata videoMetadata_;
     /// Staged by the video-params observers; handleSourceColorProfileChanged()
