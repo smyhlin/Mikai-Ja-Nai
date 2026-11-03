@@ -36,6 +36,9 @@ private:
     void updateActiveView();
     void updatePlainText();
     void cancelRequest();
+    /// Installs the shell palette the tree and the plain-text view draw from.
+    /// Called once at construction and again whenever the accent changes.
+    void applyShellPalette();
 
     QPointer<VideoSurface> surface_;
     MediaInformation information_;

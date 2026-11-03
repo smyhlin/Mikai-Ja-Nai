@@ -750,10 +750,12 @@ void CompareCanvas::drawForeground(QPainter* painter, const QRectF&) {
         pillAccent = flickerShowA_ ? compareSide(0) : compareSide(1);
     } else if (mode_ == CompareMode::Difference) {
         pillText = tr("DIFFERENCE · %1×%2").arg(imageSize_.width()).arg(imageSize_.height());
+        // Semantic, not accent: the difference view is its own mode and its dot
+        // must not be mistaken for a seat or for the accent.
         pillAccent = QColor(16, 185, 129);
     } else if (mode_ == CompareMode::SplitV || mode_ == CompareMode::SplitH) {
         pillText = tr("A / B · %1×%2").arg(imageSize_.width()).arg(imageSize_.height());
-        pillAccent = QColor(59, 130, 246);
+        pillAccent = compareSide(0);
     }
 
     if (!pillText.isEmpty()) {
