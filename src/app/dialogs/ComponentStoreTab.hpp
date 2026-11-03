@@ -351,6 +351,10 @@ private:
     QPushButton* cancelButton_ = nullptr;
     /// The tab's one action row: equal widths, re-flowed by available width.
     ActionGrid* actionGrid_ = nullptr;
+    /// The scrolled body: the cards follow the viewport's width, so the header
+    /// reflow reads the allocation here instead of the clamped card width.
+    QWidget* scrollViewport_ = nullptr;
+    QWidget* scrollContent_ = nullptr;
     QLabel* status_ = nullptr;
     struct ProgressItem {
         enum class Outcome { Active, Installed, Failed, Cancelled };

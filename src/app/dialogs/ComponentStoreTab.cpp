@@ -732,6 +732,11 @@ void ComponentStoreTab::buildUi() {
     root->addStretch();
     scroll->setWidget(content);
     outer->addWidget(scroll);
+    // The card's own width is clamped by its minimum, so the viewport is the
+    // width a reader actually has; the header decisions use it.
+    scrollViewport_ = scroll->viewport();
+    scrollContent_ = content;
+    scrollViewport_->installEventFilter(this);
 
     trackedBackend_ = animeJanaiBackendCombo_->currentData().toInt();
     connect(animeJanaiBackendCombo_, qOverload<int>(&QComboBox::currentIndexChanged), this,
@@ -823,11 +828,10 @@ void ComponentStoreTab::retranslateUi() {
 
 bool ComponentStoreTab::eventFilter(QObject* watched, QEvent* event) {
     if (event->type() == QEvent::Resize) {
-        if (auto* card = qobject_cast<QGroupBox*>(watched);
-            card != nullptr &&
-            card->objectName() == QStringLiteral("nativeComponentPackCard")) {
-            reflowComponentHeaders();
-        }
+        auto* card = qobject_cast<QGroupBox*>(watched);
+        const bool cardResized =
+            card != nullptr && card->objectName() == QStringLiteral("nativeComponentPackCard");
+        if (cardResized || watched == scrollViewport_) reflowComponentHeaders();
         return QWidget::eventFilter(watched, event);
     }
     if (event->type() == QEvent::MouseButtonRelease) {
@@ -877,6 +881,17 @@ void ComponentStoreTab::resizeEvent(QResizeEvent* event) {
 }
 
 void ComponentStoreTab::reflowComponentHeaders() {
+    // While the header is wide, the card's minimum is the widest arrangement, so
+    // the scroll content never gets narrower than that and the card's own width
+    // cannot report the space a reader has. The viewport is that space.
+    int available = 0;
+    if (scrollViewport_ != nullptr) {
+        available = scrollViewport_->width();
+        if (scrollContent_ != nullptr && scrollContent_->layout() != nullptr) {
+            const QMargins margins = scrollContent_->layout()->contentsMargins();
+            available -= margins.left() + margins.right();
+        }
+    }
     for (QGroupBox* card : findChildren<QGroupBox*>(QStringLiteral("nativeComponentPackCard"))) {
         const QString id = card->property("componentCardId").toString();
         auto* cardLayout = card->layout();
@@ -896,7 +911,9 @@ void ComponentStoreTab::reflowComponentHeaders() {
         const int shared = margins.left() + margins.right() + theme::kComponentCheckColumn +
                            cardLayout->spacing() + titleLine->spacing() * 2 +
                            theme::kComponentBadgeWidth + theme::kComponentSizeWidth;
-        const bool compact = card->width() - shared < title->minimumSizeHint().width();
+        const bool compact = available <= 0 ||
+                             qMin(card->width(), available) - shared <
+                                 title->minimumSizeHint().width();
         if (card->property("compactHeader").toBool() == compact) continue;
         card->setProperty("compactHeader", compact);
         titleLine->removeWidget(badge);
