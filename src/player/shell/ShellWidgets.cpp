@@ -32,12 +32,6 @@ namespace {
 /// frame's allocation: past it the remaining controls keep painting directly
 /// instead of the cache growing to the size of the window.
 constexpr qint64 kChromeCacheBudgetBytes = 8 * 1024 * 1024;
-/// Controls closer than this already form one visual group (a dock, a pair of
-/// side buttons). A larger gap stays two uploads, so a centre glyph and a dock
-/// never become a near-full-frame sheet.
-constexpr int kChromeSheetGapPx = 48;
-constexpr qint64 kChromeSheetMaxBytes = 4 * 1024 * 1024;
-constexpr int kChromeSheetKeep = 8;
 
 /// `rgba(r,g,b,a)` for a colour, so a stylesheet fragment is built from the
 /// same tokens the paint routines use.
@@ -188,8 +182,6 @@ void chromeUpdate(QWidget* widget, const QRect& rect) {
 
 void ChromeList::adopt(QWidget* root, QObject* watcher) {
     entries_.clear();
-    sheets_.clear();
-    sheetSerial_ = 0;
     cachedBytes_ = 0;
     mikai::gui::uiprofile::noteChromeCacheHeld(0);
     addSubtree(root, watcher);
@@ -312,89 +304,48 @@ void ChromeList::invalidateAll() {
 }
 
 void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
-    if (root == nullptr) {
-        return;
-    }
+    if (root == nullptr) return;
     const mikai::gui::uiprofile::ScopedTimer timer;
-    // The blit is a straight copy when the cache was rendered at this ratio, so
-    // a mismatch is stale pixels, not something to rescale.
     const qreal ratio =
         painter.device() != nullptr ? painter.device()->devicePixelRatio() : qreal(1.0);
     quint64 painted = 0;
     quint64 cached = 0;
-    int sheetDraws = 0;
     const bool counted = mikai::gui::uiprofile::countersEnabled();
-    struct Draw {
-        int index = -1;
-        QRect box;
-        QPoint at;
-        bool direct = false;
-    };
-    QVector<Draw> draws;
-    draws.reserve(entries_.size());
-    for (int index = 0; index < entries_.size(); ++index) {
-        Entry& entry = entries_[index];
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    for (Entry& entry : entries_) {
         QWidget* widget = entry.widget;
         if (widget == nullptr || !widget->isVisible()) {
             dropCache(entry);
             continue;
         }
-        // Recomputed rather than cached: a control that moved keeps its slot in
-        // the list, and this is a walk up its own parent chain.
         const QPoint at = widget->mapTo(root, QPoint(0, 0));
         QRect box(at, widget->size());
-        // Qt clips a child to its parent's rect; nesting must behave the same
-        // here, or an oversized child would paint past its container.
         for (QWidget* parent = widget->parentWidget(); parent != nullptr && parent != root;
              parent = parent->parentWidget()) {
             box = box.intersected(QRect(parent->mapTo(root, QPoint(0, 0)), parent->size()));
-            if (box.isEmpty()) {
-                break;
-            }
+            if (box.isEmpty()) break;
         }
-        if (box.isEmpty() || !box.intersects(clip)) {
-            continue;
-        }
-        // The miss reason, not just the miss: geometry, ratio, a full
-        // invalidation and the budget are different defects.
-        // The key is what the control looks like in its own coordinates: a move
-        // changes where it sits, not a pixel of it.
+        if (box.isEmpty() || !box.intersects(clip)) continue;
+
         const QRect local = box.translated(-at);
-        const QSize deviceSizeOf(static_cast<int>(std::ceil(box.width() * ratio)),
-                                 static_cast<int>(std::ceil(box.height() * ratio)));
+        const QSize deviceSize(static_cast<int>(std::ceil(box.width() * ratio)),
+                               static_cast<int>(std::ceil(box.height() * ratio)));
         int missReason = 0;
         if (entry.valid) {
-            if (entry.localBox != local || entry.cache.size() != deviceSizeOf) missReason = 1;
+            if (entry.localBox != local || entry.cache.size() != deviceSize) missReason = 1;
             else if (entry.devicePixelRatio != ratio) missReason = 2;
             else if (entry.stamp != generation_) missReason = 3;
         }
         const bool reusable = entry.valid && entry.localBox == local &&
-                              entry.cache.size() == deviceSizeOf &&
+                              entry.cache.size() == deviceSize &&
                               entry.devicePixelRatio == ratio && entry.stamp == generation_;
-        if (reusable) {
-            // The blit is where this control was most recently painted: without
-            // this, reuse keeps damage pointed at where it was first rendered and
-            // a second move leaves a stale island behind.
-            entry.paintedBox = box;
-            ++painted;
-            ++cached;
-            draws.append(Draw{index, box, at, false});
-            continue;
-        }
-        {
-            const QSize deviceSize(static_cast<int>(std::ceil(box.width() * ratio)),
-                                   static_cast<int>(std::ceil(box.height() * ratio)));
+        if (!reusable) {
             const qint64 bytes = qint64(deviceSize.width()) * deviceSize.height() * 4;
-            // What this entry already holds, valid or merely stale: a stale
-            // buffer is still memory the budget accounts for.
-            const qint64 held = entry.cache.isNull()
-                                    ? 0
-                                    : qint64(entry.cache.width()) *
-                                          qint64(entry.cache.height()) * 4;
+            const qint64 held = qint64(entry.cache.width()) * entry.cache.height() * 4;
             if (!deviceSize.isEmpty() && cachedBytes_ - held + bytes <= kChromeCacheBudgetBytes) {
-                // A dirty entry is a repaint, not an eviction: render into the
-                // pixmap it already owns when the device size matches, so a state
-                // change is not a device-pixel allocation per miss.
                 if (entry.cache.isNull() || entry.cache.size() != deviceSize) {
                     dropCache(entry);
                     entry.cache = QPixmap(deviceSize);
@@ -404,207 +355,50 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
                 entry.cache.fill(Qt::transparent);
                 {
                     QPainter cachePainter(&entry.cache);
-                    // Raster coverage is the antialiasing the GL device lacks.
                     cachePainter.setRenderHint(QPainter::Antialiasing, true);
                     cachePainter.setRenderHint(QPainter::TextAntialiasing, true);
                     cachePainter.setRenderHint(QPainter::SmoothPixmapTransform, true);
                     cachePainter.translate(at - box.topLeft());
                     cachePainter.setClipRect(box.translated(-at), Qt::IntersectClip);
-                    const bool timed = mikai::gui::uiprofile::countersEnabled();
-                    const qint64 rasterStart = timed ? mikai::gui::uiprofile::nowNs() : 0;
+                    const qint64 rasterStart = counted ? mikai::gui::uiprofile::nowNs() : 0;
                     entry.painted->paintChrome(cachePainter);
-                    if (timed) {
+                    if (counted) {
                         mikai::gui::uiprofile::noteChromeCacheRaster(
                             (mikai::gui::uiprofile::nowNs() - rasterStart) / 1000);
                     }
                 }
-                if (counted) {
-                    mikai::gui::uiprofile::noteChromeCacheMiss(missReason);
-                }
+                if (counted) mikai::gui::uiprofile::noteChromeCacheMiss(missReason);
                 mikai::gui::uiprofile::noteChromeCacheRender();
                 mikai::gui::uiprofile::noteChromeCacheHeld(cachedBytes_);
-                ++entry.rasterSerial;
-                entry.paintedBox = box;
                 entry.localBox = local;
                 entry.devicePixelRatio = ratio;
                 entry.stamp = generation_;
                 entry.valid = true;
-                // Painted, but NOT a hit: this control was just rasterised, and
-                // counting it as cached would make entries - cached a fake zero.
-                ++painted;
-                draws.append(Draw{index, box, at, false});
-                continue;
-            }
-            if (counted) {
-                mikai::gui::uiprofile::noteChromeCacheMiss(4);
-            }
-            dropCache(entry);
-        }
-        // Over the memory budget: pay the rasterisation directly, in order.
-        entry.paintedBox = box;
-        entry.localBox = local;
-        ++painted;
-        draws.append(Draw{index, box, at, true});
-    }
-
-    // One state change for the whole pass. Every entry wants the same three
-    // hints, and a save/restore plus three setRenderHint() calls per control was
-    // per-paint churn the direct path never paid - on the GL device each hint is
-    // a paint-engine state update, i.e. a batch flush.
-    painter.save();
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setRenderHint(QPainter::TextAntialiasing, true);
-    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    ++sheetSerial_;
-    const auto drawCache = [&](const Draw& draw) {
-        const Entry& entry = entries_[draw.index];
-        const qint64 blitStart = counted ? mikai::gui::uiprofile::nowNs() : 0;
-        painter.drawPixmap(draw.box.topLeft(), entry.cache);
-        if (counted) {
-            mikai::gui::uiprofile::noteChromeCacheBlit(
-                (mikai::gui::uiprofile::nowNs() - blitStart) / 1000);
-        }
-    };
-    const auto drawDirect = [&](const Draw& draw) {
-        Entry& entry = entries_[draw.index];
-        painter.save();
-        painter.translate(draw.at);
-        painter.setClipRect(draw.box.translated(-draw.at), Qt::IntersectClip);
-        entry.painted->paintChrome(painter);
-        painter.restore();
-    };
-    int cursor = 0;
-    while (cursor < draws.size()) {
-        if (draws[cursor].direct) {
-            drawDirect(draws[cursor]);
-            ++cursor;
-            continue;
-        }
-        int end = cursor;
-        while (end < draws.size() && !draws[end].direct) ++end;
-        struct Cluster {
-            QRect box;
-            QVector<int> draws;
-        };
-        QVector<Cluster> clusters;
-        const auto close = [](const QRect& a, const QRect& b) {
-            return a.adjusted(-kChromeSheetGapPx, -kChromeSheetGapPx, kChromeSheetGapPx,
-                              kChromeSheetGapPx)
-                .intersects(b);
-        };
-        for (int i = cursor; i < end; ++i) {
-            int found = -1;
-            for (int c = 0; c < clusters.size(); ++c) {
-                if (close(clusters[c].box, draws[i].box)) {
-                    found = c;
-                    break;
-                }
-            }
-            if (found < 0) {
-                clusters.append(Cluster{draws[i].box, {i}});
             } else {
-                clusters[found].box = clusters[found].box.united(draws[i].box);
-                clusters[found].draws.append(i);
+                if (counted) mikai::gui::uiprofile::noteChromeCacheMiss(4);
+                dropCache(entry);
             }
         }
-        bool grew = true;
-        while (grew) {
-            grew = false;
-            for (int a = 0; a < clusters.size() && !grew; ++a) {
-                for (int b = a + 1; b < clusters.size(); ++b) {
-                    if (!close(clusters[a].box, clusters[b].box)) continue;
-                    clusters[a].box = clusters[a].box.united(clusters[b].box);
-                    clusters[a].draws += clusters[b].draws;
-                    clusters.removeAt(b);
-                    grew = true;
-                    break;
-                }
-            }
-        }
-        for (Cluster& cluster : clusters) {
-            std::sort(cluster.draws.begin(), cluster.draws.end());
-            const qint64 bytes = qint64(std::ceil(cluster.box.width() * ratio)) *
-                                 qint64(std::ceil(cluster.box.height() * ratio)) * 4;
-            if (cluster.draws.size() < 2 || bytes <= 0 || bytes > kChromeSheetMaxBytes) {
-                for (int drawIndex : cluster.draws) drawCache(draws[drawIndex]);
-                continue;
-            }
-            quint64 fingerprint = 14695981039346656037ull;
-            const auto mix = [&](quint64 value) {
-                fingerprint ^= value;
-                fingerprint *= 1099511628211ull;
-            };
-            mix(static_cast<quint64>(cluster.box.x()));
-            mix(static_cast<quint64>(cluster.box.y()));
-            mix(static_cast<quint64>(cluster.box.width()));
-            mix(static_cast<quint64>(cluster.box.height()));
-            mix(static_cast<quint64>(qRound64(ratio * 1000.0)));
-            for (int drawIndex : cluster.draws) {
-                const Draw& draw = draws[drawIndex];
-                const Entry& entry = entries_[draw.index];
-                mix(static_cast<quint64>(draw.index));
-                mix(entry.rasterSerial);
-                mix(static_cast<quint64>(draw.box.x()));
-                mix(static_cast<quint64>(draw.box.y()));
-                mix(static_cast<quint64>(draw.box.width()));
-                mix(static_cast<quint64>(draw.box.height()));
-            }
-            const QSize device(static_cast<int>(std::ceil(cluster.box.width() * ratio)),
-                               static_cast<int>(std::ceil(cluster.box.height() * ratio)));
-            Sheet* sheet = nullptr;
-            Sheet* spare = nullptr;
-            for (Sheet& candidate : sheets_) {
-                if (candidate.lastUsed == sheetSerial_) continue;
-                if (candidate.fingerprint == fingerprint && candidate.box == cluster.box) {
-                    sheet = &candidate;
-                    break;
-                }
-                if (spare == nullptr && candidate.image.size() == device) spare = &candidate;
-            }
-            if (sheet == nullptr) {
-                if (spare == nullptr) {
-                    Sheet built;
-                    built.image = QPixmap(device);
-                    sheets_.append(std::move(built));
-                    spare = &sheets_.last();
-                }
-                spare->image.setDevicePixelRatio(ratio);
-                spare->image.fill(Qt::transparent);
-                {
-                    QPainter sheetPainter(&spare->image);
-                    // 1:1 copy of rasters that were already antialiased. Filtering
-                    // here would blur an edge the per-control blit did not.
-                    sheetPainter.setRenderHint(QPainter::SmoothPixmapTransform, false);
-                    for (int drawIndex : cluster.draws) {
-                        const Draw& draw = draws[drawIndex];
-                        sheetPainter.drawPixmap(draw.box.topLeft() - cluster.box.topLeft(),
-                                                entries_[draw.index].cache);
-                    }
-                }
-                spare->box = cluster.box;
-                spare->fingerprint = fingerprint;
-                sheet = spare;
-            }
-            sheet->lastUsed = sheetSerial_;
+        if (entry.valid) {
+            // One transform keeps each control at the same device-pixel phase,
+            // independent of neighboring controls and their visibility.
             const qint64 blitStart = counted ? mikai::gui::uiprofile::nowNs() : 0;
-            painter.drawPixmap(sheet->box.topLeft(), sheet->image);
+            painter.drawPixmap(box.topLeft(), entry.cache);
             if (counted) {
                 mikai::gui::uiprofile::noteChromeCacheBlit(
                     (mikai::gui::uiprofile::nowNs() - blitStart) / 1000);
             }
-            ++sheetDraws;
+            if (reusable) ++cached;
+        } else {
+            painter.save();
+            painter.translate(at);
+            painter.setClipRect(box.translated(-at), Qt::IntersectClip);
+            entry.painted->paintChrome(painter);
+            painter.restore();
         }
-        cursor = end;
-    }
-    for (int i = sheets_.size() - 1; i >= 0; --i) {
-        if (sheetSerial_ - sheets_[i].lastUsed > 2) sheets_.removeAt(i);
-    }
-    while (sheets_.size() > kChromeSheetKeep) {
-        int oldest = 0;
-        for (int i = 1; i < sheets_.size(); ++i) {
-            if (sheets_[i].lastUsed < sheets_[oldest].lastUsed) oldest = i;
-        }
-        sheets_.removeAt(oldest);
+        entry.paintedBox = box;
+        entry.localBox = local;
+        ++painted;
     }
     painter.restore();
     if (timer.measured()) {
@@ -612,14 +406,12 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
         if (mikai::gui::uiprofile::enabled()) {
             mikai::gui::uiprofile::log(
                 "chrome.list.paint",
-                QStringLiteral("entries=%1 painted=%2 cached=%3 bytes=%4 elapsed_us=%5 "
-                               "sheets=%6")
+                QStringLiteral("entries=%1 painted=%2 cached=%3 bytes=%4 elapsed_us=%5")
                     .arg(static_cast<qulonglong>(entries_.size()))
                     .arg(painted)
                     .arg(cached)
                     .arg(cachedBytes_)
-                    .arg(timer.micros())
-                    .arg(sheetDraws));
+                    .arg(timer.micros()));
         }
     }
 }

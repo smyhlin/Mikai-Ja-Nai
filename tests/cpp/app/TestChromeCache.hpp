@@ -20,5 +20,6 @@ class TestChromeCache : public QObject {
   void anAncestorClipChangeReRendersTheVisibleRect();
   void aContentChangeAfterAMoveIsNotServedStale();
   void anEnabledChangeInvalidatesEvenAfterAMove();
-  void adjacentControlsShareASheetWithoutBleeding();
+  void hidingANeighborDoesNotShiftAnotherControl_data();
+  void hidingANeighborDoesNotShiftAnotherControl();
 };

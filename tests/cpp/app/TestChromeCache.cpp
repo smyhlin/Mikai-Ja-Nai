@@ -530,43 +530,33 @@ void TestChromeCache::anEnabledChangeInvalidatesEvenAfterAMove() {
                           .arg(scratch.pixelColor(28, 6).name(QColor::HexArgb))));
 }
 
-void TestChromeCache::adjacentControlsShareASheetWithoutBleeding() {
+void TestChromeCache::hidingANeighborDoesNotShiftAnotherControl_data() {
+  QTest::addColumn<qreal>("ratio");
+  QTest::newRow("100-percent") << qreal(1.0);
+  QTest::newRow("125-percent") << qreal(1.25);
+  QTest::newRow("150-percent") << qreal(1.5);
+  QTest::newRow("175-percent") << qreal(1.75);
+  QTest::newRow("200-percent") << qreal(2.0);
+}
+
+void TestChromeCache::hidingANeighborDoesNotShiftAnotherControl() {
+  QFETCH(qreal, ratio);
   Host host;
-  host.resize(80, 100);
-  auto* left = new QuietChrome(&host);
-  auto* right = new QuietChrome(&host);
-  auto* far = new QuietChrome(&host);
-  left->move(4, 4);
-  right->move(24, 4);
-  far->move(4, 80);
-  const QColor leftFill(20, 200, 90, 255);
-  const QColor rightFill(30, 40, 220, 255);
-  const QColor farFill(220, 160, 20, 255);
-  const QColor frame(18, 18, 24, 255);
-  left->setFillQuietly(leftFill);
-  right->setFillQuietly(rightFill);
-  far->setFillQuietly(farFill);
+  host.resize(80, 80);
+  auto* neighbor = new QuietChrome(&host);
+  auto* target = new QuietChrome(&host);
+  neighbor->move(4, 5);
+  target->move(21, 9);
   host.chrome.adopt(&host, nullptr);
   QVERIFY(presented(&host));
 
-  const QImage first = painted(host.chrome, &host, 1.0, frame);
-  QCOMPARE(first.pixelColor(6, 6), leftFill);
-  QCOMPARE(first.pixelColor(26, 6), rightFill);
-  QCOMPARE(first.pixelColor(6, 82), farFill);
-  QCOMPARE(first.pixelColor(50, 6), frame);
-
-  // A sheet of the two neighbours must not serve a new colour that was never
-  // invalidated, and must not repaint the control that did not change.
-  const QColor changed(200, 40, 40, 255);
-  left->setFillQuietly(changed);
-  const QImage held = painted(host.chrome, &host, 1.0, frame);
-  QCOMPARE(held.pixelColor(6, 6), leftFill);
-  QCOMPARE(held.pixelColor(26, 6), rightFill);
-
-  chromeUpdate(left);
-  const QImage updated = painted(host.chrome, &host, 1.0, frame);
-  QCOMPARE(updated.pixelColor(6, 6), changed);
-  QCOMPARE(updated.pixelColor(26, 6), rightFill);
-  QCOMPARE(updated.pixelColor(6, 82), farFill);
+  const QColor frame(18, 18, 24, 255);
+  const QImage before = painted(host.chrome, &host, ratio, frame);
+  neighbor->hide();
+  const QImage after = painted(host.chrome, &host, ratio, frame);
+  const QRect targetWithEdge(qFloor(20 * ratio), qFloor(8 * ratio),
+                             qCeil(14 * ratio) + 2, qCeil(14 * ratio) + 2);
+  QVERIFY2(before.copy(targetWithEdge) == after.copy(targetWithEdge),
+           "hiding a separate control moved or resampled the unchanged control");
   host.hide();
 }
