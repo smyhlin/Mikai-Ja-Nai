@@ -1,23 +1,8 @@
-// GOAL-E / T-E1, T-E2, T-E7: what a viewer actually sees between two real
-// sources, and what a chrome-only pass costs.
+// GOAL-E / T-E1, T-E7: the load-transition content and chrome-paint baseline.
 //
-// This probe is observation only. It forces no paint for its verdicts: the
-// content samples read the surface's own framebuffer through its context, the
-// same way FullscreenStabilityProbe does, so a "black composition" is the
-// pixels Qt would composite and not a repaint the observer invented. The one
-// forced readback is the saved screenshot, labelled in the evidence.
-//
-// Two real measurements live here, both required before any production change:
-//
-//  1. A load transition A -> B where B is served by the deliberately slow
-//     loopback origin. Sampling starts at the request and stops at the first
-//     real output of the new source, at a cadence of a few milliseconds, in six
-//     off-centre regions of the picture band. The spinner/opening placeholder is
-//     bright at the centre, so no centre-only check can pass this.
-//  2. The paintGL duration distribution for a paused picture and for a playing
-//     one while the pointer moves over chrome. GOAL-00 recorded visible
-//     composition and first-swap latency but never paintGL itself, so a later
-//     "30 % lower p95 chrome repaint" claim had nothing to be 30 % of.
+// Observation only: verdicts force no paint, samples are paint-level readbacks
+// of the surface's own framebuffer (not proof of scanned-out pixels), and the
+// six judged regions are off-centre so a bright opening placeholder cannot pass.
 //
 // Usage:
 //   LoadTransitionProbe <video-file> --output-dir <absolute dir>
@@ -27,6 +12,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QEnterEvent>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
@@ -108,10 +94,8 @@ struct StubHost : PlayerHost {
 
 // ── the picture band, read without asking for a paint ─────────────────────
 
-// Six regions inside the picture, all off the centre third that the opening
-// placeholder's ring and arc occupy. The dock sits at the bottom, the window
-// controls at the top right and the flank chevrons at mid-height on the edges,
-// so these stay clear of chrome that legitimately changes.
+// Off-centre and clear of the chrome that legitimately changes: the opening
+// placeholder is bright in the middle, so a centre-only check could pass it.
 constexpr int kRegionCount = 6;
 struct RegionSpot {
     double fx;
@@ -188,93 +172,115 @@ quint64 hashBytes(const QImage& image) {
     return hash;
 }
 
-/// Reads the six regions out of the surface's presented framebuffer.
+/// Reads the six regions out of the surface's own framebuffer. Paint-level, not
+/// proof of scanned-out pixels; buffers are reused between polls.
 ///
-/// `geometry` is the caller's last known device size and source size: a load
-/// resets the surface's own dimensions before the new source reports any, and
-/// the band that is being judged is still the one the outgoing picture filled.
+/// The fallbacks are the last known device and source size, because a load
+/// clears the surface's dimensions before the new source reports its own.
+class PictureSampler {
+public:
+    PictureRead read(VideoSurface* surface, const QSize& deviceFallback, int videoWidthFallback,
+                     int videoHeightFallback, bool keepPixels = true) {
+        PictureRead out;
+        if (surface == nullptr || surface->context() == nullptr) return out;
+        QElapsedTimer clock;
+        clock.start();
+        QOpenGLContext* previous = QOpenGLContext::currentContext();
+        QSurface* previousSurface = previous != nullptr ? previous->surface() : nullptr;
+        surface->makeCurrent();
+        QOpenGLContext* context = QOpenGLContext::currentContext();
+        if (context == surface->context()) {
+            QOpenGLFunctions* gl = context->functions();
+            GLint framebuffer = 0;
+            GLint alignment = 0;
+            gl->glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebuffer);
+            gl->glGetIntegerv(GL_PACK_ALIGNMENT, &alignment);
+            gl->glBindFramebuffer(GL_FRAMEBUFFER, surface->defaultFramebufferObject());
+            gl->glPixelStorei(GL_PACK_ALIGNMENT, 4);
+            const QSize device = surface->size().isEmpty()
+                                     ? deviceFallback
+                                     : surface->size() * surface->devicePixelRatioF();
+            const int videoWidth =
+                surface->videoWidth() > 0 ? surface->videoWidth() : videoWidthFallback;
+            const int videoHeight =
+                surface->videoHeight() > 0 ? surface->videoHeight() : videoHeightFallback;
+            const QRect picture = pictureRectIn(device, videoWidth, videoHeight);
+            if (!picture.isEmpty() && device.width() > 0 && device.height() > 0) {
+                out.measured = true;
+                out.framebuffer = device;
+                out.picture = picture;
+                const int side = std::max(
+                    8, std::min(kRegionSide, std::min(picture.width(), picture.height()) / 3));
+                for (int index = 0; index < kRegionCount; ++index) {
+                    const RegionSpot& spot = kSpots[static_cast<std::size_t>(index)];
+                    const int centreX = picture.left() + qRound(spot.fx * picture.width());
+                    const int centreY = picture.top() + qRound(spot.fy * picture.height());
+                    QRect box(centreX - side / 2, centreY - side / 2, side, side);
+                    box.moveLeft(
+                        std::clamp(box.left(), picture.left(), picture.right() + 1 - box.width()));
+                    box.moveTop(
+                        std::clamp(box.top(), picture.top(), picture.bottom() + 1 - box.height()));
+                    RegionRead& region = out.regions[static_cast<std::size_t>(index)];
+                    region.rect = box;
+                    // One buffer per region, resized only when the band changes:
+                    // the gap poll asks every few milliseconds and must not
+                    // allocate an image per sample.
+                    QImage& capture = scratch_[static_cast<std::size_t>(index)];
+                    if (capture.size() != box.size()) {
+                        capture = QImage(box.size(), QImage::Format_RGBA8888);
+                    }
+                    // Qt measures from the top, GL from the bottom of the buffer.
+                    gl->glReadPixels(box.left(), device.height() - (box.top() + box.height()),
+                                     box.width(), box.height(), GL_RGBA, GL_UNSIGNED_BYTE,
+                                     capture.bits());
+                    region.hash = hashBytes(capture);
+                    double lumaSum = 0.0;
+                    int saturated = 0;
+                    int counted = 0;
+                    for (int y = 0; y < capture.height(); ++y) {
+                        const uchar* line = capture.constScanLine(y);
+                        for (int x = 0; x < capture.width(); ++x) {
+                            const uchar r = line[x * 4 + 0];
+                            const uchar g = line[x * 4 + 1];
+                            const uchar b = line[x * 4 + 2];
+                            lumaSum += (r * 299 + g * 587 + b * 114) / 1000.0;
+                            const int high = std::max({r, g, b});
+                            const int low = std::min({r, g, b});
+                            if (high > 90 && high - low > 40) ++saturated;
+                            ++counted;
+                        }
+                    }
+                    region.luma = counted > 0 ? lumaSum / counted : 0.0;
+                    region.saturated = counted > 0 ? double(saturated) / double(counted) : 0.0;
+                    region.valid = true;
+                    // Only the two stable-point comparisons need their own copy;
+                    // the scratch buffer is reused by the next poll.
+                    if (keepPixels) region.pixels = capture.copy();
+                }
+            }
+            gl->glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(framebuffer));
+            gl->glPixelStorei(GL_PACK_ALIGNMENT, alignment);
+        }
+        if (previous != nullptr && previousSurface != nullptr) {
+            previous->makeCurrent(previousSurface);
+        } else {
+            surface->doneCurrent();
+        }
+        out.micros = clock.nsecsElapsed() / 1000;
+        return out;
+    }
+
+private:
+    std::array<QImage, kRegionCount> scratch_;
+};
+
+/// One sampler per process, so the scratch buffers survive between polls.
+PictureSampler g_pictureSampler;
+
 PictureRead readPicture(VideoSurface* surface, const QSize& deviceFallback, int videoWidthFallback,
                         int videoHeightFallback, bool keepPixels = true) {
-    PictureRead out;
-    if (surface == nullptr || surface->context() == nullptr) return out;
-    QElapsedTimer clock;
-    clock.start();
-    QOpenGLContext* previous = QOpenGLContext::currentContext();
-    QSurface* previousSurface = previous != nullptr ? previous->surface() : nullptr;
-    surface->makeCurrent();
-    QOpenGLContext* context = QOpenGLContext::currentContext();
-    if (context == surface->context()) {
-        QOpenGLFunctions* gl = context->functions();
-        GLint framebuffer = 0;
-        GLint alignment = 0;
-        gl->glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebuffer);
-        gl->glGetIntegerv(GL_PACK_ALIGNMENT, &alignment);
-        gl->glBindFramebuffer(GL_FRAMEBUFFER, surface->defaultFramebufferObject());
-        gl->glPixelStorei(GL_PACK_ALIGNMENT, 4);
-        const QSize device = surface->size().isEmpty()
-                                 ? deviceFallback
-                                 : surface->size() * surface->devicePixelRatioF();
-        const int videoWidth = surface->videoWidth() > 0 ? surface->videoWidth() : videoWidthFallback;
-        const int videoHeight =
-            surface->videoHeight() > 0 ? surface->videoHeight() : videoHeightFallback;
-        const QRect picture = pictureRectIn(device, videoWidth, videoHeight);
-        if (!picture.isEmpty() && device.width() > 0 && device.height() > 0) {
-            out.measured = true;
-            out.framebuffer = device;
-            out.picture = picture;
-            const int side =
-                std::max(8, std::min(kRegionSide, std::min(picture.width(), picture.height()) / 3));
-            for (int index = 0; index < kRegionCount; ++index) {
-                const RegionSpot& spot = kSpots[static_cast<std::size_t>(index)];
-                const int centreX = picture.left() + qRound(spot.fx * picture.width());
-                const int centreY = picture.top() + qRound(spot.fy * picture.height());
-                QRect box(centreX - side / 2, centreY - side / 2, side, side);
-                box.moveLeft(std::clamp(box.left(), picture.left(),
-                                        picture.right() + 1 - box.width()));
-                box.moveTop(std::clamp(box.top(), picture.top(),
-                                       picture.bottom() + 1 - box.height()));
-                RegionRead& region = out.regions[static_cast<std::size_t>(index)];
-                region.rect = box;
-                QImage capture(box.size(), QImage::Format_RGBA8888);
-                // Qt measures from the top, GL from the bottom of the buffer.
-                gl->glReadPixels(box.left(), device.height() - (box.top() + box.height()),
-                                 box.width(), box.height(), GL_RGBA, GL_UNSIGNED_BYTE,
-                                 capture.bits());
-                // The gap runs at a few milliseconds a sample; only the
-                // comparisons that need pixels ask for them.
-                if (keepPixels) region.pixels = capture;
-                region.hash = hashBytes(capture);
-                double lumaSum = 0.0;
-                int saturated = 0;
-                int counted = 0;
-                for (int y = 0; y < capture.height(); ++y) {
-                    const uchar* line = capture.constScanLine(y);
-                    for (int x = 0; x < capture.width(); ++x) {
-                        const uchar r = line[x * 4 + 0];
-                        const uchar g = line[x * 4 + 1];
-                        const uchar b = line[x * 4 + 2];
-                        lumaSum += (r * 299 + g * 587 + b * 114) / 1000.0;
-                        const int high = std::max({r, g, b});
-                        const int low = std::min({r, g, b});
-                        if (high > 90 && high - low > 40) ++saturated;
-                        ++counted;
-                    }
-                }
-                region.luma = counted > 0 ? lumaSum / counted : 0.0;
-                region.saturated = counted > 0 ? double(saturated) / double(counted) : 0.0;
-                region.valid = true;
-            }
-        }
-        gl->glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(framebuffer));
-        gl->glPixelStorei(GL_PACK_ALIGNMENT, alignment);
-    }
-    if (previous != nullptr && previousSurface != nullptr) {
-        previous->makeCurrent(previousSurface);
-    } else {
-        surface->doneCurrent();
-    }
-    out.micros = clock.nsecsElapsed() / 1000;
-    return out;
+    return g_pictureSampler.read(surface, deviceFallback, videoWidthFallback, videoHeightFallback,
+                                 keepPixels);
 }
 
 /// Pixels that visibly differ, not pixels that differ by the downscaler's noise
@@ -341,9 +347,8 @@ struct Baseline {
     }
 };
 
-/// Median of the six regions over a settled stretch of a real picture. A region
-/// whose median is indistinguishable from the black clear is not judged at all,
-/// because no honest verdict can be read from it.
+/// Median of the six regions over a settled real picture. A region that is
+/// indistinguishable from the black clear is not judged at all.
 Baseline calibrate(VideoSurface* surface, int samples = 24, int intervalMs = 40) {
     Baseline baseline;
     std::array<std::vector<double>, kRegionCount> history;
@@ -445,11 +450,13 @@ void reportPasses(const QString& scope) {
 
 bool aimPointerAt(QWidget* target, const QPoint& local) {
     if (target == nullptr || !target->isVisible()) return false;
-    const QPoint global = target->mapToGlobal(local);
-    QMouseEvent enter(QEvent::Enter, QPointF(local), QPointF(global), Qt::NoButton, Qt::NoButton,
-                      Qt::NoModifier);
+    const QPointF localPos(local);
+    const QPointF globalPos(target->mapToGlobal(local));
+    // An Enter event must be a QEnterEvent: QWidget::event() casts it, and a
+    // QMouseEvent tagged Enter is the wrong dynamic type.
+    QEnterEvent enter(localPos, localPos, globalPos);
     QApplication::sendEvent(target, &enter);
-    QMouseEvent move(QEvent::MouseMove, QPointF(local), QPointF(global), Qt::NoButton, Qt::NoButton,
+    QMouseEvent move(QEvent::MouseMove, localPos, globalPos, Qt::NoButton, Qt::NoButton,
                      Qt::NoModifier);
     QApplication::sendEvent(target, &move);
     pump(4);
@@ -516,13 +523,10 @@ struct TransitionOutcome {
     QJsonArray rows;
 };
 
-/// Drives a real switch and samples continuously from the request to the first
-/// real output of the new source.
+/// Drives a real switch and samples from the request to the first real output.
 ///
-/// `switchTo` is the production gesture (a quality/variant swap or a refreshed
-/// stream). The pointer keeps moving over chrome while it runs, because a
-/// viewer's hand does not stop for a load and a chrome repaint during the gap is
-/// exactly the pass this goal is about.
+/// The pointer keeps moving over chrome during the gap: a viewer's hand does not
+/// stop for a load, and that repaint is the pass this goal is about.
 TransitionOutcome measureTransition(PlayerDialog* dialog, VideoSurface* surface,
                                     const Baseline& baseline, const std::function<void()>& switchTo,
                                     int budgetMs, bool movePointerDuringGap) {
@@ -691,6 +695,18 @@ int run(int argc, char** argv) {
                      "<absolute dir> [--delay-ms N] [--cycles N] [--no-motion]\n");
         return 3;
     }
+    // The origin keeps the whole file in memory and answers from it, so a long
+    // high-bitrate fixture is read into RAM before a single byte is served.
+    constexpr qint64 kMaxFixtureBytes = 96LL * 1024 * 1024;
+    const qint64 fixtureBytes = QFileInfo(videoArgument).size();
+    if (fixtureBytes > kMaxFixtureBytes) {
+        std::fprintf(stderr,
+                     "FAIL fixture is %lld bytes; the delayed origin holds it whole in memory. "
+                     "Pass the small motion clip (hover-motion-48s.mp4): the transition measures "
+                     "the load gap, not decode throughput.\n",
+                     static_cast<long long>(fixtureBytes));
+        return 3;
+    }
     if (!outputDir.isEmpty()) {
         if (!QFileInfo(outputDir).isAbsolute() || !QDir().mkpath(outputDir)) {
             std::fprintf(stderr,
@@ -725,8 +741,9 @@ int run(int argc, char** argv) {
     QJsonObject evidence;
     evidence.insert(QStringLiteral("fixture"), file);
     evidence.insert(QStringLiteral("delay_ms"), delayMs);
-    evidence.insert(QStringLiteral("observer"),
-                    QStringLiteral("no forced paint; region reads through the surface context"));
+    evidence.insert(
+        QStringLiteral("observer"),
+        QStringLiteral("no forced paint; paint-level readback of the surface framebuffer"));
 
     auto* dialog = new PlayerDialog(QStringLiteral("probe load transition"), file, qualities, 720,
                                     &host);
@@ -800,10 +817,8 @@ int run(int argc, char** argv) {
         const PassSummary videoFrame = summarize(mikai::gui::uiprofile::kPaintVideoFrame);
         const PictureRead pausedAfter =
             readPicture(surface, baseline.device, baseline.videoWidth, baseline.videoHeight);
-        // Re-rendering one still frame is not bit-identical (mpv re-scales it on
-        // every exposure, measured at ~5/255 here), so "not one video pixel
-        // changed" has to mean "no visible change": both are reported, and the
-        // verdict is on the one a viewer could see.
+        // A re-render of one still frame is not bit-identical (~5/255 here), so
+        // the verdict is on visible change; the exact count is reported too.
         int changedExact = 0;
         int changedVisible = 0;
         int compared = 0;
@@ -920,8 +935,8 @@ int run(int argc, char** argv) {
               QStringLiteral("%1: sampling covered the request-to-output window").arg(label));
         if (reported.samples >= 3) {
             check(reported.blackSamples == 0,
-                  QStringLiteral("%1: no black composition between the last outgoing frame and "
-                                 "the first new output (black=%2)")
+                  QStringLiteral("%1: the framebuffer is never black between the last outgoing "
+                                 "frame and the first new output (black=%2)")
                       .arg(label)
                       .arg(reported.blackSamples));
             check(reported.offCentreBlackSamples == 0,
@@ -965,7 +980,7 @@ int run(int argc, char** argv) {
         check(reported.pictureAfter,
               "stream expiry: the refreshed source produced a calibrated picture");
         check(reported.blackSamples == 0,
-              QStringLiteral("stream expiry: the frozen picture is shown instead of black "
+              QStringLiteral("stream expiry: the framebuffer keeps a picture instead of black "
                              "(black=%1)")
                   .arg(reported.blackSamples));
         evidence.insert(QStringLiteral("streamExpiry"), outcomeObject(reported));
