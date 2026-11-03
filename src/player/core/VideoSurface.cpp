@@ -401,6 +401,12 @@ void VideoSurface::ensureEngine() {
                 if (entrySourceEpoch_ == mpv_->sourceEpoch()) {
                     mediaTracksLoaded_ = true;
                     mediaTracksDirty_ = true;
+                    // This surface's own request has landed, so a hold waiting on
+                    // it may now be replaced by the new source's real frame.
+                    if (engineFrameHoldNeedsLoadLanding_ &&
+                        (mediaToken_ == 0 || mediaToken_ == entryMediaToken_)) {
+                        engineFrameHoldLandingSeen_ = true;
+                    }
                     emit mediaLoaded(entryMediaToken_);
                 }
             }
@@ -676,9 +682,10 @@ void VideoSurface::setEngineFrameHold(bool active) {
         engineFrameHoldAwaitingOutput_ = false;
         // Capture before the filter changes; ordinary playback must not copy every frame.
         if (!engineFrameHoldFbo_) {
-            // A filter change keeps the epoch, so any real frame may release this
-            // one. A snapshot already awaiting a load keeps its epoch gate.
-            engineFrameHoldRequiresNewEpoch_ = false;
+            // A filter change needs no load to land: any real frame may release
+            // this snapshot, so it must not inherit a pending landing gate.
+            engineFrameHoldNeedsLoadLanding_ = false;
+            engineFrameHoldLandingSeen_ = false;
             captureEngineFrameHold();
         }
         update();
@@ -701,33 +708,49 @@ void VideoSurface::holdPictureAcrossLoad() {
     }
     if (hasVisibleOutputFrame_ && captureEngineFrameHold()) {
         // Awaiting, not active: the held picture stands in only until the new
-        // source produces a frame of its own epoch, and then releases the GPU
-        // storage. `active` would keep it up over a picture that has arrived.
+        // source delivers, and then releases the GPU storage. `active` would
+        // keep it up over a picture that has arrived.
         engineFrameHoldAwaitingOutput_ = true;
         // The outgoing source can still hand out one more real frame after this
-        // capture and before the load lands, and that frame is not the picture
-        // the viewer is waiting for. Only a later epoch releases the hold.
-        engineFrameHoldRequiresNewEpoch_ = true;
+        // capture, and mpv bumps the command epoch at SUBMISSION, so "a frame
+        // with a newer epoch" is true for the outgoing source too. What proves
+        // the replacement is mpv reporting FILE_LOADED for this surface's own
+        // load request, which is why the release waits for that landing.
+        engineFrameHoldNeedsLoadLanding_ = true;
+        engineFrameHoldLandingSeen_ = false;
         update();
         return;
     }
-    invalidateEngineFrameHold();
+    // No picture to keep, but the one read out of a dying context is still the
+    // frame the viewer was looking at: this reload window is exactly what it is
+    // for, so it is not cleared here.
+    if (teardownPicture_.isNull()) {
+        invalidateEngineFrameHold();
+    } else {
+        clearEngineFrameHold();
+    }
 }
 
-void VideoSurface::invalidateEngineFrameHold() {
+void VideoSurface::clearEngineFrameHold() {
     engineFrameHoldActive_ = false;
     engineFrameHoldAwaitingOutput_ = false;
-    engineFrameHoldRequiresNewEpoch_ = false;
+    engineFrameHoldNeedsLoadLanding_ = false;
+    engineFrameHoldLandingSeen_ = false;
     hasVisibleOutputFrame_ = false;
-    // The teardown picture belongs to the same boundary: an intentional clear,
-    // a close or a new source retires it with the hold.
-    teardownPicture_ = QImage();
-    teardownPictureFormat_ = 0;
     if (!engineFrameHoldFbo_) return;
     QOpenGLContext* previous = nullptr;
     const bool current = makeRenderContextCurrent(&previous);
     engineFrameHoldFbo_.reset();
     if (current) releaseRenderContextCurrent(previous);
+}
+
+void VideoSurface::invalidateEngineFrameHold() {
+    clearEngineFrameHold();
+    // The teardown picture belongs to the same boundary: an intentional clear,
+    // a close or a new source retires it with the hold. A load that has one to
+    // show uses clearEngineFrameHold() instead.
+    teardownPicture_ = QImage();
+    teardownPictureFormat_ = 0;
 }
 
 qint64 VideoSurface::retainedPictureBytes() const {
@@ -809,7 +832,6 @@ bool VideoSurface::captureEngineFrameHold() {
     }
 
     engineFrameHoldFbo_ = std::move(snapshot);
-    engineFrameHoldEpoch_ = mpv_ != nullptr ? mpv_->sourceEpoch() : 0;
     framePending_ = false;
     // Capturing can consume an update, but it is not an on-screen presentation.
     if (frameConsumed || videoFramePainted_) {
@@ -852,17 +874,14 @@ bool VideoSurface::captureTeardownPicture() {
     if (destroying_ || context_ == nullptr) return false;
     QOpenGLExtraFunctions* gl = context_->extraFunctions();
     if (gl == nullptr) return false;
-    const bool haveHold = engineFrameHoldFbo_ && engineFrameHoldFbo_->isValid();
-    if (!haveHold && !hasVisibleOutputFrame_) return false;
-    // The hold is already the video-only copy; the widget target is only read
-    // when there is nothing else, because it also carries whatever chrome a
-    // previous pass left in it.
-    const GLuint source =
-        haveHold ? engineFrameHoldFbo_->handle()
-                 : static_cast<GLuint>(defaultFramebufferObject());
-    QSize size = haveHold ? engineFrameHoldFbo_->size()
-                          : QSize(std::max(1, qRound(width() * devicePixelRatioF())),
-                                  std::max(1, qRound(height() * devicePixelRatioF())));
+    // Only a private snapshot is read. Qt destroys the widget's framebuffers
+    // before it deletes the context, so at aboutToBeDestroyed
+    // defaultFramebufferObject() is 0 and names the offscreen surface behind the
+    // widget, not the picture; the caller therefore renders into this hold first
+    // when there is none.
+    if (!engineFrameHoldFbo_ || !engineFrameHoldFbo_->isValid()) return false;
+    const GLuint source = engineFrameHoldFbo_->handle();
+    const QSize size = engineFrameHoldFbo_->size();
     if (size.isEmpty()) return false;
 
     GLint previousRead = 0;
@@ -936,8 +955,11 @@ bool VideoSurface::captureTeardownPicture() {
     gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousRead));
     gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDraw));
 
-    // GL hands back rows bottom-first; a QImage is stored top-first.
-    teardownPicture_ = picture.flipped(Qt::Vertical);
+    // GL hands back rows bottom-first; a QImage is stored top-first. Flipped in
+    // place - the copying form would double a 66 MB 4K half-float buffer, which
+    // is the allocation this one-copy budget exists to avoid.
+    picture.flip(Qt::Vertical);
+    teardownPicture_ = std::move(picture);
     teardownPictureFormat_ = internalFormat;
     mikai::gui::uiprofile::noteTeardownPictureCaptured();
     if (mikai::gui::uiprofile::enabled()) {
@@ -1757,10 +1779,13 @@ void VideoSurface::finishContextReattach() {
     if (pendingMediaTrackSelection_.subtitle.has_value())
         selection.subtitle = pendingMediaTrackSelection_.subtitle;
     setNextMediaTrackSelection(selection);
-    // The position the viewer left and the pause intent they set both survive:
-    // the load resumes where the picture was, and initializeGL reasserts the
-    // pause afterwards because a loadfile resets the core's own pause write.
+    // The position the viewer left and the pause intent they set both survive.
+    // initializeGL reasserts the pause after its own reload, and this deferred
+    // path has to do the same: a loadfile resets the core's pause, and a viewer
+    // who left a paused source must not find it playing.
+    const bool restorePaused = requestedPause() || enginePauseHeld();
     startPendingUrl(observedPosition_);
+    if (restorePaused) reassertPaused();
 }
 
 void VideoSurface::createRenderContext() {
@@ -1909,13 +1934,14 @@ void VideoSurface::paintGL() {
     if (engineFrameHoldAwaitingOutput_) {
         mpv_render_frame_info frameInfo{};
         const bool realFrame = render_->nextFrameInfo(frameInfo) && isRealNewFrame(frameInfo);
-        // A hold taken across a source change belongs to the OUTGOING epoch, and
-        // that source can hand out one more real frame before the load lands. The
-        // load bumps the epoch, so only a later one proves the new source
-        // delivered; container frame info carries no epoch of its own.
-        const bool epochAdvanced = !engineFrameHoldRequiresNewEpoch_ || mpv_ == nullptr ||
-                                   mpv_->sourceEpoch() != engineFrameHoldEpoch_;
-        freshOutputFrame = realFrame && epochAdvanced;
+        // A hold taken across a source change is released only by a frame of the
+        // source that is actually loading. mpv bumps the command epoch when the
+        // load is SUBMITTED, so an epoch comparison is already true for the
+        // outgoing source's last frame; the landing event is what proves the
+        // replacement took.
+        const bool replacementLanded =
+            !engineFrameHoldNeedsLoadLanding_ || engineFrameHoldLandingSeen_;
+        freshOutputFrame = realFrame && replacementLanded;
     }
     // forceRender_ covers the framebuffer Qt hands back empty: a resize or a
     // re-show wipes the picture, and with a paused core no new frame is coming.
@@ -2039,11 +2065,12 @@ void VideoSurface::paintGL() {
     }
     if (renderResult == 0 && freshOutputFrame && !retainedPictureVisible) {
         hasVisibleOutputFrame_ = true;
-        // A frame of the current epoch reached the screen: the opening wait is
+        // A frame of the loaded source reached the screen: the opening wait is
         // over, and the placeholder must give way to the picture.
         setOpening(false);
         engineFrameHoldAwaitingOutput_ = false;
-        engineFrameHoldRequiresNewEpoch_ = false;
+        engineFrameHoldNeedsLoadLanding_ = false;
+        engineFrameHoldLandingSeen_ = false;
         // The fresh output has replaced the transition snapshot. Release its
         // GPU storage now; normal playback retains no extra video framebuffer.
         engineFrameHoldFbo_.reset();
@@ -2708,8 +2735,6 @@ void VideoSurface::releaseRenderContextCurrent(QOpenGLContext* previous) {
 }
 
 void VideoSurface::releaseRenderContext() {
-    // The format cache describes a framebuffer this context owned.
-    resetRenderTargetFormat();
     clearPacingProfile();
     pacingTimer_.stop();
     pacingTimerArmed_ = false;
@@ -2727,11 +2752,16 @@ void VideoSurface::releaseRenderContext() {
     }
     QOpenGLContext* previous = nullptr;
     const bool current = makeRenderContextCurrent(&previous);
-    // One last picture out of the context before it goes: read back here, at the
-    // target's own precision, so a context loss shows the frame that was on
-    // screen instead of a backdrop. One copy per context, never per paint.
+    // One last picture out of the context before it goes: the current frame is
+    // rendered into a private snapshot first, because Qt has already destroyed
+    // the widget's framebuffers by the time this slot runs. Read back at the
+    // target's own precision, one copy per context, never per paint.
+    if (current && !engineFrameHoldFbo_ && hasVisibleOutputFrame_) captureEngineFrameHold();
     if (current) captureTeardownPicture();
     if (current) engineFrameHoldFbo_.reset();
+    // The probe answered for a framebuffer this context owned, so it is reset
+    // only after the readback above has used it.
+    resetRenderTargetFormat();
     if (current) {
         // The render context's destructor detaches mpv's update callback before
         // it frees the context: a callback in flight cannot reach a freed one.

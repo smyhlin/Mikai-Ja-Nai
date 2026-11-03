@@ -941,6 +941,9 @@ private:
     /// Releases every retained picture without letting one cross a source
     /// boundary, an intentional clear, or a close.
     void invalidateEngineFrameHold();
+    /// Drops the hold's picture and flags without touching a teardown picture a
+    /// pending reload still has to show.
+    void clearEngineFrameHold();
     /// Reads the picture on screen out of the GL context before it is destroyed,
     /// at the target's own precision, so a context loss shows that picture
     /// instead of a backdrop. Called once per context, from releaseRenderContext.
@@ -1231,11 +1234,12 @@ private:
     bool engineFrameHoldActive_ = false;
     bool engineFrameHoldAwaitingOutput_ = false;
     std::unique_ptr<QOpenGLFramebufferObject> engineFrameHoldFbo_;
-    /// Core epoch the snapshot was taken from. A hold taken across a source
-    /// change is released only by a real frame of a LATER epoch: the outgoing
-    /// source can still hand out one more real frame before the load lands.
-    uint64_t engineFrameHoldEpoch_ = 0;
-    bool engineFrameHoldRequiresNewEpoch_ = false;
+    /// A hold taken across a source change waits for mpv to report FILE_LOADED
+    /// for THIS surface's load request before a real frame may release it: the
+    /// command epoch bumps at submission, so it cannot tell the outgoing
+    /// source's last frame from the replacement's first.
+    bool engineFrameHoldNeedsLoadLanding_ = false;
+    bool engineFrameHoldLandingSeen_ = false;
     /// The last picture read back before a context was released, kept at the
     /// precision it was read at (half-float, 10-bit packed or 16-bit).
     QImage teardownPicture_;
