@@ -620,6 +620,21 @@ int stageAndRun(const QStringList& arguments, const QString& directory,
     if (environment.value(QStringLiteral("QT_QPA_PLATFORM")).isEmpty()) {
         environment.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
     }
+#ifdef Q_OS_WIN
+    // The offscreen plugin has no fontconfig: QBasicFontDatabase scans
+    // QT_QPA_FONTDIR and otherwise falls back to Qt's lib/fonts, which ships no
+    // fonts. A geometry suite that measures a substituted engine is not
+    // measuring the dialog the user runs.
+    if (environment.value(QStringLiteral("QT_QPA_PLATFORM")) == QStringLiteral("offscreen") &&
+        environment.value(QStringLiteral("QT_QPA_FONTDIR")).isEmpty()) {
+        const QString fonts = QDir::fromNativeSeparators(
+            qEnvironmentVariable("WINDIR", QStringLiteral("C:/Windows")) +
+            QStringLiteral("/Fonts"));
+        if (QFileInfo(fonts).isDir()) {
+            environment.insert(QStringLiteral("QT_QPA_FONTDIR"), fonts);
+        }
+    }
+#endif
     // The transport suite is given the same staged, pinned runtime as the
     // packaged-runtime suite, not an unrelated installed or environment DLL.
     environment.insert(QStringLiteral("MIKAI_MPV_MODULE"), module);

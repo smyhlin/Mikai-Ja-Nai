@@ -40,6 +40,7 @@
 #include <QtCore/QUrl>
 #include <QtCore/QUrlQuery>
 #include <QtGui/QDesktopServices>
+#include <QtGui/QFontDatabase>
 #include <QtGui/QImage>
 #include <QtGui/QPainter>
 #include <QtGui/QTextBlock>
@@ -2458,6 +2459,12 @@ void TestPublicApiUi::settingsPagesFitTheDialogMinimum() {
     runner.cancel();
     if (!runner.waitForDone(10000)) qFatal("Settings workers did not stop");
   });
+#ifdef Q_OS_WIN
+  QVERIFY2(QFontDatabase::families().contains(QStringLiteral("Segoe UI")),
+           "the offscreen run loaded no platform fonts; QT_QPA_FONTDIR must name the "
+           "system font directory");
+#endif
+
   mikai::app::SettingsDialog dialog(client, runner);
   dialog.resize(dialog.minimumSize());
   dialog.show();
