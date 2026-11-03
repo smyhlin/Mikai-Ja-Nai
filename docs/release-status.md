@@ -18,9 +18,11 @@ disarmed and its frame presented by a repaint Qt asked for, which is the burst-t
 signature — and corrected what the log says about it: `disarm` now counts only passes that really
 stop an armed timer, and `lead_ms` is measured at the swap rather than at the end of `paintGL`, so
 it includes FBO composition and the vsync wait. The canonical before-side stays
-[`GOAL-E`](ai/reports/GOAL-E.md): paused chrome-only p50 410 µs / p95 490 µs. No after-side run has
-been recorded on this branch, so no pacing fix and no paint-cost improvement is claimed here; the
-goal report records that gap as a gap.
+[`GOAL-E`](ai/reports/GOAL-E.md): paused chrome-only p50 410 µs / p95 490 µs. The after-side run
+`docs/ai/GOAL-E/windows-load-after-pacing` passed its 23 load/context checks, but paused chrome-only
+p95 was 899 µs (p50 676 µs). That is not a 30 percent reduction. The same run still recorded 3429
+dirty chrome-cache misses and 543 ms of chrome raster, so the remaining cost is the dirty overlay,
+not an unmeasured pacing slot. No pacing-cost fix is claimed.
 
 ## Presentation baseline (Windows before-side)
 
