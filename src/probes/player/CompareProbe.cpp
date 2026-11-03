@@ -62,6 +62,16 @@ using namespace mplayer::shell;
 
 namespace {
 
+/// Windows is the only platform whose window identity and topmost band this
+/// probe can read. Everywhere else those observations are named unavailable
+/// rather than reported as passed.
+constexpr bool kNativeWindowProtocol =
+#ifdef Q_OS_WIN
+    true;
+#else
+    false;
+#endif
+
 /// Diagnostics only. When enabled, every async playback-timestamp sample taken
 /// from the raw/active Aji control section is mirrored to stderr together with
 /// the requested epoch, the epoch observed at request time, whether the async
@@ -954,6 +964,18 @@ int main(int argc, char** argv) {
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+#ifndef Q_OS_WIN
+    // The explicit mode measures the Windows native window protocol. Name that
+    // before any runtime setup that could fail for an unrelated reason, so the
+    // answer is never a pass and never a misleading startup failure. The
+    // existing --aji command keeps running its functional checks here.
+    if (argc > 1 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--pin-continuity")) {
+        std::fprintf(stderr,
+                     "UNAVAILABLE --pin-continuity: the native window protocol (HWND) is "
+                     "Windows-only; use --aji for the functional hold and pin checks here\n");
+        return 77;
+    }
+#endif
     if (!mplayer::probes::selectRuntime()) {
         return 2;
     }
@@ -1482,7 +1504,8 @@ int main(int argc, char** argv) {
             double paneWorst = 0.0;
             bool paneLit = true;
             bool playerLit = true;
-            bool bandHonest = true;
+            bool pinStateHonest = true;
+            bool nativeBandHonest = true;
             QString bandBreak;
             quint64 recreated = 0;
             quint64 contextResets = 0;
@@ -1522,13 +1545,12 @@ int main(int argc, char** argv) {
                              qPrintable(sample.ownerClass.isEmpty()
                                             ? QStringLiteral("(none)")
                                             : sample.ownerClass));
-                const bool bandMismatch =
-                    sample.pinned != sample.expectedPinned ||
-                    sample.fullscreen != base.fullscreen ||
-                    (sample.topmostObservable &&
-                     sample.topmost != sample.expectedPinned);
-                if (bandMismatch) {
-                    if (bandHonest) {
+                const bool pinStateMismatch = sample.pinned != sample.expectedPinned ||
+                                              sample.fullscreen != base.fullscreen;
+                const bool nativeBandMismatch = sample.topmostObservable &&
+                                                sample.topmost != sample.expectedPinned;
+                if (pinStateMismatch || (kNativeWindowProtocol && nativeBandMismatch)) {
+                    if (bandBreak.isEmpty()) {
                         bandBreak =
                             QStringLiteral("%1 pin=%2 exp=%3 topmost=%4 fullscreen=%5 "
                                            "baseFullscreen=%6 child=%7 ownerTopmost=%8")
@@ -1541,7 +1563,8 @@ int main(int argc, char** argv) {
                                 .arg(sample.nativeChild ? 1 : 0)
                                 .arg(sample.ownerTopmost ? 1 : 0);
                     }
-                    bandHonest = false;
+                    pinStateHonest &= !pinStateMismatch;
+                    nativeBandHonest &= !nativeBandMismatch;
                 }
                 holdStable &= sample.held && !sample.playing &&
                               sample.frozenFrame == base.frozenFrame &&
@@ -1580,24 +1603,40 @@ int main(int argc, char** argv) {
                              ? qPrintable(QString::number(*base.frozenTimestamp, 'f', 6))
                              : "(unavailable)");
             const QString prefix = QString::fromLatin1(label) + QStringLiteral(": ");
-            // A platform that cannot show its native identity must not report a
-            // pass for it: the observation is mandatory, not optional.
-            check(base.topmostObservable,
-                  qPrintable(prefix + QStringLiteral(
-                                            "the native window identity (HWND) is observable")));
-            check(identityStable,
-                  qPrintable(prefix + QStringLiteral(
-                                            "the pin never recreates the Compare or player window")));
+            if (kNativeWindowProtocol) {
+                // On Windows the native identity is a mandatory observation: a
+                // window the probe cannot name must not report a pass for it.
+                check(base.topmostObservable,
+                      qPrintable(prefix + QStringLiteral(
+                                                "the native window identity (HWND) is observable")));
+                check(identityStable,
+                      qPrintable(prefix + QStringLiteral(
+                                                "the pin never recreates the Compare or player window")));
+                const bool bandHonest = pinStateHonest && nativeBandHonest;
+                const QString bandMessage =
+                    bandHonest
+                        ? QStringLiteral("native topmost band, pin and fullscreen state agree")
+                        : QStringLiteral("native topmost band/pin/fullscreen disagree: ") + bandBreak;
+                check(bandHonest, qPrintable(prefix + bandMessage));
+            } else {
+                // No HWND, no topmost band: name the gap instead of passing it,
+                // so an --aji run on this platform keeps its functional checks
+                // without claiming the Windows-only observations.
+                std::fprintf(stderr,
+                             "UNAVAILABLE %s: native window identity (HWND), window-recreate "
+                             "and topmost-band continuity need the Windows window protocol\n",
+                             qPrintable(QString::fromLatin1(label)));
+                const QString pinStateMessage =
+                    pinStateHonest
+                        ? QStringLiteral("the pin and fullscreen state match every toggle")
+                        : QStringLiteral("the pin and fullscreen state disagree: ") + bandBreak;
+                check(pinStateHonest, qPrintable(prefix + pinStateMessage));
+            }
             check(contextStable,
                   qPrintable(prefix + QStringLiteral(
                                             "the pin never resets the player's render context")));
             check(epochStable,
                   qPrintable(prefix + QStringLiteral("the pin never replaces the source epoch")));
-            const QString bandMessage =
-                bandHonest
-                    ? QStringLiteral("native topmost band, pin and fullscreen state agree")
-                    : QStringLiteral("native topmost band/pin/fullscreen disagree: ") + bandBreak;
-            check(bandHonest, qPrintable(prefix + bandMessage));
             check(holdStable,
                   qPrintable(prefix + QStringLiteral(
                                             "the held frame, timestamp and pause survive every toggle")));
