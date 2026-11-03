@@ -1099,6 +1099,11 @@ bool VideoSurface::open(const QString& url, quint64 mediaToken) {
         setAnimeJanaiStatus(QStringLiteral("Configured; waiting for a loaded source"));
     }
     url_ = url;
+    // An explicit admission replaces any offset a loss captured: the caller names
+    // the source and its own resume intent, and a reload of the previous one must
+    // never replay that offset into this file.
+    pendingResumePosition_ = 0.0;
+    pendingResumePositionValid_ = false;
     // The viewer-facing wait starts here, not at the load command: a window with
     // a URL and no picture is opening, whether or not a core has taken it yet.
     setOpening(!url_.isEmpty());
@@ -1312,6 +1317,10 @@ void VideoSurface::close() {
     // this close is taking away.
     reattachPending_ = false;
     reattachTimer_.stop();
+    // A captured offset belongs to the source this close is taking away; the next
+    // open brings its own intent.
+    pendingResumePosition_ = 0.0;
+    pendingResumePositionValid_ = false;
     // A later GL recreation may restore only an open source, never a stopped
     pacingTimer_.stop();
     clearPacingProfile();
@@ -1825,7 +1834,10 @@ void VideoSurface::finishContextReattach() {
     // path has to do the same: a loadfile resets the core's pause, and a viewer
     // who left a paused source must not find it playing.
     const bool restorePaused = requestedPause() || enginePauseHeld();
-    startPendingUrl(observedPosition_);
+    // Only the captured offset can be trusted here: this reload is issued up to
+    // two thirds of a second after the context went, and by then the dead output
+    // has already reported 0 through the property pump.
+    startPendingUrl(resumePositionForReload());
     if (restorePaused) reassertPaused();
 }
 
@@ -2124,6 +2136,10 @@ void VideoSurface::paintGL() {
         // the source never had to be reloaded.
         reattachPending_ = false;
         reattachTimer_.stop();
+        // Nothing will resume from it, and holding it over a live source would let
+        // it age behind the viewer's seeks. Only a frame this pass presented retires
+        // it: no frame is owed to a load here, because a load ends the reattach.
+        if (presentedFrame) pendingResumePositionValid_ = false;
     }
     if (renderResult == 0 && newOutputFrame && presentedFrame) {
         // A frame the current source really rendered is on the buffer now: the CPU
@@ -2143,6 +2159,10 @@ void VideoSurface::paintGL() {
         // The fresh output has replaced the transition snapshot. Release its
         // GPU storage now; normal playback retains no extra video framebuffer.
         engineFrameHoldFbo_.reset();
+        // A frame of the source the reload asked for is on screen - the landing
+        // gate above proved it - so the offset it carried has been delivered and
+        // the next loss captures its own.
+        pendingResumePositionValid_ = false;
         // The teardown readback has done its job for the same reason.
         teardownPicture_ = QImage();
         teardownPictureFormat_ = 0;
@@ -2813,6 +2833,20 @@ void VideoSurface::releaseRenderContextCurrent(QOpenGLContext* previous) {
 }
 
 void VideoSurface::releaseRenderContext() {
+    // Captured before the render context goes: freeing it kills the old video
+    // output, which then reports 0 for a file it no longer decodes. `position_`
+    // is the value the viewer left behind and only the pump writes it, so it is
+    // what a reload resumes at; the raw observation stands in before the first
+    // publish, and covers a release while paused. One still standing belongs to a
+    // reload that has painted nothing yet, so a second loss keeps it rather than
+    // resuming a core that was just handed that same offset.
+    if (!pendingResumePositionValid_) {
+        const double lastGoodPosition = position_ > 0.0 ? position_ : observedPosition_;
+        if (lastGoodPosition > 0.0) {
+            pendingResumePosition_ = lastGoodPosition;
+            pendingResumePositionValid_ = true;
+        }
+    }
     clearPacingProfile();
     pacingTimer_.stop();
     pacingTimerArmed_ = false;

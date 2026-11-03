@@ -600,8 +600,9 @@ private:
     /// and whichever runs first wins, so the options cannot be set in only one.
     void ensureEngine();
     /// Issues the deferred load once the render context exists. `resumeAt` is
-    /// the position the new file starts at, non-zero only when a recreated
-    /// render context has to give mpv its video back.
+    /// the position the new file starts at: non-zero only for the internal reload
+    /// of a source whose render context was lost, and taken from
+    /// resumePositionForReload() alone.
     bool startPendingUrl(double resumeAt = 0.0);
     void pumpEvents();
     // Emits playingChanged and holds/releases the session idle lock for it.
@@ -957,6 +958,12 @@ private:
     /// the live core still delivers output; a reload happens only when it does.
     void beginContextReattach();
     void finishContextReattach();
+    /// The offset an internal reload of the current source resumes at, or 0 when
+    /// neither loss captured one. One accessor, so no reload path can substitute
+    /// the raw observation a dying output zeroes.
+    double resumePositionForReload() const {
+        return pendingResumePositionValid_ ? pendingResumePosition_ : 0.0;
+    }
     /// Keeps the picture the viewer is looking at across a source change. The
     /// snapshot is a visual cache: the caller still retires every claim the
     /// outgoing source owned, and the first real output of the new one is what
@@ -1251,6 +1258,14 @@ private:
     bool reattachPending_ = false;
     int reattachTicksLeft_ = 0;
     QTimer reattachTimer_;
+    /// The offset an internal reload of the SAME source resumes at, captured while
+    /// the outgoing video output is still trustworthy: a freed output reports 0
+    /// for a file it no longer decodes, and such a report must not reach the
+    /// reload. `pendingResumePositionValid_` is what makes it unset - 0 is an
+    /// offset a source can really start at. An explicit admission replaces it; a
+    /// second loss during the reload keeps it.
+    double pendingResumePosition_ = 0.0;
+    bool pendingResumePositionValid_ = false;
     /// Set by the destructor: a picture read back for a widget that is going
     /// away would only cost a device-sized copy nobody can ever see.
     bool destroying_ = false;
