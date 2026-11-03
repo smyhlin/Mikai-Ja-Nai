@@ -1589,6 +1589,11 @@ void VideoSurface::paintGL() {
             unrendered.fillRect(rect(), Qt::black);
         }
         if (!overlaySuppressed_) emit paintOverlay(&unrendered);
+        if (profilePaint) {
+            mikai::gui::uiprofile::recordPaintPass(
+                mikai::gui::uiprofile::kPaintUnrendered,
+                (mikai::gui::uiprofile::nowNs() - profilePaintStartNs) / 1000);
+        }
         if (mikai::gui::uiprofile::enabled()) {
             const qint64 elapsedUs = profilePaint
                                          ? (mikai::gui::uiprofile::nowNs() - profilePaintStartNs) /
@@ -1660,7 +1665,11 @@ void VideoSurface::paintGL() {
     if (!renderFormatProbed_) probeFboColorDepth();
 
     int renderResult = 0;
-    if (retainedPictureVisible && drawEngineFrameHold(target, targetWidth, targetHeight)) {
+    // Named so the pass classification below can say whether the picture on
+    // screen came from the held snapshot or from mpv's current output.
+    const bool heldPictureDrawn =
+        retainedPictureVisible && drawEngineFrameHold(target, targetWidth, targetHeight);
+    if (heldPictureDrawn) {
         if (newOutputFrame) {
             renderResult = render_->skipRendering();
             if (renderResult == 0) render_->reportSwap();
@@ -1760,6 +1769,17 @@ void VideoSurface::paintGL() {
     // No self-update here: mpv's own update callback is what asks for the next
     // paint, so scheduling one from paintGL would only spin on a paused core.
     if (!overlaySuppressed_) emit paintOverlay(&painter);
+    if (profilePaint) {
+        // What this pass cost, classified by what it actually put on screen: the
+        // chrome-repaint p95 GOAL-F needs is the pattern below, not a mean.
+        const int pass = heldPictureDrawn
+                             ? mikai::gui::uiprofile::kPaintRetained
+                             : (renderResult == 0 && presentedFrame && newOutputFrame)
+                                   ? mikai::gui::uiprofile::kPaintVideoFrame
+                                   : mikai::gui::uiprofile::kPaintChromeOnly;
+        mikai::gui::uiprofile::recordPaintPass(
+            pass, (mikai::gui::uiprofile::nowNs() - profilePaintStartNs) / 1000);
+    }
     if (mikai::gui::uiprofile::enabled()) {
         const qint64 elapsedUs =
             profilePaint ? (mikai::gui::uiprofile::nowNs() - profilePaintStartNs) / 1000 : -1;

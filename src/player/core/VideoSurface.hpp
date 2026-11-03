@@ -326,6 +326,12 @@ public:
     int videoHeight() const;
     bool hasVideo() const;
     bool hasVisibleOutputFrame() const { return hasVideo_ && hasVisibleOutputFrame_; }
+    /// Bumped whenever a render context is created, so a probe can tell a
+    /// repaint from the context recreation that reloads the source. Observational.
+    quint64 renderContextGeneration() const { return renderGeneration_; }
+    /// Whether a captured snapshot exists that a paint would present instead of
+    /// a new frame. The hold's own state, never a claim about what is on screen.
+    bool hasRetainedPicture() const { return engineFrameHoldFbo_ != nullptr; }
     /// A source is open and no frame of it has been presented yet. False before a
     /// load, false once the picture is really on screen, and false after an error
     /// or a close - a window must never claim to be opening something it is not.

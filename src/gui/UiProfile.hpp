@@ -10,10 +10,14 @@
 #include <QString>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
+#include <vector>
 
 namespace mikai::gui::uiprofile {
 
@@ -137,6 +141,71 @@ inline void noteChromePaint(quint64 entries, qint64 micros) {
 inline void noteActivationToPaint(qint64 ms) {
     if (!countersEnabled()) return;
     g_lastActivationToPaintMs.store(ms, std::memory_order_relaxed);
+}
+
+// ── paint cost, by what the pass actually did ─────────────────────────────
+//
+// GOAL-00 recorded visible-composition and first-swap latency, but never how
+// long paintGL itself took, so a "30 % lower p95 chrome repaint" criterion had
+// no baseline to be 30 % of. Every classified pass appends its own duration to
+// a bounded ring. The GUI thread is the only writer and the only reader, so the
+// ring needs no atomics, and reading it costs one copy at the end of a run.
+//
+// This is observation only: it never reads a pixel and never asks for a paint.
+enum PaintPass : int {
+    kPaintUnrendered = 0,  // no engine: opening placeholder or the defined black
+    kPaintVideoFrame,      // this pass rendered a freshly decoded output frame
+    kPaintRetained,        // the held picture was blitted instead of a new frame
+    kPaintChromeOnly,      // the engine ran with no new frame and nothing forced
+    kPaintPassCount
+};
+
+inline constexpr int kPaintSamplesPerPass = 1024;
+
+struct PaintPassProfile {
+    std::array<qint32, kPaintSamplesPerPass> micros{};
+    /// Every pass of this kind, including the ones the ring has since overwritten.
+    quint64 samples = 0;
+    int next = 0;
+};
+
+inline std::array<PaintPassProfile, kPaintPassCount> g_paintPass{};
+
+/// Records one classified pass. Guarded by the caller like every other counter;
+/// a negative duration is clamped rather than stored as a bogus sample.
+inline void recordPaintPass(int pass, qint64 micros) {
+    if (pass < 0 || pass >= kPaintPassCount) return;
+    PaintPassProfile& profile = g_paintPass[static_cast<std::size_t>(pass)];
+    profile.micros[static_cast<std::size_t>(profile.next)] = static_cast<qint32>(
+        std::clamp<qint64>(micros, 0, std::numeric_limits<qint32>::max()));
+    profile.next = (profile.next + 1) % kPaintSamplesPerPass;
+    ++profile.samples;
+}
+
+/// The recorded durations for one pass, oldest first. A snapshot: the ring keeps
+/// moving while the caller looks at this.
+inline std::vector<qint32> paintPassMicros(int pass) {
+    std::vector<qint32> out;
+    if (pass < 0 || pass >= kPaintPassCount) return out;
+    const PaintPassProfile& profile = g_paintPass[static_cast<std::size_t>(pass)];
+    const int stored = static_cast<int>(std::min<quint64>(profile.samples, kPaintSamplesPerPass));
+    out.reserve(static_cast<std::size_t>(stored));
+    for (int i = 0; i < stored; ++i) {
+        const int at = (profile.next - stored + i + kPaintSamplesPerPass) % kPaintSamplesPerPass;
+        out.push_back(profile.micros[static_cast<std::size_t>(at)]);
+    }
+    return out;
+}
+
+inline quint64 paintPassSamples(int pass) {
+    if (pass < 0 || pass >= kPaintPassCount) return 0;
+    return g_paintPass[static_cast<std::size_t>(pass)].samples;
+}
+
+inline void resetPaintPassProfile() {
+    for (PaintPassProfile& profile : g_paintPass) {
+        profile = PaintPassProfile{};
+    }
 }
 
 /// Counters a probe reports. -1 means the value was never measured in this run.

@@ -104,6 +104,12 @@ endif()
 mikai_add_probe(interaction_probe src/probes/player/InteractionProbe.cpp
   LINKS mikai_player Qt6::Widgets Qt6::Test Qt6::Network
   DEPLOY_SHADERS)
+# GOAL-E/T-E1: the measured before for the load transition. It reuses the same
+# loopback origin as the hover/loading case, so the "slow source" a viewer waits
+# on is one fixture, not two conventions.
+mikai_add_probe(load_transition_probe src/probes/player/LoadTransitionProbe.cpp
+  LINKS mikai_player Qt6::Widgets Qt6::Network
+  DEPLOY_SHADERS)
 mikai_add_probe(compare_shot_probe src/probes/player/CompareShotProbe.cpp
   LINKS mikai_player Qt6::Widgets Qt6::Test
   DEPLOY_SHADERS)
