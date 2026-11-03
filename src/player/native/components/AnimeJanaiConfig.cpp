@@ -123,7 +123,9 @@ QVector<ExternalModelPin> readExternalModelPins(QString* error = nullptr) {
     if (!nativePathTrust(path, true).trusted ||
         !pathWithinRoot(nativeRoot(), path) ||
         !pathHasNoReparsePoints(nativeRoot(), path)) {
-        if (error) *error = ConfigText::tr("The external model registry path is untrusted.");
+        if (error)
+            *error = ConfigText::tr("The external model registry %1 has an untrusted path.")
+                         .arg(QDir::toNativeSeparators(path));
         return pins;
     }
     QByteArray bytes;
@@ -131,11 +133,18 @@ QVector<ExternalModelPin> readExternalModelPins(QString* error = nullptr) {
     const SharedMetadataReadStatus readStatus =
         readSharedMetadataFile(path, kMaxModelMetadataBytes, &bytes, &readError);
     if (readStatus == SharedMetadataReadStatus::TooLarge) {
-        if (error) *error = ConfigText::tr("The external model registry exceeds the supported metadata size.");
+        if (error)
+            *error = ConfigText::tr(
+                         "The external model registry %1 exceeds the supported metadata size.")
+                         .arg(QDir::toNativeSeparators(path));
         return pins;
     }
     if (readStatus != SharedMetadataReadStatus::Ok) {
-        if (error) *error = readError;
+        // Naming the stage, the file and Qt's own reason is what separates an
+        // access refusal from a malformed or missing registry after the fact.
+        if (error)
+            *error = ConfigText::tr("The external model registry %1 could not be read: %2")
+                         .arg(QDir::toNativeSeparators(path), readError);
         return pins;
     }
     QJsonParseError parseError;
@@ -144,7 +153,9 @@ QVector<ExternalModelPin> readExternalModelPins(QString* error = nullptr) {
     if (parseError.error != QJsonParseError::NoError || !root.contains(QStringLiteral("models")) ||
         root.value(QStringLiteral("schema")).toString() != QStringLiteral("animejanai.external-models/1") ||
         !root.value(QStringLiteral("models")).isArray()) {
-        if (error) *error = ConfigText::tr("The external model registry is malformed.");
+        if (error)
+            *error = ConfigText::tr("The external model registry %1 is malformed.")
+                         .arg(QDir::toNativeSeparators(path));
         return {};
     }
     static const QRegularExpression digestRx(QStringLiteral("^[0-9a-f]{64}$"));
@@ -159,7 +170,10 @@ QVector<ExternalModelPin> readExternalModelPins(QString* error = nullptr) {
         if (pin.id.isEmpty() || !QFileInfo(pin.filePath).isAbsolute() ||
             pin.bytes < kMinOnnxFileBytes || pin.bytes > kMaxOnnxFileBytes ||
             !digestRx.match(pin.sha256).hasMatch()) {
-            if (error) *error = ConfigText::tr("The external model registry contains an invalid pin.");
+            if (error)
+                *error = ConfigText::tr(
+                             "The external model registry %1 contains an invalid pin.")
+                             .arg(QDir::toNativeSeparators(path));
             return {};
         }
         pins.push_back(std::move(pin));
@@ -178,7 +192,11 @@ bool writeExternalModelPins(const QVector<ExternalModelPin>& pins, QString* erro
         !nativePathTrust(path, true).trusted ||
         !pathWithinRoot(nativeRoot(), path) ||
         !pathHasNoReparsePoints(nativeRoot(), path)) {
-        if (error) *error = ConfigText::tr("The app-owned external model registry directory is unavailable or redirected.");
+        if (error)
+            *error = ConfigText::tr(
+                         "The app-owned external model registry directory for %1 is unavailable "
+                         "or redirected.")
+                         .arg(QDir::toNativeSeparators(path));
         return false;
     }
     QJsonArray models;
@@ -194,11 +212,29 @@ bool writeExternalModelPins(const QVector<ExternalModelPin>& pins, QString* erro
         {QStringLiteral("models"), models}}).toJson(QJsonDocument::Compact);
     QSaveFile file(path);
     file.setDirectWriteFallback(false);
-    if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size()) {
-        if (error) *error = file.errorString();
+    // Each step names itself: a refused open, a short write and a refused
+    // atomic commit are different failures, and Qt's reason alone does not say
+    // which one the user hit.
+    if (!file.open(QIODevice::WriteOnly)) {
+        if (error)
+            *error = ConfigText::tr(
+                         "The external model registry %1 could not be opened for writing: %2")
+                         .arg(QDir::toNativeSeparators(path), file.errorString());
         return false;
     }
-    if (!commitMetadataFile(file, error)) return false;
+    if (file.write(bytes) != bytes.size()) {
+        if (error)
+            *error = ConfigText::tr("The external model registry %1 could not be written: %2")
+                         .arg(QDir::toNativeSeparators(path), file.errorString());
+        return false;
+    }
+    QString commitError;
+    if (!commitMetadataFile(file, &commitError)) {
+        if (error)
+            *error = ConfigText::tr("The external model registry %1 could not be committed: %2")
+                         .arg(QDir::toNativeSeparators(path), commitError);
+        return false;
+    }
     if (error) error->clear();
     return true;
 }
@@ -1156,12 +1192,19 @@ bool registerExternalCustomAnimeJanaiModel(const QString& sourceFilePath,
     const QString canonicalPath = sourceInfo.canonicalFilePath();
     if (!sourceInfo.isFile() || sourceInfo.isSymLink() || canonicalPath.isEmpty() ||
         !pathWithinRoot(externalRoot, canonicalPath)) {
-        return fail(ConfigText::tr("The selected model is not a regular file inside the configured external model directory."));
+        return fail(ConfigText::tr(
+                        "The selected model %1 is not a regular file inside the configured "
+                        "external model directory %2.")
+                        .arg(QDir::toNativeSeparators(sourceFilePath),
+                             QDir::toNativeSeparators(externalRoot)));
     }
     qint64 bytes = 0;
     QString validationError;
     if (!validateCustomOnnxFile(canonicalPath, &bytes, &validationError)) {
-        return fail(validationError);
+        // The validation stage and the borrowed file it refused, so the reason
+        // is attributable to this exact graph rather than to the registry.
+        return fail(ConfigText::tr("The borrowed model %1 could not be validated: %2")
+                        .arg(QDir::toNativeSeparators(canonicalPath), validationError));
     }
     const QString stem = sourceInfo.completeBaseName();
     const QString id = sanitizeModelStem(stem);
@@ -1192,7 +1235,10 @@ bool registerExternalCustomAnimeJanaiModel(const QString& sourceFilePath,
         return fail(ConfigText::tr("External model registration was cancelled."));
     }
     if (digest.isEmpty() || hashedBytes != bytes || QFileInfo(canonicalPath).size() != bytes) {
-        return fail(ConfigText::tr("The external model changed while its integrity pin was being calculated."));
+        return fail(ConfigText::tr(
+                        "The borrowed model %1 could not be read for its integrity pin, or "
+                        "changed while the pin was being calculated.")
+                        .arg(QDir::toNativeSeparators(canonicalPath)));
     }
     ExternalModelPin pin{id, canonicalPath, stem, bytes, digest};
     if (isCancelled()) {
