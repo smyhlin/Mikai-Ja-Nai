@@ -784,6 +784,7 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
 
     // ── Settings Save on a playing surface; Fill also reveals the picture area ──
     const double positionBeforeSave = context.surface->position();
+    const QSize boxBeforeSave = context.surface->geometry().size();
     const VideoScalePolicy fillPolicy =
         policyFor(VideoScaleMode::Fill, 0, QStringLiteral("bicubic"), QStringLiteral("catmull_rom"));
     settingsDecision(context, client, runner, fillPolicy, true, QStringLiteral("live-save-fill"));
@@ -794,9 +795,8 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
         check(mplayer::videoScalePolicyFromSettings(storedSettings) == fillPolicy,
               QStringLiteral("Save stored the complete Fill policy the production reader returns"));
     }
-    const QSize initialSurface = context.surface->geometry().size();
     const bool relaid = pumpUntil(
-        [&] { return context.surface->size() != initialSurface; }, 5000);
+        [&] { return context.surface->size() != boxBeforeSave; }, 5000);
     check(relaid, QStringLiteral("the running shell re-laid its surface for Fill without a restart"));
     context.pictureArea = context.surface->size();
 
@@ -944,8 +944,10 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
                      true, QStringLiteral("live-save-fit"));
     check(pumpUntil([&] { return context.surface->size() == context.fitSize; }, 5000),
           QStringLiteral("Fit restored the aspect box"));
+    // The core dithers, so two renders of the same paused frame are not
+    // byte-identical; 12 is far below the difference a scaling change makes.
     const QImage fitRestored = grabMatching(*context.surface, [&](const QImage& image) {
-        return !fitPaused.isNull() && meanAbsDiff(image, fitPaused) < 6.0;
+        return !fitPaused.isNull() && meanAbsDiff(image, fitPaused) < 12.0;
     });
 
     settingsDecision(context, client, runner,
@@ -1021,10 +1023,10 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
                                QStringLiteral("catmull_rom")),
                      true, QStringLiteral("live-save-zoom-reset"));
     const QImage zoomReset = grabMatching(*context.surface, [&](const QImage& image) {
-        return !fitRestored.isNull() && meanAbsDiff(image, fitRestored) < 6.0;
+        return !fitRestored.isNull() && meanAbsDiff(image, fitRestored) < 12.0;
     });
     check(!fitRestored.isNull() && !zoomReset.isNull() &&
-              meanAbsDiff(zoomReset, fitRestored) < 6.0,
+              meanAbsDiff(zoomReset, fitRestored) < 12.0,
           QStringLiteral("resetting zoom restored the paused picture"));
 
     context.surface->setPaused(false);
