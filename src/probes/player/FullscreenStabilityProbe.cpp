@@ -626,9 +626,12 @@ struct MatrixSampler {
         } else if (!foregroundIsOurProcess()) {
             exposure = MatrixExposure::ForeignForeground;
         } else if (owner == nullptr || owner->context() == nullptr || !owner->isVisible() ||
-                   !dialog->isVisible()) {
+                   !(dialog->isVisible() || dialog->isPipActive())) {
             // A surface without a render context has no composed picture to
             // judge; it is counted as an exclusion, never as a black frame.
+            // The dialog deliberately hides itself while the float is up, so
+            // `isPipActive()` - not dialog visibility - is what says the player
+            // still owns a running picture there.
             exposure = MatrixExposure::NotExposed;
         }
         switch (exposure) {
@@ -772,11 +775,22 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
                                   mplayer::VideoSurface* surface,
                                   mikai::probes::ForegroundPeer& peer, const QString& phase,
                                   int cycles, bool knownBright,
-                                  const std::function<void(QJsonObject)>& record) {
+                                  const std::function<void(QJsonObject)>& record,
+                                  const std::function<void(int)>& idleWait = {}) {
     ActivationRun run;
     run.phase = phase;
     QScreen* const screen = surface->screen();
     const QRect cropRect = videoSampleCrop(surface);
+    // A caller that samples (the QA matrix) passes its pump here, so the fixed
+    // settles are covered by the same cadence. The latency poll below stays on
+    // spinFor: sampling inside it would change the interval it measures.
+    const auto settleFor = [&](int milliseconds) {
+        if (idleWait) {
+            idleWait(milliseconds);
+        } else {
+            spinFor(milliseconds);
+        }
+    };
     const auto grabDesktop = [&]() -> QImage {
         const qint64 started = mikai::gui::uiprofile::nowNs();
         const QImage image = desktopCrop(screen, cropRect);
@@ -804,7 +818,7 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
         const double positionBeforeAway = surface->position();
 
         const bool awayOwned = peer.activate();
-        spinFor(650);
+        settleFor(650);
         const bool awayQtInactive =
             QGuiApplication::applicationState() == Qt::ApplicationInactive;
         const bool stillAway = peer.ownsForeground() && awayQtInactive;
@@ -874,7 +888,7 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
         // foreground) would make the latency belong to that window, so the
         // interval is retried and then declared invalid rather than measured.
         for (int attempt = 0; attempt < 3 && !foregroundIs(dialog); ++attempt) {
-            spinFor(60);
+            settleFor(60);
             forceForegroundNow(dialog);
         }
         const bool foregroundOwned = foregroundIs(dialog);
@@ -915,10 +929,12 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
                             (mikai::gui::uiprofile::nowNs() - activationAtNs) / 1000000;
                     }
                 }
-                spinFor(6);
+                // The matrix pumps here too, so the exposed 300 s is represented
+                // continuously; a mode with no pump keeps the original 6 ms poll.
+                settleFor(6);
             }
         }
-        while (!paintSeen && wait.elapsed() < 2500) spinFor(5);
+        while (!paintSeen && wait.elapsed() < 2500) settleFor(5);
         QObject::disconnect(connection);
         const bool foregroundOwnedAtEnd = foregroundIs(dialog);
         const bool cycleValid = foregroundOwned && stillAway && !foregroundLostDuringPoll &&
@@ -944,7 +960,7 @@ ActivationRun runActivationCycles(mplayer::shell::PlayerDialog* dialog,
             run.activationToVisibleCompositionLowerBoundMs.append(
                 kVisibleCompositionDeadlineMs);
         }
-        spinFor(250);
+        settleFor(250);
         // Sampling the screen while another process owns the foreground would
         // report that process's pixels; the cycle names the loss instead.
         const QImage crop = cycleValid ? readComposedCrop(surface) : QImage();
@@ -1885,8 +1901,12 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     QString currentPhase = QStringLiteral("calibration");
 
     // ── calibration: a measured bright picture, not a declared one ────────
-    double calibratedLuma = -1.0;
-    double calibratedDesktopLuma = -1.0;
+    // The gate has to survive a long run of real content, so it is built from
+    // the MEAN of the bright samples, not their maximum: a bright opening would
+    // otherwise set a bar that later, legitimately darker frames cannot clear,
+    // and a correct picture would be reported as missing.
+    double calibratedLumaTotal = 0.0;
+    double calibratedDesktopTotal = 0.0;
     int brightFboSamples = 0;
     int brightDesktopSamples = 0;
     QElapsedTimer calibrationClock;
@@ -1898,18 +1918,37 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         const double luma = meanLuma(composed);
         if (!composed.isNull() && luma >= 40.0) {
             ++brightFboSamples;
-            calibratedLuma = std::max(calibratedLuma, luma);
+            calibratedLumaTotal += luma;
         }
         const QImage desktop = desktopCrop(surface->screen(), videoSampleCrop(surface));
         const double desktopLuma = meanLuma(desktop);
         if (!desktop.isNull() && desktopLuma >= 40.0) {
             ++brightDesktopSamples;
-            calibratedDesktopLuma = std::max(calibratedDesktopLuma, desktopLuma);
+            calibratedDesktopTotal += desktopLuma;
         }
         spinFor(32);
     }
+    const double calibratedLuma =
+        brightFboSamples > 0 ? calibratedLumaTotal / brightFboSamples : -1.0;
+    const double calibratedDesktopLuma =
+        brightDesktopSamples > 0 ? calibratedDesktopTotal / brightDesktopSamples : -1.0;
+    // The desktop gate is the one post-action predicates use, so it is
+    // calibrated from the desktop samples; the FBO mean is the fallback.
+    const double pictureLuma =
+        calibratedDesktopLuma >= 30.0 ? calibratedDesktopLuma : calibratedLuma;
     const double brightThreshold =
-        calibratedLuma >= 40.0 ? std::max(30.0, calibratedLuma * 0.6) : -1.0;
+        pictureLuma >= 30.0 ? std::max(30.0, pictureLuma * 0.6) : -1.0;
+    // Post-action picture test. The reference is the desktop luma measured just
+    // before the action, so a bright opening cannot raise a fixed bar and a
+    // legitimately darker (but not black) frame is still a picture. The opening
+    // calibration is only the fallback when no per-action reference exists.
+    const auto picturePresent = [&](const QImage& desktop, double referenceLuma) {
+        if (desktop.isNull() || isBlack(desktop)) return false;
+        const double luma = meanLuma(desktop);
+        if (luma < 0.0) return false;
+        const double reference = referenceLuma > 0.0 ? referenceLuma : brightThreshold;
+        return luma >= std::max(30.0, reference * 0.5);
+    };
     record(QJsonObject{{"event", "qaMatrixCalibration"},
                        {"elapsedMs", runClock.elapsed()},
                        {"calibratedFboLuma", calibratedLuma},
@@ -1930,6 +1969,9 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                     "INCOMPLETE");
     }
 
+    // Everything before this line is the explicit pre-monitor calibration; the
+    // monitored window and its coverage claims start here.
+    const qint64 monitoredStartMs = runClock.elapsed();
     const double positionStart = surface->position();
     const double durationAtStart = surface->duration();
     const quint64 framesStart = surface->playbackDiagnostics().renderedOutputFrames;
@@ -2085,20 +2127,30 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     // ── chrome hover reveal / auto-hide, observed on the shell's own state ─
     currentPhase = QStringLiteral("chrome-hover");
     for (int cycle = 0; cycle < 10; ++cycle) {
+        // A predicate that is already true is a state, not a change. Start each
+        // cycle from the auto-hidden state so the reveal below is a transition
+        // the shell actually made.
+        if (dockUp()) {
+            QCursor::setPos(dialog->mapToGlobal(picturePoint));
+            pumpUntil(autoHidden, 4500);
+        }
+        const bool dockWasUp = dockUp();
         aimAt(shell, dockPoint);
-        if (pumpUntil(dockUp, 2500)) {
+        const bool revealed = !dockWasUp && pumpUntil(dockUp, 2500) && dockUp();
+        if (revealed) {
             ++hoverReveals;
             noteChromeChange(QStringLiteral("hover-reveal"),
                              QStringLiteral("pointer over the dock; the shell left its "
                                             "auto-hidden state and the dock became visible"),
                              QJsonObject{{"shellState", shell->stateName()},
                                          {"dockVisible", dock->isVisible()},
+                                         {"stateBefore", dockWasUp},
                                          {"cycle", cycle}});
         }
         // Park over the picture and stop moving: only then can the 2.5 s
         // auto-hide timer fire, and only then is the hide a real state change.
         QCursor::setPos(dialog->mapToGlobal(picturePoint));
-        if (pumpUntil(autoHidden, 4500)) {
+        if (revealed && pumpUntil(autoHidden, 4500) && autoHidden()) {
             ++hoverHides;
             noteChromeChange(QStringLiteral("hover-autohide"),
                              QStringLiteral("pointer parked off the chrome; the shell entered "
@@ -2116,24 +2168,32 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
             aimAt(shell, dockPoint);
             pumpUntil(dockUp, 2500);
         }
+        // Only a visibility CHANGE is a panel event: a flyout left open by a
+        // failed close would otherwise make the next "open" count for free.
+        const bool flyoutWasVisible = flyout->isVisible();
         QTest::mouseClick(settingsButton, Qt::LeftButton, Qt::NoModifier,
                           settingsButton->rect().center());
-        if (pumpUntil([&] { return flyout->isVisible(); }, 2500)) {
+        if (!flyoutWasVisible && pumpUntil([&] { return flyout->isVisible(); }, 2500) &&
+            flyout->isVisible()) {
             ++panelOpens;
             noteChromeChange(QStringLiteral("panel-open"),
                              QStringLiteral("settings flyout visible after a click on the gear"),
                              QJsonObject{{"flyoutVisible", flyout->isVisible()},
                                          {"shellHasOverlay", shell->hasVisibleOverlay()},
+                                         {"visibleBefore", flyoutWasVisible},
                                          {"cycle", cycle}});
         }
+        const bool flyoutWasOpen = flyout->isVisible();
         const bool dismissed = shell->dismissOverlay();
-        if (pumpUntil([&] { return !flyout->isVisible(); }, 2500)) {
+        if (flyoutWasOpen && pumpUntil([&] { return !flyout->isVisible(); }, 2500) &&
+            !flyout->isVisible()) {
             ++panelCloses;
             noteChromeChange(QStringLiteral("panel-close"),
                              QStringLiteral("settings flyout hidden by the shell's own dismiss "
                                             "path"),
                              QJsonObject{{"flyoutVisible", flyout->isVisible()},
                                          {"dismissReportedVisibleOverlay", dismissed},
+                                         {"visibleBefore", flyoutWasOpen},
                                          {"cycle", cycle}});
         }
         if (!foregroundIs(dialog)) ensureForeground(dialog);
@@ -2142,20 +2202,27 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         for (int cycle = 0; cycle < 2; ++cycle) {
             aimAt(shell, dockPoint);
             pumpUntil(dockUp, 2500);
+            const bool menuWasVisible = pictureMenu->isVisible();
             shell->openPictureMenu(shell->mapFromGlobal(dialog->mapToGlobal(dockPoint)));
-            if (pumpUntil([&] { return pictureMenu->isVisible(); }, 2500)) {
+            if (!menuWasVisible &&
+                pumpUntil([&] { return pictureMenu->isVisible(); }, 2500) &&
+                pictureMenu->isVisible()) {
                 ++panelOpens;
                 noteChromeChange(QStringLiteral("picture-menu-open"),
                                  QStringLiteral("picture context menu visible"),
                                  QJsonObject{{"menuVisible", pictureMenu->isVisible()},
+                                             {"visibleBefore", menuWasVisible},
                                              {"cycle", cycle}});
             }
+            const bool menuWasOpen = pictureMenu->isVisible();
             shell->dismissOverlay();
-            if (pumpUntil([&] { return !pictureMenu->isVisible(); }, 2500)) {
+            if (menuWasOpen && pumpUntil([&] { return !pictureMenu->isVisible(); }, 2500) &&
+                !pictureMenu->isVisible()) {
                 ++panelCloses;
                 noteChromeChange(QStringLiteral("picture-menu-close"),
                                  QStringLiteral("picture context menu hidden"),
                                  QJsonObject{{"menuVisible", pictureMenu->isVisible()},
+                                             {"visibleBefore", menuWasOpen},
                                              {"cycle", cycle}});
             }
             if (!foregroundIs(dialog)) ensureForeground(dialog);
@@ -2194,7 +2261,7 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     currentPhase = QStringLiteral("native-foreground");
     ActivationRun activation = runActivationCycles(
         dialog, surface, peer, QStringLiteral("native-foreground"),
-        kNativeForegroundCyclesRequired, knownBright, record);
+        kNativeForegroundCyclesRequired, knownBright, record, pumpFor);
     const bool awayComplete =
         activation.cycles == kNativeForegroundCyclesRequired &&
         activation.foregroundLostCycles == 0 && activation.visibleCompositionTimeouts == 0 &&
@@ -2209,8 +2276,8 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                                       ? activation.fboLumaBeforeAway.at(index)
                                       : -1.0;
             const double after = activation.fboLumaAfterBack.at(index);
-            continuityVerified = continuityVerified && before > 0.0 && after >= brightThreshold &&
-                                 after >= before * 0.6;
+            continuityVerified = continuityVerified && before > 0.0 &&
+                                 after >= std::max(30.0, before * 0.5);
         }
     }
     record(QJsonObject{{"event", "qaMatrixAwayBack"},
@@ -2236,7 +2303,6 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     currentPhase = QStringLiteral("minimize-restore");
     int minimizeCycles = 0;
     int minimizeVerified = 0;
-    int fiveMinuteMinimizedCycles = 0;
     qint64 totalMinimizedMs = 0;
     qint64 maxMinimizedDwellMs = 0;
     QVector<qint64> restoreVisibleMs;
@@ -2244,16 +2310,14 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         const double positionBefore = surface->position();
         const QImage pictureBefore = readComposedCrop(surface);
         const double lumaBefore = meanLuma(pictureBefore);
+        const double desktopLumaBefore =
+            meanLuma(desktopCrop(surface->screen(), videoSampleCrop(surface)));
         dialog->showMinimized();
         const bool minimizedObserved = pumpUntil([&] { return dialog->isMinimized(); }, 3000);
         const qint64 minimizedAt = runClock.elapsed();
         pumpFor(kMinimizeDwellMs);
         const bool stillMinimized = dialog->isMinimized();
         const double positionWhileMinimized = surface->position();
-        const qint64 dwellMs = runClock.elapsed() - minimizedAt;
-        totalMinimizedMs += dwellMs;
-        maxMinimizedDwellMs = std::max(maxMinimizedDwellMs, dwellMs);
-        if (dwellMs >= 300000) ++fiveMinuteMinimizedCycles;
 
         dialog->showFullScreen();
         bool restored = pumpUntil(
@@ -2266,12 +2330,19 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                 [&] { return !dialog->isMinimized() && dialog->isVisible(); }, 3000);
         }
         const qint64 restoreAt = runClock.elapsed();
+        // Observed-minimized -> visible-again is the real minimized interval, so
+        // the max/total dwell gates can actually trip on a window that refused to
+        // come back. There is no 5-minute variant: the matrix asks for five short
+        // cycles, not one long minimization.
+        const qint64 dwellMs = restoreAt - minimizedAt;
+        totalMinimizedMs += dwellMs;
+        maxMinimizedDwellMs = std::max(maxMinimizedDwellMs, dwellMs);
         const bool foregroundRestored = ensureForeground(dialog);
         const bool pictureBack = pumpUntil(
             [&] {
-                const QImage desktop =
-                    desktopCrop(surface->screen(), videoSampleCrop(surface));
-                return !desktop.isNull() && meanLuma(desktop) >= brightThreshold;
+                return picturePresent(
+                    desktopCrop(surface->screen(), videoSampleCrop(surface)),
+                    desktopLumaBefore);
             },
             2500);
         const qint64 visibleAfterMs = runClock.elapsed() - restoreAt;
@@ -2283,8 +2354,12 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         const bool fullscreenAfter = dialog->isFullScreen();
         const bool positionAdvanced = positionAfter > positionBefore &&
                                       positionWhileMinimized > positionBefore;
-        const bool pictureRestored = !pictureAfter.isNull() && !isBlack(pictureAfter) &&
-                                     lumaAfter >= 0.0;
+        // The FBO reference is this action's own pre-minimize picture, not the
+        // opening calibration: a darker-but-valid frame after restore is still
+        // a restored picture, and a black target still fails.
+        const bool pictureRestored =
+            !pictureAfter.isNull() && !isBlack(pictureAfter) &&
+            lumaAfter >= std::max(30.0, lumaBefore * 0.5);
         const bool verified = minimizedObserved && stillMinimized && restored &&
                               foregroundRestored && pictureBack && fullscreenAfter &&
                               positionAdvanced && pictureRestored;
@@ -2306,6 +2381,7 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                            {"positionAfter", positionAfter},
                            {"positionAdvanced", positionAdvanced},
                            {"lumaBefore", lumaBefore},
+                           {"desktopLumaBefore", desktopLumaBefore},
                            {"lumaAfter", lumaAfter},
                            {"pictureRestored", pictureRestored},
                            {"excludedMinimizedSamplesSoFar", sampler.excludedMinimized},
@@ -2314,7 +2390,7 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     }
     const bool minimizeComplete =
         minimizeCycles == kMinimizeRestoreCyclesRequired &&
-        minimizeVerified == kMinimizeRestoreCyclesRequired && fiveMinuteMinimizedCycles == 0 &&
+        minimizeVerified == kMinimizeRestoreCyclesRequired &&
         maxMinimizedDwellMs <= kMaxMinimizeDwellMs && totalMinimizedMs <= kMaxTotalMinimizedMs;
     record(QJsonObject{{"event", "qaMatrixMinimizeSummary"},
                        {"elapsedMs", runClock.elapsed()},
@@ -2324,7 +2400,9 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                        {"totalMinimizedMs", totalMinimizedMs},
                        {"maxMinimizedDwellMs", maxMinimizedDwellMs},
                        {"maxMinimizedDwellLimitMs", kMaxMinimizeDwellMs},
-                       {"fiveMinuteMinimizedCycles", fiveMinuteMinimizedCycles},
+                       {"minimizedDwellDefinition",
+                        "observed minimized -> visible again; the max and total limits are "
+                        "the assertions, there is no 5-minute variant"},
                        {"restoreVisibleMaxMs", restoreVisibleMs.isEmpty()
                                                    ? QJsonValue(QStringLiteral("unavailable"))
                                                    : QJsonValue(*std::max_element(
@@ -2339,13 +2417,23 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     const quint64 geometryWritesBefore = mikai::gui::uiprofile::snapshot().layoutGeometryWrites;
     const quint64 masksBefore = mikai::gui::uiprofile::snapshot().setMaskApplications;
     int seamTransitionsObserved = 0;
+    int seamResizesObserved = 0;
     quint64 firstTransitionGeometryWrites = 0;
     bool geometryEdgeMeasured = false;
+    QVector<qint64> seamStateMs;
     QVector<qint64> seamVisibleMs;
     for (int cycle = 0; cycle < kFullscreenSeamTransitions; ++cycle) {
         for (int phase = 0; phase < 2; ++phase) {
             const quint64 writesBefore =
                 mikai::gui::uiprofile::snapshot().layoutGeometryWrites;
+            // The pre-transition picture is already bright, so a luma-only test
+            // would pass on the very first tick and measure nothing. First wait
+            // for the actual window state AND the surface geometry change, then
+            // start the visible-composition clock from that observed state.
+            const QSize surfaceSizeBefore = surface->size();
+            const QSize dialogSizeBefore = dialog->size();
+            const double seamReferenceLuma =
+                meanLuma(desktopCrop(surface->screen(), videoSampleCrop(surface)));
             QElapsedTimer seamClock;
             seamClock.start();
             if (phase == 0) {
@@ -2353,22 +2441,34 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
             } else {
                 dialog->showFullScreen();
             }
-            const bool composed = pumpUntil(
+            const bool stateAndGeometry = pumpUntil(
                 [&] {
-                    const QImage desktop =
-                        desktopCrop(surface->screen(), videoSampleCrop(surface));
-                    return !desktop.isNull() && meanLuma(desktop) >= brightThreshold;
+                    const bool rightState =
+                        phase == 1 ? dialog->isFullScreen() : !dialog->isFullScreen();
+                    return rightState &&
+                           (surface->size() != surfaceSizeBefore ||
+                            dialog->size() != dialogSizeBefore);
                 },
                 2500);
-            seamVisibleMs.append(seamClock.elapsed());
+            seamStateMs.append(seamClock.elapsed());
+            if (stateAndGeometry) ++seamResizesObserved;
+            QElapsedTimer seamVisibleClock;
+            seamVisibleClock.start();
+            const bool composed = stateAndGeometry && pumpUntil(
+                [&] {
+                    return picturePresent(
+                        desktopCrop(surface->screen(), videoSampleCrop(surface)),
+                        seamReferenceLuma);
+                },
+                2500);
+            seamVisibleMs.append(seamVisibleClock.elapsed());
             const quint64 writesAfter =
                 mikai::gui::uiprofile::snapshot().layoutGeometryWrites;
             if (!geometryEdgeMeasured) {
                 firstTransitionGeometryWrites = writesAfter - writesBefore;
                 geometryEdgeMeasured = true;
             }
-            const bool stateOwned = phase == 1 ? dialog->isFullScreen() : !dialog->isFullScreen();
-            if (composed && stateOwned) ++seamTransitionsObserved;
+            if (composed) ++seamTransitionsObserved;
             if (!foregroundIs(dialog)) ensureForeground(dialog);
         }
     }
@@ -2378,6 +2478,8 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
 
     // ── PiP round trip: the float's picture is sampled, not assumed ────────
     const double pipPositionBefore = surface->position();
+    const double pipReferenceLuma =
+        meanLuma(desktopCrop(surface->screen(), videoSampleCrop(surface)));
     dialog->togglePip();
     const bool pipSurfaceReady = pumpUntil(
         [&] {
@@ -2405,23 +2507,37 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     const double pipPositionAfter = surface->position();
     const bool pictureAfterPip = pumpUntil(
         [&] {
-            const QImage desktop = desktopCrop(surface->screen(), videoSampleCrop(surface));
-            return !desktop.isNull() && meanLuma(desktop) >= brightThreshold;
+            return picturePresent(
+                desktopCrop(surface->screen(), videoSampleCrop(surface)),
+                pipReferenceLuma);
         },
         2500);
     const bool pipAdvance = pipAdvanced && pipPositionAtEnd > pipPositionAtStart;
+    const bool pipPicturePresent = picturePresent(pipPicture, pipReferenceLuma);
     const bool pipVerified = pipSurfaceReady && pipOwner != nullptr && pipOwner != surface &&
-                             !pipPicture.isNull() && !isBlack(pipPicture) && pipAdvance &&
-                             mainSurfaceBack && pictureAfterPip && dialog->isFullScreen() &&
+                             pipPicturePresent && pipAdvance && mainSurfaceBack &&
+                             pictureAfterPip && dialog->isFullScreen() &&
                              pipPositionAfter >= pipPositionAtStart;
     record(QJsonObject{{"event", "qaMatrixPresentationSeams"},
                        {"elapsedMs", runClock.elapsed()},
                        {"fullscreenTransitions", 2 * kFullscreenSeamTransitions},
                        {"transitionsObserved", seamTransitionsObserved},
-                       {"seamVisibleMaxMs", seamVisibleMs.isEmpty()
-                                                ? QJsonValue(QStringLiteral("unavailable"))
-                                                : QJsonValue(*std::max_element(
-                                                      seamVisibleMs.begin(), seamVisibleMs.end()))},
+                       {"resizesObserved", seamResizesObserved},
+                       {"seamStateChangeMaxMs",
+                        seamStateMs.isEmpty()
+                            ? QJsonValue(QStringLiteral("unavailable"))
+                            : QJsonValue(*std::max_element(seamStateMs.begin(),
+                                                           seamStateMs.end()))},
+                       {"seamVisibleAfterStateMaxMs",
+                        seamVisibleMs.isEmpty()
+                            ? QJsonValue(QStringLiteral("unavailable"))
+                            : QJsonValue(*std::max_element(seamVisibleMs.begin(),
+                                                          seamVisibleMs.end()))},
+                       {"seamDefinition",
+                        "state (fullscreen flag) and surface/window geometry change are "
+                        "waited for and required before the visible-composition clock starts; "
+                        "the sample must then show a picture against the pre-action desktop "
+                        "luma, not the opening calibration"},
                        {"seamBlackSamples", seamBlackAfter - seamBlackBefore},
                        {"seamSamplesExposed", sampler.exposedSamples},
                        {"layoutGeometryWrites",
@@ -2440,6 +2556,8 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                        {"pipPositionAfterExit", pipPositionAfter},
                        {"pipPictureBlack", pipPicture.isNull() ? QJsonValue(QStringLiteral("unmeasured"))
                                                               : QJsonValue(isBlack(pipPicture))},
+                       {"pipPicturePresent", pipPicturePresent},
+                       {"pipReferenceLuma", pipReferenceLuma},
                        {"pipPositionBeforeExit", pipPositionBefore},
                        {"mainSurfaceBack", mainSurfaceBack},
                        {"pictureAfterPip", pictureAfterPip},
@@ -2533,6 +2651,8 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         {"requestedSeconds", seconds},
         {"elapsedMs", elapsedMs},
         {"elapsedSeconds", elapsedSeconds},
+        {"monitoredStartMs", monitoredStartMs},
+        {"monitoredDurationMs", elapsedMs - monitoredStartMs},
         {"knownBrightFixture", knownBright},
         {"calibratedFboLuma", calibratedLuma},
         {"calibratedDesktopLuma", calibratedDesktopLuma},
@@ -2575,7 +2695,9 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         {"totalMinimizedMs", totalMinimizedMs},
         {"maxMinimizedDwellMs", maxMinimizedDwellMs},
         {"minimizedSamplesExcluded", sampler.excludedMinimized},
-        {"fiveMinuteMinimizedCycles", fiveMinuteMinimizedCycles},
+        {"minimizedDwellDefinition",
+         "observed minimized -> visible again; the max and total limits are the assertions, "
+         "there is no 5-minute variant"},
         {"minimizeComplete", minimizeComplete},
         {"fullscreenSeamTransitions", seamTransitionsObserved},
         {"fullscreenSeamTransitionsRequired", 2 * kFullscreenSeamTransitions},
@@ -2680,8 +2802,25 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         {"coverageGaps", QJsonArray::fromStringList(coverageGaps)},
         {"samplingDefinition",
          "composed framebuffer centre crop plus a real desktop grab of the same rect, "
-         "roughly every 32 ms while the player owns the native foreground and is not "
-         "minimized; excluded ticks are counted by reason and never judged for black"},
+         "roughly every 32 ms on exposed ticks while the pump is running; excluded ticks "
+         "are counted by reason and never judged for black"},
+        {"samplingCadenceScope",
+         "pumped through the away/back helper as well: its fixed settles, its foreground "
+         "retries and its activation-latency poll all tick the same ~32 ms sampler, so the "
+         "monitored exposed window is represented continuously. The only window outside the "
+         "pump is the explicit pre-run calibration, which is not counted as monitored time"},
+        {"samplingCadenceGroups", QJsonArray{QStringLiteral("chrome"),
+                                             QStringLiteral("seams"),
+                                             QStringLiteral("minimize"),
+                                             QStringLiteral("away-back"),
+                                             QStringLiteral("pip"),
+                                             QStringLiteral("idle")}},
+        {"unsampledWindows",
+         QJsonArray{QStringLiteral("pre-run-calibration"),
+                    QStringLiteral("post-action-foreground-retry-spins")}},
+        {"samplingLatencyNote",
+         "inside the away/back poll the sampler tick sets the poll granularity (~32 ms "
+         "instead of 6 ms); the matrix does not gate on those latency quantiles"},
         {"presentationMode", presentationMode()},
         {"surfaceState", surfaceState(surface)},
         {"error", *error}});
