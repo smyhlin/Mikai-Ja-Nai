@@ -1409,43 +1409,86 @@ private:
 
                 // The bar is adopted chrome: its paintEvent draws nothing once
                 // the surface owns it, so the row is read from the surface's
-                // framebuffer. Playback keeps moving during the sweep, so the
-                // played run is located by its colour along the bar's own row
-                // instead of trusting a fraction set once at build time.
+                // framebuffer. The played segment is the longest continuous run
+                // of the chosen accent along that row - a single stray pixel of a
+                // moving picture is not a segment, so the run has to cover a real
+                // share of the bar and start where the groove starts.
                 QColor timelinePixel;
-                int timelineRunPixels = 0;
+                int timelineRunLongest = -1;   // negative: the row was not on the surface
+                int timelineBarSpanPixels = 0;
+                int timelineRunStartOffset = -1;
                 double playedFraction = 0.0;
+                QRect timelineBarRect;
                 if (scrub_ != nullptr && surface_ != nullptr && scrub_->isVisible() &&
-                    surface_->width() > 0 && scrub_->width() > 8) {
+                    surface_->width() > 8 && scrub_->height() > 2) {
                     scrub_->setValueSilent(0.5);
                     playedFraction = scrub_->value();
+                    timelineBarRect = QRect(scrub_->mapTo(surface_.data(), QPoint(0, 0)),
+                                            scrub_->size());
+                    const QRect visible = timelineBarRect.intersected(surface_->rect());
                     const QImage frame = surface_->grabFramebuffer();
-                    if (!frame.isNull() && frame.width() > 0 && frame.height() > 0) {
+                    if (!frame.isNull() && frame.width() > 0 && visible.width() > 8) {
                         const qreal ratio = static_cast<qreal>(frame.width()) /
                                             static_cast<qreal>(surface_->width());
-                        const QPoint left = scrub_->mapTo(surface_.data(), QPoint(0, 0));
-                        const QPoint middle = scrub_->mapTo(
-                            surface_.data(),
-                            QPoint(scrub_->width() / 2, scrub_->height() / 2));
-                        const int y = qBound(0, qRound(middle.y() * ratio), frame.height() - 1);
-                        const int from = qBound(0, qRound(left.x() * ratio), frame.width() - 1);
-                        const int to = qBound(from, qRound((left.x() + scrub_->width()) * ratio),
-                                              frame.width() - 1);
-                        for (int x = from; x <= to; ++x) {
-                            const QColor pixel = frame.pixelColor(x, y);
-                            if (!nearColor(pixel, expected, 10)) continue;
-                            ++timelineRunPixels;
-                            if (!timelinePixel.isValid()) timelinePixel = pixel;
+                        // The row is the bar's own, not an edge: off-surface means
+                        // the chrome is not where the bar thinks it is.
+                        const int y = qRound((visible.y() + visible.height() / 2.0) * ratio);
+                        const int from = qRound(visible.x() * ratio);
+                        const int to = qRound((visible.x() + visible.width()) * ratio) - 1;
+                        if (y >= 0 && y < frame.height() && from >= 0 && to < frame.width()) {
+                            timelineBarSpanPixels = to - from + 1;
+                            constexpr int kGapTolerance = 2;  // thumb edge, antialiasing
+                            int run = 0;
+                            int runStart = -1;
+                            int sinceMatch = 0;
+                            for (int x = from; x <= to; ++x) {
+                                const QColor pixel = frame.pixelColor(x, y);
+                                if (nearColor(pixel, expected, 10)) {
+                                    if (run == 0) runStart = x;
+                                    run += sinceMatch + 1;
+                                    sinceMatch = 0;
+                                    if (run > timelineRunLongest) {
+                                        timelineRunLongest = run;
+                                        timelineRunStartOffset = runStart - from;
+                                        timelinePixel = pixel;
+                                    }
+                                    continue;
+                                }
+                                ++sinceMatch;
+                                if (sinceMatch > kGapTolerance) {
+                                    run = 0;
+                                    runStart = -1;
+                                    sinceMatch = 0;
+                                }
+                            }
                         }
                     }
                 }
                 row.insert(QStringLiteral("timelinePlayed"), nameColor(timelinePixel));
-                row.insert(QStringLiteral("timelineRunPixels"), timelineRunPixels);
+                row.insert(QStringLiteral("timelineBarRect"),
+                           QJsonArray{timelineBarRect.x(), timelineBarRect.y(),
+                                      timelineBarRect.width(), timelineBarRect.height()});
+                row.insert(QStringLiteral("timelineBarSpanPixels"), timelineBarSpanPixels);
+                row.insert(QStringLiteral("timelineRunLongest"), timelineRunLongest);
+                row.insert(QStringLiteral("timelineRunStartOffset"), timelineRunStartOffset);
                 row.insert(QStringLiteral("timelinePlayedFraction"), playedFraction);
+                // Half the bar is played at the silent value, so a real segment
+                // covers well over a third of the span; the groove's margin is a
+                // few pixels, so the run starts inside the first tenth.
+                const int requiredRun = qMax(8, qRound(timelineBarSpanPixels * 0.3));
+                const int allowedOffset = qMax(4, qRound(timelineBarSpanPixels * 0.1));
                 check(QStringLiteral("%1/timeline-played-live").arg(variant),
-                      timelineRunPixels > 0 && nearColor(timelinePixel, expected, 10),
-                      QStringLiteral("%1 played pixels of %2, chosen %3")
-                          .arg(timelineRunPixels)
+                      timelineRunLongest >= requiredRun &&
+                          timelineRunStartOffset >= 0 &&
+                          timelineRunStartOffset <= allowedOffset &&
+                          nearColor(timelinePixel, expected, 10),
+                      QStringLiteral("longest run %1 px of %2 (need %3), starts %4 px in "
+                                     "(allow %5), colour %6, chosen %7")
+                          .arg(timelineRunLongest)
+                          .arg(timelineBarSpanPixels)
+                          .arg(requiredRun)
+                          .arg(timelineRunStartOffset)
+                          .arg(allowedOffset)
                           .arg(nameColor(timelinePixel))
                           .arg(nameColor(expected)));
 
