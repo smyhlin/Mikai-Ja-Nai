@@ -785,6 +785,7 @@ public:
         modalGuard.start(200);
         if (!buildSurfaces()) return finish(false);
         if (!sweepAccents()) return finish(false);
+        sweepGradientSource();
         if (!sweepPip()) return finish(false);
         measureLanguages();
         return finish(failed_ == 0);
@@ -1441,6 +1442,72 @@ private:
             {QStringLiteral("preparationOverlay"), overlay_ != nullptr && overlay_->isVisible()},
             {QStringLiteral("player"), player_ != nullptr && player_->isVisible()}});
         return true;
+    }
+
+    /// The gradient source, switched on the pages that are already open and
+    /// without touching the stored colour. The page wash is painted live, but the
+    /// title page's hero is a cached composite: a consumer that compared the
+    /// stored colour instead of the resolved one would keep the previous source.
+    void sweepGradientSource() {
+        Appearance autoLook;
+        autoLook.accent = QStringLiteral("#bdacff");
+        autoLook.gradientMode = mikai::app::theme::GradientMode::Auto;
+        autoLook.gradientColor = QStringLiteral("#f27bb0");
+        autoLook.backgroundGradient = true;
+        autoLook.gradientIntensity = 100;
+        autoLook.gradientHeight = 100;
+        applyLook(autoLook);
+
+        QWidget* backdrop = nullptr;
+        for (QWidget* child : titlePage_->findChildren<QWidget*>()) {
+            if (qstrcmp(child->metaObject()->className(), "mikai::app::PosterBackdrop") == 0) {
+                backdrop = child;
+                break;
+            }
+        }
+        evidence_.insert(QStringLiteral("heroWashBackdropPresent"), backdrop != nullptr);
+
+        const auto report = [&](const QString& stage, const QColor& expected) {
+            const QColor wash = glow_ != nullptr
+                                    ? pixelsOf(glow_).at(glow_->width() / 2, 2)
+                                    : QColor();
+            check(QStringLiteral("gradient-source/%1/page-glow").arg(stage),
+                  nearColor(wash, expected, 8),
+                  QStringLiteral("wash %1, resolved %2")
+                      .arg(nameColor(wash), nameColor(expected)));
+            if (backdrop != nullptr && backdrop->width() > 40 && backdrop->height() > 40) {
+                const QColor hero = pixelsOf(backdrop).at(backdrop->width() / 2, 20);
+                evidence_.insert(QStringLiteral("heroWash/") + stage,
+                                 QJsonObject{{QStringLiteral("pixel"), nameColor(hero)},
+                                             {QStringLiteral("alpha"), hero.alpha()}});
+                check(QStringLiteral("gradient-source/%1/hero-wash").arg(stage),
+                      nearColor(hero, expected, 12),
+                      QStringLiteral("cached hero wash %1, resolved %2")
+                          .arg(nameColor(hero), nameColor(expected)));
+            }
+            capture(searchPage_.get(), QStringLiteral("gradient-source-%1-search").arg(stage),
+                    QJsonObject{{QStringLiteral("surface"), QStringLiteral("search page wash")},
+                                {QStringLiteral("resolvedWash"), nameColor(expected)}});
+            capture(titlePage_.get(), QStringLiteral("gradient-source-%1-title").arg(stage),
+                    QJsonObject{{QStringLiteral("surface"), QStringLiteral("title page hero wash")},
+                                {QStringLiteral("resolvedWash"), nameColor(expected)},
+                                {QStringLiteral("presentationOnly"), true},
+                                {QStringLiteral("syntheticState"),
+                                 QStringLiteral("hero watch enabled for presentation; no catalogue entry was fabricated")},
+                                {QStringLiteral("inferenceProven"), false}});
+        };
+
+        report(QStringLiteral("auto"), mikai::app::theme::accentColor(autoLook));
+
+        Appearance custom = autoLook;
+        custom.gradientMode = mikai::app::theme::GradientMode::Custom;
+        mikai::app::setCurrentAppearance(custom);
+        QTest::qWait(150);
+        report(QStringLiteral("custom"), mikai::app::theme::gradientColor(custom));
+
+        mikai::app::setCurrentAppearance(autoLook);
+        QTest::qWait(150);
+        report(QStringLiteral("auto-again"), mikai::app::theme::accentColor(autoLook));
     }
 
     /// The picture-in-picture float, opened on its own and kept open across two
