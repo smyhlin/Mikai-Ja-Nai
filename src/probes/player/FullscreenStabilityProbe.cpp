@@ -932,19 +932,27 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
         const bool pollActiveWhileForeground = overlay != nullptr && overlay->stackingPollActive();
         const quint64 stopsBefore = mikai::gui::uiprofile::snapshot().awayStackingStops;
         const quint64 abortsBefore = mikai::gui::uiprofile::snapshot().raiseRetriesAborted;
+        const bool attachMetricSupported_here = attachMetricSupported();
+        const bool countersOn = mikai::gui::uiprofile::countersEnabled();
         const bool peerActivated = peer.activate();
+        // Taken the instant the peer owns the foreground and BEFORE the settle
+        // spin: the window where the native foreground has moved while Qt's
+        // applicationState() may still read active is exactly where a retry can
+        // still call forceForeground(), so excluding it would measure nothing.
+        // peer.activate() returns only once GetForegroundWindow() is the peer,
+        // so an attach before the switch is still outside this delta.
+        const quint64 attachesBefore = mikai::gui::uiprofile::snapshot().threadInputAttaches;
         spinFor(400);
         const bool awayOwned = peerActivated && peer.ownsForeground() &&
                                QGuiApplication::applicationState() != Qt::ApplicationActive;
-        // Measured inside the away interval only: a raise retry that attached
-        // before the switch away is not a background cost.
-        const quint64 attachesBefore = mikai::gui::uiprofile::snapshot().threadInputAttaches;
         spinFor(1000);
         const bool pollActiveWhileAway = overlay != nullptr && overlay->stackingPollActive();
         const mikai::gui::uiprofile::Snapshot countersAway =
             mikai::gui::uiprofile::snapshot();
         const qint64 attachesWhileAway =
             static_cast<qint64>(countersAway.threadInputAttaches - attachesBefore);
+        const qint64 stopsWhileAway =
+            static_cast<qint64>(countersAway.awayStackingStops - stopsBefore);
         record(QJsonObject{{"event", "focusOverlayStacking"},
                            {"pollSupported", pollSupported},
                            {"overlayVisible", overlayVisible},
@@ -954,15 +962,25 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
                             QGuiApplication::applicationState() != Qt::ApplicationActive},
                            {"pollActiveWhileAway", pollActiveWhileAway},
                            {"attachCallsWhileAway", attachesWhileAway},
-                           {"awayStackingStops",
-                            static_cast<qint64>(countersAway.awayStackingStops - stopsBefore)},
+                           {"awayStackingStops", stopsWhileAway},
                            {"raiseRetriesAborted",
                             static_cast<qint64>(countersAway.raiseRetriesAborted -
                                                 abortsBefore)},
+                           {"attachMetricSupported", attachMetricSupported_here},
+                           {"countersEnabled", countersOn},
                            {"awayWindowMs", 1400}});
+        // A zero that cannot move is not evidence: without the shipping policy
+        // linked, or with counters off, the attach counter can never increment
+        // and the criterion would pass vacuously.
         const QString failure =
             !overlayVisible
                 ? QStringLiteral("the engine overlay was not visible for the away check")
+            : !countersOn
+                ? QStringLiteral("profiling counters were off, so the away counters report "
+                                 "nothing and zero attaches is not evidence")
+            : !attachMetricSupported_here
+                ? QStringLiteral("the shipping raise policy is not linked into this probe, so "
+                                 "zero attaches is not evidence")
             : !pollSupported
                 ? QStringLiteral("no stacking poll exists on this platform, so the away "
                                  "check is unobservable")
@@ -975,6 +993,9 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
             : pollActiveWhileAway
                 ? QStringLiteral("the overlay kept its stacking poll running while another "
                                  "application owned the foreground")
+            : stopsWhileAway <= 0
+                ? QStringLiteral("the stacking poll was running before the switch away but no "
+                                 "away stop was counted, so the stop path is unproven")
             : attachesWhileAway != 0
                 ? QStringLiteral("the overlay contacted another process's input queue while "
                                  "away (attaches=%1)")

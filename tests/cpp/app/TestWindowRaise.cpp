@@ -247,6 +247,12 @@ void TestWindowRaise::processingOverlayReassertsWindowsTopmostWithoutActivation(
     const bool stillAway = QGuiApplication::applicationState() != Qt::ApplicationActive;
     QVERIFY2(stillAway, "this application took the foreground back during the background "
                         "poll window, so the negative case was not observed");
+    // The observable half of "the poll is off": a live timer that only no-ops in
+    // maintainTopmost() would keep the blocker below for the same 1200 ms, so the
+    // z-order alone cannot tell the stop path from the guard.
+    QVERIFY2(!overlay.stackingPollActive(),
+             "the overlay's stacking poll kept running while another application owned the "
+             "foreground; it must be stopped, not merely no-op");
     QVERIFY2(isAbove(blockerHandle, overlayHandle),
              "the overlay reasserted topmost while another application owned the "
              "foreground; the stacking poll must stay stopped while away");
@@ -259,6 +265,9 @@ void TestWindowRaise::processingOverlayReassertsWindowsTopmostWithoutActivation(
              "could not take this process's foreground back after the away poll");
     QTRY_VERIFY_WITH_TIMEOUT(QGuiApplication::applicationState() == Qt::ApplicationActive,
                              2000);
+    // And it really restarts: "stopped while away" must not be a timer that never
+    // came back, which would break the build overlay's topmost promise at home.
+    QTRY_VERIFY_WITH_TIMEOUT(overlay.stackingPollActive(), 2000);
     QVERIFY(SetWindowPos(blockerHandle, HWND_TOPMOST, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE));
     QTRY_VERIFY_WITH_TIMEOUT(isAbove(overlayHandle, blockerHandle), 3000);
