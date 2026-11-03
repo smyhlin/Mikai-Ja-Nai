@@ -1141,6 +1141,12 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
             core->endEnginePreparation(ok, enginePreparationSummary(ok));
         }
     });
+    // The context wait ends with the preparation, whoever ended it: a cancelled
+    // probe (or a refusal) has no context left to deliver, and a timer still
+    // counting to its own deadline would report a timeout for a wait that is
+    // already over.
+    connect(&dialog, &SettingsDialog::nativePreparationFinished, contextTimer.get(),
+            [contextTimer](bool) { contextTimer->stop(); });
 
     // The window's Cancel reaches the build's own cancellation gate through the
     // dialog that owns it. The core on screen is the one that raised it.

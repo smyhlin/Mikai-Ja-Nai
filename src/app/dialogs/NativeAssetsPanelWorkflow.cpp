@@ -1542,6 +1542,19 @@ void NativeAssetsPanel::cancelPrepare() {
                          QStringLiteral("native.prepare.commitInProgress"), QString());
         return;
     }
+    if (contextPending_) {
+        // Waiting for the core's own observation has no worker to unwind: the
+        // cancel answers now, with the same refusal a probe cancelled later
+        // reports, instead of leaving the panel to display whichever deadline
+        // expired first.
+        contextPending_ = false;
+        auto cancelled = std::make_shared<PrepareResult>();
+        cancelled->cancelled = true;
+        cancelled->reasonKey = QStringLiteral("native.prepare.cancelled");
+        cancelled->reason = tr("The preparation was cancelled while probing; nothing was built.");
+        finishPrepare(cancelled, prepareGeneration_);
+        return;
+    }
     setPrepareStatus(PrepareStatus::Kind::Cancelling, QStringLiteral("native.prepare.cancelling"),
                      QString());
     updatePrepareControls();
