@@ -20,6 +20,7 @@ class TestComponentState : public QObject {
   void failedFullTransferNeverShowsAFullBar();
   void deletedFilesClearTheStaleBarOnRefresh();
   void staleModelItemIsClearedWhenUnrelatedModelsRemain();
+  void initialInventorySurvivesClientInjection();
   void verificationTurnsAConfirmedBarIndeterminate();
   void verificationIsNotADownload();
   void generationBumpMidCheckReleasesEveryLatch();

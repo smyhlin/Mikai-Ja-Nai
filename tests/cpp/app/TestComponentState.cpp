@@ -2,8 +2,11 @@
 
 #include "dialogs/ComponentCardState.hpp"
 #include "dialogs/ComponentStoreTab.hpp"
+#include "dialogs/SettingsDialog.hpp"
 #include "state/NativeComponentProvisioner.hpp"
 #include "workers/Runner.hpp"
+
+#include "backend/MikaiClient.hpp"
 
 #include "native/components/NativeComponentCatalog.hpp"
 #include "native/components/NativeComponentProvisioning.hpp"
@@ -338,6 +341,47 @@ void TestComponentState::staleModelItemIsClearedWhenUnrelatedModelsRemain() {
     QVERIFY(!progressStatus->text().contains(QStringLiteral("Installed: ")));
     QVERIFY(cardBar->isHidden());
     QVERIFY2(cardState->text().startsWith(QStringLiteral("4/5 installed")),
+             qPrintable(cardState->text()));
+    runner.waitForDone(5000);
+}
+
+void TestComponentState::initialInventorySurvivesClientInjection() {
+    QVERIFY(storedSpatialAssets().isEmpty());
+    const QVector<SpatialAsset> catalog = spatialAssetCatalog();
+    QCOMPARE(catalog.size(), 5);
+    const QString root = spatialAssetRoot();
+    const bool rootExisted = QFileInfo::exists(root);
+    const QString directory =
+        QDir(root).filePath(SpatialAssetStore::directoryName(catalog.first().id));
+    const auto cleanup = qScopeGuard([&] {
+        QDir(directory).removeRecursively();
+        if (!rootExisted) QDir().rmdir(root);
+    });
+    // Presence only: one named directory with a graph file. The bytes do not
+    // match the pins, so this proves visibility and count, never verification.
+    QVERIFY(QDir().mkpath(directory));
+    QVERIFY(writeBytes(QDir(directory).filePath(SpatialAssetStore::graphFileName()),
+                       QByteArrayLiteral("placeholder")));
+
+    mikai::app::Runner runner;
+    mikai::backend::MikaiClient client(QString(), QStringLiteral("http://127.0.0.1:1"));
+    // The application's own initialization order: the dialog builds the
+    // Components tab and binds the runner before the client. Binding the client
+    // bumps the run generation, and the initial inventory scan the runner
+    // started must not be stranded by it - no Refresh, no click, no probe help.
+    mikai::app::SettingsDialog dialog(client, runner);
+    auto* tab = dialog.findChild<mikai::app::ComponentStoreTab*>();
+    QVERIFY(tab != nullptr);
+    QVERIFY(dialog.showPage(QStringLiteral("components")));
+
+    auto* cardState = tab->findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardState"));
+    QVERIFY(cardState != nullptr);
+
+    waitUntil([&] { return tab->inventoryReady() && !tab->acquisitionRunning(); });
+    QVERIFY(tab->inventoryReady());
+    QVERIFY2(cardState->text().startsWith(QStringLiteral("1/5 installed")),
+             qPrintable(cardState->text()));
+    QVERIFY2(cardState->text().contains(QStringLiteral("0/5 verified")),
              qPrintable(cardState->text()));
     runner.waitForDone(5000);
 }
