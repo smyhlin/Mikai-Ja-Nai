@@ -1969,17 +1969,10 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                     "INCOMPLETE");
     }
 
-    // Everything before this line is the explicit pre-monitor calibration; the
-    // monitored window and its coverage claims start here.
-    const qint64 monitoredStartMs = runClock.elapsed();
-    const double positionStart = surface->position();
-    const double durationAtStart = surface->duration();
-    const quint64 framesStart = surface->playbackDiagnostics().renderedOutputFrames;
-    const quint64 sourceEpochAtStart = surface->sourceEpoch();
-    const auto countersAtStart = surface->uiProfileCounters();
-    const auto profileAtStart = mikai::gui::uiprofile::snapshot();
-
-    // ── the separate-process foreground peer ──────────────────────────────
+    // ── the separate-process foreground peer (pre-monitor) ────────────────
+    // Peer process start-up and the foreground settle are diagnostic setup, not
+    // playback: they run BEFORE the monitored window so their blocking cannot
+    // be charged to the GUI heartbeat as an application stall.
     currentPhase = QStringLiteral("peer-warmup");
     const QRect sampleCrop = videoSampleCrop(surface);
     mikai::probes::ForegroundPeer peer;
@@ -2000,6 +1993,17 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                        {"focusCycleMechanism",
                         "SetForegroundWindow on a separate helper process's window; no "
                         "synthetic keyboard input, so it is not an Alt-Tab reproduction"}});
+
+    // ── monitored window starts here ──────────────────────────────────────
+    // Calibration and the peer start-up above are explicit pre-monitor work; the
+    // GUI heartbeat, the media clock and every coverage claim start now.
+    const qint64 monitoredStartMs = runClock.elapsed();
+    const double positionStart = surface->position();
+    const double durationAtStart = surface->duration();
+    const quint64 framesStart = surface->playbackDiagnostics().renderedOutputFrames;
+    const quint64 sourceEpochAtStart = surface->sourceEpoch();
+    const auto countersAtStart = surface->uiProfileCounters();
+    const auto profileAtStart = mikai::gui::uiprofile::snapshot();
 
     // ── sampling pump ─────────────────────────────────────────────────────
     qint64 lastSummaryElapsed = 0;
@@ -2057,6 +2061,47 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
             if (wait.elapsed() >= timeoutMs) return false;
         }
     };
+
+    // ── GUI heartbeat: the monitored interval's event-loop cadence ─────────
+    // A 50 ms high-resolution timer is a heartbeat of the GUI thread itself: a
+    // callback later than 250 ms means this process's UI stopped servicing its
+    // event loop, whatever the reason. It starts with the monitored window
+    // (peer start-up and calibration are pre-monitor) and is never paused or
+    // filtered, so an application-side stall cannot be excluded.
+    constexpr qint64 kGuiGapLimitMs = 250;
+    constexpr int kGuiHeartbeatIntervalMs = 50;
+    qint64 lastHeartbeatNs = mikai::gui::uiprofile::nowNs();
+    qint64 maxGuiGapMs = 0;
+    qint64 guiGapViolations = 0;
+    qint64 heartbeatSamples = 0;
+    qint64 firstHeartbeatAtMs = -1;
+    qint64 lastHeartbeatAtMs = -1;
+    QTimer guiHeartbeat;
+    guiHeartbeat.setTimerType(Qt::PreciseTimer);
+    guiHeartbeat.setInterval(kGuiHeartbeatIntervalMs);
+    QObject::connect(&guiHeartbeat, &QTimer::timeout, dialog, [&] {
+        const qint64 now = mikai::gui::uiprofile::nowNs();
+        const qint64 gapMs = (now - lastHeartbeatNs) / 1000000;
+        lastHeartbeatNs = now;
+        const qint64 atMs = runClock.elapsed();
+        if (firstHeartbeatAtMs < 0) firstHeartbeatAtMs = atMs;
+        lastHeartbeatAtMs = atMs;
+        ++heartbeatSamples;
+        maxGuiGapMs = std::max(maxGuiGapMs, gapMs);
+        if (gapMs > kGuiGapLimitMs) {
+            ++guiGapViolations;
+            if (guiGapViolations <= 8) {
+                record(QJsonObject{{"event", "matrixGuiGap"},
+                                   {"elapsedMs", atMs},
+                                   {"phase", currentPhase},
+                                   {"gapMs", gapMs},
+                                   {"limitMs", kGuiGapLimitMs},
+                                   {"heartbeatIntervalMs", kGuiHeartbeatIntervalMs},
+                                   {"position", surface->position()}});
+            }
+        }
+    });
+    guiHeartbeat.start();
 
     auto* dock = dialog->findChild<QWidget*>(QStringLiteral("playerDock"));
     auto* settingsButton = dialog->findChild<QWidget*>(QStringLiteral("playerSettingsButton"));
@@ -2422,6 +2467,7 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     bool geometryEdgeMeasured = false;
     QVector<qint64> seamStateMs;
     QVector<qint64> seamVisibleMs;
+    QVector<quint64> seamGeometryWrites;
     for (int cycle = 0; cycle < kFullscreenSeamTransitions; ++cycle) {
         for (int phase = 0; phase < 2; ++phase) {
             const quint64 writesBefore =
@@ -2464,6 +2510,7 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
             seamVisibleMs.append(seamVisibleClock.elapsed());
             const quint64 writesAfter =
                 mikai::gui::uiprofile::snapshot().layoutGeometryWrites;
+            seamGeometryWrites.append(writesAfter - writesBefore);
             if (!geometryEdgeMeasured) {
                 firstTransitionGeometryWrites = writesAfter - writesBefore;
                 geometryEdgeMeasured = true;
@@ -2475,6 +2522,16 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     const quint64 geometryWritesAfter = mikai::gui::uiprofile::snapshot().layoutGeometryWrites;
     const quint64 masksAfter = mikai::gui::uiprofile::snapshot().setMaskApplications;
     const qint64 seamBlackAfter = sampler.fboBlack + sampler.desktopBlack;
+    // Exactly one surface geometry write per fullscreen edge, EVERY edge. A
+    // mean or a first-edge-only check would allow one edge to pay two writes
+    // while another pays none.
+    QJsonArray seamGeometryWriteArray;
+    bool geometryWritesExactlyOne =
+        seamGeometryWrites.size() == 2 * kFullscreenSeamTransitions;
+    for (quint64 writes : seamGeometryWrites) {
+        seamGeometryWriteArray.append(static_cast<qint64>(writes));
+        geometryWritesExactlyOne = geometryWritesExactlyOne && writes == 1;
+    }
 
     // ── PiP round trip: the float's picture is sampled, not assumed ────────
     const double pipPositionBefore = surface->position();
@@ -2553,6 +2610,10 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                         static_cast<double>(geometryWritesAfter - geometryWritesBefore) /
                             (2.0 * kFullscreenSeamTransitions)},
                        {"geometryWriteEdgeMeasured", geometryEdgeMeasured},
+                       {"layoutGeometryWritesPerEdge", seamGeometryWriteArray},
+                       {"layoutGeometryWritesEachEdgeExactlyOne",
+                        geometryWritesExactlyOne},
+                       {"layoutGeometryWritesPerEdgeRequired", 1},
                        {"setMaskApplications",
                         static_cast<qint64>(masksAfter - masksBefore)},
                        {"pipSurfaceReady", pipSurfaceReady},
@@ -2600,6 +2661,11 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                                 motionFramesSecond > motionFramesFirst &&
                                 !isBlack(motionSecond);
 
+    // The monitored window ends with the final motion sample: stop the
+    // heartbeat here so artifact settling is not charged to the UI cadence.
+    guiHeartbeat.stop();
+    const bool guiHeartbeatPresent = heartbeatSamples > 0;
+    const bool guiGapBounded = maxGuiGapMs <= kGuiGapLimitMs && guiGapViolations == 0;
     collectingArtifacts = false;
     QElapsedTimer settle;
     settle.start();
@@ -2644,9 +2710,10 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     const bool passed = durationSatisfied && mediaAdvanceSatisfied && chromeSatisfied &&
                         awayComplete && continuityVerified && minimizeComplete &&
                         seamTransitionsObserved == 2 * kFullscreenSeamTransitions &&
-                        seamBlackAfter == seamBlackBefore && pipVerified && blackClean &&
-                        samplingCoverage && coverageGaps.isEmpty() && motionObserved &&
-                        (host == nullptr || !host->failed);
+                        geometryWritesExactlyOne && seamBlackAfter == seamBlackBefore &&
+                        pipVerified && blackClean && samplingCoverage &&
+                        coverageGaps.isEmpty() && motionObserved && guiHeartbeatPresent &&
+                        guiGapBounded && (host == nullptr || !host->failed);
     const QString result = passed ? QStringLiteral("PASS")
                                   : (coverageGaps.isEmpty() ? QStringLiteral("FAIL")
                                                             : QStringLiteral("INCOMPLETE"));
@@ -2758,6 +2825,19 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                                                 sampler.readbackCalls)},
         {"readbackMaxMicros", sampler.readbackMaxMicros},
         {"maxSampleWorkMs", sampler.maxWorkMs},
+        {"guiHeartbeatIntervalMs", kGuiHeartbeatIntervalMs},
+        {"guiHeartbeatSamples", heartbeatSamples},
+        {"guiHeartbeatFirstAtMs", firstHeartbeatAtMs},
+        {"guiHeartbeatLastAtMs", lastHeartbeatAtMs},
+        {"maxGuiGapMs", maxGuiGapMs},
+        {"guiGapLimitMs", kGuiGapLimitMs},
+        {"guiGapViolations", guiGapViolations},
+        {"guiGapBounded", guiGapBounded},
+        {"guiHeartbeatScope",
+         "50 ms PreciseTimer on the GUI thread from monitoredStartMs to the final motion "
+         "sample; peer start-up and pre-run calibration are before the monitored window, "
+         "nothing else is paused or filtered, and the gap is event-loop cadence, not "
+         "scanout"},
         {"firstSampleAtMs", sampler.firstSampleAtMs},
         {"lastSampleAtMs", sampler.lastSampleAtMs},
         {"idleSamplingMs", idleMs},
@@ -2813,20 +2893,19 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
         {"samplingCadenceScope",
          "pumped through the away/back helper as well: its fixed settles, its foreground "
          "retries and its activation-latency poll all tick the same ~32 ms sampler, and the "
-         "minimize-restore fallback spin does too. The monitored window is NOT represented "
-         "without gaps: the pre-run calibration, the separate-process peer warm-up and the "
-         "post-action foreground-retry spins are outside the pump and are named in "
-         "unsampledWindows"},
+         "minimize-restore fallback spin does too. Calibration and the separate-process "
+         "peer start-up run before monitoredStartMs and are pre-monitor, not monitored gaps; "
+         "the only unsampled time inside the monitored window is a post-action foreground "
+         "retry spin, named in unsampledWindows"},
         {"samplingCadenceGroups", QJsonArray{QStringLiteral("chrome"),
                                              QStringLiteral("seams"),
                                              QStringLiteral("minimize"),
                                              QStringLiteral("away-back"),
                                              QStringLiteral("pip"),
                                              QStringLiteral("idle")}},
-        {"unsampledWindows",
-         QJsonArray{QStringLiteral("pre-run-calibration"),
-                    QStringLiteral("peer-warmup"),
-                    QStringLiteral("post-action-foreground-retry-spins")}},
+        {"unsampledWindows", QJsonArray{QStringLiteral("post-action-foreground-retry-spins")}},
+        {"preMonitorWindows", QJsonArray{QStringLiteral("calibration"),
+                                         QStringLiteral("peer-warmup")}},
         {"samplingLatencyNote",
          "inside the away/back poll the sampler tick sets the poll granularity (~32 ms "
          "instead of 6 ms); the matrix does not gate on those latency quantiles"},
@@ -2836,7 +2915,8 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     peer.stop();
     if (!passed && error != nullptr) {
         *error = QStringLiteral("QA matrix %1: chrome=%2/%3 away=%4/%5 minimize=%6/%7 "
-                                "seams=%8/%9 pip=%10 black=%11 motion=%12")
+                                "seams=%8/%9 pip=%10 black=%11 motion=%12 maxGuiGap=%13/%14 "
+                                "edgeWritesExactlyOne=%15")
                      .arg(result)
                      .arg(chromeChanges)
                      .arg(kChromeChangesRequired)
@@ -2848,7 +2928,10 @@ int runQaMatrixMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
                      .arg(2 * kFullscreenSeamTransitions)
                      .arg(pipVerified)
                      .arg(sampler.fboBlack + sampler.desktopBlack)
-                     .arg(motionObserved);
+                     .arg(motionObserved)
+                     .arg(maxGuiGapMs)
+                     .arg(kGuiGapLimitMs)
+                     .arg(geometryWritesExactlyOne);
     }
     return passed ? 0 : 3;
 }
