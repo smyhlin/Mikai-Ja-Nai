@@ -489,8 +489,19 @@ void TestThemeIcons::toggleAndSwatchPaintOnceAtEveryRatio() {
 
   for (const qreal ratio : {1.0, 1.25, 1.5, 1.75, 2.0}) {
     mikai::app::ToggleSwitch toggle;
-    toggle.resize(mikai::app::theme::kSettingsSwitchWidth,
-                  mikai::app::theme::kSettingsSwitchHeight);
+    // Polishing is what QStyleSheetStyle uses to raise a widget's minimum size
+    // from the ambient sheet, and it happens on first paint, so a size pinned
+    // before it can be overridden afterwards. Pin after the polish and assert
+    // the box, so the fixture measures the control and not the sheet. Focus is
+    // cleared explicitly: a focused control paints an extra ring, which is not
+    // the body geometry this case compares.
+    toggle.clearFocus();
+    toggle.ensurePolished();
+    toggle.setFixedSize(mikai::app::theme::kSettingsSwitchWidth,
+                        mikai::app::theme::kSettingsSwitchHeight);
+    QCOMPARE(toggle.size(), QSize(mikai::app::theme::kSettingsSwitchWidth,
+                                  mikai::app::theme::kSettingsSwitchHeight));
+    QVERIFY2(!toggle.hasFocus(), "the toggle fixture must not carry focus");
     const QImage track = renderAt(toggle, ratio);
     // The track is a rounded rect inset by half a logical pixel, so its widest
     // row covers half of the boundary pixel at worst. Anything that draws the
@@ -525,9 +536,23 @@ void TestThemeIcons::toggleAndSwatchPaintOnceAtEveryRatio() {
     // The settings tab fixed-sizes every swatch: a plain resize() would be
     // clamped to QPushButton's sizeHint (its minimumSizeHint), which is wider
     // than the chip and would measure a shape the application never shows.
+    //
+    // The other clamp is the ambient sheet: QStyleSheetStyle applies a rule's
+    // min-height plus padding plus border as the widget's minimum size while it
+    // polishes, and the application's QPushButton rule asks for more height than
+    // this chip. Polishing happens on first paint, after a size pinned at
+    // construction, which is why another suite setting the sheet made the body
+    // two logical pixels taller. Polish first, pin second, and clear focus -
+    // SwatchButton paints a selection ring when focused, which is not the body
+    // geometry measured here.
     mikai::app::SwatchButton swatch(QColor(200, 40, 90));
+    swatch.clearFocus();
+    swatch.ensurePolished();
     swatch.setFixedSize(mikai::app::theme::kSettingsSwatchSize,
                         mikai::app::theme::kSettingsSwatchSize);
+    QCOMPARE(swatch.size(), QSize(mikai::app::theme::kSettingsSwatchSize,
+                                  mikai::app::theme::kSettingsSwatchSize));
+    QVERIFY2(!swatch.hasFocus(), "the swatch fixture must not carry focus");
     const QImage chip = renderAt(swatch, ratio);
     for (int y = 0; y < chip.height(); ++y) {
       QVERIFY2(alphaAt(chip, 0, y) == 0,
