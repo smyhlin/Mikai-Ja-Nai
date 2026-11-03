@@ -19,6 +19,8 @@
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QPushButton>
+#include <QtWidgets/QStyle>
+#include <QtWidgets/QStyleOptionButton>
 #include <QtWidgets/QVBoxLayout>
 #include <QtWidgets/QWidget>
 
@@ -259,6 +261,59 @@ struct WidgetPixels {
     }
 };
 
+/// The style option a button's own paint event hands to the sheet, with the
+/// state under test stated explicitly. Windows clears WA_UnderMouse whenever
+/// the physical pointer is elsewhere, so a rendered hover cannot be produced by
+/// flipping the attribute: the state is passed to the widget's own style, which
+/// is the same resolution path the paint event uses.
+QStyleOptionButton roleOption(const QPushButton& button, RoleState state) {
+    QStyleOptionButton option;
+    option.initFrom(&button);
+    option.rect = button.rect();
+    option.text = button.text();
+    option.icon = button.icon();
+    option.iconSize = button.iconSize();
+    option.features = QStyleOptionButton::None;
+    option.state &= ~(QStyle::State_HasFocus | QStyle::State_MouseOver | QStyle::State_Sunken |
+                      QStyle::State_On | QStyle::State_Raised);
+    switch (state) {
+        case RoleState::Normal:
+            option.state |= QStyle::State_Raised;
+            break;
+        case RoleState::Hover:
+            option.state |= QStyle::State_Raised | QStyle::State_MouseOver;
+            break;
+        case RoleState::Pressed:
+            option.state |= QStyle::State_Sunken;
+            break;
+        case RoleState::Checked:
+            option.state |= QStyle::State_On;
+            break;
+        case RoleState::Focus:
+            option.state |= QStyle::State_Raised | QStyle::State_HasFocus;
+            break;
+        case RoleState::Disabled:
+            option.state &= ~QStyle::State_Enabled;
+            break;
+    }
+    return option;
+}
+
+WidgetPixels grabRoleState(QPushButton& button, RoleState state) {
+    WidgetPixels pixels;
+    pixels.scale = button.devicePixelRatioF() > 0.0 ? button.devicePixelRatioF() : 1.0;
+    pixels.image = QImage(qCeil(button.width() * pixels.scale),
+                          qCeil(button.height() * pixels.scale),
+                          QImage::Format_ARGB32_Premultiplied);
+    pixels.image.setDevicePixelRatio(pixels.scale);
+    pixels.image.fill(Qt::transparent);
+    QPainter painter(&pixels.image);
+    QStyleOptionButton option = roleOption(button, state);
+    button.style()->drawControl(QStyle::CE_PushButton, &option, &painter, &button);
+    painter.end();
+    return pixels;
+}
+
 WidgetPixels grabWidget(QWidget& widget) {
     WidgetPixels pixels;
     // Render onto an explicitly transparent surface: a widget's own grab leaves
@@ -457,7 +512,7 @@ void TestThemeRoles::roleStatesRenderTheirDocumentedContract() {
                 setVisualState(button, state);
                 QVERIFY2(button.isVisible(), "the role host must be visible to render QSS");
                 const ExpectedPaint expected = expectedPaint(role, state, palette);
-                const WidgetPixels pixels = grabWidget(button);
+                const WidgetPixels pixels = grabRoleState(button, state);
                 QVERIFY(!pixels.image.isNull());
                 const int width = button.width();
                 const int height = button.height();
@@ -544,14 +599,17 @@ void TestThemeRoles::compareSideBStaysAmberOrRotatesToTheComplement() {
 
     // Amber's hue is 37 degrees. When the accent is within +/-30 degrees, side B
     // rotates to the documented 210-degree complement so the two seats cannot
-    // read as one colour. The boundary itself stays amber.
-    QCOMPARE(compareSideB(QColor::fromHsv(7, 200, 220)), amber);
-    QCOMPARE(compareSideB(QColor::fromHsv(67, 200, 220)), amber);
-    const QColor rotated = compareSideB(QColor::fromHsv(6, 200, 220));
-    QVERIFY(rotated != amber);
-    QCOMPARE(rotated.hue(), 210);
-    QVERIFY(rotated.saturationF() >= 0.45f && rotated.saturationF() <= 0.90f);
-    QVERIFY(rotated.valueF() >= 0.55f && rotated.valueF() <= 0.95f);
+    // read as one colour. The window is inclusive: exactly 30 degrees away is
+    // already too close to tell apart, so the boundary rotates and only 31
+    // degrees out keeps the semantic amber.
+    QCOMPARE(compareSideB(QColor::fromHsv(6, 200, 220)), amber);
+    QCOMPARE(compareSideB(QColor::fromHsv(68, 200, 220)), amber);
+    const QColor atBoundary = compareSideB(QColor::fromHsv(7, 200, 220));
+    QVERIFY(atBoundary != amber);
+    QCOMPARE(atBoundary.hue(), 210);
+    QCOMPARE(compareSideB(QColor::fromHsv(67, 200, 220)).hue(), 210);
+    QVERIFY(atBoundary.saturationF() >= 0.45f && atBoundary.saturationF() <= 0.90f);
+    QVERIFY(atBoundary.valueF() >= 0.55f && atBoundary.valueF() <= 0.95f);
 
     mplayer::shell::setAccent(QColor(QStringLiteral("#6797e4")));
     QCOMPARE(compareSide(0), mplayer::shell::accent());
@@ -678,6 +736,16 @@ void TestThemeRoles::swatchKeepsItsFixedSizeInsideAFlowLayout() {
     // generic button rule made the body two pixels taller than its cap.
     QCOMPARE(swatch->maximumSize(), expected);
     QCOMPARE(swatch->size(), expected);
+    // A stylesheet that raises a minimum above the chip's cap is the defect this
+    // pair exists to prevent: the interval must be closed, not merely narrower
+    // than the tolerance of a comparison.
+    QVERIFY2(swatch->minimumSize().width() <= swatch->maximumSize().width() &&
+                 swatch->minimumSize().height() <= swatch->maximumSize().height(),
+             qPrintable(QStringLiteral("inverted size interval: min %1x%2, max %3x%4")
+                            .arg(swatch->minimumSize().width())
+                            .arg(swatch->minimumSize().height())
+                            .arg(swatch->maximumSize().width())
+                            .arg(swatch->maximumSize().height())));
     QVERIFY(swatch->isVisible());
     QVERIFY2(swatch->visibleRegion().contains(swatch->rect()),
              "the chip must be fully visible, not clipped by an inflated layout item");

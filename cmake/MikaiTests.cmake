@@ -355,6 +355,7 @@ if(MIKAI_BUILD_PROBES)
     TestBenchmarkReport
     TestI18n
     TestThemeIcons
+    TestThemeRoles
     TestStreams
     TestPagers
     TestQualityCache
