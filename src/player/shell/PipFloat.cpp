@@ -400,10 +400,13 @@ void PipFloat::chromeDirty(QWidget* widget, const QRect& rect) {
     if (widget == nullptr || surface_ == nullptr) {
         return;
     }
-    chrome_.invalidate(widget);
+    // The box the control was last painted into is part of the damage: it is
+    // translucent, so Qt does not repaint the area it vacates.
+    const QRect vacated = chrome_.invalidate(widget);
     const QRect box(rect.isNull() ? widget->rect() : rect);
-    const QRect region(QRect(widget->mapTo(this, box.topLeft()), box.size())
-                           .intersected(surface_->geometry()));
+    QRect dirty(widget->mapTo(this, box.topLeft()), box.size());
+    if (!vacated.isEmpty()) dirty = dirty.united(vacated);
+    const QRect region(dirty.intersected(surface_->geometry()));
     // A control off the picture has nothing to draw, and no rect of its own
     // describes the pixels it left behind.
     if (region.isEmpty()) {

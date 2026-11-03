@@ -279,7 +279,9 @@ QRect ChromeList::invalidate(const QWidget* widget) {
     QRect vacated;
     for (Entry& entry : entries_) {
         if (entry.widget != widget) continue;
-        if (entry.valid) vacated = entry.box;
+        // The box is paint history, not cache validity: a control painted
+        // directly (budget fallback) still leaves pixels behind when it moves.
+        vacated = entry.box;
         dropCache(entry);
     }
     return vacated;
@@ -414,6 +416,8 @@ void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
         painter.setClipRect(box.translated(-at), Qt::IntersectClip);
         entry.painted->paintChrome(painter);
         painter.restore();
+        // Last actually painted box, whether or not this control is cached.
+        entry.box = box;
         ++painted;
     }
     painter.restore();
