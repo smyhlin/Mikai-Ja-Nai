@@ -1,4 +1,5 @@
 #include "PlayerPopups.hpp"
+#include "ShellTheme.hpp"
 
 #include <QAction>
 #include <QCursor>
@@ -27,10 +28,6 @@
 namespace mplayer {
 namespace shell {
 namespace {
-
-// ── mikai theme tokens, as the app defines them ────────────────────────────
-// The app keeps its palette in Python; the popovers reproduce the exact values
-// so a stylesheet here matches the rest of the client.
 
 constexpr int kSpacingXs = 4;
 constexpr int kSpacingSmall = 8;
@@ -172,7 +169,7 @@ void fillChoiceMenu(QMenu* menu, const QVector<ChoiceEntry>& entries, const QStr
     // creates a new menu, so walking the path per entry would put a second
     // "Anime4K" branch beside the first for every candidate in the list.
     QHash<QString, QMenu*> levels;
-    const auto levelFor = [menu, &levels](const QStringList& path) {
+    const auto levelFor = [menu, &levels, &menuSheet](const QStringList& path) {
         QMenu* level = menu;
         QString key;
         for (const QString& name : path) {

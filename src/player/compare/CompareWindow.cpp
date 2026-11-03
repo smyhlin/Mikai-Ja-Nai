@@ -223,7 +223,8 @@ QString windowStyleSheet() {
         "  margin: -4px 0;"
         "  border-radius: 6px;"
         "}")
-        .arg(accent, mplayer::shell::inkOn(mplayer::shell::accent()), accentWash);
+        .arg(accent, mplayer::shell::inkOn(mplayer::shell::accent()).name(QColor::HexRgb),
+             accentWash);
 }
 
 }  // namespace

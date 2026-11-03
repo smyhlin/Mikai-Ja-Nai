@@ -589,23 +589,17 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     retranslate();
 }
 
-// Qt reads the 4th component of rgba() as an integer 0..255, so the old
-// rgba(255,255,255,30) painted a near-solid slab and swallowed the row's own
-// text. The popovers already spell alpha as a fraction, which is why their rows
-// read correctly; both row styles go through here now.
 QString rowQss(bool current) {
-    // The selected row is the pushed accent, not a stale copy of a library
-    // default, so the flyout agrees with the badge above it.
-    const QString accent = rgbaTriplet(accent());
+    const QString accentRgb = rgbaTriplet(accent());
     return QStringLiteral(
                "QPushButton { color: %1; background: %2; border: 1px solid %3; border-radius: 6px;"
                " text-align: left; padding: 0 10px; font-size: 13px; font-weight: 500; min-height: 26px; }"
                "QPushButton:hover { background: rgba(255, 255, 255, 0.12); color: #ffffff;"
                " border-color: rgba(255, 255, 255, 0.20); }")
         .arg(current ? QStringLiteral("#ffffff") : QStringLiteral("#e0e0e6"),
-             current ? QStringLiteral("rgba(%1, 0.40)").arg(accent)
+             current ? QStringLiteral("rgba(%1, 0.40)").arg(accentRgb)
                      : QStringLiteral("rgba(255, 255, 255, 0.05)"),
-             current ? QStringLiteral("rgba(%1, 0.60)").arg(accent)
+             current ? QStringLiteral("rgba(%1, 0.60)").arg(accentRgb)
                      : QStringLiteral("transparent"));
 }
 
