@@ -2,6 +2,7 @@
 
 #include "player/core/VideoSurface.hpp"
 
+#include <QLocale>
 #include <QSettings>
 #include <QTemporaryDir>
 
