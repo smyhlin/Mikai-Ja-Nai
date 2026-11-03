@@ -2452,13 +2452,13 @@ void TestPublicApiUi::settingsPagesFitTheDialogMinimum() {
   qApp->setStyle(QStringLiteral("Fusion"));
   qApp->setStyleSheet(mikai::app::theme::buildStylesheet());
   IsolatedSettings settings;
-  MikaiClient client(QString(), QStringLiteral("http://127.0.0.1:1"));
-  Runner runner;
+  mikai::backend::MikaiClient client(QString(), QStringLiteral("http://127.0.0.1:1"));
+  mikai::app::Runner runner;
   const auto drain = qScopeGuard([&runner] {
     runner.cancel();
     if (!runner.waitForDone(10000)) qFatal("Settings workers did not stop");
   });
-  SettingsDialog dialog(client, runner);
+  mikai::app::SettingsDialog dialog(client, runner);
   dialog.resize(dialog.minimumSize());
   dialog.show();
   QCoreApplication::processEvents();
@@ -2534,7 +2534,7 @@ void TestPublicApiUi::managerActionRowsShareOneWidth() {
   const QString savedSheet = qApp->styleSheet();
   const auto restoreStyle = qScopeGuard([savedSheet] { qApp->setStyleSheet(savedSheet); });
   IsolatedSettings settings;
-  Runner runner;
+  mikai::app::Runner runner;
   const auto drain = qScopeGuard([&runner] {
     runner.cancel();
     if (!runner.waitForDone(10000)) qFatal("Manager workers did not stop");
