@@ -2123,6 +2123,10 @@ void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
                           .arg(settingsChip->width())
                           .arg(settingsChip->height())
                           .arg(header->height())));
+  QVERIFY2(back->width() == home->width(),
+           qPrintable(QStringLiteral("the header pills are %1 / %2 px wide")
+                          .arg(back->width())
+                          .arg(home->width())));
 
   // Hero and watch actions: one control height, the documented CTA height, and
   // one width per pair.
