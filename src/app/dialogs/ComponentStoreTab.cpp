@@ -1,6 +1,7 @@
 #include "dialogs/ComponentStoreTabInternal.hpp"
 #include "ComponentStoreTab.hpp"
 
+#include "dialogs/settings/SettingsUi.hpp"
 #include "state/NativeComponentProvisioner.hpp"
 #include "workers/Runner.hpp"
 #include "theme/Metrics.hpp"
@@ -491,6 +492,14 @@ void ComponentStoreTab::buildUi() {
     animeJanaiBackendCombo_ = new QComboBox(headerCard);
     animeJanaiBackendCombo_->setObjectName(QStringLiteral("animeJanaiRuntimeBackend"));
     animeJanaiBackendCombo_->setMinimumHeight(theme::kSettingsControlSize);
+    // A combo reserves its widest entry by default; the page keeps the row and
+    // the selected entry elides into the closed field instead.
+    animeJanaiBackendCombo_->setSizeAdjustPolicy(
+        QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    animeJanaiBackendCombo_->setMinimumContentsLength(theme::kSettingsCompactChoiceLengthChars);
+    QSizePolicy backendPolicy = animeJanaiBackendCombo_->sizePolicy();
+    backendPolicy.setHorizontalPolicy(QSizePolicy::Ignored);
+    animeJanaiBackendCombo_->setSizePolicy(backendPolicy);
     animeJanaiBackendCombo_->setAccessibleName(tr("AnimeJaNai backend used by Apply changes and Verify"));
     animeJanaiBackendCombo_->addItem(tr("TensorRT (CUDA / NVDEC)"),
                                      static_cast<int>(Backend::TensorRT));
@@ -544,7 +553,10 @@ void ComponentStoreTab::buildUi() {
         titleRow->setSpacing(theme::kSpacingSmall);
         auto* title = new QLabel(details);
         title->setObjectName(objectName + QStringLiteral("Title"));
-        title->setWordWrap(true);
+        // The card header keeps its fixed check/badge/size columns and its
+        // margins; the two caption blocks yield so the sum still fits the
+        // dialog's own minimum width.
+        yieldCaptionWidth(title);
         title->installEventFilter(this);
         QFont titleFont = title->font();
         titleFont.setBold(true);
@@ -563,7 +575,7 @@ void ComponentStoreTab::buildUi() {
         auto* description = new QLabel(details);
         description->setObjectName(objectName + QStringLiteral("Description"));
         description->setProperty("textRole", QStringLiteral("muted"));
-        description->setWordWrap(true);
+        yieldCaptionWidth(description);
         description->installEventFilter(this);
         detailsLayout->addWidget(description);
         // The counts a badge used to carry live on their own line under the
@@ -571,7 +583,7 @@ void ComponentStoreTab::buildUi() {
         auto* counts = new QLabel(details);
         counts->setObjectName(objectName + QStringLiteral("Count"));
         counts->setProperty("textRole", QStringLiteral("muted"));
-        counts->setWordWrap(false);
+        yieldCaptionWidth(counts);
         counts->setMinimumWidth(0);
         counts->hide();
         detailsLayout->addWidget(counts);

@@ -295,7 +295,9 @@ QFrame* SettingsDialog::buildSystemIntegrationCard(QWidget* parent) {
     layout->addWidget(systemIntegrationHint_);
     layout->addWidget(makeSettingsDivider(card));
 
-    systemStartup_ = new QCheckBox(card);
+    // These two captions are whole sentences; a one-line check box would reserve
+    // their full advance and widen the page past its own viewport.
+    systemStartup_ = new WrappingCheckBox(card);
     systemStartup_->setObjectName(QStringLiteral("systemStartupCheck"));
     polishInteractiveControl(systemStartup_, theme::kSettingsControlSize);
     layout->addWidget(systemStartup_);
@@ -304,7 +306,7 @@ QFrame* SettingsDialog::buildSystemIntegrationCard(QWidget* parent) {
     layout->addWidget(systemStartupHint_);
     layout->addWidget(makeSettingsDivider(card));
 
-    systemContextMenu_ = new QCheckBox(card);
+    systemContextMenu_ = new WrappingCheckBox(card);
     systemContextMenu_->setObjectName(QStringLiteral("systemContextMenuCheck"));
     polishInteractiveControl(systemContextMenu_, theme::kSettingsControlSize);
     layout->addWidget(systemContextMenu_);

@@ -7,20 +7,26 @@
 #include "theme/Palette.hpp"
 
 #include <QAbstractButton>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QCursor>
 #include <QFont>
+#include <QFontMetrics>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPainter>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSizePolicy>
 #include <QString>
+#include <QStringList>
+#include <QStringView>
 #include <QStyle>
+#include <QStyleOptionButton>
 #include <QTableWidget>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -68,6 +74,105 @@ inline void yieldCaptionWidth(QLabel* label) {
     label->setWordWrap(true);
     label->setSizePolicy(QSizePolicy::Ignored, label->sizePolicy().verticalPolicy());
 }
+
+/// A check box that wraps its own caption. QCheckBox paints its caption on one
+/// line and never elides it, so a translated caption votes its whole advance
+/// into the page and the page either pans sideways or clips the words. Here the
+/// caption is measured and drawn with word wrapping beside the indicator, and
+/// the wrapped height is what the layout receives; text() still carries the
+/// whole caption, so the accessible name, the mnemonic and every translation
+/// keep reading it.
+class WrappingCheckBox final : public QCheckBox {
+ public:
+    using QCheckBox::QCheckBox;
+
+    QSize minimumSizeHint() const override {
+        const QSize base = QCheckBox::sizeHint();
+        // The width below which no word fits on a line; the height is left to
+        // heightForWidth at the width the layout actually hands out, or a row
+        // that wraps twice would still reserve the height of its narrowest
+        // possible wrap.
+        return QSize(horizontalChrome(base) + longestWordAdvance(), base.height());
+    }
+
+    bool hasHeightForWidth() const override { return true; }
+
+    int heightForWidth(int width) const override {
+        const QSize base = QCheckBox::sizeHint();
+        const int textWidth = qMax(0, width - horizontalChrome(base));
+        const int lines = wrappedLines(textWidth).size();
+        return qMax(base.height(),
+                    base.height() - fontMetrics().height() + lines * fontMetrics().lineSpacing());
+    }
+
+ protected:
+    void paintEvent(QPaintEvent* event) override {
+        Q_UNUSED(event);
+        QStyleOptionButton option;
+        initStyleOption(&option);
+        // The style draws the indicator, the surface and the label in the
+        // sheet's own ink and mnemonic handling; the caption it receives is the
+        // same words on as many lines as the box has room for.
+        option.text =
+            wrappedLines(qMax(0, horizontalWidth(option.rect.width()))).join(QLatin1Char('\n'));
+        QPainter painter(this);
+        style()->drawControl(QStyle::CE_CheckBox, &option, &painter, this);
+    }
+
+ private:
+    /// Everything a single-line caption adds beside its own advance: the
+    /// indicator, the label spacing and the sheet's box model, as the style
+    /// computes them for this control. The style measures the caption with its
+    /// mnemonics shown, so the advance it counted has no `&` in it either.
+    int horizontalChrome(const QSize& singleLine) const {
+        QString spoken = text();
+        spoken.remove(QLatin1Char('&'));
+        return qMax(0, singleLine.width() - fontMetrics().horizontalAdvance(spoken));
+    }
+
+    int horizontalWidth(int widgetWidth) const {
+        return widgetWidth - horizontalChrome(QCheckBox::sizeHint());
+    }
+
+    /// The caption's words greedily packed into the width the box has, measured
+    /// without the mnemonic markers the style turns into underlines.
+    QStringList wrappedLines(int textWidth) const {
+        const QString caption = text();
+        if (caption.isEmpty()) return {};
+        if (textWidth <= 0) return {caption};
+        const QStringList words = caption.split(QLatin1Char(' '));
+        const auto advance = [this](const QString& line) {
+            QString spoken = line;
+            spoken.remove(QLatin1Char('&'));
+            return fontMetrics().horizontalAdvance(spoken);
+        };
+        QStringList lines;
+        QString line;
+        for (const QString& word : words) {
+            const QString candidate = line.isEmpty() ? word : line + QLatin1Char(' ') + word;
+            if (!line.isEmpty() && advance(candidate) > textWidth) {
+                lines.append(line);
+                line = word;
+            } else {
+                line = candidate;
+            }
+        }
+        if (!line.isEmpty()) lines.append(line);
+        return lines;
+    }
+
+    /// The width below which no word can stand on its own line: a caption wraps
+    /// at any width down to this one and never below it.
+    int longestWordAdvance() const {
+        int widest = 0;
+        for (const QStringView part : QStringView(text()).split(QLatin1Char(' '))) {
+            QString word = part.toString();
+            word.remove(QLatin1Char('&'));
+            widest = qMax(widest, fontMetrics().horizontalAdvance(word));
+        }
+        return widest;
+    }
+};
 
 /// Styles a top-level page heading with balanced weight and tight tracking.
 inline void stylePageHeading(QLabel* label) {

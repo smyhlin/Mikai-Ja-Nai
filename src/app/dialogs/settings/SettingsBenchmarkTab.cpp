@@ -10,6 +10,7 @@
 #include "theme/Palette.hpp"
 #include "theme/Metrics.hpp"
 #include "theme/Theme.hpp"
+#include "widgets/FlowLayout.hpp"
 
 #include <native/components/AnimeJanaiCatalogWatcher.hpp>
 #include <native/components/AnimeJanaiRuntime.hpp>
@@ -26,7 +27,6 @@
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QFont>
-#include <QGridLayout>
 #include <QHash>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -177,10 +177,12 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     clipsHeader->addWidget(benchmarkSelectAllClips_, 0, Qt::AlignVCenter);
     clipsCardLayout->addLayout(clipsHeader);
 
-    auto* clipGrid = new QGridLayout();
+    // The tiles wrap onto as many lines as the card has room for. A fixed
+    // column count reserves each column's widest tile on every line, which is
+    // wider than the page at the dialog's minimum and hides the row behind a
+    // sideways pan.
+    auto* clipGrid = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
     clipGrid->setContentsMargins(0, theme::kSpacingXs, 0, theme::kSpacingXs);
-    clipGrid->setHorizontalSpacing(theme::kSpacingSmall);
-    clipGrid->setVerticalSpacing(theme::kSpacingSmall);
     struct ClipInfo {
         const char* file;
         const char* dimensions;
@@ -202,18 +204,16 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
         check->setChecked(true);
         polishInteractiveControl(check, theme::kSettingsControlSize);
         applyTabularNumerals(check);
-        clipGrid->addWidget(check, index / 3, index % 3);
+        clipGrid->addWidget(check);
         benchmarkClipChecks_.append(check);
         connect(check, &QCheckBox::toggled, this, [this] { updateBenchmarkSelectionSummary(); });
     }
-    clipGrid->setColumnStretch(0, 1);
-    clipGrid->setColumnStretch(1, 1);
-    clipGrid->setColumnStretch(2, 1);
     clipsCardLayout->addLayout(clipGrid);
 
     clipsCardLayout->addWidget(makeSettingsDivider(clipsCard));
 
-    benchmarkRawBox_ = new QCheckBox(tr("Include the unfiltered baseline"), clipsCard);
+    benchmarkRawBox_ = new WrappingCheckBox(clipsCard);
+    benchmarkRawBox_->setText(tr("Include the unfiltered baseline"));
     benchmarkRawBox_->setObjectName(QStringLiteral("benchmarkRawBox"));
     polishInteractiveControl(benchmarkRawBox_, theme::kSettingsControlSize);
     benchmarkRawBox_->setChecked(true);
