@@ -2200,9 +2200,16 @@ void VideoSurface::paintGL() {
         const bool snapshotCovers =
             presentedPictureFbo_ && presentedPictureFbo_->isValid() &&
             presentedPictureFbo_->size() == deviceSize;
+        // A reattach is the opposite of quiet: the NEW video output is exactly
+        // what has to be asked whether it still delivers, and a paused source
+        // has no other frame coming to read. Suppressing update() here spent the
+        // two-thirds-of-a-second reattach window without ever reading the queue,
+        // so every paused recreation fell through to a full reload (which resets
+        // the playhead to 0) instead of reattaching to the core that still holds
+        // the file.
         const bool pausedQuiet = !playing_ && !framePending_ && !pacingTimerArmed_ &&
-                                 !engineFrameHoldAwaitingOutput_ && !schedule.consumesFrame &&
-                                 snapshotCovers;
+                                 !engineFrameHoldAwaitingOutput_ && !reattachPending_ &&
+                                 !schedule.consumesFrame && snapshotCovers;
         if (!pausedQuiet) {
             const uint64_t updateFlags = render_->update();
             frameArrived = (updateFlags & MPV_RENDER_UPDATE_FRAME) != 0;

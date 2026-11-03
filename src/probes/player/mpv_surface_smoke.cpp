@@ -2,7 +2,11 @@
 // --render-lifecycle, which drives the lifecycle/presentation transitions.
 // --dpr applies QT_SCALE_FACTOR before QApplication is constructed: Qt 6 has no
 // per-widget device pixel ratio, and the framebuffer dimensions are what the
-// lifecycle stages judge.
+// lifecycle stages judge. QT_SCALE_FACTOR is applied on top of whatever base the
+// process's DPI awareness makes the platform report (1.0 for a DPI-unaware
+// process, the monitor scale for a per-monitor-aware one), so the number is a
+// request, not a target: every run prints both the window and the screen ratio,
+// and those two values are the only authority on what was measured.
 
 #include <QApplication>
 #include <QByteArray>
@@ -15,6 +19,7 @@
 #include <QOpenGLFunctions>
 #include <QPainter>
 #include <QRect>
+#include <QScreen>
 #include <QSize>
 #include <QString>
 #include <QTemporaryDir>
@@ -52,8 +57,9 @@ void usage() {
                  "[--out <prefix>]\n"
                  "  --render-lifecycle runs the presentation/lifecycle contract instead of the "
                  "single-clip proof.\n"
-                 "  --dpr sets QT_SCALE_FACTOR before QApplication; Qt multiplies the monitor's "
-                 "native ratio by this factor.\n"
+                 "  --dpr sets QT_SCALE_FACTOR before QApplication. Qt applies it on top of the "
+                 "base the process's DPI awareness gives the platform (1.0 when DPI-unaware), so "
+                 "the result is the 'device pixel ratio' line in this run, not an assumption.\n"
                  "  default media for the lifecycle contract: "
                  "av://lavfi:testsrc2=size=640x360:rate=25\n"
                  "  --out prefixes the screenshot artifacts (default mpv_surface_lifecycle).\n");
@@ -379,7 +385,15 @@ int runRenderLifecycle(const Options& options) {
     }
 
     const qreal dpr = surface->devicePixelRatioF();
-    verdict.metric(QStringLiteral("device pixel ratio %1").arg(dpr, 0, 'f', 2));
+    // Widget and screen ratios are printed together because QT_SCALE_FACTOR is
+    // applied to the platform's own base: the pair is what says whether the
+    // requested value landed, instead of assuming a multiplier.
+    const QScreen* probeScreen = surface->screen();
+    const qreal screenDpr = probeScreen != nullptr ? probeScreen->devicePixelRatio() : -1.0;
+    verdict.metric(QStringLiteral("device pixel ratio %1 (screen %2, QT_SCALE_FACTOR %3)")
+                       .arg(dpr, 0, 'f', 2)
+                       .arg(screenDpr, 0, 'f', 2)
+                       .arg(qEnvironmentVariable("QT_SCALE_FACTOR", QStringLiteral("<unset>"))));
     verdict.instrumentation(std::abs(dpr - std::round(dpr)) > 0.001,
                             QStringLiteral("fractional device pixel ratio in effect"));
 
@@ -1002,6 +1016,7 @@ int runRenderLifecycle(const Options& options) {
     verdict.require(pauseBeforeReparent,
                     QStringLiteral("the core observed pause before GL recreation"));
     const double pausePositionBeforeReparent = surface->position();
+    const quint64 epochBeforeReparent = surface->sourceEpoch();
     const int initsBeforeReparent = surface->glInits;
     QWidget host2;
     host2.setWindowFlag(Qt::WindowStaysOnTopHint, true);
@@ -1030,6 +1045,18 @@ int runRenderLifecycle(const Options& options) {
         verdict.require(pauseRestored,
                         QStringLiteral("GL recreation restores the observed paused state"));
         pumpEvents(300);
+        // The playhead and the source identity are both part of "parked": a
+        // reload restarts the file at its start option and bumps the epoch, so a
+        // position that merely came back would still not be the same source.
+        verdict.metric(QStringLiteral("paused position across GL recreation: %1 -> %2, source "
+                                      "epoch %3 -> %4")
+                           .arg(pausePositionBeforeReparent, 0, 'f', 3)
+                           .arg(surface->position(), 0, 'f', 3)
+                           .arg(epochBeforeReparent)
+                           .arg(surface->sourceEpoch()));
+        verdict.require(surface->sourceEpoch() == epochBeforeReparent,
+                        QStringLiteral("the paused reparent reattached to the loaded source "
+                                       "instead of reloading it"));
         verdict.require(std::abs(surface->position() - pausePositionBeforeReparent) <= 0.12,
                         QStringLiteral("the paused source remains parked across GL recreation"));
     if (reparented && pauseBeforeReparent) {
