@@ -10,6 +10,9 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
@@ -2676,6 +2679,245 @@ void FocusDuringBuildRunner::completeTeardown() {
 }
 #endif
 
+// ── close during a real engine build ─────────────────────────────────────
+//
+// The bound this measures is GOAL-F's: a close request that arrives while the
+// player is waiting on an AnimeJaNai engine build must return control in <= 2.2 s,
+// showing what it is doing, and then really tear the dialog down. Nothing here is
+// synthesised - the build is the fork's own, the plan is submitted through the API
+// the dialog uses, the close is the dialog's own closeEvent, and the destruction
+// is the deferred delete that WA_DeleteOnClose schedules.
+
+/// Engine build logs the fork wrote at or after `sinceUtc`. The backend redirects
+/// trtexec's own output into `<engine>.build.log` beside the graph it builds, so a
+/// log from this request is evidence that a build process really ran - not a
+/// notification the probe asked for.
+QStringList freshEngineBuildLogs(const QString& modelDirectory, const QDateTime& sinceUtc) {
+    QStringList logs;
+    if (modelDirectory.isEmpty() || !sinceUtc.isValid()) return logs;
+    QDirIterator it(modelDirectory, {QStringLiteral("*.engine.build.log")}, QDir::Files,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QFileInfo info(it.next());
+        if (info.lastModified().toUTC() < sinceUtc) continue;
+        logs.append(info.absoluteFilePath());
+    }
+    return logs;
+}
+
+/// Runs the opt-in close-during-build scenario and returns the process exit code.
+///
+/// The caller has already submitted `plan`; this waits for the fork to report a
+/// build, samples the dialog's own finishing notice while its close event runs,
+/// and measures from the close request to the dialog's destruction.
+int runCloseDuringBuild(PlayerDialog* dialog, VideoSurface* surface,
+                        const native::AnimeJanaiPlan& plan, const QString& modelDirectory,
+                        const QMap<QString, QString>& enginesBefore,
+                        const QDateTime& requestedAtUtc, const QString& buildRequestTimeUtc,
+                        const QString& nativeRoot, const bool& buildActive) {
+    constexpr int kCloseBudgetMs = 2200;
+    QPointer<PlayerDialog> dialogGuard(dialog);
+    QPointer<VideoSurface> surfaceGuard(surface);
+    int failures = 0;
+    std::fprintf(stderr,
+                 "[close-build] mode=on preset=%s backend=%s submission=setAnimeJanaiPlan "
+                 "activation=none plan-source=prepareAnimeJanaiPlan store=%s\n",
+                 qPrintable(plan.presetId),
+                 plan.backend == native::Backend::TensorRT ? "tensorrt" : "directml",
+                 qPrintable(nativeRoot));
+
+    // 1. The build has to be genuinely running: the fork's own started event, the
+    //    surface's own active flag and the dialog's own preparation window. A
+    //    cached engine produces none of them.
+    QElapsedTimer buildClock;
+    buildClock.start();
+    int lastBuildNotice = -10000;
+    const bool buildStarted = waitUntil([&] {
+        if (surfaceGuard.isNull() || dialogGuard.isNull()) return true;
+        if (buildClock.elapsed() - lastBuildNotice >= 10000) {
+            lastBuildNotice = static_cast<int>(buildClock.elapsed());
+            std::fprintf(stderr,
+                         "[close-build] waiting for a fork-reported engine build (%lld s): status=%s\n",
+                         static_cast<long long>(buildClock.elapsed() / 1000),
+                         qPrintable(surfaceGuard->animeJanaiStatus()));
+        }
+        return buildActive && surfaceGuard->animeJanaiEngineBuildActive();
+    }, 120000);
+    const qint64 buildStartMs = buildClock.elapsed();
+    if (!buildStarted) {
+        std::fprintf(stderr,
+                     "[close-build] no fork-reported engine build within %lld s: a cached engine "
+                     "for this graph and resolution produces no build at all, so this store cannot "
+                     "carry the scenario; use an owned store without that engine, or a graph whose "
+                     "engine has not been built\n",
+                     static_cast<long long>(buildStartMs / 1000));
+    }
+    if (surfaceGuard.isNull() || dialogGuard.isNull()) {
+        std::fprintf(stderr,
+                     "FAIL [close-build] the player went away before any build state was observed\n");
+        return 1;
+    }
+    const QString buildDetail = surfaceGuard->animeJanaiEngineBuildDetail();
+    const QString buildStatus = surfaceGuard->animeJanaiStatus();
+    auto* overlay = dialogGuard->findChild<shell::ProcessingOverlay*>();
+    const bool overlayVisible = overlay != nullptr && overlay->isVisible();
+    // The gate above is the fork's own started event, its own active flag and the
+    // dialog's own preparation window. The trtexec log beside the graph is
+    // corroboration rather than a gate: a shell redirect creates it at a moment
+    // this process cannot pin, and a missing file here would say nothing about
+    // whether a build is running.
+    QStringList buildLogs;
+    const bool buildLogSeen = waitUntil([&] {
+        buildLogs = freshEngineBuildLogs(modelDirectory, requestedAtUtc);
+        return !buildLogs.isEmpty();
+    }, 10000);
+    for (const QString& log : buildLogs)
+        std::fprintf(stderr, "[close-build] build-log=%s\n", qPrintable(log));
+    const bool buildProved = buildStarted && !buildDetail.isEmpty() && overlayVisible;
+    {
+        result(buildProved,
+               "a fork-reported TensorRT engine build was really running when the close was "
+               "requested (surface active, preparation window visible, backend detail present)");
+        if (!buildProved) ++failures;
+    }
+
+    // 2. The close itself. The notice is conditioned on the settle exceeding
+    //    300 ms by the shipping close path, so the sampler watches the dialog's own
+    //    overlay while that settle spins the event loop; nothing is injected.
+    const QString finishingText = QCoreApplication::translate(
+        "mplayer::shell::PlayerDialog", "Finishing enhancement…");
+    bool finishingNoticeObserved = false;
+    QStringList finishingNoticeTexts;
+    QTimer noticeTimer;
+    noticeTimer.setInterval(16);
+    QObject::connect(&noticeTimer, &QTimer::timeout, dialogGuard.data(), [&] {
+        PlayerDialog* live = dialogGuard.data();
+        if (live == nullptr) return;
+        auto* liveOverlay = live->findChild<shell::ProcessingOverlay*>();
+        if (liveOverlay == nullptr || !liveOverlay->isVisible()) return;
+        for (QLabel* label : liveOverlay->findChildren<QLabel*>()) {
+            if (!label->isVisible() || label->text().isEmpty()) continue;
+            // The overlay composes its phase and its detail into one line, so the
+            // notice is the detail's words inside that line, not the whole text.
+            if (!label->text().contains(finishingText, Qt::CaseInsensitive)) continue;
+            finishingNoticeObserved = true;
+            if (!finishingNoticeTexts.contains(label->text()))
+                finishingNoticeTexts.append(label->text());
+        }
+    });
+    const int closeLogStart = capturedLogs().size();
+    QElapsedTimer closeClock;
+    closeClock.start();
+    noticeTimer.start();
+    // The real close event: synchronous by contract, so the returning call is the
+    // moment control is back with the viewer.
+    const bool acceptedClose = dialogGuard->close();
+    const qint64 closeReturnMs = closeClock.elapsed();
+    noticeTimer.stop();
+    const bool refusedVisible = !dialogGuard.isNull() && dialogGuard->isVisible();
+    const bool settleAbandoned =
+        !surfaceGuard.isNull() && surfaceGuard->nativeTeardownSettleAbandoned();
+    const QString statusAfterClose =
+        surfaceGuard.isNull() ? QString() : surfaceGuard->animeJanaiStatus();
+    bool abandonedLogged = false;
+    bool refusalLogged = false;
+    for (const QString& line : capturedLogsSince(closeLogStart)) {
+        abandonedLogged |=
+            line.contains(QStringLiteral("teardownSettleAbandoned")) ||
+            line.contains(QStringLiteral("teardown settle abandoned"));
+        refusalLogged |= line.contains(QStringLiteral("close refused"));
+    }
+    // The dialog is owned by WA_DeleteOnClose, so its destruction is the deferred
+    // delete the close event scheduled - measured from the same request.
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QCoreApplication::processEvents();
+    const qint64 destroyedMs = closeClock.elapsed();
+    const bool destroyed = dialogGuard.isNull() && surfaceGuard.isNull();
+
+    std::fprintf(stderr,
+                 "[close-build] summary build-started=%d build-ms=%lld build-log=%d "
+                 "overlay-visible=%d close-accepted=%d close-return-ms=%lld "
+                 "dialog-destroyed-ms=%lld destroyed=%d finishing-notice=%d "
+                 "settle-abandoned=%d abandoned-logged=%d refused=%d budget-ms=%d "
+                 "notice-text=%s status=%s\n",
+                 buildStarted ? 1 : 0, static_cast<long long>(buildStartMs),
+                 buildLogSeen ? 1 : 0, overlayVisible ? 1 : 0, acceptedClose ? 1 : 0,
+                 static_cast<long long>(closeReturnMs),
+                 static_cast<long long>(destroyedMs), destroyed ? 1 : 0,
+                 finishingNoticeObserved ? 1 : 0, settleAbandoned ? 1 : 0,
+                 abandonedLogged ? 1 : 0, (refusedVisible || refusalLogged) ? 1 : 0,
+                 kCloseBudgetMs, qPrintable(finishingText), qPrintable(statusAfterClose));
+    result(acceptedClose && destroyed && !refusedVisible && !refusalLogged,
+           "the real PlayerDialog accepted its own close event during the build and was destroyed");
+    if (!(acceptedClose && destroyed && !refusedVisible && !refusalLogged)) ++failures;
+    result(destroyedMs <= kCloseBudgetMs,
+           "close during an active engine build returned control within the 2.2 s budget");
+    if (destroyedMs > kCloseBudgetMs) ++failures;
+    // The shipping close path shows the notice only once the settle passes 300 ms;
+    // a faster settle owes no notice, so the criterion follows the same threshold.
+    const bool noticeProved = closeReturnMs < 300 || finishingNoticeObserved;
+    result(noticeProved,
+           "a close settle longer than 300 ms showed the Finishing enhancement notice");
+    if (!noticeProved) ++failures;
+    result(!settleAbandoned || abandonedLogged,
+           "an abandoned teardown settle named itself in the log");
+    if (settleAbandoned && !abandonedLogged) ++failures;
+
+    const QJsonObject evidence{
+        {"scope",
+         QStringLiteral("real PlayerDialog with a request-bound TensorRT engine build in an "
+                        "owned store; plan submitted through VideoSurface::setAnimeJanaiPlan "
+                        "after prepareAnimeJanaiPlan; no native activation, no synthetic "
+                        "engine notification, no cursor movement")},
+        {"presetId", plan.presetId},
+        {"backend", plan.backend == native::Backend::TensorRT ? "tensorrt" : "directml"},
+        {"buildRequestedUtc", buildRequestTimeUtc},
+        {"enginesBefore", static_cast<qint64>(enginesBefore.size())},
+        {"modelDirectory", modelDirectory},
+        {"buildStarted", buildStarted},
+        {"buildStartMs", static_cast<qint64>(buildStartMs)},
+        {"buildDetail", buildDetail},
+        {"buildStatusAtClose", buildStatus},
+        {"overlayVisibleAtClose", overlayVisible},
+        {"buildLogs", QJsonArray::fromStringList(buildLogs)},
+        {"finishingNoticeText", finishingText},
+        {"finishingNoticeObserved", finishingNoticeObserved},
+        {"finishingNoticeTexts", QJsonArray::fromStringList(finishingNoticeTexts)},
+        {"closeReturnMs", static_cast<qint64>(closeReturnMs)},
+        {"dialogDestroyedMs", static_cast<qint64>(destroyedMs)},
+        {"budgetMs", kCloseBudgetMs},
+        {"destroyed", destroyed},
+        {"settleAbandoned", settleAbandoned},
+        {"abandonedLogged", abandonedLogged},
+        {"closeRefused", refusedVisible || refusalLogged},
+        {"statusAfterClose", statusAfterClose},
+        {"passes", failures == 0}};
+    const QString evidencePath =
+        QDir(nativeRoot).filePath(QStringLiteral("animejanai-close-during-build.json"));
+    QFile evidenceFile(evidencePath);
+    if (evidenceFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        evidenceFile.write(QJsonDocument(evidence).toJson(QJsonDocument::Indented));
+        evidenceFile.close();
+        std::fprintf(stderr, "[close-build] evidence=%s\n", qPrintable(evidencePath));
+    } else {
+        std::fprintf(stderr, "FAIL [close-build] unable to write evidence at %s\n",
+                     qPrintable(evidencePath));
+        ++failures;
+    }
+    if (failures != 0) {
+        std::fprintf(stderr,
+                     "FAIL [close-build] the close-during-build scenario did not pass (%d "
+                     "criterion/criteria)\n",
+                     failures);
+        return 1;
+    }
+    std::fprintf(stderr,
+                 "PASS close-during-build: a real TensorRT build was running and the player "
+                 "returned control in %lld ms\n",
+                 static_cast<long long>(destroyedMs));
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -2747,8 +2989,20 @@ int main(int argc, char** argv) {
                        "owned activation to the first visible composited picture p95 below "
                        "300 ms. The assembly-time always-on-top diagnostic flag is omitted in "
                        "this mode so the peer can occlude the player."));
+    QCommandLineOption closeDuringBuildOption(
+        QStringLiteral("close-during-build"),
+        QStringLiteral("With --natural-player --backend tensorrt --require-engine-build and a "
+                       "preset, submit the prepared plan through the production "
+                       "VideoSurface::setAnimeJanaiPlan route (no menu, no activation), wait for "
+                       "the fork's own active engine build, then run the dialog's real close "
+                       "event and require request-to-dialog-destroyed control return within "
+                       "2200 ms. Reports the observed finishing notice, the settle-abandonment "
+                       "diagnostic and a clean exit in "
+                       "<native-root>/animejanai-close-during-build.json. This mode proves "
+                       "teardown, not build completion."));
     parser.addOption(presetOption);
     parser.addOption(backendOption);
+    parser.addOption(closeDuringBuildOption);
     parser.addOption(importOption);
     parser.addOption(provisionOption);
     parser.addOption(rifeSourceOption);
@@ -2770,6 +3024,7 @@ int main(int argc, char** argv) {
                                  QStringLiteral("[backend]"));
     parser.process(app);
     const bool focusDuringBuild = parser.isSet(focusDuringBuildOption);
+    const bool closeDuringBuild = parser.isSet(closeDuringBuildOption);
     const QString appName = parser.value(appNameOption).trimmed();
     if (appName.isEmpty()) {
         std::fprintf(stderr, "FAIL --probe-app-name must not be empty\n");
@@ -2973,6 +3228,36 @@ int main(int argc, char** argv) {
                      "is claimed by that run.\n",
                      qPrintable(presetId));
         return 1;
+    }
+    if (closeDuringBuild) {
+        const bool closePreset = parser.isSet(presetOption) || positional.size() > 1;
+        if (!parser.isSet(naturalOption) || !parser.isSet(requireBuildOption) ||
+            backend != native::Backend::TensorRT || !closePreset) {
+            std::fprintf(stderr,
+                         "FAIL --close-during-build requires --natural-player, "
+                         "--require-engine-build, --backend tensorrt, and a preset: the scenario "
+                         "needs a real PlayerDialog, a request-bound fresh build, and a graph "
+                         "identity it can require\n");
+            return 1;
+        }
+        if (focusDuringBuild) {
+            std::fprintf(stderr,
+                         "FAIL --close-during-build and --focus-during-build measure different "
+                         "things and cannot share one run: the focus proof needs the dialog to "
+                         "stay open while the close proof takes it down\n");
+            return 1;
+        }
+        if (parser.isSet(captureProcessedRawOption)) {
+            std::fprintf(stderr,
+                         "FAIL --close-during-build cannot be combined with "
+                         "--capture-processed-raw: the capture needs a live processed frame the "
+                         "close removes\n");
+            return 1;
+        }
+        std::fprintf(stderr,
+                     "[close-build] mode=requested submission=setAnimeJanaiPlan activation=none "
+                     "budget-ms=2200 (the run proves teardown during a real build, not build "
+                     "completion)\n");
     }
     const auto progress = [](const native::ComponentProvisionProgress& item) {
         std::fprintf(stderr, "[AnimeJanaiProbe] component=%s received=%lld total=%lld\n",
@@ -3516,7 +3801,7 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "[AnimeJanaiProbe] request-artifact-before-build-log path=%s sha256=%s\n",
                              qPrintable(it.key()), qPrintable(it.value()));
         }
-        if (parser.isSet(naturalOption)) {
+        if (parser.isSet(naturalOption) && !closeDuringBuild) {
             for (const native::AnimeJanaiPreset& candidate : native::animeJanaiPresets()) {
                 if (candidate.id == presetId) {
                     plan.presetId = candidate.id;
@@ -3546,8 +3831,8 @@ int main(int argc, char** argv) {
                          qPrintable(plan.presetId), plan.slot);
             const int requestLogStart = capturedLogs().size();
             const int priorFailureCount = animeJanaiFailures.size();
-            const QString buildRequestTimeUtc =
-                QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+            const QDateTime buildRequestedAtUtc = QDateTime::currentDateTimeUtc();
+            const QString buildRequestTimeUtc = buildRequestedAtUtc.toString(Qt::ISODateWithMs);
             if (parser.isSet(requireBuildOption))
                 std::fprintf(stderr,
                              "[AnimeJanaiProbe] fresh-build-request utc=%s before-snapshot-utc=%s root=%s model-directory=%s selected-preset=%s\n",
@@ -3556,7 +3841,7 @@ int main(int argc, char** argv) {
                              qPrintable(presetId));
             const quint64 priorPlanGeneration = naturalDialog
                 ? naturalDialog->animeJanaiPlanGeneration() : 0;
-            if (parser.isSet(naturalOption)) {
+            if (parser.isSet(naturalOption) && !closeDuringBuild) {
                 const bool backendChosen = chooseEnhancementMenu(
                     naturalDialog.data(),
                     {QStringLiteral("level|animejanai"), QStringLiteral("level|animejanai:backend"),
@@ -3573,7 +3858,15 @@ int main(int argc, char** argv) {
                     return 1;
                 }
             } else {
+                // The production submission route, with no menu to walk and no
+                // activation to request: the close-during-build scenario needs a
+                // real build behind a real PlayerDialog, not a foreground takeover.
                 surface->setAnimeJanaiPlan(plan);
+            }
+            if (closeDuringBuild) {
+                return runCloseDuringBuild(naturalDialog.data(), surface, plan, artifactModelDir,
+                                           engineFilesBefore, buildRequestedAtUtc,
+                                           buildRequestTimeUtc, actualNativeRoot, buildActive);
             }
             const auto requestedPlanMatches = [&] {
                 if (naturalDialog &&
