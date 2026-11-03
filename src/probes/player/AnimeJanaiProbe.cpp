@@ -2034,7 +2034,12 @@ public:
         phaseClock_.start();
         timer_.start();
     }
-    bool finished() const { return phase_ == Phase::Finished; }
+    /// The focus evidence is final as soon as finish() runs; the Teardown phase
+    /// only reaps the helper and never mutates it. Readers wait for this, not for
+    /// the process exit, so a still-active build cannot stretch their wait.
+    bool evidenceReady() const {
+        return phase_ == Phase::Teardown || phase_ == Phase::Finished;
+    }
 
 private:
     enum class Phase {
@@ -4092,9 +4097,9 @@ int main(int argc, char** argv) {
 #ifdef Q_OS_WIN
     if (focusDuringBuild) {
         // The runner advances from timer ticks; a build that settled early stops
-        // it, and this only waits for the in-flight step to finish before the
-        // evidence is read.
-        waitUntil([&] { return focusRunner.isNull() || focusRunner->finished(); }, 8000);
+        // it, and this only waits until the focus evidence is final; the helper's
+        // teardown after that mutates nothing.
+        waitUntil([&] { return focusRunner.isNull() || focusRunner->evidenceReady(); }, 8000);
     }
 #endif
     if (focusDuringBuild) {
