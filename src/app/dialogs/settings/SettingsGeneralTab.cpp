@@ -27,11 +27,13 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPair>
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
 #include <QSizePolicy>
 #include <QSettings>
+#include <QSpinBox>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -276,6 +278,121 @@ QWidget* SettingsDialog::buildGeneralTab() {
     hdrLayout->addWidget(nativeHdrOverrideHint_);
 
     root->addWidget(hdrCard);
+
+    // ── Card 5: Video scaling (GOAL-H2) ─────────────────────────────────
+    QVBoxLayout* scalingLayout = nullptr;
+    QFrame* scalingCard = makeSettingsCard(page, &scalingLayout);
+    scalingCard->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    scalingLayout->setSpacing(theme::kSpacingSmall);
+
+    scalingTitle_ = new QLabel(scalingCard);
+    styleSectionHeading(scalingTitle_);
+    scalingLayout->addWidget(scalingTitle_);
+
+    scalingHint_ = new QLabel(scalingCard);
+    styleMutedCaption(scalingHint_);
+    scalingLayout->addWidget(scalingHint_);
+
+    scalingLayout->addWidget(makeSettingsDivider(scalingCard));
+
+    QSettings scalingSettings;
+    scalingMode_ = new QComboBox(scalingCard);
+    scalingMode_->setObjectName(QStringLiteral("videoScaleModeCombo"));
+    polishInteractiveControl(scalingMode_, theme::kSettingsControlSize);
+    for (const mplayer::VideoScaleMode mode :
+         {mplayer::VideoScaleMode::Fit, mplayer::VideoScaleMode::Fill,
+          mplayer::VideoScaleMode::Stretch, mplayer::VideoScaleMode::Aspect16x9,
+          mplayer::VideoScaleMode::Aspect4x3, mplayer::VideoScaleMode::Original}) {
+        scalingMode_->addItem(mplayer::videoScaleModeLabel(mode), static_cast<int>(mode));
+    }
+    const int storedMode = scalingSettings.value(
+        QString::fromLatin1(mplayer::VideoSurface::kVideoScaleModeSettingKey), 0).toInt();
+    const int modeIndex = scalingMode_->findData(storedMode);
+    scalingMode_->setCurrentIndex(modeIndex >= 0 ? modeIndex : 0);
+    scalingMode_->setAccessibleName(tr("Video scaling mode"));
+    scalingLayout->addWidget(scalingMode_);
+
+    scalingZoomCaption_ = new QLabel(scalingCard);
+    styleMutedCaption(scalingZoomCaption_);
+    scalingLayout->addWidget(scalingZoomCaption_);
+
+    scalingZoom_ = new QSpinBox(scalingCard);
+    scalingZoom_->setObjectName(QStringLiteral("videoZoomSpin"));
+    scalingZoom_->setRange(-50, 100);
+    scalingZoom_->setSingleStep(5);
+    scalingZoom_->setSuffix(QStringLiteral(" %"));
+    scalingZoom_->setValue(scalingSettings.value(
+        QString::fromLatin1(mplayer::VideoSurface::kVideoZoomSettingKey), 0).toInt());
+    scalingZoom_->setAccessibleName(tr("Video zoom"));
+    polishInteractiveControl(scalingZoom_, theme::kSettingsControlSize);
+    scalingLayout->addWidget(scalingZoom_);
+
+    // Stretch ignores the percentage by definition, so the control says so by
+    // being unusable rather than by quietly doing nothing.
+    const auto syncZoomEnabled = [this] {
+        const bool stretch =
+            scalingMode_->currentData().toInt() ==
+            static_cast<int>(mplayer::VideoScaleMode::Stretch);
+        scalingZoom_->setEnabled(!stretch);
+    };
+    connect(scalingMode_, &QComboBox::currentIndexChanged, this, syncZoomEnabled);
+    syncZoomEnabled();
+
+    scalingLayout->addWidget(makeSettingsDivider(scalingCard));
+
+    // The ids are what the pinned core accepts verbatim; the labels are the
+    // viewer's. EWA Lanczos (soft) is the id we ship, not "auto": the core
+    // refuses the literal auto for these options.
+    const QVector<QPair<QString, QString>> scalerChoices{
+        {QStringLiteral("bilinear"), tr("Bilinear (fast)")},
+        {QStringLiteral("bicubic"), tr("Bicubic")},
+        {QStringLiteral("catmull_rom"), tr("Catmull-Rom")},
+        {QStringLiteral("lanczos"), tr("Lanczos (sharp)")},
+        {QStringLiteral("ewa_lanczossoft"), tr("Ewa Lanczos (soft)")},
+        {QStringLiteral("mitchell"), tr("Mitchell (smooth)")}};
+
+    scalingUpscalerCaption_ = new QLabel(scalingCard);
+    styleMutedCaption(scalingUpscalerCaption_);
+    scalingLayout->addWidget(scalingUpscalerCaption_);
+
+    scalingUpscaler_ = new QComboBox(scalingCard);
+    scalingUpscaler_->setObjectName(QStringLiteral("videoUpscalerCombo"));
+    polishInteractiveControl(scalingUpscaler_, theme::kSettingsControlSize);
+    for (const auto& scaler : scalerChoices) {
+        scalingUpscaler_->addItem(scaler.second, scaler.first);
+    }
+    const int upscalerIndex = scalingUpscaler_->findData(scalingSettings.value(
+        QString::fromLatin1(mplayer::VideoSurface::kVideoUpscaleSettingKey),
+        QStringLiteral("lanczos")).toString());
+    scalingUpscaler_->setCurrentIndex(upscalerIndex >= 0 ? upscalerIndex : 0);
+    scalingUpscaler_->setAccessibleName(tr("Upscaler"));
+    scalingLayout->addWidget(scalingUpscaler_);
+
+    scalingDownscalerCaption_ = new QLabel(scalingCard);
+    styleMutedCaption(scalingDownscalerCaption_);
+    scalingLayout->addWidget(scalingDownscalerCaption_);
+
+    scalingDownscaler_ = new QComboBox(scalingCard);
+    scalingDownscaler_->setObjectName(QStringLiteral("videoDownscalerCombo"));
+    polishInteractiveControl(scalingDownscaler_, theme::kSettingsControlSize);
+    // Auto is the empty id: mpv's own default is read from the core and
+    // restored, because the pinned runtime refuses the literal "auto".
+    scalingDownscaler_->addItem(tr("Auto (recommended)"), QString());
+    for (const auto& scaler : scalerChoices) {
+        scalingDownscaler_->addItem(scaler.second, scaler.first);
+    }
+    const int downscalerIndex = scalingDownscaler_->findData(scalingSettings.value(
+        QString::fromLatin1(mplayer::VideoSurface::kVideoDownscaleSettingKey),
+        QString()).toString());
+    scalingDownscaler_->setCurrentIndex(downscalerIndex >= 0 ? downscalerIndex : 0);
+    scalingDownscaler_->setAccessibleName(tr("Downscaler"));
+    scalingLayout->addWidget(scalingDownscaler_);
+
+    scalingComparisonHint_ = new QLabel(scalingCard);
+    styleMutedCaption(scalingComparisonHint_);
+    scalingLayout->addWidget(scalingComparisonHint_);
+
+    root->addWidget(scalingCard);
 
     root->addStretch();
     scroll->setWidget(page);
@@ -579,6 +696,45 @@ void SettingsDialog::retranslateGeneralTab() {
         tr("Native enhancement stages require 8-bit NV12 and are normally skipped for HDR "
            "sources. Enabling this allows that processing on HDR video; it does not convert "
            "the source to SDR, and may reduce HDR image quality."));
+
+    scalingTitle_->setText(tr("Video scaling"));
+    scalingHint_->setText(
+        tr("Controls how the video is mapped to the window and resampled for display. "
+           "Does not change AI upscaling; AnimeJaNai processes run at their own resolution."));
+    scalingComparisonHint_->setText(
+        tr("Applies to the player immediately; Compare always uses Fit so panes remain "
+           "comparable."));
+    scalingZoomCaption_->setText(tr("Zoom"));
+    scalingUpscalerCaption_->setText(tr("Upscaler"));
+    scalingDownscalerCaption_->setText(tr("Downscaler"));
+    scalingZoom_->setAccessibleName(tr("Video zoom"));
+    scalingMode_->setAccessibleName(tr("Video scaling mode"));
+    scalingUpscaler_->setAccessibleName(tr("Upscaler"));
+    scalingDownscaler_->setAccessibleName(tr("Downscaler"));
+    // The mode labels come from one shared helper, so only the row order has to
+    // be restated here.
+    const auto restateScaler = [](QComboBox* combo,
+                                  const QVector<QPair<QString, QString>>& labels) {
+        for (const auto& entry : labels) {
+            const int index = combo->findData(entry.first);
+            if (index >= 0) combo->setItemText(index, entry.second);
+        }
+    };
+    const QVector<QPair<QString, QString>> scalerLabels{
+        {QStringLiteral("bilinear"), tr("Bilinear (fast)")},
+        {QStringLiteral("bicubic"), tr("Bicubic")},
+        {QStringLiteral("catmull_rom"), tr("Catmull-Rom")},
+        {QStringLiteral("lanczos"), tr("Lanczos (sharp)")},
+        {QStringLiteral("ewa_lanczossoft"), tr("Ewa Lanczos (soft)")},
+        {QStringLiteral("mitchell"), tr("Mitchell (smooth)")}};
+    restateScaler(scalingUpscaler_, scalerLabels);
+    restateScaler(scalingDownscaler_, scalerLabels);
+    const int autoIndex = scalingDownscaler_->findData(QString());
+    if (autoIndex >= 0) scalingDownscaler_->setItemText(autoIndex, tr("Auto (recommended)"));
+    for (int i = 0; i < scalingMode_->count(); ++i) {
+        const auto mode = static_cast<mplayer::VideoScaleMode>(scalingMode_->itemData(i).toInt());
+        scalingMode_->setItemText(i, mplayer::videoScaleModeLabel(mode));
+    }
 
     refreshQuota();
 }

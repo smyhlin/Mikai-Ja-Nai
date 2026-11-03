@@ -30,6 +30,7 @@
 #include <QEvent>
 #include <QShowEvent>
 #include <QSignalBlocker>
+#include <QSpinBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -580,6 +581,27 @@ void SettingsDialog::save() {
         default: mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Auto); break;
     }
     mplayer::VideoSurface::setAnimeJanaiHdrOverride(nativeHdrOverride_->isChecked());
+    // Display scaling is the same shape of policy: the four keys are what the
+    // next startup reads, and the static is the live truth every surface
+    // adopts on its own pump, so an open player changes without a restart.
+    mplayer::VideoScalePolicy scalePolicy;
+    const int committedScaleMode = scalingMode_->currentData().toInt();
+    if (committedScaleMode >= static_cast<int>(mplayer::VideoScaleMode::Fit) &&
+        committedScaleMode <= static_cast<int>(mplayer::VideoScaleMode::Original)) {
+        scalePolicy.mode = static_cast<mplayer::VideoScaleMode>(committedScaleMode);
+    }
+    scalePolicy.zoomPercent = scalingZoom_->value();
+    scalePolicy.upscale = scalingUpscaler_->currentData().toString();
+    scalePolicy.downscale = scalingDownscaler_->currentData().toString();
+    settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kVideoScaleModeSettingKey),
+                      static_cast<int>(scalePolicy.mode));
+    settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kVideoZoomSettingKey),
+                      scalePolicy.zoomPercent);
+    settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kVideoUpscaleSettingKey),
+                      scalePolicy.upscale);
+    settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kVideoDownscaleSettingKey),
+                      scalePolicy.downscale);
+    mplayer::VideoSurface::setVideoScalePolicy(scalePolicy);
     settings.beginGroup(QLatin1String(mplayer::shell::kPresetShortcutSettingsGroup));
     for (const PresetRow& row : presetRows_) {
         if (presets.contains(row.id)) {

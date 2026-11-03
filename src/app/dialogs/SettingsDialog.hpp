@@ -35,6 +35,7 @@ class QPushButton;
 class QScrollArea;
 class QShowEvent;
 class QSlider;
+class QSpinBox;
 class QStackedWidget;
 class QTabWidget;
 class QVBoxLayout;
@@ -359,6 +360,17 @@ private:
     QComboBox* hdrPolicy_ = nullptr;
     QCheckBox* nativeHdrOverride_ = nullptr;
     QLabel* nativeHdrOverrideHint_ = nullptr;
+    // ── Video scaling (GOAL-H2) ──────────────────────────────────────────
+    QLabel* scalingTitle_ = nullptr;
+    QLabel* scalingHint_ = nullptr;
+    QLabel* scalingComparisonHint_ = nullptr;
+    QComboBox* scalingMode_ = nullptr;
+    QSpinBox* scalingZoom_ = nullptr;
+    QLabel* scalingZoomCaption_ = nullptr;
+    QLabel* scalingUpscalerCaption_ = nullptr;
+    QLabel* scalingDownscalerCaption_ = nullptr;
+    QComboBox* scalingUpscaler_ = nullptr;
+    QComboBox* scalingDownscaler_ = nullptr;
     QCheckBox* systemStartup_ = nullptr;
     QCheckBox* systemContextMenu_ = nullptr;
     QLabel* systemIntegrationTitle_ = nullptr;
