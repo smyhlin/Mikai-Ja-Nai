@@ -613,6 +613,8 @@ int runScreenshotReview(QApplication& app, TitlePage* page, const QString& ref,
     };
     const ReviewCase cases[] = {
         {"minimum-uk-dark", QSize(860, 620), "uk", mikai::app::theme::SiteTheme::Dark},
+        {"review-1000-uk-dark", QSize(1000, 700), "uk", mikai::app::theme::SiteTheme::Dark},
+        {"review-1280-uk-dark", QSize(1280, 820), "uk", mikai::app::theme::SiteTheme::Dark},
         {"wide-en-dark", QSize(1080, 760), "en", mikai::app::theme::SiteTheme::Dark},
         {"large-uk-dark", QSize(1400, 900), "uk", mikai::app::theme::SiteTheme::Dark},
         {"large-en-light", QSize(1400, 900), "en", mikai::app::theme::SiteTheme::Light},
