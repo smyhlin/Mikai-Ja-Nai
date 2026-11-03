@@ -297,25 +297,8 @@ void HoverPreview::paintChrome(QPainter& painter) {
     // pixel of the card is left to whatever the parent last had there.
     painter.fillRect(rect(), hasFrame ? QColor(0, 0, 0) : flyout());
     if (hasFrame) {
-        // The card is sized to the frame's aspect, so this covers it exactly. The
-        // frame is prescaled once per frame/size/ratio and blitted 1:1 in device
-        // pixels: a timestamp tick reuses it instead of paying the smooth
-        // resample again.
-        const qreal ratio =
-            painter.device() != nullptr ? painter.device()->devicePixelRatioF() : 1.0;
-        const QSize physical(static_cast<int>(std::ceil(width() * ratio)),
-                             static_cast<int>(std::ceil(height() * ratio)));
-        const qint64 frameKey = frame_.cacheKey();
-        if (preparedFrame_.isNull() || preparedFrameKey_ != frameKey ||
-            preparedFrameSize_ != physical || preparedFrameRatio_ != ratio) {
-            preparedFrame_ = frame_.scaled(physical, Qt::IgnoreAspectRatio,
-                                           Qt::SmoothTransformation);
-            preparedFrame_.setDevicePixelRatio(ratio);
-            preparedFrameKey_ = frameKey;
-            preparedFrameSize_ = physical;
-            preparedFrameRatio_ = ratio;
-        }
-        painter.drawImage(QPointF(0.0, 0.0), preparedFrame_);
+        // The card is sized to the frame's aspect, so this covers it exactly.
+        painter.drawImage(rect(), frame_);
         if (stale) {
             painter.fillRect(rect(), QColor(0, 0, 0, kStaleDimAlpha));
         }
