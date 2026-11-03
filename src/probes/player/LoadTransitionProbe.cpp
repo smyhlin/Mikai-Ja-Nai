@@ -301,6 +301,9 @@ int changedPixels(const QImage& before, const QImage& after, int threshold = 8) 
     return changed;
 }
 
+/// Recorded at every framebuffer read, defined with the summaries below.
+void noteObserverRead(qint64 micros);
+
 // ── what "the picture is really there" means, measured not assumed ────────
 
 struct Baseline {
@@ -355,6 +358,7 @@ Baseline calibrate(VideoSurface* surface, int samples = 24, int intervalMs = 40)
     for (int taken = 0; taken < samples; ++taken) {
         const PictureRead read =
             readPicture(surface, baseline.device, baseline.videoWidth, baseline.videoHeight);
+        noteObserverRead(read.micros);
         if (read.measured) {
             baseline.device = read.framebuffer;
             baseline.videoWidth = surface != nullptr ? surface->videoWidth() : 0;
@@ -408,7 +412,9 @@ double percentileOf(std::vector<qint32> values, double fraction) {
 }
 
 struct PassSummary {
-    quint64 samples = 0;
+    quint64 samples = 0;   // every pass of this kind in the stage
+    int ringHolds = 0;     // how many of them the ring still describes
+    int ringCapacity = 0;
     double p50 = -1.0;
     double p95 = -1.0;
     double max = -1.0;
@@ -418,6 +424,8 @@ PassSummary summarize(int pass) {
     PassSummary summary;
     summary.samples = mikai::gui::uiprofile::paintPassSamples(pass);
     const std::vector<qint32> micros = mikai::gui::uiprofile::paintPassMicros(pass);
+    summary.ringHolds = static_cast<int>(micros.size());
+    summary.ringCapacity = mikai::gui::uiprofile::kPaintSamplesPerPass;
     if (!micros.empty()) {
         summary.p50 = percentileOf(micros, 0.50);
         summary.p95 = percentileOf(micros, 0.95);
@@ -426,8 +434,41 @@ PassSummary summarize(int pass) {
     return summary;
 }
 
+// ── observer cost, recorded because it perturbs ──────────────────────────
+// Every sample is six glReadPixels on the surface's framebuffer, which costs a
+// GPU sync. The cost is reported rather than assumed negligible.
+std::vector<qint64> g_observerMicros;
+
+void noteObserverRead(qint64 micros) {
+    if (micros < 0) return;
+    g_observerMicros.push_back(micros);
+}
+
+QJsonObject observerObject() {
+    QJsonObject out;
+    out.insert(QStringLiteral("framebufferReads"), static_cast<int>(g_observerMicros.size()));
+    qint64 total = 0;
+    qint64 maxMicros = 0;
+    std::vector<qint32> values;
+    values.reserve(g_observerMicros.size());
+    for (qint64 value : g_observerMicros) {
+        total += value;
+        maxMicros = std::max(maxMicros, value);
+        values.push_back(static_cast<qint32>(std::min<qint64>(value, 2147483647LL)));
+    }
+    out.insert(QStringLiteral("readTotalUs"), static_cast<double>(total));
+    out.insert(QStringLiteral("readMaxUs"), static_cast<double>(maxMicros));
+    out.insert(QStringLiteral("readP50Us"), percentileOf(values, 0.50));
+    out.insert(QStringLiteral("readP95Us"), percentileOf(values, 0.95));
+    out.insert(QStringLiteral("note"),
+               QStringLiteral("one read = six off-centre region glReadPixels; no paint forced"));
+    return out;
+}
+
 QJsonObject passObject(const PassSummary& summary) {
     return QJsonObject{{"samples", static_cast<double>(summary.samples)},
+                       {"ringHolds", summary.ringHolds},
+                       {"ringCapacity", summary.ringCapacity},
                        {"p50_us", summary.p50},
                        {"p95_us", summary.p95},
                        {"max_us", summary.max}};
@@ -437,9 +478,11 @@ void reportPasses(const QString& scope) {
     for (int pass = 0; pass < mikai::gui::uiprofile::kPaintPassCount; ++pass) {
         const PassSummary summary = summarize(pass);
         if (summary.samples == 0 && summary.p95 < 0.0) continue;
-        metric(QStringLiteral("%1 %2: samples=%3 p50=%4us p95=%5us max=%6us")
+        metric(QStringLiteral("%1 %2: samples=%3 ring=%4/%5 p50=%6us p95=%7us max=%8us")
                    .arg(scope, QString::fromLatin1(passName(pass)))
                    .arg(summary.samples)
+                   .arg(summary.ringHolds)
+                   .arg(summary.ringCapacity)
                    .arg(summary.p50, 0, 'f', 1)
                    .arg(summary.p95, 0, 'f', 1)
                    .arg(summary.max, 0, 'f', 1));
@@ -461,6 +504,18 @@ bool aimPointerAt(QWidget* target, const QPoint& local) {
     QApplication::sendEvent(target, &move);
     pump(4);
     return true;
+}
+
+/// Sweeps the pointer over chrome for a wall-clock window: a p95 of paint cost
+/// has to describe a real stretch of interaction, not a handful of events.
+int sweepChrome(QWidget* first, QWidget* second, QWidget* scrub, int durationMs) {
+    QElapsedTimer clock;
+    clock.start();
+    int moves = 0;
+    while (clock.elapsed() < durationMs) {
+        moves += hoverRound(first, second, scrub);
+    }
+    return moves;
 }
 
 /// One round of a viewer moving the pointer across chrome: two controls, so the
@@ -498,28 +553,31 @@ struct GapSample {
     double duration = -1.0;
     int videoWidth = 0;
     int videoHeight = 0;
-    qint64 readMicros = -1;
-    double meanLuma = 0.0;
-    int litRegions = 0;
-    bool picture = false;
+    qint64 observerMicros = -1;
+    double framebufferLuma = 0.0;
+    int framebufferLitRegions = 0;
+    bool framebufferPicture = false;
 };
 
+/// Every instant below is on the run's one clock, and every origin counter
+/// belongs to the origin that served THIS transition.
 struct TransitionOutcome {
     bool measured = false;
-    bool originAnswered = false;
-    qint64 originReplyMs = -1;
+    int originRequests = 0;
+    int originResponses = 0;
+    qint64 originFirstReplyMs = -1;
     qint64 requestMs = -1;
     qint64 firstOutputMs = -1;
     qint64 gapMs = -1;
     int samples = 0;
-    int blackSamples = 0;
+    int framebufferBlackSamples = 0;
+    int framebufferOffCentreBlackSamples = 0;
     int retainedSamples = 0;
-    int offCentreBlackSamples = 0;
     quint64 epochBefore = 0;
     quint64 epochAfter = 0;
-    bool pictureAfter = false;
-    bool pictureMoved = false;
-    bool observedBlack = false;
+    bool framebufferPictureAfter = false;
+    bool framebufferMoved = false;
+    bool observedFramebufferBlack = false;
     QJsonArray rows;
 };
 
@@ -528,8 +586,9 @@ struct TransitionOutcome {
 /// The pointer keeps moving over chrome during the gap: a viewer's hand does not
 /// stop for a load, and that repaint is the pass this goal is about.
 TransitionOutcome measureTransition(PlayerDialog* dialog, VideoSurface* surface,
-                                    const Baseline& baseline, const std::function<void()>& switchTo,
-                                    int budgetMs, bool movePointerDuringGap) {
+                                    const Baseline& baseline, const QElapsedTimer& runClock,
+                                    const std::function<void()>& switchTo, int budgetMs,
+                                    bool movePointerDuringGap) {
     TransitionOutcome outcome;
     if (dialog == nullptr || surface == nullptr) return outcome;
 
@@ -537,26 +596,25 @@ TransitionOutcome measureTransition(PlayerDialog* dialog, VideoSurface* surface,
     QWidget* second = dialog->findChild<QWidget*>(QStringLiteral("playerSettingsButton"));
     QWidget* scrub = dialog->findChild<QWidget*>(QStringLiteral("playerScrubBar"));
 
-    QElapsedTimer clock;
-    clock.start();
     const Baseline& calibration = baseline;
     outcome.epochBefore = surface->sourceEpoch();
 
-    outcome.requestMs = clock.elapsed();
+    outcome.requestMs = runClock.elapsed();
     switchTo();
 
     int lastPointerMoveMs = -1000;
-    while (clock.elapsed() < budgetMs) {
+    while (runClock.elapsed() - outcome.requestMs < budgetMs) {
         pump(8);
-        if (movePointerDuringGap && clock.elapsed() - lastPointerMoveMs >= 140) {
-            lastPointerMoveMs = clock.elapsed();
+        if (movePointerDuringGap && runClock.elapsed() - lastPointerMoveMs >= 140) {
+            lastPointerMoveMs = runClock.elapsed();
             hoverRound(first, second, scrub);
         }
         const PictureRead read =
             readPicture(surface, calibration.device, calibration.videoWidth,
                         calibration.videoHeight, /*keepPixels=*/false);
+        noteObserverRead(read.micros);
         GapSample sample;
-        sample.ms = clock.elapsed();
+        sample.ms = runClock.elapsed();
         sample.epoch = surface->sourceEpoch();
         sample.contextGeneration = surface->renderContextGeneration();
         sample.opening = surface->isOpening();
@@ -567,55 +625,58 @@ TransitionOutcome measureTransition(PlayerDialog* dialog, VideoSurface* surface,
         sample.duration = surface->duration();
         sample.videoWidth = surface->videoWidth();
         sample.videoHeight = surface->videoHeight();
-        sample.readMicros = read.micros;
-        sample.meanLuma = read.meanLuma();
-        sample.litRegions = calibration.litRegions(read);
-        sample.picture = calibration.present(read);
+        sample.observerMicros = read.micros;
+        sample.framebufferLuma = read.meanLuma();
+        sample.framebufferLitRegions = calibration.litRegions(read);
+        sample.framebufferPicture = calibration.present(read);
         ++outcome.samples;
-        if (!sample.picture) {
-            ++outcome.blackSamples;
-            if (sample.litRegions == 0) ++outcome.offCentreBlackSamples;
+        if (!sample.framebufferPicture) {
+            ++outcome.framebufferBlackSamples;
+            if (sample.framebufferLitRegions == 0) ++outcome.framebufferOffCentreBlackSamples;
         }
         if (sample.retained) ++outcome.retainedSamples;
-        if (sample.ms <= 20000 && outcome.rows.size() < 1200) {
+        if (sample.ms - outcome.requestMs <= 20000 && outcome.rows.size() < 1200) {
             outcome.rows.append(QJsonObject{
-                {"ms", static_cast<double>(sample.ms)},
+                {"runClockMs", static_cast<double>(sample.ms)},
                 {"epoch", static_cast<double>(sample.epoch)},
-                {"context", static_cast<double>(sample.contextGeneration)},
+                {"contextGeneration", static_cast<double>(sample.contextGeneration)},
                 {"opening", sample.opening},
                 {"hasVideo", sample.hasVideo},
-                {"visible", sample.hasVisibleOutput},
+                {"hasVisibleOutput", sample.hasVisibleOutput},
                 {"retained", sample.retained},
                 {"position", sample.position},
                 {"duration", sample.duration},
-                {"vw", sample.videoWidth},
-                {"vh", sample.videoHeight},
-                {"read_us", static_cast<double>(sample.readMicros)},
-                {"luma", sample.meanLuma},
-                {"lit", sample.litRegions},
-                {"picture", sample.picture}});
+                {"videoWidth", sample.videoWidth},
+                {"videoHeight", sample.videoHeight},
+                {"observerUs", static_cast<double>(sample.observerMicros)},
+                {"framebufferLuma", sample.framebufferLuma},
+                {"framebufferLitRegions", sample.framebufferLitRegions},
+                {"framebufferPicture", sample.framebufferPicture}});
         }
-        // The new source has really produced output: the epoch moved, the band
-        // carries the calibrated picture, and the surface says a frame of this
-        // source reached it.
-        if (sample.epoch != outcome.epochBefore && sample.hasVisibleOutput && sample.picture) {
+        // "Real output of the new source": the epoch moved, the surface reports
+        // a visible output frame of it, and the framebuffer band carries the
+        // calibrated content. All three, so a held picture cannot answer for it.
+        if (sample.epoch != outcome.epochBefore && sample.hasVisibleOutput &&
+            sample.framebufferPicture) {
             outcome.firstOutputMs = sample.ms;
             outcome.epochAfter = sample.epoch;
-            outcome.pictureAfter = true;
+            outcome.framebufferPictureAfter = true;
             break;
         }
     }
     outcome.measured = true;
     if (outcome.firstOutputMs >= 0) outcome.gapMs = outcome.firstOutputMs - outcome.requestMs;
 
-    // A frozen outgoing picture is lit as well: motion is what tells a live new
-    // output from the snapshot the surface was holding.
-    if (outcome.pictureAfter) {
+    // A held picture is lit as well: motion in the band is what separates a live
+    // new output from the snapshot the surface kept.
+    if (outcome.framebufferPictureAfter) {
         PictureRead first = readPicture(surface, baseline.device, baseline.videoWidth,
                                         baseline.videoHeight);
         pump(220);
         PictureRead later = readPicture(surface, baseline.device, baseline.videoWidth,
                                         baseline.videoHeight);
+        noteObserverRead(first.micros);
+        noteObserverRead(later.micros);
         int changed = 0;
         int counted = 0;
         for (int index = 0; index < kRegionCount; ++index) {
@@ -625,44 +686,50 @@ TransitionOutcome measureTransition(PlayerDialog* dialog, VideoSurface* surface,
             counted += first.regions[spot].pixels.width() * first.regions[spot].pixels.height();
             changed += delta;
         }
-        outcome.pictureMoved = counted > 0 && double(changed) > 0.002 * double(counted);
+        outcome.framebufferMoved = counted > 0 && double(changed) > 0.002 * double(counted);
     }
-    outcome.observedBlack = outcome.blackSamples > 0;
+    outcome.observedFramebufferBlack = outcome.framebufferBlackSamples > 0;
     return outcome;
 }
 
 QJsonObject outcomeObject(const TransitionOutcome& outcome) {
     return QJsonObject{
-        {"originAnswered", outcome.originAnswered},
-        {"originReplyMs", static_cast<double>(outcome.originReplyMs)},
+        {"clockDomain", QStringLiteral("run elapsed ms from probe start")},
+        {"originRequests", outcome.originRequests},
+        {"originResponses", outcome.originResponses},
+        {"originFirstReplyMs", static_cast<double>(outcome.originFirstReplyMs)},
         {"requestMs", static_cast<double>(outcome.requestMs)},
         {"firstOutputMs", static_cast<double>(outcome.firstOutputMs)},
         {"gapMs", static_cast<double>(outcome.gapMs)},
         {"samples", outcome.samples},
-        {"blackSamples", outcome.blackSamples},
-        {"offCentreBlackSamples", outcome.offCentreBlackSamples},
+        {"framebufferBlackSamples", outcome.framebufferBlackSamples},
+        {"framebufferOffCentreBlackSamples", outcome.framebufferOffCentreBlackSamples},
         {"retainedSamples", outcome.retainedSamples},
         {"epochBefore", static_cast<double>(outcome.epochBefore)},
         {"epochAfter", static_cast<double>(outcome.epochAfter)},
-        {"pictureAfter", outcome.pictureAfter},
-        {"pictureMoved", outcome.pictureMoved},
-        {"observedBlack", outcome.observedBlack}};
+        {"framebufferPictureAfter", outcome.framebufferPictureAfter},
+        {"framebufferMoved", outcome.framebufferMoved},
+        {"observedFramebufferBlack", outcome.observedFramebufferBlack}};
 }
 
 void printOutcome(const QString& label, const TransitionOutcome& outcome) {
-    metric(QStringLiteral("%1: request=%2ms first_output=%3ms gap=%4ms samples=%5 "
-                          "black=%6 off_centre_black=%7 retained=%8 epoch=%9->%10 moved=%11")
+    metric(QStringLiteral("%1: originReq=%2 resp=%3 reply=%4ms request=%5ms first_output=%6ms "
+                          "gap=%7ms samples=%8 fb_black=%9 fb_off_centre_black=%10 retained=%11 "
+                          "epoch=%12->%13 fb_moved=%14")
                .arg(label)
+               .arg(outcome.originRequests)
+               .arg(outcome.originResponses)
+               .arg(outcome.originFirstReplyMs)
                .arg(outcome.requestMs)
                .arg(outcome.firstOutputMs)
                .arg(outcome.gapMs)
                .arg(outcome.samples)
-               .arg(outcome.blackSamples)
-               .arg(outcome.offCentreBlackSamples)
+               .arg(outcome.framebufferBlackSamples)
+               .arg(outcome.framebufferOffCentreBlackSamples)
                .arg(outcome.retainedSamples)
                .arg(static_cast<qulonglong>(outcome.epochBefore))
                .arg(static_cast<qulonglong>(outcome.epochAfter))
-               .arg(int(outcome.pictureMoved)));
+               .arg(int(outcome.framebufferMoved)));
 }
 
 int run(int argc, char** argv) {
@@ -671,6 +738,9 @@ int run(int argc, char** argv) {
     QString outputDir = g_outputDir;
     int delayMs = 2500;
     int cycles = 1;
+    // The shortest stretch a paint p95 can honestly describe: a handful of events
+    // is a sample of one interaction, not a distribution.
+    int hoverSeconds = 30;
     bool motion = true;
     for (int index = 1; index < argc; ++index) {
         const QString argument = QString::fromLocal8Bit(argv[index]);
@@ -680,6 +750,8 @@ int run(int argc, char** argv) {
             delayMs = QString::fromLocal8Bit(argv[++index]).toInt();
         } else if (argument == QLatin1String("--cycles") && index + 1 < argc) {
             cycles = std::max(1, QString::fromLocal8Bit(argv[++index]).toInt());
+        } else if (argument == QLatin1String("--hover-seconds") && index + 1 < argc) {
+            hoverSeconds = std::max(1, QString::fromLocal8Bit(argv[++index]).toInt());
         } else if (argument == QLatin1String("--no-motion")) {
             motion = false;
         } else if (argument.startsWith(QLatin1String("--"))) {
@@ -692,9 +764,14 @@ int run(int argc, char** argv) {
     if (videoArgument.isEmpty() || !QFileInfo::exists(videoArgument)) {
         std::fprintf(stderr,
                      "Usage: LoadTransitionProbe <known-duration-video-file> --output-dir "
-                     "<absolute dir> [--delay-ms N] [--cycles N] [--no-motion]\n");
+                     "<absolute dir> [--delay-ms N] [--cycles N] [--hover-seconds N] "
+                     "[--no-motion]\n");
         return 3;
     }
+    // One clock for the whole run: every timestamp in the evidence is elapsed
+    // milliseconds from this point, and a per-origin reply is converted onto it.
+    QElapsedTimer runClock;
+    runClock.start();
     // The origin keeps the whole file in memory and answers from it, so a long
     // high-bitrate fixture is read into RAM before a single byte is served.
     constexpr qint64 kMaxFixtureBytes = 96LL * 1024 * 1024;
@@ -788,6 +865,7 @@ int run(int argc, char** argv) {
     {
         const PictureRead settled =
             readPicture(surface, baseline.device, baseline.videoWidth, baseline.videoHeight);
+        noteObserverRead(settled.micros);
         QJsonArray regionLuma;
         for (const RegionRead& region : settled.regions) regionLuma.append(region.luma);
         evidence.insert(QStringLiteral("outgoingRegionLuma"), regionLuma);
@@ -807,18 +885,18 @@ int run(int argc, char** argv) {
         pump(320);
         const PictureRead pausedBefore =
             readPicture(surface, baseline.device, baseline.videoWidth, baseline.videoHeight);
+        noteObserverRead(pausedBefore.micros);
         mikai::gui::uiprofile::resetPaintPassProfile();
-        int hoverMoves = 0;
-        for (int round = 0; round < 10; ++round) {
-            hoverMoves += hoverRound(playToggle, settingsButton, scrub);
-        }
+        const int hoverMoves =
+            sweepChrome(playToggle, settingsButton, scrub, hoverSeconds * 1000);
         const PassSummary chromeOnly = summarize(mikai::gui::uiprofile::kPaintChromeOnly);
         const PassSummary retained = summarize(mikai::gui::uiprofile::kPaintRetained);
         const PassSummary videoFrame = summarize(mikai::gui::uiprofile::kPaintVideoFrame);
         const PictureRead pausedAfter =
             readPicture(surface, baseline.device, baseline.videoWidth, baseline.videoHeight);
-        // A re-render of one still frame is not bit-identical (~5/255 here), so
-        // the verdict is on visible change; the exact count is reported too.
+        noteObserverRead(pausedAfter.micros);
+        // The verdict is the goal's own: not one video pixel changes. The
+        // visible-delta count is diagnostic only - it is not a relaxed pass.
         int changedExact = 0;
         int changedVisible = 0;
         int compared = 0;
@@ -834,10 +912,12 @@ int run(int argc, char** argv) {
             changedExact += exact;
             changedVisible += visible;
         }
-        metric(QStringLiteral("paused hover: moves=%1 chrome_paints=%2 p95=%3us max=%4us "
-                              "changed_exact=%5 changed_visible=%6/%7")
+        metric(QStringLiteral("paused hover: moves=%1 chrome_paints=%2 ring=%3/%4 p95=%5us "
+                              "max=%6us changed_exact=%7 changed_visible=%8/%9")
                    .arg(hoverMoves)
                    .arg(chromeOnly.samples)
+                   .arg(chromeOnly.ringHolds)
+                   .arg(chromeOnly.ringCapacity)
                    .arg(chromeOnly.p95, 0, 'f', 1)
                    .arg(chromeOnly.max, 0, 'f', 1)
                    .arg(changedExact)
@@ -847,11 +927,11 @@ int run(int argc, char** argv) {
         check(hoverMoves > 0, "the paused measurement actually moved the pointer over chrome");
         check(chromeOnly.samples > 0,
               "a paused chrome repaint is classified as a chrome-only pass");
-        check(changedVisible == 0,
-              QStringLiteral("a paused picture shows no visible change across chrome hovers "
-                             "(visible=%1 exact=%2 of %3)")
-                  .arg(changedVisible)
+        check(changedExact == 0,
+              QStringLiteral("a paused picture is pixel-identical across chrome hovers "
+                             "(exact=%1 visible=%2 of %3)")
                   .arg(changedExact)
+                  .arg(changedVisible)
                   .arg(compared));
         QJsonArray hashesBefore;
         QJsonArray hashesAfter;
@@ -882,10 +962,8 @@ int run(int argc, char** argv) {
     // ── active hover: the same sweep against a moving picture ───────────────
     {
         mikai::gui::uiprofile::resetPaintPassProfile();
-        int hoverMoves = 0;
-        for (int round = 0; round < 10; ++round) {
-            hoverMoves += hoverRound(playToggle, settingsButton, scrub);
-        }
+        const int hoverMoves =
+            sweepChrome(playToggle, settingsButton, scrub, hoverSeconds * 1000);
         const PassSummary chromeOnly = summarize(mikai::gui::uiprofile::kPaintChromeOnly);
         const PassSummary videoFrame = summarize(mikai::gui::uiprofile::kPaintVideoFrame);
         metric(QStringLiteral("active hover: moves=%1 chrome_paints=%2 p95=%3us video_p95=%4us")
@@ -902,48 +980,63 @@ int run(int argc, char** argv) {
 
     // ── the load transition itself ──────────────────────────────────────────
     const QString target = QFileInfo(file).absoluteFilePath();
-    DelayedHttpSource origin;
-    origin.setDelayMs(delayMs);
-    const bool served = origin.serve(target);
-    check(served, "the loopback origin serves the same motion fixture");
-    const QString slowUrl = origin.url(QStringLiteral("clip-b.mp4"));
-    check(!slowUrl.isEmpty(), "the loopback origin listens before the switch");
 
     QJsonArray transitions;
     for (int cycle = 0; cycle < cycles; ++cycle) {
+        // A fresh origin per cycle: its reply stamp is then this transition's,
+        // not a borrowing of the first one the process ever served.
+        DelayedHttpSource origin;
+        origin.setDelayMs(delayMs);
+        const bool served = origin.serve(target);
+        check(served, QStringLiteral("transition %1: the loopback origin serves the fixture")
+                          .arg(cycle + 1));
+        const QString slowUrl =
+            origin.url(QStringLiteral("clip-b-%1.mp4").arg(cycle + 1));
+        check(!slowUrl.isEmpty(),
+              QStringLiteral("transition %1: the loopback origin listens before the switch")
+                  .arg(cycle + 1));
+        const qint64 originStartMs = runClock.elapsed();
         const TransitionOutcome outcome = measureTransition(
-            dialog, surface, baseline,
+            dialog, surface, baseline, runClock,
             [dialog, slowUrl] {
                 dialog->applyVariant(QList<QualityEntry>{{720, slowUrl}},
                                      QStringLiteral("probe B"), QStringLiteral("e1"));
             },
             30000, /*movePointerDuringGap=*/true);
         TransitionOutcome reported = outcome;
-        reported.originAnswered = origin.replyAtMs() >= 0;
-        reported.originReplyMs = origin.replyAtMs();
+        reported.originRequests = origin.connections();
+        reported.originResponses = origin.replyAtMs() >= 0 ? 1 : 0;
+        reported.originFirstReplyMs =
+            origin.replyAtMs() >= 0 ? originStartMs + origin.replyAtMs() : -1;
         const QString label = QStringLiteral("transition %1").arg(cycle + 1);
         printOutcome(label, reported);
-        check(reported.originAnswered,
-              QStringLiteral("%1: the delayed origin answered the request").arg(label));
+        check(reported.originRequests > 0 && reported.originResponses > 0,
+              QStringLiteral("%1: this cycle's origin received and answered the request "
+                             "(requests=%2 responses=%3)")
+                  .arg(label)
+                  .arg(reported.originRequests)
+                  .arg(reported.originResponses));
         check(reported.firstOutputMs >= 0,
               QStringLiteral("%1: the new source produced a real output").arg(label));
-        check(reported.pictureAfter,
-              QStringLiteral("%1: the new output carries the calibrated picture").arg(label));
+        check(reported.framebufferPictureAfter,
+              QStringLiteral("%1: the new output's framebuffer band carries the calibrated "
+                             "content")
+                  .arg(label));
         check(reported.epochAfter != reported.epochBefore,
               QStringLiteral("%1: the source epoch advanced").arg(label));
         check(reported.samples >= 3,
               QStringLiteral("%1: sampling covered the request-to-output window").arg(label));
         if (reported.samples >= 3) {
-            check(reported.blackSamples == 0,
+            check(reported.framebufferBlackSamples == 0,
                   QStringLiteral("%1: the framebuffer is never black between the last outgoing "
                                  "frame and the first new output (black=%2)")
                       .arg(label)
-                      .arg(reported.blackSamples));
-            check(reported.offCentreBlackSamples == 0,
-                  QStringLiteral("%1: the off-centre band never went fully dark "
+                      .arg(reported.framebufferBlackSamples));
+            check(reported.framebufferOffCentreBlackSamples == 0,
+                  QStringLiteral("%1: the off-centre framebuffer band never went fully dark "
                                  "(off_centre_black=%2)")
                       .arg(label)
-                      .arg(reported.offCentreBlackSamples));
+                      .arg(reported.framebufferOffCentreBlackSamples));
         }
         QJsonObject record = outcomeObject(reported);
         record.insert(QStringLiteral("cycle"), cycle + 1);
@@ -965,27 +1058,42 @@ int run(int argc, char** argv) {
         DelayedHttpSource expiryOrigin;
         expiryOrigin.setDelayMs(delayMs);
         expiryOrigin.serve(target);
+        const qint64 originStartMs = runClock.elapsed();
         const QString expiryUrl = expiryOrigin.url(QStringLiteral("clip-refresh.mp4"));
         const TransitionOutcome outcome = measureTransition(
-            dialog, surface, baseline,
+            dialog, surface, baseline, runClock,
             [dialog, expiryUrl] {
                 dialog->applyRefreshedStreams(QList<QualityEntry>{{720, expiryUrl}}, 720);
             },
             30000, /*movePointerDuringGap=*/true);
         TransitionOutcome reported = outcome;
-        reported.originAnswered = expiryOrigin.replyAtMs() >= 0;
-        reported.originReplyMs = expiryOrigin.replyAtMs();
+        reported.originRequests = expiryOrigin.connections();
+        reported.originResponses = expiryOrigin.replyAtMs() >= 0 ? 1 : 0;
+        reported.originFirstReplyMs =
+            expiryOrigin.replyAtMs() >= 0 ? originStartMs + expiryOrigin.replyAtMs() : -1;
         printOutcome(QStringLiteral("stream expiry"), reported);
-        check(reported.originAnswered, "stream expiry: the delayed origin answered the request");
-        check(reported.pictureAfter,
-              "stream expiry: the refreshed source produced a calibrated picture");
-        check(reported.blackSamples == 0,
+        check(reported.originRequests > 0 && reported.originResponses > 0,
+              QStringLiteral("stream expiry: this origin received and answered the request "
+                             "(requests=%1)")
+                  .arg(reported.originRequests));
+        check(reported.framebufferPictureAfter,
+              "stream expiry: the refreshed source's framebuffer band carries the calibrated "
+              "content");
+        check(reported.framebufferBlackSamples == 0,
               QStringLiteral("stream expiry: the framebuffer keeps a picture instead of black "
                              "(black=%1)")
-                  .arg(reported.blackSamples));
+                  .arg(reported.framebufferBlackSamples));
         evidence.insert(QStringLiteral("streamExpiry"), outcomeObject(reported));
     }
 
+    const QJsonObject observer = observerObject();
+    metric(QStringLiteral("observer: reads=%1 total=%2us p50=%3us p95=%4us max=%5us")
+               .arg(observer.value(QStringLiteral("framebufferReads")).toInt())
+               .arg(observer.value(QStringLiteral("readTotalUs")).toDouble(), 0, 'f', 0)
+               .arg(observer.value(QStringLiteral("readP50Us")).toDouble(), 0, 'f', 1)
+               .arg(observer.value(QStringLiteral("readP95Us")).toDouble(), 0, 'f', 1)
+               .arg(observer.value(QStringLiteral("readMaxUs")).toDouble(), 0, 'f', 1));
+    evidence.insert(QStringLiteral("observerCost"), observer);
     if (!g_outputDir.isEmpty()) {
         QFile out(artifactPath(QStringLiteral("load-transition-evidence.json")));
         if (out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {

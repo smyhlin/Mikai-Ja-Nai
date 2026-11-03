@@ -94,6 +94,10 @@ inline std::atomic<quint64> g_layoutGeometryWrites{0};
 inline std::atomic<quint64> g_threadInputAttaches{0};
 inline std::atomic<quint64> g_chromePaintCalls{0};
 inline std::atomic<quint64> g_chromePaintEntries{0};
+/// Controls served from the cached raster layer instead of being rasterised
+/// again. The difference between the entry count and this one is the work a
+/// painted video frame still pays for chrome.
+inline std::atomic<quint64> g_chromePaintCached{0};
 inline std::atomic<qint64> g_chromePaintLastMicros{-1};
 inline std::atomic<quint64> g_chromePaintMicrosTotal{0};
 inline std::atomic<qint64> g_chromePaintMicrosMax{-1};
@@ -124,10 +128,11 @@ inline void noteThreadInputAttach() {
     g_threadInputAttaches.fetch_add(1, std::memory_order_relaxed);
 }
 
-inline void noteChromePaint(quint64 entries, qint64 micros) {
+inline void noteChromePaint(quint64 entries, quint64 cached, qint64 micros) {
     if (!countersEnabled()) return;
     g_chromePaintCalls.fetch_add(1, std::memory_order_relaxed);
     g_chromePaintEntries.fetch_add(entries, std::memory_order_relaxed);
+    g_chromePaintCached.fetch_add(cached, std::memory_order_relaxed);
     g_chromePaintMicrosTotal.fetch_add(static_cast<quint64>(std::max<qint64>(micros, 0)),
                                        std::memory_order_relaxed);
     g_chromePaintLastMicros.store(micros, std::memory_order_relaxed);
@@ -160,7 +165,9 @@ enum PaintPass : int {
     kPaintPassCount
 };
 
-inline constexpr int kPaintSamplesPerPass = 1024;
+// 2048 keeps a 30 s window at 60 Hz (~1800 passes) inside the ring, which is the
+// shortest stretch a p95 can honestly describe here.
+inline constexpr int kPaintSamplesPerPass = 2048;
 
 struct PaintPassProfile {
     std::array<qint32, kPaintSamplesPerPass> micros{};
@@ -217,6 +224,7 @@ struct Snapshot {
     quint64 threadInputAttaches = 0;
     quint64 chromePaintCalls = 0;
     quint64 chromePaintEntries = 0;
+    quint64 chromePaintCached = 0;
     quint64 chromePaintMicrosTotal = 0;
     qint64 chromePaintMicrosMax = -1;
     qint64 chromePaintLastMicros = -1;
@@ -233,6 +241,7 @@ inline Snapshot snapshot() {
     out.threadInputAttaches = g_threadInputAttaches.load(std::memory_order_relaxed);
     out.chromePaintCalls = g_chromePaintCalls.load(std::memory_order_relaxed);
     out.chromePaintEntries = g_chromePaintEntries.load(std::memory_order_relaxed);
+    out.chromePaintCached = g_chromePaintCached.load(std::memory_order_relaxed);
     out.chromePaintMicrosTotal = g_chromePaintMicrosTotal.load(std::memory_order_relaxed);
     out.chromePaintMicrosMax = g_chromePaintMicrosMax.load(std::memory_order_relaxed);
     out.chromePaintLastMicros = g_chromePaintLastMicros.load(std::memory_order_relaxed);
@@ -248,6 +257,7 @@ inline void resetCounters() {
     g_threadInputAttaches.store(0, std::memory_order_relaxed);
     g_chromePaintCalls.store(0, std::memory_order_relaxed);
     g_chromePaintEntries.store(0, std::memory_order_relaxed);
+    g_chromePaintCached.store(0, std::memory_order_relaxed);
     g_chromePaintMicrosTotal.store(0, std::memory_order_relaxed);
     g_chromePaintMicrosMax.store(-1, std::memory_order_relaxed);
     g_chromePaintLastMicros.store(-1, std::memory_order_relaxed);
