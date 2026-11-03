@@ -2491,7 +2491,7 @@ int main(int argc, char** argv) {
         sendDialogKey(Qt::Key_Right);
         seekObserved = parkedForSeek && waitUntil([&] {
             const auto paused = surface->probeMpvProperty(QStringLiteral("pause"),
-                                                          ProbePropertyValue::Kind::Flag);
+                                                          ProbePropertyKind::Flag);
             return paused && paused->kind == ProbePropertyValue::Kind::Flag && paused->flag &&
                 surface->position() >= beforeSeek + 4.0;
         }, 3000);

@@ -589,7 +589,6 @@ int runContextLoss(PlayerDialog* dialog, VideoSurface* surface, const Baseline& 
     const PictureRead after =
         readPicture(surface, baseline.device, baseline.videoWidth, baseline.videoHeight);
     noteObserverRead(after.micros);
-    const bool retained = surface->retainedPictureBytes() > 0;
     const bool pausedAfter = corePaused();
     const double positionAfter = surface->position();
 
