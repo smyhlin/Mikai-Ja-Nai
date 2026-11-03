@@ -12,6 +12,8 @@ class TestThemeIcons : public QObject {
   void glyphBoxIsPhysicalAtEveryScale();
   void trailingPadStaysOutsideTheGlyph();
   void glyphEdgesStayAntialiasedAtFractionalRatio();
+  void headerGlyphsShareTheirLeadingInkEdge_data();
+  void headerGlyphsShareTheirLeadingInkEdge();
   void noTornColumnsInsideGlyphInk();
   void chevronKeepsEveryStrokeRowInked();
   void toggleAndSwatchPaintOnceAtEveryRatio();

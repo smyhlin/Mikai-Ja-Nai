@@ -426,6 +426,36 @@ void TestThemeIcons::glyphEdgesStayAntialiasedAtFractionalRatio() {
   }
 }
 
+void TestThemeIcons::headerGlyphsShareTheirLeadingInkEdge_data() {
+  QTest::addColumn<qreal>("ratio");
+  QTest::newRow("100-percent") << qreal(1.0);
+  QTest::newRow("125-percent") << qreal(1.25);
+}
+
+void TestThemeIcons::headerGlyphsShareTheirLeadingInkEdge() {
+  QFETCH(qreal, ratio);
+  const int size = mikai::app::theme::kIconSize;
+  const QString color = QStringLiteral("#ffffff");
+  const QList<QIcon> icons{
+      mikai::app::theme::playIcon(size, color),
+      mikai::app::theme::filterIcon(size, color),
+      mikai::app::theme::teamsIcon(size, color),
+      mikai::app::theme::searchIcon(size, color)};
+  int leftmost = std::numeric_limits<int>::max();
+  int rightmost = 0;
+  for (const QIcon& icon : icons) {
+    const QRect bounds = inkBounds(icon.pixmap(QSize(size, size), ratio).toImage());
+    QVERIFY2(!bounds.isEmpty(), "A header glyph has no visible ink");
+    leftmost = qMin(leftmost, bounds.left());
+    rightmost = qMax(rightmost, bounds.left());
+  }
+  QVERIFY2(rightmost - leftmost <= 1,
+           qPrintable(QStringLiteral("DPR %1: leading ink spans device pixels %2..%3")
+                          .arg(ratio)
+                          .arg(leftmost)
+                          .arg(rightmost)));
+}
+
 void TestThemeIcons::noTornColumnsInsideGlyphInk() {
   // The keyboard glyph is a closed outline, so every column and row between its
   // ink bounds carries ink. A resample that drops or duplicates columns shows up
