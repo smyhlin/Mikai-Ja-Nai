@@ -32,6 +32,7 @@
 #include "theme/Palette.hpp"
 #include "theme/Theme.hpp"
 #include "widgets/FlowLayout.hpp"
+#include "widgets/PageGlow.hpp"
 #include "widgets/SwatchButton.hpp"
 #include <player/shell/ShellTheme.hpp>
 
@@ -701,6 +702,63 @@ void TestThemeRoles::gradientModeMigratesAndPreservesTheCustomChoice() {
              QStringLiteral("#abcdef"));
     QCOMPARE(mikai::app::theme::gradientColor(mikai::app::loadAppearance()),
              QColor(QStringLiteral("#abcdef")));
+}
+
+void TestThemeRoles::pageGlowFollowsTheGradientSourceWithoutAColourEdit() {
+    // The defect: Auto paints the accent while the stored custom colour sits
+    // untouched, so a source-only change leaves every stored field equal. A
+    // consumer that compared the stored fields never repainted and the wash kept
+    // the previous source's colour.
+    Appearance appearance;
+    appearance.accent = QStringLiteral("#bdacff");
+    appearance.gradientMode = mikai::app::theme::GradientMode::Auto;
+    appearance.gradientColor = QStringLiteral("#f27bb0");
+    appearance.backgroundGradient = true;
+    appearance.gradientIntensity = 60;
+    appearance.gradientHeight = 100;
+    installAppearance(appearance);
+
+    QWidget host;
+    host.resize(420, 240);
+    auto* glow = new mikai::app::PageGlow(&host);
+    host.show();
+    QApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    struct PaintCounter final : QObject {
+        int paints = 0;
+        bool eventFilter(QObject*, QEvent* event) override {
+            if (event->type() == QEvent::Paint) ++paints;
+            return false;
+        }
+    } counter;
+    glow->installEventFilter(&counter);
+    QApplication::processEvents(QEventLoop::AllEvents, 50);
+    counter.paints = 0;
+
+    const auto topPixel = [glow] {
+        const WidgetPixels pixels = grabWidget(*glow);
+        return pixels.at(glow->width() / 2, 2);
+    };
+
+    // Auto resolves to the accent even though a pink custom colour is stored.
+    QVERIFY(nearColor(topPixel(), mikai::app::theme::accentColor(appearance)));
+
+    Appearance custom = appearance;
+    custom.gradientMode = mikai::app::theme::GradientMode::Custom;
+    mikai::app::setCurrentAppearance(custom);
+    QApplication::processEvents(QEventLoop::AllEvents, 50);
+    QVERIFY2(counter.paints > 0,
+             "switching the gradient source must ask the wash to repaint");
+    QVERIFY(nearColor(topPixel(), QColor(QStringLiteral("#f27bb0"))));
+
+    counter.paints = 0;
+    mikai::app::setCurrentAppearance(appearance);
+    QApplication::processEvents(QEventLoop::AllEvents, 50);
+    QVERIFY2(counter.paints > 0, "returning to Auto must ask the wash to repaint");
+    QVERIFY(nearColor(topPixel(), mikai::app::theme::accentColor(appearance)));
+
+    glow->removeEventFilter(&counter);
+    host.hide();
 }
 
 void TestThemeRoles::swatchKeepsItsFixedSizeInsideAFlowLayout() {

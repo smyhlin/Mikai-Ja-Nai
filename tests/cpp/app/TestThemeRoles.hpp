@@ -32,6 +32,7 @@ class TestThemeRoles : public QObject {
   void compareSideBStaysAmberOrRotatesToTheComplement();
   void gradientModeMigratesAndPreservesTheCustomChoice();
   void swatchKeepsItsFixedSizeInsideAFlowLayout();
+  void pageGlowFollowsTheGradientSourceWithoutAColourEdit();
 
  private:
   std::unique_ptr<QTemporaryDir> settingsDirectory_;
