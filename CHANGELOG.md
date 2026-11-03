@@ -7,6 +7,7 @@ Published changes are recorded with their downloads on the [GitHub releases page
 - Correct disabled-state detection for retained Linux desktop entries, and safely refresh or remove stale owned entries.
 - Add opt-in presentation profiling and a cross-process focus/composition probe.
 - Retire Runner work and dispatch references without destroying thread pools on their own workers.
+- Preserve PQ/BT.2020 and BT.709 frame metadata in generated acceptance media.
 
 - Offer MoonAnime opening, ending and recap skips, with accent-tinted timeline ranges.
 - Show frame previews and segment labels on timeline hover.

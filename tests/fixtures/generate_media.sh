@@ -239,7 +239,7 @@ fi
 # distinguishes tone curves that legitimately preserve the same dark values.
 if have_encoder libx265; then
     "$FFMPEG" -hide_banner -y -f lavfi \
-      -i "nullsrc=s=1280x720:r=24:d=16,format=yuv420p10le,geq=lum='if(gt(X,W*0.96),548+175*(X/W-0.96)/0.04,244+140*X/W+4*sin(T*2*PI*0.1))':cb=512:cr=512" \
+      -i "nullsrc=s=1280x720:r=24:d=16,format=yuv420p10le,geq=lum='if(gt(X,W*0.96),548+175*(X/W-0.96)/0.04,244+140*X/W+4*sin(T*2*PI*0.1))':cb=512:cr=512,setparams=range=limited:color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc" \
       -an -c:v libx265 -preset faster -crf 20 -pix_fmt "$SRC10" \
       -profile:v main10 \
       -color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc \
@@ -255,7 +255,7 @@ fi
 # remove it and turn an HDR-noise regression check into a constant-field test.
 if have_encoder libx265; then
     "$FFMPEG" -hide_banner -y -f lavfi \
-      -i "nullsrc=s=1280x720:r=24:d=16,format=yuv420p10le,geq=lum='if(gt(X,W*0.96),548+175*(X/W-0.96)/0.04,324+5*(2*random(1)-1))':cb=512:cr=512" \
+      -i "nullsrc=s=1280x720:r=24:d=16,format=yuv420p10le,geq=lum='if(gt(X,W*0.96),548+175*(X/W-0.96)/0.04,324+5*(2*random(1)-1))':cb=512:cr=512,setparams=range=limited:color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc" \
       -an -c:v libx265 -preset faster -pix_fmt "$SRC10" \
       -profile:v main10 \
       -color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc \
@@ -309,6 +309,7 @@ if have_encoder libx265; then
         box_height=$((40 * frame_id_height / 720))
         frame_id_filter="$frame_id_filter,drawbox=x=$x:y=$y:w=$box_width:h=$box_height:color=black:t=fill,drawbox=x=$x:y=$y:w=$box_width:h=$box_height:color=white:t=fill:enable='gt(mod(floor(n/$((1 << bit))),2),0)'"
     done
+    frame_id_filter="$frame_id_filter,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709"
     "$FFMPEG" -hide_banner -y -f lavfi -i "$frame_id_filter" \
       -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=$FRAME_ID_DURATION_SECONDS" \
       -map 0:v:0 -map 1:a:0 -c:v libx265 -preset faster -crf 20 -pix_fmt "$SRC10" $X265 \
