@@ -129,7 +129,7 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     quotaTimer_->setInterval(1000);
     connect(quotaTimer_, &QTimer::timeout, this, &SettingsDialog::refreshQuota);
     quotaTimer_->start();
-    refreshQuota();
+    retranslateUi();
 
     // The dialog paints the settings sheet itself, so a preview of a new theme,
     // accent or radius re-styles every page from one place. Applied once the
