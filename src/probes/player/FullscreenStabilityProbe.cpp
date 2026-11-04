@@ -12,6 +12,7 @@
 #include <QCursor>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QEnterEvent>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
@@ -1842,6 +1843,365 @@ int runBaselineMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface*
     return measured ? 0 : 3;
 }
 
+// ── the 30 s hover-playback canary ───────────────────────────────────────
+//
+// GOAL-F/T-F4's regression net: the embedded core plays the fixture for the whole
+// requested window while the pointer sweeps real chrome, and the frame-timing log
+// is the measurement. It takes no desktop grab, claims no composition and never
+// takes the foreground or the system cursor: the gestures are delivered to the
+// widgets themselves, so the run can be unattended.
+//
+// What it gates is the pacing policy, not a speed: a chrome repaint never takes
+// an armed presentation slot (the disarm counter), every scheduling decision
+// names a documented reason, no paint claims a held pause nobody holds, and the
+// core really advanced frames. Paint-delay quantiles are reported with their
+// sample count; the plan fixes no delay budget, and the only frozen paint number
+// (343 us p95 duration) is a matched-host measurement owned by the load probe,
+// so inventing a CI millisecond gate here would be a different claim.
+
+struct CanaryLogSummary {
+    int paintLines = 0;
+    int pacedSamples = 0;
+    int unknownReasons = 0;
+    int pacedWithoutDelay = 0;
+    int pauseHeldLines = 0;
+    int newFrameLines = 0;
+    QVector<qint64> delays;
+};
+
+/// The value after `token=` on one log line. -1/false when the token is absent,
+/// which is what keeps a missing field from reading as a zero.
+bool canaryTokenInt(const QString& line, const QString& token, qint64* value) {
+    const qsizetype at = line.indexOf(token);
+    if (at < 0 || value == nullptr) return false;
+    qsizetype end = at + token.size();
+    const qsizetype start = end;
+    while (end < line.size() &&
+           (line.at(end).isDigit() || (end == start && line.at(end) == QLatin1Char('-'))))
+        ++end;
+    if (end == start) return false;
+    bool ok = false;
+    const qint64 parsed = line.mid(start, end - start).toLongLong(&ok);
+    if (!ok) return false;
+    *value = parsed;
+    return true;
+}
+
+QString canaryTokenWord(const QString& line, const QString& token) {
+    const qsizetype at = line.indexOf(token);
+    if (at < 0) return QString();
+    qsizetype end = at + token.size();
+    const qsizetype start = end;
+    while (end < line.size() && !line.at(end).isSpace()) ++end;
+    return line.mid(start, end - start);
+}
+
+/// One pointer gesture on a real chrome control: the events a pointer produces
+/// arrive at the widget directly, so no window has to be active and the system
+/// cursor is never moved. A hidden control is skipped rather than invented.
+bool canaryGesture(QWidget* target, const QPoint& local) {
+    if (target == nullptr || !target->isVisible() || target->width() <= 0 ||
+        target->height() <= 0)
+        return false;
+    const QPointF localPos(local);
+    const QPointF globalPos(target->mapToGlobal(local));
+    QEnterEvent enter(localPos, localPos, globalPos);
+    QCoreApplication::sendEvent(target, &enter);
+    QMouseEvent move(QEvent::MouseMove, localPos, globalPos, Qt::NoButton, Qt::NoButton,
+                     Qt::NoModifier);
+    QCoreApplication::sendEvent(target, &move);
+    return true;
+}
+
+bool canarySkipReasonExplained(const QString& reason) {
+    return reason.isEmpty() || reason == QLatin1String("none") ||
+           reason == QLatin1String("paced") || reason == QLatin1String("forced") ||
+           reason == QLatin1String("repeat") || reason == QLatin1String("redraw") ||
+           reason == QLatin1String("elapsed") || reason == QLatin1String("no-info");
+}
+
+int runHoverCanaryMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurface* surface,
+                       mplayer::shell::PlayerShell* shell, const QString& media, int seconds,
+                       const QString& outputPath,
+                       const std::function<void(QJsonObject)>& record, QString* error) {
+    // T-F4 names a 30 s window; a shorter one would be a different measurement
+    // reported under this name.
+    constexpr int kRequiredSeconds = 30;
+    if (dialog == nullptr || surface == nullptr || shell == nullptr) {
+        *error = QStringLiteral("the canary needs the real dialog, surface and shell");
+        return 2;
+    }
+    const QString platform = QGuiApplication::platformName();
+    if (seconds < kRequiredSeconds) {
+        record(QJsonObject{{"event", "hoverCanary"},
+                           {"result", "INVALID"},
+                           {"reason", "window shorter than the 30 s the goal names"},
+                           {"seconds", seconds},
+                           {"platform", platform}});
+        *error = QStringLiteral("the hover-playback canary is a %1 s window; %2 s is not it")
+                     .arg(kRequiredSeconds)
+                     .arg(seconds);
+        return 2;
+    }
+    // An offscreen or minimal platform can still construct widgets, but not the
+    // presented, hardware-painted window this canary is about. Saying so is the
+    // difference between a refusal and a green run nobody can trust.
+    if (platform == QLatin1String("offscreen") || platform == QLatin1String("minimal")) {
+        record(QJsonObject{{"event", "hoverCanary"},
+                           {"result", "REFUSED"},
+                           {"reason", "no real display platform: the player cannot present or "
+                                      "paint its surface here"},
+                           {"platform", platform},
+                           {"required", "windows, xcb, wayland or cocoa with a working GL context"}});
+        *error = QStringLiteral("display prerequisite missing: platform '%1' cannot present the "
+                                "player").arg(platform);
+        return 77;
+    }
+    if (!waitForVideo(surface, 20000)) {
+        record(QJsonObject{{"event", "hoverCanary"},
+                           {"result", "FAILED"},
+                           {"reason", "no video decoded"},
+                           {"platform", platform},
+                           {"surfaceState", surfaceState(surface)}});
+        *error = QStringLiteral("the core decoded no frame of the fixture");
+        return 1;
+    }
+    if (!surface->isContextReady() && !surface->waitForContext(10000)) {
+        record(QJsonObject{{"event", "hoverCanary"},
+                           {"result", "REFUSED"},
+                           {"reason", "no OpenGL render context for the surface"},
+                           {"platform", platform},
+                           {"surfaceState", surfaceState(surface)}});
+        *error = QStringLiteral("render-context prerequisite missing: the surface has no GL "
+                                "context");
+        return 77;
+    }
+    // Playback, verified in the core: the pause flag has to be false there, not
+    // only in the widget's mirror.
+    bool playing = false;
+    for (int attempt = 0; attempt < 100 && !playing; ++attempt) {
+        surface->setPaused(false);
+        if (surface->isPlaying()) {
+            const auto pause = surface->probeMpvProperty(QStringLiteral("pause"),
+                                                         mplayer::ProbePropertyKind::Flag);
+            playing = pause.has_value() &&
+                      pause->kind == mplayer::ProbePropertyValue::Kind::Flag && !pause->flag;
+        }
+        spinFor(50);
+    }
+    QElapsedTimer pictureWait;
+    pictureWait.start();
+    while (!surface->hasVisibleOutputFrame() && pictureWait.elapsed() < 10000) spinFor(25);
+    const bool pictureOnScreen = surface->hasVisibleOutputFrame();
+    shell->wake();
+    spinFor(250);
+    QWidget* playToggle = shell->findChild<QWidget*>(QStringLiteral("playerPlayToggle"));
+    QWidget* settingsButton = shell->findChild<QWidget*>(QStringLiteral("playerSettingsButton"));
+    QWidget* scrub = shell->findChild<QWidget*>(QStringLiteral("playerScrubBar"));
+    const bool chromePresent =
+        playToggle != nullptr && settingsButton != nullptr && scrub != nullptr;
+    record(QJsonObject{{"event", "hoverCanaryStart"},
+                       {"seconds", seconds},
+                       {"platform", platform},
+                       {"platformDetail", QGuiApplication::platformName()},
+                       {"playing", playing},
+                       {"pictureOnScreen", pictureOnScreen},
+                       {"chromePresent", chromePresent},
+                       {"surfaceState", surfaceState(surface)},
+                       {"mediaFacts", mediaFacts(media)},
+                       {"countersEnabled", mikai::gui::uiprofile::countersEnabled()},
+                       {"scope", "embedded core playback with pointer gestures on real chrome; "
+                                 "no desktop pixels, no foreground ownership, no composition "
+                                 "claim"}});
+    if (!playing || !pictureOnScreen || !chromePresent) {
+        *error = !playing ? QStringLiteral("the core did not start playing")
+                          : (!pictureOnScreen ? QStringLiteral("no frame reached the surface")
+                                              : QStringLiteral("the player chrome was not present"));
+        record(QJsonObject{{"event", "hoverCanary"},
+                           {"result", "INVALID"},
+                           {"reason", *error},
+                           {"surfaceState", surfaceState(surface)}});
+        return 1;
+    }
+
+    // The window's own log: the path is set immediately before the storm, and
+    // moved afterwards so the surface flushes exactly this window's lines into
+    // the first file. Setting it also forces the counters on, so the numbers
+    // below are collected even without MIKAI_UI_PROFILE.
+    const QString windowLog =
+        QDir(outputPath).filePath(QStringLiteral("hover-canary-frame-timing.jsonl"));
+    const QString closeLog =
+        QDir(outputPath).filePath(QStringLiteral("hover-canary-close.jsonl"));
+    QFile::remove(windowLog);
+    QFile::remove(closeLog);
+    mikai::gui::uiprofile::resetCounters();
+    const mikai::gui::uiprofile::Snapshot countersBefore = mikai::gui::uiprofile::snapshot();
+    const auto profileBefore = surface->uiProfileCounters();
+    const quint64 framesBefore = surface->playbackDiagnostics().renderedOutputFrames;
+    const double positionAtStart = surface->position();
+    mplayer::VideoSurface::setFrameTimingLogPath(windowLog);
+
+    QElapsedTimer wall;
+    wall.start();
+    qint64 nextWakeMs = 2000;
+    int gestures = 0;
+    int loopSeeks = 0;
+    int ticks = 0;
+    while (wall.elapsed() < qint64(seconds) * 1000) {
+        if (wall.elapsed() >= nextWakeMs) {
+            // The dock auto-hides while playing; the canary keeps it up the way
+            // a viewer does, by waking the chrome, not by pinning it open.
+            shell->wake();
+            nextWakeMs = wall.elapsed() + 2000;
+        }
+        // A tracked fixture is short. A backwards seek keeps the window playing
+        // without a source reload (no load transition), and the count is stated
+        // rather than hidden.
+        const double duration = surface->duration();
+        const double position = surface->position();
+        if (duration > 3.0 && position > duration - 2.0) {
+            surface->seek(0.5);
+            ++loopSeeks;
+        }
+        QWidget* target = (ticks % 3 == 0) ? playToggle : (ticks % 3 == 1 ? scrub : settingsButton);
+        const QPoint local =
+            (target == scrub)
+                ? QPoint(qBound(2, target->width() * ((ticks / 3) % 2 == 0 ? 35 : 62) / 100,
+                                target->width() - 2),
+                         target->height() / 2)
+                : QPoint(target->width() / 2, target->height() / 2);
+        if (canaryGesture(target, local)) ++gestures;
+        spinFor(16);
+        ++ticks;
+    }
+    const qint64 windowMs = wall.elapsed();
+    const auto profileAfter = surface->uiProfileCounters();
+    const mikai::gui::uiprofile::Snapshot countersAfter = mikai::gui::uiprofile::snapshot();
+    const quint64 framesAfter = surface->playbackDiagnostics().renderedOutputFrames;
+    const double positionAtEnd = surface->position();
+    const QJsonObject stateAtEnd = surfaceState(surface);
+    // End of the window: move the log so its buffer is flushed into windowLog,
+    // then close the dialog, which flushes whatever is still buffered.
+    mplayer::VideoSurface::setFrameTimingLogPath(closeLog);
+    spinFor(150);
+    dialog->close();
+    spinFor(200);
+    mplayer::VideoSurface::setFrameTimingLogPath(QString());
+
+    CanaryLogSummary summary;
+    QFile logFile(windowLog);
+    if (logFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        while (!logFile.atEnd()) {
+            const QString line = QString::fromUtf8(logFile.readLine());
+            if (!line.startsWith(QLatin1String("paint "))) continue;
+            ++summary.paintLines;
+            const QString reason = canaryTokenWord(line, QStringLiteral("skip_reason="));
+            if (!canarySkipReasonExplained(reason)) ++summary.unknownReasons;
+            qint64 delay = -1;
+            if (canaryTokenInt(line, QStringLiteral("paint_delay_ms="), &delay)) {
+                if (delay >= 0) {
+                    ++summary.pacedSamples;
+                    summary.delays.append(delay);
+                } else if (reason == QLatin1String("paced")) {
+                    // A pacing decision that recorded no delay is a skip with no
+                    // explanation: the timer armed and no measurement followed.
+                    ++summary.pacedWithoutDelay;
+                }
+            }
+            qint64 pauseHeld = 0;
+            if (canaryTokenInt(line, QStringLiteral("pause_held="), &pauseHeld) && pauseHeld != 0)
+                ++summary.pauseHeldLines;
+            qint64 newFrame = 0;
+            if (canaryTokenInt(line, QStringLiteral("newframe="), &newFrame) && newFrame != 0)
+                ++summary.newFrameLines;
+        }
+    }
+    const quint64 windowPaints = profileAfter.paintCalls - profileBefore.paintCalls;
+    const quint64 windowDisarms = profileAfter.pacingDisarms - profileBefore.pacingDisarms;
+    const quint64 windowChromeDirty =
+        countersAfter.chromeDirtyRequests - countersBefore.chromeDirtyRequests;
+    const quint64 windowChromeApplied =
+        countersAfter.chromeDirtyApplied - countersBefore.chromeDirtyApplied;
+    const quint64 windowPacedFrames = framesAfter >= framesBefore ? framesAfter - framesBefore : 0;
+    const int unexplainedSkips =
+        summary.unknownReasons + summary.pacedWithoutDelay + summary.pauseHeldLines;
+    const double delayP50 = percentileMs(summary.delays, 0.50);
+    const double delayP95 = percentileMs(summary.delays, 0.95);
+    qint64 delayMax = -1;
+    for (qint64 value : summary.delays) delayMax = std::max(delayMax, value);
+
+    const bool measured = summary.paintLines > 0 && windowPaints > 0 && gestures > 0;
+    const bool playbackAdvanced = summary.newFrameLines >= seconds && windowPacedFrames > 0;
+    const bool chromeInteracted = windowChromeDirty > 0;
+    const bool noDisarms = windowDisarms == 0;
+    const bool skipsExplained = unexplainedSkips == 0;
+    const bool delayMeasured = summary.pacedSamples > 0;
+    const bool green = measured && playbackAdvanced && chromeInteracted && noDisarms &&
+                       skipsExplained && delayMeasured;
+
+    record(QJsonObject{
+        {"event", "hoverCanary"},
+        {"result", green ? "PASS" : "FAIL"},
+        {"platform", platform},
+        {"windowMs", windowMs},
+        {"requestedSeconds", seconds},
+        {"loopSeeks", loopSeeks},
+        {"gestures", gestures},
+        {"ticks", ticks},
+        {"paintLines", summary.paintLines},
+        {"paintCalls", static_cast<qint64>(windowPaints)},
+        {"newFramePaints", summary.newFrameLines},
+        {"renderedOutputFrames", static_cast<qint64>(windowPacedFrames)},
+        {"positionAtStart", positionAtStart},
+        {"positionAtEnd", positionAtEnd},
+        {"chromeDirtyRequests", static_cast<qint64>(windowChromeDirty)},
+        {"chromeDirtyApplied", static_cast<qint64>(windowChromeApplied)},
+        {"pacingDisarms", static_cast<qint64>(windowDisarms)},
+        {"pacedSamples", summary.pacedSamples},
+        {"paintDelayP50Ms", delayMeasured ? QJsonValue(delayP50)
+                                          : QJsonValue(QStringLiteral("unavailable"))},
+        {"paintDelayP95Ms", delayMeasured ? QJsonValue(delayP95)
+                                          : QJsonValue(QStringLiteral("unavailable"))},
+        {"paintDelayMaxMs", delayMeasured ? QJsonValue(delayMax)
+                                          : QJsonValue(QStringLiteral("unavailable"))},
+        {"unexplainedSkips", unexplainedSkips},
+        {"unknownSkipReasons", summary.unknownReasons},
+        {"pacedWithoutDelay", summary.pacedWithoutDelay},
+        {"pauseHeldPaints", summary.pauseHeldLines},
+        {"criteria",
+         QJsonObject{{"measured", measured},
+                     {"playbackAdvanced", playbackAdvanced},
+                     {"chromeInteracted", chromeInteracted},
+                     {"noPacingDisarms", noDisarms},
+                     {"skipsExplained", skipsExplained},
+                     {"paintDelayMeasured", delayMeasured}}},
+        {"frameTimingLog", windowLog},
+        {"surfaceAtEnd", stateAtEnd},
+        {"scope", "pacing and chrome-paint counters plus the frame-timing log from a real "
+                  "embedded core; desktop composition is not observed and not claimed"},
+        {"error", green ? QString() : *error}});
+    if (!green) {
+        *error = !measured
+                     ? QStringLiteral("hover canary INVALID: no paints, no gestures or no log")
+                     : (!playbackAdvanced
+                            ? QStringLiteral("hover canary FAIL: the core did not advance frames "
+                                             "for the whole window")
+                            : (!chromeInteracted
+                                   ? QStringLiteral("hover canary FAIL: no chrome invalidation "
+                                                    "reached the shell")
+                                   : (!noDisarms
+                                          ? QStringLiteral("hover canary FAIL: a chrome repaint "
+                                                           "took an armed pacing slot")
+                                          : (!skipsExplained
+                                                 ? QStringLiteral("hover canary FAIL: a paint "
+                                                                  "skip had no documented reason")
+                                                 : QStringLiteral("hover canary INCOMPLETE: no "
+                                                                  "paced paint-delay sample")))));
+        return 1;
+    }
+    return 0;
+}
+
 /// GOAL-E long-playback QA matrix.
 ///
 /// One real playback, sampled from the composed framebuffer and from the real
@@ -3164,6 +3524,7 @@ int main(int argc, char** argv) {
     bool focusSwitch = false;
     bool baseline = false;
     bool qaMatrix = false;
+    bool hoverCanary = false;
     for (int index = 1; index < argc; ++index) {
         const QString argument = QString::fromLocal8Bit(argv[index]);
         if (argument == QLatin1String("--known-bright")) {
@@ -3176,6 +3537,8 @@ int main(int argc, char** argv) {
             baseline = true;
         } else if (argument == QLatin1String("--qa-matrix")) {
             qaMatrix = true;
+        } else if (argument == QLatin1String("--hover-canary")) {
+            hoverCanary = true;
         } else {
             positionalArguments.append(argument);
         }
@@ -3187,20 +3550,20 @@ int main(int argc, char** argv) {
     // Each mode measures a different thing; a run that asked for two would
     // report one mode's numbers under the other's name.
     const int selectedModes = int(focusSwitch) + int(baseline) + int(qaMatrix) +
-                              int(steadyFullscreen);
+                              int(steadyFullscreen) + int(hoverCanary);
     if (selectedModes > 1) {
-        std::fprintf(stderr, "--focus-switch, --baseline, --qa-matrix and --steady-fullscreen "
-                             "are separate modes\n");
+        std::fprintf(stderr, "--focus-switch, --baseline, --qa-matrix, --steady-fullscreen and "
+                             "--hover-canary are separate modes\n");
         return 2;
     }
     if (positionalArguments.size() < 3 || positionalArguments.size() > 4) {
         std::fprintf(stderr,
                      "Usage: fullscreen_stability_probe <video> <seconds> <output-directory> "
                      "[anime4k-preset] [--known-bright] [--steady-fullscreen] "
-                     "[--focus-switch] [--baseline] [--qa-matrix]\n");
+                     "[--focus-switch] [--baseline] [--qa-matrix] [--hover-canary]\n");
         return 2;
     }
-    if (focusSwitch || baseline || qaMatrix) {
+    if (focusSwitch || baseline || qaMatrix || hoverCanary) {
         // The counters are the measurement; the env var caches on first use, so
         // it is set before any widget exists.
         qputenv("MIKAI_UI_PROFILE", QByteArrayLiteral("1"));
@@ -3267,10 +3630,20 @@ int main(int argc, char** argv) {
     };
     QString mediaError;
     dialog->startPlayer();
-    dialog->showFullScreen();
-    dialog->raise();
-    dialog->activateWindow();
-    QCursor::setPos(dialog->mapToGlobal(QPoint(2, 2)));
+    if (hoverCanary) {
+        // A CI canary must not take the desktop: no raise, no activation and no
+        // system-cursor move. It runs as an ordinary window whose gestures are
+        // delivered to its widgets, so an unattended run cannot steal focus from
+        // whoever owns the machine.
+        dialog->showNormal();
+        if (dialog->isFullScreen()) shell->windowModeToggled();
+        dialog->resize(960, 540);
+    } else {
+        dialog->showFullScreen();
+        dialog->raise();
+        dialog->activateWindow();
+        QCursor::setPos(dialog->mapToGlobal(QPoint(2, 2)));
+    }
 
     QElapsedTimer clock;
     clock.start();
@@ -3321,7 +3694,7 @@ int main(int argc, char** argv) {
         evidence.write("\n");
         evidence.flush();
     };
-    if (focusSwitch || baseline || qaMatrix) {
+    if (focusSwitch || baseline || qaMatrix || hoverCanary) {
         QString modeError;
         const int modeExit =
             focusSwitch
@@ -3330,10 +3703,15 @@ int main(int argc, char** argv) {
             : baseline
                 ? runBaselineMode(dialog, surface, shell, media, knownBright, seconds, record,
                                   &modeError)
+            : hoverCanary
+                ? runHoverCanaryMode(dialog, surface, shell, media, seconds, outputPath, record,
+                                     &modeError)
                 : runQaMatrixMode(dialog, surface, shell, media, outputPath, &host, knownBright,
                                   seconds, record, &modeError);
         evidence.flush();
-        dialog->close();
+        // The canary closes its own dialog so its timing-log window is flushed
+        // before it reads that window back; the other modes are closed here.
+        if (!hoverCanary) dialog->close();
         // The mode's verdict is explicit: 0 measured, 3 incomplete/invalid.
         return modeExit;
     }

@@ -432,6 +432,36 @@ if(MIKAI_BUILD_PROBES)
   # The entry runs on the offscreen platform (no desktop, no pointer, no
   # activation) and needs no exported JSON: the probe's exit code is the verdict.
   # A manual run still passes an absolute --video-scaling-evidence file.
+  # GOAL-F/T-F4: the 30 s hover-playback canary. A real embedded core plays the
+  # tracked fixture while pointer gestures sweep the real chrome, and the verdict
+  # comes from the surface's frame-timing log plus the pacing/chrome counters -
+  # no desktop grab, no foreground takeover, no system-cursor move. It needs a
+  # real display platform and a working GL context; the probe refuses with 77 and
+  # SKIP_RETURN_CODE keeps that refusal visible as a skip rather than green.
+  if(TARGET fullscreen_stability_probe)
+    add_dependencies(mikai_tests fullscreen_stability_probe)
+    add_test(NAME HoverPlaybackCanary
+      COMMAND mikai_test_launcher
+        "$<TARGET_FILE:fullscreen_stability_probe>"
+        "${CMAKE_SOURCE_DIR}/shaders"
+        "${MIKAI_SELECTED_MPV_MODULE}"
+        "$<TARGET_FILE_DIR:Qt6::Core>"
+        "${MIKAI_TEST_QT_PLUGIN_DIR}"
+        "${CMAKE_BINARY_DIR}/_test-runs"
+        "${CMAKE_SOURCE_DIR}/tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4"
+        "30"
+        "${CMAKE_BINARY_DIR}/_hover-canary"
+        "off"
+        "--hover-canary"
+    )
+    set_tests_properties(HoverPlaybackCanary PROPERTIES
+      TIMEOUT 240
+      SKIP_RETURN_CODE 77
+      LABELS "mikai_tests_suite"
+      ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+  endif()
+
   if(TARGET native_settings_probe)
     add_dependencies(mikai_tests native_settings_probe)
     add_test(NAME VideoScalingPersistence
