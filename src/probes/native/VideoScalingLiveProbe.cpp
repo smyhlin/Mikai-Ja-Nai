@@ -1,19 +1,4 @@
-// GOAL-H2 — visible, real-player display-scaling smoke.
-//
-// What this mode is for: the hidden framebuffer rows and the Settings persistence
-// mode prove the renderer and the store separately. Neither exercises the
-// ordinary windowed user path. This mode opens a real PlayerDialog on a real
-// media file, changes the display mode through the real Settings dialog's Save
-// and Cancel buttons and through the real player flyout rows, and observes the
-// shell's surface geometry plus the rendered framebuffer for every mode. It also
-// proves that a paused surface adopts a change, that PiP inherits the current
-// policy, and that a fresh process reads the final Saved policy through the
-// production reader.
-//
-// It only shows this process's own windows. It never moves the pointer, never
-// activates another process and never sends global input; every state change is
-// a Qt widget action (QAbstractButton::click, QComboBox::setCurrentIndex) or a
-// real window show().
+// UI actions stay within owned windows; no desktop input is synthesized.
 #include "VideoScalingLiveProbe.hpp"
 
 #include "PlayerDialog.hpp"
@@ -692,14 +677,7 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
         }
         return 2;
     }
-    // Runtime selection. The launcher stages the pinned module and exports its
-    // absolute path in MIKAI_MPV_MODULE; the probe's second isolation copy keeps
-    // that absolute hint. `selectRuntime()` ignores a bare module hint and asks
-    // for a packaged install this probe deliberately does not have, which is the
-    // "[Ukrainian mpv not found]" refusal this path used to hit. Resolve the
-    // module the launcher named, exactly like the other native probes do, while
-    // still honouring the explicit MIKAI_PROBE_BUNDLE convention when it is set.
-    // There is no fallback to a host or user runtime.
+    // Installed-bundle discovery cannot find the launcher's disposable module copy.
     bool runtimeReady = false;
     if (!qEnvironmentVariableIsEmpty("MIKAI_PROBE_BUNDLE")) {
         runtimeReady = mplayer::probes::selectRuntime();
