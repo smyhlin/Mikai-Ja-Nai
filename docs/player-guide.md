@@ -26,7 +26,7 @@ Catalogue variant selection and local track selection are different operations: 
 
 - **Space** toggles play/pause. The player dock also has a play/pause control.
 - The timeline shows playback position and remaining time when duration is known. Drag/scrub it to seek; the final pointer position on left-button release selects the target, even if the last movement event was elsewhere.
-- Hover over a seekable video’s timeline to preview a frame and timestamp without moving playback. During a drag, the card shows the time without decoding a frame. Unseekable or unavailable sources show a reason instead.
+- Hover over a seekable video’s timeline to preview a frame and timestamp without moving playback. Repeated movement over the same preview position keeps the pending decode; the last decoded picture can remain visible while the next one loads. During a drag, the card shows the time without decoding a frame. Unseekable or unavailable sources show a reason instead.
 - MoonAnime opening, ending, mixed-opening, mixed-ending and recap ranges are tinted with the app accent; the hover card names each range under the pointer.
 - The separate **+85** control advances by 85 seconds, bounded by a known duration.
 - When MoonAnime supplies skip markers, controls appear above the right side of the player dock during openings, endings, mixed segments, or recaps. Select one to seek to its end; overlapping segments remain separate choices. Markers depend on the selected episode and provider.
@@ -71,7 +71,7 @@ PiP behavior is window-manager dependent. On Wayland, the compositor controls in
 
 In **Settings → Application → Access → HDR playback**, choose **Auto (recommended)**, **Stable – no per-frame adaptation**, or **Vivid – Mobius curve**. Saved tone-mapping changes reach a running player shortly afterward. This controls how HDR is mapped to the display; it is separate from Native enhancement.
 
-**Video scaling**, on the card below, and the **SCALING** section of the player settings flyout, choose Fit, Fill, Stretch, 16:9, 4:3 or original size. Zoom and the display scalers are on the settings card. A running player adopts a saved change without a restart. Compare ignores that choice and uses Fit until it closes.
+**Video scaling**, on the card below, offers Fit, Fill, Stretch, 16:9, 4:3 and original size. The **SCALING** section of the player settings flyout provides the first five modes as quick switches. Zoom and the display scalers are on the settings card. A running player adopts a saved change without a restart; PiP follows the same policy. Compare ignores that choice and uses Fit until it closes.
 
 While an engine build holds playback, the player shows **Preparing enhancement — playback paused** instead of an unexplained frozen picture. Closing the player during that build shows **Finishing enhancement…** if the stop takes more than a third of a second, and does not keep the window up for the old eleven-second settle. A source change keeps the last presented picture until the new source produces a frame; that is a visual hold, not proof that playback is still advancing.
 

@@ -12,20 +12,25 @@ Published packages, release-specific changes and checksums are available on the 
 
 HDR dark-scene instability and periodic frame substitution (KB-29 and KB-30) remain under measurement. Rendering fixes and bounded tests do not establish that every black flash is resolved; see [known bugs](../known_bugs.md). A historical Linux stock-runtime hour run ended with black, frozen output; its cause was not established.
 
-Pacing causality for "very fast, then very slow" playback is also still under measurement
-(KB-30). GOAL-F removed one confirmed static aggravator — an armed presentation slot could be
-disarmed and its frame presented by a repaint Qt asked for, which is the burst-then-stall
-signature — and corrected what the log says about it: `disarm` now counts only passes that really
-stop an armed timer, and `lead_ms` is measured at the swap rather than at the end of `paintGL`, so
-it includes FBO composition and the vsync wait. The canonical before-side stays
-[`GOAL-E`](ai/reports/GOAL-E.md): paused chrome-only p50 410 µs / p95 490 µs. The after-side run
-`docs/ai/GOAL-E/windows-load-after-pacing` passed its 23 load/context checks, but paused chrome-only
-p95 was 899 µs (p50 676 µs). That is not a 30 percent reduction. The same run still recorded 3429
-dirty chrome-cache misses and 543 ms of chrome raster, so the remaining cost is the dirty overlay,
-not proof of which GPU operation caused the delay. The sheet experiment (`659af02`, `99d7768`)
-was removed: hiding a neighboring control changed unchanged pixels at 125/150/175% DPR, and its
-pixmaps bypassed the cache's 8 MiB budget. Per-control caches remain. The retained-blit clear
-optimization is not included in the 899 µs measurement. No 30% paint-cost reduction is claimed.
+Pacing causality for "very fast, then very slow" playback remains under measurement (KB-30).
+Chrome-only repaints no longer consume an armed presentation slot. `disarm` counts passes that
+actually stop an armed timer; `lead_ms` is measured at the swap, including composition and the
+vsync wait. The latest recorded measurements before the user stopped further probes are:
+
+| Paused chrome-only capture | Actual DPR | Paint p50 | Paint p95 |
+|---|---|---|---|
+| Canonical historical before-side | Not recorded | 410 µs | 490 µs |
+| Later Windows capture at `9bdd850` | 2.1875 | 2044 µs | 2388 µs |
+
+These are not matched-DPR measurements and do not demonstrate a 30% reduction. The later capture
+passed 24/24 load/context checks with zero black framebuffer samples; that is not desktop
+composition proof. A prior native hover canary obtained no paced-delay samples on due-now
+callbacks, so its pacing gate did not pass. No new numerical result is claimed after the final
+build-and-screenshot-only instruction.
+
+The shared-sheet experiment (`659af02`, `99d7768`) was removed because hiding a neighboring
+control changed unchanged pixels at fractional DPR and the sheets bypassed the cache's 8 MiB
+budget. Per-control caches remain.
 
 ## Presentation baseline (Windows before-side)
 
@@ -40,14 +45,12 @@ requests to each paint line. The fullscreen stability probe gained
 through `mikai_test_launcher` in an owned disposable tree, and write JSONL rows
 that name an unmeasured value `"unavailable"` rather than zero.
 
-The hover, loadfile, geometry and chrome before-side values come from
-[`win-before-baseline-04/samples.jsonl`](ai/GOAL-00/win-before-baseline-04/samples.jsonl)
-at `8deb325`. That run reported `MEASURED`, with paused bright video and native
+The hover, loadfile, geometry and chrome before-side values were recorded at `8deb325`.
+That historical run reported `MEASURED`, with paused bright video and native
 foreground validated throughout the requested hover interval.
 
-Activation values use the subsequent complete readiness-barrier run,
-[`win-before-focus-05/samples.jsonl`](ai/GOAL-00/win-before-focus-05/samples.jsonl)
-at `463b2a3`: every plain, processing-overlay and dock-hover cycle was valid,
+Activation values use the subsequent complete readiness-barrier run at `463b2a3`:
+every plain, processing-overlay and dock-hover cycle was valid,
 occluded and observed, with no timeout, unsupported capture or foreground loss.
 Both runs precede GOAL-B/D/H1 and all presentation product fixes. Earlier
 incomplete/interfered runs remain preserved, not silently promoted to passes.
@@ -73,9 +76,9 @@ focus run requires `focusSwitchResult.result == PASS`. Both require
 `visibleCompositionComplete == true`. An `INCOMPLETE` timeout still supplies
 failure evidence: its latency is censored at the 2500 ms deadline rather than
 dropped, but it cannot establish the activation target passed.
-`hoverStorm.pacingDisarms` is the validated
-interval only, not ticks made while another application owned the foreground. The probe invocation, fixture options and extraction contract are in
-[the GOAL-00 report](ai/reports/GOAL-00.md).
+`hoverStorm.pacingDisarms` is the validated interval only, not ticks made while another
+application owned the foreground. Raw goal reports and capture files are local-only tracking
+artifacts, not versioned release evidence.
 The idle-GPU lavfi runs did not reproduce an eight-second activation delay or
 a black load transition. The processing overlay is UI stress, not a real
 TensorRT build. These observations do not prove behaviour during TensorRT builds,
@@ -86,13 +89,39 @@ a demonstrated fix.
 
 ## Recorded verification
 
-At source checkpoint `7e88871`, the Windows app, tests and acceptance probes build with four jobs.
-Native hidden-framebuffer scaling tests pass both playing and paused modes, including Compare Fit
-release; artifacts and limitations are in [GOAL-H2](ai/reports/GOAL-H2.md). The final `7e88871`
-full CTest run passed 66/66 in 247.87 s. This does not close the foreground acceptance gates: the five-minute
-composition matrix, fullscreen hover-cost reduction, close-during-build timing and visible scaling
-Settings/flyout/PiP interactions remain unverified. [GOAL-Z](ai/reports/GOAL-Z.md) remains NOT-READY.
-Linux verification is deferred until the user's native-Linux reboot.
+### Final Windows implementation checks — 2026-11-04
+
+The final pre-commit application and translation build passed with four jobs in **16.85 s**:
+`cmake --preset release`, then
+`cmake --build build/release --target mikai release_translations --parallel 4`.
+The launched application identifies the checked working tree as
+`0.1.0 (e22b8c8-dirty, 2026-11-04T21:39:01Z)`. Implementation commits follow these checks;
+the embedded revision is not a claim that the later documentation commits were compiled.
+The Ukrainian catalog compilation reports **1938 finished translations, zero unfinished**.
+
+Actual shipping-application screenshots record:
+
+- The first-open Video scaling card with its captions, hints and native combo-box arrows.
+- The API-key caption showing the supplied **299 anonymous / 599 keyed requests per minute**.
+  These are fallback estimates; server quota headers take precedence.
+- A live switch to Fill and back to Fit through the player flyout, with the initial Fit preference restored.
+- A decoded timeline-hover thumbnail, PiP playback and return to the player, and windowed player chrome.
+- The corrected PiP remaining-time label, resized and right-anchored after the displayed text changes.
+
+Goal folders, raw reports and screenshots remain ignored, local-only files. Screenshots establish
+the pictured UI states, not a five-minute focus/occlusion matrix, a numerical pacing improvement,
+native inference or cross-platform parity. The screenshot clip was video-only because this Windows
+session exposed no audio playback devices; no audio-output verification is claimed.
+
+At the user's instruction, **no further probes or test suites were run** during these final
+implementation checks. The full CTest result **66/66 in 247.87 s at `7e88871` is historical**,
+not a test result for the final working tree. Earlier native hidden-framebuffer scaling checks
+covered playing and paused changes and Compare Fit release; they do not substitute for Linux pixels.
+
+An earlier cold active engine-build close at `28ebad9` returned in 12 ms and destroyed the player
+in 121 ms. It did not exercise the delayed finishing notice or the two-second abandonment path.
+The original long compositor matrix, matched-DPR paint-cost target and long native-stop paths
+remain unverified. Native Linux verification is deferred until the user's reboot.
 
 These observations apply to the identified runs, not automatically to later builds or every machine:
 
