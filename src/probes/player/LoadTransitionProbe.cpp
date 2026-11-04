@@ -25,6 +25,7 @@
 #include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
+#include <QPainter>
 #include <QPointer>
 #include <QScreen>
 #include <QScopeGuard>
@@ -56,6 +57,8 @@ namespace {
 int g_checks = 0;
 int g_failures = 0;
 QString g_outputDir;
+/// Names the per-transition band artifacts without reusing a cycle's label.
+int g_transitionArtifacts = 0;
 
 void check(bool ok, const QString& what) {
     ++g_checks;
@@ -101,18 +104,31 @@ struct StubHost : PlayerHost {
 
 // Off-centre and clear of the chrome that legitimately changes: the opening
 // placeholder is bright in the middle, so a centre-only check could pass it.
+//
+// "Clear of the chrome" is a geometry fact, not a hope. PlayerShell paints its
+// adopted controls INTO this surface's own painter (paintSurfaceOverlay ->
+// chrome_.paint), so the dock, the info chip and the timeline's hover-preview
+// card are framebuffer pixels this band reads. The card is the one that moves:
+// previewCardRect() puts it kCardGap above the dock with the pointer's x as its
+// centre, so it can stand over the lower third of the picture, and
+// onTimelineHoverLeft() only starts a 120 ms grace timer - a pointer swept back
+// onto the timeline inside that window keeps the card up for the whole sweep.
+// The spots therefore stay above the dock band (55% of the surface height at
+// most, plus the gap, measured from the dock's top) and off the exact centre
+// column where the paused play glyph sits; auditRegions() re-checks that on
+// every read instead of trusting this comment.
 constexpr int kRegionCount = 6;
 struct RegionSpot {
     double fx;
     double fy;
 };
 constexpr std::array<RegionSpot, kRegionCount> kSpots{{
-    {0.24, 0.28},
-    {0.76, 0.28},
-    {0.24, 0.62},
-    {0.76, 0.62},
-    {0.50, 0.20},
-    {0.50, 0.70},
+    {0.22, 0.26},
+    {0.50, 0.16},
+    {0.78, 0.26},
+    {0.22, 0.44},
+    {0.50, 0.34},
+    {0.78, 0.44},
 }};
 // Small enough that six of them stay a bounded observer, large enough to carry
 // a picture rather than a gradient.
@@ -288,6 +304,87 @@ PictureRead readPicture(VideoSurface* surface, const QSize& deviceFallback, int 
                                  keepPixels);
 }
 
+/// Names the chrome standing over a judged region at the instant of a read.
+///
+/// PlayerShell draws its adopted controls with the surface's own painter, so a
+/// region under the dock or under the timeline's hover card reads chrome, not
+/// video - and a verdict built from that crop is about the wrong pixels. The
+/// audit turns that from a silent mis-measurement into a named failure, and its
+/// hits are part of the evidence.
+class ChromeAudit {
+public:
+    void bind(PlayerDialog* dialog, VideoSurface* surface) {
+        surface_ = surface;
+        host_ = dialog;
+        widgets_.clear();
+        if (dialog == nullptr) return;
+        // The framed controls only: a popover or a widget that paints itself
+        // belongs to another device and cannot stand in this framebuffer.
+        static const std::array<const char*, 13> kNames{{
+            "playerDock", "playerHoverPreview", "playerTitleBar", "playerInfoChip",
+            "playerEpisodeLabel", "playerPauseHoldChip", "playerNativeStatus",
+            "playerAnimeJanaiStatus", "playerHdrBadge", "playerDolbyVisionBadge",
+            "playerDolbyAtmosBadge", "playerCodecBadge", "playerNetworkStats",
+        }};
+        for (const char* name : kNames) {
+            const QString objectName = QString::fromLatin1(name);
+            for (QWidget* widget : dialog->findChildren<QWidget*>(objectName)) {
+                if (widget != nullptr) widgets_.push_back(widget);
+            }
+        }
+    }
+
+    /// Adopts the region rects of one read. The picture geometry does not move
+    /// inside a stage, so the audit can then run on widget geometry alone - no
+    /// extra framebuffer read per pointer round.
+    void observe(const PictureRead& read) {
+        rects_.clear();
+        for (const RegionRead& region : read.regions) {
+            if (region.valid && !region.rect.isEmpty()) rects_.push_back(region.rect);
+        }
+    }
+
+    /// Empty when every judged region is clear of the chrome the surface would
+    /// paint over it. Recomputed per call: the hover card moves with the pointer.
+    QStringList overlaps() const {
+        QStringList out;
+        if (surface_ == nullptr || host_ == nullptr || rects_.empty()) return out;
+        const QPoint origin = surface_->mapTo(host_, QPoint(0, 0));
+        const qreal ratio = surface_->devicePixelRatioF();
+        for (QWidget* widget : widgets_) {
+            if (widget == nullptr || !widget->isVisible()) continue;
+            const QRect shellRect(widget->mapTo(host_, QPoint(0, 0)), widget->size());
+            const QRect device(QPoint(qRound((shellRect.left() - origin.x()) * ratio),
+                                      qRound((shellRect.top() - origin.y()) * ratio)),
+                               QSize(qRound(shellRect.width() * ratio),
+                                     qRound(shellRect.height() * ratio)));
+            if (device.isEmpty()) continue;
+            for (std::size_t index = 0; index < rects_.size(); ++index) {
+                if (!device.intersects(rects_[index])) continue;
+                out << QStringLiteral("region %1 under %2")
+                           .arg(index + 1)
+                           .arg(widget->objectName());
+            }
+        }
+        out.removeDuplicates();
+        return out;
+    }
+
+private:
+    PlayerDialog* host_ = nullptr;
+    VideoSurface* surface_ = nullptr;
+    std::vector<QWidget*> widgets_;
+    std::vector<QRect> rects_;
+};
+
+/// Collects audit hits over a stage without growing without bound.
+void noteChromeHits(const QStringList& hits, QStringList* into) {
+    if (into == nullptr || hits.isEmpty()) return;
+    for (const QString& hit : hits) {
+        if (!into->contains(hit)) into->append(hit);
+    }
+}
+
 /// Pixels that visibly differ, not pixels that differ by the downscaler's noise
 /// floor: two re-renders of one still frame are not bit-identical.
 int changedPixels(const QImage& before, const QImage& after, int threshold = 8) {
@@ -304,6 +401,25 @@ int changedPixels(const QImage& before, const QImage& after, int threshold = 8) 
         }
     }
     return changed;
+}
+
+/// Writes the six judged crops as one strip: a band that disagrees with the
+/// calibration can then be read off the artifact instead of guessed at from a
+/// luma average. Diagnostics only - nothing is graded from this file.
+bool saveRegionStrip(const QString& name, const PictureRead& read) {
+    if (g_outputDir.isEmpty() || !read.measured) return false;
+    constexpr int gap = 6;
+    const int cell = kRegionSide + 2 * gap;
+    QImage strip(cell * kRegionCount, cell, QImage::Format_RGB888);
+    strip.fill(QColor(24, 24, 24));
+    QPainter painter(&strip);
+    for (int index = 0; index < kRegionCount; ++index) {
+        const RegionRead& region = read.regions[static_cast<std::size_t>(index)];
+        if (region.pixels.isNull()) continue;
+        painter.drawImage(gap + index * cell, gap, region.pixels);
+    }
+    painter.end();
+    return strip.save(artifactPath(name));
 }
 
 /// Recorded at every framebuffer read, defined with the summaries below.
@@ -352,6 +468,21 @@ struct Baseline {
             if (expected) ++judged;
         }
         return judged;
+    }
+
+    /// Which judged regions fell below their own floor in this read, as a bit
+    /// mask. "The band does not carry the content" is unactionable on its own;
+    /// this says which crop disagreed, which is what tells a covered region
+    /// from a dark frame.
+    int darkRegionMask(const PictureRead& read) const {
+        int mask = 0;
+        if (!read.measured) return mask;
+        for (int index = 0; index < kRegionCount; ++index) {
+            const auto spot = static_cast<std::size_t>(index);
+            if (!meaningful[spot] || !read.regions[spot].valid) continue;
+            if (read.regions[spot].luma < floorFor(index)) mask |= 1 << index;
+        }
+        return mask;
     }
 };
 
@@ -754,12 +885,18 @@ int hoverRound(QWidget* first, QWidget* second, QWidget* scrub) {
 
 /// Sweeps the pointer over chrome for a wall-clock window: a p95 of paint cost
 /// has to describe a real stretch of interaction, not a handful of events.
-int sweepChrome(QWidget* first, QWidget* second, QWidget* scrub, int durationMs) {
+///
+/// `afterRound` runs once per round and never inside a timed paint: it is where
+/// a stage checks that the chrome it just woke did not stand over the band it
+/// is about to grade.
+int sweepChrome(QWidget* first, QWidget* second, QWidget* scrub, int durationMs,
+                const std::function<void()>& afterRound = {}) {
     QElapsedTimer clock;
     clock.start();
     int moves = 0;
     while (clock.elapsed() < durationMs) {
         moves += hoverRound(first, second, scrub);
+        if (afterRound) afterRound();
     }
     return moves;
 }
@@ -892,6 +1029,10 @@ struct GapSample {
     double framebufferLuma = 0.0;
     int framebufferLitRegions = 0;
     bool framebufferPicture = false;
+    /// The device size the crops were read out of: a region read against a
+    /// stale fallback size is a measurement fault, not a dark picture.
+    QSize framebufferDevice;
+    int framebufferDarkRegions = 0;
 };
 
 /// Every instant below is on the run's one clock, and every origin counter
@@ -910,6 +1051,19 @@ struct TransitionOutcome {
     int retainedSamples = 0;
     quint64 epochBefore = 0;
     quint64 epochAfter = 0;
+    /// The last epoch any sample reported, whether or not a real output was
+    /// ever recognised. `epochAfter` is only the epoch of the accepted first
+    /// output, so a run with no output must not print it as "the epoch reset".
+    quint64 epochLastObserved = 0;
+    /// The first sample of the new epoch that reported a visible output frame,
+    /// accepted or not: it separates "no frame ever arrived" from "a frame
+    /// arrived and the band did not carry it".
+    qint64 firstVisibleOutputMs = -1;
+    int firstVisibleDarkRegions = 0;
+    QSize firstVisibleDevice;
+    /// The new source reached its own end before a real output was recognised.
+    /// Blackness after that instant is the source having ended, not a gap.
+    bool sourceEndedWithoutOutput = false;
     bool framebufferPictureAfter = false;
     bool framebufferMoved = false;
     bool observedFramebufferBlack = false;
@@ -923,7 +1077,8 @@ struct TransitionOutcome {
 TransitionOutcome measureTransition(PlayerDialog* dialog, VideoSurface* surface,
                                     const Baseline& baseline, const QElapsedTimer& runClock,
                                     const std::function<void()>& switchTo, int budgetMs,
-                                    bool movePointerDuringGap) {
+                                    bool movePointerDuringGap, ChromeAudit* audit = nullptr,
+                                    QStringList* chromeHits = nullptr) {
     TransitionOutcome outcome;
     if (dialog == nullptr || surface == nullptr) return outcome;
 
@@ -943,11 +1098,18 @@ TransitionOutcome measureTransition(PlayerDialog* dialog, VideoSurface* surface,
         if (movePointerDuringGap && runClock.elapsed() - lastPointerMoveMs >= 140) {
             lastPointerMoveMs = runClock.elapsed();
             hoverRound(first, second, scrub);
+            // Geometry only, no framebuffer read: the band and the chrome are
+            // both known, so an overlap is answerable between two samples.
+            if (audit != nullptr) noteChromeHits(audit->overlaps(), chromeHits);
         }
         const PictureRead read =
             readPicture(surface, calibration.device, calibration.videoWidth,
                         calibration.videoHeight, /*keepPixels=*/false);
         noteObserverRead(read.micros);
+        if (audit != nullptr) {
+            audit->observe(read);
+            noteChromeHits(audit->overlaps(), chromeHits);
+        }
         GapSample sample;
         sample.ms = runClock.elapsed();
         sample.epoch = surface->sourceEpoch();
@@ -964,6 +1126,23 @@ TransitionOutcome measureTransition(PlayerDialog* dialog, VideoSurface* surface,
         sample.framebufferLuma = read.meanLuma();
         sample.framebufferLitRegions = calibration.litRegions(read);
         sample.framebufferPicture = calibration.present(read);
+        sample.framebufferDevice = read.framebuffer;
+        sample.framebufferDarkRegions = calibration.darkRegionMask(read);
+        outcome.epochLastObserved = sample.epoch;
+        if (sample.epoch != outcome.epochBefore && sample.hasVisibleOutput &&
+            outcome.firstVisibleOutputMs < 0) {
+            outcome.firstVisibleOutputMs = sample.ms;
+            outcome.firstVisibleDarkRegions = sample.framebufferDarkRegions;
+            outcome.firstVisibleDevice = read.framebuffer;
+            if (!sample.framebufferPicture && !g_outputDir.isEmpty()) {
+                // Keep the crops of the decisive read: a band that disagreed
+                // with the calibration is only explainable from its pixels.
+                saveRegionStrip(QStringLiteral("transition-%1-band.png")
+                                    .arg(++g_transitionArtifacts),
+                                readPicture(surface, calibration.device, calibration.videoWidth,
+                                            calibration.videoHeight));
+            }
+        }
         ++outcome.samples;
         if (!sample.framebufferPicture) {
             ++outcome.framebufferBlackSamples;
@@ -986,6 +1165,9 @@ TransitionOutcome measureTransition(PlayerDialog* dialog, VideoSurface* surface,
                 {"observerUs", static_cast<double>(sample.observerMicros)},
                 {"framebufferLuma", sample.framebufferLuma},
                 {"framebufferLitRegions", sample.framebufferLitRegions},
+                {"framebufferDarkRegions", sample.framebufferDarkRegions},
+                {"framebufferDeviceWidth", sample.framebufferDevice.width()},
+                {"framebufferDeviceHeight", sample.framebufferDevice.height()},
                 {"framebufferPicture", sample.framebufferPicture}});
         }
         // "Real output of the new source": the epoch moved, the surface reports
@@ -1001,9 +1183,26 @@ TransitionOutcome measureTransition(PlayerDialog* dialog, VideoSurface* surface,
             outcome.framebufferPictureAfter = true;
             break;
         }
+        // The NEW source reached its own end without ever being recognised. The
+        // gap this stage measures ends there: every sample after it is the
+        // player showing a finished source, so counting those as "black in the
+        // gap" would blame the load for the clip running out. The epoch test
+        // keeps the outgoing source's own end from being read as the new one's.
+        const bool newSourceEnded = sample.epoch != outcome.epochBefore && !sample.opening &&
+                                    !sample.hasVideo && sample.duration > 0.0 &&
+                                    sample.position >= sample.duration - 0.25 &&
+                                    !sample.retained;
+        if (newSourceEnded) {
+            outcome.sourceEndedWithoutOutput = outcome.firstOutputMs < 0;
+            break;
+        }
     }
     outcome.measured = true;
     if (outcome.firstOutputMs >= 0) outcome.gapMs = outcome.firstOutputMs - outcome.requestMs;
+    // No accepted output means `epochAfter` was never written: report the epoch
+    // the samples actually ended on, so a summary cannot claim the source epoch
+    // collapsed to zero when it only ever advanced.
+    if (outcome.epochAfter == 0) outcome.epochAfter = outcome.epochLastObserved;
 
     // A held picture is lit as well: motion in the band is what separates a live
     // new output from the snapshot the surface kept.
@@ -1045,6 +1244,13 @@ QJsonObject outcomeObject(const TransitionOutcome& outcome) {
         {"retainedSamples", outcome.retainedSamples},
         {"epochBefore", static_cast<double>(outcome.epochBefore)},
         {"epochAfter", static_cast<double>(outcome.epochAfter)},
+        {"epochLastObserved", static_cast<double>(outcome.epochLastObserved)},
+        {"firstVisibleOutputMs", static_cast<double>(outcome.firstVisibleOutputMs)},
+        {"firstVisibleDarkRegions", outcome.firstVisibleDarkRegions},
+        {"firstVisibleDevice", QStringLiteral("%1x%2")
+                                   .arg(outcome.firstVisibleDevice.width())
+                                   .arg(outcome.firstVisibleDevice.height())},
+        {"sourceEndedWithoutOutput", outcome.sourceEndedWithoutOutput},
         {"framebufferPictureAfter", outcome.framebufferPictureAfter},
         {"framebufferMoved", outcome.framebufferMoved},
         {"observedFramebufferBlack", outcome.observedFramebufferBlack}};
@@ -1068,6 +1274,20 @@ void printOutcome(const QString& label, const TransitionOutcome& outcome) {
                .arg(static_cast<qulonglong>(outcome.epochBefore))
                .arg(static_cast<qulonglong>(outcome.epochAfter))
                .arg(int(outcome.framebufferMoved)));
+    if (outcome.firstOutputMs < 0) {
+        // No accepted output: say which question failed. A visible frame the
+        // band rejected names the regions that disagreed; a source that ended
+        // instead names the end. Neither is left for the reader to guess.
+        metric(QStringLiteral("%1: no accepted output; first visible frame=%2ms dark_regions=0x%3 "
+                              "device=%4x%5 source_ended=%6 epoch_last=%7")
+                   .arg(label)
+                   .arg(outcome.firstVisibleOutputMs)
+                   .arg(outcome.firstVisibleDarkRegions, 0, 16)
+                   .arg(outcome.firstVisibleDevice.width())
+                   .arg(outcome.firstVisibleDevice.height())
+                   .arg(int(outcome.sourceEndedWithoutOutput))
+                   .arg(static_cast<qulonglong>(outcome.epochLastObserved)));
+    }
 }
 
 int run(int argc, char** argv) {
@@ -1222,6 +1442,12 @@ int run(int argc, char** argv) {
                    .arg(environment.value(QStringLiteral("screenDevicePixelRatio")).toDouble())
                    .arg(environment.value(QStringLiteral("qtScaleFactor")).toString()));
     }
+    // The band's own geometry and the chrome that shares this framebuffer, bound
+    // once: every stage below audits its reads against it, so a crop covered by
+    // the dock or by the timeline's hover card is named instead of graded.
+    ChromeAudit chromeAudit;
+    chromeAudit.bind(dialog, surface);
+    QStringList chromeHits;
     {
         const PictureRead settled =
             readPicture(surface, baseline.device, baseline.videoWidth, baseline.videoHeight);
@@ -1229,6 +1455,15 @@ int run(int argc, char** argv) {
         QJsonArray regionLuma;
         for (const RegionRead& region : settled.regions) regionLuma.append(region.luma);
         evidence.insert(QStringLiteral("outgoingRegionLuma"), regionLuma);
+        chromeAudit.observe(settled);
+        QStringList settledHits;
+        noteChromeHits(chromeAudit.overlaps(), &settledHits);
+        metric(QStringLiteral("band: regions=%1 device=%2x%3 chrome_overlaps=%4")
+                   .arg(kRegionCount)
+                   .arg(settled.framebuffer.width())
+                   .arg(settled.framebuffer.height())
+                   .arg(settledHits.isEmpty() ? QStringLiteral("none")
+                                              : settledHits.join(QStringLiteral("; "))));
     }
 
     QWidget* playToggle = dialog->findChild<QWidget*>(QStringLiteral("playerPlayToggle"));
@@ -1254,8 +1489,16 @@ int run(int argc, char** argv) {
         // The hover stage's own scale facts, read once before the sweep: the same
         // surface, outside every timed paint, with no geometry touched.
         const QJsonObject pausedScaleEnvironment = scaleEnvironment(surface);
-        const int hoverMoves =
-            sweepChrome(playToggle, settingsButton, scrub, hoverSeconds * 1000);
+        // The band this stage will grade, audited against the chrome the sweep
+        // is about to wake: a card standing over a crop turns the pixel verdict
+        // into a statement about chrome, so the overlap is named here.
+        chromeAudit.observe(pausedBefore);
+        noteChromeHits(chromeAudit.overlaps(), &chromeHits);
+        const int hoverMoves = sweepChrome(
+            playToggle, settingsButton, scrub, hoverSeconds * 1000,
+            [&chromeAudit, &chromeHits] {
+                noteChromeHits(chromeAudit.overlaps(), &chromeHits);
+            });
         const mikai::gui::uiprofile::Snapshot pausedPhaseAfter =
             mikai::gui::uiprofile::snapshot();
         const PassSummary chromeOnly = summarize(mikai::gui::uiprofile::kPaintChromeOnly);
@@ -1269,6 +1512,9 @@ int run(int argc, char** argv) {
         int changedExact = 0;
         int changedVisible = 0;
         int compared = 0;
+        int comparedRegions = 0;
+        QStringList differing;
+        QJsonArray regionDeltas;
         for (int index = 0; index < kRegionCount; ++index) {
             const auto spot = static_cast<std::size_t>(index);
             const int exact = changedPixels(pausedBefore.regions[spot].pixels,
@@ -1276,10 +1522,36 @@ int run(int argc, char** argv) {
             const int visible = changedPixels(pausedBefore.regions[spot].pixels,
                                               pausedAfter.regions[spot].pixels, 24);
             if (exact < 0 || visible < 0) continue;
+            ++comparedRegions;
             compared += pausedBefore.regions[spot].pixels.width() *
                         pausedBefore.regions[spot].pixels.height();
             changedExact += exact;
             changedVisible += visible;
+            // Which crop disagreed, with both lumas: a number alone cannot say
+            // whether the video moved or something was painted over it.
+            const QRect rect = pausedBefore.regions[spot].rect;
+            regionDeltas.append(QJsonObject{
+                {"region", index + 1},
+                {"rect", QStringLiteral("%1,%2 %3x%4")
+                             .arg(rect.left())
+                             .arg(rect.top())
+                             .arg(rect.width())
+                             .arg(rect.height())},
+                {"lumaBefore", pausedBefore.regions[spot].luma},
+                {"lumaAfter", pausedAfter.regions[spot].luma},
+                {"changedExact", exact},
+                {"changedVisible", visible}});
+            if (exact > 0) {
+                differing << QStringLiteral("region %1 %2px (luma %3->%4)")
+                                 .arg(index + 1)
+                                 .arg(exact)
+                                 .arg(pausedBefore.regions[spot].luma, 0, 'f', 1)
+                                 .arg(pausedAfter.regions[spot].luma, 0, 'f', 1);
+            }
+        }
+        if (!g_outputDir.isEmpty()) {
+            saveRegionStrip(QStringLiteral("load-transition-paused-before.png"), pausedBefore);
+            saveRegionStrip(QStringLiteral("load-transition-paused-after.png"), pausedAfter);
         }
         metric(QStringLiteral("paused hover: moves=%1 chrome_paints=%2 ring=%3/%4 p95=%5us "
                               "max=%6us changed_exact=%7 changed_visible=%8/%9")
@@ -1309,12 +1581,22 @@ int run(int argc, char** argv) {
         check(hoverMoves > 0, "the paused measurement actually moved the pointer over chrome");
         check(chromeOnly.samples > 0,
               "a paused chrome repaint is classified as a chrome-only pass");
+        // Six compared crops, or the verdict describes fewer pixels than it
+        // claims: a size change between the two reads used to drop a region
+        // silently, which turned "nothing changed" into "nothing was compared".
+        check(comparedRegions == kRegionCount,
+              QStringLiteral("every judged region could be compared across the hover "
+                             "(compared=%1 of %2)")
+                  .arg(comparedRegions)
+                  .arg(kRegionCount));
         check(changedExact == 0,
               QStringLiteral("a paused picture is pixel-identical across chrome hovers "
-                             "(exact=%1 visible=%2 of %3)")
+                             "(exact=%1 visible=%2 of %3; %4)")
                   .arg(changedExact)
                   .arg(changedVisible)
-                  .arg(compared));
+                  .arg(compared)
+                  .arg(differing.isEmpty() ? QStringLiteral("no region differed")
+                                           : differing.join(QStringLiteral(", "))));
         QJsonArray hashesBefore;
         QJsonArray hashesAfter;
         for (int index = 0; index < kRegionCount; ++index) {
@@ -1329,6 +1611,8 @@ int run(int argc, char** argv) {
                                     {"comparedPixels", compared},
                                     {"regionHashesBefore", hashesBefore},
                                     {"regionHashesAfter", hashesAfter},
+                                    {"regionDeltas", regionDeltas},
+                                    {"comparedRegions", comparedRegions},
                                     {"chromeOnly", passObject(chromeOnly)},
                                     {"retained", passObject(retained)},
                                     {"videoFrame", passObject(videoFrame)},
@@ -1497,7 +1781,7 @@ int run(int argc, char** argv) {
                 dialog->applyVariant(QList<QualityEntry>{{720, slowUrl}},
                                      QStringLiteral("probe B"), QStringLiteral("e1"));
             },
-            30000, /*movePointerDuringGap=*/true);
+            30000, /*movePointerDuringGap=*/true, &chromeAudit, &chromeHits);
         TransitionOutcome reported = outcome;
         reported.originRequests = origin.connections();
         reported.originResponses = origin.replyAtMs() >= 0 ? 1 : 0;
@@ -1564,7 +1848,7 @@ int run(int argc, char** argv) {
             [dialog, expiryUrl] {
                 dialog->applyRefreshedStreams(QList<QualityEntry>{{720, expiryUrl}}, 720);
             },
-            30000, /*movePointerDuringGap=*/true);
+            30000, /*movePointerDuringGap=*/true, &chromeAudit, &chromeHits);
         TransitionOutcome reported = outcome;
         reported.originRequests = expiryOrigin.connections();
         reported.originResponses = expiryOrigin.replyAtMs() >= 0 ? 1 : 0;
@@ -1584,6 +1868,24 @@ int run(int argc, char** argv) {
                   .arg(reported.framebufferBlackSamples));
         evidence.insert(QStringLiteral("streamExpiry"), outcomeObject(reported));
     }
+
+    // The chrome shares this framebuffer with the picture, so a crop under it is
+    // not a video pixel. Every measured read above was audited against the
+    // chrome standing over the band; a hit means the pixel verdict above is
+    // about chrome, which this says out loud instead of leaving it implied.
+    metric(QStringLiteral("chrome audit: overlaps=%1")
+               .arg(chromeHits.isEmpty() ? QStringLiteral("none")
+                                         : chromeHits.join(QStringLiteral("; "))));
+    check(chromeHits.isEmpty(),
+          QStringLiteral("the judged band stays clear of the chrome painted into the picture "
+                         "(%1)")
+              .arg(chromeHits.isEmpty() ? QStringLiteral("no overlap")
+                                        : chromeHits.join(QStringLiteral("; "))));
+    evidence.insert(QStringLiteral("chromeAudit"),
+                    QJsonObject{{"overlaps", QJsonArray::fromStringList(chromeHits)},
+                                {"auditedChromeWidgets",
+                                 QStringLiteral("dock, hover card, title bar, info chip and the "
+                                                "badges the shell paints into the surface")}});
 
     const QJsonObject observer = observerObject();
     metric(QStringLiteral("observer: reads=%1 total=%2us p50=%3us p95=%4us max=%5us")
