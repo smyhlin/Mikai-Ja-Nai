@@ -561,19 +561,6 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background-color: rgba(%27, 0.55);
             border-color: rgba(%4, 0.07);
         }
-        QComboBox::drop-down {
-            subcontrol-origin: padding;
-            subcontrol-position: top right;
-            width: 26px;
-            border-left: 1px solid rgba(%4, 0.10);
-            border-top-right-radius: %50px;
-            border-bottom-right-radius: %50px;
-            background: transparent;
-        }
-        /* No combo-arrow image: the rule above belongs to the application sheet
-           and a stylesheet image is a fixed-size raster, so a HiDPI display
-           upscales it. The style's own PE_IndicatorArrowDown is painted from
-           the palette at the device ratio. */
         QComboBox QAbstractItemView {
             background-color: %28;
             color: %2;

@@ -199,9 +199,7 @@ QLineEdit, QComboBox, QSpinBox {
     selection-background-color: %11; selection-color: %1;
 }
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus { border-color: %11; background: %8; }
-QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right;
-    width: 26px; border: none; background: transparent; }
-/* Style-painted arrows avoid QSS image upscaling at fractional DPR. */
+/* Keep the drop-down native; styling it suppresses the style's arrow. */
 QComboBox QAbstractItemView { background: %5; border: 1px solid %10;
     selection-background-color: %8; }
 QCheckBox { spacing: %3px; }
