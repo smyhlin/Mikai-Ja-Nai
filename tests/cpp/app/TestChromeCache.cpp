@@ -636,42 +636,49 @@ void TestChromeCache::aHoverThatLeavesAndComesBackRepaintsBothStates() {
 /// throws away a real move shows up as a wash that never reached its position.
 void TestChromeCache::aSliderMoveThatChangesTheFractionRepaintsIt() {
   const QColor frame(18, 18, 24, 255);
-  QWidget host;
-  host.setAttribute(Qt::WA_DontShowOnScreen, true);
+  // The host is the invalidation route, so it has to be a ChromeHost: a bare
+  // QWidget ancestor leaves chromeUpdate() with nowhere to report chromeDirty(),
+  // the entry would never go stale, and the first raster would answer every
+  // later paint.
+  Host host;
   host.resize(220, 26);
-  host.show();
 
   auto* slider = new RangeSlider(QColor(30, 120, 200), 4, &host);
   slider->setGeometry(0, 0, 200, 26);
   // A played value past every hover below, so the wash over the track is what
   // the pointer position changes and the knob stays clear of the probe.
   slider->setValue(0.9, false);
-  ChromeList chrome;
-  chrome.adopt(&host, nullptr);
+  host.chrome.adopt(&host, nullptr);
+  // Shown only once the control exists: the list skips a hidden widget, and a
+  // test that never painted its control would prove nothing about it.
   QVERIFY(presented(&host));
+  QVERIFY(presented(slider));
 
   const int y = slider->height() / 2;
   const QPoint probe(70, y);
-  const QImage idle = painted(chrome, &host, 1.0, frame);
+  const QImage idle = painted(host.chrome, &host, 1.0, frame);
   const QColor played = idle.pixelColor(probe);
+  // Guards the fixture, not the implementation: if the control never painted
+  // the probe pixel, every comparison below would be the frame talking.
+  QVERIFY2(played != frame, "the slider did not paint its track into the probe pixel");
 
   // Narrow enough to stop before the probe.
   movePointer(slider, QPointF(44.0, y));
-  const QImage near = painted(chrome, &host, 1.0, frame);
+  const QImage near = painted(host.chrome, &host, 1.0, frame);
   QCOMPARE(near.pixelColor(probe), played);
 
   // Past the probe: the wash now covers it, so the pixels have to move with it.
   movePointer(slider, QPointF(118.0, y));
-  const QImage farther = painted(chrome, &host, 1.0, frame);
+  const QImage farther = painted(host.chrome, &host, 1.0, frame);
   QVERIFY2(farther.pixelColor(probe) != played,
            qPrintable(QStringLiteral("the hover wash did not reach the new fraction: %1")
                           .arg(farther.pixelColor(probe).name(QColor::HexArgb))));
 
   // The same fraction again is not a state change: the picture stands.
   movePointer(slider, QPointF(118.0, y));
-  QVERIFY(painted(chrome, &host, 1.0, frame) == farther);
+  QVERIFY(painted(host.chrome, &host, 1.0, frame) == farther);
 
   leaveHover(slider);
-  QCOMPARE(painted(chrome, &host, 1.0, frame).pixelColor(probe), played);
+  QCOMPARE(painted(host.chrome, &host, 1.0, frame).pixelColor(probe), played);
   host.hide();
 }
