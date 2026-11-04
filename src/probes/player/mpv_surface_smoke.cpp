@@ -60,7 +60,7 @@ void usage() {
                  "single-clip proof.\n"
                  "  --dpr sets QT_SCALE_FACTOR before QApplication. Qt applies it on top of the "
                  "base this process reports to Qt, which is not the OS display scale (--dpr "
-                 "0.625 measured 0.63 here while Windows scaled the display at 200 %). Read the "
+                 "0.625 measured 0.63 here while Windows scaled the display at 200 %%). Read the "
                  "printed widget/screen ratios; do not assume a multiplier.\n"
                  "  default media for the lifecycle contract: "
                  "av://lavfi:testsrc2=size=640x360:rate=25\n"
@@ -1051,7 +1051,7 @@ int runRenderLifecycle(const Options& options) {
         const double parkedTolerance = 0.12;
         QElapsedTimer restoreClock;
         restoreClock.start();
-        const bool parked = waitUntil(
+        const bool pausedPositionRestored = waitUntil(
             [&] {
                 return surface->isContextReady() && surface->hasVideo() &&
                        surface->pauseObserved() && !surface->isPlaying() &&
@@ -1094,7 +1094,7 @@ int runRenderLifecycle(const Options& options) {
                                           .arg(epochBeforeReparent)));
         verdict.require(surface->pauseObserved() && !surface->isPlaying(),
                         QStringLiteral("GL recreation restores the observed paused state"));
-        verdict.require(parked,
+        verdict.require(pausedPositionRestored,
                         QStringLiteral("the paused source remains parked across GL recreation "
                                        "(position %1 -> %2 after %3 ms, tolerance %4)")
                             .arg(pausePositionBeforeReparent, 0, 'f', 3)
