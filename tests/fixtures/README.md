@@ -683,6 +683,42 @@ selected graph has no engine for the source resolution; the owned store from
 own models. A close that reports itself refused is a FAIL here - that is the path the close keeps
 for a stop the native side named - so read `closeRefused` and `settleAbandoned` together.
 
+## Hover-playback pacing canary
+
+GOAL-F/T-F4's regression net is a CTest entry, `HoverPlaybackCanary`. It runs the real
+`fullscreen_stability_probe --hover-canary` mode: the embedded mpv core plays
+`media/motion_320x180_24fps_8bit_hevc.mp4` for a 30 s window while pointer gestures sweep the real
+player chrome, and the verdict comes from the surface's frame-timing log plus the pacing and
+chrome-paint counters.
+
+```bat
+cmake --build build/release --target fullscreen_stability_probe --parallel 4
+ctest --test-dir build/release -R ^HoverPlaybackCanary$ --output-on-failure
+```
+
+What it gates, and nothing more:
+
+- the window really was playback: the core's `pause` is false and at least one paint per second
+  presented a new frame (`newframe=1`);
+- chrome interaction reached the shell (`chromeDirtyRequests` grew);
+- no chrome repaint took an armed pacing slot (`pacingDisarms` delta is 0);
+- every scheduling decision named a documented reason (`skip_reason` outside
+  `none|paced|forced|repeat|redraw|elapsed|no-info` is a failure), a `paced` paint with
+  `paint_delay_ms=-1` is a failure, and no paint claims a held pause (`pause_held=1`) while nothing
+  holds one;
+- at least one paced paint-delay sample exists. The p50/p95/max are written to
+  `_hover-canary/samples.jsonl` as `paintDelayP50Ms`/`paintDelayP95Ms`/`paintDelayMaxMs`; the plan
+  fixes no delay budget, and the frozen 343 us p95 paint *duration* is a matched-host measurement
+  owned by the load probe, so this entry does not invent a CI millisecond gate.
+
+It does **not** observe desktop composition, take the foreground, raise the player or move the
+system cursor: gestures are delivered to the widgets themselves, and the player runs windowed. The
+tracked fixture is 12 s, so the 30 s window continues by seeking back inside the same source (no
+reload); `loopSeeks` records how many. A run whose platform is `offscreen`/`minimal`, or that has no
+GL context, refuses with exit 77 and the CTest entry declares `SKIP_RETURN_CODE 77`, so a missing
+display prerequisite shows as a skip, never as green. Native Linux testing remains user-deferred;
+the same entry needs a real `xcb`/`wayland` display and the pinned runtime.
+
 ## Native scaling framebuffer regression
 
 `TestVideoScaling hiddenPlaybackChangesThePicturePerMode` exercises six display modes, 150% size
