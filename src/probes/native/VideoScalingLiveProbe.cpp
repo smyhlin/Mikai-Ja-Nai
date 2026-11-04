@@ -8,6 +8,7 @@
 #include "backend/MikaiClient.hpp"
 #include "dialogs/SettingsDialog.hpp"
 #include "player/core/VideoSurface.hpp"
+#include "support/I18n.hpp"
 #include "workers/Runner.hpp"
 
 #include "ProbeRuntime.hpp"
@@ -47,6 +48,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <memory>
 
 using mikai::app::SettingsDialog;
 using mplayer::VideoScaleMode;
@@ -716,6 +718,8 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
     VideoScalePolicy opening;
     {
         QSettings settings;
+        settings.setValue(QString::fromLatin1(mikai::app::kUiLanguageSettingKey),
+                          mikai::app::activeInterfaceLanguage());
         settings.setValue(QStringLiteral("player/anime4k"), QStringLiteral("off"));
         settings.sync();
         opening = mplayer::videoScalePolicyFromSettings(settings);
@@ -728,22 +732,24 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
     // / MIKAI_PROBE_HEIGHT size the real player window, and the same width is
     // what the Settings card matrix records.
     const QSize liveWindow = mikai::probes::windowSize(QSize(1280, 760));
-    PlayerDialog player(QStringLiteral("Video scaling live smoke"), media.absoluteFilePath());
-    player.setAttribute(Qt::WA_ShowWithoutActivating, true);
-    player.resize(liveWindow);
-    player.show();
-    player.startPlayer();
-
     LiveContext context;
-    context.player = &player;
+    auto player = std::make_unique<PlayerDialog>(QStringLiteral("Video scaling live smoke"),
+                                                media.absoluteFilePath());
+    player->setAttribute(Qt::WA_DeleteOnClose, false);
+    player->setAttribute(Qt::WA_ShowWithoutActivating, true);
+    player->resize(liveWindow);
+    player->show();
+    player->startPlayer();
+
+    context.player = player.get();
     context.outputDir = evidenceFileInfo.absolutePath();
     context.language = mikai::app::activeInterfaceLanguage();
-    context.shell = player.findChild<PlayerShell*>();
-    context.surface = player.findChild<VideoSurface*>();
+    context.shell = player->findChild<PlayerShell*>();
+    context.surface = player->findChild<VideoSurface*>();
     check(context.shell != nullptr && context.surface != nullptr,
           QStringLiteral("the real player window exposes its shell and video surface"));
     if (context.shell == nullptr || context.surface == nullptr) {
-        player.close();
+        player->close();
         LiveContext empty;
         QJsonObject evidence = liveEvidence(empty, options, false, -1, QString());
         QString error;
@@ -772,10 +778,37 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
           QStringLiteral("the fixture is long enough for the whole matrix without reaching EOS"),
           QStringLiteral("duration=%1 s").arg(duration));
     if (!framed || duration < 60.0 || context.video.isEmpty()) {
-        player.close();
+        player->close();
         QJsonObject evidence = liveEvidence(context, options, false, -1, QString());
         QString error;
         writeEvidence(evidence, options.evidencePath, &error);
+        return 1;
+    }
+    const bool startupReady = pumpUntil(
+        [&] { return player->isVisible() && player->isFullScreen(); }, 5000);
+    check(startupReady,
+          QStringLiteral("the player completed its deferred fullscreen startup"));
+    if (startupReady) context.shell->windowModeToggled();
+    const QSize requestedWindow = liveWindow.expandedTo(player->minimumSize());
+    player->resize(requestedWindow);
+    const bool windowedReady = startupReady && pumpUntil(
+        [&] {
+            return player->isVisible() && !player->isFullScreen() &&
+                   player->size() == requestedWindow;
+        },
+        5000);
+    check(windowedReady,
+          QStringLiteral("the real window-mode action established the requested windowed matrix"),
+          QStringLiteral("requested=%1x%2 actual=%3x%4 fullscreen=%5")
+              .arg(requestedWindow.width()).arg(requestedWindow.height())
+              .arg(player->width()).arg(player->height()).arg(player->isFullScreen()));
+    if (!windowedReady) {
+        player->close();
+        QJsonObject evidence = liveEvidence(context, options, false, -1, QString());
+        QString error;
+        if (!writeEvidence(evidence, options.evidencePath, &error)) {
+            std::fprintf(stderr, "FAIL the live evidence was written: %s\n", qPrintable(error));
+        }
         return 1;
     }
     context.dpr = context.surface->devicePixelRatioF();
@@ -1209,7 +1242,7 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
         captureArtifacts(context, QStringLiteral("hold"));
         std::fprintf(stderr,
                      "LIVE-SMOKE-HOLD-READY ms=%d window=%dx%d surface=%dx%d mode=%s evidence=%s\n",
-                     options.holdMs, player.width(), player.height(),
+                     options.holdMs, player->width(), player->height(),
                      context.surface->width(), context.surface->height(),
                      qPrintable(mplayer::videoScaleModeLabel(
                          VideoSurface::videoScalePolicy().mode)),
@@ -1220,7 +1253,7 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
         std::fflush(stderr);
     }
 
-    player.close();
+    player->close();
     QApplication::processEvents();
     VideoSurface::setVideoScalePolicy(opening);
 
