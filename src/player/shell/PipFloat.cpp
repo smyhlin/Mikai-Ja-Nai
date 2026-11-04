@@ -525,22 +525,21 @@ void PipFloat::setPlaying(bool playing) {
 }
 
 void PipFloat::setTime(double position, double duration) {
-    // Retained: a language change re-renders the clocks from the last values
-    // the surface reported, instead of reading the float's core for them.
+    // Retranslation reuses the observed clock without reading the playback core.
     lastPosition_ = position;
     lastDuration_ = duration;
-    // Display only: nothing is emitted, so answering with a seek could loop.
-    // The position is shown whenever it is known. Blanking it merely because
-    // the length is not - a live stream, or a clip still reporting zero -
-    // threw away the one number the viewer can actually read.
-    if (position > 0.0) {
-        elapsed_->setText(pipFormatSeconds(position));
-    } else {
-        elapsed_->setText(QStringLiteral("0:00"));
+    const QString elapsedText = pipFormatSeconds(position);
+    const QString remainingText = duration > 0.0
+        ? QStringLiteral("-%1").arg(pipFormatSeconds(std::max(0.0, duration - position)))
+        : QStringLiteral("--:--");
+    if (elapsed_->text() != elapsedText || remaining_->text() != remainingText) {
+        elapsed_->setText(elapsedText);
+        remaining_->setText(remainingText);
+        elapsed_->adjustSize();
+        remaining_->adjustSize();
+        remaining_->move(qMax(0, width() - kSpacingMedium - remaining_->width()),
+                         remaining_->y());
     }
-    remaining_->setText(duration > 0.0
-                            ? QStringLiteral("-%1").arg(pipFormatSeconds(std::max(0.0, duration - position)))
-                            : QStringLiteral("--:--"));
     // An unknown length leaves the scrubber disabled rather than collapsing it
     // to a 1 ms range, where every drag reads as a jump back to the start.
     if (duration > 0.0) {
@@ -1062,7 +1061,7 @@ void PipFloat::fitSurfaces() {
     }
     if (remaining_ != nullptr) {
         remaining_->adjustSize();
-        remaining_->move(qMax(0, w - 12 - remaining_->width()), labelY);
+        remaining_->move(qMax(0, w - kSpacingMedium - remaining_->width()), labelY);
     }
 }
 
