@@ -125,13 +125,24 @@ void HoverPreview::present(double seconds, const QPoint& anchorGlobal, const QRe
         dismiss();
         return;
     }
+    const QString label = segmentLabel.trimmed();
+    const bool labelChanged = label_ != label;
+    const bool sameRequest = isVisible() && seconds_ == seconds && frameAllowed_ == allowFrame;
     seconds_ = seconds;
-    label_ = segmentLabel.trimmed();
+    label_ = label;
+    frameAllowed_ = allowFrame;
     anchor_ = host->mapFromGlobal(anchorGlobal);
     bar_ = QRect(host->mapFromGlobal(barGlobal.topLeft()), barGlobal.size());
 
-    ++token_;
     place();
+    if (sameRequest) {
+        // An unchanged hover must not retire the decoder's in-flight reply.
+        if (labelChanged) chromeUpdate(this);
+        service_->noteActivity();
+        return;
+    }
+    ++token_;
+    pendingToken_ = 0;
     if (!isVisible()) {
         // Raised once: a raise per mouse move invalidates the region the card
         // covers, for a card that is already on top.
@@ -155,15 +166,21 @@ void HoverPreview::present(double seconds, const QPoint& anchorGlobal, const QRe
     // stale, instead of being replaced by a grey void for the length of the
     // decode. A picture whose own timestamp is this instant's needs nothing.
     if (!frame_.isNull() && std::abs(frameSeconds_ - seconds) <= kSameInstantSec) {
+        const bool changed = labelChanged || !status_.isEmpty() || !detail_.isEmpty() || refused_;
         status_.clear();
         detail_.clear();
-        chromeUpdate(this);
+        refused_ = false;
+        if (changed) chromeUpdate(this);
         return;
     }
-    status_ = tr("Decoding preview…");
+    const QString decoding = tr("Decoding preview…");
+    const bool changed = labelChanged || frame_.isNull() || status_ != decoding ||
+                         !detail_.isEmpty() || refused_;
+    status_ = decoding;
     detail_.clear();
     refused_ = false;
-    chromeUpdate(this);
+    if (changed) chromeUpdate(this);
+    pendingToken_ = token_;
     service_->requestFrame(token_, seconds);
 }
 
@@ -179,6 +196,7 @@ void HoverPreview::noteActivity() {
 
 void HoverPreview::dismiss() {
     ++token_;
+    pendingToken_ = 0;
     if (service_ != nullptr) service_->cancel();
     frame_ = {};
     frameSeconds_ = -1.0;
@@ -202,9 +220,10 @@ FramePreviewStats HoverPreview::previewStats() const {
 
 void HoverPreview::applyFrame(quint64 token, double requestedSeconds, double decodedSeconds,
                               const QImage& frame) {
-    if (released_ || frame.isNull() || !isVisible()) return;
-    const bool newest = previewReplyMatches(token, token_, requestedSeconds, seconds_);
+    if (released_ || frame.isNull() || !isVisible() || pendingToken_ == 0) return;
+    const bool newest = previewReplyMatches(token, pendingToken_, requestedSeconds, seconds_);
     if (newest) {
+        pendingToken_ = 0;
         // The answer settles the card before it is weighed as a picture: a cache
         // hit for the instant under the pointer is often the same frame the card
         // already shows, and leaving "Decoding preview…" over it is a wait that
@@ -239,7 +258,8 @@ void HoverPreview::applyFrame(quint64 token, double requestedSeconds, double dec
 
 void HoverPreview::applyUnavailable(quint64 token, double seconds, const QString& reason) {
     if (released_ || !isVisible()) return;
-    if (!previewReplyMatches(token, token_, seconds, seconds_)) return;
+    if (!previewReplyMatches(token, pendingToken_, seconds, seconds_)) return;
+    pendingToken_ = 0;
     // Nothing is coming: no older frame may stay behind as if it were this one.
     frame_ = {};
     frameSeconds_ = -1.0;

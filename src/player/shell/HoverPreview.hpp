@@ -125,6 +125,7 @@ private:
     /// A refusal is terminal for this instant: no picture is coming. Tracked
     /// rather than inferred from the status text, which is display copy.
     bool refused_ = false;
+    bool frameAllowed_ = true;
     QImage frame_;
     /// The instant `frame_` was decoded for, or -1 when there is no frame.
     double frameSeconds_ = -1.0;
@@ -133,6 +134,7 @@ private:
     /// The newest request issued; a reply carrying another token belongs to a
     /// pointer position that is no longer on screen.
     quint64 token_ = 0;
+    quint64 pendingToken_ = 0;
     bool released_ = false;
 };
 
