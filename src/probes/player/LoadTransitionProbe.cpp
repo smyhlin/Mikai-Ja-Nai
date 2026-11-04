@@ -103,52 +103,8 @@ struct StubHost : PlayerHost {
 
 // ── the picture band, read without asking for a paint ─────────────────────
 
-// Off-centre and clear of the chrome that legitimately changes: the opening
-// placeholder is bright in the middle, so a centre-only check could pass it.
-//
-// "Clear of the chrome" is a geometry fact, not a hope. PlayerShell paints its
-// adopted controls INTO this surface's own painter (paintSurfaceOverlay ->
-// chrome_.paint), so the dock, the info chip and the timeline's hover-preview
-// card are framebuffer pixels this band reads. The card is the one that moves:
-// previewCardRect() puts it kCardGap above the dock with the pointer's x as its
-// centre, so it can stand over the lower third of the picture, and
-// onTimelineHoverLeft() only starts a 120 ms grace timer - a pointer swept back
-// onto the timeline inside that window keeps the card up for the whole sweep.
-// The spots therefore stay above the dock band (55% of the surface height at
-// most, plus the gap, measured from the dock's top), below the windowed title
-// strip and the info chip, off the exact centre column where the paused play
-// glyph sits (88x88 logical, 0.456-0.545 of the height) and inside the flank
-// chevrons; ChromeAudit re-checks that on every read instead of trusting this
-// comment.
-//
-// The other half of "this crop is video" is that the signal cannot dip on its
-// own: the no-black gate counts any sample whose band falls below the
-// calibrated floor, so a spot whose content legitimately darkens on some frames
-// makes that gate flaky rather than strict. These six were chosen against all
-// 1152 frames of the 48 s motion fixture (no subset, no new clip), read back the
-// way the probe reads them: the exact 5.334-source-pixel window, reconstructed
-// with a 4x bilinear box filter, at sixteen sub-pixel phases so the answer does
-// not depend on where a given raster lands. Per spot the number is
-// min-over-all-frames / the highest floor calibrate() can produce, which is
-// max(10, 0.55 * median) taken over the worst of every 24-sample window:
-//   (0.10,0.08) median 72,  min/floor 1.69
-//   (0.16,0.24) median 79,  min/floor 1.58
-//   (0.30,0.14) median 90,  min/floor 1.28   <- carries the fixture's motion
-//   (0.69,0.23) median 104, min/floor 1.36
-//   (0.79,0.14) median 105, min/floor 1.27
-//   (0.79,0.42) median 105, min/floor 1.34
-// The band's worst case is 1.27x its own floor, so no frame the fixture can
-// deliver - including the frozen one a retained snapshot holds - puts a judged
-// region under its floor, at any raster, and the no-black gate cannot fire on
-// content. Motion across a 220 ms read pair stays far above the 0.2% gate on
-// every one of the 1147 frame pairs (worst 3968 of 24576 judged pixels, 79x the
-// threshold), because (0.30,0.14) is where the clip moves.
-//
-// No bright frame-invariant crop exists between x=0.34 and x=0.62: that is where
-// the fixture's subject crosses, and every crop there dips below 55% of its own
-// median on some frames. Keeping a spot there would reintroduce the flaky gate
-// this band exists to remove, so the band is wide (0.10..0.79) in x but not
-// continuous, and the audit below is what proves what it does cover is video.
+// Avoid the central opening placeholder and surface-painted chrome.
+// These fixture regions stay bright throughout the clip; ChromeAudit checks overlap.
 constexpr int kRegionCount = 6;
 struct RegionSpot {
     double fx;
@@ -162,14 +118,7 @@ constexpr std::array<RegionSpot, kRegionCount> kSpots{{
     {0.79, 0.14},
     {0.79, 0.42},
 }};
-// Small enough that six of them stay a bounded observer, large enough to carry
-// a picture rather than a gradient. Expressed as a share of the picture, not as a
-// count of device pixels: a 64 px crop of the 3839-wide 4K raster this goal's
-// evidence was taken on is 5.33 source pixels, and keeping that window fixed
-// makes the same picture area the judged one on a 1080p surface (32 px), a
-// 2733-wide one (46 px) or an 8K one (128 px). The frame-invariance measured
-// below is a property of that source window, so holding the window fixed is
-// what lets the no-black verdict hold at any raster instead of only at 4K.
+// Keep the source-image footprint stable across framebuffer sizes.
 constexpr double kRegionSourceFraction = 64.0 / 3839.0;
 
 struct RegionRead {
@@ -347,13 +296,7 @@ PictureRead readPicture(VideoSurface* surface, const QSize& deviceFallback, int 
                                  keepPixels);
 }
 
-/// Names the chrome standing over a judged region at the instant of a read.
-///
-/// PlayerShell draws its adopted controls with the surface's own painter, so a
-/// region under the dock or under the timeline's hover card reads chrome, not
-/// video - and a verdict built from that crop is about the wrong pixels. The
-/// audit turns that from a silent mis-measurement into a named failure, and its
-/// hits are part of the evidence.
+// Adopted chrome is painted into the video FBO and must not be graded as video.
 class ChromeAudit {
 public:
     void bind(PlayerDialog* dialog, VideoSurface* surface) {
@@ -361,28 +304,19 @@ public:
         host_ = dialog;
         widgets_.clear();
         if (dialog == nullptr) return;
-        // Membership is the product's own answer, not a list of names kept here:
-        // ChromeList::adopt marks every control the surface draws with
-        // setSurfacePainted(true), so the audit covers the dock, the hover card,
-        // the centre glyph and the flank chevrons alike - and stays out of the
-        // popovers that paint themselves on another device.
         for (QWidget* widget : dialog->findChildren<QWidget*>()) {
             auto* painted = dynamic_cast<ChromePaint*>(widget);
             if (painted != nullptr && painted->surfacePainted()) widgets_.push_back(widget);
         }
     }
 
-    /// The widget's name for a message, falling back to its class: the glyph and
-    /// the chevrons carry no object name and still have to be nameable.
     static QString labelOf(const QWidget* widget) {
         if (widget == nullptr) return QString();
         if (!widget->objectName().isEmpty()) return widget->objectName();
         return QString::fromLatin1(widget->metaObject()->className());
     }
 
-    /// Adopts the region rects of one read. The picture geometry does not move
-    /// inside a stage, so the audit can then run on widget geometry alone - no
-    /// extra framebuffer read per pointer round.
+    // Hover audits reuse the last read's geometry without another GL readback.
     void observe(const PictureRead& read) {
         rects_.clear();
         for (const RegionRead& region : read.regions) {
@@ -390,8 +324,6 @@ public:
         }
     }
 
-    /// Empty when every judged region is clear of the chrome the surface would
-    /// paint over it. Recomputed per call: the hover card moves with the pointer.
     QStringList overlaps() const {
         QStringList out;
         if (surface_ == nullptr || host_ == nullptr || rects_.empty()) return out;
