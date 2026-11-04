@@ -1188,7 +1188,12 @@ TransitionOutcome measureTransition(PlayerDialog* dialog, VideoSurface* surface,
         // player showing a finished source, so counting those as "black in the
         // gap" would blame the load for the clip running out. The epoch test
         // keeps the outgoing source's own end from being read as the new one's.
-        const bool newSourceEnded = sample.epoch != outcome.epochBefore && !sample.opening &&
+        // A frame of the new epoch has to have been seen first: the outgoing
+        // source's own duration and position are still readable for an instant
+        // after the switch, and those must not be mistaken for the new one's
+        // end.
+        const bool newSourceEnded = outcome.firstVisibleOutputMs >= 0 &&
+                                    sample.epoch != outcome.epochBefore && !sample.opening &&
                                     !sample.hasVideo && sample.duration > 0.0 &&
                                     sample.position >= sample.duration - 0.25 &&
                                     !sample.retained;
