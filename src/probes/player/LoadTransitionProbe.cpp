@@ -45,6 +45,7 @@
 #include "DelayedHttpSource.hpp"
 #include "ProbeRuntime.hpp"
 #include "PlayerDialog.hpp"
+#include "ShellWidgets.hpp"
 #include "VideoSurface.hpp"
 #include "gui/UiProfile.hpp"
 
@@ -114,25 +115,62 @@ struct StubHost : PlayerHost {
 // onTimelineHoverLeft() only starts a 120 ms grace timer - a pointer swept back
 // onto the timeline inside that window keeps the card up for the whole sweep.
 // The spots therefore stay above the dock band (55% of the surface height at
-// most, plus the gap, measured from the dock's top) and off the exact centre
-// column where the paused play glyph sits; auditRegions() re-checks that on
-// every read instead of trusting this comment.
+// most, plus the gap, measured from the dock's top), below the windowed title
+// strip and the info chip, off the exact centre column where the paused play
+// glyph sits (88x88 logical, 0.456-0.545 of the height) and inside the flank
+// chevrons; ChromeAudit re-checks that on every read instead of trusting this
+// comment.
+//
+// The other half of "this crop is video" is that the signal cannot dip on its
+// own: the no-black gate counts any sample whose band falls below the
+// calibrated floor, so a spot whose content legitimately darkens on some frames
+// makes that gate flaky rather than strict. These six were chosen against all
+// 1152 frames of the 48 s motion fixture (no subset, no new clip), read back the
+// way the probe reads them: the exact 5.334-source-pixel window, reconstructed
+// with a 4x bilinear box filter, at sixteen sub-pixel phases so the answer does
+// not depend on where a given raster lands. Per spot the number is
+// min-over-all-frames / the highest floor calibrate() can produce, which is
+// max(10, 0.55 * median) taken over the worst of every 24-sample window:
+//   (0.10,0.08) median 72,  min/floor 1.69
+//   (0.16,0.24) median 79,  min/floor 1.58
+//   (0.30,0.14) median 90,  min/floor 1.28   <- carries the fixture's motion
+//   (0.69,0.23) median 104, min/floor 1.36
+//   (0.79,0.14) median 105, min/floor 1.27
+//   (0.79,0.42) median 105, min/floor 1.34
+// The band's worst case is 1.27x its own floor, so no frame the fixture can
+// deliver - including the frozen one a retained snapshot holds - puts a judged
+// region under its floor, at any raster, and the no-black gate cannot fire on
+// content. Motion across a 220 ms read pair stays far above the 0.2% gate on
+// every one of the 1147 frame pairs (worst 3968 of 24576 judged pixels, 79x the
+// threshold), because (0.30,0.14) is where the clip moves.
+//
+// No bright frame-invariant crop exists between x=0.34 and x=0.62: that is where
+// the fixture's subject crosses, and every crop there dips below 55% of its own
+// median on some frames. Keeping a spot there would reintroduce the flaky gate
+// this band exists to remove, so the band is wide (0.10..0.79) in x but not
+// continuous, and the audit below is what proves what it does cover is video.
 constexpr int kRegionCount = 6;
 struct RegionSpot {
     double fx;
     double fy;
 };
 constexpr std::array<RegionSpot, kRegionCount> kSpots{{
-    {0.22, 0.26},
-    {0.50, 0.16},
-    {0.78, 0.26},
-    {0.22, 0.44},
-    {0.50, 0.34},
-    {0.78, 0.44},
+    {0.10, 0.08},
+    {0.16, 0.24},
+    {0.30, 0.14},
+    {0.69, 0.23},
+    {0.79, 0.14},
+    {0.79, 0.42},
 }};
 // Small enough that six of them stay a bounded observer, large enough to carry
-// a picture rather than a gradient.
-constexpr int kRegionSide = 64;
+// a picture rather than a gradient. Expressed as a share of the picture, not as a
+// count of device pixels: a 64 px crop of the 3839-wide 4K raster this goal's
+// evidence was taken on is 5.33 source pixels, and keeping that window fixed
+// makes the same picture area the judged one on a 1080p surface (32 px), a
+// 2733-wide one (46 px) or an 8K one (128 px). The frame-invariance measured
+// below is a property of that source window, so holding the window fixed is
+// what lets the no-black verdict hold at any raster instead of only at 4K.
+constexpr double kRegionSourceFraction = 64.0 / 3839.0;
 
 struct RegionRead {
     QRect rect;
@@ -230,8 +268,13 @@ public:
                 out.measured = true;
                 out.framebuffer = device;
                 out.picture = picture;
-                const int side = std::max(
-                    8, std::min(kRegionSide, std::min(picture.width(), picture.height()) / 3));
+                // 5.33 source pixels of the picture, whatever the raster the
+                // picture is drawn at: the judged crop is the same content on a
+                // 1080p and a 4K surface, and the band's frame-invariance is a
+                // property of that content.
+                const int side =
+                    std::clamp(qRound(picture.width() * kRegionSourceFraction), 8,
+                               std::max(8, std::min(picture.width(), picture.height()) / 3));
                 for (int index = 0; index < kRegionCount; ++index) {
                     const RegionSpot& spot = kSpots[static_cast<std::size_t>(index)];
                     const int centreX = picture.left() + qRound(spot.fx * picture.width());
@@ -318,20 +361,23 @@ public:
         host_ = dialog;
         widgets_.clear();
         if (dialog == nullptr) return;
-        // The framed controls only: a popover or a widget that paints itself
-        // belongs to another device and cannot stand in this framebuffer.
-        static const std::array<const char*, 13> kNames{{
-            "playerDock", "playerHoverPreview", "playerTitleBar", "playerInfoChip",
-            "playerEpisodeLabel", "playerPauseHoldChip", "playerNativeStatus",
-            "playerAnimeJanaiStatus", "playerHdrBadge", "playerDolbyVisionBadge",
-            "playerDolbyAtmosBadge", "playerCodecBadge", "playerNetworkStats",
-        }};
-        for (const char* name : kNames) {
-            const QString objectName = QString::fromLatin1(name);
-            for (QWidget* widget : dialog->findChildren<QWidget*>(objectName)) {
-                if (widget != nullptr) widgets_.push_back(widget);
-            }
+        // Membership is the product's own answer, not a list of names kept here:
+        // ChromeList::adopt marks every control the surface draws with
+        // setSurfacePainted(true), so the audit covers the dock, the hover card,
+        // the centre glyph and the flank chevrons alike - and stays out of the
+        // popovers that paint themselves on another device.
+        for (QWidget* widget : dialog->findChildren<QWidget*>()) {
+            auto* painted = dynamic_cast<ChromePaint*>(widget);
+            if (painted != nullptr && painted->surfacePainted()) widgets_.push_back(widget);
         }
+    }
+
+    /// The widget's name for a message, falling back to its class: the glyph and
+    /// the chevrons carry no object name and still have to be nameable.
+    static QString labelOf(const QWidget* widget) {
+        if (widget == nullptr) return QString();
+        if (!widget->objectName().isEmpty()) return widget->objectName();
+        return QString::fromLatin1(widget->metaObject()->className());
     }
 
     /// Adopts the region rects of one read. The picture geometry does not move
@@ -363,7 +409,7 @@ public:
                 if (!device.intersects(rects_[index])) continue;
                 out << QStringLiteral("region %1 under %2")
                            .arg(index + 1)
-                           .arg(widget->objectName());
+                           .arg(labelOf(widget));
             }
         }
         out.removeDuplicates();
@@ -409,7 +455,14 @@ int changedPixels(const QImage& before, const QImage& after, int threshold = 8) 
 bool saveRegionStrip(const QString& name, const PictureRead& read) {
     if (g_outputDir.isEmpty() || !read.measured) return false;
     constexpr int gap = 6;
-    const int cell = kRegionSide + 2 * gap;
+    // The crop side follows the raster, so the strip takes it from the read it
+    // is drawing rather than from a constant.
+    int side = 0;
+    for (const RegionRead& region : read.regions) {
+        side = std::max(side, region.rect.width());
+    }
+    if (side <= 0) return false;
+    const int cell = side + 2 * gap;
     QImage strip(cell * kRegionCount, cell, QImage::Format_RGB888);
     strip.fill(QColor(24, 24, 24));
     QPainter painter(&strip);
@@ -1476,6 +1529,9 @@ int run(int argc, char** argv) {
     QWidget* scrub = dialog->findChild<QWidget*>(QStringLiteral("playerScrubBar"));
     check(playToggle != nullptr && settingsButton != nullptr && scrub != nullptr,
           "the chrome the pointer sweeps over exists");
+    // Adoption is decided when the chrome is built, so the set is re-read once
+    // the player has finished building rather than trusted from the start.
+    chromeAudit.bind(dialog, surface);
 
     // ── paused hover: does moving over chrome cost a picture, or change one ──
     if (motion) {
@@ -1888,9 +1944,9 @@ int run(int argc, char** argv) {
                                         : chromeHits.join(QStringLiteral("; "))));
     evidence.insert(QStringLiteral("chromeAudit"),
                     QJsonObject{{"overlaps", QJsonArray::fromStringList(chromeHits)},
-                                {"auditedChromeWidgets",
-                                 QStringLiteral("dock, hover card, title bar, info chip and the "
-                                                "badges the shell paints into the surface")}});
+                                {"auditedChromeSource",
+                                 QStringLiteral("every ChromePaint descendant of the dialog that "
+                                                "ChromeList::adopt marked surfacePainted")}});
 
     const QJsonObject observer = observerObject();
     metric(QStringLiteral("observer: reads=%1 total=%2us p50=%3us p95=%4us max=%5us")
