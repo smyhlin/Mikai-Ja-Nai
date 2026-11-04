@@ -1,15 +1,3 @@
-// The mikai player dialog: the composition root that hosts PlayerShell and
-// carries the three panels the shell has no room for (quality list, dub/sub
-// picker, episode drawer) plus the status panel, the feature strip and the PiP
-// float.
-//
-// Two things the Python needed are gone on purpose. It gave mpv a native
-// winId, so every floating panel carried WA_NativeWindow and was restacked by
-// delayed re-raise passes; VideoSurface is a QOpenGLWidget, so the panels are
-// ordinary siblings and z-order is Qt's problem. And it drove playback through
-// PlayerController, a python-mpv wrapper; here the shell's signals go straight
-// to the surface, and the state the shell needs is pushed back from the
-// surface's own signals.
 
 #include "CompareWindow.hpp"
 #include "PlayerDialog.hpp"
@@ -60,6 +48,7 @@
 #include <QScreen>
 #include <QShortcut>
 #include <QShowEvent>
+#include <QWindowStateChangeEvent>
 #include <QSignalBlocker>
 #include <QSlider>
 #include <QTimer>
@@ -2160,6 +2149,24 @@ void PlayerDialog::showEvent(QShowEvent* event) {
 
 void PlayerDialog::changeEvent(QEvent* event) {
     QDialog::changeEvent(event);
+    if (event->type() == QEvent::WindowStateChange) {
+        const auto* stateChange = static_cast<QWindowStateChangeEvent*>(event);
+        if (shell_ == nullptr || closed_ || transitioning_ || pip_ != nullptr ||
+            isMinimized() || stateChange->oldState().testFlag(Qt::WindowMinimized)) {
+            return;
+        }
+        const bool fullscreen = isFullScreen();
+        if (fullscreen_ == fullscreen) return;
+        // Native window actions bypass the shell's fullscreen toggle signal.
+        fullscreen_ = fullscreen;
+        if (fullscreen_) {
+            shell_->enterFullscreen();
+        } else {
+            shell_->leaveFullscreen();
+            rememberWindowedGeometry();
+        }
+        return;
+    }
     if (event->type() != QEvent::LanguageChange) {
         return;
     }
