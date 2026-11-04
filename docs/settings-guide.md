@@ -60,7 +60,9 @@ The interface language is independent of the title and name language choices und
 
 ### Mikai API access token
 
-The app can make anonymous API requests; the token is optional. The Access page says a key raises the request limit from 60 to 300 per minute and is stored locally in a `.env` file. Use **Test** to check the text currently in the field; testing does not itself save it. Get a key from the linked Mikai developer dashboard. Keep the token private: it is sent to the Mikai API, and any `.env` file containing it should not be committed or shared. The app writes the key as `X-API-Key: …`; on Windows it restricts the file to the current user, and on Linux it grants read/write access only to the file owner.
+The token is optional. The advertised public API limits are **299 requests per minute without a key** and **599 with a key**. The client uses these estimates until response headers supply the current quota; server-provided limits take precedence.
+
+Use **Test** to check the text currently in the field; testing does not itself save it. Get a key from the linked Mikai developer dashboard. Keep the token private: it is sent to the Mikai API, and any `.env` file containing it should not be committed or shared. The app writes the key as `X-API-Key: …`; on Windows it restricts the file to the current user, and on Linux it grants read/write access only to the file owner.
 
 The client first checks `.env` in the current working directory, then beside the executable, then in its immediate parent directory; the first existing file wins, and it does not search farther up. If no file exists, saving creates `.env` in the current working directory. At client initialization, a non-empty `MIKAI_API_KEY` environment variable takes precedence over the file. If saving the key fails, the app reports the error and leaves the active key unchanged.
 

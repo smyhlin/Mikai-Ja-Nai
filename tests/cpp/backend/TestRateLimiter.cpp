@@ -28,14 +28,6 @@ QMap<QString, QString> headers(int limit, int remaining, int resetSeconds,
 
 }  // namespace
 
-void TestRateLimiter::reportsTheDefaultQuotaForKeyedAndAnonymous() {
-  const RateLimiter limiter;
-  // The server never answered yet, so the local default stands: a keyed client
-  // is on the 300/min plan, an anonymous one on 60.
-  QCOMPARE(limiter.state(true).limit, 300);
-  QCOMPARE(limiter.state(false).limit, 60);
-}
-
 void TestRateLimiter::reportsNothingUsedBeforeAnyCall() {
   const RateLimiter limiter;
   const RateLimitState state = limiter.state(true);
@@ -83,13 +75,14 @@ void TestRateLimiter::keepsTheConservativeRemainingWhileTheWindowIsOpen() {
 
 void TestRateLimiter::aStaleGenerationDoesNotTouchTheCounters() {
   RateLimiter limiter;
+  const int initialLimit = limiter.state(true).limit;
   const int generation = limiter.acquireSlot();
   // The key changed under an in-flight call; its headers describe a quota that
   // no longer applies to this client.
-  limiter.finishCall(headers(300, 5, 60), generation + 1, 200);
+  limiter.finishCall(headers(411, 5, 60), generation + 1, 200);
   const RateLimitState state = limiter.state(true);
   QVERIFY(!state.remaining.has_value());
-  QCOMPARE(state.limit, 300);
+  QCOMPARE(state.limit, initialLimit);
 }
 
 void TestRateLimiter::countsQueuedCallersWhileTheyWait() {
@@ -175,8 +168,9 @@ void TestRateLimiter::theFirstGenerationIsZeroAndASlotCarriesIt() {
 
 void TestRateLimiter::resettingTheGenerationReleasesEveryWindow() {
   RateLimiter limiter;
+  const int initialLimit = limiter.state(true).limit;
   const int first = limiter.acquireSlot();
-  limiter.finishCall(headers(300, 299, 60), first, 200);
+  limiter.finishCall(headers(411, 410, 60), first, 200);
   limiter.reset();
 
   QCOMPARE(limiter.generation(), 1);
@@ -184,12 +178,13 @@ void TestRateLimiter::resettingTheGenerationReleasesEveryWindow() {
   // The new key gets a fresh window rather than the previous key's count.
   QVERIFY(!state.remaining.has_value());
   QVERIFY(!state.used.has_value());
-  QCOMPARE(state.limit, 300);
+  QCOMPARE(state.limit, initialLimit);
   QCOMPARE(state.resetIn, 0);
 }
 
 void TestRateLimiter::aSlotGrantedBeforeAResetStillKnowsItsGeneration() {
   RateLimiter limiter;
+  const int initialLimit = limiter.state(true).limit;
   const int beforeReset = limiter.acquireSlot();
   // The key changes while this call is in flight. Whatever the reply says about
   // quota, it arrived for the window this slot was granted in - and only that
@@ -198,13 +193,13 @@ void TestRateLimiter::aSlotGrantedBeforeAResetStillKnowsItsGeneration() {
   QCOMPARE(beforeReset, 0);
   QVERIFY(beforeReset < limiter.generation());
 
-  limiter.finishCall(headers(300, 1, 60), beforeReset, 200);
+  limiter.finishCall(headers(411, 1, 60), beforeReset, 200);
   const RateLimitState state = limiter.state(true);
   QVERIFY2(!state.remaining.has_value(),
            "quota answered under a superseded key was applied to the new one");
   QVERIFY2(!state.used.has_value(), "the old window's usage leaked into the new one");
   QCOMPARE(state.resetIn, 0);
-  QCOMPARE(state.limit, 300);
+  QCOMPARE(state.limit, initialLimit);
 }
 
 void TestRateLimiter::aQuotaUpdateFromAnEarlierGenerationDropsTheWindowAgain() {

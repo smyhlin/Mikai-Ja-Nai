@@ -74,8 +74,6 @@ void TestLiveOracle::initTestCase() {
   if (qEnvironmentVariableIntValue("MIKAI_LIVE") != 1) {
     QSKIP("live oracle is off; set MIKAI_LIVE=1 to run it");
   }
-  // The key is never hardcoded: without one the API answers anonymously at
-  // 60/min, which is enough for four calls but not for a debugging session.
   if (qEnvironmentVariable("MIKAI_API_KEY").isEmpty()) {
     QSKIP("MIKAI_LIVE=1 but MIKAI_API_KEY is unset");
   }

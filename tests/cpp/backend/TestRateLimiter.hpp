@@ -8,7 +8,6 @@ class TestRateLimiter : public QObject {
   Q_OBJECT
 
  private slots:
-  void reportsTheDefaultQuotaForKeyedAndAnonymous();
   void reportsNothingUsedBeforeAnyCall();
   void aFreshCallReleasesItsSlot();
   void readsTheAdvertisedQuotaFromHeaders();

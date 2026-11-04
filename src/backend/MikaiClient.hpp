@@ -47,6 +47,8 @@ struct ApiKeySaveResult {
 
 inline const QString kApiApplicationName = QStringLiteral("Mikai Wrapper");
 inline const QString kApiApplicationVersion = QStringLiteral("0.1.0");
+inline constexpr int kApiAnonymousRequestsPerMinute = 299;
+inline constexpr int kApiKeyedRequestsPerMinute = 599;
 
 QString apiUserAgent();
 

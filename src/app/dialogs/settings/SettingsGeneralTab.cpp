@@ -82,10 +82,7 @@ QWidget* SettingsDialog::buildGeneralTab() {
     headerRow->addWidget(tokenHeading_, 1, Qt::AlignVCenter);
     apiLayout->addLayout(headerRow);
 
-    tokenDescription_ = new QLabel(
-        tr("An API key raises the limit from 60 to 300 requests per minute and is stored "
-           "locally in the .env file."),
-        apiCard);
+    tokenDescription_ = new QLabel(apiCard);
     styleMutedCaption(tokenDescription_);
     apiLayout->addWidget(tokenDescription_);
 
@@ -645,8 +642,10 @@ void SettingsDialog::refreshQuota() {
 void SettingsDialog::retranslateGeneralTab() {
     tokenHeading_->setText(tr("Mikai API access token"));
     tokenDescription_->setText(
-        tr("An API key raises the limit from 60 to 300 requests per minute and is stored "
-           "locally in the .env file."));
+        tr("An API key raises the limit from %1 to %2 requests per minute and is stored "
+           "locally in the .env file.")
+            .arg(backend::kApiAnonymousRequestsPerMinute)
+            .arg(backend::kApiKeyedRequestsPerMinute));
     tokenLink_->setText(tr("<a style=\"color: %1; text-decoration: none; font-weight: 500;\" "
                            "href=\"https://mikai.me/user/developers\">"
                            "Get a key from the developer dashboard on mikai.me ↗</a>")

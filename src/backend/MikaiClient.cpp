@@ -41,8 +41,6 @@
 namespace mikai::backend {
 namespace {
 
-constexpr int kAnonymousLimit = 60;
-constexpr int kKeyedLimit = 300;
 constexpr int kApiTimeoutMs = 15000;
 constexpr int kArtworkTimeoutMs = 20000;
 constexpr int kValidateTimeoutMs = 10000;
@@ -542,7 +540,8 @@ RateLimitState RateLimiter::state(bool keyed) const {
     // Report elapsed windows as empty until the next mutator clears them.
     const bool windowElapsed = resetAt_ != 0.0 && now >= resetAt_;
     RateLimitState snapshot;
-    snapshot.limit = limit_.value_or(keyed ? kKeyedLimit : kAnonymousLimit);
+    snapshot.limit = limit_.value_or(keyed ? kApiKeyedRequestsPerMinute
+                                         : kApiAnonymousRequestsPerMinute);
     if (!windowElapsed) {
         snapshot.remaining = remaining_;
         if (remaining_.has_value()) {
@@ -1047,11 +1046,13 @@ QMap<QString, QVariant> MikaiClient::validateApiKey(const QString& candidateKey)
         QMap<QString, QVariant> out;
         if (data.value(QStringLiteral("ok")).toBool()) {
             const QJsonObject payload = data.value(QStringLiteral("result")).toObject();
+            const bool authenticated = payload.value(QStringLiteral("authenticated")).toBool();
             out.insert(QStringLiteral("valid"), true);
-            out.insert(QStringLiteral("authenticated"),
-                       payload.value(QStringLiteral("authenticated")).toBool());
+            out.insert(QStringLiteral("authenticated"), authenticated);
             out.insert(QStringLiteral("rate_limit"),
-                       payload.value(QStringLiteral("rateLimitPerMin")).toInt(kAnonymousLimit));
+                       payload.value(QStringLiteral("rateLimitPerMin"))
+                           .toInt(authenticated ? kApiKeyedRequestsPerMinute
+                                                : kApiAnonymousRequestsPerMinute));
             out.insert(QStringLiteral("name"), payload.value(QStringLiteral("name")).toString());
         } else {
             const QJsonObject error = data.value(QStringLiteral("error")).toObject();
