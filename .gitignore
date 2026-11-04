@@ -61,6 +61,11 @@ _grab_*.png
 test-results/
 Testing/
 
+# Goal tracking is local-only, including reports and acceptance evidence.
+**/*[Gg][Oo][Aa][Ll]*/
+**/[Gg][Oo][Aa][Ll]*.md
+/docs/ai/
+
 # Archives and platform build products must not enter source accidentally
 *.zip
 *.7z
