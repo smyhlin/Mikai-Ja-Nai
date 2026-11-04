@@ -2882,12 +2882,18 @@ int runCloseDuringBuild(PlayerDialog* dialog, VideoSurface* surface,
     if (destroyedMs > kCloseBudgetMs) ++failures;
     // The shipping close path shows the notice only once the settle passes 300 ms;
     // a faster settle owes no notice, so the criterion follows the same threshold.
-    const bool noticeProved = closeReturnMs < 300 || finishingNoticeObserved;
+    const bool noticeRequired = closeReturnMs >= 300;
+    const bool noticeProved = !noticeRequired || finishingNoticeObserved;
     result(noticeProved,
-           "a close settle longer than 300 ms showed the Finishing enhancement notice");
+           noticeRequired
+               ? "a close settle longer than 300 ms showed the Finishing enhancement notice"
+               : "the close finished inside the 300 ms notice deadline, so no notice was required");
     if (!noticeProved) ++failures;
     result(!settleAbandoned || abandonedLogged,
-           "an abandoned teardown settle named itself in the log");
+           settleAbandoned
+               ? "the abandoned teardown settle named itself in the log"
+               : "the teardown settle completed without abandonment, so no abandonment line was "
+                 "required");
     if (settleAbandoned && !abandonedLogged) ++failures;
 
     const QJsonObject evidence{
@@ -2909,6 +2915,7 @@ int runCloseDuringBuild(PlayerDialog* dialog, VideoSurface* surface,
         {"overlayVisibleAtClose", overlayVisible},
         {"buildLogs", QJsonArray::fromStringList(buildLogs)},
         {"finishingNoticeText", finishingText},
+        {"finishingNoticeRequired", noticeRequired},
         {"finishingNoticeObserved", finishingNoticeObserved},
         {"finishingNoticeTexts", QJsonArray::fromStringList(finishingNoticeTexts)},
         {"closeReturnMs", static_cast<qint64>(closeReturnMs)},
