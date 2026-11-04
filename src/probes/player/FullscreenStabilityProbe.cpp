@@ -2122,7 +2122,8 @@ int runHoverCanaryMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
         countersAfter.chromeDirtyRequests - countersBefore.chromeDirtyRequests;
     const quint64 windowChromeApplied =
         countersAfter.chromeDirtyApplied - countersBefore.chromeDirtyApplied;
-    const quint64 windowPacedFrames = framesAfter >= framesBefore ? framesAfter - framesBefore : 0;
+    const quint64 windowRenderedFrames =
+        framesAfter >= framesBefore ? framesAfter - framesBefore : 0;
     const int unexplainedSkips =
         summary.unknownReasons + summary.pacedWithoutDelay + summary.pauseHeldLines;
     const double delayP50 = percentileMs(summary.delays, 0.50);
@@ -2131,7 +2132,7 @@ int runHoverCanaryMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
     for (qint64 value : summary.delays) delayMax = std::max(delayMax, value);
 
     const bool measured = summary.paintLines > 0 && windowPaints > 0 && gestures > 0;
-    const bool playbackAdvanced = summary.newFrameLines >= seconds && windowPacedFrames > 0;
+    const bool playbackAdvanced = summary.newFrameLines >= seconds && windowRenderedFrames > 0;
     const bool chromeInteracted = windowChromeDirty > 0;
     const bool noDisarms = windowDisarms == 0;
     const bool skipsExplained = unexplainedSkips == 0;
@@ -2151,7 +2152,7 @@ int runHoverCanaryMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
         {"paintLines", summary.paintLines},
         {"paintCalls", static_cast<qint64>(windowPaints)},
         {"newFramePaints", summary.newFrameLines},
-        {"renderedOutputFrames", static_cast<qint64>(windowPacedFrames)},
+        {"renderedOutputFrames", static_cast<qint64>(windowRenderedFrames)},
         {"positionAtStart", positionAtStart},
         {"positionAtEnd", positionAtEnd},
         {"chromeDirtyRequests", static_cast<qint64>(windowChromeDirty)},
