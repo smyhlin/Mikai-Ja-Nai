@@ -250,7 +250,10 @@ real widget actions (`QAbstractButton::click`, `QComboBox::setCurrentIndex`).
 Requirements and conventions (existing probe conventions, no new ones):
 
 - A native Qt platform (`QT_QPA_PLATFORM=windows`) and the pinned mpv runtime
-  staged by `mikai_test_launcher`.
+  staged by `mikai_test_launcher`. The launcher exports that staged module as an
+  absolute `MIKAI_MPV_MODULE`, and the mode selects exactly that module (or an
+  explicit `MIKAI_PROBE_BUNDLE` if one is set). Without either it fails by name;
+  it never falls back to a host or user runtime.
 - `--video-scaling-media <absolute path>`: a long fixture (at least 60 s). A
   shorter clip is refused before the matrix because it would reach EOS mid-run.
 - `--video-scaling-evidence <absolute json path>`: the persistent JSON. All

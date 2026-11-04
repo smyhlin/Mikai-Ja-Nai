@@ -692,8 +692,42 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
         }
         return 2;
     }
-    if (!mplayer::probes::selectRuntime()) {
-        std::fprintf(stderr, "FAIL the pinned mpv runtime could not be selected\n");
+    // Runtime selection. The launcher stages the pinned module and exports its
+    // absolute path in MIKAI_MPV_MODULE; the probe's second isolation copy keeps
+    // that absolute hint. `selectRuntime()` ignores a bare module hint and asks
+    // for a packaged install this probe deliberately does not have, which is the
+    // "[Ukrainian mpv not found]" refusal this path used to hit. Resolve the
+    // module the launcher named, exactly like the other native probes do, while
+    // still honouring the explicit MIKAI_PROBE_BUNDLE convention when it is set.
+    // There is no fallback to a host or user runtime.
+    bool runtimeReady = false;
+    if (!qEnvironmentVariableIsEmpty("MIKAI_PROBE_BUNDLE")) {
+        runtimeReady = mplayer::probes::selectRuntime();
+        check(runtimeReady, QStringLiteral("the named MIKAI_PROBE_BUNDLE selects the runtime"));
+    } else {
+        const QString stagedModule = qEnvironmentVariable("MIKAI_MPV_MODULE");
+        const QFileInfo stagedInfo(stagedModule);
+        if (stagedInfo.isAbsolute() && stagedInfo.isFile()) {
+            const mplayer::native::RuntimeSelection runtime =
+                mplayer::native::selectStandardRuntime(stagedModule);
+            mplayer::probes::detail::reportSelected(runtime, "launcher-staged module");
+            runtimeReady = runtime.loaded;
+            check(runtimeReady, QStringLiteral("the launcher-staged pinned mpv module loads"),
+                  runtime.reason.isEmpty() ? stagedModule : runtime.reason);
+        } else {
+            check(false, QStringLiteral("the launcher staged an absolute mpv module"),
+                  stagedModule.isEmpty() ? QStringLiteral("MIKAI_MPV_MODULE is unset")
+                                         : stagedModule);
+        }
+    }
+    if (!runtimeReady) {
+        LiveContext empty;
+        empty.outputDir = evidenceFileInfo.absolutePath();
+        QJsonObject evidence = liveEvidence(empty, options, false, -1, QString());
+        QString error;
+        if (!writeEvidence(evidence, options.evidencePath, &error)) {
+            std::fprintf(stderr, "FAIL the live evidence was written: %s\n", qPrintable(error));
+        }
         return 2;
     }
 
