@@ -24,6 +24,7 @@
 #include <QMutex>
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
+#include <QPointer>
 #include <QRunnable>
 #include <QScreen>
 #include <QSet>
@@ -3737,6 +3738,7 @@ int main(int argc, char** argv) {
         evidence.flush();
     };
     if (focusSwitch || baseline || qaMatrix || hoverCanary) {
+        QPointer<mplayer::shell::PlayerDialog> modeDialog(dialog);
         QString modeError;
         const int modeExit =
             focusSwitch
@@ -3751,9 +3753,7 @@ int main(int argc, char** argv) {
                 : runQaMatrixMode(dialog, surface, shell, media, outputPath, &host, knownBright,
                                   seconds, record, &modeError);
         evidence.flush();
-        // The canary closes its own dialog so its timing-log window is flushed
-        // before it reads that window back; the other modes are closed here.
-        if (!hoverCanary) dialog->close();
+        if (modeDialog != nullptr) modeDialog->close();
         // The mode's verdict is explicit: 0 measured, 3 incomplete/invalid.
         return modeExit;
     }
