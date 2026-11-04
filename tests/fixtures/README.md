@@ -701,23 +701,29 @@ What it gates, and nothing more:
 - the window really was playback: the core's `pause` is false and at least one paint per second
   presented a new frame (`newframe=1`);
 - chrome interaction reached the shell (`chromeDirtyRequests` grew);
-- no chrome repaint took an armed pacing slot (`pacingDisarms` delta is 0);
+- no *chrome-only* repaint took an armed pacing slot: the log's cumulative `disarm=` field is
+  differenced per paint line and attributed to the pass that disarmed, so a forced or seek-driven
+  paint that legitimately stops a timer is recorded as `frameOwningDisarms` instead of failing the
+  gate (`chromeOnlyDisarms` must be 0);
 - every scheduling decision named a documented reason (`skip_reason` outside
   `none|paced|forced|repeat|redraw|elapsed|no-info` is a failure), a `paced` paint with
   `paint_delay_ms=-1` is a failure, and no paint claims a held pause (`pause_held=1`) while nothing
   holds one;
-- at least one paced paint-delay sample exists. The p50/p95/max are written to
-  `_hover-canary/samples.jsonl` as `paintDelayP50Ms`/`paintDelayP95Ms`/`paintDelayMaxMs`; the plan
-  fixes no delay budget, and the frozen 343 us p95 paint *duration* is a matched-host measurement
-  owned by the load probe, so this entry does not invent a CI millisecond gate.
+- at least one paced paint-delay sample exists and its **p95 is at most 250 ms**, the ceiling the
+  QA matrix already treats as the GUI thread having stopped servicing its event loop
+  (`kGuiGapLimitMs`). The p50/p95/max and the budget are written to `_hover-canary/samples.jsonl`
+  as `paintDelayP50Ms`/`paintDelayP95Ms`/`paintDelayMaxMs`/`paintDelayP95BudgetMs`; 250 ms is a
+  conservative ceiling for a delay measured from timer arm to paint, not a new budget.
 
 It does **not** observe desktop composition, take the foreground, raise the player or move the
 system cursor: gestures are delivered to the widgets themselves, and the player runs windowed. The
 tracked fixture is 12 s, so the 30 s window continues by seeking back inside the same source (no
 reload); `loopSeeks` records how many. A run whose platform is `offscreen`/`minimal`, or that has no
 GL context, refuses with exit 77 and the CTest entry declares `SKIP_RETURN_CODE 77`, so a missing
-display prerequisite shows as a skip, never as green. Native Linux testing remains user-deferred;
-the same entry needs a real `xcb`/`wayland` display and the pinned runtime.
+display prerequisite shows as a skip, never as green. The Windows entry sets
+`QT_QPA_PLATFORM=windows` explicitly, because the launcher's empty default resolves to `offscreen`
+and would skip the gate on every run. Native Linux testing remains user-deferred; there the display
+must be stated in the handoff environment (`xcb`/`wayland`) together with the pinned runtime.
 
 ## Native scaling framebuffer regression
 

@@ -1866,6 +1866,10 @@ struct CanaryLogSummary {
     int pacedWithoutDelay = 0;
     int pauseHeldLines = 0;
     int newFrameLines = 0;
+    /// Disarms attributed to the pass that stopped the timer, by whether that
+    /// pass owned a frame. Only the chrome-only ones are the goal's criterion.
+    int chromeOnlyDisarms = 0;
+    int frameOwningDisarms = 0;
     QVector<qint64> delays;
 };
 
@@ -2089,6 +2093,11 @@ int runHoverCanaryMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
     mplayer::VideoSurface::setFrameTimingLogPath(QString());
 
     CanaryLogSummary summary;
+    // The log's `disarm=` field is cumulative per surface, so a difference against
+    // the previous line attributes each increment to the pass that caused it -
+    // what separates the goal's chrome-only criterion from a forced or seek-driven
+    // paint that legitimately stopped an armed timer.
+    qint64 previousDisarm = static_cast<qint64>(profileBefore.pacingDisarms);
     QFile logFile(windowLog);
     if (logFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
         while (!logFile.atEnd()) {
@@ -2114,6 +2123,23 @@ int runHoverCanaryMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
             qint64 newFrame = 0;
             if (canaryTokenInt(line, QStringLiteral("newframe="), &newFrame) && newFrame != 0)
                 ++summary.newFrameLines;
+            qint64 pending = 0;
+            qint64 forced = 0;
+            qint64 disarm = -1;
+            const bool ownsFrame =
+                newFrame != 0 ||
+                (canaryTokenInt(line, QStringLiteral("pending="), &pending) && pending != 0) ||
+                (canaryTokenInt(line, QStringLiteral("forced="), &forced) && forced != 0);
+            if (canaryTokenInt(line, QStringLiteral("disarm="), &disarm)) {
+                if (previousDisarm >= 0 && disarm >= previousDisarm) {
+                    const qint64 jumped = disarm - previousDisarm;
+                    if (jumped > 0) {
+                        if (ownsFrame) summary.frameOwningDisarms += static_cast<int>(jumped);
+                        else summary.chromeOnlyDisarms += static_cast<int>(jumped);
+                    }
+                }
+                previousDisarm = disarm;
+            }
         }
     }
     const quint64 windowPaints = profileAfter.paintCalls - profileBefore.paintCalls;
@@ -2134,11 +2160,37 @@ int runHoverCanaryMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
     const bool measured = summary.paintLines > 0 && windowPaints > 0 && gestures > 0;
     const bool playbackAdvanced = summary.newFrameLines >= seconds && windowRenderedFrames > 0;
     const bool chromeInteracted = windowChromeDirty > 0;
-    const bool noDisarms = windowDisarms == 0;
     const bool skipsExplained = unexplainedSkips == 0;
     const bool delayMeasured = summary.pacedSamples > 0;
-    const bool green = measured && playbackAdvanced && chromeInteracted && noDisarms &&
-                       skipsExplained && delayMeasured;
+    // Match the QA matrix's GUI responsiveness ceiling.
+    constexpr double kPaintDelayP95LimitMs = 250.0;
+    const bool noChromeOnlyDisarms = summary.chromeOnlyDisarms == 0;
+    const bool delayWithinBudget = delayMeasured && delayP95 <= kPaintDelayP95LimitMs;
+    const bool green = measured && playbackAdvanced && chromeInteracted && noChromeOnlyDisarms &&
+                       skipsExplained && delayWithinBudget;
+
+    if (!green) {
+        if (!measured) {
+            *error = QStringLiteral("hover canary INVALID: no paints, no gestures or no log");
+        } else if (!playbackAdvanced) {
+            *error = QStringLiteral("hover canary FAIL: the core did not advance frames for the "
+                                    "whole window");
+        } else if (!chromeInteracted) {
+            *error = QStringLiteral("hover canary FAIL: no chrome invalidation reached the shell");
+        } else if (!noChromeOnlyDisarms) {
+            *error = QStringLiteral("hover canary FAIL: a chrome repaint took an armed pacing "
+                                    "slot");
+        } else if (!skipsExplained) {
+            *error = QStringLiteral("hover canary FAIL: a paint skip had no documented reason");
+        } else if (!delayMeasured) {
+            *error = QStringLiteral("hover canary INCOMPLETE: no paced paint-delay sample");
+        } else {
+            *error = QStringLiteral("hover canary FAIL: paint-delay p95 %1 ms exceeds the %2 ms "
+                                    "budget")
+                         .arg(delayP95, 0, 'f', 1)
+                         .arg(kPaintDelayP95LimitMs, 0, 'f', 1);
+        }
+    }
 
     record(QJsonObject{
         {"event", "hoverCanary"},
@@ -2157,8 +2209,12 @@ int runHoverCanaryMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
         {"positionAtEnd", positionAtEnd},
         {"chromeDirtyRequests", static_cast<qint64>(windowChromeDirty)},
         {"chromeDirtyApplied", static_cast<qint64>(windowChromeApplied)},
+        {"chromeOnlyDisarms", summary.chromeOnlyDisarms},
+        {"frameOwningDisarms", summary.frameOwningDisarms},
         {"pacingDisarms", static_cast<qint64>(windowDisarms)},
         {"pacedSamples", summary.pacedSamples},
+        {"paintDelayP95BudgetMs", kPaintDelayP95LimitMs},
+        {"paintDelayBudgetSource", "kGuiGapLimitMs (250 ms GUI event-loop ceiling)"},
         {"paintDelayP50Ms", delayMeasured ? QJsonValue(delayP50)
                                           : QJsonValue(QStringLiteral("unavailable"))},
         {"paintDelayP95Ms", delayMeasured ? QJsonValue(delayP95)
@@ -2173,34 +2229,16 @@ int runHoverCanaryMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
          QJsonObject{{"measured", measured},
                      {"playbackAdvanced", playbackAdvanced},
                      {"chromeInteracted", chromeInteracted},
-                     {"noPacingDisarms", noDisarms},
+                     {"noChromeOnlyDisarms", noChromeOnlyDisarms},
                      {"skipsExplained", skipsExplained},
+                     {"paintDelayWithinBudget", delayWithinBudget},
                      {"paintDelayMeasured", delayMeasured}}},
         {"frameTimingLog", windowLog},
         {"surfaceAtEnd", stateAtEnd},
         {"scope", "pacing and chrome-paint counters plus the frame-timing log from a real "
                   "embedded core; desktop composition is not observed and not claimed"},
         {"error", green ? QString() : *error}});
-    if (!green) {
-        *error = !measured
-                     ? QStringLiteral("hover canary INVALID: no paints, no gestures or no log")
-                     : (!playbackAdvanced
-                            ? QStringLiteral("hover canary FAIL: the core did not advance frames "
-                                             "for the whole window")
-                            : (!chromeInteracted
-                                   ? QStringLiteral("hover canary FAIL: no chrome invalidation "
-                                                    "reached the shell")
-                                   : (!noDisarms
-                                          ? QStringLiteral("hover canary FAIL: a chrome repaint "
-                                                           "took an armed pacing slot")
-                                          : (!skipsExplained
-                                                 ? QStringLiteral("hover canary FAIL: a paint "
-                                                                  "skip had no documented reason")
-                                                 : QStringLiteral("hover canary INCOMPLETE: no "
-                                                                  "paced paint-delay sample")))));
-        return 1;
-    }
-    return 0;
+    return green ? 0 : 1;
 }
 
 /// GOAL-E long-playback QA matrix.
@@ -3571,7 +3609,9 @@ int main(int argc, char** argv) {
 #ifdef MIKAI_PROBE_HAS_APP
         // The shipping raise policy, so AttachThreadInput counts are the ones
         // the application would make and not a probe-local imitation.
-        mikai::app::WindowRaisePolicy::install();
+        if (focusSwitch || baseline || qaMatrix) {
+            mikai::app::WindowRaisePolicy::install();
+        }
 #endif
     }
     bool validDuration = false;
@@ -3616,6 +3656,7 @@ int main(int argc, char** argv) {
     auto* dialog = new mplayer::shell::PlayerDialog(
         QStringLiteral("Fullscreen stability verification"), media,
         {{1080, media}}, 1080, &host);
+    if (hoverCanary) dialog->setAttribute(Qt::WA_ShowWithoutActivating, true);
     auto* surface = dialog->findChild<mplayer::VideoSurface*>();
     auto* shell = dialog->findChild<mplayer::shell::PlayerShell*>();
     if (surface == nullptr || shell == nullptr) return 2;

@@ -425,19 +425,7 @@ if(MIKAI_BUILD_PROBES)
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
   )
 
-  # GOAL-H2: the Settings Save/Cancel/reopen/restart persistence path is a
-  # permanent regression gate, not only a manual probe mode. Registering it here
-  # keeps the coverage in the ordinary `ctest` run, and the dependency below
-  # makes `cmake --build --preset tests` build the probe that the test launches.
-  # The entry runs on the offscreen platform (no desktop, no pointer, no
-  # activation) and needs no exported JSON: the probe's exit code is the verdict.
-  # A manual run still passes an absolute --video-scaling-evidence file.
-  # GOAL-F/T-F4: the 30 s hover-playback canary. A real embedded core plays the
-  # tracked fixture while pointer gestures sweep the real chrome, and the verdict
-  # comes from the surface's frame-timing log plus the pacing/chrome counters -
-  # no desktop grab, no foreground takeover, no system-cursor move. It needs a
-  # real display platform and a working GL context; the probe refuses with 77 and
-  # SKIP_RETURN_CODE keeps that refusal visible as a skip rather than green.
+  # Missing display/GL support must remain a visible skip.
   if(TARGET fullscreen_stability_probe)
     add_dependencies(mikai_tests fullscreen_stability_probe)
     add_test(NAME HoverPlaybackCanary
@@ -460,6 +448,10 @@ if(MIKAI_BUILD_PROBES)
       LABELS "mikai_tests_suite"
       ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    if(WIN32)
+      set_tests_properties(HoverPlaybackCanary PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=windows")
+    endif()
   endif()
 
   if(TARGET native_settings_probe)
