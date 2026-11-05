@@ -21,6 +21,7 @@ using mikai::backend::kFetchRetries;
 using mikai::backend::kTimeoutMs;
 using mikai::backend::kUserAgent;
 using mikai::backend::parseMoonSkipSegments;
+using mikai::backend::parseMoonSourceList;
 using mikai::backend::parseVariants;
 using mikai::backend::qualityUrl;
 using mikai::backend::tortugaDecode;
@@ -237,6 +238,53 @@ void TestStreams::qualityUrlRejectsAnEmptyVariantList() {
     raised = true;
   }
   QVERIFY(raised);
+}
+
+void TestStreams::parsesMoonLabelledSourceList() {
+  // The payload MoonAnime writes into rawVideo: quality labels in front of
+  // direct media URLs, comma separated.
+  const QVector<QualityVariant> variants = parseMoonSourceList(QStringLiteral(
+      "[720p]https://s.example/content/v/abc/720/?expires=1&sig=a,"
+      "[1080p]https://s.example/content/v/abc/1080/?expires=1&sig=b"));
+
+  QCOMPARE(static_cast<int>(variants.size()), 2);
+  QCOMPARE(variants.at(0).height, 720);
+  QCOMPARE(variants.at(0).url, QStringLiteral("https://s.example/content/v/abc/720/?expires=1&sig=a"));
+  QCOMPARE(variants.at(1).height, 1080);
+  QCOMPARE(variants.at(1).url, QStringLiteral("https://s.example/content/v/abc/1080/?expires=1&sig=b"));
+}
+
+void TestStreams::keepsTheFirstMoonSourceForARepeatedHeight() {
+  // A repeated label must not replace the earlier entry, which is the one the
+  // provider listed first.
+  const QVector<QualityVariant> variants = parseMoonSourceList(QStringLiteral(
+      "[720p]https://s.example/first,"
+      "[720p]https://s.example/second,"
+      "[1080p]https://s.example/third"));
+
+  QCOMPARE(static_cast<int>(variants.size()), 2);
+  QCOMPARE(urlAtHeight(variants, 720), QStringLiteral("https://s.example/first"));
+}
+
+void TestStreams::aMoonMasterUrlIsNotALabelledSourceList() {
+  // The older payload shape: one playlist URL and no labels. It must not be
+  // reported as a variant with no height, or the caller would treat a playlist
+  // as a playable file.
+  const QVector<QualityVariant> variants = parseMoonSourceList(
+      QStringLiteral("https://s.example/hls/master.m3u8"));
+  QVERIFY(variants.isEmpty());
+}
+
+void TestStreams::ignoresMalformedMoonSourceEntries() {
+  const QVector<QualityVariant> variants = parseMoonSourceList(QStringLiteral(
+      "[720p],"
+      "[0p]https://s.example/zero,"
+      "[1080p60]https://s.example/suffixed?x=1,"
+      "https://s.example/unlabelled"));
+
+  QCOMPARE(static_cast<int>(variants.size()), 1);
+  QCOMPARE(variants.first().height, 1080);
+  QCOMPARE(variants.first().url, QStringLiteral("https://s.example/suffixed?x=1"));
 }
 
 void TestStreams::decodesATortugaToken() {

@@ -177,7 +177,8 @@ QString ashdiMaster(QNetworkAccessManager* manager, const QString& pageUrl) {
     return match.captured(1);
 }
 
-QString moonMaster(QNetworkAccessManager* manager, const QString& pageUrl) {
+namespace {
+QString moonSourceText(QNetworkAccessManager* manager, const QString& pageUrl) {
     const QString html = fetchText(manager, pageUrl, pageHeaderSet());
     const QString js = decodeMoonPayload(html, pageUrl);
 
@@ -208,14 +209,10 @@ QString moonMaster(QNetworkAccessManager* manager, const QString& pageUrl) {
         decoded[i] = static_cast<char>(static_cast<unsigned char>(raw.at(i)) ^
                                        static_cast<unsigned char>(xk.at(i % xk.size())));
     }
-    const QString text = QString::fromUtf8(decoded);
+    return QString::fromUtf8(decoded);
+}
 
-    static const QRegularExpression pairPattern(
-        QStringLiteral("\\[([^\\]]+)\\]((?:https?://)[^,\\[\\s]+)"));
-    QRegularExpressionMatchIterator pairs = pairPattern.globalMatch(text);
-    if (pairs.hasNext()) {
-        return pairs.next().captured(2);
-    }
+QString legacyMoonMaster(const QString& text, const QString& pageUrl) {
     QString master = text.trimmed();
     while (master.endsWith(QLatin1Char('"')) || master.endsWith(QLatin1Char(' '))) {
         master.chop(1);
@@ -227,6 +224,40 @@ QString moonMaster(QNetworkAccessManager* manager, const QString& pageUrl) {
         throw StreamError(QStringLiteral("moonanime master not found in %1").arg(pageUrl));
     }
     return master;
+}
+}  // namespace
+
+QVector<QualityVariant> parseMoonSourceList(const QString& decoded) {
+    static const QRegularExpression labelled(
+        QStringLiteral("\\[(\\d{2,4})p[^\\]]*\\](https?://[^,\\[\\s]+)"));
+    QVector<QualityVariant> variants;
+    QRegularExpressionMatchIterator matches = labelled.globalMatch(decoded);
+    while (matches.hasNext()) {
+        const QRegularExpressionMatch match = matches.next();
+        const int height = match.captured(1).toInt();
+        const QString url = match.captured(2);
+        bool known = false;
+        for (const QualityVariant& variant : variants) {
+            if (variant.height == height) {
+                known = true;
+                break;
+            }
+        }
+        if (height > 0 && !known) {
+            variants.append(QualityVariant{height, url});
+        }
+    }
+    return variants;
+}
+
+QVector<QualityVariant> moonVariants(QNetworkAccessManager* manager, const QString& pageUrl) {
+    const QString text = moonSourceText(manager, pageUrl);
+    const QVector<QualityVariant> variants = parseMoonSourceList(text);
+    if (!variants.isEmpty()) {
+        return variants;
+    }
+    // Older payloads carried one HLS master URL where the labelled list is now.
+    return {QualityVariant{0, legacyMoonMaster(text, pageUrl)}};
 }
 
 QVector<QVariantMap> parseMoonSkipSegments(const QString& html, const QString& pageUrl) {
@@ -347,16 +378,16 @@ QString tortugaMaster(QNetworkAccessManager* manager, const QString& pageUrl) {
     }
 }
 
-QString extractMaster(QNetworkAccessManager* manager, const QString& pageUrl) {
-    const QString site = detectSite(pageUrl);
-    if (site == QLatin1String("ashdi")) {
-        return ashdiMaster(manager, pageUrl);
+namespace {
+bool isSafeStreamUrl(const QString& rawUrl) {
+    const QUrl parsed(rawUrl, QUrl::StrictMode);
+    if (!parsed.isValid() || parsed.host().isEmpty()) {
+        return false;
     }
-    if (site == QLatin1String("tortuga")) {
-        return tortugaMaster(manager, pageUrl);
-    }
-    return moonMaster(manager, pageUrl);
+    const QString scheme = parsed.scheme().toLower();
+    return scheme == QLatin1String("https") || scheme == QLatin1String("http");
 }
+}  // namespace
 
 QVector<QualityVariant> parseVariants(const QString& masterText, const QString& baseUrl) {
     QVector<QualityVariant> variants;
@@ -449,20 +480,21 @@ QMap<int, QString> qualityStreams(const QString& pageUrl) {
     // again on every episode click. Tied to the thread's lifetime so an
     // expiring pool thread leaves nothing behind.
     QNetworkAccessManager* manager = transportManagerForThread();
-    const QString master = extractMaster(manager, pageUrl);
-    const QMap<QString, QString> headers =
-        (site == QLatin1String("ashdi") || site == QLatin1String("tortuga")) ? bareHeaderSet()
-                                                                             : mediaHeaderSet();
-    const QVector<QualityVariant> variants =
-        parseVariants(fetchText(manager, master, headers), master);
-    auto isSafeStreamUrl = [](const QString& rawUrl) -> bool {
-        const QUrl parsed(rawUrl, QUrl::StrictMode);
-        if (!parsed.isValid() || parsed.host().isEmpty()) {
-            return false;
+    QVector<QualityVariant> variants;
+    if (site == QLatin1String("moon")) {
+        variants = moonVariants(manager, pageUrl);
+        // An unlabelled entry is the older single master playlist, which still
+        // has to be read before its variants are known.
+        if (variants.size() == 1 && variants.first().height == 0) {
+            const QString master = variants.first().url;
+            variants = parseVariants(fetchText(manager, master, mediaHeaderSet()), master);
         }
-        const QString scheme = parsed.scheme().toLower();
-        return scheme == QLatin1String("https") || scheme == QLatin1String("http");
-    };
+    } else {
+        const QString master =
+            site == QLatin1String("ashdi") ? ashdiMaster(manager, pageUrl)
+                                           : tortugaMaster(manager, pageUrl);
+        variants = parseVariants(fetchText(manager, master, bareHeaderSet()), master);
+    }
     QMap<int, QString> streams;
     for (const QualityVariant& variant : variants) {
         if (variant.height > 0 && !variant.url.isEmpty() && isSafeStreamUrl(variant.url)) {

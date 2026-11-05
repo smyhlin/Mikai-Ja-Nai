@@ -30,6 +30,11 @@ class TestStreams : public QObject {
   void qualityUrlPrefersTheFirstOfTwoEqualHeights();
   void qualityUrlRejectsAnEmptyVariantList();
 
+  void parsesMoonLabelledSourceList();
+  void keepsTheFirstMoonSourceForARepeatedHeight();
+  void aMoonMasterUrlIsNotALabelledSourceList();
+  void ignoresMalformedMoonSourceEntries();
+
   void decodesATortugaToken();
   void rejectsATortugaTokenThatIsNotBase64();
 

@@ -23,6 +23,7 @@ Published changes are recorded with their downloads on the [GitHub releases page
 - Update advertised API quota estimates to 299 requests/minute without a key and 599 with an API key; server quota headers remain authoritative.
 - Add a responsive Home/Filters/Teams sidebar with matching Open video, Shortcuts and Settings rows at the bottom and an icon rail at compact widths; keep search and RPM in a single toolbar.
 - Let Home headings scroll with the feeds, reserve a scrollbar gutter and page carousels by the visible card count without diverting vertical scrolling.
+- Play MoonAnime again after the provider replaced its HLS master with a labelled list of direct per-quality media URLs: resolve those entries as the quality ladder, keep the legacy playlist shape working, and stop reporting a playable episode as having no source.
 - Prefer MoonAnime when that provider is present; an explicit choice still wins, and a title without it keeps its first provider.
 - Keep a presented picture across source changes and ordinary chrome repaints instead of clearing to black. A chrome-only repaint no longer consumes an armed presentation slot.
 - Keep cached controls pixel-stable when neighboring controls hide at fractional display scales. Remove the experimental shared chrome sheets and retain the 8 MiB per-list cache budget.

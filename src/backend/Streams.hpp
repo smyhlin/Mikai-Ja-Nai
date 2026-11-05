@@ -11,8 +11,9 @@ class QNetworkAccessManager;
 #include <stdexcept>
 
 // Stream resolution mirrors mikai_backend/streams.py: the embed page is
-// fetched, its obfuscated master playlist url is extracted, and the master is
-// parsed into per-height variants.
+// fetched and its obfuscated source is extracted. Ashdi and Tortuga publish an
+// HLS master playlist, which is parsed into per-height variants; MoonAnime
+// publishes a labelled list of direct media URLs instead.
 namespace mikai::backend {
 
 inline const QString kUserAgent =
@@ -52,7 +53,11 @@ QString fetchText(QNetworkAccessManager* manager, const QString& url,
                   const QMap<QString, QString>& headers = {});
 
 QString ashdiMaster(QNetworkAccessManager* manager, const QString& pageUrl);
-QString moonMaster(QNetworkAccessManager* manager, const QString& pageUrl);
+
+// The decoded MoonAnime source: "[720p]https://…,[1080p]https://…". A payload
+// that carries a single master URL instead (the older shape) yields no entries.
+QVector<QualityVariant> parseMoonSourceList(const QString& decoded);
+QVector<QualityVariant> moonVariants(QNetworkAccessManager* manager, const QString& pageUrl);
 
 // Maps contain "type", "start" and "end" in seconds; provider order and overlaps are preserved.
 QVector<QVariantMap> moonSkipSegments(QNetworkAccessManager* manager, const QString& pageUrl);
@@ -60,7 +65,6 @@ QVector<QVariantMap> moonSkipSegments(QNetworkAccessManager* manager, const QStr
 QVector<QVariantMap> parseMoonSkipSegments(const QString& html, const QString& pageUrl = {});
 QString tortugaDecode(const QString& token);
 QString tortugaMaster(QNetworkAccessManager* manager, const QString& pageUrl);
-QString extractMaster(QNetworkAccessManager* manager, const QString& pageUrl);
 
 QVector<QualityVariant> parseVariants(const QString& masterText, const QString& baseUrl = {});
 
