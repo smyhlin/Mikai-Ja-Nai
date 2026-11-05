@@ -5,6 +5,7 @@
 #include <native/components/AnimeJanaiRuntime.hpp>
 #include <native/components/NativeComponentProvisioning.hpp>
 #include <native/models/NativeSpatialAssets.hpp>
+#include <native/models/NativeUpscalers.hpp>
 #include <state/NativeComponentProvisioner.hpp>
 
 #include <QMap>
@@ -102,7 +103,8 @@ public:
     /// count: it stays inside Settings.
     bool downloadActive() const {
         return (provisioner_ != nullptr && provisioner_->running()) ||
-               animeJanaiRuntimeDownloading_ || rifeDownloading_ || modelsDownloading_;
+               animeJanaiRuntimeDownloading_ || rifeDownloading_ || modelsDownloading_ ||
+               upscalersDownloading_;
     }
     /// Hashing or a digest proof is running. A verification is not a download:
     /// it never disables the transfer actions' meaning or reports a transfer.
@@ -323,6 +325,8 @@ private:
     void startAcquisitionVerification();
     void downloadRifeArchive();
     void downloadNextModel();
+    /// One optional upscaler at a time: they share one store and one registry.
+    void downloadNextUpscaler();
     void scheduleInventoryRefresh();
     void applyInventorySnapshot(const QVariant& result);
     void finishRecommendedInstall();
@@ -427,6 +431,10 @@ private:
     /// Which catalogue rows the current download run still has to fetch, as
     /// indices into spatialAssetCatalog().
     QVector<int> pendingModels_;
+    /// Optional upscaler graphs the current run still has to fetch. They share
+    /// the queue with the spatial graphs but land in the custom-model store, so
+    /// they run as their own unit.
+    QVector<mplayer::native::UpscalerModel> pendingUpscalers_;
     /// User-selected acquisition groups; graph IDs belong only to the catalogue.
     QSet<QString> selectedPacks_;
     std::shared_ptr<std::atomic<bool>> rifeCancelFlag_;
@@ -487,6 +495,7 @@ private:
     std::shared_ptr<std::atomic<bool>> inventoryCancelFlag_;
     bool rifeDownloading_ = false;
     bool modelsDownloading_ = false;
+    bool upscalersDownloading_ = false;
     /// Verification-only activity. Distinct from `modelsDownloading_` on
     /// purpose: a proof run is not a transfer and must never render through the
     /// download path.

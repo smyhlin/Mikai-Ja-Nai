@@ -2366,6 +2366,16 @@ void TestPublicApiUi::componentCardsKeepASingleLineBadgeAndASeparateCountLine() 
     auto* title = tab.findChild<QLabel*>(cardId + QStringLiteral("Title"));
     auto* description = tab.findChild<QLabel*>(cardId + QStringLiteral("Description"));
     auto* counts = tab.findChild<QLabel*>(cardId + QStringLiteral("Count"));
+    if (cardId == QStringLiteral("upscalerModelsCard")) {
+      // The card is the download entry point for these graphs: a disabled or
+      // hidden box is a row a viewer cannot act on, which is what it used to be.
+      auto* box = tab.findChild<QCheckBox*>(cardId + QStringLiteral("Check"));
+      QVERIFY2(box != nullptr, "the upscaler card has no selection box");
+      QVERIFY2(box->isEnabled(), "the upscaler card cannot be selected");
+      QVERIFY2(!box->isHidden(), "the upscaler card selection is hidden");
+      QVERIFY2(description->text().contains(QStringLiteral("Apply changes")),
+               qPrintable(description->text()));
+    }
     QVERIFY2(badge != nullptr && title != nullptr && description != nullptr,
              qPrintable(QStringLiteral("%1 is missing a header element").arg(cardId)));
     QVERIFY2(counts != nullptr, qPrintable(QStringLiteral("%1 has no count line").arg(cardId)));

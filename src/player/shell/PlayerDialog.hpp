@@ -318,6 +318,8 @@ signals:
     /// before a plan can fail, so the acquisition surface can target the exact
     /// runtime the viewer chose without a payload here.
     void componentSetupRequested();
+    /// The Enhancements › Upscalers branch asked for the download page.
+    void upscalersRequested();
 
 protected:
     void changeEvent(QEvent* event) override;

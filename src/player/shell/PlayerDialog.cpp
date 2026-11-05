@@ -657,6 +657,8 @@ void PlayerDialog::connectShell() {
     });
     connect(shell_, &PlayerShell::animeJanaiPresetRequested, this,
             &PlayerDialog::applyAnimeJanaiRequest);
+    connect(shell_, &PlayerShell::upscalersRequested, this,
+            &PlayerDialog::upscalersRequested);
     connect(shell_, &PlayerShell::animeJanaiBackendRequested, this,
             &PlayerDialog::applyAnimeJanaiBackend);
     connect(shell_, &PlayerShell::anime4KModeChanged, this, [this](anime4k::Mode mode) {

@@ -96,6 +96,9 @@ private:
     /// Opens Settings on the Components tab, landing on the element the startup
     /// prompt warned about. Plain dialog, no intent: nothing is armed.
     void openComponentSettings();
+    /// Settings on the Upscalers page, the surface that downloads the optional
+    /// ONNX graphs the player menu lists.
+    void openUpscalerSettings();
     /// The processing-failure remedy surface. `intent` is what the viewer
     /// actually asked for: an explicit Prepare runs the existing preparation
     /// command once the live context callbacks are installed, Providers only

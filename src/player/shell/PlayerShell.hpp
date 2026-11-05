@@ -242,6 +242,8 @@ signals:
     void anime4KModeChanged(anime4k::Mode mode);
     void animeJanaiPresetRequested(const QString& id);
     void animeJanaiBackendRequested(const QString& backend);
+    /// A row in the Upscalers branch asked for the page that downloads them.
+    void upscalersRequested();
     void volumeChanged(double volume);
     void muteChanged(bool muted);
     void fullscreenChanged(bool fullscreen);

@@ -401,6 +401,8 @@ bool MainWindow::openMedia(const QString& source) {
             });
     connect(mediaPlayer_, &mplayer::shell::PlayerDialog::componentSetupRequested,
             this, [this] { offerAnimeJanaiSetup(); });
+    connect(mediaPlayer_, &mplayer::shell::PlayerDialog::upscalersRequested, this,
+            &MainWindow::openUpscalerSettings);
     // The app-owned assembly answers this dialog's native requests: it reads the
     // owned model store, the requested recipe and the measured machine identity
     // off the GUI thread and submits the whole request back through the dialog.
@@ -697,6 +699,11 @@ void MainWindow::openSettings() {
 
 void MainWindow::openComponentSettings() {
     openSettingsImpl(std::nullopt, {}, true);
+}
+
+void MainWindow::openUpscalerSettings() {
+    openSettings();
+    if (settingsDialog_ != nullptr) settingsDialog_->showPage(QStringLiteral("upscalers"));
 }
 
 void MainWindow::openSettingsForIntent(mplayer::shell::ProcessingSettingsIntent intent,

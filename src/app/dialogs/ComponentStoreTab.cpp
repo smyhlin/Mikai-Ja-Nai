@@ -687,8 +687,6 @@ void ComponentStoreTab::buildUi() {
     // the inventory line the download settings need to show for them.
     auto* upscalerCard = makeCard(QStringLiteral("upscalerModelsCard"),
                                   &upscalerCheck_, &upscalerState_);
-    upscalerCheck_->hide();
-    upscalerCheck_->setEnabled(false);
     for (auto* card :
          {runtimeCard, spatialCard, rifeCard, kernelsCard, anime4kCard, upscalerCard}) {
         card->setProperty("componentCard", true);
@@ -709,7 +707,8 @@ void ComponentStoreTab::buildUi() {
     setCardText(anime4kCard, tr("Anime4K shaders"),
                 tr("GLSL presets bundled with this build. No download is needed."));
     setCardText(upscalerCard, tr("Upscale models"),
-                tr("Optional ONNX upscalers, downloaded from the Upscalers page."));
+                tr("Optional ONNX upscalers. Selected models download with Apply changes; "
+                   "the Upscalers page manages them one by one."));
     // The runtime card names the selected backend's product, not a fixed one.
     updateRuntimeCardText();
     auto updateRuntimeSelection = [this](bool checked) {
@@ -741,6 +740,13 @@ void ComponentStoreTab::buildUi() {
                 if (checked) selectedPacks_.insert(QStringLiteral("component:kernels"));
                 else selectedPacks_.remove(QStringLiteral("component:kernels"));
                 syncCardSelectionStyle(kernelsCard, checked);
+                updateControls();
+            });
+    connect(upscalerCheck_, &QCheckBox::toggled, this,
+            [this, upscalerCard, syncCardSelectionStyle](bool checked) {
+                if (checked) selectedPacks_.insert(QStringLiteral("upscaler:all"));
+                else selectedPacks_.remove(QStringLiteral("upscaler:all"));
+                syncCardSelectionStyle(upscalerCard, checked);
                 updateControls();
             });
 
@@ -1649,6 +1655,9 @@ void ComponentStoreTab::updateCardStates() {
     showSelection(rifeCheck_, QStringLiteral("rife:archive"));
     showSelection(spatialCheck_, QStringLiteral("component:spatial"));
     showSelection(kernelsCheck_, QStringLiteral("component:kernels"));
+    // The optional upscalers are downloadable from here as one group; the
+    // Upscalers page still manages them one by one.
+    showSelection(upscalerCheck_, QStringLiteral("upscaler:all"));
     // The banner is an offer for an idle surface. While a run is up it would
     // describe work already in flight, and once the selected backend and every
     // pinned model are present it would contradict the cards.
@@ -1721,6 +1730,10 @@ void ComponentStoreTab::applyProvisionProgress(
 
 QString ComponentStoreTab::progressCardForPack(const QString& pack) const {
     if (findSpatialAsset(pack) != nullptr) return QStringLiteral("animeJanaiModelsCard");
+    // Upscaler rows are keyed by their digest, which no other pack uses.
+    for (const mplayer::native::UpscalerModel& model : mplayer::native::upscalerCatalog()) {
+        if (pack == model.sha256) return QStringLiteral("upscalerModelsCard");
+    }
 
     for (const ComponentPack& component : tensorRtComponentCatalog()) {
         if (pack == component.name || pack == component.asset ||

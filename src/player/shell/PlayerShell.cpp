@@ -1,6 +1,8 @@
 #include <utility>
 #include "PlayerShell.hpp"
 
+#include "native/models/NativeUpscalers.hpp"
+
 #include "PlayerPopups.hpp"
 #include "gui/VideoDropTarget.hpp"
 #include "gui/SystemDefaultPlayer.hpp"
@@ -77,6 +79,7 @@ constexpr int kEnhancementTreeDepth = 6;
 /// separating a pill from the dock it sits above.
 constexpr int kSkipOfferGap = 8;
 constexpr auto kAnimeJanaiRoot = "animejanai";
+constexpr auto kUpscalersRoot = "upscalers";
 constexpr auto kAnimeJanaiRife = "animejanai:rife";
 constexpr auto kAnimeJanaiSpatial = "animejanai:spatial";
 constexpr auto kAnimeJanaiBackend = "animejanai:backend";
@@ -332,6 +335,23 @@ bool sameEntries(const QVector<MenuEntry>& entries, const MenuPopup* panel) {
 QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& currentId,
                                       const native::menu::Inputs& native) {
     QVector<MenuEntry> entries;
+    if (levelId == QLatin1String(kUpscalersRoot)) {
+        // The optional ONNX graphs are downloads, not a chain this player can
+        // apply yet: the row states what is stored and opens the page that
+        // fetches what is not.
+        for (const native::UpscalerModel& model : native::upscalerCatalog()) {
+            MenuEntry entry;
+            const bool installed = !native::installedUpscalerPath(model).isEmpty();
+            entry.text = installed ? QObject::tr("%1  · installed").arg(model.displayName)
+                                   : QObject::tr("%1  · download…").arg(model.displayName);
+            entry.tooltip = installed
+                                ? QObject::tr("Stored under the app-owned model folder")
+                                : QObject::tr("Opens Settings › Upscalers to download it");
+            entry.payload = QStringLiteral("upscalersettings|") + model.fileName;
+            entries.append(entry);
+        }
+        return entries;
+    }
     if (levelId == QLatin1String(kAnimeJanaiRoot) ||
         levelId == QLatin1String(kAnimeJanaiSpatial) ||
         levelId == QLatin1String(kAnimeJanaiRife) ||
@@ -392,6 +412,12 @@ QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& cur
         aj.payload = QStringLiteral("level|") + QString::fromLatin1(kAnimeJanaiRoot);
         aj.submenu = true;
         entries.append(aj);
+        MenuEntry upscalers;
+        upscalers.text = QObject::tr("Upscalers  ›");
+        upscalers.tooltip = QObject::tr("Optional ONNX upscalers and their downloads");
+        upscalers.payload = QStringLiteral("level|") + QString::fromLatin1(kUpscalersRoot);
+        upscalers.submenu = true;
+        entries.append(upscalers);
         if (privateNativeRuntime) {
             for (const native::menu::Row& row : native::menu::rootRows(native)) {
                 MenuEntry entry;
@@ -2163,6 +2189,11 @@ void PlayerShell::onEnhancementRow(MenuPopup* panel, int spot, bool activated) {
     }
     if (payload.startsWith(QLatin1String("ajbackend|"))) {
         emit animeJanaiBackendRequested(payload.mid(10));
+        dismissOverlay();
+        return;
+    }
+    if (payload.startsWith(QLatin1String("upscalersettings|"))) {
+        emit upscalersRequested();
         dismissOverlay();
         return;
     }

@@ -15,6 +15,7 @@
 #include <native/components/NativeComponentProvisioning.hpp>
 #include <native/components/NativeGpuProbe.hpp>
 #include <native/models/NativeRife.hpp>
+#include <native/models/NativeUpscalers.hpp>
 #include <native/models/NativeSpatialAssets.hpp>
 
 #include <QtCore/QCoreApplication>
@@ -234,6 +235,7 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
     const Backend backend = selectedBackend();
     const GpuComputeCapability gpu = observeComputeCapability();
     const QSet<QString> selected = selectedPacks_;
+    pendingUpscalers_.clear();
     applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::Busy,
                                         .busy = StatusReason::Busy::Checking});
     updateControls();
@@ -252,6 +254,7 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
                 acquisitionSequenceActive_ = false;
                 acquisitionCheckCancelFlag_.reset();
                 pendingModels_.clear();
+                pendingUpscalers_.clear();
                 applyStatus(QStringLiteral("native.components.cancelled"), QString());
                 updateControls();
                 return;
@@ -260,10 +263,19 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
             const QVariantMap inventory = value.toMap();
             const QVector<SpatialAsset> catalog = spatialAssetCatalog();
             pendingModels_.clear();
+            pendingUpscalers_.clear();
             if (selected.contains(QStringLiteral("component:spatial"))) {
                 for (int index = 0; index < catalog.size(); ++index) {
                     const StoredSpatialAsset* row = spatialInventoryRow(storedSpatial_, catalog.at(index).id);
                     if (row == nullptr || !row->verified) pendingModels_.append(index);
+                }
+            }
+            const QVector<mplayer::native::UpscalerModel> upscalers =
+                mplayer::native::upscalerCatalog();
+            if (selected.contains(QStringLiteral("upscaler:all"))) {
+                for (const mplayer::native::UpscalerModel& model : upscalers) {
+                    if (mplayer::native::installedUpscalerPath(model).isEmpty())
+                        pendingUpscalers_.append(model);
                 }
             }
             const bool runtimeSelected = selected.contains(QStringLiteral("component:runtime"));
@@ -281,6 +293,8 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
                 review.append(tr("%1 backend closure").arg(backendProductName(backend)));
             }
             for (int index : pendingModels_) review.append(catalog.at(index).name);
+            for (const mplayer::native::UpscalerModel& model : pendingUpscalers_)
+                review.append(model.displayName);
             if (selectedRifeMissing)
                 review.append(tr("RIFE 3.7.0 archive pack (all 47 graphs)"));
             if (review.isEmpty()) {
@@ -293,6 +307,8 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
             }
             qint64 bytes = 0;
             for (int index : pendingModels_) bytes += catalog.at(index).bytes;
+            for (const mplayer::native::UpscalerModel& model : pendingUpscalers_)
+                bytes += model.bytes;
             if (selectedRifeMissing) bytes += rifeArchivePack().assetBytes;
             // The closure's own queue is reviewable too, so the prompt is not
             // hiding an unknown beside the model sizes.
@@ -308,6 +324,7 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
                                           QMessageBox::Yes | QMessageBox::Cancel,
                                           QMessageBox::Cancel) != QMessageBox::Yes) {
                     pendingModels_.clear();
+                pendingUpscalers_.clear();
                     acquisitionSequenceActive_ = false;
                     // The transient "Checking selected components..." label was
                     // set before the check ran; a cancelled review must clear it
@@ -339,6 +356,7 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
             acquisitionSequenceActive_ = false;
             acquisitionCheckCancelFlag_.reset();
             pendingModels_.clear();
+            pendingUpscalers_.clear();
             const QString cause = backend::failureLine(failure);
             applyStatus(QStringLiteral("native.components.fetch"),
                         StatusReason{.kind = StatusReason::Kind::CheckFailed, .detail = cause});
@@ -583,6 +601,14 @@ void ComponentStoreTab::downloadRemainingComponents() {
                             ComponentProvisionStage::Downloading, 0, asset.bytes, true);
         }
     }
+    if (!pendingUpscalers_.isEmpty()) {
+        clearProgressCard(QStringLiteral("upscalerModelsCard"));
+        for (const mplayer::native::UpscalerModel& model : pendingUpscalers_) {
+            setProgressItem(model.sha256, QStringLiteral("upscalerModelsCard"),
+                            model.displayName, ComponentProvisionStage::Downloading, 0,
+                            model.bytes, true);
+        }
+    }
     // The independent units run at the same time: the backend closure, the RIFE
     // archive and the spatial graphs share no scratch, no destination and no
     // record, so serialising them only made the whole acquisition as slow as the
@@ -600,6 +626,7 @@ void ComponentStoreTab::downloadRemainingComponents() {
     if (pendingBackendWork_) noteAcquisitionUnitStarted();
     if (pendingRifeArchive_) noteAcquisitionUnitStarted();
     if (!pendingModels_.isEmpty()) noteAcquisitionUnitStarted();
+    if (!pendingUpscalers_.isEmpty()) noteAcquisitionUnitStarted();
     if (pendingBackendWork_) {
         if (pendingRuntimeClosure_) {
             downloadAnimeJanaiRuntime();
@@ -621,6 +648,7 @@ void ComponentStoreTab::downloadRemainingComponents() {
     }
     if (pendingRifeArchive_) downloadRifeArchive();
     if (!pendingModels_.isEmpty()) downloadNextModel();
+    if (!pendingUpscalers_.isEmpty()) downloadNextUpscaler();
     // A unit that refused synchronously already settled itself (and finalized
     // when it brought the count to zero), so only an empty count that no
     // callback consumed can start the cycle here.
@@ -1154,6 +1182,79 @@ void ComponentStoreTab::publishAcquisition() {
         total > 0 ? static_cast<int>(qBound<qint64>(qint64(0), received * 100 / total, qint64(100)))
                   : -1;
     emit acquisitionProgress(status, started, percent);
+}
+
+void ComponentStoreTab::downloadNextUpscaler() {
+    if (pendingUpscalers_.isEmpty()) {
+        upscalersDownloading_ = false;
+        finishAcquisitionUnit(tr("Upscale models installed."), true);
+        return;
+    }
+    if (runner_ == nullptr || client_ == nullptr) {
+        upscalersDownloading_ = false;
+        pendingUpscalers_.clear();
+        finishAcquisitionUnit(tr("An upscaler download needs the backend client and a runner."),
+                              false, QStringLiteral("native.components.noClient"));
+        return;
+    }
+    upscalersDownloading_ = true;
+    backend::MikaiClient* client = client_;
+    const mplayer::native::UpscalerModel model = pendingUpscalers_.takeFirst();
+    const quint64 generation = acquisitionGeneration_ == 0 ? runGeneration_
+                                                           : acquisitionGeneration_;
+    const auto cancelFlag = modelCancelFlag_;
+    applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::Busy,
+                                        .count = 1,
+                                        .busy = StatusReason::Busy::Models});
+    updateControls();
+    const ProgressPublisher publish{runner_->post(), this, alive_, generation};
+    runner_->runTransfer(
+        [client, model, cancelFlag, publish]() -> QVariant {
+            if (cancelFlag != nullptr && cancelFlag->load()) return QVariant{};
+            const backend::WorkCancellationScope scope(cancelFlag.get());
+            const QByteArray bytes = client->fetchBytes(
+                model.url, kModelDownloadTimeoutMs,
+                [publish, model](qint64 received, qint64 total) {
+                    const ComponentProvisionProgress progress{
+                        model.sha256, received, total, ComponentProvisionStage::Downloading};
+                    publish([progress](ComponentStoreTab& tab) {
+                        tab.applyDownloadProgress(progress);
+                    });
+                });
+            if (cancelFlag != nullptr && cancelFlag->load()) return QVariant{};
+            const ComponentProvisionProgress installing{
+                model.sha256, static_cast<qint64>(bytes.size()), model.bytes,
+                ComponentProvisionStage::Installing};
+            publish([installing](ComponentStoreTab& tab) {
+                tab.applyDownloadProgress(installing);
+            });
+            QString reason;
+            const QString registered = mplayer::native::installUpscalerBytes(model, bytes, &reason);
+            if (registered.isEmpty()) {
+                throw std::runtime_error(reason.isEmpty() ? "not installed" : reason.toStdString());
+            }
+            return QVariant(registered);
+        },
+        [this, model, generation, cancelFlag](const QVariant&) {
+            if (runGeneration_ != generation) return;
+            if (cancelFlag != nullptr && cancelFlag->load()) {
+                settleProgressItem(model.sha256, false, true);
+                pendingUpscalers_.clear();
+                upscalersDownloading_ = false;
+                finishAcquisitionUnit(tr("Upscale model download cancelled."), false);
+                return;
+            }
+            settleProgressItem(model.sha256, true, false);
+            updateCardStates();
+            downloadNextUpscaler();
+        },
+        [this, model, generation](const backend::Failure& failure) {
+            if (runGeneration_ != generation) return;
+            settleProgressItem(model.sha256, false, false);
+            pendingUpscalers_.clear();
+            upscalersDownloading_ = false;
+            finishAcquisitionUnit(backend::failureLine(failure), false);
+        });
 }
 
 QString ComponentStoreTab::renderStatusReason() const {
