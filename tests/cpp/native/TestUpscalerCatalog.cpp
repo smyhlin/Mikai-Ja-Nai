@@ -1,6 +1,7 @@
 #include "TestUpscalerCatalog.hpp"
 
 #include "native/models/NativeUpscalers.hpp"
+#include "native/components/AnimeJanaiRuntime.hpp"
 
 #include <QtCore/QByteArray>
 #include <QtCore/QCryptographicHash>
@@ -141,4 +142,41 @@ void TestUpscalerCatalog::aTruncatedOrForeignDownloadIsRefusedByName() {
     foreign[0] = 'S';
     QVERIFY(!verifyUpscalerBytes(model, foreign, &reason));
     QVERIFY2(reason.contains(QStringLiteral("digest")), qPrintable(reason));
+}
+
+void TestUpscalerCatalog::anUpscalerSelectionIsNotTreatedAsAPreset() {
+    // The failure this guards: the preset lookup ran first, so selecting an
+    // upscaler answered "The selected AnimeJaNai preset is not recognised."
+    // Needs a real AnimeJaNai installation to get past its own checks, so it is
+    // opt-in: point MIKAI_NATIVE_ROOT at a store that has one.
+    if (qEnvironmentVariableIsEmpty("MIKAI_NATIVE_ROOT"))
+        QSKIP("set MIKAI_NATIVE_ROOT to a store with an installed AnimeJaNai runtime");
+    const mplayer::native::AnimeJanaiPlan plan = mplayer::native::prepareAnimeJanaiPlan(
+        QStringLiteral("upscaler:2xHFA2kCompact-fp32-opset17.onnx"),
+        mplayer::native::Backend::TensorRT, {}, {}, {});
+    // Either the graph is in the store and the plan is ready, or it is absent
+    // and the plan refuses by naming the upscaler. What must never happen is the
+    // preset catalogue answering for it.
+    QVERIFY2(plan.reasonKey != QStringLiteral("animejanai.preset.invalid"), qPrintable(plan.reason));
+    if (plan.reasonKey.startsWith(QStringLiteral("animejanai.installation.")) ||
+        plan.reasonKey.startsWith(QStringLiteral("animejanai.runtime.")) ||
+        plan.reasonKey == QStringLiteral("animejanai.config.invalid")) {
+        QSKIP(qPrintable(QStringLiteral("the store cannot reach the model check: %1")
+                             .arg(plan.reasonKey)));
+    }
+    if (!plan.available) {
+        // The plan's own upscaler refusal proves the selection is routed before
+        // the preset catalogue is consulted.
+        QCOMPARE(plan.reasonKey, QStringLiteral("animejanai.model.missing"));
+        QVERIFY2(plan.reason.contains(QStringLiteral("Upscalers"), Qt::CaseInsensitive),
+                 qPrintable(plan.reason));
+    } else {
+        QCOMPARE(plan.presetId, QStringLiteral("upscaler:2xHFA2kCompact-fp32-opset17.onnx"));
+    }
+
+    const mplayer::native::AnimeJanaiPlan unknown = mplayer::native::prepareAnimeJanaiPlan(
+        QStringLiteral("upscaler:not-a-model"), mplayer::native::Backend::TensorRT, {}, {}, {});
+    QVERIFY(!unknown.available);
+    QVERIFY2(!unknown.reason.contains(QStringLiteral("preset is not recognised")),
+             qPrintable(unknown.reason));
 }

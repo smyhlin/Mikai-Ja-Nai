@@ -1327,7 +1327,10 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
         }
         appendPlanNote(plan, iniSettings.note);
     }
-    if (presetId.startsWith(QStringLiteral("builtin_slot:"))) {
+    // A downloaded upscaler is selected by its own id and carries none of the
+    // preset catalogue's fields, so the preset lookup below must not run for it.
+    const bool isUpscaler = presetId.startsWith(QStringLiteral("upscaler:"));
+    if (!isUpscaler && presetId.startsWith(QStringLiteral("builtin_slot:"))) {
         bool slotOk = false;
         const int slotNumber = presetId.mid(QStringLiteral("builtin_slot:").size()).toInt(&slotOk);
         const auto slot = std::find_if(managerConf.customSlots.cbegin(), managerConf.customSlots.cend(),
@@ -1347,21 +1350,24 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
                                            shaderResolver, managerConf, *slot);
         }
     }
-    const QVector<AnimeJanaiPreset> presets = animeJanaiPresets();
-    const AnimeJanaiPreset* preset = findPreset(presetId, presets);
-    if (!preset) { fail(plan, QStringLiteral("animejanai.preset.invalid"), RuntimeText::tr("The selected AnimeJaNai preset is not recognised.")); return plan; }
-
     const AnimeJanaiInstallation installation = describeAnimeJanaiInstallation(backend, true);
     if (!installation.installed) { fail(plan, installation.reasonKey, installation.reason); return plan; }
-    const RifeModelPin* selectedRife = preset->rife ? rifeModelPinForFileName(preset->modelFile) : nullptr;
-    if (preset->rife && !selectedRife) {
-        fail(plan, QStringLiteral("animejanai.model.pinMissing"), RuntimeText::tr("The selected RIFE graph has no compiled content pin."));
-        return plan;
-    }
-    if (selectedRife && selectedRife->variant == RifeVariant::Heavy && !installation.heavyRifeSupported) {
-        fail(plan, QStringLiteral("animejanai.preset.rifeHeavyUnsupported"),
-             RuntimeText::tr("This installed AnimeJaNai runtime does not report support for the selected heavy RIFE model."));
-        return plan;
+    const AnimeJanaiPreset* preset = nullptr;
+    const RifeModelPin* selectedRife = nullptr;
+    if (!isUpscaler) {
+        const QVector<AnimeJanaiPreset> presets = animeJanaiPresets();
+        preset = findPreset(presetId, presets);
+        if (!preset) { fail(plan, QStringLiteral("animejanai.preset.invalid"), RuntimeText::tr("The selected AnimeJaNai preset is not recognised.")); return plan; }
+        selectedRife = preset->rife ? rifeModelPinForFileName(preset->modelFile) : nullptr;
+        if (preset->rife && !selectedRife) {
+            fail(plan, QStringLiteral("animejanai.model.pinMissing"), RuntimeText::tr("The selected RIFE graph has no compiled content pin."));
+            return plan;
+        }
+        if (selectedRife && selectedRife->variant == RifeVariant::Heavy && !installation.heavyRifeSupported) {
+            fail(plan, QStringLiteral("animejanai.preset.rifeHeavyUnsupported"),
+                 RuntimeText::tr("This installed AnimeJaNai runtime does not report support for the selected heavy RIFE model."));
+            return plan;
+        }
     }
 
     const QString ownedRoot = configRoot();
@@ -1374,7 +1380,7 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
     plan.modelDir = QDir(ownedRoot).filePath(QStringLiteral("models/spatial"));
     plan.rifeModelDir = QDir(ownedRoot).filePath(QStringLiteral("models/rife"));
     plan.statsPath = QDir(ownedRoot).filePath(QStringLiteral("stats/") + safeConfigName(presetId) + QStringLiteral(".txt"));
-    plan.slot = preset->slot;
+    plan.slot = preset != nullptr ? preset->slot : 0;
     if (backend != Backend::TensorRTRTX)
         plan.trtexecLibDir = detail::shellSafeLibDir(installation.root);
 #ifndef Q_OS_WIN
@@ -1386,8 +1392,15 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
         QDir::cleanPath(QFileInfo(plan.rifeModelDir).absoluteFilePath())};
     QString busyKey;
     QString busyOwner;
+    QString jobLabel = preset != nullptr ? preset->label : QString();
+    if (isUpscaler) {
+        if (const std::optional<UpscalerModel> selected = upscalerForId(presetId.mid(9));
+            selected.has_value()) {
+            jobLabel = selected->displayName;
+        }
+    }
     plan.cacheLease = AnimeJanaiStageBuildLease::tryAcquire(
-        plan.cacheKeys, QStringLiteral("AnimeJaNai %1").arg(preset->label),
+        plan.cacheKeys, QStringLiteral("AnimeJaNai %1").arg(jobLabel),
         &busyKey, &busyOwner);
     if (!plan.cacheLease) {
         fail(plan, QStringLiteral("animejanai.cache.busy"),
@@ -1409,7 +1422,6 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
     }
 
     QString ini;
-    const bool isUpscaler = presetId.startsWith(QStringLiteral("upscaler:"));
     if (isUpscaler || presetId.startsWith(QStringLiteral("builtin_slot:"))) {
         AnimeJanaiSlot stagedSlot;
         if (isUpscaler) {

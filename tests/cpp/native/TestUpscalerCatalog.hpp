@@ -14,4 +14,5 @@ private slots:
     void anUnknownIdentifierResolvesNothing();
     void onlyThePinnedBytesVerify();
     void aTruncatedOrForeignDownloadIsRefusedByName();
+    void anUpscalerSelectionIsNotTreatedAsAPreset();
 };
