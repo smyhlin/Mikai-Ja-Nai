@@ -126,6 +126,16 @@ QVector<ModeInfo> catalogue() {
           QStringLiteral("Anime4K_AutoDownscalePre_x4.glsl"),
           QStringLiteral("Anime4K_Restore_CNN_M.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_M.glsl")}},
+        // Upstream v4.1 documents a GAN stage in the mode list; this is its
+        // chain in its own order, with no Clamp or downscale stage.
+        {Mode::HqGan, QStringLiteral("hq_gan"),
+         QCoreApplication::translate("Anime4K", "GAN (v4.1)"),
+         QCoreApplication::translate("Anime4K", "Generative x4 upscale - heaviest GPU cost"),
+         QStringLiteral("anime4k/maximum"),
+         {QStringLiteral("Anime4K_Restore_GAN_UUL.glsl"),
+          QStringLiteral("Anime4K_Upscale_GAN_x4_UUL.glsl"),
+          QStringLiteral("Anime4K_Restore_CNN_Soft_M.glsl"),
+          QStringLiteral("Anime4K_Upscale_CNN_x2_M.glsl")}},
         // ── experiments ────────────────────────────────────────────────
         // Fixed chains. The single-file entries are complete presets on their
         // own, not toggleable effects: composing them is what the viewer would

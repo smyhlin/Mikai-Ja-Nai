@@ -8,7 +8,7 @@
 namespace mplayer {
 namespace anime4k {
 
-/// Every selectable preset: the ten built-ins, then the experiments as
+/// Every selectable preset: the eleven built-ins, then the experiments as
 /// single-purpose chains of their own.
 ///
 /// The enum is a menu shorthand, never the persisted value: the id in
@@ -24,6 +24,7 @@ enum class Mode {
     HqAA,        // Mode A+A (HQ) - Perceptual quality restoration
     HqBB,        // Mode B+B (HQ) - Denoise + Deblur
     HqCA,        // Mode C+A (HQ) - Highest fidelity
+    HqGan,       // v4.1 GAN - Upscale_GAN_x4 + CNN Soft M
     // Experiments: one fixed chain each, offered under Experimental.
     Exp3dGraphics,
     ExpOldFilm,

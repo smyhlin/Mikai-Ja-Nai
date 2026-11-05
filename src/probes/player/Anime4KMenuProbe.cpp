@@ -450,6 +450,7 @@ const LeafCheck kLeaves[] = {
     {"hq_aa", "anime4k/maximum", ""},
     {"hq_bb", "anime4k/maximum", ""},
     {"hq_ca", "anime4k/maximum", ""},
+    {"hq_gan", "anime4k/maximum", ""},
     {"exp_3d_graphics", "anime4k/experimental", ""},
     {"exp_old_film", "anime4k/experimental", ""},
     {"exp_deblur_strong", "anime4k/experimental", ""},

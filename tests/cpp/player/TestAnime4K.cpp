@@ -71,6 +71,8 @@ QVector<std::pair<QString, QStringList>> originalChains() {
       {QStringLiteral("hq_ca"), shaderFiles({"Clamp_Highlights", "Upscale_Denoise_CNN_x2_VL",
                                               "AutoDownscalePre_x2", "AutoDownscalePre_x4",
                                               "Restore_CNN_M", "Upscale_CNN_x2_M"})},
+      {QStringLiteral("hq_gan"), shaderFiles({"Restore_GAN_UUL", "Upscale_GAN_x4_UUL",
+                                              "Restore_CNN_Soft_M", "Upscale_CNN_x2_M"})},
   };
 }
 
@@ -135,6 +137,7 @@ void TestAnime4K::originalPresetChainsPreserveHistoricalOrder() {
       {Mode::HqAA, QStringLiteral("hq_aa")},
       {Mode::HqBB, QStringLiteral("hq_bb")},
       {Mode::HqCA, QStringLiteral("hq_ca")},
+      {Mode::HqGan, QStringLiteral("hq_gan")},
   };
   for (const auto& [mode, id] : enumIds) QCOMPARE(modeId(mode), id);
 
@@ -227,7 +230,7 @@ void TestAnime4K::menuCategoriesExposeTheirPresetMembership() {
       {QStringLiteral("anime4k/quality"), {QStringLiteral("hq_a"), QStringLiteral("hq_b"),
                                            QStringLiteral("hq_c")}},
       {QStringLiteral("anime4k/maximum"), {QStringLiteral("hq_aa"), QStringLiteral("hq_bb"),
-                                           QStringLiteral("hq_ca")}},
+                                           QStringLiteral("hq_ca"), QStringLiteral("hq_gan")}},
       {QStringLiteral("anime4k/experimental"), {QStringLiteral("exp_3d_graphics"),
                                                 QStringLiteral("exp_old_film"),
                                                 QStringLiteral("exp_deblur_strong")}},
@@ -292,7 +295,7 @@ void TestAnime4K::rifeLevelLivesInNativeMenuNotCatalogue() {
   QVERIFY(mplayer::native::menu::ownsLevel(QStringLiteral("rife")));
   QVERIFY(menuRows(QStringLiteral("rife")).isEmpty());
   QVERIFY(categoryLabel(QStringLiteral("rife")).isEmpty());
-  QCOMPARE(availableModes().size(), 24);
+  QCOMPARE(availableModes().size(), 25);
 }
 
 void TestAnime4K::offAndUnknownIdsResolveNothing() {

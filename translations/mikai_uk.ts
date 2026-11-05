@@ -4,27 +4,27 @@
 <context>
     <name>Anime4K</name>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="372"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="382"/>
         <source>%1 · size %2</source>
         <translation>%1 · розмір %2</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="369"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="379"/>
         <source>%1 ×%2</source>
         <translation>%1 ×%2</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="365"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="375"/>
         <source>%1 ×%2 · size %3</source>
         <translation>%1 ×%2 · розмір %3</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="135"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="145"/>
         <source>3D Graphics</source>
         <translation>3D-графіка</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="392"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="402"/>
         <source>3D graphics</source>
         <translation>3D-графіка</translation>
     </message>
@@ -47,12 +47,12 @@
         <translation>A+A (Максимум)</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="224"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="234"/>
         <source>Anime4K presets: upscaling and image restoration</source>
         <translation>Пресети Anime4K: масштабування та відновлення зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="136"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="146"/>
         <source>Anti-aliasing for 3D graphics - experimental</source>
         <translation>Згладжування для 3D-графіки — експериментально</translation>
     </message>
@@ -80,27 +80,27 @@
         <translation>B+B (Максимум)</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="230"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="240"/>
         <source>Balanced high quality</source>
         <translation>Збалансована висока якість</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="157"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="167"/>
         <source>Bilateral Mean</source>
         <translation>Білатеральне середнє</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="162"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="172"/>
         <source>Bilateral Median</source>
         <translation>Білатеральна медіана</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="167"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="177"/>
         <source>Bilateral Mode</source>
         <translation>Білатеральна мода</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="386"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="396"/>
         <source>Blur</source>
         <translation>Розмиття</translation>
     </message>
@@ -123,54 +123,54 @@
         <translation>C+A (Максимум)</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="391"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="401"/>
         <source>Clamping</source>
         <translation>Обмеження (Clamping)</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="158"/>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="163"/>
         <location filename="../src/player/shaders/Anime4K.cpp" line="168"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="173"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="178"/>
         <source>Complete denoising preset - experimental</source>
         <translation>Повний пресет шумозаглушення — експериментально</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="198"/>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="204"/>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="210"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="208"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="214"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="220"/>
         <source>Complete preset for line darkening - experimental</source>
         <translation>Повний пресет затемнення ліній — експериментально</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="188"/>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="193"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="198"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="203"/>
         <source>Complete preset for texture - experimental</source>
         <translation>Повний пресет текстур — експериментально</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="173"/>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="178"/>
         <location filename="../src/player/shaders/Anime4K.cpp" line="183"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="188"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="193"/>
         <source>Complete preset for thin lines - experimental</source>
         <translation>Повний пресет тонких ліній — експериментально</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="187"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="197"/>
         <source>DTD x2</source>
         <translation>DTD x2</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="252"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="262"/>
         <source>Darken</source>
         <translation>Затемнення</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="388"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="398"/>
         <source>Darkening</source>
         <translation>Затемнення ліній</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="149"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="159"/>
         <source>Deblur</source>
         <translation>Усунення розмиття</translation>
     </message>
@@ -195,7 +195,7 @@
         <translation>Вимкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="192"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="202"/>
         <source>DoG x2</source>
         <translation>DoG x2</translation>
     </message>
@@ -210,24 +210,24 @@
         <translation>Подвійне м’яке відновлення</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="390"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="400"/>
         <source>Downscaling</source>
         <translation>Зменшення масштабу</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="235"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="245"/>
         <source>Experimental</source>
         <translation>Експериментальні</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="177"/>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="203"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="187"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="213"/>
         <source>Fast</source>
         <translation>Швидкий</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="182"/>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="209"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="192"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="219"/>
         <source>HQ</source>
         <translation>Висока якість</translation>
     </message>
@@ -237,7 +237,7 @@
         <translation>Високий PSNR + очищення шуму</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="253"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="263"/>
         <source>Line darkening: one shader - a complete preset. Experimental, not a typical setting</source>
         <translation>Затемнення ліній: один шейдер — повний пресет. Експериментально, не для типового перегляду</translation>
     </message>
@@ -247,42 +247,52 @@
         <translation>Відновлення ліній + масштабування (1080p/SD)</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="227"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="132"/>
+        <source>GAN (v4.1)</source>
+        <translation>GAN (v4.1)</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="133"/>
+        <source>Generative x4 upscale - heaviest GPU cost</source>
+        <translation>Генеративне збільшення x4 — найвища ціна GPU</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="237"/>
         <source>Low GPU load, real time</source>
         <translation>Низьке навантаження на GPU, у реальному часі</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="232"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="242"/>
         <source>Maximum</source>
         <translation>Максимум</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="233"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="243"/>
         <source>Multi-stage enhancement, higher GPU cost</source>
         <translation>Багатоетапне покращення, вище навантаження на GPU</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="239"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="249"/>
         <source>Noise Reduction</source>
         <translation>Шумозаглушення</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="385"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="395"/>
         <source>Noise reduction</source>
         <translation>Шумозаглушення</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="240"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="250"/>
         <source>Noise reduction: one shader - a complete preset. Experimental, not a typical setting</source>
         <translation>Шумозаглушення: один шейдер — повний пресет. Експериментально, не для типового перегляду</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="141"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="151"/>
         <source>Old Film Restore</source>
         <translation>Відновлення старої плівки</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="142"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="152"/>
         <source>Old film restoration - experimental</source>
         <translation>Відновлення старої плівки — експериментально</translation>
     </message>
@@ -292,17 +302,17 @@
         <translation>Оригінальне зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="383"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="393"/>
         <source>Presets</source>
         <translation>Пресети</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="229"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="239"/>
         <source>Quality</source>
         <translation>Якість</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="384"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="394"/>
         <source>Restoration</source>
         <translation>Відновлення</translation>
     </message>
@@ -312,53 +322,53 @@
         <translation>М’яке відновлення та згладжування</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="236"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="246"/>
         <source>Special cases, not typical settings</source>
         <translation>Спеціальні випадки, не для типових налаштувань</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="226"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="236"/>
         <source>Speed</source>
         <translation>Швидкість</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="150"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="160"/>
         <source>Strong deblurring (Strong Deblur) - experimental</source>
         <translation>Сильне усунення розмиття (Strong Deblur) — експериментально</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="248"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="258"/>
         <source>Texture Enhancement</source>
         <translation>Покращення текстур</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="249"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="259"/>
         <source>Textures: one shader - a complete preset. Experimental, not a typical setting</source>
         <translation>Текстури: один шейдер — повний пресет. Експериментально, не для типового перегляду</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="244"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="254"/>
         <source>Thin Lines</source>
         <translation>Тонкі лінії</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="387"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="397"/>
         <source>Thin lines</source>
         <translation>Тонкі лінії</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="245"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="255"/>
         <source>Thin lines: one shader - a complete preset. Experimental, not a typical setting</source>
         <translation>Тонкі лінії: один шейдер — повний пресет. Експериментально, не для типового перегляду</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="389"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="399"/>
         <source>Upscaling</source>
         <translation>Масштабування</translation>
     </message>
     <message>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="172"/>
-        <location filename="../src/player/shaders/Anime4K.cpp" line="197"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="182"/>
+        <location filename="../src/player/shaders/Anime4K.cpp" line="207"/>
         <source>VeryFast</source>
         <translation>Дуже швидкий</translation>
     </message>
@@ -1641,7 +1651,7 @@
     </message>
     <message>
         <location filename="../src/app/support/Labels.cpp" line="404"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2185"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2213"/>
         <source>Autumn</source>
         <translation>Осінь</translation>
     </message>
@@ -1758,7 +1768,7 @@
     </message>
     <message>
         <location filename="../src/app/support/Labels.cpp" line="400"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2183"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2211"/>
         <source>Spring</source>
         <translation>Весна</translation>
     </message>
@@ -1775,7 +1785,7 @@
     </message>
     <message>
         <location filename="../src/app/support/Labels.cpp" line="402"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2184"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2212"/>
         <source>Summer</source>
         <translation>Літо</translation>
     </message>
@@ -1806,7 +1816,7 @@
     </message>
     <message>
         <location filename="../src/app/support/Labels.cpp" line="398"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2182"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2210"/>
         <source>Winter</source>
         <translation>Зима</translation>
     </message>
@@ -2767,7 +2777,7 @@
         <translation>Чіткий (V3.1Sharp1)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2515"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2543"/>
         <source>%1 teams · page %2 of %3</source>
         <translation>Команд: %1 · сторінка %2 з %3</translation>
     </message>
@@ -5779,12 +5789,12 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
 <context>
     <name>mikai::app::SearchPage</name>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2014"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2042"/>
         <source>Untitled</source>
         <translation>Без назви</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/app/pages/SearchPage.cpp" line="1070"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1098"/>
         <source>%n episode(s)</source>
         <translation>
             <numerusform>%n серія</numerusform>
@@ -5793,7 +5803,7 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/app/pages/SearchPage.cpp" line="639"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="667"/>
         <source>%n recent update(s)</source>
         <translation>
             <numerusform>%n нове оновлення</numerusform>
@@ -5802,7 +5812,7 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/app/pages/SearchPage.cpp" line="941"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="969"/>
         <source>%n title(s)</source>
         <translation>
             <numerusform>%n тайтл</numerusform>
@@ -5811,7 +5821,7 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/app/pages/SearchPage.cpp" line="640"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="668"/>
         <source>%n upcoming airing(s)</source>
         <translation>
             <numerusform>%n запланований реліз</numerusform>
@@ -5820,633 +5830,633 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
         </translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="415"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="416"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="851"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="852"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="443"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="444"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="879"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="880"/>
         <source>API token settings</source>
         <translation>Налаштування токена API</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2337"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2365"/>
         <source>Sort by</source>
         <translation>Сортувати за</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2881"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2909"/>
         <source>All (%1)</source>
         <translation>Усі (%1)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="980"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1008"/>
         <source>Click a card to open a title · search by title is available above</source>
         <translation>Натисніть на картку, щоб відкрити тайтл · пошук за назвою доступний вище</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="932"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1127"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="960"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1155"/>
         <source>Collection not loaded yet</source>
         <translation>Колекцію ще не завантажено</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="3078"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="3096"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="3106"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="3124"/>
         <source>Copy ID</source>
         <translation>Копіювати ID</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="3073"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="3091"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="3101"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="3119"/>
         <source>Copy link</source>
         <translation>Копіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="3074"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="3092"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="3102"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="3120"/>
         <source>Copy the page address on mikai.me</source>
         <translation>Копіювати адресу сторінки на mikai.me</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="3079"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="3097"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="3107"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="3125"/>
         <source>Copy the title identifier</source>
         <translation>Копіювати ідентифікатор тайтлу</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="622"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="650"/>
         <source>Currently airing</source>
         <translation>Зараз виходять</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="501"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="529"/>
         <source>Currently airing · sorted by newest episode</source>
         <translation>Зараз виходять · за найновішими серіями</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1028"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1056"/>
         <source>Episode %1</source>
         <translation>Серія %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1013"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1041"/>
         <source>Failed to copy ID</source>
         <translation>Не вдалося скопіювати ID</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1011"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1039"/>
         <source>Failed to copy link</source>
         <translation>Не вдалося скопіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="646"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="674"/>
         <source>Failed to load</source>
         <translation>Не вдалося завантажити</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="645"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="673"/>
         <source>Failed to load schedule</source>
         <translation>Не вдалося завантажити розклад</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="644"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="672"/>
         <source>Failed to load updates</source>
         <translation>Не вдалося завантажити оновлення</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1015"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1043"/>
         <source>Failed to open in browser</source>
         <translation>Не вдалося відкрити у браузері</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="990"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1018"/>
         <source>Found: %1</source>
         <translation>Знайдено: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="654"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="682"/>
         <source>Fri</source>
         <translation>Пт</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="396"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="847"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="424"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="875"/>
         <source>Keyboard shortcuts</source>
         <translation>Гарячі клавіші</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="395"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="846"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="423"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="874"/>
         <source>Keyboard shortcuts (?)</source>
         <translation>Гарячі клавіші (?)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="320"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="321"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="322"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="858"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="859"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="348"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="349"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="350"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="886"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="887"/>
         <source>Filters</source>
         <translation>Фільтри</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="332"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="333"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="334"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="862"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="863"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="864"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="360"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="361"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="362"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="890"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="891"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="892"/>
         <source>Teams…</source>
         <translation>Команди…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="456"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="825"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="484"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="853"/>
         <source>Enter</source>
         <translation>Enter</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="628"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="656"/>
         <source>Latest updates</source>
         <translation>Останні оновлення</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="870"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2590"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="898"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2618"/>
         <source>Anime from %1</source>
         <translation>Аніме від %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="873"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2593"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2628"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="901"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2621"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2656"/>
         <source>All catalogue</source>
         <translation>Увесь каталог</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="935"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="983"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="963"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1011"/>
         <source>Loading collection…</source>
         <translation>Завантаження колекції…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="953"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="981"/>
         <source>Loading new episodes…</source>
         <translation>Завантаження нових серій…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="952"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="980"/>
         <source>Loading schedule…</source>
         <translation>Завантаження розкладу…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1405"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2488"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1433"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2516"/>
         <source>Loading…</source>
         <translation>Завантаження…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="650"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="678"/>
         <source>Mon</source>
         <translation>Пн</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1027"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1055"/>
         <source>New episode</source>
         <translation>Нова серія</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="899"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1156"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="927"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1184"/>
         <source>Next page (or Alt + mouse wheel)</source>
         <translation>Наступна сторінка (або Alt + колесо миші)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="635"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="663"/>
         <source>No airings in the schedule yet.</source>
         <translation>У розкладі ще немає запланованих релізів.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="938"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="966"/>
         <source>No titles in this collection yet.</source>
         <translation>У цій колекції ще немає тайтлів.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="634"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="662"/>
         <source>No updates yet.</source>
         <translation>Оновлень ще немає.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="281"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="828"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="309"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="856"/>
         <source>Mikai Ja Nai</source>
         <translation>Mikai Ja Nai</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="302"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="303"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="304"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="833"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="834"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="835"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="330"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="331"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="332"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="861"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="862"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="863"/>
         <source>Home</source>
         <translation>На головну</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="394"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="845"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="422"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="873"/>
         <source>Shortcuts</source>
         <translation>Гарячі клавіші</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="414"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="850"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="442"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="878"/>
         <source>Settings</source>
         <translation>Налаштування</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="450"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="822"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="478"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="850"/>
         <source>Search by title…</source>
         <translation>Пошук за назвою…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="457"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="826"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="485"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="854"/>
         <source>Press Enter to search</source>
         <translation>Натисніть Enter для пошуку</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="989"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1017"/>
         <source>Nothing found</source>
         <translation>Нічого не знайдено</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2065"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2093"/>
         <source>Catalogue dictionaries loaded</source>
         <translation>Словники каталогу завантажено</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2082"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2110"/>
         <source>Catalogue filters</source>
         <translation>Фільтри каталогу</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2092"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2120"/>
         <source>Catalogue dictionaries failed: %1</source>
         <translation>Не вдалося завантажити словники каталогу: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2095"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2123"/>
         <source>Retry dictionaries</source>
         <translation>Повторити завантаження словників</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2173"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2201"/>
         <source>Match all</source>
         <translation>Усі вибрані</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2174"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2202"/>
         <source>Match any</source>
         <translation>Будь-який із вибраних</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2175"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2203"/>
         <source>Name</source>
         <translation>Назва</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2176"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2204"/>
         <source>Year</source>
         <translation>Рік</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2177"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2205"/>
         <source>Recently updated</source>
         <translation>Нещодавно оновлені</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2178"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2206"/>
         <source>Views</source>
         <translation>Перегляди</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2179"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2207"/>
         <source>MAL rating</source>
         <translation>Оцінка MAL</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2180"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2208"/>
         <source>Ascending</source>
         <translation>За зростанням</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2181"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2209"/>
         <source>Descending</source>
         <translation>За спаданням</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2250"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2278"/>
         <source>Genres</source>
         <translation>Жанри</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2251"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2279"/>
         <source>Search genres</source>
         <translation>Пошук жанрів</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2253"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2281"/>
         <source>Genres include</source>
         <translation>Жанри — включити</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2254"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2282"/>
         <source>Genres exclude</source>
         <translation>Жанри — виключити</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2255"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2283"/>
         <source>Genre matching</source>
         <translation>Збіг жанрів</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2256"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2284"/>
         <source>Tags</source>
         <translation>Теги</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2257"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2285"/>
         <source>Search tags</source>
         <translation>Пошук тегів</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2259"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2287"/>
         <source>Tags include</source>
         <translation>Теги — включити</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2260"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2288"/>
         <source>Tags exclude</source>
         <translation>Теги — виключити</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2261"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2289"/>
         <source>Tag matching</source>
         <translation>Збіг тегів</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2266"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2271"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2294"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2299"/>
         <source>Any</source>
         <translation>Будь-який</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2279"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2307"/>
         <source>Release</source>
         <translation>Випуск</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2294"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2322"/>
         <source>Year from</source>
         <translation>Рік від</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2295"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2323"/>
         <source>Year to</source>
         <translation>Рік до</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2298"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2326"/>
         <source>Years (comma separated)</source>
         <translation>Роки (через кому)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2317"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2345"/>
         <source>Formats</source>
         <translation>Формати</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2318"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2346"/>
         <source>Statuses</source>
         <translation>Стани</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2319"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2347"/>
         <source>Seasons</source>
         <translation>Сезони</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2320"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2348"/>
         <source>Studios</source>
         <translation>Студії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2324"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2352"/>
         <source>Search release options</source>
         <translation>Пошук параметрів випуску</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2336"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2364"/>
         <source>Sorting</source>
         <translation>Сортування</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2338"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2366"/>
         <source>Order</source>
         <translation>Порядок</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2339"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2367"/>
         <source>Text search uses relevance ranking; sort selection is retained but may be overridden.</source>
         <translation>Текстовий пошук використовує ранжування за релевантністю; вибране сортування зберігається, але може бути проігнороване.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2432"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2460"/>
         <source>Select a team</source>
         <translation>Вибір команди</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2442"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2470"/>
         <source>Search teams</source>
         <translation>Пошук команд</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2447"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2475"/>
         <source>Load more</source>
         <translation>Завантажити ще</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2449"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2477"/>
         <source>Browse anime</source>
         <translation>Переглянути аніме</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2452"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2480"/>
         <source>Filter catalogue</source>
         <translation>Фільтрувати каталог</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2634"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2662"/>
         <source>Loading team…</source>
         <translation>Завантаження команди…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2661"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2689"/>
         <source>Birthday: %1</source>
         <translation>День народження: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2662"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2690"/>
         <source>%1 anime · %2 total views · %3 views this month</source>
         <translation>%1 аніме · усього переглядів: %2 · переглядів цього місяця: %3</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2665"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2693"/>
         <source>Voice</source>
         <translation>Озвучення</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2666"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2694"/>
         <source>Subtitles</source>
         <translation>Субтитри</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2676"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2704"/>
         <source>Website</source>
         <translation>Вебсайт</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2678"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2706"/>
         <source>Donate</source>
         <translation>Підтримати</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="3070"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="3088"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="3098"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="3116"/>
         <source>Open</source>
         <translation>Відкрити</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="3101"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="3129"/>
         <source>Open in browser</source>
         <translation>Відкрити у браузері</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="3102"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="3130"/>
         <source>Open the page on mikai.me</source>
         <translation>Відкрити сторінку на mikai.me</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="3071"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="3089"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="3099"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="3117"/>
         <source>Open the title page</source>
         <translation>Відкрити сторінку тайтлу</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="370"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="371"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="372"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="838"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="839"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="840"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="398"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="399"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="400"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="866"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="867"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="868"/>
         <source>Open video</source>
         <translation>Відкрити відео</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="623"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="651"/>
         <source>Popular on Mikai</source>
         <translation>Популярне на Mikai</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="898"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1155"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="926"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1183"/>
         <source>Previous page (or Alt + mouse wheel)</source>
         <translation>Попередня сторінка (або Alt + колесо миші)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="621"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="649"/>
         <source>Recently opened</source>
         <translation>Нещодавно відкриті</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="871"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1755"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="899"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1783"/>
         <source>Recommendations</source>
         <translation>Рекомендації</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="912"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1392"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="940"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1420"/>
         <source>Refresh</source>
         <translation>Оновити</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="629"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="657"/>
         <source>Release schedule</source>
         <translation>Розклад виходу серій</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="655"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="683"/>
         <source>Sat</source>
         <translation>Сб</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="462"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="854"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="490"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="882"/>
         <source>Search</source>
         <translation>Пошук</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="871"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="2784"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="899"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="2812"/>
         <source>Search results</source>
         <translation>Результати пошуку</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="986"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1014"/>
         <source>Searching…</source>
         <translation>Пошук…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="656"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="684"/>
         <source>Sun</source>
         <translation>Нд</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="653"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="681"/>
         <source>Thu</source>
         <translation>Чт</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="651"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="679"/>
         <source>Tue</source>
         <translation>Вт</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="386"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="843"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="414"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="871"/>
         <source>Video URL…</source>
         <translation>URL відео…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="383"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="842"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="411"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="870"/>
         <source>Video file…</source>
         <translation>Відеофайл…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="652"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="680"/>
         <source>Wed</source>
         <translation>Ср</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1039"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1067"/>
         <source>dub</source>
         <translation>озвучення</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1040"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1068"/>
         <source>subs</source>
         <translation>субтитри</translation>
     </message>
@@ -10095,7 +10105,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>%1 Залишаємо оригінальне зображення.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1866"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1909"/>
         <source>%1p is not available for this release</source>
         <translation>%1p недоступно для цього релізу</translation>
     </message>
@@ -10105,8 +10115,8 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Захоплення еталонного кадру вже виконується.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="404"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2265"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="447"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2308"/>
         <source>AUDIO</source>
         <translation>ОЗВУЧЕННЯ</translation>
     </message>
@@ -10117,30 +10127,30 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Збирання рушія TensorRT</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="589"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2278"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="632"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2321"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="957"/>
         <source>Choose the processing provider</source>
         <translation>Вибрати провайдера обробки</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="781"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="824"/>
         <source>Containing folder opened</source>
         <translation>Папку з файлом відкрито</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="778"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="821"/>
         <source>Could not open the containing folder</source>
         <translation>Не вдалося відкрити папку з файлом</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="905"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1995"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="948"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2038"/>
         <source>Could not play the stream</source>
         <translation>Не вдалося відтворити потік</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1314"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1357"/>
         <source>Could not read the current frame</source>
         <translation>Не вдалося прочитати поточний кадр</translation>
     </message>
@@ -10150,118 +10160,118 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Не вдалося зберегти нативне налаштування: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="541"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="584"/>
         <source>Episode list</source>
         <translation>Список серій</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="540"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1896"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="583"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1939"/>
         <source>Episode list (S)</source>
         <translation>Список серій (S)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1487"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1530"/>
         <source>Episode: %1</source>
         <translation>Серія: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1318"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1361"/>
         <source>Failed to copy frame</source>
         <translation>Не вдалося скопіювати кадр</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="729"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="772"/>
         <source>Failed to copy link</source>
         <translation>Не вдалося скопіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1321"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1364"/>
         <source>Frame copied (%1×%2)</source>
         <translation>Кадр скопійовано (%1×%2)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1688"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1731"/>
         <source>Audio track %1</source>
         <translation>Аудіодоріжка %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1689"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1732"/>
         <source>Subtitle track %1</source>
         <translation>Доріжка субтитрів %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1693"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1736"/>
         <source>%1 ch</source>
         <translation>%1 кан.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1694"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1737"/>
         <source>External</source>
         <translation>Зовнішня</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1695"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1738"/>
         <source>Forced</source>
         <translation>Примусова</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1696"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1739"/>
         <source>Default</source>
         <translation>Типова</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1896"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1939"/>
         <source>Hide episode list (S)</source>
         <translation>Сховати список серій (S)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2061"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2104"/>
         <source>Continue playing</source>
         <translation>Продовжити перегляд</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2062"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2105"/>
         <source>Continue from %1?</source>
         <translation>Продовжити з %1?</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2063"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2106"/>
         <source>You stopped this episode at %1.</source>
         <translation>Ви зупинилися на %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2066"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2109"/>
         <source>Continue</source>
         <translation>Продовжити</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2067"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2110"/>
         <source>Start over</source>
         <translation>Почати спочатку</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2075"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2118"/>
         <source>Continued from %1</source>
         <translation>Продовжено з %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2078"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2121"/>
         <source>Starting from the beginning</source>
         <translation>Початок з нуля</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2122"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2165"/>
         <source>Opening stream…</source>
         <translation>Відкриття потоку…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2531"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2574"/>
         <source>Finishing enhancement…</source>
         <translation>Завершуємо покращення…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2566"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2609"/>
         <source>Native processing did not acknowledge its stop; the player stays open so it can be retried.</source>
         <translation>Нативна обробка не підтвердила зупинку; плеєр залишається відкритим для повторної спроби.</translation>
     </message>
@@ -10276,12 +10286,12 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Нативна обробка вимкнена · Оригінальне зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1309"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1352"/>
         <source>No frame to copy</source>
         <translation>Немає кадру для копіювання</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1584"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1627"/>
         <source>No other audio tracks available</source>
         <translation>Інших аудіодоріжок немає</translation>
     </message>
@@ -10296,36 +10306,36 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Жодне ядро відтворення не може прийняти нативний план.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1599"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1642"/>
         <source>No subtitles available</source>
         <translation>Субтитри недоступні</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1166"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1209"/>
         <source>No video to compare</source>
         <translation>Немає відео для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1180"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1223"/>
         <source>Not enough variants to compare</source>
         <translation>Недостатньо варіантів для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="451"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1680"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="494"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1723"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="344"/>
         <source>Off</source>
         <translation>Вимкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2277"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2320"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="956"/>
         <source>Open processing and component settings</source>
         <translation>Відкрити налаштування обробки та компонентів</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="592"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2280"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="635"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2323"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="959"/>
         <source>Original</source>
         <translation>Оригінал</translation>
@@ -10336,26 +10346,26 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Картинка в картинці</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="319"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1345"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1470"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="362"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1388"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1513"/>
         <source>Player — %1</source>
         <translation>Плеєр — %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1352"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1395"/>
         <source>Playing local file</source>
         <translation>Відтворення локального файлу</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="585"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2271"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="628"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2314"/>
         <source>Prepare</source>
         <translation>Підготувати</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="586"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2272"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="629"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2315"/>
         <source>Prepare the selected recipe</source>
         <translation>Підготувати вибраний рецепт</translation>
     </message>
@@ -10365,23 +10375,23 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Підготовка…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="588"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2275"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="631"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2318"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="954"/>
         <source>Providers</source>
         <translation>Провайдери</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="568"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2268"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="611"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2311"/>
         <source>Retry</source>
         <translation>Повторити</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="569"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="570"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2269"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2270"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="612"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="613"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2312"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2313"/>
         <source>Retry playback</source>
         <translation>Повторити відтворення</translation>
     </message>
@@ -10391,35 +10401,35 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Повернуто у вікно</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="406"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2266"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="449"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2309"/>
         <source>SUBTITLES</source>
         <translation>СУБТИТРИ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2275"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2318"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="954"/>
         <source>Settings</source>
         <translation>Налаштування</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1175"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1218"/>
         <source>Shaders folder not found — comparison is unavailable</source>
         <translation>Папку шейдерів не знайдено — порівняння недоступне</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="593"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2281"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="636"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2324"/>
         <source>Stay on the Original picture</source>
         <translation>Залишити оригінальне зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1534"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1577"/>
         <source>Stream link has expired — refreshing</source>
         <translation>Посилання на потік застаріло — оновлення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1859"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1902"/>
         <source>Switching to %1p…</source>
         <translation>Перемикання на %1p…</translation>
     </message>
@@ -10430,22 +10440,22 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Запит еталонного захоплення було адресовано іншому ядру.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="773"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="816"/>
         <source>The video file is no longer there</source>
         <translation>Відеофайл більше не існує за вказаним шляхом</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="766"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="809"/>
         <source>This source is a stream — it has no folder</source>
         <translation>Це потокове відео — у нього немає локальної папки</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1512"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1555"/>
         <source>Track: %1</source>
         <translation>Доріжка: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2280"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2323"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="959"/>
         <source>Turn off AnimeJaNai</source>
         <translation>Вимкнути AnimeJaNai</translation>
@@ -10494,7 +10504,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Компіляція TensorRT</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="732"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="775"/>
         <source>Video link copied</source>
         <translation>Посилання на відео скопійовано</translation>
     </message>
