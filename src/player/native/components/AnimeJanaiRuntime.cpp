@@ -4,6 +4,7 @@
 #include "native/components/AnimeJanaiConfig.hpp"
 #include "native/models/NativeRife.hpp"
 #include "native/models/NativeSpatialAssets.hpp"
+#include "native/models/NativeUpscalers.hpp"
 #include "native/status/NativeFilterCommand.hpp"
 
 #include <QtCore/QCoreApplication>
@@ -1408,19 +1409,51 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
     }
 
     QString ini;
-    if (presetId.startsWith(QStringLiteral("builtin_slot:"))) {
-        bool slotOk = false;
-        const int slotNum = presetId.mid(QStringLiteral("builtin_slot:").size()).toInt(&slotOk);
-        const auto slotIt = std::find_if(
-            managerConf.customSlots.cbegin(), managerConf.customSlots.cend(),
-            [slotNum](const AnimeJanaiSlot& candidate) { return candidate.number == slotNum; });
-        if (!slotOk || slotIt == managerConf.customSlots.cend() || slotIt->chains.isEmpty()) {
-            fail(plan, QStringLiteral("animejanai.preset.invalid"),
-                 RuntimeText::tr("The selected custom AnimeJaNai profile slot is empty or invalid."));
-            return plan;
+    const bool isUpscaler = presetId.startsWith(QStringLiteral("upscaler:"));
+    if (isUpscaler || presetId.startsWith(QStringLiteral("builtin_slot:"))) {
+        AnimeJanaiSlot stagedSlot;
+        if (isUpscaler) {
+            // One downloaded upscaler is a one-step chain of its own: the graph
+            // is in the custom-model store, its scale is the catalogue's, and no
+            // manager slot has to exist for a viewer to use it.
+            const std::optional<UpscalerModel> model =
+                upscalerForId(presetId.mid(QStringLiteral("upscaler:").size()));
+            if (!model.has_value()) {
+                fail(plan, QStringLiteral("animejanai.preset.invalid"),
+                     RuntimeText::tr("The selected upscaler is not recognised."));
+                return plan;
+            }
+            if (!findCustomAnimeJanaiModel(model->fileName).has_value()) {
+                fail(plan, QStringLiteral("animejanai.model.missing"),
+                     RuntimeText::tr("The upscaler '%1' is not downloaded. Install it in "
+                                     "Settings › Upscalers.")
+                         .arg(model->displayName));
+                return plan;
+            }
+            AnimeJanaiChainStep step;
+            step.number = 1;
+            step.kind = AnimeJanaiStepKind::OnnxModel;
+            step.id = model->fileName;
+            step.scaleFactor = model->scale;
+            AnimeJanaiChain chain;
+            chain.number = 1;
+            chain.steps = {step};
+            stagedSlot.number = 1;
+            stagedSlot.profileName = model->displayName;
+            stagedSlot.chains = {chain};
+        } else {
+            bool slotOk = false;
+            const int slotNum = presetId.mid(QStringLiteral("builtin_slot:").size()).toInt(&slotOk);
+            const auto slotIt = std::find_if(
+                managerConf.customSlots.cbegin(), managerConf.customSlots.cend(),
+                [slotNum](const AnimeJanaiSlot& candidate) { return candidate.number == slotNum; });
+            if (!slotOk || slotIt == managerConf.customSlots.cend() || slotIt->chains.isEmpty()) {
+                fail(plan, QStringLiteral("animejanai.preset.invalid"),
+                     RuntimeText::tr("The selected custom AnimeJaNai profile slot is empty or invalid."));
+                return plan;
+            }
+            stagedSlot = *slotIt;
         }
-
-        AnimeJanaiSlot stagedSlot = *slotIt;
         const auto pinnedCatalog = spatialAssetCatalog();
         const auto storedPinned = storedSpatialAssets();
         QSet<QString> stagedSpatialDigests;

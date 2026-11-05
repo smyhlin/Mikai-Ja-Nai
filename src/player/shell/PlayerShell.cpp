@@ -347,7 +347,12 @@ QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& cur
             entry.tooltip = installed
                                 ? QObject::tr("Stored under the app-owned model folder")
                                 : QObject::tr("Opens Settings › Upscalers to download it");
-            entry.payload = QStringLiteral("upscalersettings|") + model.fileName;
+            // An installed graph is a real chain step: the payload applies it
+            // through the AnimeJaNai plan path. A missing one opens the page
+            // that downloads it.
+            entry.payload = installed ? (QStringLiteral("upscaler|") + model.fileName)
+                                      : (QStringLiteral("upscalersettings|") + model.fileName);
+            entry.current = installed && currentId == QStringLiteral("upscaler:") + model.fileName;
             entries.append(entry);
         }
         return entries;
@@ -1861,6 +1866,16 @@ void PlayerShell::updateAnimeJanaiChip() {
                     break;
                 }
             }
+            // A downloaded upscaler is a selection of its own and is named by
+            // its own catalogue row, not reported as an unknown preset.
+            if (!presetInCatalogue && id.startsWith(QLatin1String("upscaler:"))) {
+                if (const std::optional<native::UpscalerModel> model =
+                        native::upscalerForId(id.mid(9));
+                    model.has_value()) {
+                    presetLabel = QStringLiteral("%1 · %2×").arg(model->displayName).arg(model->scale);
+                    presetInCatalogue = true;
+                }
+            }
             if (!presetInCatalogue) {
                 // The retained selection outlived its graph. It is still the
                 // selection - the filter was asked for that id - so the chip
@@ -2189,6 +2204,11 @@ void PlayerShell::onEnhancementRow(MenuPopup* panel, int spot, bool activated) {
     }
     if (payload.startsWith(QLatin1String("ajbackend|"))) {
         emit animeJanaiBackendRequested(payload.mid(10));
+        dismissOverlay();
+        return;
+    }
+    if (payload.startsWith(QLatin1String("upscaler|"))) {
+        emit animeJanaiPresetRequested(QStringLiteral("upscaler:") + payload.mid(9));
         dismissOverlay();
         return;
     }
