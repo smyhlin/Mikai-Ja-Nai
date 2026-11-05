@@ -184,7 +184,10 @@ inline constexpr int kHomeCardWidth = 360;
 inline constexpr int kHomeCardHeight = 140;
 inline constexpr int kHomePosterWidth = 80;
 inline constexpr int kHomePosterHeight = 114;
-inline constexpr int kHomeCarouselScrollStep = 740;
+inline constexpr int kHomeScrollBarExtent = kSpacingMedium;
+inline constexpr int kHomeScrollHandleInset = 2;
+inline constexpr int kHomeScrollHandleMinHeight = 36;
+inline constexpr int kHomeScrollContentGap = kSpacingSmall;
 inline constexpr int kHomeFeedPosterWidth = 34;
 inline constexpr int kHomeFeedPosterHeight = 48;
 inline constexpr int kHomeCarouselMaxTitles = 18;
@@ -192,16 +195,24 @@ inline constexpr int kHomeFeedMaxRows = 5;
 inline constexpr int kHomeRecentMaxTitles = 12;
 inline constexpr int kRelatedCarouselMax = 6;
 
-// Carousel card spacing between entries, in the track layout.
 inline constexpr int kCarouselCardSpacing = 10;
+inline constexpr int kCarouselTrackInset = 2;
+
+inline constexpr int kSearchSidebarWidth = 208;
+inline constexpr int kSearchSidebarRailWidth = 64;
+inline constexpr int kSearchSidebarInset = 16;
+inline constexpr int kSearchSidebarRailInset = kSpacingSmall;
+inline constexpr int kSearchSidebarBrandIconSize = 28;
+inline constexpr int kSearchSidebarActionIconSize = 20;
+inline constexpr int kSearchSidebarBrandFontSize = 16;
+inline constexpr int kSearchSidebarIndicatorWidth = 3;
+inline constexpr int kSearchSidebarExpandedMinWidth =
+    kSearchSidebarWidth + 2 * kCarouselTrackInset + 2 * kHomeCardWidth +
+    kCarouselCardSpacing + 2 * kSpacingLarge + kHomeScrollBarExtent +
+    kHomeScrollContentGap;
 
 // ── Search page header ──────────────────────────────────────────────────────
-// The main page's header is two aligned rows: the brand with the passive quota
-// pill and the icon actions above, the title search with its actions below.
-// The height, inset and radius are the shared control tokens; only the header's
-// own rhythm and the keycap stay search-header-only.
 inline constexpr int kSearchHeaderSpacing = kSpacingSmall;
-inline constexpr int kSearchHeaderRowGap = kSpacingMedium;
 inline constexpr int kSearchKeycapRadius = 6;
 inline constexpr int kSearchFieldInset = 12;
 inline constexpr int kSearchFieldTrailingInset = 6;
@@ -215,13 +226,5 @@ inline constexpr int kSearchDotRadius = kSearchDotSize / 2;
 inline constexpr int kSearchDotSpacing = 6;
 inline constexpr int kSearchPillPaddingLeft = 10;
 inline constexpr int kSearchPillPaddingRight = kSearchPillPaddingLeft;
-// The chevron the Open video menu carries past its label. Below 12 the glyph's
-// 2.4-unit stroke falls under a device pixel and single columns round away, so
-// the menu reads as a dashed line at 100 % scaling.
-inline constexpr int kSearchMenuChevronSize = 12;
-// The Open-video button is the one control whose right inset differs: its menu
-// chevron lives in that inset, and the sheet states it as this one exception.
-inline constexpr int kSearchMenuPaddingRight =
-    kControlInsetH + kSearchMenuChevronSize + kSpacingSmall;
 
 }  // namespace mikai::app::theme

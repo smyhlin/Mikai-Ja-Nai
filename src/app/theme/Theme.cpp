@@ -48,7 +48,7 @@ QLabel, QCheckBox, QRadioButton {
     background: transparent;
 }
 QLabel#heading { font-size: 20px; font-weight: 700; background: transparent; }
-QLabel#sectionHeading { font-size: 15px; font-weight: 600; padding-top: %15px; background: transparent; }
+QLabel#sectionHeading, QLabel#pageHeading { font-size: 15px; font-weight: 600; padding-top: %15px; background: transparent; }
 QLabel#muted, QLabel#status, QLabel#benchmarkClipCount, QLabel#benchmarkModelCount {
     color: %4; background: transparent;
 }
@@ -1043,11 +1043,96 @@ QWidget#titlePage QPushButton#titleDetailsClose:focus { border-color: %4; }
         .arg(kControlContentHeight);   // %47
 }
 
-// The main page's header: two aligned rows with their own quiet surfaces. Every
-// rule is scoped to QWidget#searchPage, so the shared RateLimitLabel keeps its
-// catalogue/title-page line and no other surface inherits these fills.
 QString searchPageSheet(const Appearance& appearance, const SearchHeaderPalette& roles) {
     QString sheet = QStringLiteral(R"QSS(
+QWidget#searchPage QWidget#searchSidebar {
+    background: @pillSurface;
+    border: none;
+    border-right: 1px solid @pillBorder;
+}
+QWidget#searchPage QLabel#sidebarBrandName {
+    background: transparent;
+    color: @text;
+    font-size: %16px;
+    font-weight: 700;
+}
+QWidget#searchPage QWidget#searchSidebar QToolButton {
+    background: transparent;
+    color: @text;
+    border: 1px solid transparent;
+    border-left: %17px solid transparent;
+    border-radius: %1px;
+    min-height: %2px;
+    max-height: %2px;
+    padding: 0 %18px;
+    font-weight: 500;
+    text-align: left;
+}
+QWidget#searchPage QWidget#searchSidebar QToolButton:hover {
+    background: @secondaryHover;
+    border-color: @border;
+}
+QWidget#searchPage QWidget#searchSidebar QToolButton:pressed {
+    background: @input;
+    border-color: @primary;
+}
+QWidget#searchPage QWidget#searchSidebar QToolButton:focus {
+    border-color: @primary;
+}
+QWidget#searchPage QWidget#searchSidebar QToolButton:disabled {
+    color: @pillText;
+    background: transparent;
+    border-color: transparent;
+}
+QWidget#searchPage QToolButton#homeButton:checked {
+    background: @secondary;
+    color: @text;
+    border-left-color: @primary;
+}
+QWidget#searchPage QToolButton#homeButton:checked:hover,
+QWidget#searchPage QToolButton#homeButton:checked:focus {
+    border-left-color: @primary;
+}
+QWidget#searchPage QWidget#searchSidebar QToolButton#openMediaButton,
+QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip {
+    background: @secondary;
+    color: @text;
+    border: 1px solid @border;
+    border-radius: %1px;
+    min-height: %2px;
+    max-height: %2px;
+    padding: 0 %6px;
+    font-weight: 500;
+    text-align: center;
+}
+QWidget#searchPage QWidget#searchSidebar QToolButton#openMediaButton:hover,
+QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip:hover {
+    background: @secondaryHover;
+    border-color: @primary;
+}
+QWidget#searchPage QWidget#searchSidebar QToolButton#openMediaButton:pressed,
+QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip:pressed {
+    background: @input;
+}
+QWidget#searchPage QWidget#searchSidebar QToolButton#openMediaButton:focus,
+QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip:focus {
+    border-color: @primary;
+}
+QWidget#searchPage QWidget#searchSidebar QToolButton#openMediaButton:disabled,
+QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip:disabled {
+    color: @pillText;
+    background: @secondary;
+    border-color: @border;
+}
+QWidget#searchPage QWidget#searchSidebar QToolButton#openMediaButton[compact="true"],
+QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip[compact="true"] {
+    padding: 0;
+}
+QWidget#searchPage QWidget#searchSidebar QToolButton#openMediaButton[compact="true"]::menu-indicator {
+    image: none;
+    width: 0px;
+    height: 0px;
+}
 QWidget#searchPage QWidget#searchField {
     background: @input;
     border: 1px solid @inputBorder;
@@ -1092,7 +1177,6 @@ QWidget#searchPage QPushButton[actionRole="secondary"] {
     font-weight: 500;
     text-align: center;
 }
-QWidget#searchPage QPushButton#openMediaButton { padding: 0 %7px 0 %6px; }
 QWidget#searchPage QPushButton[actionRole="secondary"]:hover {
     background: @secondaryHover;
     border-color: @primary;
@@ -1123,16 +1207,6 @@ QWidget#searchPage QPushButton#teamBackButton:hover {
 }
 QWidget#searchPage QPushButton#teamBackButton:pressed { background: @input; }
 QWidget#searchPage QPushButton#teamBackButton:focus { border-color: @primary; }
-QWidget#searchPage QPushButton#openMediaButton::menu-indicator {
-    image: none;
-    width: 0px;
-    height: 0px;
-}
-QWidget#searchPage QPushButton#openMediaButton QLabel {
-    background: transparent;
-    border: none;
-    color: @text;
-}
 QWidget#searchPage QPushButton[actionRole="primary"] {
     background: @primary;
     color: @onPrimary;
@@ -1152,22 +1226,6 @@ QWidget#searchPage QPushButton[actionRole="primary"]:disabled {
     color: @onPrimary;
     border-color: @border;
 }
-QWidget#searchPage QPushButton#settingsChip {
-    background: @secondary;
-    border: 1px solid @border;
-    border-radius: %1px;
-    padding: 0;
-    min-width: %2px;
-    max-width: %2px;
-    min-height: %2px;
-    max-height: %2px;
-}
-QWidget#searchPage QPushButton#settingsChip:hover {
-    background: @secondaryHover;
-    border-color: @borderStrong;
-}
-QWidget#searchPage QPushButton#settingsChip:pressed { background: @input; }
-QWidget#searchPage QPushButton#settingsChip:focus { border-color: @primary; }
 QWidget#searchPage QWidget#ratePill {
     background: @pillSurface;
     border: 1px solid @pillBorder;
@@ -1191,6 +1249,37 @@ QWidget#searchPage QLabel#rateDot {
     min-height: %10px;
     max-height: %10px;
 }
+QWidget#searchPage QScrollArea#discoveryScroll QWidget#pageIntro QLabel#pageHeading {
+    padding-top: 0;
+}
+QWidget#searchPage QScrollArea#discoveryScroll QScrollBar:vertical {
+    background: transparent;
+    width: %12px;
+    margin: 0;
+}
+QWidget#searchPage QScrollArea#discoveryScroll QScrollBar::handle:vertical {
+    background: @borderStrong;
+    border: none;
+    border-radius: %13px;
+    min-height: %14px;
+    margin: 0 %15px;
+}
+QWidget#searchPage QScrollArea#discoveryScroll QScrollBar::handle:vertical:hover {
+    background: @primary;
+}
+QWidget#searchPage QScrollArea#discoveryScroll QScrollBar::handle:vertical:pressed {
+    background: @primaryHover;
+}
+QWidget#searchPage QScrollArea#discoveryScroll QScrollBar::add-line:vertical,
+QWidget#searchPage QScrollArea#discoveryScroll QScrollBar::sub-line:vertical {
+    background: transparent;
+    border: none;
+    height: 0;
+}
+QWidget#searchPage QScrollArea#discoveryScroll QScrollBar::add-page:vertical,
+QWidget#searchPage QScrollArea#discoveryScroll QScrollBar::sub-page:vertical {
+    background: transparent;
+}
 QWidget#searchPage QLabel#rateDot[tone="healthy"] { background: @dotHealthy; }
 QWidget#searchPage QLabel#rateDot[tone="low"] { background: @dotLow; }
 QWidget#searchPage QLabel#rateDot[tone="exhausted"] { background: @dotExhausted; }
@@ -1202,11 +1291,17 @@ QWidget#searchPage QLabel#rateDot[tone="unknown"] { background: @dotUnknown; }
         .arg(kSearchKeycapPaddingV)        // %4
         .arg(kSearchKeycapPaddingH)        // %5
         .arg(kControlInsetH)               // %6
-        .arg(kSearchMenuPaddingRight)      // %7
         .arg(kControlInsetHPrimary)        // %8
         .arg(kSearchDotRadius)             // %9
         .arg(kSearchDotSize)               // %10
-        .arg(kSearchKeycapContentHeight);  // %11
+        .arg(kSearchKeycapContentHeight)  // %11
+        .arg(kHomeScrollBarExtent)
+        .arg((kHomeScrollBarExtent - 2 * kHomeScrollHandleInset) / 2)
+        .arg(kHomeScrollHandleMinHeight)
+        .arg(kHomeScrollHandleInset)
+        .arg(kSearchSidebarBrandFontSize)
+        .arg(kSearchSidebarIndicatorWidth)
+        .arg(kSpacingSmall);
     // Longest name first where one token is a prefix of another (@border and
     // @borderStrong, @secondary and @secondaryHover, @primary and
     // @primaryHover), or the shorter replacement would eat the longer name.

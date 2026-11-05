@@ -29,12 +29,14 @@
 #include <QDebug>
 #include <QDesktopServices>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QGroupBox>
 #include <QSpinBox>
 #include <QGuiApplication>
 #include <QStyleHints>
+#include <QFont>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QEasingCurve>
@@ -56,6 +58,7 @@
 #include <QSizePolicy>
 #include <QSettings>
 #include <QTabBar>
+#include <QToolButton>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -128,59 +131,130 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
 
     setObjectName(QStringLiteral("searchPage"));
 
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(theme::kSpacingLarge, theme::kSpacingLarge, theme::kSpacingLarge,
-                             theme::kSpacingLarge);
-    root->setSpacing(theme::kSpacingMedium);
+    auto* pageLayout = new QHBoxLayout(this);
+    pageLayout->setContentsMargins(0, 0, 0, 0);
+    pageLayout->setSpacing(0);
 
-    // The header is two aligned rows: the brand with the passive quota pill and
-    // the icon actions above, the title search with its own actions below.
-    auto* header = new QWidget(this);
-    header->setObjectName(QStringLiteral("searchHeader"));
-    auto* headerLayout = new QVBoxLayout(header);
-    headerLayout->setContentsMargins(0, 0, 0, 0);
-    headerLayout->setSpacing(theme::kSearchHeaderRowGap);
+    sidebar_ = new QWidget(this);
+    sidebar_->setObjectName(QStringLiteral("searchSidebar"));
+    sidebar_->setAttribute(Qt::WA_StyledBackground, true);
+    auto* sidebarLayout = new QVBoxLayout(sidebar_);
+    sidebarLayout->setContentsMargins(theme::kSearchSidebarInset, theme::kSearchSidebarInset,
+                                      theme::kSearchSidebarInset, theme::kSearchSidebarInset);
+    sidebarLayout->setSpacing(theme::kSpacingSmall);
 
-    auto* topRow = new QHBoxLayout();
-    topRow->setContentsMargins(0, 0, 0, 0);
-    topRow->setSpacing(theme::kSearchHeaderSpacing);
+    sidebarBrandLayout_ = new QHBoxLayout();
+    sidebarBrandLayout_->setContentsMargins(0, 0, 0, 0);
+    sidebarBrandLayout_->setSpacing(theme::kIconTextGap);
 
-    headerLogo_ = new QLabel(header);
+    headerLogo_ = new QLabel(sidebar_);
     headerLogo_->setObjectName(QStringLiteral("headerLogo"));
     headerLogo_->setAccessibleName(QString());
     headerLogo_->setAccessibleDescription(QString());
     headerLogo_->setFocusPolicy(Qt::NoFocus);
     headerLogo_->installEventFilter(this);
-    headerLogo_->setMinimumSize(24, 24);
-    headerLogo_->setFixedSize(36, 36);
+    headerLogo_->setFixedSize(theme::kSearchSidebarBrandIconSize,
+                              theme::kSearchSidebarBrandIconSize);
     headerLogoSource_.load(QStringLiteral(":/icons/app/mikai-mono.png"));
-    topRow->addWidget(headerLogo_, 0, Qt::AlignVCenter);
-    auto* heading = new QLabel(tr("Mikai Ja Nai"), header);
-    heading->setObjectName(QStringLiteral("heading"));
-    topRow->addWidget(heading, 0, Qt::AlignVCenter);
+    sidebarBrandLayout_->addWidget(headerLogo_, 0, Qt::AlignVCenter);
+    sidebarBrandName_ = new QLabel(tr("Mikai Ja Nai"), sidebar_);
+    sidebarBrandName_->setObjectName(QStringLiteral("sidebarBrandName"));
+    sidebarBrandName_->setFocusPolicy(Qt::NoFocus);
+    {
+        QFont brandFont = sidebarBrandName_->font();
+        brandFont.setPixelSize(theme::kSearchSidebarBrandFontSize);
+        brandFont.setWeight(QFont::DemiBold);
+        sidebarBrandName_->setFont(brandFont);
+    }
+    sidebarBrandLayout_->addWidget(sidebarBrandName_, 1, Qt::AlignVCenter);
+    sidebarLayout->addLayout(sidebarBrandLayout_);
     refreshHeaderLogo();
 
-    homeButton_ = new QPushButton(tr("Home"), header);
+    const QSize sidebarGlyphBox(theme::kSearchSidebarActionIconSize + theme::kIconGlyphPad,
+                                theme::kSearchSidebarActionIconSize);
+    auto* navLayout = new QVBoxLayout();
+    navLayout->setContentsMargins(0, 0, 0, 0);
+    navLayout->setSpacing(theme::kSpacingXs);
+
+    homeButton_ = new QToolButton(sidebar_);
     homeButton_->setObjectName(QStringLiteral("homeButton"));
-    theme::applyActionRole(homeButton_, theme::ActionRole::Secondary);
-    connect(homeButton_, &QPushButton::clicked, this, &SearchPage::returnHome);
-    topRow->addWidget(homeButton_, 0, Qt::AlignVCenter);
-    homeButton_->hide();
-    topRow->addStretch();
+    homeButton_->setText(tr("Home"));
+    homeButton_->setToolTip(tr("Home"));
+    homeButton_->setAccessibleName(tr("Home"));
+    homeButton_->setCheckable(true);
+    homeButton_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    homeButton_->setIconSize(sidebarGlyphBox);
+    homeButton_->setFixedHeight(theme::kControlHeight);
+    homeButton_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    theme::applyActionRole(homeButton_, theme::ActionRole::Ghost);
+    connect(homeButton_, &QToolButton::clicked, this, [this] {
+        // Clicking the current Home entry must not clear its selected state.
+        returnHome();
+        updateHomeIndicator();
+    });
+    navLayout->addWidget(homeButton_);
+
+    filtersButton_ = new QToolButton(sidebar_);
+    filtersButton_->setObjectName(QStringLiteral("catalogueFiltersButton"));
+    filtersButton_->setText(tr("Filters"));
+    filtersButton_->setToolTip(tr("Filters"));
+    filtersButton_->setAccessibleName(tr("Filters"));
+    filtersButton_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    filtersButton_->setIconSize(sidebarGlyphBox);
+    filtersButton_->setFixedHeight(theme::kControlHeight);
+    filtersButton_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    theme::applyActionRole(filtersButton_, theme::ActionRole::Ghost);
+    navLayout->addWidget(filtersButton_);
+
+    teamsButton_ = new QToolButton(sidebar_);
+    teamsButton_->setObjectName(QStringLiteral("catalogueTeamsButton"));
+    teamsButton_->setText(tr("Teams…"));
+    teamsButton_->setToolTip(tr("Teams…"));
+    teamsButton_->setAccessibleName(tr("Teams…"));
+    teamsButton_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    teamsButton_->setIconSize(sidebarGlyphBox);
+    teamsButton_->setFixedHeight(theme::kControlHeight);
+    teamsButton_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    theme::applyActionRole(teamsButton_, theme::ActionRole::Ghost);
+    navLayout->addWidget(teamsButton_);
+    sidebarLayout->addLayout(navLayout);
+    sidebarLayout->addStretch(1);
+
+    searchContent_ = new QWidget(this);
+    searchContent_->setObjectName(QStringLiteral("searchContent"));
+    rootLayout_ = new QVBoxLayout(searchContent_);
+    rootLayout_->setContentsMargins(theme::kSpacingLarge, theme::kSpacingLarge,
+                                    theme::kSpacingLarge, theme::kSpacingLarge);
+    rootLayout_->setSpacing(theme::kSpacingMedium);
+
+    pageLayout->addWidget(sidebar_, 0);
+    pageLayout->addWidget(searchContent_, 1);
+
+    // The header is one row: the title search takes the free width, its action
+    // and the passive quota pill sit beside it.
+    auto* header = new QWidget(searchContent_);
+    header->setObjectName(QStringLiteral("searchHeader"));
+    auto* headerLayout = new QHBoxLayout(header);
+    headerLayout->setContentsMargins(0, 0, 0, 0);
+    headerLayout->setSpacing(theme::kSearchHeaderSpacing);
 
     rateLabel_ = new RateLimitLabel(client_, header);
     rateLabel_->setObjectName(QStringLiteral("ratePill"));
     // The main page presents the shared quota snapshot as the header pill; the
     // catalogue and title page keep its inline line.
     rateLabel_->setPresentation(RateLimitLabel::Presentation::Pill);
-    topRow->addWidget(rateLabel_, 0, Qt::AlignVCenter);
 
-    mediaButton_ = new QPushButton(tr("Open video"), header);
+    mediaButton_ = new QToolButton(sidebar_);
     mediaButton_->setObjectName(QStringLiteral("openMediaButton"));
+    mediaButton_->setText(tr("Open video"));
+    mediaButton_->setToolTip(tr("Open video"));
     mediaButton_->setAccessibleName(tr("Open video"));
+    mediaButton_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    mediaButton_->setIconSize(sidebarGlyphBox);
+    mediaButton_->setFixedHeight(theme::kControlHeight);
+    mediaButton_->setPopupMode(QToolButton::InstantPopup);
+    mediaButton_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     theme::applyActionRole(mediaButton_, theme::ActionRole::Secondary);
-    mediaButton_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    mediaButton_->setIconSize(QSize(theme::kIconSize + theme::kIconGlyphPad, theme::kIconSize));
     // The menu and its actions are owned by the button; the actions are kept
     // because their captions are this page's to restate.
     auto* mediaMenu = new QMenu(mediaButton_);
@@ -192,51 +266,41 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     openUrlAction_->setObjectName(QStringLiteral("openVideoUrl"));
     connect(openUrlAction_, &QAction::triggered, this, &SearchPage::mediaUrlRequested);
     mediaButton_->setMenu(mediaMenu);
-    // The trailing chevron lives in its own layout rather than in the style's
-    // menu indicator, which cannot be inset from the border. It is transparent
-    // to the mouse, so the whole button keeps opening the menu.
-    mediaChevron_ = new QLabel(mediaButton_);
-    mediaChevron_->setObjectName(QStringLiteral("mediaButtonChevron"));
-    mediaChevron_->setFixedSize(theme::kSearchMenuChevronSize, theme::kSearchMenuChevronSize);
-    mediaChevron_->setFocusPolicy(Qt::NoFocus);
-    mediaChevron_->setAttribute(Qt::WA_TransparentForMouseEvents);
-    auto* chevronRow = new QHBoxLayout(mediaButton_);
-    chevronRow->setContentsMargins(0, 0, theme::kControlInsetH, 0);
-    chevronRow->setSpacing(0);
-    chevronRow->addStretch(1);
-    chevronRow->addWidget(mediaChevron_, 0, Qt::AlignVCenter);
-    topRow->addWidget(mediaButton_, 0, Qt::AlignVCenter);
+    sidebarLayout->addWidget(mediaButton_);
 
-    keysButton_ = new QPushButton(header);
+    keysButton_ = new QToolButton(sidebar_);
     keysButton_->setObjectName(QStringLiteral("settingsChip"));
-    keysButton_->setIcon(theme::keyboardIcon());
-    keysButton_->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
-    keysButton_->setFixedSize(theme::kControlHeight, theme::kControlHeight);
+    keysButton_->setText(tr("Shortcuts"));
     keysButton_->setToolTip(tr("Keyboard shortcuts (?)"));
     keysButton_->setAccessibleName(tr("Keyboard shortcuts"));
-    connect(keysButton_, &QPushButton::clicked, this, [this] {
+    keysButton_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    keysButton_->setIcon(theme::keyboardIcon());
+    keysButton_->setIconSize(sidebarGlyphBox);
+    keysButton_->setFixedHeight(theme::kControlHeight);
+    keysButton_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    theme::applyActionRole(keysButton_, theme::ActionRole::Secondary);
+    connect(keysButton_, &QToolButton::clicked, this, [this] {
         if (keyHints_ == nullptr) {
             keyHints_ = new mplayer::shell::KeyHints(this);
         }
         keyHints_->popupNear(keysButton_->mapToGlobal(
             QPoint(keysButton_->width() / 2, keysButton_->height())));
     });
-    topRow->addWidget(keysButton_, 0, Qt::AlignVCenter);
+    sidebarLayout->addWidget(keysButton_);
 
-    settingsButton_ = new QPushButton(header);
+    settingsButton_ = new QToolButton(sidebar_);
     settingsButton_->setObjectName(QStringLiteral("settingsChip"));
-    settingsButton_->setIcon(theme::outlineGearIcon());
-    settingsButton_->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
-    settingsButton_->setFixedSize(theme::kControlHeight, theme::kControlHeight);
+    settingsButton_->setText(tr("Settings"));
     settingsButton_->setToolTip(tr("API token settings"));
     settingsButton_->setAccessibleName(tr("API token settings"));
-    connect(settingsButton_, &QPushButton::clicked, this, &SearchPage::settingsRequested);
-    topRow->addWidget(settingsButton_, 0, Qt::AlignVCenter);
-    headerLayout->addLayout(topRow);
-
-    auto* searchRow = new QHBoxLayout();
-    searchRow->setContentsMargins(0, 0, 0, 0);
-    searchRow->setSpacing(theme::kSearchHeaderSpacing);
+    settingsButton_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    settingsButton_->setIcon(theme::outlineGearIcon());
+    settingsButton_->setIconSize(sidebarGlyphBox);
+    settingsButton_->setFixedHeight(theme::kControlHeight);
+    settingsButton_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    theme::applyActionRole(settingsButton_, theme::ActionRole::Secondary);
+    connect(settingsButton_, &QToolButton::clicked, this, &SearchPage::settingsRequested);
+    sidebarLayout->addWidget(settingsButton_);
 
     // The field is one framed control: a leading glyph, the line edit, and a
     // non-interactive keycap in the trailing inset. The keycap is a sibling of
@@ -275,16 +339,8 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     searchKeycap_->setAccessibleName(tr("Press Enter to search"));
     fieldLayout->addWidget(searchKeycap_, 0, Qt::AlignVCenter);
 
-    searchRow->addWidget(searchField_, 1);
+    headerLayout->addWidget(searchField_, 1);
 
-    filtersButton_ = new QPushButton(tr("Filters"), header);
-    filtersButton_->setObjectName(QStringLiteral("catalogueFiltersButton"));
-    theme::applyActionRole(filtersButton_, theme::ActionRole::Secondary);
-    filtersButton_->setIconSize(QSize(theme::kIconSize + theme::kIconGlyphPad, theme::kIconSize));
-    teamsButton_ = new QPushButton(tr("Teams…"), header);
-    teamsButton_->setObjectName(QStringLiteral("catalogueTeamsButton"));
-    theme::applyActionRole(teamsButton_, theme::ActionRole::Secondary);
-    teamsButton_->setIconSize(QSize(theme::kIconSize + theme::kIconGlyphPad, theme::kIconSize));
     searchButton_ = new QPushButton(tr("Search"), header);
     searchButton_->setObjectName(QStringLiteral("searchActionButton"));
     theme::applyActionRole(searchButton_, theme::ActionRole::Primary);
@@ -306,30 +362,41 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
             loadOngoing();
         }
     });
-    searchRow->addWidget(filtersButton_);
-    searchRow->addWidget(teamsButton_);
-    searchRow->addWidget(searchButton_);
-    headerLayout->addLayout(searchRow);
+    headerLayout->addWidget(searchButton_, 0);
+    // The row's own order: the search takes the free width, its action follows
+    // it, and the passive quota pill closes the row.
+    headerLayout->addWidget(rateLabel_, 0, Qt::AlignVCenter);
 
-    root->addWidget(header);
+    rootLayout_->addWidget(header);
 
-    connect(filtersButton_, &QPushButton::clicked, this, &SearchPage::showCatalogueFilters);
-    connect(teamsButton_, &QPushButton::clicked, this, &SearchPage::openTeamPicker);
+    connect(filtersButton_, &QToolButton::clicked, this, &SearchPage::showCatalogueFilters);
+    connect(teamsButton_, &QToolButton::clicked, this, &SearchPage::openTeamPicker);
     refreshHeaderIcons();
-    equalizeHeaderActions();
     loadDictionaries();
 
-    resultsHeading_ = new QLabel(tr("Currently airing · sorted by newest episode"), this);
-    resultsHeading_->setObjectName(QStringLiteral("sectionHeading"));
-    root->addWidget(resultsHeading_);
+    pageIntro_ = new QWidget(this);
+    pageIntro_->setObjectName(QStringLiteral("pageIntro"));
+    auto* introLayout = new QVBoxLayout(pageIntro_);
+    introLayout->setContentsMargins(0, 0, 0, 0);
+    introLayout->setSpacing(theme::kSpacingXs);
 
-    status_ = new QLabel(this);
+    resultsHeading_ = new QLabel(tr("Currently airing · sorted by newest episode"), pageIntro_);
+    // The page's own heading, addressed by its own name: the discovery blocks
+    // below carry `sectionHeading` too, and two captions under one name make a
+    // selector that cannot tell the page's line from a carousel's.
+    resultsHeading_->setObjectName(QStringLiteral("pageHeading"));
+    introLayout->addWidget(resultsHeading_);
+
+    status_ = new QLabel(pageIntro_);
     status_->setObjectName(QStringLiteral("status"));
-    root->addWidget(status_);
+    introLayout->addWidget(status_);
+    rootLayout_->addWidget(pageIntro_);
 
     auto* discovery = new QWidget(this);
     auto* discoveryLayout = new QVBoxLayout(discovery);
-    discoveryLayout->setContentsMargins(0, 0, 0, 0);
+    discoveryLayout_ = discoveryLayout;
+    // The right gap keeps the content clear of the dedicated scrollbar track.
+    discoveryLayout->setContentsMargins(0, 0, theme::kHomeScrollContentGap, 0);
     discoveryLayout->setSpacing(theme::kSpacingMedium);
     CarouselSection* recent = buildCarousel(kRecentKey);
     CarouselSection* ongoing = buildCarousel(QStringLiteral("ongoing"));
@@ -358,17 +425,21 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     discoveryScroll_->setObjectName(QStringLiteral("discoveryScroll"));
     discoveryScroll_->setWidgetResizable(true);
     discoveryScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    // The bar is always on so its gutter is reserved from the first paint: a
+    // feed that grows past one screen must not narrow the cards underneath.
+    discoveryScroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
     discoveryScroll_->setFrameShape(QFrame::NoFrame);
     discoveryScroll_->setWidget(discovery);
     pageGlow_ = new PageGlow(this);
-    root->addWidget(discoveryScroll_, 1);
+    rootLayout_->addWidget(discoveryScroll_, 1);
+    placeIntro(true);
 
     formatBar_ = new QTabBar(this);
     formatBar_->setExpanding(false);
     formatBar_->setDrawBase(false);
     formatBar_->hide();
     connect(formatBar_, &QTabBar::currentChanged, this, [this](int) { applyFormatFilter(); });
-    root->addWidget(formatBar_);
+    rootLayout_->addWidget(formatBar_);
 
     results_ = new QListWidget(this);
     results_->setObjectName(QStringLiteral("searchResults"));
@@ -382,12 +453,12 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     connect(results_, &QListWidget::customContextMenuRequested, this,
             &SearchPage::resultsContextMenu);
     results_->hide();
-    root->addWidget(results_, 1);
+    rootLayout_->addWidget(results_, 1);
 
     pager_ = new RangePager(theme::kSearchResultsPerPage, this);
     connect(pager_, &RangePager::pageRequested, this, &SearchPage::goToPage);
     pager_->hide();
-    root->addWidget(pager_);
+    rootLayout_->addWidget(pager_);
 
     healTimer_ = new QTimer(this);
     healTimer_->setSingleShot(true);
@@ -411,6 +482,11 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
                 refreshHeaderLogo();
                 refreshHeaderIcons();
             });
+
+    // The page may be built into a stack at its default size, so the rail's
+    // presentation is settled here and then kept current by resizeEvent.
+    updateSidebarPresentation(true);
+    updateHomeIndicator();
 
     QTimer::singleShot(0, this, &SearchPage::loadOngoing);
     if (!recentItems_.isEmpty()) {
@@ -469,8 +545,9 @@ void SearchPage::changeEvent(QEvent* event) {
         event->type() == QEvent::StyleChange ||
         event->type() == QEvent::DevicePixelRatioChange ||
         event->type() == QEvent::ScreenChangeInternal) {
-        // A new font or ratio changes what the row was measured from.
-        equalizeHeaderActions();
+        // A new font or ratio changes what the rail's captions measure at, so
+        // the mode is re-derived and re-applied.
+        updateSidebarPresentation(true);
     }
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
@@ -510,30 +587,36 @@ void SearchPage::refreshHeaderLogo() {
 void SearchPage::refreshHeaderIcons() {
     // The glyphs resolve their ink when they are built, so every path that
     // re-tints the brand logo also rebuilds them: a theme switch cannot leave a
-    // white play glyph on a light secondary button.
+    // white play glyph on a pale sidebar.
     const QPalette pagePalette = palette();
     const QColor ink = pagePalette.color(QPalette::ButtonText);
     const QColor muted = pagePalette.color(QPalette::PlaceholderText);
     const QColor onPrimary(theme::searchHeaderPalette(currentAppearance()).onPrimary);
     const int trailing = theme::kIconGlyphPad;
 
+    // The rail's entries draw at the sidebar's own glyph box; the trailing pad
+    // is the gap between the glyph and the caption the expanded form shows.
+    const int sidebarGlyph = theme::kSearchSidebarActionIconSize;
     if (mediaButton_ != nullptr) {
-        mediaButton_->setIcon(theme::playIcon(theme::kIconSize, ink.name(), trailing));
+        mediaButton_->setIcon(theme::playIcon(sidebarGlyph, ink.name(), trailing));
+    }
+    if (homeButton_ != nullptr) {
+        homeButton_->setIcon(theme::homeIcon(sidebarGlyph, ink.name(), trailing));
     }
     if (filtersButton_ != nullptr) {
-        filtersButton_->setIcon(theme::filterIcon(theme::kIconSize, ink.name(), trailing));
+        filtersButton_->setIcon(theme::filterIcon(sidebarGlyph, ink.name(), trailing));
     }
     if (teamsButton_ != nullptr) {
-        teamsButton_->setIcon(theme::teamsIcon(theme::kIconSize, ink.name(), trailing));
+        teamsButton_->setIcon(theme::teamsIcon(sidebarGlyph, ink.name(), trailing));
     }
     if (searchButton_ != nullptr) {
         searchButton_->setIcon(theme::searchIcon(theme::kIconSize, onPrimary.name(), trailing));
     }
     if (keysButton_ != nullptr) {
-        keysButton_->setIcon(theme::keyboardIcon(theme::kIconSize, ink.name()));
+        keysButton_->setIcon(theme::keyboardIcon(sidebarGlyph, ink.name(), trailing));
     }
     if (settingsButton_ != nullptr) {
-        settingsButton_->setIcon(theme::outlineGearIcon(theme::kIconSize, ink.name()));
+        settingsButton_->setIcon(theme::outlineGearIcon(sidebarGlyph, ink.name(), trailing));
     }
     if (searchGlyph_ != nullptr) {
         searchGlyph_->setPixmap(
@@ -541,18 +624,63 @@ void SearchPage::refreshHeaderIcons() {
                 .pixmap(QSize(theme::kIconSize, theme::kIconSize),
                         searchGlyph_->devicePixelRatioF()));
     }
-    if (mediaChevron_ != nullptr) {
-        mediaChevron_->setPixmap(
-            theme::chevronDownIcon(theme::kSearchMenuChevronSize, muted.name())
-                .pixmap(QSize(theme::kSearchMenuChevronSize, theme::kSearchMenuChevronSize),
-                        mediaChevron_->devicePixelRatioF()));
+}
+
+void SearchPage::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    updateSidebarPresentation();
+}
+
+void SearchPage::updateSidebarPresentation(bool force) {
+    if (sidebar_ == nullptr || headerLogo_ == nullptr) return;
+    const bool expanded = width() >= theme::kSearchSidebarExpandedMinWidth;
+    if (!force && expanded == sidebarExpanded_) return;
+    sidebarExpanded_ = expanded;
+
+    sidebar_->setFixedWidth(expanded ? theme::kSearchSidebarWidth
+                                     : theme::kSearchSidebarRailWidth);
+    const int inset = expanded ? theme::kSearchSidebarInset : theme::kSearchSidebarRailInset;
+    const Qt::Alignment actionAlignment = expanded ? Qt::Alignment() : Qt::AlignHCenter;
+    if (auto* rail = qobject_cast<QVBoxLayout*>(sidebar_->layout())) {
+        rail->setContentsMargins(inset, inset, inset, inset);
+        for (QToolButton* action : {mediaButton_, keysButton_, settingsButton_}) {
+            if (action == nullptr) continue;
+            rail->setAlignment(action, actionAlignment);
+        }
+    }
+    if (sidebarBrandName_ != nullptr) {
+        sidebarBrandName_->setVisible(expanded);
+    }
+    if (sidebarBrandLayout_ != nullptr) {
+        sidebarBrandLayout_->setAlignment(headerLogo_, expanded
+                                                         ? (Qt::AlignLeft | Qt::AlignVCenter)
+                                                         : Qt::AlignHCenter);
+    }
+    for (QToolButton* button : {homeButton_, filtersButton_, teamsButton_, mediaButton_,
+                                keysButton_, settingsButton_}) {
+        if (button == nullptr) continue;
+        button->setToolButtonStyle(expanded ? Qt::ToolButtonTextBesideIcon
+                                            : Qt::ToolButtonIconOnly);
+    }
+    for (QToolButton* action : {mediaButton_, keysButton_, settingsButton_}) {
+        if (action == nullptr) continue;
+        action->setProperty("compact", !expanded);
+        if (expanded) {
+            action->setMinimumWidth(0);
+            action->setMaximumWidth(QWIDGETSIZE_MAX);
+            action->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        } else {
+            action->setFixedWidth(theme::kControlHeight);
+            action->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        }
+        action->style()->unpolish(action);
+        action->style()->polish(action);
     }
 }
 
-void SearchPage::equalizeHeaderActions() {
-    // The row reads as a row only when its buttons share one width; the home
-    // button joins the group so a returned-to-home bar keeps the same rhythm.
-    theme::equalizeWidths({filtersButton_, teamsButton_, searchButton_, homeButton_});
+void SearchPage::updateHomeIndicator() {
+    // Stack visibility is not the Home navigation state.
+    if (homeButton_ != nullptr) homeButton_->setChecked(homeCurrent_);
 }
 
 void SearchPage::retranslateUi() {
@@ -566,24 +694,44 @@ void SearchPage::retranslateUi() {
         searchKeycap_->setText(tr("Enter ↵"));
         searchKeycap_->setAccessibleName(tr("Press Enter to search"));
     }
-    if (homeButton_ != nullptr) homeButton_->setText(tr("Home"));
+    if (sidebarBrandName_ != nullptr) sidebarBrandName_->setText(tr("Mikai Ja Nai"));
+    if (homeButton_ != nullptr) {
+        // The caption, the hover tooltip and the accessible name are the same
+        // word in every language; the rail's icon-only form shows the latter
+        // two, the expanded form all three.
+        homeButton_->setText(tr("Home"));
+        homeButton_->setToolTip(tr("Home"));
+        homeButton_->setAccessibleName(tr("Home"));
+    }
     if (mediaButton_ != nullptr) {
         mediaButton_->setText(tr("Open video"));
+        mediaButton_->setToolTip(tr("Open video"));
         mediaButton_->setAccessibleName(tr("Open video"));
     }
     if (openFileAction_ != nullptr) openFileAction_->setText(tr("Video file…"));
     if (openUrlAction_ != nullptr) openUrlAction_->setText(tr("Video URL…"));
     if (keysButton_ != nullptr) {
+        keysButton_->setText(tr("Shortcuts"));
         keysButton_->setToolTip(tr("Keyboard shortcuts (?)"));
         keysButton_->setAccessibleName(tr("Keyboard shortcuts"));
     }
     if (settingsButton_ != nullptr) {
+        settingsButton_->setText(tr("Settings"));
         settingsButton_->setToolTip(tr("API token settings"));
         settingsButton_->setAccessibleName(tr("API token settings"));
     }
     if (searchButton_ != nullptr) searchButton_->setText(tr("Search"));
-    if (filtersButton_ != nullptr) filtersButton_->setText(tr("Filters"));
-    if (teamsButton_ != nullptr) teamsButton_->setText(tr("Teams…"));
+    if (filtersButton_ != nullptr) {
+        // The tooltip belongs to the dictionary load, which words its own
+        // status; only the caption and the accessible name are this pass's.
+        filtersButton_->setText(tr("Filters"));
+        filtersButton_->setAccessibleName(tr("Filters"));
+    }
+    if (teamsButton_ != nullptr) {
+        teamsButton_->setText(tr("Teams…"));
+        teamsButton_->setToolTip(tr("Teams…"));
+        teamsButton_->setAccessibleName(tr("Teams…"));
+    }
     if (resultsHeading_ != nullptr) {
         // The heading names the mode the page is in, never the request that is
         // running: browse shows a recommendation set, everything else a search.
@@ -618,6 +766,8 @@ void SearchPage::retranslateUi() {
             if (section->heading != nullptr) section->heading->setText(carouselHeading(key));
             section->previous->setToolTip(tr("Previous page (or Alt + mouse wheel)"));
             section->next->setToolTip(tr("Next page (or Alt + mouse wheel)"));
+            section->previous->setAccessibleName(section->previous->toolTip());
+            section->next->setAccessibleName(section->next->toolTip());
             renderCarouselLine(*section);
             if (section->hasFailure) {
                 // The failure itself belongs to the surface, which re-localizes
@@ -636,9 +786,10 @@ void SearchPage::retranslateUi() {
             }
         }
     }
-    // The captions moved, so the row's width is measured again: a longer
-    // translation widens the bar instead of breaking its equality.
-    equalizeHeaderActions();
+    // A wider translation is a different rail: the caption that has to fit is
+    // measured again, and the mode is re-applied only if the page now crosses
+    // its threshold.
+    updateSidebarPresentation(true);
 }
 
 void SearchPage::renderCarouselLine(CarouselSection& section) {
@@ -861,7 +1012,8 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& key) {
     auto* track = new QWidget(section->scroll);
     track->setObjectName(QStringLiteral("animeCarouselTrack"));
     section->cards = new QHBoxLayout(track);
-    section->cards->setContentsMargins(2, 2, 2, 2);
+    section->cards->setContentsMargins(theme::kCarouselTrackInset, theme::kCarouselTrackInset,
+                                       theme::kCarouselTrackInset, theme::kCarouselTrackInset);
     section->cards->setSpacing(theme::kCarouselCardSpacing);
     section->scroll->setWidget(track);
     layout->addWidget(section->scroll);
@@ -871,10 +1023,12 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& key) {
     QPushButton* next = section->next;
     previous->setToolTip(tr("Previous page (or Alt + mouse wheel)"));
     next->setToolTip(tr("Next page (or Alt + mouse wheel)"));
+    previous->setAccessibleName(previous->toolTip());
+    next->setAccessibleName(next->toolTip());
     connect(previous, &QPushButton::clicked, this,
-            [this, bar] { smoothScrollCarousel(bar, -theme::kHomeCarouselScrollStep); });
+            [this, section] { smoothScrollCarousel(*section, -1); });
     connect(next, &QPushButton::clicked, this,
-            [this, bar] { smoothScrollCarousel(bar, theme::kHomeCarouselScrollStep); });
+            [this, section] { smoothScrollCarousel(*section, 1); });
     // Both edges of the track disable the arrow that would go nowhere.
     connect(bar, &QScrollBar::rangeChanged, this,
             [bar, previous, next](int, int) { syncArrows(bar, previous, next); });
@@ -882,8 +1036,9 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& key) {
             [bar, previous, next](int) { syncArrows(bar, previous, next); });
     syncArrows(bar, previous, next);
 
-    // Mouse wheel only scrolls the carousel horizontally when Alt is held;
-    // normal vertical scrolling passes through to the discovery scroll area.
+    // A wheel gesture scrolls the carousel horizontally only when it is
+    // horizontal itself or Alt is held; ordinary vertical scrolling passes
+    // through to the discovery feed behind it.
     section->scroll->viewport()->installEventFilter(this);
     section->scroll->hide();
 
@@ -891,19 +1046,38 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& key) {
     return section;
 }
 
-void SearchPage::smoothScrollCarousel(QScrollBar* bar, int delta) {
+void SearchPage::smoothScrollCarousel(CarouselSection& section, int direction) {
+    if (section.scroll == nullptr || direction == 0) {
+        return;
+    }
+    QScrollBar* bar = section.scroll->horizontalScrollBar();
     if (bar == nullptr) {
         return;
     }
+    const int spacing = section.cards != nullptr ? section.cards->spacing()
+                                                 : theme::kCarouselCardSpacing;
+    const int pitch = theme::kHomeCardWidth + spacing;
+    const QMargins margins = section.cards != nullptr ? section.cards->contentsMargins()
+                                                      : QMargins{};
+    const int usable = section.scroll->viewport()->width() - margins.left() - margins.right();
+    const int perPage = qMax(1, (usable + spacing) / pitch);
     const int start = bar->value();
-    const int target = qBound(bar->minimum(), start + delta, bar->maximum());
+    const bool animating = section.animation != nullptr &&
+                           section.animation->state() == QAbstractAnimation::Running;
+    // Repeated clicks advance from the pending destination, not an intermediate frame.
+    const int base = animating ? section.animation->endValue().toInt() : start;
+    const int pageIndex = (base + pitch / 2) / pitch;
+    const int target = qBound(bar->minimum(), (pageIndex + direction * perPage) * pitch,
+                             bar->maximum());
+    if (animating && base == target) {
+        return;
+    }
+    if (section.animation != nullptr) {
+        section.animation->stop();
+    }
     if (start == target) {
         return;
     }
-    // Qt 6.12 surfaces the system reduced-motion preference through
-    // QStyleHints::accessibility(); when it is set, jump instead of animating
-    // so the carousel respects the same OS setting the rest of the UI does. Both
-    // pointers are platform-owned and checked rather than assumed.
     const QStyleHints* hints = QGuiApplication::styleHints();
     const QAccessibilityHints* accessibility = hints != nullptr ? hints->accessibility() : nullptr;
     if (accessibility != nullptr &&
@@ -911,12 +1085,14 @@ void SearchPage::smoothScrollCarousel(QScrollBar* bar, int delta) {
         bar->setValue(target);
         return;
     }
-    auto* anim = new QPropertyAnimation(bar, "value", this);
-    anim->setDuration(240);
-    anim->setEasingCurve(QEasingCurve::OutCubic);
-    anim->setStartValue(start);
-    anim->setEndValue(target);
-    anim->start(QAbstractAnimation::DeleteWhenStopped);
+    if (section.animation == nullptr) {
+        section.animation = new QPropertyAnimation(bar, "value", this);
+        section.animation->setDuration(240);
+        section.animation->setEasingCurve(QEasingCurve::OutCubic);
+    }
+    section.animation->setStartValue(start);
+    section.animation->setEndValue(target);
+    section.animation->start();
 }
 
 bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
@@ -959,38 +1135,107 @@ bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
         }
     }
     if (event->type() == QEvent::Wheel) {
-        for (const auto* section : carousels_) {
+        for (auto* section : carousels_) {
             if (section != nullptr && section->scroll != nullptr &&
                 watched == section->scroll->viewport()) {
-                auto* we = static_cast<QWheelEvent*>(event);
-                const bool altHeld = we->modifiers().testFlag(Qt::AltModifier);
-                const int hDelta = we->angleDelta().x();
-                const int vDelta = we->angleDelta().y();
-
-                // Horizontal wheeling occurs only when Alt is held, or when
-                // hardware emits a true horizontal scroll delta.
-                if (altHeld && vDelta != 0) {
-                    QScrollBar* bar = section->scroll->horizontalScrollBar();
-                    if (bar != nullptr) {
-                        smoothScrollCarousel(bar, -vDelta * 2);
-                        return true;
-                    }
-                } else if (hDelta != 0) {
-                    QScrollBar* bar = section->scroll->horizontalScrollBar();
-                    if (bar != nullptr) {
-                        smoothScrollCarousel(bar, -hDelta * 2);
-                        return true;
-                    }
+                if (handleCarouselWheel(*section, static_cast<QWheelEvent*>(event))) {
+                    return true;
                 }
-
-                // Normal vertical wheel scroll must bubble up to the main
-                // discovery scroll area so carousels do not hijack navigation.
+                // Anything the carousel does not take is the discovery feed's:
+                // the page must keep scrolling normally over a card.
                 event->ignore();
                 return false;
             }
         }
     }
     return QWidget::eventFilter(watched, event);
+}
+
+bool SearchPage::handleCarouselWheel(CarouselSection& section, QWheelEvent* event) {
+    if (section.scroll == nullptr || event == nullptr) {
+        return false;
+    }
+    QScrollBar* bar = section.scroll->horizontalScrollBar();
+    if (bar == nullptr) {
+        return false;
+    }
+    const QPoint pixel = event->pixelDelta();
+    const bool altHeld = event->modifiers().testFlag(Qt::AltModifier);
+    // Qt's scrollbar wheel handler reads angleDelta, not pixelDelta.
+    if (!pixel.isNull()) {
+        const bool altVertical = altHeld && pixel.y() != 0;
+        if (altVertical || qAbs(pixel.x()) > qAbs(pixel.y())) {
+            if (section.animation != nullptr) {
+                section.animation->stop();
+            }
+            const int before = bar->value();
+            const int delta = altVertical ? pixel.y() : pixel.x();
+            bar->setValue(static_cast<int>(qBound(
+                static_cast<qint64>(bar->minimum()), static_cast<qint64>(before) - delta,
+                static_cast<qint64>(bar->maximum()))));
+            if (bar->value() != before) {
+                event->accept();
+                return true;
+            }
+        }
+        if (pixel.y() != 0 && discoveryScroll_ != nullptr) {
+            QScrollBar* pageBar = discoveryScroll_->verticalScrollBar();
+            const int before = pageBar->value();
+            pageBar->setValue(static_cast<int>(qBound(
+                static_cast<qint64>(pageBar->minimum()), static_cast<qint64>(before) - pixel.y(),
+                static_cast<qint64>(pageBar->maximum()))));
+            event->setAccepted(pageBar->value() != before);
+        } else {
+            event->ignore();
+        }
+        // Angle noise must not reinterpret the pixel gesture in the child area.
+        return true;
+    }
+
+    const QPoint angle = event->angleDelta();
+    const bool altVertical = altHeld && angle.y() != 0;
+    if (!altVertical && qAbs(angle.x()) <= qAbs(angle.y())) {
+        return false;
+    }
+    if (bar->maximum() <= bar->minimum()) {
+        return false;
+    }
+    if (section.animation != nullptr) {
+        section.animation->stop();
+    }
+    event->ignore();
+    if (altVertical && angle.x() != 0) {
+        const QPointF local = bar->mapFromGlobal(event->globalPosition());
+        QWheelEvent forwarded(local, event->globalPosition(), {}, QPoint(0, angle.y()),
+                              event->buttons(), event->modifiers(), event->phase(),
+                              event->inverted(), event->source(), event->pointingDevice());
+        forwarded.ignore();
+        QCoreApplication::sendEvent(bar, &forwarded);
+        event->setAccepted(forwarded.isAccepted());
+    } else {
+        QCoreApplication::sendEvent(bar, event);
+    }
+    // Native fractional deltas can be consumed before the integer value changes.
+    return event->isAccepted();
+}
+
+void SearchPage::placeIntro(bool inDiscovery) {
+    if (pageIntro_ == nullptr || rootLayout_ == nullptr || discoveryLayout_ == nullptr ||
+        inDiscovery == introInDiscovery_) {
+        return;
+    }
+    if (inDiscovery) {
+        rootLayout_->removeWidget(pageIntro_);
+        discoveryLayout_->insertWidget(0, pageIntro_);
+    } else {
+        discoveryLayout_->removeWidget(pageIntro_);
+        int index = formatBar_ != nullptr ? rootLayout_->indexOf(formatBar_) : -1;
+        if (index < 0 && results_ != nullptr) {
+            index = rootLayout_->indexOf(results_);
+        }
+        rootLayout_->insertWidget(index < 0 ? rootLayout_->count() : index, pageIntro_);
+    }
+    introInDiscovery_ = inDiscovery;
 }
 
 void SearchPage::keyPressEvent(QKeyEvent* event) {
@@ -2232,9 +2477,13 @@ void SearchPage::browseSelectedTeam(const backend::Team& team) {
                 reportFailure(Notice::Browser);
             }
         });
-        if (auto* root = qobject_cast<QVBoxLayout*>(layout())) {
-            root->insertWidget(2, teamBackButton_);
-            root->insertWidget(3, teamDetailLabel_);
+        // The profile's own controls sit between the heading and the status
+        // line, the order they had when they opened the page's fixed column.
+        if (pageIntro_ != nullptr) {
+            if (auto* intro = qobject_cast<QVBoxLayout*>(pageIntro_->layout())) {
+                intro->insertWidget(1, teamBackButton_);
+                intro->insertWidget(2, teamDetailLabel_);
+            }
         }
         connect(teamBackButton_, &QPushButton::clicked, this, [this] {
             teamBrowseMode_ = false;
@@ -2407,21 +2656,25 @@ void SearchPage::search() {
 }
 
 void SearchPage::showDiscovery() {
+    placeIntro(true);
     discoveryScroll_->show();
     results_->hide();
     formatBar_->hide();
     resultsHeading_->show();
-    if (homeButton_ != nullptr) homeButton_->hide();
+    homeCurrent_ = true;
+    updateHomeIndicator();
     // Thumbs that landed while the feeds were hidden were left unpainted, so
     // the switch back is the moment to catch them up.
     applyFeedPosters();
 }
 
 void SearchPage::showSearchResults() {
+    placeIntro(false);
     discoveryScroll_->hide();
     results_->show();
     resultsHeading_->show();
-    if (homeButton_ != nullptr) homeButton_->show();
+    homeCurrent_ = false;
+    updateHomeIndicator();
     applyThumbs();
 }
 

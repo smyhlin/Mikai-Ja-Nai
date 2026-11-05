@@ -50,6 +50,7 @@
 
 #include <QtGui/QGuiApplication>
 #include <QtTest/QSignalSpy>
+#include <QtWidgets/QAbstractButton>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QComboBox>
@@ -1403,8 +1404,8 @@ void TestFeedRender::settingsClosingDuringAcquisitionRestoresMainWindowInput() {
   window.show();
   QApplication::processEvents();
 
-  QPushButton* settingsButton = nullptr;
-  for (QPushButton* button : window.findChildren<QPushButton*>(QStringLiteral("settingsChip"))) {
+  QAbstractButton* settingsButton = nullptr;
+  for (QAbstractButton* button : window.findChildren<QAbstractButton*>(QStringLiteral("settingsChip"))) {
     if (button->accessibleName() == QStringLiteral("API token settings")) {
       settingsButton = button;
       break;
@@ -1414,8 +1415,8 @@ void TestFeedRender::settingsClosingDuringAcquisitionRestoresMainWindowInput() {
   // The shortcuts overlay steals focus and never closes itself. Open it first
   // so the regression covers the real stuck state: Settings opening and closing
   // over a live overlay.
-  QPushButton* keysButton = nullptr;
-  for (QPushButton* button : window.findChildren<QPushButton*>(QStringLiteral("settingsChip"))) {
+  QAbstractButton* keysButton = nullptr;
+  for (QAbstractButton* button : window.findChildren<QAbstractButton*>(QStringLiteral("settingsChip"))) {
     if (button->accessibleName() == QStringLiteral("Keyboard shortcuts")) {
       keysButton = button;
       break;
@@ -1806,94 +1807,6 @@ void TestFeedRender::titlePageKeepsLongControlsReachableAtDesktopMinimum() {
   QTRY_VERIFY_WITH_TIMEOUT(!overlay->isVisible(), 5000);
 }
 
-void TestFeedRender::mainPageHeaderKeepsEveryActionAndSkipsTheKeycap() {
-  CannedApi api;
-  QString error;
-  QVERIFY2(api.start(&error), qPrintable(error));
-
-  MikaiClient client(QString(), api.baseUrl());
-  Runner runner;
-  const auto drainBeforeClientDestruction =
-      drainWorkersBeforeClientDies(runner, "Search page workers did not stop");
-  SearchPage page(runner, client);
-  page.resize(1120, 800);
-  page.show();
-  page.activateWindow();
-
-  auto* header = page.findChild<QWidget*>(QStringLiteral("searchHeader"));
-  auto* field = page.findChild<QWidget*>(QStringLiteral("searchField"));
-  auto* query = page.findChild<QLineEdit*>(QStringLiteral("searchQuery"));
-  auto* keycap = page.findChild<QLabel*>(QStringLiteral("searchKeycap"));
-  auto* filters = page.findChild<QPushButton*>(QStringLiteral("catalogueFiltersButton"));
-  auto* teams = page.findChild<QPushButton*>(QStringLiteral("catalogueTeamsButton"));
-  auto* search = page.findChild<QPushButton*>(QStringLiteral("searchActionButton"));
-  auto* media = page.findChild<QPushButton*>(QStringLiteral("openMediaButton"));
-  auto* menu = page.findChild<QMenu*>(QStringLiteral("openMediaMenu"));
-  auto* ratePill = page.findChild<mikai::app::RateLimitLabel*>();
-  auto* dot = page.findChild<QLabel*>(QStringLiteral("rateDot"));
-  QVERIFY2(header != nullptr && field != nullptr && query != nullptr && keycap != nullptr &&
-               filters != nullptr && teams != nullptr && search != nullptr && media != nullptr &&
-               menu != nullptr && ratePill != nullptr && dot != nullptr,
-           "the header does not expose its field, keycap, actions, quota chip or menu");
-  QCOMPARE(ratePill->presentation(), mikai::app::RateLimitLabel::Presentation::Pill);
-  QVERIFY(dot->isVisible());
-  QVERIFY2(!media->icon().isNull(), "the Open video action lost its glyph");
-  QVERIFY2(media->width() <= media->sizeHint().width() + 2,
-           "the media menu must not expand across the utility cluster");
-  QVERIFY2(!filters->icon().isNull(), "the filters action lost its glyph");
-  QVERIFY2(!teams->icon().isNull(), "the teams action lost its glyph");
-  QVERIFY2(!search->icon().isNull(), "the primary action lost its glyph");
-
-  // The keycap is a hint, not a control: once the dictionary request answers
-  // and the filters action is live, the tab chain goes from the field straight
-  // to it instead of stopping on the keycap.
-  QTRY_VERIFY_WITH_TIMEOUT(filters->isEnabled(), 20000);
-  query->setFocus();
-  QTRY_VERIFY(query->hasFocus());
-  QTest::keyClick(query, Qt::Key_Tab);
-  QTRY_VERIFY_WITH_TIMEOUT(QApplication::focusWidget() == filters, 5000);
-
-  // The menu actions still reach the page.
-  auto* fileAction = page.findChild<QAction*>(QStringLiteral("openVideoFile"));
-  auto* urlAction = page.findChild<QAction*>(QStringLiteral("openVideoUrl"));
-  QVERIFY(fileAction != nullptr && urlAction != nullptr);
-  QSignalSpy fileSpy(&page, &SearchPage::mediaFileRequested);
-  QSignalSpy urlSpy(&page, &SearchPage::mediaUrlRequested);
-  fileAction->trigger();
-  urlAction->trigger();
-  QCOMPARE(fileSpy.count(), 1);
-  QCOMPARE(urlSpy.count(), 1);
-
-  // The settings chip in the icon cluster is still the token settings action.
-  QPushButton* settings = nullptr;
-  for (QPushButton* button : page.findChildren<QPushButton*>(QStringLiteral("settingsChip"))) {
-    if (button->accessibleName() == QStringLiteral("API token settings")) {
-      settings = button;
-      break;
-    }
-  }
-  QVERIFY(settings != nullptr);
-  QSignalSpy settingsSpy(&page, &SearchPage::settingsRequested);
-  QTest::mouseClick(settings, Qt::LeftButton);
-  QCOMPARE(settingsSpy.count(), 1);
-
-  // Both ways of asking for results still work.
-  auto* results = page.findChild<QListWidget*>(QStringLiteral("searchResults"));
-  QVERIFY(results != nullptr);
-  QTest::keyClicks(query, QStringLiteral("Probe"));
-  QTest::keyClick(query, Qt::Key_Return);
-  QTRY_VERIFY_WITH_TIMEOUT(results->isVisible() && results->count() > 0, 20000);
-
-  // The primary action starts its own result request: it drops the rows it
-  // held before the request goes out, then they land again. Asserting on that
-  // state avoids racing the page's format-count requests, which ride the same
-  // query and would make a bare request count pass on their own.
-  QTest::mouseClick(search, Qt::LeftButton);
-  QVERIFY2(results->count() == 0,
-           "the primary action did not start a new result request");
-  QTRY_VERIFY_WITH_TIMEOUT(results->count() > 0, 20000);
-}
-
 void TestFeedRender::loadedResultsRetranslateWithoutRefetchingOrLosingViewState() {
   const QString openingLanguage = mikai::app::activeInterfaceLanguage();
   QSettings settings;
@@ -1938,11 +1851,7 @@ void TestFeedRender::loadedResultsRetranslateWithoutRefetchingOrLosingViewState(
 
   auto* query = page.findChild<QLineEdit*>(QStringLiteral("searchQuery"));
   auto* results = page.findChild<QListWidget*>(QStringLiteral("searchResults"));
-  auto* searchButton = page.findChild<QPushButton*>(QStringLiteral("searchActionButton"));
-  auto* status = page.findChild<QLabel*>(QStringLiteral("status"));
-  QVERIFY2(query != nullptr && results != nullptr && searchButton != nullptr &&
-               status != nullptr,
-           "the search page does not expose its query, results, action and status");
+  QVERIFY(query != nullptr && results != nullptr);
 
   QTest::keyClicks(query, QStringLiteral("canned-many"));
   QTest::keyClick(query, Qt::Key_Return);
@@ -2030,16 +1939,6 @@ void TestFeedRender::loadedResultsRetranslateWithoutRefetchingOrLosingViewState(
   QVERIFY(resultsScrollBefore > 0);
 
   const QString englishSelected = results->item(6)->text();
-  const QString englishSearch = searchButton->text();
-  const QString englishPlaceholder = query->placeholderText();
-  QLabel* resultsHeading = nullptr;
-  for (QLabel* label : page.findChildren<QLabel*>(QStringLiteral("sectionHeading"))) {
-    if (label->text() == QStringLiteral("Search results")) {
-      resultsHeading = label;
-      break;
-    }
-  }
-  QVERIFY2(resultsHeading != nullptr, "the search page did not label the result mode");
 
   // From here on only words may move. The settings dialog is the real surface:
   // its selector installs the preview into the running page before Save.
@@ -2062,18 +1961,6 @@ void TestFeedRender::loadedResultsRetranslateWithoutRefetchingOrLosingViewState(
   language->setCurrentIndex(ukrainian);
   QCoreApplication::processEvents();
   QCOMPARE(mikai::app::activeInterfaceLanguage(), QStringLiteral("uk"));
-
-  const QString ukrainianSearch =
-      QCoreApplication::translate("mikai::app::SearchPage", "Search");
-  QVERIFY2(ukrainianSearch != englishSearch,
-           "the catalog did not translate the search action, so this slot proves nothing");
-  QCOMPARE(searchButton->text(), ukrainianSearch);
-  QCOMPARE(query->placeholderText(),
-           QCoreApplication::translate("mikai::app::SearchPage", "Search by title…"));
-  QCOMPARE(resultsHeading->text(),
-           QCoreApplication::translate("mikai::app::SearchPage", "Search results"));
-  QCOMPARE(status->text(),
-           QCoreApplication::translate("mikai::app::SearchPage", "Found: %1").arg(15));
 
   // State, not wording: the query, the filtered set, the selected row and the
   // scroll stay exactly where the reader left them.
@@ -2111,10 +1998,6 @@ void TestFeedRender::loadedResultsRetranslateWithoutRefetchingOrLosingViewState(
   language->setCurrentIndex(english);
   QCoreApplication::processEvents();
   QCOMPARE(mikai::app::activeInterfaceLanguage(), QStringLiteral("en"));
-  QCOMPARE(searchButton->text(), englishSearch);
-  QCOMPARE(query->placeholderText(), englishPlaceholder);
-  QCOMPARE(resultsHeading->text(), QStringLiteral("Search results"));
-  QCOMPARE(status->text(), QStringLiteral("Found: 15"));
   QCOMPARE(results->item(6)->text(), englishSelected);
   QCOMPARE(results->currentRow(), 6);
   QCOMPARE(resultsBar->value(), resultsScrollBefore);

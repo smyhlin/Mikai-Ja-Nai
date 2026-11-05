@@ -244,6 +244,49 @@ QPixmap renderSearch(int size, const QColor& color) {
     return pixmap;
 }
 
+QPixmap renderHome(int size, const QColor& color) {
+    QPixmap pixmap(size, size);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    const double scale = size / 24.0;
+    painter.scale(scale, scale);
+
+    QPen pen(color);
+    pen.setWidthF(1.8);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+
+    QPainterPath roof;
+    roof.moveTo(3.6, 10.8);
+    roof.lineTo(12.0, 3.8);
+    roof.lineTo(20.4, 10.8);
+    painter.drawPath(roof);
+
+    QPainterPath walls;
+    walls.moveTo(5.8, 9.4);
+    walls.lineTo(5.8, 20.0);
+    walls.lineTo(18.2, 20.0);
+    walls.lineTo(18.2, 9.4);
+    painter.drawPath(walls);
+
+    // The door is a single stroke pair rather than a filled shape: at the
+    // sidebar's smallest glyph box a filled door closes into a blob.
+    QPainterPath door;
+    door.moveTo(10.0, 20.0);
+    door.lineTo(10.0, 14.2);
+    door.lineTo(14.0, 14.2);
+    door.lineTo(14.0, 20.0);
+    painter.drawPath(door);
+
+    painter.end();
+    return pixmap;
+}
+
 /// The catalogue filters' funnel.
 QPixmap renderFilter(int size, const QColor& color) {
     QPixmap pixmap(size, size);
@@ -340,41 +383,6 @@ QPixmap renderPlay(int size, const QColor& color) {
     return pixmap;
 }
 
-QPixmap renderChevronDown(int size, const QColor& color) {
-    QPixmap pixmap(size, size);
-    pixmap.fill(Qt::transparent);
-
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-
-    const double scale = size / 24.0;
-    painter.scale(scale, scale);
-
-    // 2.4 grid units is 1.2 px at the menu chevron's 12 px: the 2.0-unit stroke
-    // this replaced was 0.83 px at 10 px, thin enough that whole device columns
-    // rounded away and the V read as a dashed line.
-    const double stroke = 2.4;
-    QPen pen(color);
-    pen.setWidthF(stroke);
-    pen.setCapStyle(Qt::RoundCap);
-    pen.setJoinStyle(Qt::RoundJoin);
-    painter.setPen(pen);
-    painter.setBrush(Qt::NoBrush);
-
-    // Half a device pixel of shift puts the stroke's edges on pixel boundaries,
-    // so the antialiasing ramp down the V is even instead of one-sided.
-    painter.translate(0.5 / scale, 0.5 / scale);
-
-    QPainterPath path;
-    path.moveTo(7.0, 10.0);
-    path.lineTo(12.0, 15.0);
-    path.lineTo(17.0, 10.0);
-    painter.drawPath(path);
-
-    painter.end();
-    return pixmap;
-}
-
 QPixmap renderChevron(int size, const QColor& color, bool left) {
     QPixmap pixmap(size, size);
     pixmap.fill(Qt::transparent);
@@ -416,10 +424,10 @@ enum class Glyph {
     ChevronLeft,
     ChevronRight,
     Search,
+    Home,
     Filter,
     Teams,
-    Play,
-    ChevronDown
+    Play
 };
 
 /// The icon box a request asks for, in logical pixels: the glyph is square and
@@ -448,10 +456,10 @@ QPixmap renderGlyph(Glyph glyph, int side, const QColor& color) {
         case Glyph::ChevronLeft: return renderChevron(side, color, true);
         case Glyph::ChevronRight: return renderChevron(side, color, false);
         case Glyph::Search: return renderSearch(side, color);
+        case Glyph::Home: return renderHome(side, color);
         case Glyph::Filter: return renderFilter(side, color);
         case Glyph::Teams: return renderTeams(side, color);
         case Glyph::Play: return renderPlay(side, color);
-        case Glyph::ChevronDown: return renderChevronDown(side, color);
     }
     return {};
 }
@@ -567,14 +575,14 @@ QIcon gearIcon(int size, const QString& color) {
     return glyphIcon(Glyph::Gear, size, fill, fill, fill);
 }
 
-QIcon outlineGearIcon(int size, const QString& color) {
+QIcon outlineGearIcon(int size, const QString& color, int trailingGap) {
     const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
-    return glyphIcon(Glyph::OutlineGear, size, fill, fill, fill);
+    return glyphIcon(Glyph::OutlineGear, size, fill, fill, fill, trailingGap);
 }
 
-QIcon keyboardIcon(int size, const QString& color) {
+QIcon keyboardIcon(int size, const QString& color, int trailingGap) {
     const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
-    return glyphIcon(Glyph::Keyboard, size, fill, fill, fill);
+    return glyphIcon(Glyph::Keyboard, size, fill, fill, fill, trailingGap);
 }
 
 QIcon slidersIcon(int size, const QString& color) {
@@ -592,9 +600,15 @@ QIcon searchIcon(int size, const QString& color, int trailingGap) {
     return glyphIcon(Glyph::Search, size, fill, fill, fill, trailingGap);
 }
 
+QIcon homeIcon(int size, const QString& color, int trailingGap) {
+    const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
+    return glyphIcon(Glyph::Home, size, fill, fill, fill, trailingGap);
+}
+
 QIcon filterIcon(int size, const QString& color, int trailingGap) {
     const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
-    return glyphIcon(Glyph::Filter, size, fill, fill, fill, trailingGap);
+    const QColor disabled = QApplication::palette().color(QPalette::Disabled, QPalette::Text);
+    return glyphIcon(Glyph::Filter, size, fill, fill, disabled, trailingGap);
 }
 
 QIcon teamsIcon(int size, const QString& color, int trailingGap) {
@@ -605,11 +619,6 @@ QIcon teamsIcon(int size, const QString& color, int trailingGap) {
 QIcon playIcon(int size, const QString& color, int trailingGap) {
     const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
     return glyphIcon(Glyph::Play, size, fill, fill, fill, trailingGap);
-}
-
-QIcon chevronDownIcon(int size, const QString& color) {
-    const QColor fill(color.isEmpty() ? QApplication::palette().color(QPalette::Text) : QColor(color));
-    return glyphIcon(Glyph::ChevronDown, size, fill, fill, fill);
 }
 
 QIcon chevronLeftIcon(int size) {

@@ -15,7 +15,6 @@ class TestThemeIcons : public QObject {
   void headerGlyphsShareTheirLeadingInkEdge_data();
   void headerGlyphsShareTheirLeadingInkEdge();
   void noTornColumnsInsideGlyphInk();
-  void chevronKeepsEveryStrokeRowInked();
   void toggleAndSwatchPaintOnceAtEveryRatio();
   void artworkFrameIsAllocatedAtTheDeviceSize();
   void shellGlyphJoinsAreRound();

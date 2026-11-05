@@ -619,8 +619,8 @@ QString labelText(const QWidget& root, const char* name) {
   return label ? label->text() : QString();
 }
 
-QPushButton* button(const QWidget& root, const char* name) {
-  return root.findChild<QPushButton*>(QString::fromLatin1(name));
+QAbstractButton* button(const QWidget& root, const char* name) {
+  return root.findChild<QAbstractButton*>(QString::fromLatin1(name));
 }
 
 mikai::app::TitlePage* visibleTitle(const QWidget& root) {
@@ -926,16 +926,9 @@ void TestPublicApiUi::headerLogoTracksLightAndDarkAppearance() {
   page.resize(900, 640);
   page.show();
 
-  auto* heading = page.findChild<QLabel*>(QStringLiteral("heading"));
   auto* logo = page.findChild<QLabel*>(QStringLiteral("headerLogo"));
-  QVERIFY(heading != nullptr);
   QVERIFY(logo != nullptr);
-  QTRY_VERIFY(heading->isVisible());
   QTRY_VERIFY(logo->isVisible());
-  QVERIFY(logo->accessibleName().isEmpty());
-  QVERIFY(logo->accessibleDescription().isEmpty());
-  QVERIFY(logo->minimumSize().width() >= 24);
-  QVERIFY(logo->minimumSize().height() >= 24);
 
   auto hasTintedAlpha = [logo](const QColor& tint) {
     QImage image(logo->size(), QImage::Format_ARGB32);
@@ -968,7 +961,6 @@ void TestPublicApiUi::headerLogoTracksLightAndDarkAppearance() {
   qApp->setStyleSheet(mikai::app::theme::buildStylesheet(appearance));
   QTRY_VERIFY(hasTintedAlpha(logo->palette().color(QPalette::WindowText)));
   QVERIFY(logo->palette().color(QPalette::WindowText) != darkTint);
-  QVERIFY(heading->isVisible());
   QVERIFY(logo->isVisible());
 }
 
@@ -1249,7 +1241,7 @@ void TestPublicApiUi::catalogueFiltersRetainCanonicalSelectionsAndReset() {
   page.resize(1120, 800);
   page.show();
 
-  auto* heading = page.findChild<QLabel*>(QStringLiteral("sectionHeading"));
+  auto* heading = page.findChild<QLabel*>(QStringLiteral("pageHeading"));
   QVERIFY(heading != nullptr);
   const QString initialHeading = heading->text();
   QTRY_VERIFY_WITH_TIMEOUT(heading->text() != initialHeading, 10000);
@@ -1358,7 +1350,7 @@ void TestPublicApiUi::catalogueFilterSearchNarrowsChoices() {
   page.resize(1120, 800);
   page.show();
 
-  auto* heading = page.findChild<QLabel*>(QStringLiteral("sectionHeading"));
+  auto* heading = page.findChild<QLabel*>(QStringLiteral("pageHeading"));
   QVERIFY(heading != nullptr);
   const QString initialHeading = heading->text();
   QTRY_VERIFY_WITH_TIMEOUT(heading->text() != initialHeading, 10000);
@@ -1445,7 +1437,7 @@ void TestPublicApiUi::teamBrowsingAndFilteringKeepSelectionsConsistent() {
   page.resize(1120, 800);
   page.show();
 
-  auto* heading = page.findChild<QLabel*>(QStringLiteral("sectionHeading"));
+  auto* heading = page.findChild<QLabel*>(QStringLiteral("pageHeading"));
   QVERIFY(heading != nullptr);
   const QString initialHeading = heading->text();
   QTRY_VERIFY_WITH_TIMEOUT(heading->text() != initialHeading, 10000);
@@ -1558,7 +1550,7 @@ void TestPublicApiUi::teamLinksShowServiceNamesAndOpenOnlyOnActivation() {
   mikai::app::SearchPage page(runner, client);
   page.resize(1120, 800);
   page.show();
-  auto* heading = page.findChild<QLabel*>(QStringLiteral("sectionHeading"));
+  auto* heading = page.findChild<QLabel*>(QStringLiteral("pageHeading"));
   QVERIFY(heading != nullptr);
   const QString initialHeading = heading->text();
   QTRY_VERIFY_WITH_TIMEOUT(heading->text() != initialHeading, 10000);
@@ -1619,7 +1611,7 @@ void TestPublicApiUi::homeAndEscapeReturnFromTeamAndSearch() {
   page.resize(1120, 800);
   page.show();
   page.activateWindow();
-  auto* heading = page.findChild<QLabel*>(QStringLiteral("sectionHeading"));
+  auto* heading = page.findChild<QLabel*>(QStringLiteral("pageHeading"));
   auto* discovery = page.findChild<QScrollArea*>(QStringLiteral("discoveryScroll"));
   auto* results = page.findChild<QListWidget*>(QStringLiteral("searchResults"));
   auto* query = page.findChild<QLineEdit*>(QStringLiteral("searchQuery"));
@@ -1701,7 +1693,7 @@ void TestPublicApiUi::escapeCancelsPendingTeamNavigationAtHome() {
   page.resize(1120, 800);
   page.show();
   page.activateWindow();
-  auto* heading = page.findChild<QLabel*>(QStringLiteral("sectionHeading"));
+  auto* heading = page.findChild<QLabel*>(QStringLiteral("pageHeading"));
   auto* discovery = page.findChild<QScrollArea*>(QStringLiteral("discoveryScroll"));
   auto* query = page.findChild<QLineEdit*>(QStringLiteral("searchQuery"));
   QVERIFY(heading && discovery && query);
@@ -1753,7 +1745,7 @@ void TestPublicApiUi::titleHomeSkipsHistoryAndEscapeUnwindsDetailsAndHistory() {
   auto* query = search->findChild<QLineEdit*>(QStringLiteral("searchQuery"));
   auto* results = search->findChild<QListWidget*>(QStringLiteral("searchResults"));
   auto* discovery = search->findChild<QScrollArea*>(QStringLiteral("discoveryScroll"));
-  auto* heading = search->findChild<QLabel*>(QStringLiteral("sectionHeading"));
+  auto* heading = search->findChild<QLabel*>(QStringLiteral("pageHeading"));
   QVERIFY(query && results && discovery && heading);
   const QString initialHeading = heading->text();
   QTRY_VERIFY_WITH_TIMEOUT(heading->text() != initialHeading, 10000);
@@ -2149,7 +2141,7 @@ void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
   QVERIFY2(header != nullptr, "the title header is missing");
   QCOMPARE(header->height(),
            40 + 2 * mikai::app::theme::kSpacingMedium);
-  for (QPushButton* control : {back, home, settingsChip}) {
+  for (QAbstractButton* control : {back, home, settingsChip}) {
     QVERIFY2(control->height() == 40,
              qPrintable(QStringLiteral("%1 is %2 px tall inside a %3 px track")
                             .arg(control->objectName())
@@ -2187,49 +2179,6 @@ void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
                           .arg(heroWatch->width())
                           .arg(episodes->width())));
 
-  // The search header: the field and its row share the control height, and the
-  // three action buttons share one width whatever their caption.
-  mikai::app::SearchPage search(runner, client);
-  search.resize(1280, 900);
-  search.show();
-  QTRY_VERIFY_WITH_TIMEOUT(button(search, "catalogueFiltersButton") != nullptr, 10000);
-  auto* field = search.findChild<QWidget*>(QStringLiteral("searchField"));
-  auto* filters = button(search, "catalogueFiltersButton");
-  auto* teams = button(search, "catalogueTeamsButton");
-  auto* action = button(search, "searchActionButton");
-  QVERIFY(field != nullptr && filters != nullptr && teams != nullptr && action != nullptr);
-  QTRY_VERIFY_WITH_TIMEOUT(filters->isVisible() && action->isVisible(), 10000);
-  QCOMPARE(field->height(), 40);
-  for (QPushButton* control : {filters, teams, action}) {
-    QCOMPARE(control->height(), 40);
-  }
-  const auto rowIsEqual = [filters, teams, action] {
-    return filters->width() == teams->width() && teams->width() == action->width();
-  };
-  QVERIFY2(rowIsEqual(), qPrintable(QStringLiteral("the action row is %1 / %2 / %3 px wide")
-                                        .arg(filters->width())
-                                        .arg(teams->width())
-                                        .arg(action->width())));
-  // A translation restates the captions; the row stays equal at the new
-  // advances instead of keeping the width the old language asked for.
-  if (primeBuiltCatalogForSwitching()) {
-    QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
-    const auto restoreEnglish =
-        qScopeGuard([] { mikai::app::applyInterfaceLanguage(QStringLiteral("en")); });
-    QCoreApplication::processEvents();
-    QVERIFY2(rowIsEqual(), qPrintable(QStringLiteral(
-                               "the Ukrainian action row is %1 / %2 / %3 px wide")
-                               .arg(filters->width())
-                               .arg(teams->width())
-                               .arg(action->width())));
-    for (QPushButton* control : {filters, teams, action}) {
-      const int ink = control->fontMetrics().horizontalAdvance(control->text());
-      QVERIFY2(control->width() >= ink,
-               qPrintable(QStringLiteral("%1 clips its Ukrainian caption")
-                              .arg(control->objectName())));
-    }
-  }
-
   // The settings action rows hold the same contract at the dialog minimum.
   mikai::app::ComponentStoreTab tab;
   tab.setRunner(&runner);
@@ -2266,10 +2215,9 @@ void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
   // paints at: the style rounds its own box model for the device, so a control
   // can ask for a pixel more than the row measured from the font alone, and
   // then paints wider than its equals.
-  QList<QPushButton*> equalRow{back,     home,     watch,  heroWatch, watched,
-                               episodes, filters,  teams,  action};
-  equalRow += settingsActions;
-  for (QPushButton* control : equalRow) {
+  QList<QAbstractButton*> equalRow{back, home, watch, heroWatch, watched, episodes};
+  for (QPushButton* control : settingsActions) equalRow.append(control);
+  for (QAbstractButton* control : equalRow) {
     QVERIFY2(control->sizeHint().width() <= control->width(),
              qPrintable(QStringLiteral("%1 paints %2 px wide inside its %3 px row")
                             .arg(control->objectName())

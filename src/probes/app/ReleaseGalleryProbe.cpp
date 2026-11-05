@@ -514,8 +514,8 @@ private:
             }
             break;
         case Stage::SettingsOpen: {
-            QPushButton* settingsButton = nullptr;
-            for (auto* button : window_->findChildren<QPushButton*>()) {
+            QAbstractButton* settingsButton = nullptr;
+            for (auto* button : window_->findChildren<QAbstractButton*>()) {
                 if (button->isVisible() && button->isEnabled() &&
                     button->accessibleName() == QLatin1String("API token settings")) {
                     settingsButton = button;

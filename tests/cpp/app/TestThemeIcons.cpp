@@ -343,14 +343,9 @@ void TestThemeIcons::glyphBoxIsPhysicalAtEveryScale() {
   const QList<qreal> scales = {1.0, 1.25, 1.5, 1.75, 2.0};
   const QColor ink(QStringLiteral("#ffffff"));
   const int pad = mikai::app::theme::kIconGlyphPad;
-  // The boxes the application really asks for: the padded header action, the
-  // unpadded square, and the menu chevron.
   const QList<QPair<QSize, int>> requests = {
       {QSize(mikai::app::theme::kIconSize + pad, mikai::app::theme::kIconSize), pad},
       {QSize(mikai::app::theme::kIconSize, mikai::app::theme::kIconSize), 0},
-      {QSize(mikai::app::theme::kSearchMenuChevronSize,
-             mikai::app::theme::kSearchMenuChevronSize),
-       0},
   };
 
   for (const qreal scale : scales) {
@@ -485,30 +480,6 @@ void TestThemeIcons::noTornColumnsInsideGlyphInk() {
       peak = qMax(peak, alphaAt(image, x, y));
     }
     QVERIFY2(peak > 0, qPrintable(QStringLiteral("transparent row %1 inside the glyph").arg(y)));
-  }
-}
-
-void TestThemeIcons::chevronKeepsEveryStrokeRowInked() {
-  const int side = mikai::app::theme::kSearchMenuChevronSize;
-  const QIcon icon = mikai::app::theme::chevronDownIcon(side, QStringLiteral("#c8c8d0"));
-  for (const qreal ratio : {1.0, 1.25, 1.5}) {
-    const QImage image = icon.pixmap(QSize(side, side), ratio).toImage();
-    const QRect bounds = inkBounds(image);
-    QVERIFY2(bounds.isValid(), "the chevron left no ink");
-    // The V's two arms plus the apex: at 12 px that is four or five rows, and the
-    // outermost ones are the round caps, which taper by design.
-    QVERIFY(bounds.height() >= 4);
-    for (int y = bounds.top() + 1; y < bounds.bottom(); ++y) {
-      int peak = 0;
-      for (int x = bounds.left(); x <= bounds.right(); ++x) {
-        peak = qMax(peak, alphaAt(image, x, y));
-      }
-      QVERIFY2(peak >= 128,
-               qPrintable(QStringLiteral("stroke row %1 at %2 is %3% covered")
-                              .arg(y)
-                              .arg(ratio)
-                              .arg(QString::number(peak * 100.0 / 255.0, 'f', 0))));
-    }
   }
 }
 

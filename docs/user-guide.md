@@ -14,7 +14,9 @@ The original Windows v0.1.0 packages can fail on startup with `__cxa_call_termin
 
 ## Start here
 
-Launch the installed or portable application. Home offers discovery feeds; Search is where you can search and filter the catalogue; **Teams…** opens a team picker. Open a result to see its title page, releases and episodes. Press **Enter** in the search field to search; **Escape** returns to Home (or dismisses the keyboard-shortcut overlay first). The **Keyboard shortcuts** button opens the app's shortcut overlay. Settings contains API access, appearance, playback and processing options.
+Launch the installed or portable application. The left sidebar provides **Home**, **Filters** and **Teams…**, with matching full-width **Open video**, **Shortcuts** and **Settings** rows at the bottom. In narrower windows it becomes an icon rail; tooltips identify each action. Home offers discovery feeds, Filters opens the catalogue-filter dialog, and Teams opens a team picker.
+
+The search field, **Search** and **RPM** stay in the top toolbar while Home headings and feeds scroll below. Carousel arrows advance card-aligned pages sized to the visible cards; vertical scrolling over cards continues down the page. Open a result to see its title page, releases and episodes. Press **Enter** in the search field to search. **Shortcuts** opens the keyboard-shortcut overlay; **Escape** dismisses it first or returns to Home. Settings contains API access, appearance, playback and processing options.
 
 Catalogue browsing works anonymously, subject to the service's anonymous limits. A key is optional: add one under **Settings → Access** to use the higher keyed limit. Keep the key private; it is sent to the Mikai API. The Access page provides a token test and API-usage readout. The [API reference](../docs.md) explains the public API contract.
 
@@ -22,7 +24,7 @@ The Home/Search header’s **RPM** badge shows the most recently reported reques
 
 ## Find titles and filter the catalogue
 
-1. Open **Search**, enter a title or search phrase, then press **Enter** or choose **Search**. Clear the field and search again to return to the unfiltered catalogue browse; if catalogue filters remain selected, they still apply.
+1. Enter a title or search phrase in the top search field, then press **Enter** or choose **Search**. Clear the field and search again to return to the unfiltered catalogue browse; if catalogue filters remain selected, they still apply.
 2. Open **Filters** (the dialog is titled **Catalogue filters**) to narrow results. It provides genre and tag include/exclude lists; year-from/year-to ranges and a comma-separated list of exact years; format, status, season and studio selections; and sort field/order. The search fields narrow the displayed genre, tag and release-option lists (formats, statuses, seasons and studios).
 3. For selected genres or tags, choose **Match all** or **Match any**. Include and exclude selections let you shape a result set—for example, include a genre and exclude a tag you do not want.
 4. Choose **Apply** to apply the selections, or **Reset** to clear catalogue criteria. Both actions keep the search text. **Cancel** discards edits made in the dialog.

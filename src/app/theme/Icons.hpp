@@ -11,10 +11,10 @@ namespace mikai::app::theme {
 /// cached, so it stays crisp at any device pixel ratio and adds nothing to the
 /// build.
 QIcon gearIcon(int size = 0, const QString& color = {});
-QIcon outlineGearIcon(int size = 0, const QString& color = {});
+QIcon outlineGearIcon(int size = 0, const QString& color = {}, int trailingGap = 0);
 
 /// The keyboard glyph for shortcuts list.
-QIcon keyboardIcon(int size = 0, const QString& color = {});
+QIcon keyboardIcon(int size = 0, const QString& color = {}, int trailingGap = 0);
 
 /// The tuning sliders glyph for the processing pipeline tab.
 QIcon slidersIcon(int size = 0, const QString& color = {});
@@ -27,11 +27,10 @@ QIcon packageIcon(int size = 0, const QString& color = {});
 // and label itself owns the spacing between them, and this is how the header
 // brings the style's fixed gap up to the 8 px its design asks for.
 QIcon searchIcon(int size = 0, const QString& color = {}, int trailingGap = 0);
+QIcon homeIcon(int size = 0, const QString& color = {}, int trailingGap = 0);
 QIcon filterIcon(int size = 0, const QString& color = {}, int trailingGap = 0);
 QIcon teamsIcon(int size = 0, const QString& color = {}, int trailingGap = 0);
 QIcon playIcon(int size = 0, const QString& color = {}, int trailingGap = 0);
-/// The downward chevron a control that opens a menu carries at its trailing edge.
-QIcon chevronDownIcon(int size = 0, const QString& color = {});
 
 /// Crisp vector left/right chevrons for carousel navigation buttons.
 QIcon chevronLeftIcon(int size = 0);

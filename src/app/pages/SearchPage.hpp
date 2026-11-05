@@ -23,12 +23,16 @@ class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
 class QPixmap;
+class QPropertyAnimation;
 class QPushButton;
+class QResizeEvent;
+class QToolButton;
 class QScrollArea;
 class QScrollBar;
 class QTabBar;
 class QTimer;
 class QVBoxLayout;
+class QWheelEvent;
 class QWidget;
 
 namespace mplayer::shell {
@@ -98,6 +102,7 @@ Q_SIGNALS:
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void changeEvent(QEvent* event) override;
 
@@ -112,6 +117,7 @@ private:
         FailureView* failure = nullptr;
         QPushButton* previous = nullptr;
         QPushButton* next = nullptr;
+        QPropertyAnimation* animation = nullptr;
         /// What the block's own line currently says, kept as the state it
         /// describes rather than as the words it was painted with, so a
         /// language switch restates the line without re-reading the collection.
@@ -182,7 +188,9 @@ private:
         QString shown;
     };
 
-    void smoothScrollCarousel(QScrollBar* bar, int delta);
+    void smoothScrollCarousel(CarouselSection& section, int direction);
+    bool handleCarouselWheel(CarouselSection& section, QWheelEvent* event);
+    void placeIntro(bool inDiscovery);
     CarouselSection* buildCarousel(const QString& key);
     FeedSection* buildFeedSection(const QString& key);
     CarouselSection* carouselSection(const QString& key) const;
@@ -198,11 +206,17 @@ private:
     /// the logo is re-tinted, so an icon can never stay on the previous theme's
     /// ink while its button moves.
     void refreshHeaderIcons();
-    /// One width for the header's text actions, read from their fonts. Called
-    /// after construction, after every retranslation and when the font or the
-    /// device ratio changes, so a wider translation widens the row instead of
-    /// making one button longer than its neighbours.
-    void equalizeHeaderActions();
+    /// The sidebar's state for the page width it now has. Called from
+    /// resizeEvent, and forced once after construction and after a
+    /// retranslation that changes what the rail measures. Only a change of mode
+    /// touches the widget tree: the widths, the margins, the caption and the
+    /// button style are all set from the state, and a resize inside one mode is
+    /// a no-op.
+    void updateSidebarPresentation(bool force = false);
+    /// The discovery entry's current marker, taken from the page's own mode
+    /// rather than from a widget's visibility: an ancestor stack hides the
+    /// whole page without telling the rail anything.
+    void updateHomeIndicator();
     void retranslateUi();
     /// The heading of the block `key` names, in the active language. Both the
     /// constructor and a retranslate pass take it from here, so the two can
@@ -394,18 +408,16 @@ private:
 
     QTimer* healTimer_ = nullptr;
     QTimer* thumbTimer_ = nullptr;
-    /// Handles for the captions a language switch restates. The query holds the
-    /// viewer's text and the results list its rows; neither is rebuilt.
-    QPushButton* homeButton_ = nullptr;
-    QPushButton* mediaButton_ = nullptr;
+    QToolButton* homeButton_ = nullptr;
+    QToolButton* mediaButton_ = nullptr;
     QAction* openFileAction_ = nullptr;
     QAction* openUrlAction_ = nullptr;
-    QPushButton* keysButton_ = nullptr;
-    QPushButton* settingsButton_ = nullptr;
+    QToolButton* keysButton_ = nullptr;
+    QToolButton* settingsButton_ = nullptr;
     QPushButton* searchButton_ = nullptr;
     QLineEdit* query_ = nullptr;
-    QPushButton* filtersButton_ = nullptr;
-    QPushButton* teamsButton_ = nullptr;
+    QToolButton* filtersButton_ = nullptr;
+    QToolButton* teamsButton_ = nullptr;
     QLabel* headerLogo_ = nullptr;
     QImage headerLogoSource_;
     QColor headerLogoTint_;
@@ -416,13 +428,20 @@ private:
     QWidget* searchField_ = nullptr;
     QLabel* searchGlyph_ = nullptr;
     QLabel* searchKeycap_ = nullptr;
-    /// The chip's trailing chevron. It lives in its own right-aligned layout
-    /// rather than the style's menu indicator, which offers no inset control.
-    QLabel* mediaChevron_ = nullptr;
     QPushButton* teamBackButton_ = nullptr;
     QLabel* teamDetailLabel_ = nullptr;
     QLabel* resultsHeading_ = nullptr;
     QLabel* status_ = nullptr;
+    QWidget* pageIntro_ = nullptr;
+    bool introInDiscovery_ = false;
+    QWidget* sidebar_ = nullptr;
+    QWidget* searchContent_ = nullptr;
+    QLabel* sidebarBrandName_ = nullptr;
+    QHBoxLayout* sidebarBrandLayout_ = nullptr;
+    bool sidebarExpanded_ = true;
+    bool homeCurrent_ = true;
+    QVBoxLayout* rootLayout_ = nullptr;
+    QVBoxLayout* discoveryLayout_ = nullptr;
     QScrollArea* discoveryScroll_ = nullptr;
     QTabBar* formatBar_ = nullptr;
     QListWidget* results_ = nullptr;
