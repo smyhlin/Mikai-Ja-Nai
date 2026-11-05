@@ -93,7 +93,8 @@ mpv_digest="$(sha256sum "$mpv_archive" | cut -d' ' -f1)"
 
 build_dir="$work_dir/pkgbuild"
 mkdir -p "$build_dir/out"
-sed -e "s/@SHA256@/$digest/" -e "s/@MPV_SHA256@/$mpv_digest/" -e "s/@REVISION@/$revision/" \
+sed -e "s/@VERSION@/$version/" -e "s/@SHA256@/$digest/" -e "s/@MPV_SHA256@/$mpv_digest/" \
+  -e "s/@REVISION@/$revision/" \
   packaging/arch/PKGBUILD > "$build_dir/PKGBUILD"
 cp "$tarball" "$build_dir/mikai-$version.tar.gz"
 cp "$mpv_archive" "$build_dir/mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst"

@@ -1,8 +1,8 @@
 # Maintainer: Mikai local QA build <noreply@localhost>
 # Built from an exported source tarball by packaging/linux/arch-package.sh, which
-# substitutes _revision and sha256sums. A manual `makepkg` needs both replaced.
+# substitutes pkgver, _revision and sha256sums. A manual `makepkg` needs them replaced.
 pkgname=mikai
-pkgver=0.1.0
+pkgver=@VERSION@
 pkgrel=1
 pkgdesc='Mikai Ja Nai desktop client for the Mikai anime catalogue, with a libmpv player'
 arch=('x86_64')
