@@ -21,13 +21,20 @@ sha256sums=('@SHA256@' '@MPV_SHA256@')
 _revision='@REVISION@'
 
 build() {
+  # The driver passes the cached pinned Anime4K tarball when it has one, so the
+  # package build does not depend on network access for third-party shaders.
+  local anime4k_args=()
+  if [[ -n "${MIKAI_ANIME4K_ARCHIVE:-}" && -f "${MIKAI_ANIME4K_ARCHIVE}" ]]; then
+    anime4k_args+=(-DMIKAI_ANIME4K_ARCHIVE="${MIKAI_ANIME4K_ARCHIVE}")
+  fi
   cmake -S "$srcdir/mikai-$pkgver" -B build -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr \
     -DMIKAI_BUILD_REVISION="$_revision" \
     -DMIKAI_LINUX_BUNDLE_MPV=ON \
     -DMIKAI_LINUX_MPV_ARCHIVE="$srcdir/mpv-linux-x64-$_mpvver.tar.zst" \
-    -DMIKAI_LINUX_MPV_INSTALL_SUBDIR=lib/mikai/mpv
+    -DMIKAI_LINUX_MPV_INSTALL_SUBDIR=lib/mikai/mpv \
+    "${anime4k_args[@]}"
   cmake --build build
 }
 

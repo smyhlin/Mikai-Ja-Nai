@@ -11,15 +11,17 @@ usage() {
 output_dir=''
 work_dir=''
 mpv_archive=''
+anime4k_archive_arg=''
 skip_check=0
 while (($#)); do
   case "$1" in
-    --output-dir|--work-dir|--mpv-archive)
+    --output-dir|--work-dir|--mpv-archive|--anime4k-archive)
       if (($# < 2)) || [[ -z "$2" ]]; then usage >&2; exit 2; fi
       case "$1" in
         --output-dir) output_dir="$2" ;;
         --work-dir) work_dir="$2" ;;
         --mpv-archive) mpv_archive="$2" ;;
+        --anime4k-archive) anime4k_archive_arg="$2" ;;
       esac
       shift 2 ;;
     --skip-check) skip_check=1; shift ;;
@@ -91,6 +93,21 @@ if [[ ! -f "$mpv_archive" ]]; then
 fi
 mpv_digest="$(sha256sum "$mpv_archive" | cut -d' ' -f1)"
 
+anime4k_pin="$(sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' \
+  "$repo_root/packaging/shaders/anime4k-manifest.json" | head -1)"
+anime4k_archive="${anime4k_archive_arg:-${MIKAI_ANIME4K_ARCHIVE:-}}"
+if [[ -z "$anime4k_archive" && -n "$anime4k_pin" ]]; then
+  for candidate in \
+      "${XDG_CACHE_HOME:-$HOME/.cache}/mikai/anime4k/anime4k-$anime4k_pin.tar.gz" \
+      "$repo_root"/build/*/_dist-cache/anime4k/anime4k-$anime4k_pin.tar.gz; do
+    if [[ -f "$candidate" ]]; then anime4k_archive="$candidate"; break; fi
+  done
+fi
+if [[ -n "$anime4k_archive" && ! -f "$anime4k_archive" ]]; then
+  printf 'The Anime4K archive does not exist: %s\n' "$anime4k_archive" >&2
+  exit 1
+fi
+
 build_dir="$work_dir/pkgbuild"
 mkdir -p "$build_dir/out"
 sed -e "s/@VERSION@/$version/" -e "s/@SHA256@/$digest/" -e "s/@MPV_SHA256@/$mpv_digest/" \
@@ -106,7 +123,8 @@ makepkg_args=(--noconfirm --force --cleanbuild --nodeps)
 if ((skip_check)); then makepkg_args+=(--nocheck); fi
 (
   cd "$build_dir"
-  PKGDEST="$build_dir/out" SRCDEST="$build_dir" makepkg "${makepkg_args[@]}"
+  PKGDEST="$build_dir/out" SRCDEST="$build_dir" \
+    MIKAI_ANIME4K_ARCHIVE="$anime4k_archive" makepkg "${makepkg_args[@]}"
 )
 
 shopt -s nullglob

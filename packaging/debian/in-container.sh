@@ -36,6 +36,10 @@ mkdir -p "$BUILD" "$STAGE" "$OUT"
 # or tested, so nothing can resolve a dependency the package fails to carry.
 export LD_LIBRARY_PATH="/opt/icu73/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
+anime4k_archive_args=()
+if [[ -f /anime4k.tar.gz ]]; then
+  anime4k_archive_args=(-DMIKAI_ANIME4K_ARCHIVE=/anime4k.tar.gz)
+fi
 cmake -S "$SRC" -B "$BUILD" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH="$QT_DIR" \
@@ -43,6 +47,7 @@ cmake -S "$SRC" -B "$BUILD" -G Ninja \
   -DMIKAI_LINUX_DEPLOY_QT=ON \
   -DMIKAI_LINUX_BUNDLE_MPV=ON \
   -DMIKAI_LINUX_MPV_ARCHIVE=/mpv/runtime.tar.zst \
+  "${anime4k_archive_args[@]}" \
   -DMIKAI_LINUX_MPV_INSTALL_SUBDIR=lib/mikai/mpv \
   -DMIKAI_BUILD_PROBES=OFF \
   -DMIKAI_BUILD_REVISION="$REVISION"

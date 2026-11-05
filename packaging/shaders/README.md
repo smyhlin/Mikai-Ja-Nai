@@ -22,8 +22,14 @@ cmake -S . -B build -DMIKAI_ANIME4K_ARCHIVE=/path/Anime4K-<commit>.tar.gz   # of
 
 - The archive is cached in `<build>/_dist-cache/anime4k/`; a configure whose pin
   is already staged in `<build>/shaders` reuses it without any network access.
-- `MIKAI_ANIME4K_SHADERS_DIR` overrides where the files are staged,
-  `MIKAI_ANIME4K_CACHE_DIR` where the tarball is kept.
+- The cache is `~/.cache/mikai/anime4k/` (`MIKAI_ANIME4K_CACHE_DIR` overrides
+  it), shared by every build tree; `MIKAI_ANIME4K_SHADERS_DIR` overrides where
+  the files are staged.
+- The Arch and Debian drivers look for the pinned tarball in `~/.cache/mikai/anime4k/`
+  and in any `build/*/_dist-cache/anime4k/`, mount or forward it, and accept
+  `--anime4k-archive FILE`. The Debian builder has no guaranteed network path,
+  so without a cached tarball its configure fails rather than silently shipping
+  a package without shaders.
 - Every staged file is digest-checked against the manifest before it is written;
   a mismatch fails the configure instead of shipping unverified shaders.
 - `mikai_anime4k_shaders` (CTest) re-checks the staged tree, so a locally edited

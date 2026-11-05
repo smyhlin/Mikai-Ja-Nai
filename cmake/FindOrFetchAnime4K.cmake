@@ -19,7 +19,14 @@ set(MIKAI_ANIME4K_MANIFEST
   "Pinned Anime4K manifest: upstream commit and per-file SHA-256")
 set(MIKAI_ANIME4K_ARCHIVE "" CACHE FILEPATH
   "Optional local tar.gz of the pinned Anime4K commit (every file is still digest-checked)")
-set(MIKAI_ANIME4K_CACHE_DIR "${CMAKE_BINARY_DIR}/_dist-cache/anime4k" CACHE PATH
+# One cache per user, so consecutive build trees and the distribution drivers
+# reuse the same pinned tarball instead of downloading it again.
+if(DEFINED ENV{HOME} AND NOT "$ENV{HOME}" STREQUAL "")
+  set(_mikai_anime4k_default_cache "$ENV{HOME}/.cache/mikai/anime4k")
+else()
+  set(_mikai_anime4k_default_cache "${CMAKE_BINARY_DIR}/_dist-cache/anime4k")
+endif()
+set(MIKAI_ANIME4K_CACHE_DIR "${_mikai_anime4k_default_cache}" CACHE PATH
   "Download cache for the pinned Anime4K archive")
 set(MIKAI_ANIME4K_SHADERS_DIR "${CMAKE_BINARY_DIR}/shaders" CACHE PATH
   "Directory the Anime4K shaders are materialised in")

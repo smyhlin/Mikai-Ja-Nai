@@ -6,17 +6,18 @@
 # distribution the package is for.
 set -euo pipefail
 usage() {
-  printf '%s\n' 'Usage: bash packaging/linux/deb-package.sh --output-dir FRESH_DIR --qt-dir QT_SDK [--work-dir DIR] [--image TAG] [--mpv-archive FILE] [--rebuild-image]'
+  printf '%s\n' 'Usage: bash packaging/linux/deb-package.sh --output-dir FRESH_DIR --qt-dir QT_SDK [--work-dir DIR] [--image TAG] [--mpv-archive FILE] [--anime4k-archive FILE] [--rebuild-image]'
 }
 output_dir=''
 qt_dir=''
 work_dir=''
 mpv_archive=''
+anime4k_archive_arg=''
 image='mikai-deb-builder:trixie'
 rebuild=0
 while (($#)); do
   case "$1" in
-    --output-dir|--qt-dir|--work-dir|--image|--mpv-archive)
+    --output-dir|--qt-dir|--work-dir|--image|--mpv-archive|--anime4k-archive)
       if (($# < 2)) || [[ -z "$2" ]]; then usage >&2; exit 2; fi
       case "$1" in
         --output-dir) output_dir="$2" ;;
@@ -24,6 +25,7 @@ while (($#)); do
         --work-dir) work_dir="$2" ;;
         --image) image="$2" ;;
         --mpv-archive) mpv_archive="$2" ;;
+        --anime4k-archive) anime4k_archive_arg="$2" ;;
       esac
       shift 2 ;;
     --rebuild-image) rebuild=1; shift ;;
@@ -52,6 +54,19 @@ if [[ ! -f "$mpv_archive" ]]; then
   printf 'The bundled runtime archive is missing: %s\n' "$mpv_archive" >&2
   printf 'Build it with: bash packaging/mpv/build-tls-archive.sh\n' >&2
   exit 1
+fi
+
+# The container has no guaranteed network path, and the Anime4K shaders are
+# staged at configure time; hand it the cached pinned tarball when one exists.
+anime4k_pin="$(sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' \
+  "$repo_root/packaging/shaders/anime4k-manifest.json" | head -1)"
+anime4k_archive="${anime4k_archive_arg:-${MIKAI_ANIME4K_ARCHIVE:-}}"
+if [[ -z "$anime4k_archive" && -n "$anime4k_pin" ]]; then
+  for candidate in \
+      "${XDG_CACHE_HOME:-$HOME/.cache}/mikai/anime4k/anime4k-$anime4k_pin.tar.gz" \
+      "$repo_root"/build/*/_dist-cache/anime4k/anime4k-$anime4k_pin.tar.gz; do
+    if [[ -f "$candidate" ]]; then anime4k_archive="$candidate"; break; fi
+  done
 fi
 
 if [[ -e "$output_dir" ]]; then
@@ -84,12 +99,17 @@ else
   mkdir -p "$work_dir"
 fi
 
+anime4k_mount=()
+if [[ -n "$anime4k_archive" ]]; then
+  anime4k_mount=(-v "$anime4k_archive:/anime4k.tar.gz:ro")
+fi
 docker run --rm \
   -e REVISION="$revision" \
   -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
   -v "$repo_root:/src:ro" \
   -v "$qt_dir:/qt:ro" \
   -v "$mpv_archive:/mpv/runtime.tar.zst:ro" \
+  "${anime4k_mount[@]}" \
   -v "$work_dir:/work" \
   "$image" \
   bash /src/packaging/debian/in-container.sh
