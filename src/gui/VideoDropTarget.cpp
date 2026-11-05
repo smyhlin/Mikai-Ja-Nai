@@ -8,11 +8,14 @@
 #include <QMimeData>
 #include <QPainter>
 #include <QPalette>
+#include <QPixmap>
 #include <QStringView>
+#include <QTransform>
 #include <QUrl>
 #include <QWidget>
 
 #include <algorithm>
+#include <cmath>
 
 namespace mikai::gui {
 namespace {
@@ -24,6 +27,77 @@ constexpr int kSmallGap = 4;
 constexpr int kIconSize = 48;
 constexpr int kCardWidth = 520;
 constexpr int kRadius = 12;
+// How far the dashed rounded perimeter reaches past its own geometry: half the
+// 2 px pen plus one pixel of coverage, and the same coverage outside the corner
+// arcs' radius.
+constexpr int kStrokeReach = 3;
+constexpr int kCornerReach = kRadius + 3;
+// The largest side a layer may have, in device pixels. Qt's OpenGL paint engine
+// hands a blitted pixmap to a texture cache that refuses anything past
+// GL_MAX_TEXTURE_SIZE, and the smallest limit a desktop context may report is
+// 2048 - the bound every tile is kept inside so the ring survives the surface's
+// paint sink on any GPU.
+constexpr int kMaxLayerExtent = 2048;
+
+/// True when `toDevice` maps logical units to device pixels at exactly `ratio`,
+/// without rotation, shear or a second scale: the only case where a layer
+/// tagged with `ratio` lands one texel per device pixel, so the blit may turn
+/// its filter off instead of softening an exact copy. This is the rule the
+/// shell blits its cached chrome by (ShellWidgets.cpp, deviceAlignedTransform);
+/// it is restated here because gui/ is the lower layer of the two and must not
+/// include the player's shell headers.
+bool deviceAlignedTransform(const QTransform& toDevice, qreal ratio) {
+    return toDevice.isInvertible() && qFuzzyCompare(toDevice.m11(), ratio) &&
+           qFuzzyCompare(toDevice.m22(), ratio) && qFuzzyIsNull(toDevice.m12()) &&
+           qFuzzyIsNull(toDevice.m21());
+}
+
+/// `logicalOrigin` snapped so its device position is a whole pixel. A fractional
+/// ratio (1.25, 1.5, 1.75) puts a logical origin between device pixels, and a
+/// layer copied at that phase is resampled even at one texel per pixel; the snap
+/// moves it by at most half a device pixel and keeps the copy exact.
+QPointF deviceAlignedOrigin(const QTransform& toDevice, const QPointF& logicalOrigin) {
+    const QPointF mapped = toDevice.map(logicalOrigin);
+    return toDevice.inverted().map(QPointF(qRound(mapped.x()), qRound(mapped.y())));
+}
+
+/// One element of the indicator as a device-resolution alpha layer. `body` draws
+/// in the indicator's logical coordinates; the layer receives the pixels inside
+/// `deviceBox`, expressed in device pixels so that two neighbouring layers
+/// always meet on a pixel boundary. A seam in the middle of a pixel would draw
+/// that pixel's coverage twice, or drop it.
+template <typename Body>
+QPixmap renderLayer(const QRect& deviceBox, qreal ratio, Body&& body) {
+    QPixmap layer(deviceBox.size());
+    layer.fill(Qt::transparent);
+    QPainter painter(&layer);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    // One explicit transform rather than scale() then translate(), whose
+    // composition order is easy to invert: this is exactly device = ratio *
+    // logical - layerOrigin, so the coverage lands on the same device pixel grid
+    // it would have been drawn on directly.
+    painter.setTransform(QTransform(ratio, 0.0, 0.0, ratio,
+                                    -qreal(deviceBox.left()), -qreal(deviceBox.top())),
+                         true);
+    body(painter);
+    return layer;
+}
+
+/// Blit one layer back at the size and alignment it was rendered for. The layer
+/// already carries its own coverage, so the filter is only there for a transform
+/// that would actually scale the copy.
+void blitLayer(QPainter& painter, const QPixmap& layer, const QPointF& logicalOrigin,
+               qreal ratio, bool oneToOne, const QTransform& toDevice) {
+    if (layer.isNull()) return;
+    const QPointF origin =
+        oneToOne ? deviceAlignedOrigin(toDevice, logicalOrigin) : logicalOrigin;
+    const QRectF target(origin, QSizeF(layer.width() / ratio, layer.height() / ratio));
+    painter.save();
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, !oneToOne);
+    painter.drawPixmap(target, layer, QRectF(layer.rect()));
+    painter.restore();
+}
 
 class DropOverlay final : public QWidget {
 public:
@@ -108,6 +182,9 @@ void VideoDropTarget::refreshAppearance() {
     titleHeight_ = QFontMetrics(titleFont_).height();
     bodyHeight_ = QFontMetrics(bodyFont_).height();
     textWidth_ = -1;
+    // Colours, fonts and the elided strings are layer pixels: a new appearance
+    // is a new raster, not a repaint of the old one.
+    dropLayers();
     if (!overlay_.isNull()) {
         overlay_->setAccessibleName(title_);
         overlay_->setAccessibleDescription(fileName_ + QStringLiteral(". ") + hint_);
@@ -136,6 +213,7 @@ void VideoDropTarget::clearIndicator() {
     leaveTimer_.stop();
     if (path_.isEmpty()) return;
     path_.clear();
+    dropLayers();
     if (!overlay_.isNull()) overlay_->hide();
     emit indicatorChanged();
 }
@@ -232,30 +310,133 @@ bool VideoDropTarget::eventFilter(QObject* watched, QEvent* event) {
 
 void VideoDropTarget::paintIndicator(QPainter& painter, const QRect& bounds) const {
     if (path_.isEmpty() || bounds.isEmpty()) return;
+    const qreal ratio =
+        (painter.device() != nullptr) ? painter.device()->devicePixelRatio() : qreal(1.0);
+    // Read from the painter instead of assumed: the shell paints one half of
+    // this overlay through a painter translated by the surface's own offset, and
+    // a layer copied at the wrong phase is a blurred copy at every fractional
+    // ratio.
+    const QTransform toDevice = painter.deviceTransform();
+    const bool oneToOne = deviceAlignedTransform(toDevice, ratio);
     painter.save();
     painter.setClipRect(bounds, Qt::IntersectClip);
-    painter.setRenderHint(QPainter::Antialiasing);
-    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    // The scrim is the one primitive with nothing to antialias: a flat fill whose
+    // only edges are the window's. It is painted straight and never cached - a
+    // full-window layer would be a window-area allocation, which is exactly what
+    // an overlay that appears mid-drag must not make. Every other primitive is a
+    // device-resolution layer below, so this painter needs no filter or
+    // antialiasing hint of its own.
     painter.fillRect(bounds, scrim_);
     const int margin = std::min({kMargin, bounds.width() / 8, bounds.height() / 8});
     const QRect available = bounds.adjusted(margin, margin, -margin, -margin);
-    painter.setBrush(Qt::NoBrush);
-    painter.setPen(QPen(border_, 2, Qt::DashLine));
-    painter.drawRoundedRect(QRectF(available), kRadius, kRadius);
+    if (available.isEmpty()) {
+        painter.restore();
+        return;
+    }
     const int padding = std::min(kPadding, available.width() / 8);
     const int fullHeight = 2 * padding + kIconSize + 2 * kGap + kSmallGap +
                            titleHeight_ + 2 * bodyHeight_;
     const QSize size(std::min(kCardWidth, available.width()), std::min(fullHeight, available.height()));
     const QRect card(available.center() - QPoint(size.width() / 2, size.height() / 2), size);
+    if (ensureLayers(available, card, padding, ratio)) {
+        // The dashed perimeter is a band of tiles rather than one window-sized
+        // image: each is only as thick as the corner arc it carries, so what this
+        // overlay holds follows the window's perimeter and never its area.
+        for (const Layer& layer : layers_.ring) {
+            blitLayer(painter, layer.pixmap, layer.origin, ratio, oneToOne, toDevice);
+        }
+        blitLayer(painter, layers_.card.pixmap, layers_.card.origin, ratio, oneToOne, toDevice);
+    }
+    painter.restore();
+}
+
+void VideoDropTarget::dropLayers() const {
+    // The layers belong to the drag, not to the window: releasing them when the
+    // indicator clears keeps an idle overlay at zero bytes.
+    layers_ = OverlayLayers{};
+}
+
+bool VideoDropTarget::ensureLayers(const QRect& available, const QRect& card, int padding,
+                                   qreal ratio) const {
+    if (layers_.built && layers_.available == available && layers_.cardBox == card &&
+        qFuzzyCompare(layers_.ratio, ratio)) {
+        return true;
+    }
+    dropLayers();
+    if (card.isEmpty() || ratio <= 0.0) return false;
+
+    layers_.available = available;
+    layers_.cardBox = card;
+    layers_.ratio = ratio;
+
+    // The geometry crosses to device pixels once, so every layer edge and every
+    // seam between layers is a whole pixel.
+    const auto toDevicePixels = [ratio](int logical) {
+        return static_cast<int>(std::lround(logical * ratio));
+    };
+    const auto toLogical = [ratio](int device) { return device / ratio; };
+
+    const int left = toDevicePixels(available.left());
+    const int top = toDevicePixels(available.top());
+    const int right = toDevicePixels(available.left() + available.width());
+    const int bottom = toDevicePixels(available.top() + available.height());
+    const int reach = std::max(1, toDevicePixels(kStrokeReach));
+    const int corner = std::max(1, toDevicePixels(kCornerReach));
+
+    // Four abutting strips: the top and bottom ones carry both corner arcs, the
+    // side ones only the straight edges, so each is as thick as the arc it has
+    // to hold rather than as the window.
+    const QRect strips[] = {
+        QRect(left - reach, top - reach, right - left + 2 * reach, reach + corner),
+        QRect(left - reach, bottom - corner, right - left + 2 * reach, corner + reach),
+        QRect(left - reach, top + corner, 2 * reach, bottom - top - 2 * corner),
+        QRect(right - reach, top + corner, 2 * reach, bottom - top - 2 * corner)};
+
+    // Every tile draws the whole path and is clipped to its own bounds by the
+    // layer it renders into, so the dash sequence - which is part of the stroke
+    // geometry - stays continuous across the blits and nothing is drawn twice.
+    const auto ringTile = [this, available, ratio](const QRect& deviceBox) {
+        return renderLayer(deviceBox, ratio, [this, available](QPainter& painter) {
+            painter.setBrush(Qt::NoBrush);
+            painter.setPen(QPen(border_, 2, Qt::DashLine));
+            painter.drawRoundedRect(QRectF(available), kRadius, kRadius);
+        });
+    };
+    for (const QRect& strip : strips) {
+        // QRect's right() and bottom() are inclusive, and these strips tile with
+        // half-open edges so two neighbours never share a pixel.
+        const int stripRight = strip.x() + strip.width();
+        const int stripBottom = strip.y() + strip.height();
+        for (int y = strip.y(); y < stripBottom; y += kMaxLayerExtent) {
+            for (int x = strip.x(); x < stripRight; x += kMaxLayerExtent) {
+                const QRect box(x, y, std::min(kMaxLayerExtent, stripRight - x),
+                                std::min(kMaxLayerExtent, stripBottom - y));
+                layers_.ring.push_back(
+                    Layer{ringTile(box), QPointF(toLogical(box.left()), toLogical(box.top()))});
+            }
+        }
+    }
+    const QRect cardBox(toDevicePixels(card.left()), toDevicePixels(card.top()),
+                        toDevicePixels(card.left() + card.width()) -
+                            toDevicePixels(card.left()),
+                        toDevicePixels(card.top() + card.height()) -
+                            toDevicePixels(card.top()));
+    if (cardBox.isEmpty()) return false;
+    layers_.card = Layer{renderLayer(cardBox, ratio, [this, card, padding](QPainter& painter) {
+                             paintCard(painter, card, padding);
+                         }),
+                         QPointF(toLogical(cardBox.left()), toLogical(cardBox.top()))};
+    layers_.built = true;
+    return true;
+}
+
+void VideoDropTarget::paintCard(QPainter& painter, const QRect& card, int padding) const {
     painter.setPen(QPen(border_, 1));
     painter.setBrush(background_);
     painter.drawRoundedRect(QRectF(card), kRadius, kRadius);
     const QRect content = card.adjusted(padding, padding, -padding, -padding);
     const int textWidth = content.width();
-    if (textWidth <= 0 || content.height() < bodyHeight_) {
-        painter.restore();
-        return;
-    }
+    if (textWidth <= 0 || content.height() < bodyHeight_) return;
     if (textWidth_ != textWidth) {
         textWidth_ = textWidth;
         displayedTitle_ = QFontMetrics(titleFont_).elidedText(title_, Qt::ElideRight, textWidth);
@@ -302,7 +483,6 @@ void VideoDropTarget::paintIndicator(QPainter& painter, const QRect& bounds) con
         painter.drawText(QRect(content.left(), y + bodyHeight_ + kGap, textWidth, bodyHeight_),
                          Qt::AlignCenter | Qt::TextSingleLine, displayedHint_);
     }
-    painter.restore();
 }
 
 } // namespace mikai::gui

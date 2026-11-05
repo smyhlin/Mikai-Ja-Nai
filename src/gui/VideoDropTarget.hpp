@@ -3,14 +3,16 @@
 #include <QColor>
 #include <QFont>
 #include <QObject>
+#include <QPixmap>
 #include <QPointer>
+#include <QRect>
 #include <QString>
 #include <QTimer>
+#include <QVector>
 
 class QEvent;
 class QMimeData;
 class QPainter;
-class QRect;
 class QWidget;
 
 namespace mikai::gui {
@@ -39,6 +41,39 @@ private:
     void refreshAppearance();
     void clearIndicator();
 
+    /// One blittable piece of the indicator: its pixels at device resolution and
+    /// the logical point it is drawn back at. The pixmap carries no device pixel
+    /// ratio of its own - its size is the device rectangle it covers, which is
+    /// what keeps two neighbouring layers meeting on a whole pixel.
+    struct Layer {
+        QPixmap pixmap;
+        QPointF origin;
+    };
+
+    /// The indicator as a handful of layers rasterised at the physical pixel
+    /// grid, because the paint sinks disagree about what they can antialias:
+    /// the overlay widget is a raster device, the player's surface paints over
+    /// a non-multisampled framebuffer, and Qt's OpenGL paint engine antialiases
+    /// only through multisampling. Device-resolution alpha layers make both
+    /// sinks draw the same smoothed coverage.
+    ///
+    /// The dashed perimeter is tiled rather than held as four window-long
+    /// images: a layer wider or taller than GL_MAX_TEXTURE_SIZE cannot be
+    /// uploaded by the OpenGL paint engine's texture cache, so every tile is
+    /// kept inside a bound that any GPU this app runs on can hold.
+    struct OverlayLayers {
+        Layer card;
+        QVector<Layer> ring;
+        QRect available;
+        QRect cardBox;
+        qreal ratio = 0.0;
+        bool built = false;
+    };
+
+    bool ensureLayers(const QRect& available, const QRect& card, int padding, qreal ratio) const;
+    void dropLayers() const;
+    void paintCard(QPainter& painter, const QRect& card, int padding) const;
+
     QPointer<QWidget> host_;
     QPointer<QWidget> overlay_;
     QString path_;
@@ -58,6 +93,7 @@ private:
     bool windowBlocked_ = false;
     int titleHeight_ = 0;
     int bodyHeight_ = 0;
+    mutable OverlayLayers layers_;
     mutable int textWidth_ = -1;
     mutable QString displayedTitle_;
     mutable QString displayedFileName_;
