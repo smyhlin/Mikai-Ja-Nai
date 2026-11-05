@@ -77,7 +77,7 @@ gate consumes it.
 
 The two `hdr_*` clips are generated on demand, not committed. Both are 10-bit HEVC Main10 with BT.2020 primaries and SMPTE ST 2084 (PQ) transfer. The authored gradient fixture combines slowly changing dark levels with a right-edge highlight ramp spanning approximately 150–1000 nits, exercising tone mapping below the peak rather than relying on a flat peak patch. The companion fixture is lossless near-black temporal shadow-noise; lossless encoding preserves its signal. Do not claim these source shapes prove a particular flicker mechanism or root cause. Their presence is mandatory for HDR acceptance; do not substitute a generic source. Generated media resides outside the source tree in the acceptance setup.
 
-The lavfi frames carry explicit `setparams` color tags before encoding. Output `-color_primaries`/`-color_trc` options alone lost BT.2020/PQ in the verified Windows FFmpeg 9.0.2 run; independent `ffprobe` checks must confirm `bt2020`, `smpte2084`, `bt2020nc`, limited range and 10-bit output. The frame-ID source is tagged BT.709 the same way. Native-Windows tool provenance and the three generated stream records are in `docs/ai/GOAL-00/windows-acceptance-media-evidence.json`; this is source-fixture evidence, not HDR display or inference proof.
+The lavfi frames carry explicit `setparams` color tags before encoding. Output `-color_primaries`/`-color_trc` options alone lost BT.2020/PQ in the verified Windows FFmpeg 9.0.2 run; independent `ffprobe` checks must confirm `bt2020`, `smpte2084`, `bt2020nc`, limited range and 10-bit output. The frame-ID source is tagged BT.709 the same way. Native-Windows tool provenance and the three generated stream records were local evidence and have been deleted with the rest of that evidence tree; this is source-fixture evidence, not HDR display or inference proof.
 
 ### Windows manager smoke
 
@@ -637,7 +637,7 @@ It is opt-in and cannot run on its own:
 cmake --build build/release --target animejanai_probe --parallel 4
 python .probe-out/goals/aji-runtime-prep/run_natural.py ^
     windows-close-during-build ^
-    docs/ai/GOAL-E/windows-aji-runtime-stage/stage-context.json ^
+    <stage-context.json from the recorded run> ^
     --close-during-build
 ```
 
