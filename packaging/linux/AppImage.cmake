@@ -94,9 +94,9 @@ file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 # The install tree stays a normal GNUInstallDirs tree under usr/, which is what
 # an AppImage expects; nothing is flattened or rewritten by hand.
 execute_process(
-  COMMAND "${CMAKE_COMMAND}" --install "${BUILD_DIR}" --prefix /usr
-  RESULT_VARIABLE install_result OUTPUT_VARIABLE install_output ERROR_VARIABLE install_error
-  ENVIRONMENT "DESTDIR=${appdir}")
+  COMMAND "${CMAKE_COMMAND}" -E env "DESTDIR=${appdir}"
+          "${CMAKE_COMMAND}" --install "${BUILD_DIR}" --prefix /usr
+  RESULT_VARIABLE install_result OUTPUT_VARIABLE install_output ERROR_VARIABLE install_error)
 if(NOT install_result EQUAL 0)
   message(FATAL_ERROR "Install into ${appdir} failed (${install_result}):\n${install_error}")
 endif()
@@ -129,15 +129,18 @@ endforeach()
 # qpa description makes it skip the platform plugins, which leaves the image
 # unable to start. cmake/MikaiLinux.cmake completes the tree during install with
 # packaging/linux/CompleteQtPlugins.cmake; this only proves it happened.
-set(_qt_platform_plugins "${appdir}/usr/lib/qt6/plugins/platforms")
-if(NOT IS_DIRECTORY "${_qt_platform_plugins}")
-  message(FATAL_ERROR
-    "The install tree carries no Qt platform plugins (${_qt_platform_plugins}); the "
-    "image could not start on any display.")
-endif()
-file(GLOB _qt_platform_files "${_qt_platform_plugins}/*.so")
+set(_qt_platform_plugins "${appdir}/usr/plugins/platforms"
+    "${appdir}/usr/lib/qt6/plugins/platforms")
+set(_qt_platform_files)
+foreach(_qt_platform_dir IN LISTS _qt_platform_plugins)
+  if(IS_DIRECTORY "${_qt_platform_dir}")
+    file(GLOB _qt_platform_dir_files "${_qt_platform_dir}/*.so")
+    list(APPEND _qt_platform_files ${_qt_platform_dir_files})
+  endif()
+endforeach()
 if(NOT _qt_platform_files)
-  message(FATAL_ERROR "No Qt platform plugin was installed under ${_qt_platform_plugins}")
+  message(FATAL_ERROR
+    "No Qt platform plugin was installed under ${_qt_platform_plugins}")
 endif()
 message(STATUS "Qt platform plugins present: ${_qt_platform_files}")
 

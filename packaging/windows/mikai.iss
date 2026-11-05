@@ -34,6 +34,7 @@ UninstallDisplayIcon={app}\mikai.exe
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+DisableWelcomePage=no
 LicenseFile={#StageDir}\LICENSE
 CloseApplications=yes
 CloseApplicationsFilter=mikai.exe
@@ -131,6 +132,15 @@ begin
     Result := '';
 end;
 
+function DetectionInstalledDir(): String;
+begin
+  // Same value Inno reads for UsePreviousAppDir. {app} is not expandable on
+  // the Welcome page because the destination page has not initialised it yet.
+  Result := '';
+  if not RegQueryStringValue(HKCU, InstalledProductKey, 'Inno Setup: App Path', Result) then
+    Result := '';
+end;
+
 function InitializeSetup(): Boolean;
 var
   Comparison: Integer;
@@ -141,7 +151,8 @@ begin
   if InstalledVersion = '' then exit;
   Comparison := CompareVersions(InstalledVersion, CurrentVersion);
   if Comparison = 0 then
-    InstallMode := 'repair'
+    // Same number does not mean the same build; Setup cannot order two builds.
+    InstallMode := 'sameversion'
   else if Comparison < 0 then
     InstallMode := 'upgrade'
   else
@@ -165,26 +176,43 @@ end;
 
 procedure UpdateInstallModePage();
 var
-  ModeText, NextCaption: String;
+  ModeText, NextCaption, Where, Destination: String;
 begin
-  if InstallMode = 'repair' then
+  if WizardSilent then exit;
+  Destination := DetectionInstalledDir();
+  Where := ' is already installed';
+  if Destination <> '' then
+    Where := Where + ' at ' + Destination;
+  NextCaption := '';
+  if InstallMode = 'sameversion' then
   begin
-    ModeText := 'Mikai Ja Nai ' + InstalledVersion + ' is already installed. ' +
-      'Setup detected a matching version and will repair the existing installation.';
-    NextCaption := 'Repair';
+    ModeText := 'Mikai Ja Nai ' + InstalledVersion + Where + '.' + #13#10 + #13#10 +
+      'This package contains version ' + CurrentVersion + '. Both report the same ' +
+      'version number, so Setup cannot determine which build is newer.' + #13#10 + #13#10 +
+      'Choosing Update updates or repairs the existing installation in place, ' +
+      'reinstalling its files and keeping your settings. You can confirm or change ' +
+      'the destination on the next pages.';
+    NextCaption := 'Update';
   end
   else if InstallMode = 'upgrade' then
   begin
-    ModeText := 'Mikai Ja Nai ' + InstalledVersion + ' is installed. ' +
-      'Setup will upgrade that installation to ' + CurrentVersion + '.';
-    NextCaption := 'Upgrade';
+    ModeText := 'Mikai Ja Nai ' + InstalledVersion + Where + '.' + #13#10 + #13#10 +
+      'This package contains version ' + CurrentVersion + '. Choosing Update will ' +
+      'update the existing installation. You can confirm or change the destination ' +
+      'on the next pages.';
+    NextCaption := 'Update';
   end
+  else if InstallMode = 'install' then
+    ModeText := 'No registered Mikai Ja Nai installation was found for this Windows user.' + #13#10 + #13#10 +
+      'Setup will install version ' + CurrentVersion + '. Portable or manually copied ' +
+      'copies are not detected automatically, so if you already use one, select its ' +
+      'folder on the following pages. Setup installs only to the folder you choose.'
   else
     exit;
 
   WizardForm.WelcomeLabel2.Caption :=
     WelcomeLabel2Base + #13#10#13#10 + ModeText;
-  if not WizardSilent then
+  if NextCaption <> '' then
     WizardForm.NextButton.Caption := NextCaption;
 end;
 
@@ -192,8 +220,8 @@ procedure UpdateFinishedPage();
 var
   ModeText: String;
 begin
-  if InstallMode = 'repair' then
-    ModeText := 'Mikai Ja Nai ' + CurrentVersion + ' was repaired successfully.'
+  if InstallMode = 'sameversion' then
+    ModeText := 'Mikai Ja Nai ' + CurrentVersion + ' was updated or repaired successfully.'
   else if InstallMode = 'upgrade' then
     ModeText := 'Mikai Ja Nai was upgraded from ' + InstalledVersion + ' to ' +
       CurrentVersion + '.'

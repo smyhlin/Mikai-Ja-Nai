@@ -65,6 +65,10 @@ powershell -NoProfile -File packaging/windows/package.ps1 `
 
 If Inno Setup's `ISCC.exe` is not on `PATH`, pass its actual path with `-ISCC`. The script builds `mikai` and stages packages freshly from that build, rather than copying an existing populated `dist-mikai/`. Use a new/empty output directory; do not point it at user data or a populated release directory.
 
+Building into a dated subdirectory does **not** refresh existing top-level files in `release-artifacts/`. When those canonical paths are the delivery location, back up the previous product files, replace them with the verified new packages and receipt, then regenerate the top-level `SHA256SUMS` for the complete product set. Preserve pinned runtime archives, corresponding-source inputs and unrelated output directories.
+
+Verify the executable inside the canonical portable ZIP with `--version`, not only the executable in the build directory. Rebuilds can share the `0.1.0` product number; the embedded source revision and package checksums distinguish their actual contents.
+
 Expected outputs are:
 
 - `mikai-0.1.0-windows-x64-portable.zip`
@@ -73,7 +77,8 @@ Expected outputs are:
 - `mikai-0.1.0-windows-x64-release.json`
 
 - The installer is unsigned and per-user. It does not force associations or enable startup automatically.
-- Setup reads the registered version before installing: a matching version is offered as **Repair**, an older one as **Upgrade**, and a newer one is refused rather than silently replaced.
+- Setup shows its Welcome page and checks this Windows user's registered installation. An older version is offered as **Update**; a matching version is offered for update or repair because different builds can share the same version number. A newer registered version is refused rather than silently replaced.
+- Portable and manually copied installations have no installer registration and are not automatically detected. Choose the intended folder explicitly if updating one.
 - Upgrades and repairs preserve settings, logs, acquired models and user data; uninstall removes only integrations owned by the installation and does not erase acquired models by default.
 - The portable application requires its deployed Qt/image-format/TLS/MinGW/mpv runtime files and a system Vulkan loader supplied with graphics drivers.
 - Optional AI components are not part of the base portable package.

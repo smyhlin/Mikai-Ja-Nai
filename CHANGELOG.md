@@ -4,6 +4,9 @@ Published changes are recorded with their downloads on the [GitHub releases page
 
 ## Unreleased
 
+- Show the Windows setup Welcome page and offer an explicit update or repair for registered installations, including builds sharing the same version number.
+- Repair Linux AppImage staging: pass `DESTDIR` through CMake's environment launcher and accept both supported Qt platform-plugin layouts.
+
 - Correct disabled-state detection for retained Linux desktop entries, and safely refresh or remove stale owned entries.
 - Add opt-in presentation profiling and a cross-process focus/composition probe.
 - Retire Runner work and dispatch references without destroying thread pools on their own workers.
