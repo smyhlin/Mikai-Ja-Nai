@@ -89,6 +89,44 @@ a demonstrated fix.
 
 ## Recorded verification
 
+### Linux release artifacts rebuilt — 2026-11-05
+
+All four Linux packages were rebuilt at `6ee0c15` and promoted into
+`release-artifacts/`; the Windows packages were left at their earlier `1e94fc7`
+build. Each Linux artifact answers `--version` with the recorded revision and
+resolves its bundled runtime at startup:
+
+| Artifact | Size | SHA-256 | `--version` |
+|---|---:|---|---|
+| `mikai-0.2.0-linux-x86_64.tar.gz` | 45,528,993 | `d0262efc4b305483584ca20cd022a866f8b9a4f479500517851b3da6621f3da3` | `0.2.0 (6ee0c15, built 2026-11-05T17:25:49Z)` |
+| `mikai-0.2.0-x86_64.AppImage` | 75,569,656 | `188b6b17350e0f38cc5a65c583ff7a935ebcee1b32c6b3c45c19d3253aa79c01` | `0.2.0 (6ee0c15, built 2026-11-05T17:28:17Z)` |
+| `mikai-0.2.0-1-x86_64.pkg.tar.zst` | 43,435,772 | `b96e2ddfb6b648029af545d5d90155a30425fb7e57891762baef1e53577655b6` | `0.2.0 (6ee0c15, built 2026-11-05T17:24:36Z)` |
+| `mikai_0.2.0_amd64.deb` | 66,565,436 | `3231f347e5f4d6c95491bebba11bb6c3cc4249ad63110d99c4830e5a7505ffd7` | `0.2.0 (6ee0c15, built 2026-11-05T17:25:50Z)` |
+
+- The tarball, the AppImage and the package install trees each logged
+  `player runtime standard stock-…` for the bundled runtime; the Arch entry was
+  observed after `pacman -U` inside `archlinux:latest` with `qt6-base` and
+  `libglvnd`, the Debian entry inside the `mikai-deb-builder:trixie` container.
+  That is runtime-selection evidence, not playback, GPU or distribution-matrix
+  verification.
+- `packaging/arch/PKGBUILD` carried `pkgver=0.1.0` past the 0.2.0 bump, so
+  `makepkg` looked for a source tarball the driver never exports. The version now
+  comes from `project(mikai VERSION …)` through `@VERSION@` substitution.
+- The Arch package was built with `--skip-check`; `makepkg`'s `check()` fails in
+  this packaging layout. The suite rejects the bundled runtime twice: the test
+  launcher stages the closure into a flat `mpv/` directory, while the package
+  configures `MIKAI_LINUX_MPV_INSTALL_SUBDIR=lib/mikai/mpv` and the executable
+  therefore looks in `lib/mikai/mpv`; and once a host `libmpv` has been loaded in
+  the same process, the loader keeps the host's `libass.so.9` (0.17.5, which
+  lacks `ass_set_composite_deferred`) instead of the staged closure. The installed
+  package is unaffected, as the container run above shows. The test gate is
+  recorded as not run, not as passed.
+- The AppImage was staged against the Qt 6.12.0 `linux_gcc_64` SDK; the earlier
+  build in this session used the host's Qt 6.12 and dragged host KDE icon and Qt
+  Quick libraries into the image (166 MB), while the SDK build carries the leaner
+  75 MB Qt deployment the previous artifact had.
+
+
 ### AnimeJaNai v0.22.2 implementation — 2026-11-05
 
 Windows and Linux application builds succeeded for the v0.22.2 implementation. The Windows build `0d8ff35` was also used for the [manual UI gallery](images/README.md); the screenshots include an RTX backend selection with the runtime not installed. No RTX acquisition, engine build, native inference, benchmark or Linux visual parity is established by those checks. No test suites or probes were run for that implementation under the current verification instruction.
