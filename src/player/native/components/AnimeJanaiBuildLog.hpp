@@ -171,12 +171,13 @@ inline QString animeJanaiOutOfMemoryEngineBuildEvidence(QStringView modelDir,
 /// Classic builds report ".build.log"; TensorRT-RTX in-process builds report
 /// either that or the in-session ".warm.log".
 inline QString animeJanaiBuildFailureLogPath(QStringView prefix, QStringView line) {
-    if (prefix.compare(QLatin1String("animejanai"), Qt::CaseInsensitive) == 0) {
-        if (!line.startsWith(QLatin1String("[aji] "))) return {};
-        line = line.sliced(6);
-    } else if (prefix.compare(QLatin1String("aji"), Qt::CaseInsensitive) != 0) {
+    if (prefix.compare(QLatin1String("animejanai"), Qt::CaseInsensitive) != 0 &&
+        prefix.compare(QLatin1String("aji"), Qt::CaseInsensitive) != 0) {
         return {};
     }
+    // mpv hands the message text with its own "[aji] " header while the log
+    // prefix arrives separately, so both shapes reach this parser.
+    if (line.startsWith(QLatin1String("[aji] "))) line = line.sliced(6);
     struct Marker {
         QLatin1String text;
         QLatin1String suffix;
