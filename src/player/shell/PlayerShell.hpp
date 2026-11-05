@@ -566,12 +566,6 @@ private:
     QPointer<QWindow> profileEventWindow_;
 
     QVector<QPointer<QWidget>> overlays_;
-    /// The corner mask installed on the surface: the shape and radius last
-    /// applied, in the surface's LOCAL coordinates. Tracked rather than read
-    /// back from QWidget::mask(), which returns by value, and compared before
-    /// re-applying because an unchanged region is a backing-store change for no
-    /// new pixels.
-    CornerMask surfaceMask_;
 
     // canvas / fsm
     bool fullscreen_ = false;

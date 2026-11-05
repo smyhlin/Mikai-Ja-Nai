@@ -1087,13 +1087,13 @@ void PlayerShell::applyState() {
     setStateCursor();
 
 
-    // QOpenGLWidget ignores stylesheets, so corner rounding is a real mask. The
-    // shape it tracks is the surface's own rect and radius, and it is
-    // re-applied only when it changes: applyState() runs on every input event,
-    // and re-setting an identical 1-bit region churns the widget's backing
-    // store. The helper cuts it in the surface's own coordinates.
+    // The corners are alpha coverage on the displayed composited output, so
+    // they are antialiased: a window mask could only cut a one-bit staircase,
+    // one logical-pixel step at a time. The setter keeps the raw framebuffer
+    // untouched and returns immediately for an unchanged radius, which matters
+    // because applyState() runs on every input event.
     const int radius = (rounded_ && !fullscreen_ && frameless_) ? 12 : 0;
-    applyRoundedMask(surface_, radius, &surfaceMask_);
+    surface_->setDisplayCornerRadius(radius);
 
     if (name != lastState_) {
         lastState_ = name;
@@ -2691,6 +2691,20 @@ bool PlayerShell::event(QEvent* event) {
         event->accept();
         return true;
     }
+    // QWidget::event() consumes both of these without forwarding them to
+    // changeEvent(), so this override is the only place the shell is told. The
+    // caches are keyed on the ratio but nothing would repaint them otherwise:
+    // a moved window kept its previous screen's raster, and the output chip
+    // kept that screen's physical size.
+    if (event->type() == QEvent::DevicePixelRatioChange ||
+        event->type() == QEvent::ScreenChangeInternal) {
+        // The base handler first: it updates the device font for the new ratio,
+        // and the layout below measures with that font.
+        const bool handled = QWidget::event(event);
+        themeChanged();
+        layoutChrome();
+        return handled;
+    }
     return QWidget::event(event);
 }
 
@@ -2879,9 +2893,9 @@ void PlayerShell::paintSurfaceOverlay(QPainter* painter) {
     const mikai::gui::uiprofile::ScopedTimer timer;
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing);
-    // The cached controls are blitted at their own device resolution, so the
-    // hint has nothing to resample - it is here so a fractional ratio cannot
-    // fall back to nearest-neighbour and split a glyph.
+    // ChromeList decides the filter for its own cache blits (aligned copies are
+    // copied unfiltered); this hint covers everything else the overlay draws
+    // from a pixmap at a non-unit scale.
     painter->setRenderHint(QPainter::SmoothPixmapTransform);
     // The painter is in the surface's coordinates and the chrome is laid out in
     // the shell's, of which the surface is a child at a known offset. The clip

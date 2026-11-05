@@ -362,6 +362,16 @@ public:
     std::optional<VideoScaleFitLock> acquireVideoScaleFitLock();
     bool compareFitHeld() const { return compareFitActive_; }
 
+    /// Rounds the displayed picture's corners with antialiased alpha coverage,
+    /// in logical pixels; 0 keeps them square. The coverage is the last thing a
+    /// displayed pass does to this widget's own target, so it shapes what the
+    /// window composites - never a grabVideoFramebuffer() capture, which
+    /// suppresses the overlay and the coverage together. A translucent window
+    /// behind the corners shows the desktop; an opaque one shows what it painted
+    /// there, which is exactly what a QWidget mask used to expose.
+    void setDisplayCornerRadius(int radius);
+    int displayCornerRadius() const { return displayCornerRadius_; }
+
     /// The observed color profile of the current source (T-102). Read from
     /// mpv's own `video-params` notifications and reset at each source epoch.
     /// Unknown or unsupported transfer metadata remains gated until a known
@@ -773,6 +783,15 @@ private:
     /// The no-engine paint while a source is opening: a neutral field and a
     /// sweeping arc. Replaced by the picture as soon as one is presented.
     void paintOpeningPlaceholder(QPainter& painter);
+    /// Rasterises the opening ring at the widget's device resolution and blits
+    /// it 1:1, because this target is single-sampled: a path drawn straight into
+    /// it has no coverage antialiasing at all. The buffer is reused in place.
+    void paintOpeningRing(QPainter& painter, const QPointF& centre, double radius,
+                          double penWidth);
+    /// Applies the four cached corner-coverage patches to this pass's target,
+    /// after the overlay and only when the picture is being displayed. At radius
+    /// zero, or behind a suppressed overlay, it does nothing at all.
+    void paintDisplayCornerCoverage(QPainter& painter, int targetWidth, int targetHeight);
     void setAnimeJanaiStatus(const QString& status);
     void resetAnimeJanaiObservation();
     bool animeJanaiBackendLogsNeeded() const;
@@ -1442,6 +1461,22 @@ private:
     /// precision it was read at (half-float, 10-bit packed or 16-bit).
     QImage teardownPicture_;
     int teardownPictureFormat_ = 0;
+    /// Antialiased alpha coverage for the displayed picture's four corners, one
+    /// bounded patch each, rasterised at device resolution. Rebuilt only when
+    /// the radius or the device-pixel ratio changes - four corner patches, never
+    /// a full-frame mask.
+    QImage displayCornerTopLeft_;
+    QImage displayCornerTopRight_;
+    QImage displayCornerBottomLeft_;
+    QImage displayCornerBottomRight_;
+    int displayCornerRadius_ = 0;
+    qreal displayCornerRatio_ = 0.0;
+    /// The opening placeholder's ring, rasterised at device resolution into one
+    /// reused buffer: the target has no multisampling to antialias a path with.
+    QImage openingRing_;
+    qreal openingRingRatio_ = 0.0;
+    double openingRingRadius_ = 0.0;
+    int openingRingPhase_ = -1;
     /// The last frame this surface put in its own target, at the target's
     /// probed format, so a repaint that presents no new frame can blit it
     /// instead of re-running mpv's render of the frame it is holding.

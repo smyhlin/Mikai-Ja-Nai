@@ -115,6 +115,11 @@ PipFloat::PipFloat(QWidget* parent)
     surface_->setObjectName(QStringLiteral("pipVideo"));
     surface_->setFocusPolicy(Qt::NoFocus);
     surface_->setMouseTracking(true);
+    // The float is a translucent top level, so the surface's alpha is the
+    // window's shape: the corners are coverage on the composited output, not a
+    // one-bit window mask, and the desktop shows through them. The setter keeps
+    // the raw framebuffer untouched.
+    surface_->setDisplayCornerRadius(kPipCornerRadiusPx);
     // T-205: no in-app consumer reads the raw counters; the pooled float must
     // not poll either. The probes keep their own surfaces with polling on.
     surface_->setDiagnosticsPolling(false);
@@ -445,8 +450,9 @@ void PipFloat::paintSurfaceOverlay(QPainter* painter) {
     }
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing, true);
-    // The cached controls are blitted at their own device resolution; the hint
-    // keeps a fractional ratio from splitting a glyph instead of blending it.
+    // ChromeList decides the filter for its own cache blits (aligned copies are
+    // copied unfiltered); this hint covers everything else the overlay draws
+    // from a pixmap at a non-unit scale.
     painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
     // The fade is the painter's: one alpha over the chrome, where an opacity
     // effect re-composited an offscreen buffer of the overlay on every change.
@@ -467,31 +473,83 @@ void PipFloat::paintTimeline(QPainter& painter) {
     // rect is in the float's coordinates and its width is what the press maths
     // divides by.
     const QRect groove = scrub_->geometry();
-    const double trackY = groove.y() + (groove.height() - kPipTimelineHeight) / 2.0;
-    paintRounded(painter, QRectF(groove.x(), trackY, groove.width(), kPipTimelineHeight),
-                 kPipTimelineHeight / 2.0, w25());
 
-    // Inset by half a handle at each end - the expression timelineSeekTo() reads
-    // a pointer from - so the drawn handle and the seek agree.
-    const double span = std::max(1.0, static_cast<double>(groove.width()) - kPipTimelineHandle);
-    const double at = scrub_->maximum() > 0
-        ? std::clamp(static_cast<double>(scrub_->value()) / scrub_->maximum(), 0.0, 1.0)
-        : 0.0;
-    if (at > 0.0) {
-        // The played part, up to the handle: what the slider's sub-page was.
-        paintRounded(painter,
-                     QRectF(groove.x(), trackY, kPipTimelineHandle / 2.0 + at * span,
-                            kPipTimelineHeight),
-                     kPipTimelineHeight / 2.0, timelinePlayed());
+    // The surface's framebuffer is single-sample (no format in the app asks for
+    // samples), so QPainter::Antialiasing on the GL painter has no coverage to
+    // resolve: the rounded groove and the handle were aliased there. They are
+    // rasterised with the raster engine instead, into a buffer that is reused,
+    // and copied back one texel per device pixel.
+    const QRect bounds = groove.adjusted(-kPipTimelineHandle / 2, -kPipTimelineHandle / 2,
+                                         kPipTimelineHandle / 2, kPipTimelineHandle / 2);
+    const qreal ratio =
+        painter.device() != nullptr ? painter.device()->devicePixelRatio() : qreal(1.0);
+    const QSize deviceSize(qMax(1, static_cast<int>(std::ceil(bounds.width() * ratio))),
+                           qMax(1, static_cast<int>(std::ceil(bounds.height() * ratio))));
+    const int value = scrub_->value();
+    const int maximum = scrub_->maximum();
+    const QRgb accentRgba = accent().rgba();
+
+    const bool reusable = timelineCacheValid_ && !timelineCache_.isNull() &&
+                          timelineCacheBounds_ == bounds &&
+                          timelineCachePixels_ == deviceSize &&
+                          timelineCacheValue_ == value && timelineCacheMaximum_ == maximum &&
+                          timelineCacheAccent_ == accentRgba &&
+                          qFuzzyCompare(timelineCacheRatio_, ratio);
+    if (!reusable) {
+        if (timelineCache_.isNull() || timelineCache_.size() != deviceSize) {
+            timelineCache_ = QPixmap(deviceSize);
+        }
+        timelineCache_.setDevicePixelRatio(ratio);
+        timelineCache_.fill(Qt::transparent);
+        QPainter cache(&timelineCache_);
+        cache.setRenderHint(QPainter::Antialiasing, true);
+        cache.setRenderHint(QPainter::TextAntialiasing, true);
+        cache.translate(-bounds.topLeft());
+
+        const double trackY = groove.y() + (groove.height() - kPipTimelineHeight) / 2.0;
+        paintRounded(cache, QRectF(groove.x(), trackY, groove.width(), kPipTimelineHeight),
+                     kPipTimelineHeight / 2.0, w25());
+
+        // Inset by half a handle at each end - the expression timelineSeekTo()
+        // reads a pointer from - so the drawn handle and the seek agree.
+        const double span =
+            std::max(1.0, static_cast<double>(groove.width()) - kPipTimelineHandle);
+        const double at = maximum > 0
+            ? std::clamp(static_cast<double>(value) / maximum, 0.0, 1.0)
+            : 0.0;
+        if (at > 0.0) {
+            // The played part, up to the handle: what the slider's sub-page was.
+            paintRounded(cache,
+                         QRectF(groove.x(), trackY, kPipTimelineHandle / 2.0 + at * span,
+                                kPipTimelineHeight),
+                         kPipTimelineHeight / 2.0, timelinePlayed());
+        }
+
+        const double centerX = groove.x() + kPipTimelineHandle / 2.0 + at * span;
+        const double centerY = groove.y() + groove.height() / 2.0;
+        cache.setPen(Qt::NoPen);
+        cache.setBrush(white(255));
+        cache.drawEllipse(QRectF(centerX - kPipTimelineHandle / 2.0,
+                                 centerY - kPipTimelineHandle / 2.0, kPipTimelineHandle,
+                                 kPipTimelineHandle));
+
+        timelineCacheBounds_ = bounds;
+        timelineCachePixels_ = deviceSize;
+        timelineCacheRatio_ = ratio;
+        timelineCacheValue_ = value;
+        timelineCacheMaximum_ = maximum;
+        timelineCacheAccent_ = accentRgba;
+        timelineCacheValid_ = true;
     }
 
-    const double centerX = groove.x() + kPipTimelineHandle / 2.0 + at * span;
-    const double centerY = groove.y() + groove.height() / 2.0;
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(white(255));
-    painter.drawEllipse(QRectF(centerX - kPipTimelineHandle / 2.0,
-                               centerY - kPipTimelineHandle / 2.0, kPipTimelineHandle,
-                               kPipTimelineHandle));
+    const QTransform toDevice = painter.deviceTransform();
+    const bool oneToOne = deviceAlignedTransform(toDevice, ratio);
+    const QPointF origin = oneToOne ? deviceAlignedOrigin(toDevice, QPointF(bounds.topLeft()))
+                                    : QPointF(bounds.topLeft());
+    painter.save();
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, !oneToOne);
+    painter.drawPixmap(origin, timelineCache_);
+    painter.restore();
 }
 
 void PipFloat::openStream(const QString& url, double position, bool paused, quint64 mediaToken) {
@@ -730,6 +788,20 @@ bool PipFloat::eventFilter(QObject* watched, QEvent* event) {
         }
     }
     return QWidget::eventFilter(watched, event);
+}
+
+bool PipFloat::event(QEvent* event) {
+    // QWidget::event() consumes both of these without forwarding them to
+    // changeEvent(), so this override is the only place the float is told. The
+    // chrome and the rasterised timeline are keyed on the ratio, but nothing
+    // would ask for the repaint that rebuilds them after a monitor move.
+    if (event->type() == QEvent::DevicePixelRatioChange ||
+        event->type() == QEvent::ScreenChangeInternal) {
+        timelineCacheValid_ = false;
+        chromeDirtyAll();
+        fitSurfaces();
+    }
+    return QWidget::event(event);
 }
 
 void PipFloat::changeEvent(QEvent* event) {
@@ -1065,20 +1137,8 @@ void PipFloat::fitSurfaces() {
     }
 }
 
-void PipFloat::applyCornerMask() {
-    // Round the window itself, not just its background: a styled border-radius
-    // only clips the widget's own painting, and the video is a child that
-    // paints square corners straight over the rounded background otherwise.
-    //
-    // The helper cuts it in this widget's LOCAL coordinates and leaves an
-    // unchanged shape alone: the float is the top level, so its local rect is
-    // the whole mask, and a resize is the only thing that moves it.
-    applyRoundedMask(this, kPipCornerRadiusPx, &cornerMask_);
-}
-
 void PipFloat::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
-    applyCornerMask();
     fitSurfaces();
     // The chrome lives in the picture now, and a resize moves every control to
     // a new place - and can land with no frame arriving. The surface draws

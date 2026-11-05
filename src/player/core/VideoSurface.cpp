@@ -14,6 +14,7 @@
 #include <QOpenGLFunctions>
 #include <QOpenGLPaintDevice>
 #include <QPainter>
+#include <QPainterPath>
 #include <QRegularExpression>
 #include <QScopedValueRollback>
 #include <QSettings>
@@ -90,6 +91,27 @@ constexpr GLenum kGlRenderbufferInternalFormat = 0x8D44;
 const QColor& videoBackdrop() {
     static const QColor colour(9, 10, 14);
     return colour;
+}
+
+/// Antialiased alpha coverage of one rounded corner, rasterised at `size` device
+/// pixels: opaque inside the quarter disc, transparent outside it. The patch's
+/// own top-left pixel is the widget's corner and the straight edges past the arc
+/// stay at full coverage, so a patch can be blitted without a seam.
+QImage cornerCoveragePatch(int size, qreal radiusDevice) {
+    QImage patch(size, size, QImage::Format_ARGB32_Premultiplied);
+    if (patch.isNull()) return patch;
+    patch.fill(Qt::transparent);
+    QPainter painter(&patch);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(Qt::white);
+    // The quarter disc of a rounded rect whose corner radius spans the whole
+    // arc; everything past it - the part this patch extends into - is filled.
+    QPainterPath shape;
+    shape.addRoundedRect(QRectF(0.0, 0.0, radiusDevice * 2.0, radiusDevice * 2.0),
+                         radiusDevice, radiusDevice);
+    painter.drawPath(shape);
+    return patch;
 }
 
 /// Monotonic nanoseconds for local duration measurements only. MPV target_time
@@ -1229,7 +1251,22 @@ bool VideoSurface::paintTeardownPicture(QPainter& painter) {
     const QSizeF fitted(teardownPicture_.width() * scale, teardownPicture_.height() * scale);
     const QRectF box(area.center().x() - fitted.width() / 2.0,
                      area.center().y() - fitted.height() / 2.0, fitted.width(), fitted.height());
+    // The readback is already device-sized, so fitting it to the widget's own
+    // logical rect maps it 1:1 through the widget's ratio - no resampling, and no
+    // hint needed. Only a letterbox that really shrinks it is resampled, and
+    // there nearest-neighbour would alias the whole picture.
+    const qreal ratio = devicePixelRatioF();
+    const bool resampled =
+        std::abs(box.width() * ratio - teardownPicture_.width()) > 1.0 ||
+        std::abs(box.height() * ratio - teardownPicture_.height()) > 1.0;
+    if (!resampled) {
+        painter.drawImage(box, teardownPicture_);
+        return true;
+    }
+    painter.save();
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
     painter.drawImage(box, teardownPicture_);
+    painter.restore();
     return true;
 }
 
@@ -1916,21 +1953,125 @@ void VideoSurface::paintOpeningPlaceholder(QPainter& painter) {
     painter.fillRect(rect(), videoBackdrop());
     const QPointF centre(width() / 2.0, height() / 2.0);
     const double radius = std::max(10.0, std::min(width(), height()) * 0.035);
-    const QRectF ring(centre.x() - radius, centre.y() - radius, radius * 2.0, radius * 2.0);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    QPen pen(QColor(255, 255, 255, 45));
-    pen.setWidthF(std::max(2.0, radius * 0.18));
-    painter.setPen(pen);
-    painter.setBrush(Qt::NoBrush);
-    painter.drawEllipse(ring);
-    // One sweeping arc, advanced by the timer: an indeterminate wait says
-    // "working", never a percentage this surface does not know.
-    QPen sweep(QColor(255, 255, 255, 190));
-    sweep.setWidthF(pen.widthF());
-    sweep.setCapStyle(Qt::RoundCap);
-    painter.setPen(sweep);
-    const int startAngle = (placeholderPhase_ * 24) % 360;
-    painter.drawArc(ring, startAngle * 16, 100 * 16);
+    paintOpeningRing(painter, centre, radius, std::max(2.0, radius * 0.18));
+}
+
+void VideoSurface::paintOpeningRing(QPainter& painter, const QPointF& centre, double radius,
+                                    double penWidth) {
+    // This target is single-sampled: QPainter::Antialiasing only reaches it when
+    // the framebuffer carries samples, so a track and an arc drawn straight into
+    // it have hard stair-steps. The ring is rasterised instead - the raster
+    // paint engine computes real coverage - and blitted 1:1, into one reused
+    // buffer rather than a multisampled target or a per-tick allocation.
+    const qreal ratio = devicePixelRatioF();
+    if (!(ratio > 0.0)) return;
+    // The stroke's half-width reaches past the ring, and a cap reaches further.
+    const int extent =
+        std::max(2, static_cast<int>(std::ceil((radius + penWidth) * 2.0 * ratio)));
+    if (openingRing_.size() != QSize(extent, extent)) {
+        openingRing_ = QImage(extent, extent, QImage::Format_ARGB32_Premultiplied);
+        // A new buffer holds no ring yet, so the phase must not claim otherwise.
+        openingRingPhase_ = -1;
+    }
+    if (openingRing_.isNull()) return;
+    // The buffer is placed in the target's own device pixels: the widget's paint
+    // device is scaled by the ratio, and a fractional logical origin would
+    // resample the coverage that was just rasterised.
+    const int originX =
+        static_cast<int>(std::lround(centre.x() * ratio)) - extent / 2;
+    const int originY =
+        static_cast<int>(std::lround(centre.y() * ratio)) - extent / 2;
+    if (openingRingPhase_ != placeholderPhase_ || openingRingRadius_ != radius ||
+        openingRingRatio_ != ratio) {
+        openingRing_.fill(Qt::transparent);
+        QPainter ring(&openingRing_);
+        ring.setRenderHint(QPainter::Antialiasing, true);
+        // The ring sits at the buffer's own centre, so the same pixels serve
+        // every position the buffer is drawn at.
+        const QRectF deviceRing(extent / 2.0 - radius * ratio, extent / 2.0 - radius * ratio,
+                                radius * 2.0 * ratio, radius * 2.0 * ratio);
+        QPen pen(QColor(255, 255, 255, 45));
+        pen.setWidthF(penWidth * ratio);
+        ring.setPen(pen);
+        ring.setBrush(Qt::NoBrush);
+        ring.drawEllipse(deviceRing);
+        // One sweeping arc, advanced by the timer: an indeterminate wait says
+        // "working", never a percentage this surface does not know.
+        QPen sweep(QColor(255, 255, 255, 190));
+        sweep.setWidthF(penWidth * ratio);
+        sweep.setCapStyle(Qt::RoundCap);
+        ring.setPen(sweep);
+        const int startAngle = (placeholderPhase_ * 24) % 360;
+        ring.drawArc(deviceRing, startAngle * 16, 100 * 16);
+        openingRingPhase_ = placeholderPhase_;
+        openingRingRadius_ = radius;
+        openingRingRatio_ = ratio;
+    }
+    painter.save();
+    painter.setWorldTransform(QTransform::fromScale(1.0 / ratio, 1.0 / ratio));
+    painter.drawImage(QPoint(originX, originY), openingRing_);
+    painter.restore();
+}
+
+void VideoSurface::setDisplayCornerRadius(int radius) {
+    const int requested = std::max(0, radius);
+    if (requested == displayCornerRadius_) return;
+    displayCornerRadius_ = requested;
+    // The patches describe the previous radius; the next displayed pass rebuilds
+    // them. The repaint is what makes the new corners appear without waiting for
+    // a frame - a paused surface may get none.
+    displayCornerTopLeft_ = QImage();
+    displayCornerTopRight_ = QImage();
+    displayCornerBottomLeft_ = QImage();
+    displayCornerBottomRight_ = QImage();
+    displayCornerRatio_ = 0.0;
+    // A rounded picture carries alpha the window has to composite; the opaque
+    // flag claims it never has any, so it stands only while the corners are
+    // square. Nothing else about the widget changes: same window flags, same
+    // children, same target.
+    setAttribute(Qt::WA_OpaquePaintEvent, displayCornerRadius_ <= 0);
+    update();
+}
+
+void VideoSurface::paintDisplayCornerCoverage(QPainter& painter, int targetWidth,
+                                              int targetHeight) {
+    // A suppressed overlay is a capture, not a display: the raw pixels must reach
+    // grabVideoFramebuffer() uncut, exactly as they do with square corners.
+    if (displayCornerRadius_ <= 0 || overlaySuppressed_) return;
+    const qreal ratio = devicePixelRatioF();
+    if (!(ratio > 0.0) || targetWidth <= 0 || targetHeight <= 0) return;
+    // The ratio is part of the coverage: the arc is rasterised in device pixels,
+    // so a window that moved to another screen must not reuse the old arc.
+    if (displayCornerTopLeft_.isNull() || displayCornerRatio_ != ratio) {
+        const qreal radiusDevice = displayCornerRadius_ * ratio;
+        // One whole device pixel past the arc keeps the straight edges sealed.
+        const int patch = std::max(2, static_cast<int>(std::ceil(radiusDevice)) + 1);
+        // Two patches must never meet: past that the radius does not describe a
+        // corner and no coverage is invented for it.
+        if (patch * 2 > targetWidth || patch * 2 > targetHeight) return;
+        displayCornerTopLeft_ = cornerCoveragePatch(patch, radiusDevice);
+        if (displayCornerTopLeft_.isNull()) return;
+        displayCornerTopRight_ = displayCornerTopLeft_.flipped(Qt::Horizontal);
+        displayCornerBottomLeft_ = displayCornerTopLeft_.flipped(Qt::Vertical);
+        displayCornerBottomRight_ = displayCornerTopLeft_.flipped(Qt::Horizontal | Qt::Vertical);
+        displayCornerRatio_ = ratio;
+    }
+    const int patch = displayCornerTopLeft_.width();
+    painter.save();
+    // Alpha coverage, not paint: the picture and the chrome over it keep their
+    // colours, and only what falls outside the rounded shape loses its alpha.
+    painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
+    // Device pixels, on the target's own grid. Cancelling the widget's ratio
+    // transform puts each patch exactly on the buffer's pixels, so a fractional
+    // ratio cannot resample the coverage into a soft or uneven corner.
+    painter.setWorldTransform(QTransform::fromScale(1.0 / ratio, 1.0 / ratio));
+    painter.drawImage(QPoint(0, 0), displayCornerTopLeft_);
+    painter.drawImage(QPoint(targetWidth - patch, 0), displayCornerTopRight_);
+    painter.drawImage(QPoint(0, targetHeight - patch), displayCornerBottomLeft_);
+    painter.drawImage(QPoint(targetWidth - patch, targetHeight - patch),
+                      displayCornerBottomRight_);
+    painter.restore();
 }
 double VideoSurface::position() const { return position_; }
 
@@ -2184,6 +2325,9 @@ void VideoSurface::paintGL() {
             }
         }
         if (!overlaySuppressed_) emit paintOverlay(&unrendered);
+        // Last, and over the overlay: the coverage is what the window composites.
+        paintDisplayCornerCoverage(unrendered, std::max(1, retainedSize.width()),
+                                   std::max(1, retainedSize.height()));
         if (profilePaint) {
             mikai::gui::uiprofile::recordPaintPass(
                 mikai::gui::uiprofile::kPaintUnrendered,
@@ -2530,6 +2674,10 @@ void VideoSurface::paintGL() {
     phaseMark = phaseTimed ? mikai::gui::uiprofile::nowNs() : 0;
     if (!overlaySuppressed_) emit paintOverlay(&painter);
     if (phaseTimed) overlayMicros = (mikai::gui::uiprofile::nowNs() - phaseMark) / 1000;
+    // After the chrome, because a control that stands in a corner is part of the
+    // rounded shape - and outside the overlay segment, because this is the
+    // picture's own presentation cost, not the chrome's.
+    paintDisplayCornerCoverage(painter, targetWidth, targetHeight);
     if (profilePaint) {
         // What this pass cost, classified by what it actually put on screen: the
         // chrome-repaint p95 GOAL-F needs is the pattern below, not a mean.

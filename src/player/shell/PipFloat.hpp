@@ -1,8 +1,10 @@
 #pragma once
 
 #include <QList>
+#include <QPixmap>
 #include <QPoint>
 #include <QPointF>
+#include <QRect>
 #include <QSize>
 #include <QString>
 #include <QWidget>
@@ -102,6 +104,7 @@ protected:
     void closeEvent(QCloseEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void changeEvent(QEvent* event) override;
+    bool event(QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
@@ -153,7 +156,6 @@ private:
     void pointerRelease(QMouseEvent* event);
     bool handleKey(QKeyEvent* event);
     void fitSurfaces();
-    void applyCornerMask();
     void revealControls();
     void hideControls();
     void setOverlayOpacity(double value);
@@ -176,9 +178,18 @@ private:
     QVariantAnimation* overlayFade_ = nullptr;
     QTimer* hideTimer_ = nullptr;
 
-    /// The corner mask installed on the float, in its LOCAL coordinates: an
-    /// unchanged shape is left alone rather than re-applied on every resize.
-    CornerMask cornerMask_;
+    /// The timeline strip's rasterised pixels, keyed by the geometry, ratio and
+    /// value they were drawn for. The picture's surface is single-sampled, so a
+    /// QPainter path has no coverage antialiasing there; the strip is drawn into
+    /// this buffer instead and blitted 1:1 - reused, never reallocated per tick.
+    QPixmap timelineCache_;
+    QRect timelineCacheBounds_;
+    QSize timelineCachePixels_;
+    qreal timelineCacheRatio_ = 0.0;
+    int timelineCacheValue_ = -1;
+    int timelineCacheMaximum_ = -1;
+    QRgb timelineCacheAccent_ = 0;
+    bool timelineCacheValid_ = false;
 
     /// Retained display state: what the last setPlaying() reported and the last
     /// clock setTime() rendered. A language change re-derives the labels and

@@ -17,8 +17,10 @@
 #include <QBrush>
 #include <QColor>
 #include <QFrame>
+#include <QImage>
 #include <QLabel>
 #include <QPixmap>
+#include <QPointF>
 #include <QRect>
 #include <utility>
 #include <QPoint>
@@ -26,6 +28,7 @@
 #include <QSize>
 #include <QString>
 #include <QTimer>
+#include <QTransform>
 #include <QVector>
 #include <QWidget>
 #include <QWindow>
@@ -92,27 +95,34 @@ public:
 
 ChromeHost* chromeHostOf(QWidget* widget);
 
-/// What a widget's corner mask currently describes: the shape, in the widget's
-/// own LOCAL coordinates, and the radius it was cut at. An empty shape means no
-/// mask stands.
-struct CornerMask {
-    QRect shape;
-    int radius = 0;
-};
+// ── cached-pixmap blitting ────────────────────────────────────────────────
 
-/// Rounds `widget`'s corner by cutting a mask out of it, in `widget`'s LOCAL
-/// coordinates - never its parent's, which is what a path built from the parent
-/// rect got wrong. A radius of zero or less clears the mask.
+/// True when `toDevice` maps logical units to device pixels at exactly `ratio`,
+/// without rotation, shear or a second scale.
 ///
-/// This is the only setMask() call site in the shell, and `state` is why: an
-/// identical region is not re-applied, because re-setting one churns the
-/// widget's backing store for no new pixels, and the callers run on every input
-/// event and every resize.
-void applyRoundedMask(QWidget* widget, int radius, CornerMask* state);
+/// That is the only case where a pixmap tagged with `ratio` lands one texel per
+/// device pixel, and therefore the only case where the blit may turn
+/// SmoothPixmapTransform off: an aligned copy needs no filter, and a filtered
+/// copy is a softened one.
+bool deviceAlignedTransform(const QTransform& toDevice, qreal ratio);
+
+/// `logicalOrigin` snapped so its device position is an integer pixel.
+///
+/// A control's logical origin lands between device pixels whenever the ratio is
+/// fractional (1.25, 1.5, 1.75); a pixmap copied at that phase is resampled
+/// even at one texel per pixel. Snapping moves a control by at most half a
+/// device pixel and keeps the copy exact.
+QPointF deviceAlignedOrigin(const QTransform& toDevice, const QPointF& logicalOrigin);
 
 /// What an adopted widget calls where it used to call update(): its own
 /// update() covers only the part of it that falls outside the picture.
 void chromeUpdate(QWidget* widget, const QRect& rect = QRect());
+
+/// The part of the chrome-cache budget the fallback raster may claim: the
+/// smallest tile it is allowed to fall back to, 64 device pixels square. Cache
+/// admission keeps this much free, so the first over-budget control can always
+/// be rasterised instead of painted straight into the GL device.
+constexpr qint64 kChromeScratchReserveBytes = 64 * 64 * 4;
 
 /// The chrome one host has adopted, in paint order: what the surface draws,
 /// resolved once where the chrome is built, so painting a frame walks this list
@@ -172,7 +182,32 @@ private:
     void dropCache(Entry& entry);
     void markStale(Entry& entry);
 
+    /// An over-budget control painted into the GL device: rasterised one bounded
+    /// tile at a time into `scratch_`, each copied back at its device-aligned
+    /// origin. QPainter's Antialiasing resolves only through a multisampled
+    /// framebuffer on that engine, and the app's surfaces are single-sample, so
+    /// painting the paths directly there would leave hard edges. `box` (root
+    /// coordinates) fixes the phase; `clip` only bounds this paint's tiles.
+    void paintFallback(QPainter& painter, Entry& entry, const QRect& box, const QPoint& at,
+                       const QRect& clip);
+
+    /// The tile side, in device pixels, that the budget can still hold: at most
+    /// 1024 (4 MiB), never below the reserve the cache admission leaves.
+    int fallbackTileSide() const;
+    /// Grows `scratch_` to `side` and retags it for `ratio`; keeps the buffer it
+    /// already has, so a repeated fallback does not allocate per frame.
+    void ensureScratch(int side, qreal ratio);
+    /// Bytes the per-control caches must leave for the fallback raster.
+    qint64 cacheReservation() const {
+        return scratchBytes_ > 0 ? scratchBytes_ : kChromeScratchReserveBytes;
+    }
+
     QVector<Entry> entries_;
+
+    /// The shared raster the over-budget controls are drawn into; its bytes are
+    /// part of the same budget as the per-control caches.
+    QImage scratch_;
+    qint64 scratchBytes_ = 0;
 
     /// Bumped by invalidateAll(), so every entry is stale without walking them.
     quint64 generation_ = 0;
