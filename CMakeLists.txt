@@ -378,6 +378,8 @@ set(APP_SOURCES
   src/app/dialogs/ComponentStoreTabAcquisition.cpp
   src/app/dialogs/CoverViewer.cpp
   src/app/dialogs/NativeAssetsPanel.cpp
+  src/app/dialogs/UpscalersPanel.cpp
+  src/app/dialogs/UpscalersPanel.hpp
   src/app/dialogs/NativeAssetsPanelWorkflow.cpp
   src/app/dialogs/NativeRifeControls.cpp
   src/app/dialogs/SettingsDialog.cpp
@@ -385,6 +387,7 @@ set(APP_SOURCES
   src/app/dialogs/settings/BenchmarkPlayback.cpp
   src/app/dialogs/settings/BenchmarkReport.cpp
   src/app/dialogs/settings/SettingsBenchmarkTab.cpp
+  src/app/dialogs/settings/SettingsUpscalersTab.cpp
   src/app/dialogs/settings/SettingsComponentsTab.cpp
   src/app/dialogs/settings/SettingsCustomizationTab.cpp
   src/app/dialogs/settings/SettingsGeneralTab.cpp

@@ -13,6 +13,7 @@
 
 #include <optional>
 
+#include <QtCore/QByteArray>
 #include <QtCore/QString>
 #include <QtCore/QStringView>
 #include <QtCore/QVector>
@@ -52,6 +53,25 @@ std::optional<UpscalerModel> upscalerForId(QStringView idOrName);
 
 /// The catalogue entry whose pinned bytes hash to `sha256`.
 std::optional<UpscalerModel> upscalerForDigest(QStringView sha256);
+
+/// True when `bytes` are exactly the pinned graph: length first, then digest.
+/// A download is proved before a single byte reaches the store.
+bool verifyUpscalerBytes(const UpscalerModel& model, const QByteArray& bytes,
+                         QString* reasonOut = nullptr);
+
+/// Stores verified bytes in the app-owned custom-model directory under the
+/// catalogue's file name and publishes their integrity record, so a chain step
+/// can name the graph. Refuses anything that does not verify, and never
+/// replaces an existing registered graph. Returns the registered identifier.
+QString installUpscalerBytes(const UpscalerModel& model, const QByteArray& bytes,
+                             QString* reasonOut = nullptr);
+
+/// Removes a stored upscaler and its integrity record. False when nothing owned
+/// matches, which is not an error the caller has to invent words for.
+bool removeInstalledUpscaler(const UpscalerModel& model, QString* reasonOut = nullptr);
+
+/// Where a stored upscaler lives, or an empty path when it is not installed.
+QString installedUpscalerPath(const UpscalerModel& model);
 
 }  // namespace native
 }  // namespace mplayer

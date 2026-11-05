@@ -5,6 +5,8 @@
 #include <dialogs/AnimeJanaiManagerPanel.hpp>
 #include <dialogs/ComponentStoreTab.hpp>
 #include <dialogs/SettingsDialog.hpp>
+#include <dialogs/UpscalersPanel.hpp>
+#include <native/models/NativeUpscalers.hpp>
 #include <dialogs/settings/SettingsUi.hpp>
 #include <widgets/PageGlow.hpp>
 #include <state/AppearanceStore.hpp>
@@ -2447,6 +2449,39 @@ void TestPublicApiUi::componentCardsKeepASingleLineBadgeAndASeparateCountLine() 
                               .arg(cardId)
                               .arg(width)));
     }
+  }
+}
+
+void TestPublicApiUi::theUpscalersPageListsEveryPinnedModel() {
+  mikai::backend::MikaiClient client(QString(), QStringLiteral("http://127.0.0.1:1"));
+  mikai::app::Runner runner;
+  const auto drain = qScopeGuard([&runner] {
+    runner.cancel();
+    if (!runner.waitForDone(10000)) qFatal("Upscaler workers did not stop");
+  });
+  mikai::app::SettingsDialog dialog(client, runner);
+  dialog.resize(dialog.minimumSize());
+  dialog.show();
+  QCoreApplication::processEvents();
+  QVERIFY(dialog.showPage(QStringLiteral("upscalers")));
+  QCoreApplication::processEvents();
+
+  auto* panel = dialog.findChild<mikai::app::UpscalersPanel*>();
+  QVERIFY2(panel != nullptr, "the upscalers page is missing");
+  QCOMPARE(panel->rowIds().size(), mplayer::native::upscalerCatalog().size());
+  QVERIFY(!panel->busy());
+  for (const mplayer::native::UpscalerModel& model : mplayer::native::upscalerCatalog()) {
+    auto* state = dialog.findChild<QLabel*>(QStringLiteral("upscalerState_%1").arg(model.fileName));
+    auto* action =
+        dialog.findChild<QPushButton*>(QStringLiteral("upscalerAction_%1").arg(model.fileName));
+    QVERIFY2(state != nullptr, qPrintable(model.fileName));
+    QVERIFY2(action != nullptr, qPrintable(model.fileName));
+    // A placeholder is a state, not an empty row: the action says what can be
+    // done now, and never reports a download that already happened.
+    const bool installed = !mplayer::native::installedUpscalerPath(model).isEmpty();
+    QCOMPARE(state->text(), installed ? QStringLiteral("installed")
+                                      : QStringLiteral("not installed"));
+    QCOMPARE(action->text(), installed ? QStringLiteral("Remove") : QStringLiteral("Download"));
   }
 }
 

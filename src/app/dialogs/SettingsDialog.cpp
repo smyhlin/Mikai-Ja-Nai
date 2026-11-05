@@ -101,6 +101,7 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     processingTab_ = buildProcessingTab();
     componentsTab_ = buildComponentsTab();
     benchmarkTab_ = buildBenchmarkTab();
+    upscalersTab_ = buildUpscalersTab();
     customizationGeneralPage_ = buildCustomizationGeneralTab();
     appearancePage_ = buildAppearanceTab();
     refreshAppearanceControls();

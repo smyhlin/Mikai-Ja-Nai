@@ -12,4 +12,6 @@ private slots:
     void theScaleAndPrecisionMatchThePublishedGraphs();
     void theUrlsStayOnTheirPinnedHosts();
     void anUnknownIdentifierResolvesNothing();
+    void onlyThePinnedBytesVerify();
+    void aTruncatedOrForeignDownloadIsRefusedByName();
 };

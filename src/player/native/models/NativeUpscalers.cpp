@@ -1,6 +1,12 @@
 #include "NativeUpscalers.hpp"
 
+#include "native/components/AnimeJanaiConfig.hpp"
+
+#include <QtCore/QCryptographicHash>
+#include <QtCore/QDir>
+#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QSaveFile>
 
 namespace mplayer {
 namespace native {
@@ -67,6 +73,103 @@ QVector<UpscalerModel> makeCatalog() {
 }
 
 }  // namespace
+
+bool verifyUpscalerBytes(const UpscalerModel& model, const QByteArray& bytes,
+                         QString* reasonOut) {
+    const auto fail = [reasonOut](const QString& reason) {
+        if (reasonOut != nullptr) *reasonOut = reason;
+        return false;
+    };
+    if (model.sha256.isEmpty() || model.bytes <= 0) return fail(QStringLiteral("invalid pin"));
+    // Length first: a truncated transfer never has to be hashed to be refused.
+    if (bytes.size() != model.bytes) {
+        return fail(QStringLiteral("expected %1 bytes, received %2")
+                        .arg(model.bytes)
+                        .arg(bytes.size()));
+    }
+    const QString actual = QString::fromLatin1(
+        QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
+    if (actual != model.sha256) {
+        return fail(QStringLiteral("digest mismatch: expected %1, received %2")
+                        .arg(model.sha256, actual));
+    }
+    if (reasonOut != nullptr) reasonOut->clear();
+    return true;
+}
+
+QString installedUpscalerPath(const UpscalerModel& model) {
+    const QString path = QDir(customAnimeJanaiModelsDir()).filePath(model.fileName);
+    return QFileInfo(path).isFile() ? path : QString();
+}
+
+QString installUpscalerBytes(const UpscalerModel& model, const QByteArray& bytes,
+                             QString* reasonOut) {
+    const auto fail = [reasonOut](const QString& reason) {
+        if (reasonOut != nullptr) *reasonOut = reason;
+        return QString();
+    };
+    QString verifyReason;
+    if (!verifyUpscalerBytes(model, bytes, &verifyReason)) return fail(verifyReason);
+
+    const QString directory = customAnimeJanaiModelsDir();
+    if (directory.isEmpty()) return fail(QStringLiteral("the model store is unavailable"));
+    if (!QDir().mkpath(directory)) return fail(QStringLiteral("cannot create %1").arg(directory));
+    const QString target = QDir(directory).filePath(model.fileName);
+
+    // A graph already registered under this name is never rewritten: a second
+    // download of the same pin is a no-op, and different bytes under the same
+    // name would silently invalidate the integrity record beside it.
+    if (QFileInfo(target).isFile()) {
+        QFile existing(target);
+        if (existing.open(QIODevice::ReadOnly) && existing.readAll() == bytes) {
+            CustomAnimeJanaiModel registered;
+            QString reason;
+            if (registerOwnedCustomAnimeJanaiModel(target, &registered, &reason)) {
+                if (reasonOut != nullptr) reasonOut->clear();
+                return registered.id;
+            }
+            // Already registered with a sidecar: report its identity.
+            if (!reason.isEmpty() && reason.contains(QStringLiteral("already"), Qt::CaseInsensitive)) {
+                if (reasonOut != nullptr) reasonOut->clear();
+                return QStringLiteral("sha256:") + model.sha256;
+            }
+            return fail(reason);
+        }
+        return fail(QStringLiteral("%1 already exists with different bytes").arg(model.fileName));
+    }
+
+    QSaveFile file(target);
+    if (!file.open(QIODevice::WriteOnly)) return fail(file.errorString());
+    if (file.write(bytes) != bytes.size()) return fail(file.errorString());
+    if (!file.commit()) return fail(file.errorString());
+
+    CustomAnimeJanaiModel registered;
+    QString reason;
+    if (!registerOwnedCustomAnimeJanaiModel(target, &registered, &reason)) {
+        // The graph is ours and unregistered; dropping it keeps the store honest
+        // instead of leaving an executable-looking file nothing vouches for.
+        QFile::remove(target);
+        return fail(reason);
+    }
+    if (reasonOut != nullptr) reasonOut->clear();
+    return registered.id;
+}
+
+bool removeInstalledUpscaler(const UpscalerModel& model, QString* reasonOut) {
+    const QString path = installedUpscalerPath(model);
+    if (path.isEmpty()) {
+        if (reasonOut != nullptr) *reasonOut = QStringLiteral("not installed");
+        return false;
+    }
+    QString reason;
+    const bool removed = removeCustomAnimeJanaiModel(model.fileName, &reason);
+    if (!removed) {
+        if (reasonOut != nullptr) *reasonOut = reason;
+        return false;
+    }
+    if (reasonOut != nullptr) reasonOut->clear();
+    return true;
+}
 
 QVector<UpscalerModel> upscalerCatalog() {
     return makeCatalog();

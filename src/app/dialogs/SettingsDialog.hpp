@@ -210,6 +210,7 @@ private:
     QWidget* buildProcessingTab();
     QWidget* buildComponentsTab();
     QWidget* buildBenchmarkTab();
+    QWidget* buildUpscalersTab();
     QWidget* buildCustomizationGeneralTab();
     QWidget* buildAppearanceTab();
 
@@ -467,6 +468,7 @@ private:
     QWidget* processingTab_ = nullptr;
     QWidget* componentsTab_ = nullptr;
     QWidget* benchmarkTab_ = nullptr;
+    QWidget* upscalersTab_ = nullptr;
     QScrollArea* benchmarkScroll_ = nullptr;
     QVector<QCheckBox*> benchmarkClipChecks_;
     QLineEdit* benchmarkModelSearch_ = nullptr;

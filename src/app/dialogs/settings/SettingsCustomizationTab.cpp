@@ -127,6 +127,7 @@ void SettingsDialog::buildNavigation() {
     addNavigationEntry(QStringLiteral("shortcuts"), QStringLiteral("application"), presetsTab_);
     addNavigationEntry(QStringLiteral("processing"), QStringLiteral("playback"), processingTab_);
     addNavigationEntry(QStringLiteral("components"), QStringLiteral("playback"), componentsTab_);
+    addNavigationEntry(QStringLiteral("upscalers"), QStringLiteral("playback"), upscalersTab_);
     addNavigationEntry(QStringLiteral("benchmark"), QStringLiteral("playback"), benchmarkTab_);
     selectPage(customizationGeneralPage_);
 }

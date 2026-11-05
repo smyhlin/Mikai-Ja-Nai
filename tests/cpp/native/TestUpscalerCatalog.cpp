@@ -2,6 +2,8 @@
 
 #include "native/models/NativeUpscalers.hpp"
 
+#include <QtCore/QByteArray>
+#include <QtCore/QCryptographicHash>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QSet>
 
@@ -109,4 +111,34 @@ void TestUpscalerCatalog::anUnknownIdentifierResolvesNothing() {
     QVERIFY(!upscalerForId(QStringLiteral("sha256:00")).has_value());
     QVERIFY(!upscalerForDigest(QString()).has_value());
     QVERIFY(!upscalerForDigest(QStringLiteral("00")).has_value());
+}
+
+void TestUpscalerCatalog::onlyThePinnedBytesVerify() {
+    // A synthetic graph with the pin rebuilt around those exact bytes: the check
+    // is the rule, not the four published files.
+    const QByteArray payload = QByteArray("synthetic upscaler bytes for the rule");
+    UpscalerModel model;
+    model.bytes = payload.size();
+    model.sha256 = QString::fromLatin1(
+        QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex());
+    QString reason;
+    QVERIFY(verifyUpscalerBytes(model, payload, &reason));
+    QVERIFY(reason.isEmpty());
+}
+
+void TestUpscalerCatalog::aTruncatedOrForeignDownloadIsRefusedByName() {
+    const QByteArray payload = QByteArray("synthetic upscaler bytes for the rule");
+    UpscalerModel model;
+    model.bytes = payload.size();
+    model.sha256 = QString::fromLatin1(
+        QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex());
+
+    QString reason;
+    QVERIFY(!verifyUpscalerBytes(model, payload.left(payload.size() - 1), &reason));
+    QVERIFY2(reason.contains(QStringLiteral("bytes")), qPrintable(reason));
+
+    QByteArray foreign = payload;
+    foreign[0] = 'S';
+    QVERIFY(!verifyUpscalerBytes(model, foreign, &reason));
+    QVERIFY2(reason.contains(QStringLiteral("digest")), qPrintable(reason));
 }

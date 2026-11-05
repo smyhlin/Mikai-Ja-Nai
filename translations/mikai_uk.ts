@@ -6606,8 +6606,8 @@ Active: %1 · queued: %2</source>
         <translation>Бекенд</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="117"/>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="391"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="118"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="392"/>
         <source>Cancel</source>
         <translation>Скасувати</translation>
     </message>
@@ -6633,8 +6633,8 @@ Active: %1 · queued: %2</source>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="40"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="329"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="774"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="330"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="775"/>
         <source>Appearance</source>
         <translation>Вигляд</translation>
     </message>
@@ -6649,209 +6649,209 @@ Active: %1 · queued: %2</source>
         <translation>Компоненти</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="197"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="743"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="198"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="744"/>
         <source>Adjust how content and more are displayed</source>
         <translation>Налаштуйте вигляд контенту та іншого</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="203"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="745"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="204"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="746"/>
         <source>Site theme</source>
         <translation>Тема сайту</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="205"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="748"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="206"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="749"/>
         <source>Dark theme</source>
         <translation>Темна тема</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="206"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="750"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="207"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="751"/>
         <source>Light theme</source>
         <translation>Світла тема</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="216"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="753"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="217"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="754"/>
         <source>Content titles language</source>
         <translation>Мова назв контенту</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="220"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="235"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="761"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="221"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="236"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="762"/>
         <source>Original</source>
         <translation>Оригінал</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="230"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="755"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="231"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="756"/>
         <source>Names language</source>
         <translation>Мова імен</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="232"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="758"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="233"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="759"/>
         <source>As the interface</source>
         <translation>Як інтерфейс</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="277"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="765"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="278"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="766"/>
         <source>Gradient overlay</source>
         <translation>Градієнтне накладання</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="278"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="767"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="279"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="768"/>
         <source>Overlay a gradient on the cover image</source>
         <translation>Накладати градієнт на обкладинку</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="286"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="769"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="287"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="770"/>
         <source>18+ content</source>
         <translation>Контент 18+</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="287"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="771"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="288"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="772"/>
         <source>Show explicit content without a warning</source>
         <translation>Показувати відвертий контент без попередження</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="331"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="776"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="332"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="777"/>
         <source>Adjust themes, colors and display</source>
         <translation>Налаштуйте теми, кольори та відображення</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="336"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="778"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="337"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="779"/>
         <source>Reset</source>
         <translation>Скинути</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="345"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="779"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="346"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="780"/>
         <source>Accent color</source>
         <translation>Акцентний колір</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="346"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="781"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="347"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="782"/>
         <source>Pick a preset or a custom accent color</source>
         <translation>Виберіть готовий або власний акцентний колір</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="360"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="361"/>
         <source>%1 accent</source>
         <translation>%1 — акцент</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="375"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="379"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="810"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="376"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="380"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="811"/>
         <source>Custom accent color</source>
         <translation>Власний акцентний колір</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="376"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="811"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="377"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="812"/>
         <source>Pick a custom accent color</source>
         <translation>Виберіть власний акцентний колір</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="395"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="783"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="396"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="784"/>
         <source>Corner radius</source>
         <translation>Радіус кутів</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="396"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="785"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="397"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="786"/>
         <source>Rounding of buttons, cards and fields</source>
         <translation>Округлення кнопок, карток і полів</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="410"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="411"/>
         <source>%1 px</source>
         <translation>%1 px</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="430"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="439"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="792"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="431"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="440"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="793"/>
         <source>Background gradient</source>
         <translation>Фоновий градієнт</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="432"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="795"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="433"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="796"/>
         <source>Accent glow at the top of the page</source>
         <translation>Акцентне світіння вгорі сторінки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="478"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="797"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="479"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="798"/>
         <source>Intensity</source>
         <translation>Інтенсивність</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="479"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="798"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="480"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="799"/>
         <source>Height</source>
         <translation>Висота</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="496"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="799"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="497"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="800"/>
         <source>Gradient source</source>
         <translation>Джерело градієнта</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="498"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="803"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="499"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="804"/>
         <source>Auto (follow accent)</source>
         <translation>Автоматично (за акцентом)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="499"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="806"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="500"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="807"/>
         <source>Custom color</source>
         <translation>Власний колір</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="513"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="808"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="514"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="809"/>
         <source>Gradient color</source>
         <translation>Колір градієнта</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="525"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="526"/>
         <source>%1 gradient</source>
         <translation>%1 — градієнт</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="541"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="545"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="814"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="542"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="546"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="815"/>
         <source>Custom gradient color</source>
         <translation>Власний колір градієнта</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="542"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="815"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="543"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="816"/>
         <source>Pick a custom gradient color</source>
         <translation>Виберіть власний колір градієнта</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="583"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="589"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="681"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="688"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="584"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="590"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="682"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="689"/>
         <source>%1 %2</source>
         <translation>%1 %2</translation>
     </message>
@@ -6873,9 +6873,9 @@ Active: %1 · queued: %2</source>
         <translation>&lt;a style=&quot;color: %1; text-decoration: none; font-weight: 500;&quot; href=&quot;https://mikai.me/user/developers&quot;&gt;Отримати ключ у кабінеті розробника на mikai.me ↗&lt;/a&gt;</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="219"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="234"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="760"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="220"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="235"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="761"/>
         <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="256"/>
         <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="720"/>
         <source>English</source>
@@ -6894,8 +6894,8 @@ Active: %1 · queued: %2</source>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="39"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="196"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="741"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="197"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="742"/>
         <source>General</source>
         <translation>Загальні</translation>
     </message>
@@ -7161,7 +7161,7 @@ Automatic startup could not be restored: %1. Its current state is %2.</source>
         <translation>У цій збірці немає доступних нативних рецептів.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="229"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="230"/>
         <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="247"/>
         <source>No source-presence path is wired, so there is no live video to prepare for.</source>
         <translation>Джерело відтворення не підключено, тому немає активного відео для підготовки.</translation>
@@ -7222,14 +7222,14 @@ Automatic startup could not be restored: %1. Its current state is %2.</source>
         <translation>Модуль середовища</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="119"/>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="392"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="120"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="393"/>
         <source>Save</source>
         <translation>Зберегти</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/SettingsDialog.cpp" line="54"/>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="389"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="390"/>
         <source>Settings</source>
         <translation>Налаштування</translation>
     </message>
@@ -7257,42 +7257,42 @@ Automatic startup could not be restored: %1. Its current state is %2.</source>
         <translation>Гарячі клавіші</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="362"/>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="550"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="363"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="551"/>
         <source>The %1 interface could not be applied, so the language was left unchanged.</source>
         <translation>Не вдалося застосувати інтерфейс (%1), тому мову залишено без змін.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="473"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="474"/>
         <source>The API key could not be saved, so it was left unchanged: %1</source>
         <translation>Не вдалося зберегти ключ API, тому його залишено без змін: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="491"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="492"/>
         <source>The AnimeJaNai configuration could not be saved.</source>
         <translation>Не вдалося зберегти конфігурацію AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="515"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="516"/>
         <source>The native preferences could not be saved.</source>
         <translation>Не вдалося зберегти нативні налаштування.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="527"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="528"/>
         <source>The runtime choice could not be saved.</source>
         <translation>Не вдалося зберегти вибір середовища виконання.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="561"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="562"/>
         <source>
 Any other settings already saved remain saved, even if you cancel. Unsaved language and appearance previews will still be restored.</source>
         <translation>
 Усі інші вже збережені налаштування залишаться збереженими, навіть якщо ви скасуєте дію. Незбережені попередні перегляди мови й оформлення буде відновлено.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="218"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="233"/>
-        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="759"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="219"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="234"/>
+        <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="760"/>
         <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="257"/>
         <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="721"/>
         <source>Ukrainian</source>
@@ -7377,7 +7377,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Середовище mpv</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="475"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="476"/>
         <source>the key file could not be written</source>
         <translation>не вдалося записати файл ключа</translation>
     </message>
@@ -8474,6 +8474,89 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="535"/>
         <source>Stream expired — refreshing URL…</source>
         <translation>Термін дії потоку минув — оновлення URL…</translation>
+    </message>
+</context>
+<context>
+    <name>mikai::app::UpscalersPanel</name>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="66"/>
+        <source>Upscale models</source>
+        <translation>Моделі збільшення</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="70"/>
+        <source>Optional ONNX upscalers applied as an AnimeJaNai chain step. Nothing here is bundled: a model is downloaded only when you ask for it, then stored under the app-owned model folder. Anime4K presets do not need any of them.</source>
+        <translation>Необов'язкові ONNX-моделі збільшення, що застосовуються як крок ланцюга AnimeJaNai. Нічого не входить до збірки: модель завантажується лише на ваш запит і зберігається в папці моделей застосунку. Пресетам Anime4K вони не потрібні.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="122"/>
+        <source>%1× upscale · %2 · publisher: %3</source>
+        <translation>%1× збільшення · %2 · видавець: %3</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="163"/>
+        <source>The publisher&apos;s model card is the licence record for these bytes; this project does not redistribute them. Downloaded graphs stay on this machine.</source>
+        <translation>Картка моделі видавця є ліцензійним записом для цих байтів; цей проєкт їх не розповсюджує. Завантажені графи залишаються на цій машині.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="181"/>
+        <source>%1 of %2 models installed</source>
+        <translation>Встановлено моделей: %1 з %2</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="201"/>
+        <source>installed</source>
+        <translation>встановлено</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="201"/>
+        <source>not installed</source>
+        <translation>не встановлено</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="208"/>
+        <source>Remove</source>
+        <translation>Видалити</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="208"/>
+        <source>Download</source>
+        <translation>Завантажити</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="226"/>
+        <source>A download needs the backend client and a worker pool.</source>
+        <translation>Для завантаження потрібні клієнт бекенду та пул потоків.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="232"/>
+        <source>Downloading…</source>
+        <translation>Завантаження…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="235"/>
+        <source>Contacting the publisher…</source>
+        <translation>Зв'язок із видавцем…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="260"/>
+        <source>Installed.</source>
+        <translation>Встановлено.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="278"/>
+        <source>Removing needs a worker pool.</source>
+        <translation>Для видалення потрібен пул потоків.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="284"/>
+        <source>Removing…</source>
+        <translation>Видалення…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/UpscalersPanel.cpp" line="285"/>
+        <source>Removing the stored graph…</source>
+        <translation>Видалення збереженого графа…</translation>
     </message>
 </context>
 <context>
