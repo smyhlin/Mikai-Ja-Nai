@@ -6,13 +6,13 @@ Open **Settings** from the main window. The settings window has these pages:
 |---|---|---|
 | **Customization** | **General** | Site theme, content/name language, cover display, 18+ display, and system integrations |
 | **Customization** | **Appearance** | Accent, corner radius and background gradient |
-| **Application** | **Access** | Mikai API token, home-page feed sections, interface language and HDR playback |
+| **Application** | **Access** | Mikai API token, home-page feed sections, interface language, HDR playback and video scaling |
 | **Application** | **Keyboard shortcuts** | Anime4K preset key bindings |
-| **Playback** | **Processing** | Playback runtime, AnimeJaNai and Native processing options |
-| **Playback** | **Components** | Optional runtime/model component inventory and downloads |
+| **Playback** | **Processing** | Runtime module selection and the Standard and Native processing workflows |
+| **Playback** | **Components** | Downloadable backend components, models and their install state |
 | **Playback** | **Benchmark** | Rendering throughput comparison |
 
-The page contents scroll independently; the **Save** and **Cancel** buttons stay in the Settings footer. For detailed processing, component installation and benchmark instructions, see the [processing guide](processing-guide.md).
+The sidebar groups the pages as listed, and the window normally opens on **Customization → General**; an invalid stored preset binding opens **Application → Keyboard shortcuts** instead so the conflict is visible. Page contents scroll independently; the **Save** and **Cancel** buttons stay in the Settings footer. For detailed processing, component installation and benchmark instructions, see the [processing guide](processing-guide.md).
 
 ## Change appearance and display preferences
 
@@ -68,7 +68,9 @@ The token is optional. The advertised public API limits are **299 requests per m
 
 Use **Test** to check the text currently in the field; testing does not itself save it. Get a key from the linked Mikai developer dashboard. Keep the token private: it is sent to the Mikai API, and any `.env` file containing it should not be committed or shared. The app writes the key as `X-API-Key: …`; on Windows it restricts the file to the current user, and on Linux it grants read/write access only to the file owner.
 
-The client first checks `.env` in the current working directory, then beside the executable, then in its immediate parent directory; the first existing file wins, and it does not search farther up. If no file exists, saving creates `.env` in the current working directory. At client initialization, a non-empty `MIKAI_API_KEY` environment variable takes precedence over the file. If saving the key fails, the app reports the error and leaves the active key unchanged.
+Leaving the field blank saves anonymous access, as the field's placeholder says. Saving a changed blank key writes an empty `.env` file in place instead of deleting it.
+
+The client first checks `.env` in the current working directory, then beside the executable, then in its immediate parent directory; the first existing file wins, and it does not search farther up. When a save changes the key, it writes the first location that already existed, or `.env` in the current working directory when none did; an unchanged key is not rewritten. At client initialization, a non-empty `MIKAI_API_KEY` environment variable takes precedence over the file. If saving the key fails, the app reports the error and leaves the active key unchanged.
 
 The **API usage** readout shows the current limit and, after API responses arrive, usage/remaining requests, active and queued work, and reset countdown where available. It may initially say it is waiting for the next response.
 
@@ -81,8 +83,8 @@ Check the home-page sections you want loaded. Disabled sections are not loaded a
 The **HDR playback** controls are on **Application → Access**:
 
 - **Auto (recommended)** selects the automatic tone-mapping policy.
-- **Stable** disables per-frame adaptation.
-- **Vivid** uses a Mobius curve.
+- **Stable - no per-frame adaptation** disables per-frame adaptation.
+- **Vivid - Mobius curve** uses a Mobius curve.
 - **Native enhancement for HDR** allows Native enhancement stages on HDR video. Those stages require 8-bit NV12; enabling this option does not convert the source to SDR and may reduce HDR image quality.
 
 These settings are separate: HDR tone mapping describes how HDR video is mapped to a display, while Native enhancement is a processing choice. Saved HDR changes reach a running player shortly after saving.
@@ -104,14 +106,33 @@ Open **Application → Keyboard shortcuts**. Focus a shortcut field and press a 
 
 A key combination can belong to only one preset, and built-in player shortcuts are reserved. A conflicting edit is rejected and the page explains the conflict; saving is also blocked while the preset bindings are invalid. Bindings are written on **Save**, not as soon as you type them.
 
+## Processing runtime, components and benchmark
+
+**Playback → Processing** is headed **Processing runtime**. Its **Runtime module** choice is **Standard**, or **Native** on Windows. Saving stores the choice; when it differs from the runtime the running process loaded, the page says the runtime will change after restarting Mikai Ja Nai, and the dialog does not replace the running core itself.
+
+- **Standard** shows the AnimeJaNai manager card, which owns the official models and profiles, including TensorRT for RTX on Windows.
+- **Native** (Windows only) replaces that card with **Backend**, **Recipe**, the Native model-assets card and **RIFE interpolation**. Only Native fields you actually changed are written, so an untouched preference block survives an unrelated save. Preparation and model work started from these controls is an operation, not a pending preference.
+
+Platform boundaries are stated in the pages themselves:
+
+- On Linux the runtime selector offers only **Standard**, and the page header says that DirectML, TensorRT for RTX and the private Native runtime are Windows-only.
+- **Playback → Components** is headed **Backend components**. On Windows the backend selector offers TensorRT, DirectML and **TensorRT for RTX**; on Linux it offers TensorRT only. That selector decides which backend **Apply changes** and **Verify** act on. A stored RTX choice opened on Linux appears as **TensorRT for RTX (unavailable on this platform)**, and the page explains that the runtime is available only on Windows.
+- Opening these pages does not prepare a model or start inference. **Apply changes** downloads the selected missing components, **Verify** re-checks installed elements against their digests, and **Cancel** stops the active acquisition. The downloaded files are the app's own components, not GPU drivers.
+
+![Components settings page with TensorRT for RTX selected and its runtime reported as not installed](images/gallery-2026-11-05/components.png)
+
+*The Components page during the Windows capture: TensorRT for RTX selected, its runtime reported as not installed, and no download started. The capture does not show a working RTX runtime or any inference result.*
+
+**Playback → Benchmark** is headed **Benchmark** and compares rendering speed at 2× input resolution. Choose **Video clips** and **Enhancement models**, optionally keep **Include the unfiltered baseline**, then press **Run benchmark**; the **Results** table reports **Model**, **Clip** and **Throughput**, with preparation excluded from FPS. A run is a measurement of the current selection, not a saved preference. For clip locations, reports and the full workflow, see the [processing guide](processing-guide.md).
+
 ## Windows and Linux system integrations
 
 Find these controls under **Customization → General → System integration**. They apply to the current user account and take effect on **Save**. They do not take effect just by checking a box.
 
-| Option | Windows | Linux |
+| Control | Windows | Linux |
 |---|---|---|
-| Start at sign-in | Registers the app for the current Windows user. | Registers the app for the current user using XDG autostart. |
-| Open With | Adds an **Open in Mikai Ja Nai** video-file context-menu command without changing the default app. | Registers the app as a video-file **Open With** candidate; file managers decide where it appears. |
+| **Start Mikai Ja Nai when I sign in** | Registers the app for the current Windows user. | Registers the app for the current user using XDG autostart. |
+| **Open With** | Label: **Add Mikai Ja Nai to the video file context menu**. Adds an **Open with Mikai Ja Nai** video-file context-menu command without changing the default app. | Label: **Add Mikai Ja Nai to video files' Open With list**. Registers the app as a video-file **Open With** candidate; file managers decide where it appears. |
 
 Neither platform option forces file associations. On Linux, the desktop decides how default-app settings and Open With entries are presented. If default-player registration was requested, disabling Open With keeps the desktop identity so existing defaults can continue to refer to it; a package-managed entry cannot be disabled in the app. On Windows, an existing unmarked context-menu registration or one owned by another installation is left unchanged rather than adopted.
 
@@ -121,9 +142,11 @@ The player also has a **Set as default video player…** action in its **Quality
 
 ## Save, Cancel and work that starts immediately
 
-Treat **Save** as applying several settings stores, not as one all-or-nothing transaction. Most ordinary preference edits are committed on Save; language and appearance are previews that can be rolled back until their commit succeeds. Save validates shortcut bindings before writing. It then performs fallible writes for the token, AnimeJaNai configuration when changed, Native preferences and runtime choice, and system integrations. The remaining appearance, language preference, feeds, HDR preferences and shortcuts are committed after those writes succeed.
+Treat **Save** as applying several settings stores, not as one all-or-nothing transaction. Most ordinary preference edits are committed on Save; language and appearance are previews that can be rolled back until their commit succeeds. Save validates shortcut bindings before writing. It then makes the fallible writes in this order: the API token (only when it differs from the active key), the AnimeJaNai configuration when that manager is dirty, the changed Native backend and recipe fields, the runtime choice, the interface-language catalog, and the system integrations. The appearance, language preference, feeds, HDR tone-mapping policy and Native-on-HDR override, video scaling and preset bindings are committed after those writes succeed.
 
-If a later save step fails, earlier independent writes that already succeeded remain saved. For example, if an integration fails after the token was written, cancelling afterward does not undo the token write. The dialog explains that other settings may already be saved; Cancel restores unsaved language and appearance previews, not previously completed writes. System-integration changes have their own rollback attempt, but an OS error can prevent complete rollback.
+If the requested interface-language catalog cannot be applied, Save stops before the system integrations and the remaining commits; the earlier writes stay saved.
+
+If a later save step fails, earlier independent writes that already succeeded remain saved. For example, if an integration fails after the token was written, cancelling afterward does not undo the token write. The dialog explains that other settings may already be saved; Cancel restores unsaved language and appearance previews, not previously completed writes. A failed write also brings its own page forward - **Access** for the token or language, **Processing** for the AnimeJaNai, Native or runtime stores, **General** for system integrations - and keeps Settings open. System-integration changes have their own rollback attempt, but an OS error can prevent complete rollback.
 
 Some page actions are operations, not pending preferences:
 

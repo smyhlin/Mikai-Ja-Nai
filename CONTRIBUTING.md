@@ -42,4 +42,6 @@ Use [Building Mikai Ja Nai](docs/building.md) for prerequisites and platform-spe
 
 The release assembly entry points are `cmake --build <build> --target dist`, `packaging/windows/package.ps1` (with `-BuildDir` and `-OutputDir`), and `packaging/linux/package.sh` (build and output directories). Read [Releasing Mikai Ja Nai](docs/releasing.md) before changing packaging or release workflows. Do not commit generated output from these commands.
 
+The optional MSVC native shim (`MIKAI_WITH_NATIVE=ON`) is not part of the default contribution path: it needs an operator-supplied inference source tree plus an MSVC/nvcc toolchain, and it builds only the private ABI-8 core. Follow [Building the native shim](native/build-msvc.md) if a change is about that shim; do not enable it in unrelated changes.
+
 For every contribution, run relevant checks for the affected code and state what was or was not exercised. Release artifacts are prepared locally or by the configured workflows; contribution does not imply authorization to publish or sign a release.

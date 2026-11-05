@@ -1,22 +1,37 @@
-# Known bugs and audit caveats — Closed
+# Known bugs and audit caveats
 
-**Audit date:** 2026-10-11 (static, solo repository audit requested by the owner).
-**Closure date:** 2026-10-29.
-**Status:** **All 28 original findings (KB-01 through KB-28) are fixed and verified.** KB-29 and KB-30 are playback observations under continued measurement and have been migrated to [`docs/release-status.md`](docs/release-status.md).
+**Updated:** 2026-11-05. This inventory separates observed defects from unresolved observations and verification gaps. It does not establish that the rest of the app is defect-free, or assign priorities without supporting evidence.
 
-The original audit text is preserved in git history at this revision. This document now serves as the closure record.
+## Open issues and observations
 
-## Summary
+| Issue | Evidence and current status |
+|---|---|
+| Compare candidate label is clipped | The Windows capture of build `0d8ff35` shows the right-hand selector as `B · A (…` despite available space, hiding the full **A (Fast)** preset name. See [the capture](docs/images/gallery-2026-11-05/compare.png), its [provenance](docs/images/README.md), and `fitSelectorLabel()` in [`CompareCanvas.cpp`](src/player/compare/CompareCanvas.cpp). The exact trigger is not established. Open the selector menu to read the full candidate name. |
+| Media-information session emitted Qt cursor warnings | During the Windows `0d8ff35` screenshot session, the application logged repeated `QTextCursor::setPosition: Position '…' out of range` warnings while the media-information and Compare views were used. The application exited normally; no crash or data loss was observed. The log did not establish which view or code path produced them, or whether they affect displayed metadata or text selection. The session log was not retained as release evidence. |
+| KB-29 — HDR dark-scene instability | A playback observation remains under measurement; tone-mapping/FBO behavior and the cause of black flashes are not established. A historical Linux stock-runtime hour run ended black and frozen, with no established cause. See [playback observation tracking](docs/release-status.md#playback-observation-tracking). |
+| KB-30 — Periodic frame substitution / uneven pacing | Presentation changes landed, but the cause of the reported fast/slow playback and a general fix are not established. Existing before/after paint measurements used different device-pixel ratios and do not prove an improvement. See [playback observation tracking](docs/release-status.md#playback-observation-tracking). |
+| Benchmark page overflow at minimum Settings size | A prior Windows portable build showed horizontal overflow at the minimum Settings size but not at the default size. This was recorded in [release status](docs/release-status.md#recorded-verification); the current build has not been checked at that size, so its present status is unknown. |
 
-| Finding range | Status | Verification |
+## Verification gaps and platform limits
+
+- Windows and Linux application builds succeeded for the AnimeJaNai v0.22.2 / TensorRT for RTX implementation; the Windows `0d8ff35` build was also used for the [manual UI gallery](docs/images/README.md). These checks do not establish RTX acquisition, engine creation, model inference, throughput or Linux visual parity.
+- TensorRT for RTX is offered on Windows; no Linux AJI RTX binary is published. The app reports that limitation instead of silently switching backends. See [AnimeJaNai runtime notes](docs/animejanai.md).
+- Wayland compositors control stacking and may not keep the engine-build overlay or Compare pin above other windows. This is a platform limitation, not proof of an application defect.
+- Release artifacts are unsigned, and third-party corresponding-source, licence and redistribution obligations remain unresolved. See [release status](docs/release-status.md#what-remains-open) and [redistribution evidence](docs/redistribution.md). These are release constraints, not application bug reports.
+- No test suites, probes, native inference or benchmarks were run for the latest RTX implementation under the current verification instruction. The recorded **55/55** CTest result at `f4256bd` and **66/66** at `7e88871` are historical results, not results for the current tree.
+
+## Historical audit closure — 2026-10-29
+
+The original 2026-10-11 audit recorded KB-01 through KB-28 as fixed and verified on 2026-10-29. The evidence below is retained as a historical closure record; it is not a new verification of the current build. The original audit text is preserved in Git history.
+
+| Finding range | Recorded status at closure | Historical verification |
 |---|---|---|
-| KB-01 through KB-28 | **Fixed** | All 28 defects resolved; fixes verified by running affected paths; CTest **55/55** PASS |
-| KB-29 (HDR dark-scene instability) | **Migrated** | Playback observation under measurement; see [`docs/release-status.md`](docs/release-status.md) |
-| KB-30 (Periodic frame substitution) | **Migrated** | Playback timing observation; pacing implemented, causal proof pending; see [`docs/release-status.md`](docs/release-status.md) |
+| KB-01 through KB-28 | Fixed | Affected paths were checked and CTest reported **55/55** at `f4256bd` |
+| KB-29 and KB-30 | Under measurement | Playback observations remain tracked above and in [release status](docs/release-status.md#playback-observation-tracking) |
 
-## Fixed findings (KB-01 through KB-28)
+### Fixed findings (KB-01 through KB-28)
 
-All 28 findings from the 2026-10-11 audit have been resolved. Each row names the fix and the verification that established it.
+Each row records the fix and verification reported for the historical audit.
 
 | Finding | Fix | Observed verification |
 |---|---|---|
@@ -34,9 +49,9 @@ All 28 findings from the 2026-10-11 audit have been resolved. Each row names the
 | KB-22 — Packaged mpv has Vulkan loader dependency | `NativeRuntimeSelection` (`kSystemDriverImports`/`windowsSystemDirectory`) reads the module's own PE imports through `NativePeImage` and refuses by name when a required Windows system driver (the Vulkan loader) is missing from `%SystemRoot%\System32`; nothing is copied and no fallback module is tried | `TestRuntimeSelection::aModuleSystemDriverImportIsReadFromItsOwnImage` PASS; docs record prerequisite as supporting-loader fact, not renderer |
 | KB-23, KB-25 — ESC-5 described as resolved where unresolved; documentation mixes removed/current contracts | `native/README.md`, `native/sdk-acquisition.md`, `readme.md`, `plan.md`, `native/build-msvc.md`, `native/manifest/*`, catalogue comment: ESC-5 scoped to private prepared-helper path with official `trtexec` path unresolved; landed header acquisition, executable-local roots, two-part shim provenance, `nvinfer_11` documented | Documentation inspected against current sources; no remaining statement claims resolved official path, manual `MPV_INCLUDE_DIR`, stock download, global ESC-5 clearance or `v2` CPU baseline |
 
-## Player, watch-state and native-store status (2026-10-29)
+### Player, watch-state and native-store follow-up
 
-Eight additional issues were fixed after the original audit. Each was verified by running the affected path.
+The following fixes and observations were recorded after the original audit. Their verification applies to the named runs, not automatically to the current build.
 
 | Area | Change | Observed verification |
 |---|---|---|
@@ -54,21 +69,4 @@ Eight additional issues were fixed after the original audit. Each was verified b
 | Player corner radius | Application pushes `theme::radiusSmall()` through `shell::setCornerRadius`; window controls, title bar, dock, footer chip and new `EpisodeNavButton` read it rather than constants | `EpisodeNavButton` rendered with radius 0 keeps filled corner and radius 16 cuts it; hover raised mean alpha 140.9 → 155.9 and disabled returned 70.9 |
 | AnimeJaNai `Failed to create inference context` on Linux | The fork's `aji_trt` backend dlopens `libnvinfer.so.11` by bare soname, so the closure folder must be preloaded `RTLD_GLOBAL` before the filter attaches; `prepareAnimeJanaiPlan` now records `backendLibDirs` (the TRT installation root) and `VideoSurface` preloads every `.so` in it before `vf add`. AJI failures are also logged (`[animejanai] <key>: <reason>`), and the session log falls back to `AppLocalDataLocation` when the exe folder is read-only (AppImage mounts are), so AppImage runs produce a readable `mikai.log` | Fork CLI repro: with the store's `trt/` dir absent from the loader path the filter logged `libnvinfer.so.11: cannot open shared object file` then `Failed to create inference context`; with it on the path the backend initialised (`backend: TensorRT (aji_trt)`) and streamed. `TestAnimeJanaiRuntime::tensorRtPlanCarriesTheBackendLoaderDir` pins the plan field; `TestDiagnostics::aBlockedPreferredLogFolderFallsBackToThePerUserFolder` covers log fallback when the preferred write probe is blocked |
 
-## Migrated playback observations (KB-29 and KB-30)
-
-KB-29 (HDR dark-scene instability) and KB-30 (periodic frame substitution) are **not static defects**. They describe playback behavior under measurement:
-
-- **KB-29:** HDR tone-mapping and FBO attachment behavior under investigation; controlled hardware A/B pending.
-- **KB-30:** Frame timing and substitution observation; client-side pacing implemented, causal proof pending.
-
-Both are tracked in [`docs/release-status.md`](docs/release-status.md) under **Playback observation tracking**. Neither is a release blocker for the current scope (Original playback, UI, component acquisition).
-
-## Current status
-
-- **CTest suite:** **55/55** PASS (revision `f4256bd`) (`ctest --test-dir build/linux-release --output-on-failure --timeout 900`)
-- **Open P1/P2 defects:** **None**
-- **Documentation:** All contracts updated; no "static defect" or "runtime risk" claims remain in this file
-
----
-
-*Original audit detail preserved in git history. This closure record supersedes the 665-line original text.*
+The historical test and probe results above are retained for provenance. Current observations and gaps are listed at the top of this file; historical passes do not establish their resolution.

@@ -5,6 +5,21 @@ The native AnimeJaNai shim is a **second, optional toolchain**. The GUI
 `aji.dll`/`aji_trt.dll`/`aji_dml.dll` at run time through the mpv filter's
 `lib=` and speaks only the C ABI in `include/aji.h`.
 
+This project builds the **private ABI-8** shim from the historical
+official v0.9.0 tag baseline plus authorized mutable local edits
+(`native/manifest/sources.json`, `patchSeries.baseCommitNote`,
+`matchesPinnedCommit: false`). It is not the runtime the application installs
+for Standard AnimeJaNai playback and it does not build one:
+
+- the current official release cohort is **v0.22.2 / ABI 9**, recorded in
+  `native/manifest/sources.json` under `currentOfficialRelease`, and it is
+  acquired as a release asset rather than built here;
+- its opt-in Windows **TensorRT for RTX 1.7** backend (`aji_trtrtx.dll` plus
+  NVIDIA's `tensorrt_rtx_1_7.dll` / `tensorrt_onnxparser_rtx_1_7.dll`) is also
+  a release-asset overlay and has no target in this directory;
+- ABI 9 must not be paired with an ABI-8 mpv filter, so a DLL built here is not
+  interchangeable with either cohort.
+
 Nothing in this document changes the default build. With
 `MIKAI_WITH_NATIVE=OFF` — the default — the root `CMakeLists.txt` does not call
 `add_subdirectory(native)`, so the optional SDK-dependent targets defined by
@@ -21,10 +36,17 @@ hashed by their own root-project targets.
 | `aji_dml` | SHARED, DirectML backend | `AJI_ORT_ROOT` + `AJI_DML_ROOT` |
 | `mikai_native_prep` | EXE, the out-of-band preparation helper CLI (M15) | `nvinfer_11`, `nvonnxparser_11`, `CUDA::cudart`, `bcrypt`, `version` |
 | `mikai_native_verify` | EXE, the native numerical/binding verifier | `nvinfer_11`, `CUDA::cuda_driver`, `CUDA::cudart`, `bcrypt` |
+| `native_abi_probe` | EXE, SDK-independent ABI/protocol/control probe | staged headers only |
+| `native_prepared_runtime_probe` | EXE, prepared-runtime probe | `CUDA::cuda_driver`, `CUDA::cudart` |
 | `aji_harness`, `aji_kernel_test` | EXE, the upstream self-checks | `CUDA::cudart` |
 
-The three DLLs are the default target; the two CLIs and the two self-checks are
-`EXCLUDE_FROM_ALL` and are built by name.
+The DLLs are the default target. `mikai_native_prep`, `mikai_native_verify`,
+`native_abi_probe`, `native_prepared_runtime_probe`, `aji_harness` and
+`aji_kernel_test` are all `EXCLUDE_FROM_ALL` and are built by name; the two
+harness targets exist only when the staged tree actually carries
+`tools/aji_harness.cpp` / `tools/aji_kernel_test.cu`. `native_abi_probe` is the
+only one of these that does not need TensorRT or CUDA, so it builds even when
+`AJI_BUILD_TRT=OFF`.
 
 ### The two CLIs are out-of-band, and separate from the Qt app
 
@@ -50,6 +72,11 @@ unaffected: there `--config Release` selects the configuration, as above.
 - CUDA Toolkit with `nvcc.exe`.
 - TensorRT 11.3 (`include/NvInfer.h` + `lib/nvinfer_11.lib`). TensorRT 10 is
   **not** a dependency, and the build refuses to fall back to it silently.
+  TensorRT for RTX is a **separate product**, not part of this SDK and not a
+  build input here. The pinned local SDK is TensorRT 11.3.0.99; the upstream
+  source's own build recipe targets TensorRT 11.4.0.106 with CUDA 13.4, which is
+  a statement about that recipe only
+  (`sources.json#sources[id=animejanai-inference].currentOfficialRelease.buildRecord`).
 - Optionally the DirectML ONNX Runtime and DirectML packages.
 
 On this machine the SDK trees are acquired under `F:\ZKS\mikai-native-sdks\` and
@@ -99,7 +126,7 @@ that dies on every other GPU.
 | `AJI_STAGE_DIR` | `<build>/aji-src` | Where the read-only tree is staged |
 | `AJI_RESTAGE` | `OFF` | Force a fresh copy on this configure |
 | `AJI_PATCH_POLICY` | `strict` | See *The patch series* below |
-| `AJI_REPRODUCIBLE` | `ON` | Adds `/Brepro` and `/utf-8` to the DLL links |
+| `AJI_REPRODUCIBLE` | `ON` | Adds `/Brepro` to links and `/utf-8` to C/C++ compilations |
 
 ## The read-only source tree is never edited in place
 
@@ -177,6 +204,43 @@ flags), `mikai_native_verify.exe` and `native_abi_probe.exe`. A later odd-420
 crop-kernel correction is **source-only/unbuilt**. It establishes no `Prepared`
 or `Active` state and no inference result.
 
+### Windows path/loader handling: `patches/0004-wide-win32-paths-and-loaders.patch`
+
+It is fourth in the sorted series and touches `src/aji_conf.cpp`,
+`src/aji_dispatch.cpp` and `src/aji_dml.cpp`. It converts a requested path from
+UTF-8 to UTF-16 with `MB_ERR_INVALID_CHARS` and opens the conf or the library
+through the wide CRT, so a non-ASCII conf or library directory is either used
+exactly as named or refused. The previous `const char *` overload took the path
+in the process ANSI code page, which could open a different path than the one
+the caller named. It changes path and loader handling only.
+
+### RIFE heavy mapping and capability exports: `patches/0005-rife-heavy-model-mapping.patch`
+
+Applies after `0001`–`0004` to `src/aji_trt.cpp`, `src/aji_dml.cpp` and
+`src/aji_dispatch.cpp`. It maps RIFE model code `4262` to
+`rife_v4.26_heavy` and refuses that code with `ensemble=1`, because the heavy
+archive carries no ensemble graph — the refusal replaces a silent fallback to
+the regular or ensemble graph. It also exports `aji_api_version` and
+`aji_rife_heavy_supported` from the dispatcher.
+
+This is **local build source only**. `native/manifest/sources.json`
+(`patchSeries.seriesFiles[name=0005-rife-heavy-model-mapping.patch]`,
+`notInOfficialAsset: true`) records that the official v0.9.0 downloaded Aji
+asset does not carry the extension, and the current official release still maps
+`4262` to regular `rife_v4.26` with no heavy graph
+(`sources.json#sources[id=animejanai-inference].heavyRife`). The exports
+identify the source API and the mapping; neither indicates that inference is
+ready.
+
+### The series identity
+
+`native/manifest/sources.json` (`patchSeries`) records the five files above,
+their per-file digests, and the `identitySha256` of the `name=sha256` lines the
+build writes into `.mikai-patched`; `patchSeries.status` records that the earlier
+three-file record was incomplete and that `0004` and `0005` are part of the
+series. A recipient reproduces the staged tree by applying this exact series to
+the recorded source copy under the same policy.
+
 ### Not applied: `patches/notes/`
 
 `patches/notes/0001-add-get-meta-for-status.patch`,
@@ -186,11 +250,11 @@ headers are placeholders (`@@ -...`) that no applier can consume. They are kept
 as the record of what the three requirements were; they are not a build input,
 and `AJI_PATCH_POLICY=strict` is satisfied without them.
 
-### Separate: `patches/mpv/0001-get-meta-mikai-native.patch`
+### Separate: the `patches/mpv/` fork series
 
-The diff applies against pinned fork
-`63d127174d8f70336c82a22408929e2bc301edcb` and implements the M19 **Probe**
-producer in `video/filter/vf_animejanai.c`. `GET_META` publishes exactly four
+The series applies against pinned fork
+`63d127174d8f70336c82a22408929e2bc301edcb`. Its first patch implements the M19
+**Probe** producer in `video/filter/vf_animejanai.c`. `GET_META` publishes exactly four
 typed tags: `schema`, `protocol`, `revision` and cached JSON `snapshot`.
 Both metadata layers use protocol/schema 1, independently of the additive
 AJI C ABI v2. Unconfigured passthrough reports `Probe`; an unverified legacy
@@ -225,10 +289,20 @@ software decoding plus hardware upload. The smoke checks actual decoded CUDA
 frames, not merely a GPU UUID. The probe accepts a confined sibling `deps/`
 directory without relaxing `MpvApi` search rules.
 
-This CMake project still stages only the inference tree. The mpv patch is a
-separate fork build input. Managed prepared-plan attachment, authoritative
-effective/cadence snapshots and suspend/resume lifecycle remain open; this
-Probe proof does not complete M19 or establish Native readiness.
+This CMake project still stages only the inference tree. The mpv patches are a
+separate fork build input. `native/patches/mpv/` now carries four files against
+that pinned base — `0001-get-meta-mikai-native.patch`,
+`0002-independent-native-filter-build.patch`
+(registers `vf_animejanai` under `HAVE_ANIMEJANAI` instead of
+`HAVE_CUDA_HWACCEL`), `0002-managed-native-admission.patch` (the plain-C
+status/control bridge and managed admission path, ABI-8 unchanged) and
+`0003-wide-utf8-library-load.patch` (the same strict UTF-8→UTF-16 conversion for
+the filter's own library load). `native/manifest/sources.json`
+(`patchSeries.mpvForkPatchSeries`) records their digests and the evidence that
+the managed patch is applied to the shipped core. Managed prepared-plan
+attachment, authoritative effective/cadence snapshots and suspend/resume
+lifecycle remain open; this Probe proof does not complete M19 or establish
+Native readiness.
 
 A patch that *is* applicable but fails to apply is a hard error under `strict`,
 and under `warn` the staged tree is discarded rather than left half-patched — a
@@ -246,13 +320,24 @@ is no `--trtexec` flag and no child process.
 
 ```text
 mikai_native_prep --onnx <graph> --out <NEW raw engine> ^
-  --shapes <name:d0xd1xd2xd3[,name:...]> --device-uuid <CUDA UUID> [--workspace-bytes <uint64>]
+  --shapes <name:d0xd1xd2xd3[,name:...]> --device-uuid <CUDA UUID> ^
+  [--workspace-bytes <uint64>] [--builder-optimization-level <0..5>]
+
+mikai_native_prep --describe-device [--json] [--device-uuid <CUDA UUID>] ^
+  [--workspace-bytes <uint64>] [--builder-optimization-level <0..5>]
 ```
 
-The four required flags may each be given once; `--workspace-bytes` is optional
-and sets the TensorRT builder workspace bound (default 1 GiB). `--shapes` entries
-are rank-4, positive, uniquely named, and must match the graph's real network
-inputs — a count or extent that disagrees with the declared input is refused. A
+The flags are parsed in one function (`native/tools/mikai_native_prep.cpp`), so
+the two modes share the same argument rules: each flag may be given once, and an
+unknown flag reports the full usage. `--workspace-bytes` is optional and sets the
+TensorRT builder workspace bound (default 1 GiB). `--builder-optimization-level`
+is optional, takes a single digit `0`–`5` (the builder's documented range), and
+defaults to `3`. `--describe-device` is the only mode that accepts `--json`, and
+it builds no engine: it reports the real device, runtime and builder policy, and
+its failures are one JSON object carrying a named reason and exit code.
+In build mode `--shapes` entries are rank-4, positive, uniquely named, and must
+match the graph's real network inputs — a count or extent that disagrees with
+the declared input is refused. A
 `--device-uuid` is the usual dashed 16-byte form; `-`, `{` and `}` are ignored
 and a leading `GPU-` is accepted, but it must resolve to exactly 32 hex digits.
 The invariants it holds:
@@ -502,6 +587,11 @@ cmake -S . -B build-native -G "Visual Studio 17 2022" -DMIKAI_WITH_NATIVE=ON ^
   -DAJI_SOURCE_DIR=... -DAJI_TRT_ROOT=... -DAJI_NVINFER=nvinfer_11
 ```
 
+The root `CMakePresets.json` also has a preset named `native`. It is not this
+shim: `configurePresets[name=native]` is Release plus model inspection for the
+MinGW/Qt tree and keeps `MIKAI_WITH_NATIVE` `OFF`, so `cmake --preset native`
+never configures the MSVC project.
+
 The root application build obtains its mpv headers from the pinned developer
 archive — `MIKAI_DIST_MPV_ARCHIVE` names an optional local copy, otherwise
 CMake fetches the pinned release and verifies its SHA-256 — so no
@@ -526,11 +616,16 @@ The default configuration never enters this directory:
 - `MIKAI_WITH_NATIVE` is `OFF` by default, so `add_subdirectory(native)` is not
   reached and no CUDA compiler is probed.
 - The native targets (`aji`, `aji_trt`, `aji_dml`, `mikai_native_prep`,
+  `mikai_native_verify`, `native_abi_probe`, `native_prepared_runtime_probe`,
   `aji_harness`, `aji_kernel_test`) are defined only inside `native/`, so the
   default build's target list, link line and binary are unchanged.
-- `native/tools/bundle_tool.cpp` and `native/tools/manifest_check.cpp` belong to
-  the **root** project and are unaffected by anything here; the native-only
-  tool is `native/tools/mikai_native_prep.cpp`, which this project builds.
+- `native/tools/bundle_tool.cpp` (`mikai_bundle`) and
+  `native/tools/manifest_check.cpp` (`mikai_manifest_check`) belong to the
+  **root** project and are unaffected by anything here, and so is
+  `native/tools/native_inspect.cpp` (`native_inspect`), which the root project
+  defines only under `MIKAI_WITH_MODEL_INSPECTION`. The tools this project
+  builds are `mikai_native_prep`, `mikai_native_verify`, `native_abi_probe` and
+  `native_prepared_runtime_probe`.
 - Verified: configuring the root project with the default MinGW generator and no
   `MIKAI_WITH_NATIVE` produces a tree whose target list contains none of the
   native targets.
@@ -552,7 +647,19 @@ its recorded decisions); that grant does not relicense third-party code. The
 **third-party** shim source's upstream terms are **not verified**: its
 repository declares no licence and its GitHub licence field is still `null`, and
 no upstream grant was located. The project records its decision to use it
-(`manifest/components.json#escalations[id=ESC-1]`), and a shipped notice must
-not claim an upstream MIT licence. Nothing here changes that record, and the
-build never fetches the source: it consumes a local checkout the operator
+(`native/manifest/components.json#escalations[id=ESC-1]`), and a shipped notice
+must not claim an upstream MIT licence. Nothing here changes that record, and
+the build never fetches the source: it consumes a local checkout the operator
 already has.
+
+`native/manifest/sources.json` records the same finding for the current
+v0.22.2 source: no `LICENSE`, `COPYING` or per-file headers for its own code,
+`license: null` from the GitHub API, and one notice-named member,
+`ci/windows/TensorRT-RTX-NOTICE.txt`, which is NVIDIA's vendor notice for the
+optional TensorRT-for-RTX overlay and grants nothing for the inference source.
+That overlay's runtime files (`tensorrt_rtx_1_7.dll`,
+`tensorrt_onnxparser_rtx_1_7.dll`) are NVIDIA proprietary under the NVIDIA
+TensorRT for RTX Software License Agreement and carry their own mandatory
+notices; they are staged only into the user's component store after an explicit
+install and are not built or redistributed by this project. Neither cohort is
+cleared for public redistribution, and nothing in this document changes that.

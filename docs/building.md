@@ -6,10 +6,13 @@ This guide describes the repository's current CMake paths. Build outputs belong 
 
 | Target | Toolchain | Qt | Playback runtime |
 |---|---|---|---|
-| Windows x64 | MinGW-w64 GCC 13.1.0, MinGW Makefiles | Qt 6.12.0 `win64_mingw` kit and LinguistTools | Pinned mpv DEV archive provides headers, import library and `libmpv-2.dll`; the separate CLI/updater archive is not used |
-| Linux x86_64 | GCC or Clang, Unix Makefiles | Qt 6.12+ (`Core`, `Gui`, `Widgets`, `OpenGL`, `OpenGLWidgets`, `Network`, `LinguistTools`; `Test` when probes/tests enabled) | Developer builds need libmpv headers and ABI 2 library. Runtime may use configured host `libmpv.so.2` or the opt-in pinned private bundle |
+| Windows x64 | MinGW-w64, MinGW Makefiles. CI pins the Qt kit's GCC 13.1.0; a local build uses any MinGW matching the installed Qt kit | Qt 6.12.0 `win64_mingw` kit and LinguistTools | Pinned mpv DEV archive provides headers, import library and `libmpv-2.dll`; the separate CLI/updater archive is not used |
+| Linux x86_64 | GCC or Clang, Unix Makefiles | Qt 6.12+ (`Core`, `Gui`, `Widgets`, `OpenGL`, `OpenGLWidgets`, `Network`, `LinguistTools`; `Test` when probes/tests enabled) | Developer builds need libmpv 0.35+ (client API 2) headers and a `libmpv.so.2` library. Runtime may use configured host `libmpv.so.2` or the opt-in pinned private bundle |
 
-CMake 3.25+ is required (preset schema v6). Both targets need a desktop OpenGL-capable environment. Optional AI paths require separate GPU-specific components and do not define the baseline player's requirements.
+- `project(mikai VERSION 0.1.0)` and `find_package(Qt6 6.12 REQUIRED ...)` in `CMakeLists.txt` are the authority for the version and minimum Qt; `CMakePresets.json` is schema v6 with `cmake_minimum_required(VERSION 3.25)`.
+- The Windows compiler must match the Qt kit it links against. The CI lane provisions Qt's own MinGW 13.1.0 (`packaging/ci/provision.py`); the recorded local package payload was built with GNU 16.2.0 from a w64devkit recipe, as `packaging/provenance/windows-runtime.json` states under `build.mingw`. The public packaging path deploys `libgcc_s_seh-1.dll`, `libstdc++-6.dll` and `libwinpthread-1.dll` from the Qt SDK when they exist there and only then falls back to the compiler directory, so the shipped runtime is the kit's, not an arbitrary PATH copy.
+
+Both targets need a desktop OpenGL-capable environment. Optional AI paths require separate GPU-specific components and do not define the baseline player's requirements.
 
 On Debian/Ubuntu, install the compiler/build tools, desktop OpenGL development headers, Qt tools and mpv development headers/library. Even the bundled-runtime profile still needs development headers when compiling; add the distro mpv development package, for example:
 
@@ -33,7 +36,7 @@ sudo apt-get install patchelf
 - Linux package identity is recorded in [packaging provenance](../packaging/provenance/linux-runtime.json) and [releasing](releasing.md); neither establishes runtime usability or broad distribution portability.
 
 - The build needs a Qt 6.12+ development kit matching the active compiler/toolchain.
-- Linux package staging can optionally deploy Qt with `-DMIKAI_LINUX_DEPLOY_QT=ON`; this is independent of `MIKAI_LINUX_BUNDLE_MPV` and does not itself establish redistribution clearance or eliminate the host glibc, graphics and audio baseline.
+- Linux package staging can optionally deploy Qt with `-DMIKAI_LINUX_DEPLOY_QT=ON`; configure fails without `patchelf`, which the Qt deployment script uses to give the copied plugins a relative RUNPATH. This option is independent of `MIKAI_LINUX_BUNDLE_MPV` and does not itself establish redistribution clearance or eliminate the host glibc, graphics and audio baseline.
 - When Qt deployment is off, runtime Qt libraries/plugins must be provided by the host.
 - Actual compatibility also depends on plugins, drivers and the selected mpv runtime.
 
@@ -53,6 +56,7 @@ sudo apt-get install patchelf
 
 - The pinned DEV archive is not corresponding source, which remains a redistribution gate.
 - The mpv DLL imports `vulkan-1.dll`, normally supplied by graphics drivers.
+- HTTPS trust comes from the platform, not from the mpv archive: the deployed Windows Qt TLS plugin is Schannel, which uses the OS certificate store, and no OpenSSL/LibreSSL payload is shipped (see `tls` in `../packaging/provenance/windows-runtime.json`).
 - A deployed Mikai Ja Nai app also needs Qt, image-format/TLS, MinGW and mpv runtime files; use the packaging path rather than copying the executable alone.
 
 - For CI, `packaging/ci/provision.py` acquires Qt 6.12.0 for `win64_mingw` or `linux_gcc_64`.
@@ -62,7 +66,7 @@ sudo apt-get install patchelf
 
 Re-derive a digest only from the same URL.
 
-The Windows CI build also passes `-DMIKAI_DISABLE_IPO=ON`: GCC 13.1 MinGW's LTO rejects the duplicated weak destructor thunks this tree's multiple-inheritance widgets emit, and the link fails on `multiple definition` where a non-LTO link merges them.
+The Windows CI build also passes `-DMIKAI_DISABLE_IPO=ON`: GCC 13.1 MinGW's LTO rejects the duplicated weak destructor thunks this tree's multiple-inheritance widgets emit, and the link fails on `multiple definition` where a non-LTO link merges them. Pass the same flag by hand for a local MinGW GCC 13 build; it is the compiler version that matters, not whether the build is native or cross. `MIKAI_DISABLE_IPO=OFF` remains the default, so a newer MinGW keeps LTO.
 
 - The Windows kit's official repository metadata identifies MinGW 13.1.0; its matching compiler package is `qt.tools.win64_mingw1310` from tool group `tools_mingw1310`.
 - The corresponding Qt repository is [Qt 6.12.0 MinGW](https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6120/qt6_6120_mingw/), and the compiler is published in [Qt's MinGW 13.1.0 tools repository](https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_mingw1310/).
@@ -70,7 +74,7 @@ The Windows CI build also passes `-DMIKAI_DISABLE_IPO=ON`: GCC 13.1 MinGW's LTO 
 
 ## Configure and build
 
-The repository's Windows `release` preset encodes machine-local tool paths, so do not assume those defaults exist on another workstation. Configure explicitly with installed tool paths instead. In PowerShell, substitute the actual locations:
+The Windows `release` preset fixes the generator (`MinGW Makefiles`), `CMAKE_BUILD_TYPE=Release`, `MIKAI_BUILD_PROBES=ON` and `MIKAI_WITH_MODEL_INSPECTION=OFF` under `build/release`, but it deliberately does not choose a compiler or Qt: its description requires the matching MinGW/Qt tools on `PATH` and `CMAKE_PREFIX_PATH` (or `Qt6_DIR`). Configure explicitly when a workstation needs exact tool paths. In PowerShell, substitute the actual locations:
 
 ```powershell
 cmake -S . -B build/release -G "MinGW Makefiles" `
@@ -89,6 +93,8 @@ cmake --build --preset app-linux --parallel
 ```
 
 The preset builds under `build/linux-release`. If Qt is not in the system CMake search path, pass `-DCMAKE_PREFIX_PATH=/path/to/Qt/6.12+` at configure time, for example with an explicit `cmake -S . -B build/linux-release -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=...` invocation. Ensure the Qt installation matches the active compiler/toolchain.
+
+`CMakePresets.json` provides: `release`/`debug` (Windows MinGW, model inspection off), `native` (model inspection on, needs `-DORT_INCLUDE_DIR=<onnxruntime>/include`, not a public package), `linux-release`/`linux-debug`, and `linux-tsan`/`linux-asan`/`linux-ubsan` (Debug with the sanitizer flags on `CMAKE_CXX_FLAGS`). Build presets are `app`, `tests`, `app-native`, `tests-native`, `app-linux`, `tests-linux` and the three sanitizer test presets.
 
 To build in system-libmpv mode explicitly:
 
@@ -123,13 +129,16 @@ The pinned Linux runtime is `mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst`, 39.6
 - The mode requires `patchelf`; requested bundle failures are fatal and never fall back to system libmpv.
 - Its developer build still uses system development headers; the archive is a runtime bundle, not a Linux development SDK.
 
+- The archive carries OpenSSL 3.0 and no CA bundle; certificate trust is whatever the host's OpenSSL default paths resolve, so a packaged player on a machine without a system CA store cannot verify `https` endpoints. That is a host requirement like glibc and the graphics driver, not something the bundle ends.
 - A rebuild of the TLS runtime is not byte-reproducible — `packaging/mpv/build-tls-archive.sh` compiles FFmpeg inside a distribution image whose package set drifts — so CI builds its own, passes `-DMIKAI_LINUX_MPV_EXPECTED_SHA256=<digest of that build>` and records the digest in `evidence/linux-mpv-runtime.json`.
 - The runtime receipt then reports `archivePinnedRelease: false`, and configure still refuses any archive that does not match the digest it was given.
 - Without the override the shipped pin applies, so an ordinary configure cannot bundle a different runtime.
 
 `MIKAI_DIST_MPV_ARCHIVE` is Windows-only. On Linux it is rejected by CMake; Linux developer builds use system headers/library selection or the separate `MIKAI_LINUX_MPV_ARCHIVE` override. The two archive variables and their SHA checks are intentionally separate.
 
-- A local `dist` target assembles a staging tree at the configured distribution path.
+- Both platforms have a local `dist` target; it writes into `MIKAI_DIST_DIR` (`-DMIKAI_DIST_DIR=...`, default `<source>/dist-mikai`) and refuses a populated path rather than refreshing one.
+- On Windows `dist` runs `windeployqt`, copies the pinned `libmpv-2.dll` and assembles the self-contained folder. It is developer convenience output, not a shippable package: `packaging/windows/package.ps1` stages its own payload through the generated `build/mikai-package-Release.cmake`, which includes the same `cmake/dist.cmake` with `MIKAI_PUBLIC_RELEASE` set.
+- On Linux `dist` only runs the install rules into that staging tree (`packaging/linux/Stage.cmake`); it produces no archive. Use `packaging/linux/package.sh` for the tarball.
 - Linux public releases must use Release configuration; `linux-release` does this for the single-config Unix Makefiles generator.
 - Public Linux staging and archive commands reject optional model inspection, Native support and native distribution because their redistribution status is not established.
 - These packaging restrictions do not disable those features in developer builds; native inference still requires its supported platform, external source, rights and runtime prerequisites.
@@ -149,7 +158,7 @@ cmake --build build/linux-release --target dist
 - Do not point packaging output at user data, a populated release directory, or an existing deployment.
 - For release artifacts, follow [Releasing](releasing.md), which uses owned staging and names the output package.
 
-The Windows distribution assembly prefers SDK C++ runtime files. Both Windows assembly paths check that `libstdc++-6.dll` exports `__cxa_call_terminate` when `Qt6Core.dll` imports it. A successful package assembly does not establish that the installer has been installed or that the package works on a clean machine; see [release status](release-status.md) for the locally recorded startup check and its limits.
+The Windows distribution assembly prefers SDK C++ runtime files and then verifies the pair the Windows loader actually uses: if `Qt6Core.dll` imports `__cxa_call_terminate`, the deployed `libstdc++-6.dll` must export it. `cmake/dist.cmake` does this with the configured `objdump` for the public package, and `packaging/windows/assemble-payload.py` (the runtime-contract check used by CI) applies the same rule. A successful package assembly does not establish that the installer has been installed or that the package works on a clean machine; see [release status](release-status.md) for the locally recorded startup check and its limits.
 
 ## Tests and probes
 
@@ -178,9 +187,11 @@ Every build stamps its own identity, so two builds of the same `0.1.0` can be to
 mikai 0.1.0 (9372c03, built 2026-10-28T21:55:18Z)
 ```
 
-The revision comes from `git rev-parse --short HEAD` with `-dirty` when tracked files are modified, and the stamp is UTC at configure time. A cross build whose container cannot read the checkout states it instead: `-DMIKAI_BUILD_REVISION=<short-rev>`. The same line is logged at startup and folded into `applicationVersion`, which benchmark reports and crash logs carry.
+`--version`/`-V` is answered in `src/app/main.cpp` before `QApplication` exists, so it works over ssh and without a display.
 
-A MinGW cross build with GCC 13 needs `-DMIKAI_DISABLE_IPO=ON`: LTO refuses the duplicated weak destructor thunks this tree produces for a `QObject` with two bases, which a non-LTO link merges. The default stays LTO for native builds.
+The revision comes from `git rev-parse --short HEAD` with `-dirty` when tracked files are modified, and the stamp is UTC at configure time. A cross build whose container cannot read the checkout states it instead: `-DMIKAI_BUILD_REVISION=<short-rev>`; `packaging/arch/PKGBUILD` passes it that way. Startup logs the same three values as `mikai: build <version> (<revision>, <stamp>)`, and `applicationVersion` is the shorter `<version> (<revision>)` that benchmark reports and crash logs carry.
+
+A MinGW GCC 13 build needs `-DMIKAI_DISABLE_IPO=ON`: LTO refuses the duplicated weak destructor thunks this tree produces for a `QObject` with two bases, which a non-LTO link merges. The default stays LTO for other toolchains.
 
 - On Unix, a desktop locale with a decimal comma can conflict with `mpv_create`'s requirement for the C numeric locale.
 - After `QApplication` initializes and before workers start, the player sets `LC_NUMERIC` to `C`; direct libmpv core creation also enforces it.
@@ -214,7 +225,7 @@ ctest --test-dir build/linux-release --output-on-failure -R '^mikai_tests_(TestM
 - In Settings → Customization → General → System integration, check Save/Cancel for launch at sign-in and Open With, then check the desktop's application list/default-app settings; defaults require the user's choice.
 - Undo any integrations after testing.
 - In Settings → Processing and Components, verify unsupported choices are reported; on supported NVIDIA hardware with compatible fork libmpv, CUDA 13 and TensorRT 11, acquire the current official AnimeJaNai v0.22.2 API/ABI-9 runtime/model, select it explicitly and verify real processed frames on the same video.
-- The current Windows DEV archive's headers declare ABI 9.
+- The current Windows DEV archive's runtime exposes ABI-9 host entrypoint markers (`aji_ingest`, `aji_infer_seq`, `aji_temporal_radius`, and peers); those are string markers in the binary, not a behaviour guarantee.
 - The `mpv-fork` source entry still points to ABI-8 commit `63d127174d8f70336c82a22408929e2bc301edcb`; the Windows archive has separate source commit `b4f9f5bfed18d5ce610af28024986410dd9bdaae`, while corresponding-source/build evidence for the Linux runtime is not established.
 - Archive identity does not establish hardware operation or inference.
 - The old official v0.9.0 ABI-8 pair and separately patched private MSVC AJI ABI-8 build are historical, distinct builds, not substitutes.
@@ -244,6 +255,6 @@ On start the application removes abandoned work from that store: `scratch/` entr
 - [Player & Compare](player-guide.md).
 - [Processing & benchmarks](processing-guide.md).
 - [Settings & privacy](settings-guide.md).
-- [Public API reference](../docs.md).
+- [Public API reference](https://api.mikai.me/public/docs).
 - [Native bundle/build documentation](../native/README.md), [MSVC native build guide](../native/build-msvc.md), and [native component manifests](../native/manifest/).
 - [Benchmark results](../bench_results.md), with explicit historical workload limitations.

@@ -15,7 +15,7 @@
   <a href="docs/releasing.md">Packaging and release</a> ·
   <a href="docs/architecture.md">Architecture</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
-  <a href="docs.md">Public API reference</a> ·
+  <a href="https://api.mikai.me/public/docs">Public API reference</a> ·
   <a href="CONTRIBUTING.md">Contributing</a> ·
   <a href="SECURITY.md">Security</a>
 </p>
@@ -25,9 +25,12 @@
 ## What it does
 
 - Browse and search the Mikai catalogue, filter titles, view teams and schedules, and keep a local recently-opened list.
-- Play provider streams or open local video files in an integrated **libmpv** player. Local playback is independent of catalogue sign-in/API availability.
+- Play provider streams or open local video files in an integrated **libmpv** player, through the picker, a drag-and-drop or an Open With hand-off. Local playback is independent of catalogue sign-in/API availability, and the app can offer itself as a per-user default-player candidate without changing an existing default on its own.
 - Compare a paused frame across Original, Anime4K, AnimeJaNai and prepared Native candidates; export flicker comparisons as GIF, animated WebP or silent MP4.
-- Optionally acquire GPU-specific components and models for AI processing. Ordinary Original playback does not require AI components; enhancement is opt-in.
+- Optionally acquire GPU-specific components and models for AI processing: the official AnimeJaNai v0.22.2 pair, and on Windows an opt-in TensorRT for RTX runtime. Ordinary Original playback does not require AI components; enhancement is opt-in.
+- Skip the openings, endings and recaps the provider publishes for an episode, with accent-tinted timeline ranges and per-segment skip buttons.
+- Preview the timeline on hover with decoded frame thumbnails, and move playback into a floating picture-in-picture window.
+- Change how the picture fills the window: Fit, Fill, Stretch, 16:9, 4:3, original size, zoom, upscaler and downscaler.
 - Inspect local media metadata, manage audio/subtitle tracks, and customize the interface in English or Ukrainian.
 - Resume where you stopped: playback starts at 00:00 and offers a stored position instead, the episode is marked watched at 90 % of its length, and the title page shows the same progress.
 - Read the source at a glance in the player footer: HDR, Dolby Vision, Dolby Atmos and the video codec, based on what the container reports.
@@ -76,6 +79,8 @@ The artifacts are unsigned, and [release status](docs/release-status.md) records
 
 Linux packages include the project's libmpv runtime, but still require compatible host graphics, audio and system libraries. They are not universal Linux bundles. The original Windows v0.1.0 packages have a startup-runtime issue; the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101) includes the fix.
 
+The published packages predate the current source tree: the AnimeJaNai v0.22.2 update, the Windows TensorRT for RTX option, skips, hover previews, video scaling and the rest of the pending work are only in an unreleased build. [Changelog](CHANGELOG.md) separates those from the shipped 0.1.0 packages.
+
 ## Quick start
 
 For Windows, the portable ZIP is extracted and launched from its own folder; the setup executable is per-user. On Linux, install the Arch or Debian package with the distribution's package manager, run the AppImage, or unpack the tarball anywhere. All four bring their own mpv runtime; the Arch package uses the distribution's Qt 6.12, the `.deb` and AppImage carry Qt 6.12 themselves, and the tarball expects a compatible host Qt.
@@ -108,6 +113,8 @@ These options do not establish broad distribution portability: host glibc/loader
 
 The pinned DEV and Linux runtime archives are the 2026-10-24 builds; see [platform-specific build and runtime requirements](docs/building.md#platforms-and-prerequisites) for identities and the DEV-vs-CLI distinction.
 
+TensorRT for RTX is a Windows-only opt-in: it needs a supported NVIDIA GPU and compatible driver, and its separately acquired runtime does not replace classic TensorRT. Upstream publishes no Linux RTX asset, so Linux builds keep classic TensorRT. The component and admission contracts are described under [optional enhancement paths](docs/architecture.md#optional-enhancement-paths).
+
 ## Credits and licensing
 
 Mikai Ja Nai uses [mpv/libmpv](https://mpv.io/), [Anime4K](https://github.com/bloc97/Anime4K), [mpv-AnimeJaNai](https://github.com/the-database/mpv-AnimeJaNai), [animejanai-inference](https://github.com/the-database/animejanai-inference), Qt and other third-party components; these remain subject to their own terms. Its source is released under the [Unlicense](LICENSE), which does not relicense third-party code, models or runtime packages.
@@ -124,5 +131,6 @@ The catalogue/API belongs to the Mikai service. This client is unofficial and do
 - [Settings & privacy](docs/settings-guide.md): application settings, access credentials, customization and local data.
 - [Building](docs/building.md): toolchains, dependencies, configure/build/test commands and runtime requirements.
 - [Releasing](docs/releasing.md): local package creation, artifact contents, legal and publication limitations.
-- [Architecture](docs/architecture.md): application layers, playback/rendering and data boundaries.
-- [Public API v1 reference](docs.md); [benchmark evidence and limitations](bench_results.md); [Native build and bundle documentation](native/README.md) and [MSVC build guide](native/build-msvc.md).
+- [Architecture](docs/architecture.md): application layers, background work, playback/rendering, enhancement runtimes and data boundaries.
+- [AnimeJaNai troubleshooting](docs/animejanai.md): the fork's filter admission contract and the failures it produces.
+- [Public API v1 reference](https://api.mikai.me/public/docs); [benchmark evidence and limitations](bench_results.md); [Native build and bundle documentation](native/README.md) and [MSVC build guide](native/build-msvc.md).

@@ -10,8 +10,8 @@ this page covers the runtime contract and what a broken one looks like.
 ## 0. Runtime admission is marker-based on both platforms
 
 Windows previously rejected an updated pinned fork before filter attachment because it required
-the old exact DLL digest and client API 2.5. The current Windows DLL contains the fork's
-`animejanai` filter marker and reports client API 2.6, so neither an exact historical digest nor
+the old exact DLL digest and client API 2.5. The current pinned Windows `libmpv` contains the fork's
+`animejanai` filter marker and reports mpv client API 2.6, so neither an exact historical digest nor
 an exact API minor version is a valid fork-identification rule.
 
 Admission requires the loaded **Standard** core, the exact resolved module path to be a member of
@@ -80,22 +80,30 @@ whenever the real path contains a space, quote or tab; both plan builders pass t
 The build log beside the engine is the authoritative record — read it before guessing:
 
 ```bash
-ls -t "$HOME/.local/share/Mikai Wrapper/native/animejanai/models/spatial/"*.build.log | head -1 | xargs cat
+ls -t "$HOME/.local/share/Mikai/Mikai Wrapper/native/animejanai/models/spatial/"*.build.log | head -1 | xargs cat
 ```
+
+That path is the per-user store; a portable or developer tree keeps `native/` beside the executable instead.
 
 ## 4. Reproducing without the GUI
 
 Run the fork against the same store, module and options the application passes:
 
 ```bash
-S="$HOME/.local/share/Mikai Wrapper/native"
+S="$HOME/.local/share/Mikai/Mikai Wrapper/native"
 M="$S/components/aji/v0.22.2/trt"
 MODELS="$S/animejanai/models/spatial"
+RIFE="$S/animejanai/models/rife"
 LD_LIBRARY_PATH="$M:/path/to/extracted/mpv" \
   mpv --no-config --vo=gpu --ao=null --loop=inf \
-      --vf="animejanai=lib=$M/libaji.so:conf=CONF:model-dir=$MODELS:rife-model-dir=$MODELS/rife:trtexec=$M/trtexec:trtexec-libdir=LIBDIR:slot=1002:stats=/tmp/stats.txt:output-444=no:passthrough=no" \
+      --vf="animejanai=lib=$M/libaji.so:conf=CONF:model-dir=$MODELS:rife-model-dir=$RIFE:trtexec=$M/trtexec:trtexec-libdir=LIBDIR:slot=1002:stats=/tmp/stats.txt:output-444=no:passthrough=no" \
       --msg-level=all=info CLIP
 ```
+
+`CONF` is the generated plan INI for the profile and `slot` must name a slot section it contains.
+`MODELS` and `RIFE` are the built-in preset locations; a mixed or custom chain stages per-stage
+model, config, statistics and RIFE directories, and both options must point at the directories that
+plan uses.
 
 - `LIBDIR="$M"` reproduces `exit 127` / `No such file or directory`.
 - `LIBDIR` set to the mirror — or any space-free directory of symlinks to the same closure — lets
@@ -117,7 +125,7 @@ verified digests in `components/aji/<version>/` must stay as installed.
 - Attach and preload: `src/player/core/VideoSurfaceAnimeJanai.cpp` (`preloadAnimeJanaiBackendLibs`,
   `animeJanaiFail` logging).
 - Session log location: `src/app/support/CrashLog.cpp` — an AppImage mounts its payload read-only, so
-  `mikai.log` falls back to `AppLocalDataLocation` (`~/.local/share/mikai.log` here).
+  `mikai.log` falls back to `AppLocalDataLocation` (`~/.local/share/Mikai/Mikai Wrapper/mikai.log` here).
 - Regression tests: `TestAnimeJanaiRuntime::tensorRtPlanCarriesTheBackendLoaderDir`,
   `TestAnimeJanaiRuntime::shellSafeLibDirAvoidsASplitLibraryPath`,
   `TestDiagnostics::aBlockedPreferredLogFolderFallsBackToThePerUserFolder` (blocks the preferred

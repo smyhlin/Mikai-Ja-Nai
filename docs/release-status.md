@@ -89,6 +89,12 @@ a demonstrated fix.
 
 ## Recorded verification
 
+### AnimeJaNai v0.22.2 implementation — 2026-11-05
+
+Windows and Linux application builds succeeded for the v0.22.2 implementation. The Windows build `0d8ff35` was also used for the [manual UI gallery](images/README.md); the screenshots include an RTX backend selection with the runtime not installed. No RTX acquisition, engine build, native inference, benchmark or Linux visual parity is established by those checks. No test suites or probes were run for that implementation under the current verification instruction.
+
+These source-tree changes postdate the published packages. A local application build or screenshot is not a rebuilt release artifact or evidence of redistribution clearance.
+
 ### Final Windows implementation checks — 2026-11-04
 
 The final pre-commit application and translation build passed with four jobs in **16.85 s**:
@@ -121,7 +127,8 @@ covered playing and paused changes and Compare Fit release; they do not substitu
 An earlier cold active engine-build close at `28ebad9` returned in 12 ms and destroyed the player
 in 121 ms. It did not exercise the delayed finishing notice or the two-second abandonment path.
 The original long compositor matrix, matched-DPR paint-cost target and long native-stop paths
-remain unverified. Native Linux verification is deferred until the user's reboot.
+remained unverified at that point. Native Linux verification was deferred; the later Linux
+application build above is not a visual or native-inference verification.
 
 These observations apply to the identified runs, not automatically to later builds or every machine:
 

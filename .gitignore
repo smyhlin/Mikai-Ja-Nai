@@ -1,6 +1,7 @@
 # Local secrets and machine-specific configuration
 .env*
 /.mcp.json
+/docs.md
 
 # Build and release output
 /build/

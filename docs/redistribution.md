@@ -48,6 +48,7 @@ This document records the source/artifact evidence required to accompany release
 - Keep original-asset hashes separate from final packaged hashes, and do not substitute a same-SONAME host library as source/build evidence.
 
 - The product does not ship glibc or the ELF loader, and the release recipe excludes host graphics/display/driver-coupled libraries (including GL/EGL/DRM/GBM and CUDA/NVIDIA driver files).
+- One graphics component is not excluded: `packaging/provenance/linux-runtime.json` records that the pinned archive bundles a Vulkan loader (1.4.363) because the runtime links it and an older host loader would disable mpv's Vulkan path. That loader's own source, version pin and notice mapping are not separately retained, and whether its licence text is among the staged third-party notices is not established — treat it as part of the outstanding Linux source/notice closure.
 - The host graphics/GPU and session/audio services remain dependencies.
 - The build host's glibc 2.39 is recorded but is not a minimum runtime guarantee.
 - These distinctions do not establish compatibility with a particular host.
@@ -110,6 +111,17 @@ The following primary-upstream materials have been retained under `release-artif
 - The exact source tree on which that superseded edit ran is not retained.
 - Do not label that recipe line as a standalone, matching patch artifact or infer an original-to-patched binary member mapping from the recipe.
 - For Linux final files modified by `patchelf`, only identify a source member when an actual archive-member-to-final-file mapping is recorded; SONAME similarity is insufficient.
+
+## Optional native AnimeJaNai components
+
+These components are outside both platform profiles, and this section records only that boundary — not rights.
+
+- `../packaging/third-party.json` (`optionalNative`) sets `includedInProfiles: false`, excludes the paths `native/components`, `native/assets`, `native/models`, `native/records`, `native/runtime` and the user's native component/model stores, and defers to `../native/manifest/components.json` as the separate authority for them.
+- The current official **v0.22.2 / ABI 9** runtime and the historical private **ABI-8** build cohort are distinct: v0.22.2 is downloaded as a release asset into the user's per-machine component store, while the ABI-8 shim is a local MSVC build from the historical v0.9.0 baseline (`../native/manifest/sources.json`). Earlier v0.17.1 records left on disk are separate again. Neither cohort is cleared for public redistribution, and ABI 9 must not be paired with an ABI-8 mpv filter.
+- The inference source declares no licence (`license: null` from the GitHub API; no `LICENSE`/`COPYING` or per-file headers for its own code). `ci/windows/TensorRT-RTX-NOTICE.txt` in the v0.22.2 source ZIP is NVIDIA's notice for the optional TensorRT-for-RTX overlay, not an upstream grant for that source.
+- The opt-in Windows TensorRT-for-RTX 1.7 overlay (`aji_trtrtx.dll`, `tensorrt_rtx_1_7.dll`, `tensorrt_onnxparser_rtx_1_7.dll`) is NVIDIA proprietary under the NVIDIA TensorRT for RTX Software License Agreement, with NVIDIA's own required `TensorRT-RTX-NOTICE.txt` and `TensorRT-RTX-Acknowledgements.txt`. It is acquired only after an explicit user install action and is never part of the base installer or any distribution; there is no Linux RTX asset and a Linux RTX request fails by name. No clearance is claimed for it here.
+- The separate Linux `aji-encode` asset is an optional offline CLI, not a playback dependency; it is not acquired or shipped automatically, and its FFmpeg dependency and rights need their own assessment.
+- `../packaging/third-party.json` records these as open escalations (`ESC-1`, `ESC-2`, `ESC-3`, `ESC-5`, `ESC-6`) and states that the profile exclusion is not clearance. Nothing in this document does either.
 
 ## LGPL replacement and delivery scope
 

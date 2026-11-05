@@ -19,12 +19,14 @@ The application supports two distinct neural enhancement contracts alongside the
    - Updated Windows DEV archive contains ABI-9 host entrypoint name markers (`aji_ingest`, `aji_infer_seq`, `aji_temporal_radius`, `aji_temporal_reset`, `aji_rife_before_upscale`, `aji_pre_resize`, `aji_resize`, `aji_infer_rife`); marker evidence only — not proof that entrypoints are exported or callable, executed, or of hardware operation/inference.
    - Linux runtime separately pinned; matching ABI-9 markers not recorded for its binary.
    - Official Linux and Windows runtime archives are distinct release assets; archive identity alone does not establish source correspondence, hardware operation, or inference.
+   - The official v0.22.2 dispatcher has no version-query export. Its install record's ABI 9 is established by the pinned dispatcher/backend hashes, not by a runtime version call.
+   - A locally imported runtime is admitted only when it is the pinned official pair, or when its dispatcher reports ABI 9 through `aji_api_version` and its selected backend is either the pinned backend or also reports ABI 9. Provenance stays `local`: the import records measured digests of its own files, while only an official download is checked against the pinned v0.22.2 digests. The heavy-RIFE flag is cleared unless the dispatcher export reports it.
    - Historical official v0.9.0 ABI-8 pair and separately patched private MSVC AJI ABI-8 build are not substitutes for this runtime.
    - Separate Linux `aji-encode` archive (~80 MB) is an optional offline tool, not a playback dependency; not automatically downloaded/adopted; FFmpeg dependency and redistribution rights unresolved.
    - Separate Windows TensorRT-for-RTX overlay archive (~95 MB) backs the opt-in Standard `TensorRT for RTX` backend; it is acquired only on explicit user action, is not part of the base installer or distribution, and keeps NVIDIA's proprietary runtime and notices local-only.
    - User-defined model/profile setup: [Standard AnimeJaNai Custom Models & Profiles](#2-standard-animejanai-custom-models--profiles).
 2. **Prepared Native Bundle Track (`mikai_native_support`, `NativePlaybackController`, `NativeBuilder`):**
-   - Uses a versioned, manifest-verified bundle under `<nativeRoot>/runtime/<bundle-id>/` (`manifest.json` schema `mikai.native.bundle/1`) together with out-of-process preparation tools (`mikai_native_prep`, `mikai_native_verify`, `native_inspect`) that build and numerically verify TensorRT plans against an ONNX Runtime CPU reference before admitting them into playback.
+   - Uses a versioned, manifest-verified bundle under `<nativeRoot>/runtime/<bundle-id>/` (`manifest.json` schema `mikai.native.bundle/1`) together with out-of-process preparation tools: `mikai_native_prep` builds a raw TensorRT plan, `native_inspect` inspects ONNX and can produce a CPU reference through ONNX Runtime, and `mikai_native_verify` measures the built engine's outputs against that reference. Bundle admission is a separate manifest check.
 
 The fork's Linux loader and engine-build contracts, their failure modes and the reproduction
 commands live in [docs/animejanai.md](../docs/animejanai.md).
@@ -52,7 +54,7 @@ The manager configuration is schema v3 at
 `<nativeRoot>/animejanai/animejanai_manager.conf`:
 
 - Stores Standard/Sharp variant choices, logging and TensorRT settings, the optional external-model directory, and custom slots 1–10.
-- `.pconf` profiles and complete `.conf` manager imports/exports retain schema-v3 slot keys, with `mikai_chain_steps_version=1` for typed ordered ONNX/Anime4K steps.
+- `.pconf` profiles and complete `.conf` manager imports/exports retain schema-v3 slot keys; `mikai_chain_steps_version=1` is written whenever any chain carries an Anime4K step, and the typed ordered ONNX/Anime4K step keys are read alongside the legacy model keys.
 - Legacy model keys migrate on read.
 - Profile edits and manager settings are deferred until **Save**; custom model import, external registration, and removal are immediate.
 
@@ -146,9 +148,13 @@ resolution and FPS activation bounds:
 - Settings expose temporal frame count (Auto, 1, or odd 3–15), scene
   threshold, upscale enable/disable and temporal-fix controls.
 - Sharp selects the corresponding HD model variant; it does not replace the SD branch.
-- Official v0.22.2 source maps RIFE code 4262 to `rife_v4.26`, not
-  `rife_v4.26_heavy`; this source mapping does not prove model availability
-  or inference.
+- RIFE choices come from the pinned `3.7.0` `rife` pack; the compiled pin table
+  holds 47 graph identities, including `rife_v4.26_heavy`. Official v0.22.2
+  source maps RIFE code `4262` to `rife_v4.26`, not `rife_v4.26_heavy`, and the
+  official runtime does not report heavy support, so selecting **RIFE 4.26
+  Heavy** fails preparation with `animejanai.preset.rifeHeavyUnsupported`
+  instead of substituting the non-heavy graph. This source mapping does not
+  prove model availability or inference.
 - TensorRT configuration supports Static (match the current video resolution),
   Static ONNX (fixed graph input shape), and Dynamic
   (minimum/optimal/maximum shapes), plus builder optimization levels 0–5 and
@@ -183,7 +189,7 @@ positive chain and model-step numbers, also serialized in numeric order.
 | `chain_C_` | `rife`, `rife_model` | Interpolation switch and AJI model code, for example `426` for RIFE 4.26. |
 | `chain_C_` | `rife_factor_numerator`, `rife_factor_denominator`, `rife_scene_detect_threshold` | Interpolation ratio and scene threshold. |
 | `chain_C_` | `rife_ensemble`, `rife_before_upscale` | `yes`/`no` ensemble and interpolation-order controls. |
-| `chain_C_` | `upscale` | `yes`/`no` controls whether ONNX model steps are kept in the chain; when `no`, runtime preparation removes ONNX model steps, including a configured temporal-fix model, but leaves RIFE enabled if configured. |
+| `chain_C_` | `upscale` | `yes`/`no` controls whether the chain's ONNX model steps are kept; when `no`, runtime preparation removes those steps but still expands a configured temporal-fix model into its own step, and leaves RIFE enabled if configured. |
 | `chain_C_` | `temporal_fix_model`, `temporal_fix_scene_threshold`, `temporal_fix_before_upscale` | Optional temporal-fix model name, scene threshold (`0.0`–`1.0`, default `0.150`), and `yes`/`no` ordering before upscale. |
 | `chain_C_model_M_` / ONNX `chain_C_step_S_` | `frames`, `temporal_scene_threshold` | ONNX model temporal window (`0` = detect from its input shape, `1` = single frame, or odd `3`–`15`) and scene threshold (`0.0`–`1.0`, default `0.150`). |
 
@@ -199,11 +205,13 @@ runtime artifacts, not the editable source of the profile.
 `TensorRT for RTX` is an explicit Standard backend choice, not an automatic
 upgrade of an existing TensorRT selection:
 
-- The backend controls in Settings, Components and Benchmark show it on Windows
-  as **TensorRT for RTX**, persisted as `tensorrt-rtx` (lowercase in the saved
-  choice; the plan INI uses `TensorRT-RTX`). A restored or imported RTX choice
-  is kept rather than rewritten, and on Linux it fails by name instead of being
-  clamped to TensorRT or DirectML: installation/provisioning report
+- The player's **Backend** menu and the Settings/Components backend row name it
+  **TensorRT for RTX** on every platform, persisted as `tensorrt-rtx` (lowercase
+  in the saved choice; the plan INI uses `TensorRT-RTX`); only Windows can
+  install or run it. Benchmark has no backend control: it runs the player's
+  saved choice and reports an RTX run as `tensorrt-rtx`. A restored or imported
+  RTX choice is kept rather than rewritten, and on Linux it fails by name
+  instead of being clamped to TensorRT or DirectML: installation/provisioning report
   `TensorRT for RTX is available only on Windows.`, while runtime preparation
   reports `TensorRT for RTX is not available on this platform.`. No Linux RTX
   asset is published or offered.
@@ -223,9 +231,10 @@ upgrade of an existing TensorRT selection:
 - Both NVIDIA notices are required members and remain with the local copy. The
   overlay is not part of the base installer or any distribution, and acquiring
   or using it locally does not clear public redistribution.
-- An RTX root containing `aji_trt.dll` is rejected at acquisition, verification
-  and import, so the upstream dispatcher cannot silently fall back to classic
-  TensorRT inside it. The upstream backend's own
+- Provisioning stages only the six closure files, and verification and import
+  reject an RTX root containing `aji_trt.dll`, so the upstream dispatcher
+  cannot silently fall back to classic TensorRT inside it. The upstream
+  backend's own
   `TensorRT-RTX failed ...; using TensorRT instead` line is classified as a
   named RTX failure, not an RTX success; the pinned upstream DLL is not patched.
 - RTX builds the engine in-process. Plans keep the same pinned dispatcher, the
@@ -306,7 +315,7 @@ Release archives and model graphs are pinned by SHA-256 where indicated; source 
 
 | Manifest File | Schema / Purpose |
 |---|---|
-| `native/manifest/sources.json` | (`mikai.native.sources/1`) Pinned upstream identities and release asset digests, including `mpv-fork` (ABI-8 source commit `63d127174d8f`; full: this file and `native/manifest/components.json`), Windows `mpv-author-winbuild` DEV archive (`2026-10-24`; separate source commit `b4f9f5bfed18`; full: same), and `animejanai-inference` (official `v0.22.2`, historical `v0.9.0`); TensorRT SDK (`11.3.0.99` / CUDA `13.4`), ONNX Runtime DirectML (`1.24.4`), DirectML (`1.15.4`), 5 spatial ONNX models, and RIFE `v4.14` checkpoints. The Linux mpv archive pin is recorded in `cmake/MikaiLinuxMpv.cmake` and `packaging/provenance/linux-runtime.json`. |
+| `native/manifest/sources.json` | (`mikai.native.sources/1`) Pinned upstream identities and release asset digests, including `mpv-fork` (ABI-8 source commit `63d127174d8f`; full: this file and `native/manifest/components.json`), Windows `mpv-author-winbuild` DEV archive (`2026-10-24`; separate source commit `b4f9f5bfed18`; full: same), and `animejanai-inference` (official `v0.22.2`, historical `v0.9.0`); TensorRT SDK (`11.3.0.99` / CUDA `13.4`), ONNX Runtime DirectML (`1.24.4`), DirectML (`1.15.4`), and 5 spatial ONNX models. `rife-v4.14-assets` records the four private-helper RIFE graphs separately; the official playback RIFE graphs arrive in the `3.7.0` `rife` pack inventoried by `animejanai-release.json` and pinned by content digest in `NativeRife.cpp`. The Linux mpv archive pin is recorded in `cmake/MikaiLinuxMpv.cmake` and `packaging/provenance/linux-runtime.json`. |
 | `native/manifest/components.json` | (`mikai.native.components/1`) Per-component licensing, provenance, and redistribution status (`cleared`, `external`, or `blocked` under `ESC-1..6`). |
 | `native/manifest/animejanai-release.json` | Pinned Windows x64 (`component-trt-*.7z`, `component-rife.7z`) and Linux x64 (`component-trt-*-linux-x64.7z`, `component-rife-linux-x64.7z`) asset inventory and file mappings for [`the-database/mpv-AnimeJaNai` `3.7.0`](https://github.com/the-database/mpv-AnimeJaNai/releases/tag/3.7.0). |
 | `native/manifest/videojanai-release.json` | Negative-control record for `VideoJaNai 2.1.0` (TensorRT `11.0.0.114` / CUDA `13.2.75`), documenting why cross-release TensorRT engines and builder resources are binary-incompatible with TensorRT `11.3.0.99`. |
@@ -332,11 +341,12 @@ Full digests: `native/manifest/animejanai-release.json` (`assetInventory` / `lin
 
 ### Component store ownership, pack membership and cleanup
 
-`nativeRoot()` resolves `MIKAI_NATIVE_ROOT`, else an executable-adjacent
-`native/` when that directory accepts a write, else `AppLocalDataLocation/native`
-(typically `~/.local/share/Mikai/Mikai Wrapper/native` on Linux):
+`nativeRoot()` uses `MIKAI_NATIVE_ROOT` whenever it is set to a non-empty path;
+otherwise it uses an executable-adjacent `native/` when the executable's
+directory accepts a temporary create-and-remove probe, else
+`AppLocalDataLocation/native` (typically `~/.local/share/Mikai/Mikai Wrapper/native` on Linux):
 
-- The write probe is a real create-and-remove, because an AppImage mount reports writable modes on a read-only squashfs and a packaged prefix is root-owned.
+- The write probe is a real create-and-remove beside the executable, because an AppImage mount reports writable modes on a read-only squashfs and a packaged prefix is root-owned.
 - Path trust is anchored at the resolved store's parent, so a data-directory store passes the same ownership and reparse-point checks as an adjacent one.
 
 Installed packs live in `components/tensorrt/<release>/` with a `component.json`
@@ -358,8 +368,10 @@ It does **not** list `trtexec`: the AnimeJaNai provisioning step copies
 `trtexec` once from the extracted runtime archive (or from the store when the
 archive was not re-extracted) into the staged AJI runtime, and recording it as
 a pack member made that second copy fail against `QIODevice::NewOnly` with
-"trtexec could not be created". The Windows catalogue has never listed
-`trtexec.exe` for the same reason: the prepared-helper path builds its own.
+"trtexec could not be created". The Windows catalogue likewise does not list
+`trtexec.exe`: the classic AnimeJaNai closure still receives it from the
+extracted runtime archive, while the Prepared Native helper builds plans
+in-process and never invokes it.
 
 Starting the application prunes abandoned work in this store:
 
@@ -396,7 +408,9 @@ Starting the application prunes abandoned work in this store:
 
 - **`mikai_manifest_check`** (`native/tools/manifest_check.cpp`): Checks `native/manifest/sources.json` and `native/manifest/components.json` structure, identities, git SHA pins, ABI inventories and rights records. Recomputing source-file digests requires explicit read-only `--source-root id=directory` arguments; observation hashes are format-checked, never recomputed.
 - **`mikai_bundle`** (`native/tools/bundle_tool.cpp`): Generates, inspects, and verifies `<nativeRoot>/runtime/<bundle>/manifest.json` against on-disk PE/ELF binaries.
-- **`native_inspect`** (`native/tools/native_inspect.cpp`, enabled when `MIKAI_WITH_MODEL_INSPECTION=ON`): Inspects ONNX model inputs/outputs and executes CPU reference inference via ONNX Runtime.
+- **`native_inspect`** (`native/tools/native_inspect.cpp`, enabled when `MIKAI_WITH_MODEL_INSPECTION=ON`): Inspects ONNX model inputs/outputs and executes CPU reference inference via ONNX Runtime, optionally exporting raw reference outputs.
+- **`mikai_native_prep`** (`native/tools/mikai_native_prep.cpp`): Builds one raw serialized TensorRT plan out of process. Success means a non-empty plan was written, not that it was admitted for playback.
+- **`mikai_native_verify`** (`native/tools/mikai_native_verify.cpp`): Runs one raw engine on an explicitly named CUDA device and measures its outputs against supplied CPU reference bytes. It publishes nothing and does not make a plan prepared or active.
 - **Standalone MSVC + CUDA Build (`native/build-msvc.md`):** Instructions for compiling `aji`, `aji_trt`, `aji_dml`, `mikai_native_prep`, and `mikai_native_verify` with MSVC, CUDA 13.4, and TensorRT 11.3.0.99.
 
 ### Manifest checker exit codes
