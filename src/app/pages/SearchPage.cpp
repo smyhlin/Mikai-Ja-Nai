@@ -37,6 +37,7 @@
 #include <QGuiApplication>
 #include <QStyleHints>
 #include <QFont>
+#include <QFontMetricsF>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QEasingCurve>
@@ -48,6 +49,7 @@
 #include <QMenu>
 #include <QPixmap>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPalette>
 #include <QPropertyAnimation>
 #include <QPushButton>
@@ -63,9 +65,11 @@
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWheelEvent>
+#include <QtMath>
 
-#include <memory>
 #include <algorithm>
+#include <cmath>
+#include <memory>
 
 namespace mikai::app {
 namespace {
@@ -116,6 +120,151 @@ bool hasExplicitCatalogueCriteria(const backend::AnimeQuery& query) {
     if (query.genres_match != QLatin1String("all") || query.tags_match != QLatin1String("all")) return true;
     return query.sort != QStringLiteral("name") || !query.order.isEmpty();
 }
+
+// Keep the return arrow independent of font fallback and subpixel text rendering.
+class SearchKeycap : public QLabel {
+public:
+    explicit SearchKeycap(QWidget* parent = nullptr) : QLabel(parent) {
+        setObjectName(QStringLiteral("searchKeycap"));
+        setAlignment(Qt::AlignCenter);
+        setFocusPolicy(Qt::NoFocus);
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        applyGreyText();
+    }
+
+    QSize sizeHint() const override {
+        const int edge = 2 * theme::kSearchKeycapBorder;
+        return QSize(contentWidth() + edge, theme::kSearchKeycapContentHeight + edge);
+    }
+    QSize minimumSizeHint() const override { return sizeHint(); }
+
+protected:
+    void paintEvent(QPaintEvent*) override {
+        const theme::SearchHeaderPalette roles =
+            theme::searchHeaderPalette(currentAppearance());
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setRenderHint(QPainter::TextAntialiasing, true);
+
+        const qreal edge = theme::kSearchKeycapBorder;
+        const qreal radius = theme::kSearchKeycapRadius;
+        const QRectF bed(rect());
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(roles.keycapSurface));
+        painter.drawRoundedRect(bed, radius, radius);
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(QColor(roles.keycapBorder), edge));
+        painter.drawRoundedRect(bed.adjusted(edge / 2, edge / 2, -edge / 2, -edge / 2),
+                                 radius, radius);
+
+        const QFontMetricsF metrics(font());
+        const QString caption = text();
+        const qreal captionWidth = metrics.horizontalAdvance(caption);
+        const qreal arrow = metrics.ascent();
+        const qreal gap = theme::kSpacingXs;
+        const qreal block = captionWidth + gap + arrow;
+        const qreal left = std::round((width() - block) / 2.0);
+        const bool rtl = layoutDirection() == Qt::RightToLeft;
+        const qreal textLeft = std::round(rtl ? left + arrow + gap : left);
+        const qreal arrowLeft = rtl ? left : left + captionWidth + gap;
+        const qreal baseline =
+            std::round((height() - metrics.height()) / 2.0 + metrics.ascent());
+
+        const QColor ink(roles.pillText);
+        painter.save();
+        painter.setBrush(ink);
+        painter.setPen(Qt::NoPen);
+        painter.translate(textLeft, baseline);
+        painter.fillPath(captionPath(caption), ink);
+        painter.restore();
+        drawReturnArrow(painter, arrowLeft, baseline - arrow * 0.12, arrow, ink);
+    }
+
+    void changeEvent(QEvent* event) override {
+        QLabel::changeEvent(event);
+        switch (event->type()) {
+        case QEvent::FontChange:
+            // The sheet restates the type size whenever it is re-polished.
+            applyGreyText();
+            updateGeometry();
+            update();
+            break;
+        case QEvent::StyleChange:
+        case QEvent::PaletteChange:
+        case QEvent::ApplicationPaletteChange:
+        case QEvent::LayoutDirectionChange:
+            // The bed, hairline, ink and arrow come from the live theme.
+            update();
+            break;
+        default:
+            break;
+        }
+    }
+
+private:
+    struct CaptionPath {
+        QPainterPath path;
+        QString text;
+        QString font;
+        qreal ratio = 0.0;
+    };
+    CaptionPath caption_;
+
+    static constexpr QFont::StyleStrategy kGreyText =
+        static_cast<QFont::StyleStrategy>(QFont::PreferAntialias |
+                                          QFont::NoSubpixelAntialias);
+
+    void applyGreyText() {
+        const auto strategy = font().styleStrategy();
+        if ((strategy & QFont::PreferAntialias) == QFont::PreferAntialias &&
+            (strategy & QFont::NoSubpixelAntialias) == QFont::NoSubpixelAntialias) {
+            return;
+        }
+        QFont adjusted = font();
+        adjusted.setStyleStrategy(kGreyText);
+        setFont(adjusted);
+    }
+
+    /// Filled outlines, not drawText: Qt's subpixel text path ignores the
+    /// no-subpixel hint on some Windows renderers and leaves colour fringes on
+    /// a glyph this small.
+    const QPainterPath& captionPath(const QString& caption) {
+        const qreal ratio = devicePixelRatioF();
+        if (caption_.path.isEmpty() || caption_.text != caption ||
+            caption_.font != font().key() || caption_.ratio != ratio) {
+            caption_.path = QPainterPath();
+            caption_.path.addText(0.0, 0.0, font(), caption);
+            caption_.text = caption;
+            caption_.font = font().key();
+            caption_.ratio = ratio;
+        }
+        return caption_.path;
+    }
+
+    int contentWidth() const {
+        const QFontMetricsF metrics(font());
+        return 2 * theme::kSearchKeycapPaddingH +
+               qCeil(metrics.horizontalAdvance(text())) + theme::kSpacingXs +
+               qCeil(metrics.ascent());
+    }
+
+    static void drawReturnArrow(QPainter& painter, qreal left, qreal baseline,
+                                qreal side, const QColor& ink) {
+        const qreal right = left + side;
+        QPainterPath path;
+        path.moveTo(right, baseline - side * 0.62);
+        path.lineTo(right, baseline);
+        path.lineTo(left, baseline);
+        path.moveTo(left + side * 0.28, baseline - side * 0.30);
+        path.lineTo(left, baseline);
+        path.lineTo(left + side * 0.28, baseline + side * 0.30);
+        const qreal stroke = std::max<qreal>(1.0, side / 7.0);
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(ink, stroke, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.drawPath(path);
+    }
+};
 
 }  // namespace
 
@@ -331,11 +480,8 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     query_->installEventFilter(this);
     fieldLayout->addWidget(query_, 1);
 
-    searchKeycap_ = new QLabel(tr("Enter ↵"), searchField_);
-    searchKeycap_->setObjectName(QStringLiteral("searchKeycap"));
-    searchKeycap_->setAlignment(Qt::AlignCenter);
-    searchKeycap_->setFocusPolicy(Qt::NoFocus);
-    searchKeycap_->setAttribute(Qt::WA_TransparentForMouseEvents);
+    searchKeycap_ = new SearchKeycap(searchField_);
+    searchKeycap_->setText(tr("Enter"));
     searchKeycap_->setAccessibleName(tr("Press Enter to search"));
     fieldLayout->addWidget(searchKeycap_, 0, Qt::AlignVCenter);
 
@@ -704,7 +850,7 @@ void SearchPage::retranslateUi() {
         query_->setPlaceholderText(tr("Search by title…"));
     }
     if (searchKeycap_ != nullptr) {
-        searchKeycap_->setText(tr("Enter ↵"));
+        searchKeycap_->setText(tr("Enter"));
         searchKeycap_->setAccessibleName(tr("Press Enter to search"));
     }
     if (sidebarBrandName_ != nullptr) sidebarBrandName_->setText(tr("Mikai Ja Nai"));
@@ -3277,7 +3423,7 @@ void SearchPage::applyFeedPosters() {
             }
             // The slot is small but a 1x crop of it is still soft on a HiDPI
             // screen: crop and scale in device pixels, and round it to the
-            // radius its own rule declares вЂ” the stylesheet rounds the label's
+            // radius its own rule declares — the stylesheet rounds the label's
             // surface, never the pixmap drawn inside it, so an unrounded thumb
             // would square off the corners. No cover shade: at 34x48 the
             // gradient would swallow the artwork it exists to protect.

@@ -214,10 +214,11 @@ inline constexpr int kSearchSidebarExpandedMinWidth =
 // ── Search page header ──────────────────────────────────────────────────────
 inline constexpr int kSearchHeaderSpacing = kSpacingSmall;
 inline constexpr int kSearchKeycapRadius = 6;
+// One hairline, drawn by the keycap itself: the same width on every edge.
+inline constexpr int kSearchKeycapBorder = 1;
 inline constexpr int kSearchFieldInset = 12;
 inline constexpr int kSearchFieldTrailingInset = 6;
 inline constexpr int kSearchKeycapPaddingH = 8;
-inline constexpr int kSearchKeycapPaddingV = 0;
 inline constexpr int kSearchKeycapContentHeight = kBadgeHeight;
 inline constexpr int kSearchKeycapMinFieldWidth = 240;
 // The quota pill's status dot: a small filled disc, never an icon.

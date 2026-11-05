@@ -1149,13 +1149,9 @@ QWidget#searchPage QLineEdit#searchQuery {
     selection-color: @onPrimary;
 }
 QWidget#searchPage QLabel#searchKeycap {
-    background: @keycap;
-    color: @pillText;
-    border: 1px solid @keycapBorder;
-    border-radius: %3px;
-    min-height: %11px;
-    max-height: %11px;
-    padding: %4px %5px;
+    background: transparent;
+    border: none;
+    padding: 0;
     font-size: 11px;
     font-weight: 600;
 }
@@ -1284,14 +1280,10 @@ QWidget#searchPage QLabel#rateDot[tone="unknown"] { background: @dotUnknown; }
 )QSS")
         .arg(radiusSmall(appearance))      // %1
         .arg(kControlContentHeight)        // %2
-        .arg(kSearchKeycapRadius)          // %3
-        .arg(kSearchKeycapPaddingV)        // %4
-        .arg(kSearchKeycapPaddingH)        // %5
         .arg(kControlInsetH)               // %6
         .arg(kControlInsetHPrimary)        // %8
         .arg(kSearchDotRadius)             // %9
         .arg(kSearchDotSize)               // %10
-        .arg(kSearchKeycapContentHeight)  // %11
         .arg(kHomeScrollBarExtent)
         .arg((kHomeScrollBarExtent - 2 * kHomeScrollHandleInset) / 2)
         .arg(kHomeScrollHandleMinHeight)
@@ -1305,7 +1297,6 @@ QWidget#searchPage QLabel#rateDot[tone="unknown"] { background: @dotUnknown; }
     const QVector<std::pair<QString, QString>> rolesTable = {
         {QStringLiteral("@inputBorder"), roles.inputBorder},
         {QStringLiteral("@pillBorder"), roles.pillBorder},
-        {QStringLiteral("@keycapBorder"), roles.keycapBorder},
         {QStringLiteral("@borderStrong"), roles.borderStrong},
         {QStringLiteral("@secondaryHover"), roles.secondaryHover},
         {QStringLiteral("@primaryHover"), roles.primaryHover},
@@ -1319,7 +1310,6 @@ QWidget#searchPage QLabel#rateDot[tone="unknown"] { background: @dotUnknown; }
         {QStringLiteral("@secondary"), roles.secondary},
         {QStringLiteral("@primary"), roles.primary},
         {QStringLiteral("@border"), roles.border},
-        {QStringLiteral("@keycap"), roles.keycapSurface},
         {QStringLiteral("@input"), roles.input},
         {QStringLiteral("@text"), roles.text},
     };
