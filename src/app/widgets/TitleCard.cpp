@@ -4,7 +4,6 @@
 
 #include "gui/ImageDecode.hpp"
 #include "state/AppearanceStore.hpp"
-#include "theme/Appearance.hpp"
 #include "theme/Metrics.hpp"
 
 #include <QCoreApplication>
@@ -21,6 +20,7 @@
 #include <QPointF>
 #include <QPixmap>
 #include <QPushButton>
+#include <QSizeF>
 #include <QStyle>
 #include <QVBoxLayout>
 
@@ -193,7 +193,8 @@ QString TitleCard::elideTwoLines(const QString& text, const QFont& font, int max
     return line1 + QLatin1Char('\n') + line2;
 }
 
-QPixmap TitleCard::rounded(const QPixmap& pixmap, const QSize& logical, qreal dpr) {
+QPixmap TitleCard::rounded(const QPixmap& pixmap, const QSize& logical, qreal dpr, int radius,
+                           bool shade) {
     if (pixmap.isNull() || logical.isEmpty()) {
         return {};
     }
@@ -213,35 +214,43 @@ QPixmap TitleCard::rounded(const QPixmap& pixmap, const QSize& logical, qreal dp
     const int cropY = qMax(0, (scaled.height() - device.height()) / 2);
     scaled.setDevicePixelRatio(ratio);
 
-    // Clip to rounded corners matching the card's inner radius so artwork
-    // sits seamlessly inside the container without square corners overflowing.
-    const theme::Appearance& appearance = currentAppearance();
-    const int radius = theme::radiusSmall(appearance);
     // Tagged target: the painter below is logical-coordinate only, so the
-    // radius, the shade and the clip stay in the caller's units while the
+    // radius, the shade and the mask stay in the caller's units while the
     // raster behind them is `ratio` times larger.
     QPixmap out = gui::pixmapForDevice(logical, ratio);
     QPainter painter(&out);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::SmoothPixmapTransform);
-    QPainterPath path;
-    path.addRoundedRect(QRectF(0, 0, logical.width(), logical.height()), radius, radius);
-    painter.setClipPath(path);
-    // Draw the centred region directly at its negative offset: the clip is
-    // exactly the target box, so the parts outside it are discarded and the
-    // second allocation of scaled.copy() is pure cost. Both the crop and the
-    // offset divide by the ratio, which keeps the blit one source pixel per
-    // device pixel.
+    // Draw the centred region directly at its negative offset: the target box
+    // is exactly `device`, so the parts outside it are discarded and the second
+    // allocation of scaled.copy() is pure cost. Both the crop and the offset
+    // divide by the ratio, which keeps the blit one source pixel per device
+    // pixel.
     painter.drawPixmap(QPointF(-qreal(cropX) / ratio, -qreal(cropY) / ratio), scaled);
-    if (appearance.coverGradient) {
+    if (shade && currentAppearance().coverGradient) {
         // A bottom shade keeps a bright poster from swallowing the card's own
         // controls; the top stays untouched.
-        QLinearGradient shade(0, logical.height() * 0.45, 0, logical.height());
-        shade.setColorAt(0.0, QColor(0, 0, 0, 0));
-        shade.setColorAt(1.0, QColor(0, 0, 0, 120));
+        QLinearGradient gradient(0, logical.height() * 0.45, 0, logical.height());
+        gradient.setColorAt(0.0, QColor(0, 0, 0, 0));
+        gradient.setColorAt(1.0, QColor(0, 0, 0, 120));
         painter.fillRect(QRectF(0, logical.height() * 0.45, logical.width(),
                                 logical.height() * 0.55),
-                         shade);
+                         gradient);
+    }
+    if (radius > 0) {
+        // Inverted mask cleared with DestinationOut: compositing the rounded
+        // shape in only inside the path left the corners outside it opaque,
+        // while a clip would be one bit and step on the arc. Antialiased path
+        // coverage keeps the corner ramp and the allocated frame's full extent.
+        const QSizeF frame = out.deviceIndependentSize();
+        const QRectF full(0, 0, frame.width(), frame.height());
+        QPainterPath mask;
+        mask.setFillRule(Qt::OddEvenFill);
+        mask.addRect(full);
+        mask.addRoundedRect(full, radius, radius);
+        painter.setCompositionMode(QPainter::CompositionMode_DestinationOut);
+        painter.fillPath(mask, Qt::black);
+        painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
     }
     return out;
 }

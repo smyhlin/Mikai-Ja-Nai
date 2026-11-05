@@ -64,6 +64,10 @@ int radiusMedium(const Appearance& appearance);
 int radiusLarge(const Appearance& appearance);
 int radiusPill(const Appearance& appearance);
 int radiusStepCount();
+/// A title-sheet decoration metric at the selected appearance:
+/// `metric × radiusSmall / 8`, rounded and never negative. The stylesheet that
+/// rounds a surface and the artwork drawn inside it share this one rule.
+int scaledRadius(int metric, const Appearance& appearance);
 
 QString themeId(SiteTheme theme);
 SiteTheme themeFromId(const QString& id);

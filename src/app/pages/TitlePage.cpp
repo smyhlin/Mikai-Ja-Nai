@@ -505,13 +505,9 @@ void TitlePage::buildUi() {
                 }
                 if (previous.radiusStep != appearance.radiusStep ||
                     previous.coverGradient != appearance.coverGradient) {
-                    for (const auto& entry : relatedPosterImages_) {
-                        if (!entry.first.isNull()) {
-                            entry.first->setPixmap(TitleCard::rounded(
-                                entry.second, entry.first->size(),
-                                entry.first->devicePixelRatioF()));
-                        }
-                    }
+                    // The radius and the shade are baked into the frame, so a
+                    // change to either repaints it from the decoded pixels.
+                    refreshRelatedPosters();
                     coverAppliedSize_ = {};
                     applyCoverPixmap();
                 }
@@ -1123,7 +1119,10 @@ void TitlePage::buildDetailsSheet() {
     detailsHeading_->setObjectName(QStringLiteral("titleDetailsHeading"));
     detailsClose_ = new QPushButton(detailsHeaderHost_);
     detailsClose_->setObjectName(QStringLiteral("titleDetailsClose"));
-    detailsClose_->setText(QStringLiteral("✕"));
+    // The glyph is the same painted vector the chevrons use, so the close mark
+    // carries the button colour at every DPI instead of a font's fallback.
+    detailsClose_->setIcon(theme::closeIcon());
+    detailsClose_->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
     detailsClose_->setFixedSize(theme::kTitleDetailsCloseSize, theme::kTitleDetailsCloseSize);
     detailsClose_->setCursor(Qt::PointingHandCursor);
     detailsClose_->setAccessibleName(tr("Close details"));
@@ -1753,7 +1752,10 @@ void TitlePage::populateRelated(const backend::AnimeDetail& detail) {
     relatedPagerButtons_.clear();
     relatedKindLabels_.clear();
     relatedPosterLabels_.clear();
-    relatedPosterImages_.clear();
+    // A landing decode finds its poster by slot index and proves the index with
+    // the label it holds, so the slots of the carousels going away are dropped
+    // before the new ones are built.
+    relatedPosters_.clear();
     while (relatedLayout_->count() > 0) {
         QLayoutItem* item = relatedLayout_->takeAt(0);
         if (item->widget() != nullptr) {
@@ -1942,40 +1944,11 @@ QWidget* TitlePage::buildRelatedCarousel(
 
         const QString posterUrl = backend::posterUrl(anime);
         if (!posterUrl.isEmpty()) {
-            // One task per poster, on the image pool: a shared poster costs one
-            // download, and a fan-out costs no API budget.
-            backend::MikaiClient* client = &client_;
-            const QPointer<TitlePage> self(this);
-            const QPointer<QLabel> poster(posterLabel);
-            // The decode lands at the device size the label will draw, so its
-            // pixels are the label's own rather than an upscaled 1x raster.
-            const QSize target =
-                gui::deviceSizeFor(posterLabel->size(), posterLabel->devicePixelRatioF());
-            runner_.runImage(
-                [client, posterUrl, target] {
-                    return QVariant::fromValue(gui::decodeImage(client->fetchBytes(posterUrl), target));
-                },
-                [self, poster](const QVariant& result) {
-                    if (self.isNull() || poster.isNull()) {
-                        return;
-                    }
-                    auto decoded = result.value<gui::DecodedImage>();
-                    if (decoded.image.isNull()) {
-                        qWarning().noquote() << "TitlePage: related artwork decode failed:"
-                                             << self->ref_ << decoded.error;
-                        return;
-                    }
-                    QPixmap pixmap = QPixmap::fromImage(std::move(decoded.image));
-                    pixmap.setDevicePixelRatio(poster->devicePixelRatioF());
-                    poster->setText(QString());
-                    self->relatedPosterImages_.append({poster, pixmap});
-                    poster->setPixmap(
-                        TitleCard::rounded(pixmap, poster->size(), poster->devicePixelRatioF()));
-                },
-                [](const backend::Failure& failure) {
-                    qWarning().noquote() << "TitlePage: related artwork fetch failed:"
-                                         << backend::failureLine(failure);
-                });
+            // One slot per poster, requested through the same path a later
+            // ratio change uses: a shared poster costs one download and a
+            // fan-out costs no API budget.
+            relatedPosters_.append({posterLabel, posterUrl, {}, 0.0, false});
+            requestRelatedPoster(relatedPosters_.size() - 1);
         }
     }
     track->adjustSize();
@@ -1998,6 +1971,100 @@ QWidget* TitlePage::buildRelatedCarousel(
         next->setEnabled(value < bar->maximum());
     });
     return section;
+}
+
+void TitlePage::requestRelatedPoster(int index) {
+    if (index < 0 || index >= relatedPosters_.size()) {
+        return;
+    }
+    RelatedPoster& slot = relatedPosters_[index];
+    if (slot.label.isNull() || slot.url.isEmpty()) {
+        return;
+    }
+    QLabel* label = slot.label.data();
+    // The decode lands at the device size the label draws at on this screen, so
+    // its pixels are the label's own rather than an upscaled 1x raster.
+    const qreal requestedDpr = label->devicePixelRatioF();
+    const QSize target = gui::deviceSizeFor(label->size(), requestedDpr);
+    backend::MikaiClient* client = &client_;
+    const QPointer<TitlePage> self(this);
+    const QPointer<QLabel> poster(label);
+    const QString url = slot.url;
+    slot.pending = true;
+    runner_.runImage(
+        [client, url, target] {
+            return QVariant::fromValue(gui::decodeImage(client->fetchBytes(url), target));
+        },
+        [self, url, requestedDpr, poster, index](const QVariant& result) {
+            if (self.isNull() || poster.isNull() || index >= self->relatedPosters_.size()) {
+                return;
+            }
+            // The strip is rebuilt as a whole, so the index is only meaningful
+            // while it still names the label and the URL it was asked for.
+            RelatedPoster& slot = self->relatedPosters_[index];
+            if (slot.label.data() != poster.data() || slot.url != url) {
+                return;
+            }
+            slot.pending = false;
+            auto decoded = result.value<gui::DecodedImage>();
+            if (decoded.image.isNull()) {
+                qWarning().noquote() << "TitlePage: related artwork decode failed:"
+                                     << self->ref_ << decoded.error;
+                return;
+            }
+            slot.pixmap = QPixmap::fromImage(std::move(decoded.image));
+            // Tagged with the ratio it was decoded at, never with the one the
+            // label is on now: a 1x raster labelled as a HiDPI one is exactly
+            // what left the strip soft after a screen move.
+            slot.pixmap.setDevicePixelRatio(requestedDpr);
+            slot.decodedDpr = requestedDpr;
+            if (!qFuzzyCompare(requestedDpr, poster->devicePixelRatioF())) {
+                // Answered for the screen this label has left: ask again rather
+                // than stretch these pixels onto the new one.
+                self->requestRelatedPoster(index);
+                return;
+            }
+            self->paintRelatedPoster(index);
+        },
+        [self, poster, index](const backend::Failure& failure) {
+            if (!self.isNull() && index < self->relatedPosters_.size() &&
+                self->relatedPosters_[index].label.data() == poster.data()) {
+                self->relatedPosters_[index].pending = false;
+            }
+            qWarning().noquote() << "TitlePage: related artwork fetch failed:"
+                                 << backend::failureLine(failure);
+        });
+}
+
+void TitlePage::paintRelatedPoster(int index) {
+    if (index < 0 || index >= relatedPosters_.size()) {
+        return;
+    }
+    const RelatedPoster& slot = relatedPosters_.at(index);
+    if (slot.label.isNull() || slot.pixmap.isNull()) {
+        return;
+    }
+    QLabel* label = slot.label.data();
+    label->setText(QString());
+    label->setPixmap(TitleCard::rounded(
+        slot.pixmap, label->size(), label->devicePixelRatioF(),
+        theme::scaledRadius(theme::kTitlePosterRadius, currentAppearance()), true));
+}
+
+void TitlePage::refreshRelatedPosters() {
+    for (int index = 0; index < relatedPosters_.size(); ++index) {
+        const RelatedPoster& slot = relatedPosters_.at(index);
+        if (slot.label.isNull() || slot.pixmap.isNull()) {
+            continue;
+        }
+        // The pixels on hand are painted at the ratio this screen draws on, so
+        // the strip never falls back to QLabel's unfiltered rescale; only then
+        // is the decode for that ratio worth asking for.
+        paintRelatedPoster(index);
+        if (!slot.pending && !qFuzzyCompare(slot.decodedDpr, slot.label->devicePixelRatioF())) {
+            requestRelatedPoster(index);
+        }
+    }
 }
 
 void TitlePage::setRelatedExpanded(bool expanded, bool fromUser) {
@@ -3185,21 +3252,28 @@ void TitlePage::changeEvent(QEvent* event) {
                event->type() == QEvent::StyleChange) {
         // A new font changes every advance the groups were measured from.
         refreshActionWidths();
-    } else if (event->type() == QEvent::DevicePixelRatioChange ||
-               event->type() == QEvent::ScreenChangeInternal) {
+    }
+}
+
+bool TitlePage::event(QEvent* event) {
+    // Qt consumes these two types in QWidget::event() and never forwards them
+    // to changeEvent(), so the ratio refresh has to live here.
+    const bool ratioChanged = event->type() == QEvent::DevicePixelRatioChange ||
+                              event->type() == QEvent::ScreenChangeInternal;
+    const bool result = QWidget::event(event);
+    if (ratioChanged) {
         // The even-width rounding is a device-pixel decision, so a ratio change
         // measures every group again.
         refreshActionWidths();
         // Frames are painted at the ratio they will be shown at: a window that
-        // moves to another screen repaints them instead of scaling the old ones.
-        for (const auto& entry : relatedPosterImages_) {
-            if (entry.first.isNull()) continue;
-            entry.first->setPixmap(TitleCard::rounded(
-                entry.second, entry.first->size(), entry.first->devicePixelRatioF()));
-        }
+        // moves to another screen repaints them from the pixels on hand and
+        // asks for the pixels this screen can show, instead of stretching the
+        // old ones onto it.
+        refreshRelatedPosters();
         coverAppliedSize_ = {};
         applyCoverPixmap();
     }
+    return result;
 }
 
 void TitlePage::fitEpisodeSection() {
@@ -3769,18 +3843,22 @@ void TitlePage::applyCoverPixmap() {
         return;
     }
     // Rounded copies are produced on a size or ratio change, never on a paint.
+    // Each frame carries the radius its own QSS surface declares: the hero cover
+    // at the poster radius, the details thumbnail at the thumbnail radius.
     const QSize posterSize = cover_->size();
     const qreal dpr = cover_->devicePixelRatioF();
     if (posterSize != coverAppliedSize_ || !qFuzzyCompare(dpr, coverAppliedDpr_)) {
-        cover_->setPixmap(TitleCard::rounded(coverPixmap_, posterSize, dpr));
+        cover_->setPixmap(TitleCard::rounded(
+            coverPixmap_, posterSize, dpr,
+            theme::scaledRadius(theme::kTitlePosterRadius, currentAppearance()), true));
         coverAppliedSize_ = posterSize;
         coverAppliedDpr_ = dpr;
     }
     if (detailsThumb_ != nullptr) {
         detailsThumb_->setText(QString());
-        detailsThumb_->setPixmap(
-            TitleCard::rounded(coverPixmap_, detailsThumb_->size(),
-                               detailsThumb_->devicePixelRatioF()));
+        detailsThumb_->setPixmap(TitleCard::rounded(
+            coverPixmap_, detailsThumb_->size(), detailsThumb_->devicePixelRatioF(),
+            theme::scaledRadius(theme::kTitleDetailsThumbRadius, currentAppearance()), true));
     }
     if (backdrop_ != nullptr) {
         backdrop_->setPoster(coverPixmap_);

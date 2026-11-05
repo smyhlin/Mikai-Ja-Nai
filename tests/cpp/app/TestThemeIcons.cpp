@@ -596,14 +596,19 @@ void TestThemeIcons::artworkFrameIsAllocatedAtTheDeviceSize() {
                       mikai::app::theme::kHomePosterHeight);
 
   for (const qreal ratio : {1.0, 1.25, 1.5, 1.75, 2.0}) {
-    const QPixmap frame = mikai::app::TitleCard::rounded(pixmap, logical, ratio);
+    // The home card's poster carries the radius its own rule declares, and the
+    // cover shade its surface asks for.
+    const QPixmap frame = mikai::app::TitleCard::rounded(
+        pixmap, logical, ratio,
+        mikai::app::theme::radiusSmall(mikai::app::currentAppearance()), true);
     QVERIFY2(!frame.isNull(), "no card frame was painted");
     QVERIFY2(qFuzzyCompare(frame.devicePixelRatio(), ratio), "the frame carries another ratio");
     QCOMPARE(frame.size(), QSize(qRound(logical.width() * ratio),
                                 qRound(logical.height() * ratio)));
     const QImage image = frame.toImage();
-    // Rounded corners are clipped, so the outermost pixel is clear while the
-    // middle of the artwork is solid: the clip ran in logical coordinates.
+    // The rounded corners are composited away, so the outermost pixel is clear
+    // while the middle of the artwork is solid: the mask ran in logical
+    // coordinates against a device-resolution raster.
     QVERIFY2(alphaAt(image, 0, 0) == 0, "the frame's corner is not rounded");
     QVERIFY2(alphaAt(image, image.width() / 2, image.height() / 4) > 200,
              "the frame's artwork is missing");

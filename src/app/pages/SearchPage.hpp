@@ -101,6 +101,7 @@ Q_SIGNALS:
     void mediaUrlRequested();
 
 protected:
+    bool event(QEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
@@ -186,6 +187,14 @@ private:
         QString url;
         QPointer<QLabel> label;
         QString shown;
+    };
+
+    /// A decoded thumb waiting for its publish turn, carrying the ratio it was
+    /// decoded at: a raster answered for the screen the page has left is asked
+    /// for again rather than retagged onto this one.
+    struct PendingThumb {
+        QImage image;
+        qreal dpr = 1.0;
     };
 
     void smoothScrollCarousel(CarouselSection& section, int direction);
@@ -322,7 +331,7 @@ private:
     /// again for the posters the page is still showing.
     void refreshArtwork();
     void requestThumb(const QString& url);
-    void applyThumb(const QString& url, QImage image);
+    void applyThumb(const QString& url, QImage image, qreal dpr);
     void flushThumbs();
     void applyThumbs();
     void applyFeedPosters();
@@ -370,7 +379,7 @@ private:
     QString formatTotalsQuery_;
 
     QSet<QString> thumbsInFlight_;
-    QHash<QString, QImage> pendingThumbs_;
+    QHash<QString, PendingThumb> pendingThumbs_;
     /// The device ratio the poster rasters in `icons_` were decoded at.
     qreal artworkDpr_ = 0.0;
     QHash<QString, QPixmap> icons_;

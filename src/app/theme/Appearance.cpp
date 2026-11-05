@@ -48,6 +48,9 @@ int radiusPill(const Appearance& appearance) {
     // a chip into a rectangle and loses the affordance it carries.
     return qBound(2, radiusSmall(appearance) * 3 / 4, 8);
 }
+int scaledRadius(int metric, const Appearance& appearance) {
+    return qMax(0, qRound(metric * (radiusSmall(appearance) / 8.0)));
+}
 
 QString themeId(SiteTheme theme) {
     return theme == SiteTheme::Light ? QStringLiteral("light") : QStringLiteral("dark");

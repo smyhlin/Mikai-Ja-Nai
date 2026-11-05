@@ -202,6 +202,14 @@ private:
     QWidget* buildRelatedCarousel(
         const QString& headingKey,
         const QVector<std::pair<QString, backend::AnimeSummary>>& entries);
+    /// Paints every related poster from the pixels already decoded, and asks
+    /// again for the ones whose pixels were decoded for another screen.
+    void refreshRelatedPosters();
+    /// Asks for one related poster at the ratio its label draws on now.
+    void requestRelatedPoster(int index);
+    /// Repaints one related poster from its decoded pixels into the corner
+    /// radius its surface declares. Never decodes.
+    void paintRelatedPoster(int index);
     /// `fromUser` is false when data landing expands the block itself. Only a
     /// toggle the reader pressed scrolls the overview: the recommendations
     /// carousel arriving is not a request to be scrolled away from whatever
@@ -368,6 +376,7 @@ private:
     void refreshEpisodeTexts();
 
 protected:
+    bool event(QEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void changeEvent(QEvent* event) override;
@@ -565,7 +574,20 @@ protected:
     QVector<QPair<QPointer<QPushButton>, QPointer<QPushButton>>> relatedPagerButtons_;
     QVector<QPair<QString, QPointer<QLabel>>> relatedKindLabels_;
     QVector<QPointer<QLabel>> relatedPosterLabels_;
-    QVector<QPair<QPointer<QLabel>, QPixmap>> relatedPosterImages_;
+    /// One poster of a related carousel: the URL it waits for, the pixels last
+    /// decoded for it and the ratio those pixels were decoded at. The ratio is
+    /// the point: a raster is never re-tagged onto another screen, and a slot
+    /// whose pixels are stale is asked for again at the ratio it now draws at.
+    struct RelatedPoster {
+        QPointer<QLabel> label;
+        QString url;
+        QPixmap pixmap;
+        qreal decodedDpr = 0.0;
+        /// True while a decode for the label's current ratio is on its way, so
+        /// a second ratio event does not queue the same request twice.
+        bool pending = false;
+    };
+    QVector<RelatedPoster> relatedPosters_;
 };
 
 }  // namespace mikai::app

@@ -30,10 +30,13 @@ public:
     /// Display-ready card pixmap: the page paints it once per poster URL
     /// through rounded() and hands the same one to every card sharing it.
     void applyPixmap(const QPixmap& pixmap);
-    /// The rounded, shaded card frame for `pixmap` in a `logical` box at `dpr`:
-    /// the raster is allocated in device pixels and tagged with the ratio, so a
-    /// HiDPI label blits one raster pixel per device pixel.
-    static QPixmap rounded(const QPixmap& pixmap, const QSize& logical, qreal dpr);
+    /// The rounded frame for `pixmap` in a `logical` box at `dpr`: the raster is
+    /// allocated in device pixels and tagged with the ratio, so a HiDPI label
+    /// blits one raster pixel per device pixel. `radius` is the logical corner
+    /// radius of the surface the frame sits in, and `shade` adds the cover
+    /// gradient for the surfaces that carry one.
+    static QPixmap rounded(const QPixmap& pixmap, const QSize& logical, qreal dpr, int radius,
+                           bool shade);
     static QString elideTwoLines(const QString& text, const QFont& font, int maxWidth);
     void applyStatus(const QString& status);
     void applyEpisodes(int aired, int planned);

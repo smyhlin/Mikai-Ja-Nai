@@ -542,23 +542,36 @@ QString SearchPage::feedDayLabel(const QString& dayKey) const {
 void SearchPage::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::FontChange || event->type() == QEvent::ApplicationFontChange ||
-        event->type() == QEvent::StyleChange ||
-        event->type() == QEvent::DevicePixelRatioChange ||
-        event->type() == QEvent::ScreenChangeInternal) {
-        // A new font or ratio changes what the rail's captions measure at, so
-        // the mode is re-derived and re-applied.
+        event->type() == QEvent::StyleChange) {
+        // A new font changes what the rail's captions measure at, so the mode
+        // is re-derived and re-applied.
         updateSidebarPresentation(true);
     }
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
     } else if (event->type() == QEvent::PaletteChange ||
-               event->type() == QEvent::ApplicationPaletteChange ||
-               event->type() == QEvent::ScreenChangeInternal ||
-               event->type() == QEvent::DevicePixelRatioChange) {
+               event->type() == QEvent::ApplicationPaletteChange) {
         refreshHeaderLogo();
         refreshHeaderIcons();
         refreshArtwork();
     }
+}
+
+bool SearchPage::event(QEvent* event) {
+    // Qt consumes both of these in QWidget::event() and never forwards them to
+    // changeEvent(), so this is the only place a monitor move is observable.
+    const bool ratioChanged = event->type() == QEvent::DevicePixelRatioChange ||
+                              event->type() == QEvent::ScreenChangeInternal;
+    const bool result = QWidget::event(event);
+    if (ratioChanged) {
+        // The captions the rail measures at now resolve differently, and every
+        // raster on the page was built for the previous ratio. The brand logo
+        // refreshes from its own event filter.
+        updateSidebarPresentation(true);
+        refreshHeaderIcons();
+        refreshArtwork();
+    }
+    return result;
 }
 
 void SearchPage::refreshHeaderLogo() {
@@ -3074,7 +3087,7 @@ void SearchPage::requestThumb(const QString& url) {
                 self->requestThumb(url);
                 return;
             }
-            self->applyThumb(url, std::move(decoded.image));
+            self->applyThumb(url, std::move(decoded.image), requestedDpr);
         },
         [self, url](const backend::Failure&) {
             if (self.isNull()) {
@@ -3087,14 +3100,15 @@ void SearchPage::requestThumb(const QString& url) {
 QPixmap SearchPage::roundedPoster(const QPixmap& pixmap) {
     // Every cache holds one frame per poster URL, so the frame is painted for
     // the ratio the page is on: a frame baked at another ratio is either soft
-    // (upscaled) or wastefully large.
-    return TitleCard::rounded(
-        pixmap, QSize(theme::kHomePosterWidth, theme::kHomePosterHeight),
-        devicePixelRatioF());
+    // (upscaled) or wastefully large. The radius is the one the card poster's
+    // own rule declares, so the artwork's corner and the surface behind it are
+    // the same curve.
+    return TitleCard::rounded(pixmap, QSize(theme::kHomePosterWidth, theme::kHomePosterHeight),
+                              devicePixelRatioF(), theme::radiusSmall(currentAppearance()), true);
 }
 
-void SearchPage::applyThumb(const QString& url, QImage image) {
-    pendingThumbs_.insert(url, std::move(image));
+void SearchPage::applyThumb(const QString& url, QImage image, qreal dpr) {
+    pendingThumbs_.insert(url, {std::move(image), dpr});
     thumbTimer_->start();
 }
 
@@ -3105,15 +3119,20 @@ void SearchPage::flushThumbs() {
     // QPixmap creation stays on the GUI thread, with one image published per turn.
     auto it = pendingThumbs_.begin();
     const QString key = it.key();
-    QImage image = std::move(it.value());
+    const PendingThumb pending = std::move(it.value());
     pendingThumbs_.erase(it);
-    if (!icons_.contains(key)) {
-        QPixmap pixmap = QPixmap::fromImage(std::move(image));
+    if (!qFuzzyCompare(pending.dpr, devicePixelRatioF())) {
+        // The decode answered for the screen the page has left. Tagging it with
+        // this ratio would dress a low-resolution raster up as one for the
+        // label's own pixels, so it is asked for again instead.
+        requestThumb(key);
+    } else if (!icons_.contains(key)) {
+        QPixmap pixmap = QPixmap::fromImage(pending.image);
         if (!pixmap.isNull()) {
             // The decode landed at the device size, so the raster is tagged with
             // the ratio it was asked for: an untagged pixmap would be drawn at
             // its device size in logical units and overflow the slot.
-            pixmap.setDevicePixelRatio(devicePixelRatioF());
+            pixmap.setDevicePixelRatio(pending.dpr);
             icons_.insert(key, pixmap);
             // A poster URL is shared by several cards; the index turns that
             // into a lookup instead of a scan of every card on the page. The
@@ -3160,9 +3179,38 @@ void SearchPage::refreshArtwork() {
     artworkDpr_ = dpr;
     // Poster rasters are decoded at the device size and the rounded frames bake
     // the ratio into their corners, so both are dropped and asked for again.
+    // The rasters on hand are still the best pixels the page has: every slot is
+    // repainted from them at the new ratio first, so the download window shows
+    // a smoothly resampled frame instead of an old-ratio raster that QLabel
+    // would blit unfiltered. Nothing of that bridging frame is cached, so the
+    // decodes below still land at the resolution this screen can show.
+    const QHash<QString, QPixmap> previous = icons_;
     icons_.clear();
     rounded_.clear();
     pendingThumbs_.clear();
+    const int cardRadius = theme::radiusSmall(currentAppearance());
+    for (auto it = previous.cbegin(); it != previous.cend(); ++it) {
+        const QPixmap frame = TitleCard::rounded(
+            it.value(), QSize(theme::kHomePosterWidth, theme::kHomePosterHeight),
+            devicePixelRatioF(), cardRadius, true);
+        const QList<TitleCard*> cards = cardsByImageKey_.value(it.key());
+        for (TitleCard* card : cards) {
+            card->applyPixmap(frame);
+        }
+    }
+    // A feed slot repaints its own box: the thumb there is cropped, unshaded
+    // and matched to the small radius its rule declares.
+    for (auto it = feedPosterLabels_.begin(); it != feedPosterLabels_.end(); ++it) {
+        for (FeedPosterSlot& entry : it.value()) {
+            entry.shown.clear();
+            if (entry.label.isNull() || entry.url.isEmpty()) continue;
+            const auto source = previous.constFind(entry.url);
+            if (source == previous.constEnd()) continue;
+            entry.label->setPixmap(TitleCard::rounded(source.value(), entry.label->size(),
+                                                      entry.label->devicePixelRatioF(),
+                                                      cardRadius, false));
+        }
+    }
     // Every URL that paints a raster has to be asked for again, not only the
     // carousel cards: feed posters and result-row thumbnails own slots of their
     // own, and a slot whose `shown` still names the URL would keep the old
@@ -3172,9 +3220,8 @@ void SearchPage::refreshArtwork() {
     for (auto it = cardsByImageKey_.cbegin(); it != cardsByImageKey_.cend(); ++it) {
         urls.append(it.key());
     }
-    for (auto it = feedPosterLabels_.begin(); it != feedPosterLabels_.end(); ++it) {
-        for (FeedPosterSlot& entry : it.value()) {
-            entry.shown.clear();
+    for (auto it = feedPosterLabels_.cbegin(); it != feedPosterLabels_.cend(); ++it) {
+        for (const FeedPosterSlot& entry : it.value()) {
             if (!entry.url.isEmpty()) urls.append(entry.url);
         }
     }
@@ -3229,15 +3276,15 @@ void SearchPage::applyFeedPosters() {
                 continue;
             }
             // The slot is small but a 1x crop of it is still soft on a HiDPI
-            // screen: crop and scale in device pixels and tag the result.
+            // screen: crop and scale in device pixels, and round it to the
+            // radius its own rule declares вЂ” the stylesheet rounds the label's
+            // surface, never the pixmap drawn inside it, so an unrounded thumb
+            // would square off the corners. No cover shade: at 34x48 the
+            // gradient would swallow the artwork it exists to protect.
             const qreal ratio = entry.label->devicePixelRatioF();
-            QPixmap source = cached.value();
-            source.setDevicePixelRatio(1.0);
-            QPixmap scaled = source.scaled(gui::deviceSizeFor(entry.label->size(), ratio),
-                                           Qt::KeepAspectRatioByExpanding,
-                                           Qt::SmoothTransformation);
-            scaled.setDevicePixelRatio(ratio);
-            entry.label->setPixmap(scaled);
+            entry.label->setPixmap(TitleCard::rounded(
+                cached.value(), entry.label->size(), ratio,
+                theme::radiusSmall(currentAppearance()), false));
             entry.shown = entry.url;
         }
     }

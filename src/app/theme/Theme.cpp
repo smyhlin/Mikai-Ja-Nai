@@ -508,10 +508,7 @@ QString titlePage(const Palette& p, const Appearance& a) {
     const QColor hoverText = contrastText(QColor(p.titleAccentHover));
     // Decorative chips, cards, posters and the details panel retain their
     // appearance-scaled radii; buttons use the application radius directly.
-    const double scale = radiusSmall(a) / 8.0;
-    const auto scaled = [scale](int value) {
-        return qMax(0, qRound(value * scale));
-    };
+    const auto scaled = [&a](int value) { return scaledRadius(value, a); };
     return QStringLiteral(R"QSS(
 QWidget#titlePage {
     background: %1;
