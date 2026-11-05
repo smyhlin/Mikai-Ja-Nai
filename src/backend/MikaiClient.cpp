@@ -936,11 +936,15 @@ PlayerResult MikaiClient::getPlayer(const QString& ref) const {
 
 QByteArray MikaiClient::fetchBytes(
     const QString& url, int timeoutMs,
-    const std::function<void(qint64, qint64)>& progress) const {
+    const std::function<void(qint64, qint64)>& progress, Redirects redirects) const {
     QNetworkRequest request{QUrl(url)};
-    // Artwork redirects stay within the original origin.
+    // Artwork keeps to its own origin. A pinned payload may follow a mirror to
+    // another https host: HuggingFace answers resolve/ with a CDN redirect, and
+    // NoLessSafe still refuses an https-to-http downgrade.
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                         QNetworkRequest::SameOriginRedirectPolicy);
+                         redirects == Redirects::FollowSafe
+                             ? QNetworkRequest::NoLessSafeRedirectPolicy
+                             : QNetworkRequest::SameOriginRedirectPolicy);
     request.setRawHeader("User-Agent", apiUserAgent().toUtf8());
     const int timeout = timeoutMs > 0 ? timeoutMs : kArtworkTimeoutMs;
     const HttpFetchResult result =

@@ -1,6 +1,8 @@
 #include "TestDownloads.hpp"
 
 #include <backend/Downloads.hpp>
+#include <backend/MikaiClient.hpp>
+#include <native/models/NativeUpscalers.hpp>
 #include <backend/Cancellation.hpp>
 
 #include <cstdio>
@@ -685,4 +687,37 @@ int runTestDownloads(int argc, char** argv) {
   }
   std::fflush(stderr);
   return rc;
+}
+
+void TestDownloads::aPinnedPayloadFollowsAMirrorRedirect() {
+    // Opt-in: this is the only case here that needs the network. It records the
+    // two mirror behaviours that made a HuggingFace download fail with a bare
+    // network_error - the same origin policy refuses the redirect, the pinned
+    // payload policy follows it and the bytes are still digest-proved.
+    const QString url = qEnvironmentVariable("MIKAI_NETWORK_TEST_URL");
+    if (url.isEmpty()) QSKIP("set MIKAI_NETWORK_TEST_URL to a mirror URL that redirects");
+    mikai::backend::MikaiClient client(QString(), QStringLiteral("http://127.0.0.1:1"));
+
+    bool sameOriginRefused = false;
+    try {
+        const QByteArray body = client.fetchBytes(url, 60000, {},
+                                                  mikai::backend::MikaiClient::Redirects::SameOrigin);
+        QVERIFY2(false, qPrintable(QStringLiteral("the same-origin policy answered with %1 bytes")
+                                       .arg(body.size())));
+    } catch (const mikai::backend::MikaiApiError& error) {
+        sameOriginRefused = error.code == QStringLiteral("network_error");
+    }
+    QVERIFY2(sameOriginRefused, "the same-origin policy must refuse a cross-origin mirror");
+
+    const QByteArray bytes = client.fetchBytes(url, 60000, {},
+                                               mikai::backend::MikaiClient::Redirects::FollowSafe);
+    QVERIFY2(bytes.size() > 1000, qPrintable(QStringLiteral("received %1 bytes").arg(bytes.size())));
+    // A followed redirect must still land on the pinned graph, not on whatever
+    // the mirror served: the digest is the only reason following is allowed.
+    for (const mplayer::native::UpscalerModel& model : mplayer::native::upscalerCatalog()) {
+        if (model.url != url) continue;
+        QString reason;
+        QVERIFY2(mplayer::native::verifyUpscalerBytes(model, bytes, &reason),
+                 qPrintable(reason));
+    }
 }

@@ -777,7 +777,8 @@ void ComponentStoreTab::downloadNextModel() {
                         publish([progress](ComponentStoreTab& tab) {
                             tab.applyDownloadProgress(progress);
                         });
-                    });
+                    },
+                    backend::MikaiClient::Redirects::FollowSafe);
                 if (cancelFlag->load()) return QVariant{};
                 const ComponentProvisionProgress installing{
                     asset.id, static_cast<qint64>(bytes.size()), asset.bytes,
@@ -1220,7 +1221,8 @@ void ComponentStoreTab::downloadNextUpscaler() {
                     publish([progress](ComponentStoreTab& tab) {
                         tab.applyDownloadProgress(progress);
                     });
-                });
+                },
+                backend::MikaiClient::Redirects::FollowSafe);
             if (cancelFlag != nullptr && cancelFlag->load()) return QVariant{};
             const ComponentProvisionProgress installing{
                 model.sha256, static_cast<qint64>(bytes.size()), model.bytes,

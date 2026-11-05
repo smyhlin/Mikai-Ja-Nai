@@ -51,6 +51,7 @@ class TestDownloads : public QObject {
   void aQuietFetchReportsItsDeadline();
   void cancellationTakesPrecedenceWhenSevenZipIsAlreadyInstalled();
   void cancelledExtractionDoesNotTouchTheDestination();
+    void aPinnedPayloadFollowsAMirrorRedirect();
 };
 
 /// Standalone entry point for the mikai_tests runner; the class above carries

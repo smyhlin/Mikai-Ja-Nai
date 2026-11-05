@@ -141,9 +141,15 @@ public:
     // is the one transport callers use for large non-artwork payloads (a model
     // graph, for instance, needs far more than the artwork budget); a negative
     // timeout keeps the artwork default.
+    /// How a payload URL may redirect. Artwork stays on its own origin; a
+    /// pinned download follows a redirect only to another https host, because a
+    /// mirror such as HuggingFace answers `resolve/` with a CDN location and the
+    /// bytes are proved by digest on arrival anyway.
+    enum class Redirects { SameOrigin, FollowSafe };
     QByteArray fetchBytes(
         const QString& url, int timeoutMs = -1,
-        const std::function<void(qint64 received, qint64 total)>& progress = {}) const;
+        const std::function<void(qint64 received, qint64 total)>& progress = {},
+        Redirects redirects = Redirects::SameOrigin) const;
 
     QString baseUrl() const { return baseUrl_; }
 

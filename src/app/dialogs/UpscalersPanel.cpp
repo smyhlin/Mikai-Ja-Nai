@@ -241,7 +241,9 @@ void UpscalersPanel::startDownload(Row& row) {
             // The bar is indeterminate for the transfer and turns into the
             // verified result: a few megabytes over a network that may not
             // report its total would otherwise sit at a stalled percentage.
-            const QByteArray bytes = client->fetchBytes(model.url, kDownloadTimeoutMs);
+            const QByteArray bytes =
+                client->fetchBytes(model.url, kDownloadTimeoutMs, {},
+                                   backend::MikaiClient::Redirects::FollowSafe);
             QString reason;
             const QString registered =
                 mplayer::native::installUpscalerBytes(model, bytes, &reason);
