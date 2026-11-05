@@ -271,10 +271,10 @@ Published Arch and Debian package checksums are available in each release's `SHA
 bash packaging/linux/arch-package.sh --output-dir /fresh/output
 ```
 
-- The driver refuses a modified worktree and a non-empty output directory, exports `HEAD` with `git archive`, substitutes the tarball digest and revision into `packaging/arch/PKGBUILD`, and runs `makepkg`.
+- The driver refuses a modified worktree and a non-empty output directory, exports `HEAD` with `git archive`, substitutes the project version, the tarball digest and revision into `packaging/arch/PKGBUILD`, and runs `makepkg`.
 - The driver requires `makepkg`, `git`, `cmake`, `ninja`, `sha256sum`, `patchelf`, and checks that `qt6-base` and `libglvnd` are installed; the configure step still needs mpv/libmpv development headers on the build host. `check()` runs this repository's CTest suite, so a package is only produced after the tests pass.
-- The result is `mikai-0.1.0-1-x86_64.pkg.tar.zst` plus the generated `.SRCINFO`.
-- The package depends at runtime on `qt6-base` and `libglvnd`, installs the executable as `/usr/bin/mikai` (with `/usr/bin/mikai-0.1.0` as its real name and `/usr/bin/shaders` linking to the shader directory), and relies on the distribution's Qt 6.12 — which is why this format only applies to Arch, where Qt 6.12 is current. `mpv` is a build-host dependency only.
+- The result is `mikai-<version>-<pkgrel>-x86_64.pkg.tar.zst` plus the generated `.SRCINFO`.
+- The package depends at runtime on `qt6-base` and `libglvnd`, installs the executable as `/usr/bin/mikai` (with `/usr/bin/mikai-<version>` as its real name and `/usr/bin/shaders` linking to the shader directory), and relies on the distribution's Qt 6.12 — which is why this format only applies to Arch, where Qt 6.12 is current. `mpv` is a build-host dependency only.
 
 **Debian** is built inside Debian 13 (trixie) because the binary's glibc floor is the build base's, and no Debian-family distribution ships Qt 6.12.
 
