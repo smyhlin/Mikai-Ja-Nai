@@ -82,6 +82,17 @@ constexpr int kSettleTimeoutMs = 3000;
 constexpr int kPollIntervalMs = 40;
 constexpr int kMaxPauseReassertions = kSettleTimeoutMs / kPollIntervalMs;
 
+/// The overlay names the engine product actually being built: an RTX run is
+/// TensorRT for RTX, not classic TensorRT, and this wording is the one place the
+/// comparison says which build is in progress.
+QString comparisonEngineBuildTitle(native::Backend backend) {
+    if (backend == native::Backend::TensorRTRTX) {
+        return QCoreApplication::translate("CompareWindow",
+                                           "Build comparison TensorRT for RTX engine");
+    }
+    return QCoreApplication::translate("CompareWindow", "Build comparison TensorRT engine");
+}
+
 QStringList categoryPath(const QString& categoryId) {
     QStringList path;
     QString parent;
@@ -667,7 +678,7 @@ void CompareWindow::retranslateUi() {
         if (buildOperationActive_) {
             // Running: retitle without resetting the run, its timer or its
             // progress. The stage words are the caller's and stay verbatim.
-            processingOverlay_->setOperationTitle(tr("Build comparison TensorRT engine"));
+            processingOverlay_->setOperationTitle(comparisonEngineBuildTitle(ajiBackend_));
         } else if (buildSummaryKind_ != BuildSummaryKind::None) {
             // Terminal: only the app-owned wrapper around an opaque failure
             // detail is rebuilt; the detail itself is preserved verbatim.
@@ -1789,7 +1800,7 @@ QImage CompareWindow::renderIsolated(const QString& id) {
         self->buildSummaryKind_ = BuildSummaryKind::None;
         self->buildFailureDetail_.clear();
         self->processingOverlay_->anchorTo(self);
-        self->processingOverlay_->begin(CompareWindow::tr("Build comparison TensorRT engine"));
+        self->processingOverlay_->begin(comparisonEngineBuildTitle(self->ajiBackend_));
         self->processingOverlay_->setStage(-1, 0, detail, QString());
     };
     if (!isolatedRenderer_) {

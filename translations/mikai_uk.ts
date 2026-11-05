@@ -29,19 +29,19 @@
         <translation>3D-графіка</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1316"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1327"/>
         <location filename="../src/player/shaders/Anime4K.cpp" line="36"/>
         <source>A (Fast)</source>
         <translation>A (Швидкий)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1319"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1330"/>
         <location filename="../src/player/shaders/Anime4K.cpp" line="65"/>
         <source>A (High Quality)</source>
         <translation>A (Висока якість)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1322"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1333"/>
         <location filename="../src/player/shaders/Anime4K.cpp" line="94"/>
         <source>A+A (Maximum)</source>
         <translation>A+A (Максимум)</translation>
@@ -62,19 +62,19 @@
         <translation>Згладжування артефактів + масштабування (720p)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1317"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1328"/>
         <location filename="../src/player/shaders/Anime4K.cpp" line="46"/>
         <source>B (Fast)</source>
         <translation>B (Швидкий)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1320"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1331"/>
         <location filename="../src/player/shaders/Anime4K.cpp" line="75"/>
         <source>B (High Quality)</source>
         <translation>B (Висока якість)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1323"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1334"/>
         <location filename="../src/player/shaders/Anime4K.cpp" line="109"/>
         <source>B+B (Maximum)</source>
         <translation>B+B (Максимум)</translation>
@@ -105,19 +105,19 @@
         <translation>Розмиття</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1318"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1329"/>
         <location filename="../src/player/shaders/Anime4K.cpp" line="56"/>
         <source>C (Fast)</source>
         <translation>C (Швидкий)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1321"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1332"/>
         <location filename="../src/player/shaders/Anime4K.cpp" line="85"/>
         <source>C (High Quality)</source>
         <translation>C (Висока якість)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1324"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1335"/>
         <location filename="../src/player/shaders/Anime4K.cpp" line="120"/>
         <source>C+A (Maximum)</source>
         <translation>C+A (Максимум)</translation>
@@ -852,6 +852,68 @@
     </message>
 </context>
 <context>
+    <name>AnimeJanaiInstallation</name>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="765"/>
+        <source>The downloaded Aji binary does not match its pinned v0.22.2 identity: %1</source>
+        <translation>Контрольна сума завантаженого двійкового файлу Aji не відповідає зафіксованій версії v0.22.2: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="782"/>
+        <source>The imported AnimeJaNai dispatcher does not report ABI 9 and is not the pinned official v0.22.2 x64 backend pair.</source>
+        <translation>Імпортований диспетчер AnimeJaNai не повідомляє про ABI 9 і не відповідає зафіксованій офіційній парі диспетчера та бекенда x64 v0.22.2.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="786"/>
+        <source>The imported AnimeJaNai backend does not report ABI 9 and is not the pinned official v0.22.2 backend.</source>
+        <translation>Імпортований бекенд AnimeJaNai не повідомляє про ABI 9 і не відповідає зафіксованому офіційному бекенду v0.22.2.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="875"/>
+        <source>The verified TensorRT for RTX archive is missing a required member.</source>
+        <translation>У перевіреному архіві TensorRT for RTX немає обов’язкового файлу.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="916"/>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="1128"/>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="1210"/>
+        <source>TensorRT for RTX is available only on Windows.</source>
+        <translation>TensorRT for RTX доступний лише у Windows.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="977"/>
+        <source>The installed TensorRT for RTX runtime contains the classic TensorRT backend, which the dispatcher would silently fall back to.</source>
+        <translation>Встановлене середовище TensorRT for RTX містить класичний бекенд TensorRT, на який диспетчер міг би непомітно перейти.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="1049"/>
+        <source>An official Aji library does not match the pinned v0.22.2 release.</source>
+        <translation>Офіційна бібліотека Aji не відповідає зафіксованому випуску v0.22.2.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="1061"/>
+        <source>Official Aji v0.22.2 does not map the heavy RIFE model.</source>
+        <translation>В офіційному Aji v0.22.2 немає зіставлення для важкої моделі RIFE.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="1070"/>
+        <source>The installed AnimeJaNai dispatcher does not report ABI 9 and does not match the pinned official v0.22.2 x64 backend pair.</source>
+        <translation>Встановлений диспетчер AnimeJaNai не повідомляє про ABI 9 і не відповідає зафіксованій офіційній парі диспетчера та бекенда x64 v0.22.2.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="1072"/>
+        <source>The installed AnimeJaNai backend does not report ABI 9 and does not match the pinned official v0.22.2 backend.</source>
+        <translation>Встановлений бекенд AnimeJaNai не повідомляє про ABI 9 і не відповідає зафіксованому офіційному бекенду v0.22.2.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="891"/>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="1468"/>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="1537"/>
+        <source>The official Aji v0.22.2 asset unexpectedly reports heavy RIFE support.</source>
+        <translation>Офіційний архів Aji v0.22.2 неочікувано повідомляє про підтримку важкої моделі RIFE.</translation>
+    </message>
+</context>
+<context>
     <name>AnimeJanaiRuntime</name>
     <message>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="145"/>
@@ -860,33 +922,33 @@
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="184"/>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="199"/>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="215"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="709"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="732"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="949"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="966"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1191"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1540"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="820"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="843"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1060"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1077"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1303"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1665"/>
         <source>AnimeJaNai preparation was cancelled.</source>
         <translation>Підготовку AnimeJaNai було скасовано.</translation>
     </message>
     <message>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="153"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="863"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="870"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="959"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="974"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="981"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1070"/>
         <source>The app-owned AnimeJaNai model directory is unavailable or redirected.</source>
         <translation>Папка моделей AnimeJaNai недоступна або перенаправлена.</translation>
     </message>
     <message>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="160"/>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="205"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="950"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1061"/>
         <source>The selected model graph does not match its pinned content digest.</source>
         <translation>Граф вибраної моделі не відповідає зафіксованій контрольній сумі вмісту.</translation>
     </message>
     <message>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="166"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="967"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1078"/>
         <source>An existing staged AnimeJaNai graph is corrupt and will not be replaced.</source>
         <translation>Наявний підготовлений граф AnimeJaNai пошкоджено і не може бути замінено.</translation>
     </message>
@@ -897,226 +959,241 @@
         <translation>Помилка перевірки або атомарної публікації підготовленого графа AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="329"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="347"/>
+        <source>TensorRT for RTX builds engines in-process and supports only --minShapes=, --optShapes=, --maxShapes=, --builderOptimizationLevel= and --memPoolSize=workspace: in trt_engine_settings; &apos;%1&apos; is not supported. Precision comes from the ONNX graph.</source>
+        <translation>TensorRT for RTX збирає рушії в процесі застосунку та підтримує в trt_engine_settings лише --minShapes=, --optShapes=, --maxShapes=, --builderOptimizationLevel= і --memPoolSize=workspace:. Параметр «%1» не підтримується. Точність береться з графа ONNX.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="356"/>
+        <source>TensorRT for RTX builds the engine in-process, so --skipInference is not used.</source>
+        <translation>TensorRT for RTX збирає рушій у процесі застосунку, тому --skipInference не використовується.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="428"/>
         <source>The app-owned AnimeJaNai configuration directory is unavailable or redirected.</source>
         <translation>Папка конфігурації AnimeJaNai недоступна або перенаправлена.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="373"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="472"/>
         <source>An AnimeJaNai filter option cannot be represented safely.</source>
         <translation>Параметр фільтра AnimeJaNai не може бути безпечно представлений.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="483"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="582"/>
         <source>Quality</source>
         <translation>Якість</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="484"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="583"/>
         <source>Balanced</source>
         <translation>Збалансований</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="485"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="584"/>
         <source>Performance</source>
         <translation>Продуктивність</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="491"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="590"/>
         <source>Slot %1</source>
         <translation>Слот %1</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="572"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="672"/>
         <source>AnimeJaNai mixed chains require the original source dimensions and frame rate.</source>
         <translation>Змішаним ланцюжкам AnimeJaNai потрібні початкові розміри та частота кадрів джерела.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="599"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="699"/>
         <source>A mixed AnimeJaNai chain has invalid source bounds.</source>
         <translation>Змішаний ланцюжок AnimeJaNai містить некоректні межі джерела.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="611"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="711"/>
         <source>No AnimeJaNai chain matches the original source dimensions and frame rate.</source>
         <translation>Жоден ланцюжок AnimeJaNai не відповідає початковим розмірам і частоті кадрів джерела.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="648"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1261"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="758"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1393"/>
         <source>The AnimeJaNai engine cache is currently in use by %1.</source>
         <translation>Кеш рушія AnimeJaNai зараз використовує %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="649"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1262"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="759"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1394"/>
         <source>another operation</source>
         <translation>інша операція</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="668"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="778"/>
         <source>The selected RIFE ensemble has no compiled content pin.</source>
         <translation>Вибраний ансамбль RIFE не має закріпленої контрольної суми.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="714"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="825"/>
         <source>A mixed AnimeJaNai chain contains an unsupported step type.</source>
         <translation>Змішаний ланцюжок AnimeJaNai містить непідтримуваний тип кроку.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="720"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="831"/>
         <source>Anime4K output scale must be 1, 2, or 4.</source>
         <translation>Вихідний масштаб Anime4K має дорівнювати 1, 2 або 4.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="725"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="836"/>
         <source>No Anime4K shader resolver is available.</source>
         <translation>Засіб завантаження шейдерів Anime4K недоступний.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="737"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="848"/>
         <source>The selected Anime4K shader program is missing or invalid.</source>
         <translation>Вибрана програма шейдерів Anime4K відсутня або некоректна.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="745"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="856"/>
         <source>The app-owned AnimeJaNai shader directory is unavailable or redirected.</source>
         <translation>Власна папка шейдерів AnimeJaNai недоступна або переспрямована.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="752"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="863"/>
         <source>An existing staged Anime4K shader is not the expected immutable app-owned program.</source>
         <translation>Наявний підготовлений шейдер Anime4K не відповідає очікуваній незмінній програмі застосунку.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="805"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="916"/>
         <source>A mixed AnimeJaNai ONNX step has no model reference.</source>
         <translation>Крок ONNX змішаного ланцюжка AnimeJaNai не містить посилання на модель.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="815"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="926"/>
         <source>A pinned spatial model referenced by the mixed chain is not installed.</source>
         <translation>Закріплену просторову модель зі змішаного ланцюжка не встановлено.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="823"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="934"/>
         <source>The mixed chain references ONNX model &apos;%1&apos;, which is missing or invalid.</source>
         <translation>Модель ONNX «%1» зі змішаного ланцюжка відсутня або некоректна.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="893"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1004"/>
         <source>RIFE runs after the mixed chain because it contains a temporal model.</source>
         <translation>RIFE запускається після змішаного ланцюжка, оскільки той містить часову модель.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="897"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1008"/>
         <source>Cannot read a supported temporal input shape from model &apos;%1&apos; for RIFE ordering. Set an explicit frame count or choose RIFE after upscaling.</source>
         <translation>Не вдалося визначити підтримувану форму часового входу моделі «%1» для впорядкування RIFE. Вкажіть кількість кадрів явно або виберіть запуск RIFE після масштабування.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="934"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1045"/>
         <source>The app-owned per-stage AnimeJaNai model directory is unavailable or redirected.</source>
         <translation>Власна папка моделей етапу AnimeJaNai недоступна або переспрямована.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="973"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1084"/>
         <source>The verified AnimeJaNai model could not be moved into its stage.</source>
         <translation>Не вдалося перемістити перевірену модель AnimeJaNai до відповідного етапу.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1018"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1129"/>
         <source>The app-owned per-stage RIFE model directory is unavailable or redirected.</source>
         <translation>Власна папка моделей етапу RIFE недоступна або переспрямована.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1095"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1154"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1207"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1266"/>
         <source>The selected AnimeJaNai chain has no processing steps.</source>
         <translation>Вибраний ланцюжок AnimeJaNai не містить кроків обробки.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1126"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1238"/>
         <source>A mixed chain ONNX step could not be staged.</source>
         <translation>Не вдалося підготувати крок ONNX змішаного ланцюжка.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1139"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1251"/>
         <source>The selected Anime4K shader program was not staged.</source>
         <translation>Вибрану програму шейдерів Anime4K не підготовлено.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="109"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1220"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="120"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1351"/>
         <source>The selected AnimeJaNai preset is not recognised.</source>
         <translation>Вибраний пресет AnimeJaNai не розпізнано.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1226"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1357"/>
         <source>The selected RIFE graph has no compiled content pin.</source>
         <translation>Вибраний граф RIFE не має закріпленої контрольної суми.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="673"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1231"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1389"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="783"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1362"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1514"/>
         <source>This installed AnimeJaNai runtime does not report support for the selected heavy RIFE model.</source>
         <translation>Це встановлене середовище AnimeJaNai не підтримує вибрану важку (Heavy) модель RIFE.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="685"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1273"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="795"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1405"/>
         <source>The installed TensorRT closure does not include its verified upstream trtexec executable.</source>
         <translation>Встановлене середовище TensorRT не містить перевіреного виконуваного файлу trtexec.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1294"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1307"/>
+        <source>TensorRT for RTX is not available on this platform.</source>
+        <translation>TensorRT for RTX недоступний на цій платформі.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1419"/>
         <source>The selected custom AnimeJaNai profile slot is empty or invalid.</source>
         <translation>Вибраний слот користувацького профілю AnimeJaNai порожній або некоректний.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1308"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1433"/>
         <source>Chain %1 in custom profile &apos;%2&apos; has no model or RIFE step.</source>
         <translation>Ланцюжок %1 у користувацькому профілі «%2» не містить моделі або кроку RIFE.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1315"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1440"/>
         <source>A model-only AnimeJaNai profile contains an unsupported step type.</source>
         <translation>Профіль AnimeJaNai лише з моделями містить непідтримуваний тип кроку.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1321"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1446"/>
         <source>Model step %1 in chain %2 of custom profile &apos;%3&apos; has no model.</source>
         <translation>Крок моделі %1 у ланцюжку %2 користувацького профілю «%3» не містить моделі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1333"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1458"/>
         <source>A pinned spatial model required by custom profile &apos;%1&apos; is not installed.</source>
         <translation>Закріплена просторова модель, потрібна користувацькому профілю «%1», не встановлена.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1358"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1483"/>
         <source>Custom profile &apos;%1&apos; references ONNX model &apos;%2&apos;, which is missing or invalid.</source>
         <translation>Користувацький профіль «%1» посилається на модель ONNX «%2», яка відсутня або некоректна.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1383"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1508"/>
         <source>The RIFE model &apos;%1&apos; in custom profile &apos;%2&apos; has no compiled content pin.</source>
         <translation>Модель RIFE «%1» у користувацькому профілі «%2» не має вбудованої контрольної суми вмісту.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1444"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1569"/>
         <source>A required built-in model is absent from the pinned catalogue.</source>
         <translation>Необхідна вбудована модель відсутня в закріпленому каталозі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1447"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1572"/>
         <source>A model required by the built-in AnimeJaNai profiles is not installed.</source>
         <translation>Модель, потрібна для вбудованих профілів AnimeJaNai, не встановлена.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1011"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1396"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1465"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1122"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1521"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1590"/>
         <source>The selected pinned RIFE graph is missing or corrupt.</source>
         <translation>Вибраний закріплений граф RIFE відсутній або пошкоджений.</translation>
     </message>
@@ -1126,28 +1203,28 @@
         <translation>Граф вибраної моделі відсутній або має неочікуваний розмір.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1496"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1621"/>
         <source>The selected custom ONNX model is not registered.</source>
         <translation>Вибрана користувацька модель ONNX не зареєстрована.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1502"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1627"/>
         <source>The selected custom ONNX model is missing or failed integrity verification.</source>
         <translation>Вибрана користувацька модель ONNX відсутня або не пройшла перевірку цілісності.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1521"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1646"/>
         <source>The selected spatial model is not in the pinned catalogue.</source>
         <translation>Вибрана просторова модель відсутня в закріпленому каталозі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1525"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1650"/>
         <source>The selected spatial model is not installed.</source>
         <translation>Вибрану просторову модель не встановлено.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1057"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1549"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1166"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1672"/>
         <source>The app-owned AnimeJaNai stats directory is unavailable or redirected.</source>
         <translation>Папка статистики AnimeJaNai недоступна або перенаправлена.</translation>
     </message>
@@ -1380,97 +1457,130 @@
 <context>
     <name>CompareRenderer</name>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="530"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="564"/>
         <source>This source exceeds the internal comparison target, so x2 upscaling candidates may render unchanged.</source>
         <translation>Це джерело перевищує внутрішню ціль порівняння, тому кандидати x2 апскейлінгу можуть відображатися без змін.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="183"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="213"/>
         <source>Building the comparison TensorRT engine</source>
         <translation>Збирання рушія TensorRT для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="115"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="116"/>
         <source>The comparison OpenGL context could not be created.</source>
         <translation>Не вдалося створити контекст OpenGL для порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="123"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="124"/>
         <source>The comparison OpenGL context is unavailable.</source>
         <translation>Контекст OpenGL для порівняння недоступний.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="231"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="187"/>
+        <source>TensorRT for RTX did not start and the core fell back to TensorRT; the comparison did not run the requested backend: %1</source>
+        <translation>TensorRT for RTX не запустився, і ядро перейшло на TensorRT; порівняння не виконало запитаний бекенд: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="208"/>
+        <source>Preparing the comparison TensorRT for RTX engine</source>
+        <translation>Підготовка рушія TensorRT for RTX для порівняння</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="209"/>
+        <source>Building the comparison TensorRT for RTX engine</source>
+        <translation>Збирання рушія TensorRT for RTX для порівняння</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="212"/>
+        <source>Preparing the comparison TensorRT engine</source>
+        <translation>Підготовка рушія TensorRT для порівняння</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="263"/>
         <source>The comparison OpenGL context was lost.</source>
         <translation>Контекст OpenGL для порівняння було втрачено.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="295"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="327"/>
         <source>The comparison command did not complete.</source>
         <translation>Команда порівняння не завершилася вчасно.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="299"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="331"/>
         <source>The comparison command failed: %1</source>
         <translation>Помилка виконання команди порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="472"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="505"/>
         <source>The previous AnimeJaNai comparison pipeline has not been detached.</source>
         <translation>Попередній конвеєр порівняння AnimeJaNai ще не від’єднано.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="479"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="512"/>
         <source>The comparison plan has no owned AnimeJaNai cache keys.</source>
         <translation>План порівняння не містить власних ключів кешу AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="492"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="525"/>
         <source>The AnimeJaNai stage cache %1 is already in use by %2.</source>
         <translation>Кеш етапу AnimeJaNai %1 уже використовує %2.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="108"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="109"/>
         <source>The comparison frame storage or geometry is unavailable.</source>
         <translation>Буфер кадру або геометрія для порівняння недоступні.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="132"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="133"/>
         <source>The comparison framebuffer could not be created.</source>
         <translation>Не вдалося створити буфер кадру (framebuffer) для порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="187"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="219"/>
         <source>The comparison model failed: %1</source>
         <translation>Помилка моделі під час порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="341"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="373"/>
         <source>The comparison output did not settle.</source>
         <translation>Вихідне зображення порівняння не стабілізувалося.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="257"/>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="396"/>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="560"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="289"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="428"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="594"/>
         <source>The comparison renderer failed: %1</source>
         <translation>Помилка рендерера порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="152"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="153"/>
         <source>The comparison source could not be loaded: %1</source>
         <translation>Не вдалося завантажити джерело для порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="378"/>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="388"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="410"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="420"/>
         <source>The decoded comparison source frame could not be read.</source>
         <translation>Не вдалося прочитати декодований вихідний кадр для порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="415"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="447"/>
         <source>The shader chain for %1 could not be resolved.</source>
         <translation>Не вдалося розв’язати ланцюжок шейдерів для %1.</translation>
+    </message>
+</context>
+<context>
+    <name>CompareWindow</name>
+    <message>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="90"/>
+        <source>Build comparison TensorRT for RTX engine</source>
+        <translation>Зібрати рушій TensorRT for RTX для порівняння</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="93"/>
+        <source>Build comparison TensorRT engine</source>
+        <translation>Зібрати рушій TensorRT для порівняння</translation>
     </message>
 </context>
 <context>
@@ -1819,12 +1929,12 @@
         <translation>Виявлений інструментарій не містить жодного підтримуваного середовища провайдера.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1425"/>
+        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1449"/>
         <source>The owned store holds no %1.</source>
         <translation>У власному сховищі відсутній %1.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1404"/>
+        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1428"/>
         <source>The plan is not resolved.</source>
         <translation>План не розв’язано.</translation>
     </message>
@@ -1844,7 +1954,7 @@
         <translation>Допоміжний процес підготовки відмовився надати опис системи (код %1).</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1359"/>
+        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1366"/>
         <source>The preparation helper&apos;s describe document is not JSON: %1</source>
         <translation>Відповідь допоміжного процесу підготовки не є коректним JSON: %1</translation>
     </message>
@@ -1859,12 +1969,17 @@
         <translation>Інструментарій підготовки не встановлено: для збирання рушія потрібні виконувані файли inspect, prep, verify та папка ONNX Runtime.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1320"/>
+        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1327"/>
         <source>The preparation was cancelled before it started.</source>
         <translation>Підготовку було скасовано до її початку.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1485"/>
+        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1386"/>
+        <source>The private Native pipeline does not carry the %1 backend, so no engine can be built for it.</source>
+        <translation>Приватний конвеєр Native не підтримує бекенд %1, тому для нього неможливо зібрати рушій.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1509"/>
         <source>The reference builder supplied %1 reference(s) for a %2-stage plan.</source>
         <translation>Генератор еталонів надав %1 еталон(ів) для плану з %2 етапів.</translation>
     </message>
@@ -1885,19 +2000,32 @@
     </message>
 </context>
 <context>
+    <name>NativeBuilder</name>
+    <message>
+        <location filename="../src/player/native/prepare/NativeBuilder.cpp" line="1486"/>
+        <source>the %1 backend is not carried by this private Native ABI</source>
+        <translation>бекенд %1 не підтримується цим приватним ABI Native</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/prepare/NativeBuilder.cpp" line="1529"/>
+        <source>build.provider &apos;%1&apos; is not carried by this private Native ABI</source>
+        <translation>build.provider «%1» не підтримується цим приватним ABI Native</translation>
+    </message>
+</context>
+<context>
     <name>NativeCapabilities</name>
     <message>
-        <location filename="../src/player/native/bundle/NativeCapabilities.cpp" line="33"/>
+        <location filename="../src/player/native/bundle/NativeCapabilities.cpp" line="38"/>
         <source>Native unavailable: no inference backend present (TensorRT or DirectML).</source>
         <translation>Нативна обробка недоступна: відсутній бекенд інференсу (TensorRT або DirectML).</translation>
     </message>
     <message>
-        <location filename="../src/player/native/bundle/NativeCapabilities.cpp" line="42"/>
+        <location filename="../src/player/native/bundle/NativeCapabilities.cpp" line="47"/>
         <source>Native unavailable: protocol mismatch (backend %1, player %2).</source>
         <translation>Нативна обробка недоступна: розбіжність протоколу (бекенд %1, плеєр %2).</translation>
     </message>
     <message>
-        <location filename="../src/player/native/bundle/NativeCapabilities.cpp" line="51"/>
+        <location filename="../src/player/native/bundle/NativeCapabilities.cpp" line="56"/>
         <source>Native unavailable: required capability not present.</source>
         <translation>Нативна обробка недоступна: відсутня необхідна підтримка середовища.</translation>
     </message>
@@ -1905,246 +2033,246 @@
 <context>
     <name>NativeMenu</name>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="47"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="50"/>
         <source>Active</source>
         <translation>Активний</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="231"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="234"/>
         <source>Backend: %1</source>
         <translation>Бекенд: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="54"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="57"/>
         <source>Deactivated</source>
         <translation>Деактивовано</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="195"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="198"/>
         <source>Disable only the private prepared Native pipeline.</source>
         <translation>Вимкнути лише підготовлений нативний конвеєр.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="314"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="317"/>
         <source>Effective: Original</source>
         <translation>Діє: Оригінал</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="311"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="314"/>
         <source>Effective: native</source>
         <translation>Діє: Нативний</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="204"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="207"/>
         <source>Enable prepared Native pipeline</source>
         <translation>Увімкнути підготовлений нативний конвеєр</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="50"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="53"/>
         <source>Failed</source>
         <translation>Помилка</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="156"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="159"/>
         <source>Frame interpolation. %1</source>
         <translation>Інтерполяція кадрів. %1</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="148"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="151"/>
         <source>Frame interpolation. %1 configured RIFE recipe(s) available.</source>
         <translation>Інтерполяція кадрів. Доступно налаштованих рецептів RIFE: %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="165"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="168"/>
         <source>Frame interpolation. No RIFE recipe is configured yet.</source>
         <translation>Інтерполяція кадрів. Рецепт RIFE ще не налаштовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="160"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="163"/>
         <source>Frame interpolation. No RIFE recipe is configured. %1</source>
         <translation>Інтерполяція кадрів. Рецепт RIFE не налаштовано. %1</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="32"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="35"/>
         <source>Full</source>
         <translation>Повний</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="34"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="37"/>
         <source>Heavy</source>
         <translation>Важкий (Heavy)</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="33"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="36"/>
         <source>Lite</source>
         <translation>Полегшений (Lite)</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="519"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="522"/>
         <source>Native</source>
         <translation>Нативний</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="528"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="531"/>
         <source>Native %1</source>
         <translation>Нативний %1</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="531"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="534"/>
         <source>Native requested · Original active — %1</source>
         <translation>Запитано нативний · Активний оригінал — %1</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="46"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="49"/>
         <source>Needs preparation</source>
         <translation>Потребує підготовки</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="395"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="398"/>
         <source>No RIFE recipe is configured for %1 yet. Configure one in Settings.</source>
         <translation>Для %1 ще не налаштовано рецепт RIFE. Налаштуйте його у Параметрах.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="399"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="402"/>
         <source>No RIFE recipe is configured for %1 yet. Configure one in Settings: %2</source>
         <translation>Для %1 ще не налаштовано рецепт RIFE. Налаштуйте його у Параметрах: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="223"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="226"/>
         <source>No backend available</source>
         <translation>Немає доступного бекенду</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="258"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="261"/>
         <source>No model catalogue has been provisioned, and no engine exists in this build to run one.</source>
         <translation>Каталог моделей не підготовлено, а в цій збірці немає рушія для його виконання.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="255"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="258"/>
         <source>No native models available</source>
         <translation>Нативні моделі недоступні</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="69"/>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="89"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="72"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="92"/>
         <source>No native processing engine is available in this build.</source>
         <translation>У цій збірці немає рушія нативної обробки.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="241"/>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="274"/>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="347"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="244"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="277"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="350"/>
         <source>Not available: %1</source>
         <translation>Недоступно: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="41"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="44"/>
         <source>Off</source>
         <translation>Вимкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="194"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="197"/>
         <source>Off (Original picture)</source>
         <translation>Вимкнено (Оригінальне зображення)</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="412"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="415"/>
         <source>Prepared Native</source>
         <translation>Підготовлений Нативний</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="420"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="423"/>
         <source>Prepared RIFE</source>
         <translation>Підготовлений RIFE</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="44"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="47"/>
         <source>Preparing</source>
         <translation>Підготовка</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="132"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="135"/>
         <source>Private prepared Native pipeline. %1</source>
         <translation>Приватний підготовлений нативний конвеєр. %1</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="42"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="45"/>
         <source>Probe</source>
         <translation>Перевірка</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="388"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="391"/>
         <source>RIFE v4.14 · %1</source>
         <translation>RIFE v4.14 · %1</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="384"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="387"/>
         <source>RIFE v4.14 · %1 · Ensemble</source>
         <translation>RIFE v4.14 · %1 · Ансамбль</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="213"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="216"/>
         <source>Request native processing. It cannot run here: %1 The picture stays on the Original pipeline.</source>
         <translation>Запитати нативну обробку. Вона не може бути запущена тут: %1 Зображення залишається на оригінальному конвеєрі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="290"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="293"/>
         <source>Requested recipe “%1” is not offered</source>
         <translation>Запитаний рецепт «%1» недоступний</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="243"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="246"/>
         <source>Run native processing on %1.</source>
         <translation>Запустити нативну обробку на %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="276"/>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="349"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="279"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="352"/>
         <source>Run the native recipe “%1”.</source>
         <translation>Запустити нативний рецепт «%1».</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="210"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="213"/>
         <source>Run the requested native chain.</source>
         <translation>Запустити запитаний нативний ланцюжок.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="49"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="52"/>
         <source>Suspended</source>
         <translation>Призупинено</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="319"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="322"/>
         <source>The filter reports this request is running.</source>
         <translation>Фільтр повідомляє, що цей запит виконується.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="322"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="325"/>
         <source>The request is stored but cannot be applied: %1</source>
         <translation>Запит збережено, але його неможливо застосувати: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="297"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="300"/>
         <source>The saved recipe “%1” is the current request but cannot be applied: %2</source>
         <translation>Збережений рецепт «%1» вибрано, але його неможливо застосувати: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="455"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="458"/>
         <source>Unavailable</source>
         <translation>Недоступно</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="52"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="55"/>
         <source>Unsupported</source>
         <translation>Не підтримується</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="515"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="518"/>
         <source>dropped %1</source>
         <translation>пропущено %1</translation>
     </message>
     <message>
-        <location filename="../src/player/native/status/NativeMenu.cpp" line="511"/>
+        <location filename="../src/player/native/status/NativeMenu.cpp" line="514"/>
         <source>interp %1</source>
         <translation>інтерп. %1</translation>
     </message>
@@ -2152,17 +2280,17 @@
 <context>
     <name>NativePrefs</name>
     <message>
-        <location filename="../src/player/native/bundle/NativePrefs.cpp" line="440"/>
+        <location filename="../src/player/native/bundle/NativePrefs.cpp" line="459"/>
         <source>Native processing is off.</source>
         <translation>Нативну обробку вимкнено.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/bundle/NativePrefs.cpp" line="466"/>
+        <location filename="../src/player/native/bundle/NativePrefs.cpp" line="485"/>
         <source>No native recipe is selected.</source>
         <translation>Нативний рецепт не вибрано.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/bundle/NativePrefs.cpp" line="497"/>
+        <location filename="../src/player/native/bundle/NativePrefs.cpp" line="516"/>
         <source>The backend %1 is not offered by this runtime.</source>
         <translation>Це середовище виконання не підтримує бекенд %1.</translation>
     </message>
@@ -2172,7 +2300,7 @@
         <translation>Не вдалося зберегти нативні налаштування.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/bundle/NativePrefs.cpp" line="456"/>
+        <location filename="../src/player/native/bundle/NativePrefs.cpp" line="475"/>
         <source>The native processing engine is not available.</source>
         <translation>Рушій нативної обробки недоступний.</translation>
     </message>
@@ -2183,7 +2311,7 @@
     </message>
     <message>
         <location filename="../src/player/native/bundle/NativePrefs.cpp" line="346"/>
-        <location filename="../src/player/native/bundle/NativePrefs.cpp" line="452"/>
+        <location filename="../src/player/native/bundle/NativePrefs.cpp" line="471"/>
         <source>The native runtime is not the module this launch selected.</source>
         <translation>Нативне середовище не є модулем, вибраним під час цього запуску.</translation>
     </message>
@@ -2203,7 +2331,12 @@
         <translation>Фабрика середовища не підтвердила готовність для цього джерела.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/bundle/NativePrefs.cpp" line="487"/>
+        <location filename="../src/player/native/bundle/NativePrefs.cpp" line="397"/>
+        <source>The backend %1 is not one the private native pipeline can run on this build.</source>
+        <translation>Бекенд %1 не належить до тих, на яких приватний нативний конвеєр може працювати в цій збірці.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/bundle/NativePrefs.cpp" line="506"/>
         <source>The recipe “%1” is not available.</source>
         <translation>Рецепт «%1» недоступний.</translation>
     </message>
@@ -2223,7 +2356,7 @@
         <translation>Збережений перемикач нативної обробки мав некоректне значення; його прочитано як «вимкнено».</translation>
     </message>
     <message>
-        <location filename="../src/player/native/bundle/NativePrefs.cpp" line="476"/>
+        <location filename="../src/player/native/bundle/NativePrefs.cpp" line="495"/>
         <source>The saved recipe “%1” is not in the current catalogue.</source>
         <translation>Збережений рецепт «%1» відсутній у поточному каталозі.</translation>
     </message>
@@ -2236,6 +2369,22 @@
         <location filename="../src/player/native/bundle/NativePrefs.cpp" line="135"/>
         <source>These native preferences were saved by another version of Mikai and were left unchanged.</source>
         <translation>Ці нативні налаштування були збережені іншою версією Mikai і залишені без змін.</translation>
+    </message>
+</context>
+<context>
+    <name>NativePreparationPlan</name>
+    <message>
+        <location filename="../src/player/native/prepare/NativePreparationPlan.cpp" line="481"/>
+        <source>recipe %1 asks for the %2 backend, which this private Native ABI does not carry; no other backend is substituted</source>
+        <translation>рецепт %1 вимагає бекенд %2, який не підтримується цим приватним ABI Native; інший бекенд не підставляється</translation>
+    </message>
+</context>
+<context>
+    <name>NativePreparedPlan</name>
+    <message>
+        <location filename="../src/player/native/prepare/NativePreparedPlan.cpp" line="131"/>
+        <source>The %1 backend is not carried by this private Native ABI.</source>
+        <translation>Бекенд %1 не підтримується цим приватним ABI Native.</translation>
     </message>
 </context>
 <context>
@@ -2410,68 +2559,83 @@
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="363"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="390"/>
         <source>AnimeJaNai  ›</source>
         <translation>AnimeJaNai  ›</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="364"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="391"/>
         <source>AnimeJaNai official filter</source>
         <translation>Офіційний фільтр AnimeJaNai</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="144"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="145"/>
         <source>BACKEND</source>
         <translation>БЕКЕНД</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="195"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="196"/>
         <source>Unavailable · %1</source>
         <translation>Недоступно · %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="196"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="197"/>
         <source>This model is no longer in the catalogue. The selection is kept until you choose another.</source>
         <translation>Цієї моделі більше немає в каталозі. Вибір зберігається, доки ви не оберете іншу.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="206"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="207"/>
         <source>Backend</source>
         <translation>Бекенд</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="264"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="277"/>
+        <source>TensorRT for RTX</source>
+        <translation>TensorRT for RTX</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="278"/>
         <source>DirectML</source>
         <translation>DirectML</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="167"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="288"/>
+        <source>In-process TensorRT-RTX 1.7 engine builds; CUDA GPUs, Windows only.</source>
+        <translation>Збирання рушіїв TensorRT-RTX 1.7 у процесі застосунку; GPU CUDA, лише Windows.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="294"/>
+        <source>TensorRT for RTX has no published runtime on this platform. The saved RTX request is kept but cannot run.</source>
+        <translation>TensorRT for RTX не має опублікованого середовища виконання на цій платформі. Збережений запит RTX зберігається, але не може виконуватися.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="168"/>
         <source>Disable only AnimeJaNai; Anime4K is unchanged.</source>
         <translation>Вимкнути лише AnimeJaNai; Anime4K залишається без змін.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="166"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="167"/>
         <source>Off</source>
         <translation>Вимкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="143"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="144"/>
         <source>RIFE MODELS</source>
         <translation>МОДЕЛІ RIFE</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="205"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="206"/>
         <source>RIFE models</source>
         <translation>Моделі RIFE</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="149"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="244"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="150"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="245"/>
         <source>RIFE v%1</source>
         <translation>RIFE v%1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="101"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="102"/>
         <source>RIFE v4.%1–v4.%2</source>
         <translation>RIFE v4.%1–v4.%2</translation>
     </message>
@@ -2481,23 +2645,23 @@
         <translation>Відмова замінити активний модуль mpv (%1) на інший (%2) під час роботи</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="142"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="143"/>
         <source>SPATIAL MODELS</source>
         <translation>ПРОСТОРОВІ МОДЕЛІ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="204"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="205"/>
         <source>Spatial models</source>
         <translation>Просторові моделі</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="263"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="276"/>
         <source>TensorRT</source>
         <translation>TensorRT</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="215"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="256"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="216"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="257"/>
         <source>Unavailable: %1</source>
         <translation>Недоступно: %1</translation>
     </message>
@@ -2763,40 +2927,55 @@
 <context>
     <name>SettingsDialog</name>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="96"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="105"/>
+        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="99"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="116"/>
         <source>%1 (not available)</source>
         <translation>%1 (недоступно)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="111"/>
+        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="114"/>
         <source>Combination %1 is already assigned to %2.</source>
         <translation>Комбінація %1 вже призначена для %2.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="106"/>
+        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="109"/>
         <source>Key %1 is reserved by the player and cannot be assigned to preset “%2”.</source>
         <translation>Клавіша %1 зарезервована плеєром і не може бути призначена пресету «%2».</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="124"/>
+        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="127"/>
         <source>Saved combination %1 is already assigned to %2; it was kept there and cleared for “%3”.</source>
         <translation>Збережена комбінація %1 вже призначена для %2; її збережено там і очищено для «%3».</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="119"/>
+        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="122"/>
         <source>Saved key %1 is reserved by the player; the binding for “%2” was cleared.</source>
         <translation>Збережена клавіша %1 зарезервована плеєром; прив’язку для «%2» було очищено.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="87"/>
+        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="90"/>
         <source>preset “%1”</source>
         <translation>пресет «%1»</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="92"/>
+        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="95"/>
         <source>the player</source>
         <translation>плеєр</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="40"/>
+        <source>Unsupported backend</source>
+        <translation>Непідтримуваний бекенд</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="42"/>
+        <source>%1 — unavailable for Native</source>
+        <translation>%1 — недоступно для Native</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="46"/>
+        <source>The private Native workflow runs only TensorRT and DirectML. This saved backend is kept but cannot run here; select TensorRT or DirectML. TensorRT for RTX is available from the Standard AnimeJaNai runtime.</source>
+        <translation>Приватний робочий процес Native працює лише з TensorRT і DirectML. Цей збережений бекенд зберігається, але не може працювати тут; виберіть TensorRT або DirectML. TensorRT for RTX доступний у стандартному середовищі AnimeJaNai.</translation>
     </message>
 </context>
 <context>
@@ -3071,85 +3250,85 @@ If a portable folder was moved, disable startup from the old location before mov
     <name>mikai::app::AnimeJanaiManagerPanel</name>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="236"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2051"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2062"/>
         <source>Custom RealESRGAN / ONNX spatial models</source>
         <translation>Користувацькі просторові моделі RealESRGAN / ONNX</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="245"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2053"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2064"/>
         <source>Import compatible RealESRGAN, Compact (SRVGGNet), SPAN, DAT, or SwinIR .onnx graph (4D 1x3xHxW RGB). Imported models appear immediately in the player&apos;s ANIMEJANAI -&gt; Spatial models menu, Compare window, Benchmark tab, and custom profile chains.</source>
         <translation>Імпортуйте сумісний граф .onnx RealESRGAN, Compact (SRVGGNet), SPAN, DAT або SwinIR (4D 1x3xHxW RGB). Імпортовані моделі одразу з’являються в меню програвача ANIMEJANAI -&gt; Просторові моделі, вікні порівняння, вкладці бенчмарку та ланцюжках користувацьких профілів.</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="267"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2061"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2072"/>
         <source>Import .onnx Model…</source>
         <translation>Імпортувати модель .onnx…</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="271"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2062"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2073"/>
         <source>Remove Selected</source>
         <translation>Видалити вибране</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="275"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2063"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2074"/>
         <source>Open Models Folder</source>
         <translation>Відкрити папку моделей</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="289"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2066"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2077"/>
         <source>Optional external directory containing additional .onnx models…</source>
         <translation>Необов’язковий зовнішній каталог із додатковими моделями .onnx…</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="291"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2064"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2075"/>
         <source>External models folder</source>
         <translation>Папка зовнішніх моделей</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="292"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2067"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2078"/>
         <source>Browse…</source>
         <translation>Огляд…</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="295"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2068"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2079"/>
         <source>Clear</source>
         <translation>Очистити</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="314"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2070"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2081"/>
         <source>Built-in preset variants &amp; TensorRT engine settings</source>
         <translation>Варіанти вбудованих пресетів і налаштування рушія TensorRT</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="319"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2072"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2083"/>
         <source>Switch built-in Quality, Balanced, and Performance profiles between Standard (V3.1) and Sharp (V3.1Sharp1) models, and customize how TensorRT compiles ONNX graphs.</source>
         <translation>Перемикайте вбудовані профілі якості, балансу та швидкодії між моделями Standard (V3.1) і Sharp (V3.1Sharp1) та налаштовуйте компіляцію графів ONNX у TensorRT.</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="342"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2074"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2085"/>
         <source>Quality preset (Slot 1001)</source>
         <translation>Пресет якості (слот 1001)</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="345"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2075"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2086"/>
         <source>Balanced preset (Slot 1002)</source>
         <translation>Пресет балансу (слот 1002)</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="348"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2076"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2087"/>
         <source>Performance preset (Slot 1003)</source>
         <translation>Пресет швидкодії (слот 1003)</translation>
     </message>
@@ -3170,7 +3349,7 @@ If a portable folder was moved, disable startup from the old location before mov
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="373"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2078"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2089"/>
         <source>TensorRT engine type</source>
         <translation>Тип рушія TensorRT</translation>
     </message>
@@ -3206,626 +3385,631 @@ If a portable folder was moved, disable startup from the old location before mov
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="385"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2079"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2090"/>
         <source>Builder optimization level</source>
         <translation>Рівень оптимізації збирача</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="408"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2080"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2091"/>
         <source>Dynamic minimum resolution</source>
         <translation>Мінімальна динамічна роздільність</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="416"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2081"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2092"/>
         <source>Dynamic optimal resolution</source>
         <translation>Оптимальна динамічна роздільність</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="424"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2082"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2093"/>
         <source>Dynamic maximum resolution</source>
         <translation>Максимальна динамічна роздільність</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="439"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2083"/>
-        <source>trtexec engine arguments</source>
-        <translation>Аргументи рушія trtexec</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="445"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2084"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="456"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2106"/>
         <source>Import animejanai.conf…</source>
         <translation>Імпортувати animejanai.conf…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="448"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2085"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="459"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2107"/>
         <source>Export animejanai.conf…</source>
         <translation>Експортувати animejanai.conf…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="451"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2086"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="462"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2108"/>
         <source>Reset Defaults</source>
         <translation>Відновити типові значення</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="466"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2088"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="477"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2110"/>
         <source>Custom multi-chain profile editor (Slots 1–10)</source>
         <translation>Редактор багатоланцюжкових профілів (слоти 1–10)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="486"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2093"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="497"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2115"/>
         <source>Profile slot</source>
         <translation>Слот профілю</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="492"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2094"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="503"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2116"/>
         <source>Activate / Reset Slot</source>
         <translation>Активувати / скинути слот</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="495"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2095"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="506"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2117"/>
         <source>Clone From…</source>
         <translation>Клонувати з…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="498"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2096"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="509"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2118"/>
         <source>Clear Slot</source>
         <translation>Очистити слот</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="502"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2097"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="513"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2119"/>
         <source>Import .pconf…</source>
         <translation>Імпортувати .pconf…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="505"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2098"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="516"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2120"/>
         <source>Export .pconf…</source>
         <translation>Експортувати .pconf…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="531"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2099"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="542"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2121"/>
         <source>Profile name</source>
         <translation>Назва профілю</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="541"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2100"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="552"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2122"/>
         <source>Active chain</source>
         <translation>Активний ланцюжок</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="542"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2101"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="553"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2123"/>
         <source>Add Chain</source>
         <translation>Додати ланцюжок</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="545"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2102"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="556"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2124"/>
         <source>Remove Chain</source>
         <translation>Видалити ланцюжок</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="548"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1403"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2103"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="559"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1414"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2125"/>
         <source>Move Up</source>
         <translation>Перемістити вгору</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="551"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1409"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2104"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="562"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1420"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2126"/>
         <source>Move Down</source>
         <translation>Перемістити вниз</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="575"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2105"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="586"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2127"/>
         <source>Min resolution (WxH)</source>
         <translation>Мін. роздільність (ШxВ)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="580"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2106"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="591"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2128"/>
         <source>Max resolution (WxH)</source>
         <translation>Макс. роздільність (ШxВ)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="584"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="595"/>
         <source>0 (Any)</source>
         <translation>0 (будь-який)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="586"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2107"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="597"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2129"/>
         <source>Min FPS</source>
         <translation>Мін. FPS</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="590"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="601"/>
         <source>0 (Unbounded)</source>
         <translation>0 (без обмежень)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="592"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2108"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="603"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2130"/>
         <source>Max FPS</source>
         <translation>Макс. FPS</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="660"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2117"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="671"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2139"/>
         <source>Chain RIFE model</source>
         <translation>Модель RIFE ланцюжка</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="678"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2118"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="689"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2140"/>
         <source>Interpolation FPS factor</source>
         <translation>Множник FPS інтерполяції</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="686"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2119"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="697"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2141"/>
         <source>Scene change threshold</source>
         <translation>Поріг зміни сцени</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="688"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2120"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="699"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2142"/>
         <source>RIFE ensemble</source>
         <translation>Ансамбль RIFE</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1573"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1584"/>
         <source>Model registration is unavailable.</source>
         <translation>Реєстрація моделей недоступна.</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="355"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2077"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2088"/>
         <source>Backend logging</source>
         <translation>Журналювання бекенду</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="471"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2090"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="482"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2112"/>
         <source>Build custom AnimeJaNai profile slots with resolution/FPS activation conditions, ordered ONNX and Anime4K processing steps, input resizing, and per-chain RIFE interpolation. Active custom slots appear in the player&apos;s ANIMEJANAI menu.</source>
         <translation>Створюйте власні профілі AnimeJaNai з умовами активації за роздільністю та FPS, послідовними кроками ONNX і Anime4K, зміною розміру вхідного кадру та інтерполяцією RIFE для кожного ланцюжка. Активні слоти доступні в меню ANIMEJANAI плеєра.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="626"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2114"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="637"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2136"/>
         <source>Processing steps in this chain</source>
         <translation>Кроки обробки в цьому ланцюжку</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="628"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2115"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="639"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2137"/>
         <source>Add Processing Step</source>
         <translation>Додати крок обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="642"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2116"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="653"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2138"/>
         <source>RIFE interpolation</source>
         <translation>Інтерполяція RIFE</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="691"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2121"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="702"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2143"/>
         <source>RIFE before upscaling</source>
         <translation>RIFE перед масштабуванням</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="842"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1147"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1852"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="853"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1158"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1863"/>
         <source>Slot %1: %2</source>
         <translation>Слот %1: %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="843"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1145"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="854"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1156"/>
         <source>Custom Profile</source>
         <translation>Користувацький профіль</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1052"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1063"/>
         <source>Ready</source>
         <translation>Готово</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1061"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1072"/>
         <source>%1 custom</source>
         <translation>%1 користувацьких</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1149"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1160"/>
         <source>Slot %1 (Unassigned)</source>
         <translation>Слот %1 (не призначений)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1193"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1204"/>
         <source>Chain %1 (%2 -&gt; %3)</source>
         <translation>Ланцюжок %1 (%2 -&gt; %3)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1196"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1207"/>
         <source>inf</source>
         <translation>∞</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1336"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1547"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1347"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1558"/>
         <source>(None)</source>
         <translation>(Немає)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1354"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1365"/>
         <source>0 (Off)</source>
         <translation>0 (вимк.)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1293"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1304"/>
         <source>Step %1</source>
         <translation>Крок %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="600"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2109"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="439"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2094"/>
+        <source>TensorRT engine arguments</source>
+        <translation>Аргументи рушія TensorRT</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="611"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2131"/>
         <source>Enable ONNX upscale steps</source>
         <translation>Увімкнути кроки масштабування ONNX</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="607"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2111"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="618"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2133"/>
         <source>Registered ONNX model identifier; leave empty to disable the temporal fix.</source>
         <translation>Ідентифікатор зареєстрованої моделі ONNX; залиште порожнім, щоб вимкнути часове коригування.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="608"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2110"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="619"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2132"/>
         <source>Temporal fix ONNX model</source>
         <translation>Модель ONNX для часового коригування</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="613"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2112"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="624"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2134"/>
         <source>Temporal fix scene threshold</source>
         <translation>Порогове значення сцени для часового коригування</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="614"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2113"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="625"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2135"/>
         <source>Temporal fix before upscaling</source>
         <translation>Часове коригування перед масштабуванням</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1047"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1058"/>
         <source>Not registered: %1</source>
         <translation>Не зареєстровано: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1048"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1059"/>
         <source>select and Import to register</source>
         <translation>виберіть і натисніть «Імпортувати», щоб зареєструвати</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1051"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1062"/>
         <source>Ready (external pin)</source>
         <translation>Готово (зовнішній контрольний запис)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1298"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1344"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1309"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1355"/>
         <source>ONNX model</source>
         <translation>Модель ONNX</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1300"/>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1344"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1311"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1355"/>
         <source>Anime4K preset</source>
         <translation>Пресет Anime4K</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1303"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1314"/>
         <source>Step %1 type</source>
         <translation>Тип кроку %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1346"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1357"/>
         <source>Step %1 Anime4K preset</source>
         <translation>Пресет Anime4K кроку %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1347"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1358"/>
         <source>Step %1 ONNX model</source>
         <translation>Модель ONNX кроку %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1350"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1361"/>
         <source>Input resize height (px)</source>
         <translation>Висота вхідного кадру (пікс.)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1356"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1367"/>
         <source>Step %1 input resize height</source>
         <translation>Висота вхідного кадру кроку %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1360"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1371"/>
         <source>Input resize percentage</source>
         <translation>Масштаб вхідного кадру (%)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1366"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1377"/>
         <source>Step %1 input resize percentage</source>
         <translation>Масштаб вхідного кадру кроку %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1372"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1383"/>
         <source>0 (Auto)</source>
         <translation>0 (авто)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1373"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1384"/>
         <source>Use 0 to detect the window from ONNX, 1 for a single frame, or an odd number up to 15.</source>
         <translation>Використовуйте 0, щоб визначити вікно з ONNX, 1 — для одного кадру, або непарне число до 15.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1375"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1386"/>
         <source>Temporal window frames</source>
         <translation>Кадри часового вікна</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1380"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1391"/>
         <source>Set to 0 to disable scene-cut protection.</source>
         <translation>Установіть 0, щоб вимкнути захист від зміни сцени.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1382"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1393"/>
         <source>Temporal scene threshold</source>
         <translation>Часовий поріг сцени</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1390"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1401"/>
         <source>Anime4K output scale</source>
         <translation>Вихідний масштаб Anime4K</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1393"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1404"/>
         <source>%1×</source>
         <translation>%1×</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1396"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1407"/>
         <source>Step %1 Anime4K output scale</source>
         <translation>Вихідний масштаб Anime4K кроку %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1405"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1416"/>
         <source>Move step %1 up</source>
         <translation>Перемістити крок %1 угору</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1411"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1422"/>
         <source>Move step %1 down</source>
         <translation>Перемістити крок %1 униз</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1415"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1426"/>
         <source>Remove step %1</source>
         <translation>Видалити крок %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1416"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1427"/>
         <source>Remove</source>
         <translation>Видалити</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1437"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1448"/>
         <source>Step type</source>
         <translation>Тип кроку</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1518"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1529"/>
         <source>Slot %1</source>
         <translation>Слот %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1582"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1593"/>
         <source>Registering external ONNX model…</source>
         <translation>Реєстрація зовнішньої моделі ONNX…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1583"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1594"/>
         <source>Registering owned ONNX model…</source>
         <translation>Реєстрація власної моделі ONNX…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1610"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1621"/>
         <source>External ONNX model registered.</source>
         <translation>Зовнішню модель ONNX зареєстровано.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1611"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1622"/>
         <source>Owned ONNX model registered.</source>
         <translation>Власну модель ONNX зареєстровано.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1622"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1633"/>
         <source>Import RealESRGAN / ONNX Spatial Models</source>
         <translation>Імпорт просторових моделей RealESRGAN / ONNX</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1623"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1634"/>
         <source>ONNX Models (*.onnx)</source>
         <translation>Моделі ONNX (*.onnx)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1626"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1637"/>
         <source>Model import is unavailable.</source>
         <translation>Імпорт моделей недоступний.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1635"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1646"/>
         <source>Importing ONNX models…</source>
         <translation>Імпортування моделей ONNX…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1641"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1652"/>
         <source>Importing ONNX model…</source>
         <translation>Імпортування моделі ONNX…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1665"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1676"/>
         <source>Imported %1 custom ONNX model(s).</source>
         <translation>Імпортовано користувацьких моделей ONNX: %1.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1691"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1702"/>
         <source>Removing custom ONNX model…</source>
         <translation>Видалення користувацької моделі ONNX…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1708"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1719"/>
         <source>Removed custom ONNX model &apos;%1&apos;.</source>
         <translation>Користувацьку модель ONNX «%1» видалено.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1721"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1732"/>
         <source>Could not open the custom models folder.</source>
         <translation>Не вдалося відкрити папку користувацьких моделей.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1728"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1739"/>
         <source>Select External ONNX Models Directory</source>
         <translation>Вибір каталогу зовнішніх моделей ONNX</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1749"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1760"/>
         <source>Import animejanai.conf</source>
         <translation>Імпорт animejanai.conf</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1750"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1761"/>
         <source>AnimeJaNai Config (*.conf *.ini);;All Files (*)</source>
         <translation>Конфігурація AnimeJaNai (*.conf *.ini);;Усі файли (*)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1763"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1774"/>
         <source>Imported configuration from &apos;%1&apos;.</source>
         <translation>Імпортовано конфігурацію з «%1».</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1770"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1781"/>
         <source>Export animejanai.conf</source>
         <translation>Експорт animejanai.conf</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1771"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1782"/>
         <source>AnimeJaNai Config (*.conf *.ini)</source>
         <translation>Конфігурація AnimeJaNai (*.conf *.ini)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1778"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1789"/>
         <source>Exported configuration to &apos;%1&apos;.</source>
         <translation>Конфігурацію експортовано до «%1».</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1789"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1800"/>
         <source>Reset AnimeJaNai settings and custom slots to defaults.</source>
         <translation>Налаштування AnimeJaNai та користувацькі слоти скинуто до типових значень.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1798"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1809"/>
         <source>Custom Slot %1</source>
         <translation>Користувацький слот %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1830"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1841"/>
         <source>Built-in: %1</source>
         <translation>Вбудований: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1834"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1845"/>
         <source>%1 (Copy)</source>
         <translation>%1 (копія)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1857"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1868"/>
         <source>%1 (Slot %2)</source>
         <translation>%1 (слот %2)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1889"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1900"/>
         <source>Import Profile (.pconf)</source>
         <translation>Імпорт профілю (.pconf)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1890"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1901"/>
         <source>AnimeJaNai Profile (*.pconf *.conf);;All Files (*)</source>
         <translation>Профіль AnimeJaNai (*.pconf *.conf);;Усі файли (*)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1916"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1927"/>
         <source>Imported profile &apos;%1&apos; into Slot %2.</source>
         <translation>Профіль «%1» імпортовано до слота %2.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1928"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1939"/>
         <source>Export Profile (.pconf)</source>
         <translation>Експорт профілю (.pconf)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1929"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1940"/>
         <source>AnimeJaNai Profile (*.pconf)</source>
         <translation>Профіль AnimeJaNai (*.pconf)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1936"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1947"/>
         <source>Exported Slot %1 to &apos;%2&apos;.</source>
         <translation>Слот %1 експортовано до «%2».</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2057"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2068"/>
         <source>Model</source>
         <translation>Модель</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2057"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2068"/>
         <source>Architecture</source>
         <translation>Архітектура</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2057"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2068"/>
         <source>Scale</source>
         <translation>Масштаб</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2057"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2068"/>
         <source>Size</source>
         <translation>Розмір</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2057"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2068"/>
         <source>Status</source>
         <translation>Стан</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2096"/>
+        <source>Classic TensorRT passes these to trtexec. TensorRT for RTX builds the ONNX graph in-process and honors only --minShapes, --optShapes, --maxShapes, --builderOptimizationLevel and --memPoolSize=workspace:. Precision comes from the ONNX graph, trtexec is not used, --skipInference does not apply to an in-process build and is removed from RTX plans, and any other flag is rejected for that backend instead of being silently ignored.</source>
+        <translation>Класичний TensorRT передає їх trtexec. TensorRT for RTX збирає граф ONNX у процесі застосунку та враховує лише --minShapes, --optShapes, --maxShapes, --builderOptimizationLevel і --memPoolSize=workspace:. Точність береться з графа ONNX, trtexec не використовується, --skipInference не застосовується до збирання в процесі застосунку й вилучається з планів RTX, а будь-який інший прапорець для цього бекенду відхиляється, а не ігнорується мовчки.</translation>
     </message>
 </context>
 <context>
@@ -3856,75 +4040,90 @@ If a portable folder was moved, disable startup from the old location before mov
         <translation>Не вдалося виділити буфер кадрів для бенчмарку.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="214"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="169"/>
+        <source>TensorRT for RTX</source>
+        <translation>TensorRT for RTX</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="170"/>
+        <source>TensorRT</source>
+        <translation>TensorRT</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="220"/>
         <source>Playback failed: %1</source>
         <translation>Помилка відтворення: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="276"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="250"/>
+        <source>%1 did not start and the core fell back to TensorRT; the requested backend was not measured.</source>
+        <translation>%1 не запустився, і ядро перейшло на TensorRT; запитаний бекенд не вимірювався.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="302"/>
         <source>Waiting for video output</source>
         <translation>Очікування виведення відео</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="319"/>
+        <source>%1 engine build failed.</source>
+        <translation>Збирання рушія %1 не вдалося.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="327"/>
+        <source>%1 engine build timed out.</source>
+        <translation>Час збирання рушія %1 вичерпано.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="333"/>
+        <source>%1 did not confirm the selected slot is ready.</source>
+        <translation>%1 не підтвердив, що вибраний слот готовий.</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="65"/>
         <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="91"/>
         <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="122"/>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="284"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="310"/>
         <source>Benchmark cancelled.</source>
         <translation>Бенчмарк скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="292"/>
-        <source>TensorRT engine build failed.</source>
-        <translation>Не вдалося зібрати рушій TensorRT.</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="299"/>
-        <source>TensorRT engine build timed out.</source>
-        <translation>Перевищено час очікування збірки рушія TensorRT.</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="305"/>
-        <source>TensorRT did not confirm the selected slot is ready.</source>
-        <translation>TensorRT не підтвердив готовність вибраного слота.</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="306"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="335"/>
         <source>Timed out waiting for rendered video frames.</source>
         <translation>Перевищено час очікування відтворених відеокадрів.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="315"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="344"/>
         <source>Could not read rendered-frame information.</source>
         <translation>Не вдалося прочитати відомості про відтворений кадр.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="324"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="353"/>
         <source>Rendering failed: %1</source>
         <translation>Помилка рендерингу: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="332"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="361"/>
         <source>OpenGL rendering failed (0x%1).</source>
         <translation>Помилка рендерингу OpenGL (0x%1).</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="343"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="372"/>
         <source>Measuring throughput</source>
         <translation>Вимірювання швидкості</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="352"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="381"/>
         <source>No new video frames were rendered during measurement.</source>
         <translation>Під час вимірювання не відтворено жодного нового відеокадру.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="366"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="395"/>
         <source>mpv: %1</source>
         <translation>mpv: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="369"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="398"/>
         <source>Benchmark failed: %1</source>
         <translation>Помилка бенчмарку: %1</translation>
     </message>
@@ -3932,529 +4131,564 @@ If a portable folder was moved, disable startup from the old location before mov
 <context>
     <name>mikai::app::ComponentStoreTab</name>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1250"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1252"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1255"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1458"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1461"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1464"/>
         <source>%1 MB</source>
         <translation>%1 МБ</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1124"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1190"/>
         <source>%1 RIFE interpolation model(s) failed verification.</source>
         <translation>Моделей інтерполяції RIFE не пройшли перевірку: %1.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1129"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1195"/>
         <source>%1 elements failed verification: %2</source>
         <translation>Елементів не пройшли перевірку (%1): %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1097"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1155"/>
         <source>%1 elements verified, none changed.</source>
         <translation>Перевірено елементів: %1, без змін.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="339"/>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="364"/>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1147"/>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1159"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="411"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="435"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1213"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1225"/>
         <source>%1 installation failed: %2</source>
         <translation>Не вдалося встановити %1: %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1127"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1193"/>
         <source>%1 spatial model(s) failed verification.</source>
         <translation>Просторові моделі не пройшли перевірку: %1.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1265"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1474"/>
         <source>%1/%2 installed · %3/%2 verified</source>
         <translation>%1/%2 встановлено · %3/%2 перевірено</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1262"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1471"/>
         <source>not installed</source>
         <translation>не встановлено</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1275"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1484"/>
         <source>installed · recommended for this PC</source>
         <translation>встановлено · рекомендовано для цього ПК</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1276"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1485"/>
         <source>not installed · recommended for this PC</source>
         <translation>не встановлено · рекомендовано для цього ПК</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1283"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1503"/>
         <source>downloaded · runtime missing</source>
         <translation>завантажено · відсутнє середовище виконання</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1190"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1256"/>
         <source>Verifying installed components... Downloaded: %1/%2 · Verified: %3/%2</source>
         <translation>Перевірка встановлених компонентів... Завантажено: %1/%2 · Перевірено: %3/%2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1195"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1261"/>
         <source>Installed: %1/%2 · Verified: %3/%2</source>
         <translation>Встановлено: %1/%2 · Перевірено: %3/%2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1200"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1266"/>
         <source>Installed: %1/%2 · Failed: %3</source>
         <translation>Встановлено: %1/%2 · Помилка: %3</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="654"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="709"/>
         <source>A model download needs the backend client and a runner.</source>
         <translation>Для завантаження моделі потрібні клієнт API та виконавець фонових задач.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="656"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="793"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="690"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="844"/>
         <source>All five pinned HD and SD graphs required by the built-in AnimeJaNai profiles.</source>
         <translation>Усі п’ять закріплених HD та SD графів, потрібних для вбудованих профілів AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="211"/>
-        <source>AnimeJaNai DirectML backend closure</source>
-        <translation>Пакет середовища AnimeJaNai DirectML</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="210"/>
-        <source>AnimeJaNai TensorRT / CUDA backend closure</source>
-        <translation>Пакет середовища AnimeJaNai TensorRT / CUDA</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="503"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="815"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="519"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="866"/>
         <source>AnimeJaNai backend used by Apply changes and Verify</source>
         <translation>Бекенд AnimeJaNai для дій «Застосувати зміни» та «Перевірити»</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="821"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="875"/>
         <source>AnimeJaNai backend:</source>
         <translation>Бекенд AnimeJaNai:</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="335"/>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="431"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="407"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="502"/>
         <source>AnimeJaNai runtime installation failed.</source>
         <translation>Не вдалося встановити середовище виконання AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="655"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="792"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1309"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="689"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="843"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1529"/>
         <source>AnimeJaNai upscaling models</source>
         <translation>Моделі масштабування AnimeJaNai</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="799"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="850"/>
         <source>Apply changes</source>
         <translation>Застосувати зміни</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="800"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="851"/>
         <source>Apply selected component changes</source>
         <translation>Застосувати вибрані зміни компонентів</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1451"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1684"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1683"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1920"/>
         <source>Local AnimeJaNai runtime files</source>
         <translation>Локальні файли середовища AnimeJaNai</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1680"/>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="498"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1344"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1916"/>
         <source>AnimeJaNai runtime and backend dependencies</source>
         <translation>Середовище AnimeJaNai та залежності бекенду</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1682"/>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="395"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="431"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1308"/>
+        <source>TensorRT for RTX runtime</source>
+        <translation>Середовище TensorRT for RTX</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="810"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1493"/>
+        <source>TensorRT for RTX is available only on Windows.</source>
+        <translation>TensorRT for RTX доступний лише у Windows.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1269"/>
+        <source>TensorRT for RTX</source>
+        <translation>TensorRT for RTX</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1280"/>
+        <source>TensorRT for RTX (in-process)</source>
+        <translation>TensorRT for RTX (у процесі застосунку)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1281"/>
+        <source>TensorRT for RTX (unavailable on this platform)</source>
+        <translation>TensorRT for RTX (недоступний на цій платформі)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1303"/>
+        <source>DirectML runtime</source>
+        <translation>Середовище DirectML</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1304"/>
+        <source>Windows GPU acceleration for AnimeJaNai through DirectML and ONNX Runtime.</source>
+        <translation>Прискорення GPU у Windows для AnimeJaNai через DirectML і ONNX Runtime.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1309"/>
+        <source>Runs AnimeJaNai in-process with NVIDIA TensorRT for RTX 1.7; installs the Aji dispatcher and NVIDIA&apos;s RTX overlay. No classic CUDA or kernel pack is used.</source>
+        <translation>Запускає AnimeJaNai у процесі застосунку з NVIDIA TensorRT for RTX 1.7; встановлює диспетчер Aji та оверлей RTX від NVIDIA. Класичний CUDA чи пакет ядер не використовується.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1491"/>
+        <source>unavailable</source>
+        <translation>недоступно</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1918"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="466"/>
         <source>Local AnimeJaNai runtime and backend dependencies</source>
         <translation>Локальне середовище AnimeJaNai та залежності бекенду</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1690"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1926"/>
         <source>Queued: %1</source>
         <translation>У черзі: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1694"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1930"/>
         <source>copied</source>
         <translation>скопійовано</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1695"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1931"/>
         <source>downloaded</source>
         <translation>завантажено</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1704"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1940"/>
         <source>Downloading %1...</source>
         <translation>Завантаження %1...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1709"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1945"/>
         <source>Extracting %1 (%2 of %3 %4)...</source>
         <translation>Розпакування %1 (%2 із %3 %4)...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1714"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1950"/>
         <source>Extracting %1...</source>
         <translation>Розпакування %1...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1719"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1955"/>
         <source>Installing %1 (%2 of %3 %4)...</source>
         <translation>Встановлення %1 (%2 із %3 %4)...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1724"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1960"/>
         <source>Installing %1...</source>
         <translation>Встановлення %1...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1729"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1965"/>
         <source>Verifying %1 (%2 of %3 %4)...</source>
         <translation>Перевірка %1 (%2 із %3 %4)...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1734"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1970"/>
         <source>Verifying %1...</source>
         <translation>Перевірка %1...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1737"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1973"/>
         <source>Finishing %1...</source>
         <translation>Завершення %1...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1747"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1983"/>
         <source>Failed %1</source>
         <translation>Не вдалося: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1748"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1984"/>
         <source>Failed %1: %2</source>
         <translation>Не вдалося: %1: %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1751"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1987"/>
         <source>Cancelled %1</source>
         <translation>Скасовано: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1767"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1773"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="2003"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="2009"/>
         <source>Installed: %1</source>
         <translation>Встановлено: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="776"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="831"/>
         <source>Backend components</source>
         <translation>Компоненти бекенду</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="418"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="422"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="434"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="438"/>
         <source>Upscaling runtime and GPU components</source>
         <translation>Компоненти ШІ та GPU</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="436"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="452"/>
         <source>Upscaling models (%1 of %2 missing)</source>
         <translation>Моделі масштабування (бракує %1 із %2)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="441"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="457"/>
         <source>For AI upscaling, download these optional components. Normal playback works without them.</source>
         <translation>Для ШІ-масштабування потрібні ці додаткові компоненти. Для звичайного перегляду — ні.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="443"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="459"/>
         <source>Download these optional components (%1)?</source>
         <translation>Завантажити ці додаткові компоненти (%1)?</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="651"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="788"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1298"/>
         <source>Required for AnimeJaNai on Linux with an NVIDIA GPU; DirectML is Windows-only.</source>
         <translation>Потрібно для AnimeJaNai в Linux із графічним процесором NVIDIA; DirectML доступний лише у Windows.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="809"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="860"/>
         <source>Cancel</source>
         <translation>Скасувати</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="810"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="861"/>
         <source>Cancel the running download</source>
         <translation>Скасувати поточне завантаження</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1157"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1223"/>
         <source>Cancelling the running downloads...</source>
         <translation>Скасування активних завантажень...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1136"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1202"/>
         <source>Checking selected component state needs a runner.</source>
         <translation>Для перевірки стану компонентів потрібен виконавець фонових задач.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1074"/>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1171"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1132"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1237"/>
         <source>Checking selected components...</source>
         <translation>Перевірка вибраних компонентів...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="808"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="859"/>
         <source>Choose a local AnimeJaNai runtime directory and install its selected backend closure</source>
         <translation>Вибрати локальну папку середовища AnimeJaNai та встановити обраний бекенд</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="777"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="832"/>
         <source>Choose which recommended components, AnimeJaNai upscaling models and optional RIFE models to install.</source>
         <translation>Виберіть рекомендовані компоненти, моделі масштабування AnimeJaNai та додаткові моделі RIFE для встановлення.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1140"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1206"/>
         <source>Component check failed: %1</source>
         <translation>Помилка перевірки компонентів: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1093"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1151"/>
         <source>Component inventory failed: %1</source>
         <translation>Помилка інвентаризації компонентів: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="825"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="879"/>
         <source>Components recommended for this PC are not installed. Check the highlighted items below, then click Apply changes to install them.</source>
         <translation>Рекомендовані для цього ПК компоненти не встановлено. Позначте виділені пункти нижче та натисніть «Застосувати зміни», щоб встановити їх.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="727"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="813"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="763"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="864"/>
         <source>Components status</source>
         <translation>Стан компонентів</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="333"/>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="360"/>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1085"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1268"/>
         <source>DirectML</source>
         <translation>DirectML</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="507"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="818"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1277"/>
         <source>DirectML (D3D11VA)</source>
         <translation>DirectML (D3D11VA)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1113"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1171"/>
         <source>DirectML closure: %1</source>
         <translation>Середовище DirectML: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1700"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1936"/>
         <source>Downloading %1: %2 of %3</source>
         <translation>Завантаження %1: %2 із %3</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1178"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1244"/>
         <source>Downloading the RIFE 3.7.0 graph archive...</source>
         <translation>Завантаження архіву графів RIFE 3.7.0...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="658"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="796"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="692"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="847"/>
         <source>Engine-builder kernels matched to this GPU generation.</source>
         <translation>Ядра збирача рушіїв, підібрані для цього покоління GPU.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1165"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1231"/>
         <source>Every selected pack is installed and verified.</source>
         <translation>Усі вибрані пакети встановлено та перевірено.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="648"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="785"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1295"/>
         <source>Fastest NVIDIA upscaling engine; without it NVIDIA falls back to DirectML.</source>
         <translation>Найшвидший рушій масштабування NVIDIA; без нього використовується резервний DirectML.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="654"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="791"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="688"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="842"/>
         <source>Frame interpolation, not needed for upscale only.</source>
         <translation>Інтерполяція кадрів; не потрібна, якщо використовується лише масштабування.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1007"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1061"/>
         <source>GPU: %1</source>
         <translation>GPU: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="806"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="857"/>
         <source>Install local runtime...</source>
         <translation>Встановити локальне середовище...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1173"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1239"/>
         <source>Installing AnimeJaNai runtime and selected backend dependencies...</source>
         <translation>Встановлення середовища AnimeJaNai та залежностей вибраного бекенду...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1145"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1211"/>
         <source>Installing a local AnimeJaNai runtime needs a runner.</source>
         <translation>Для встановлення локального середовища AnimeJaNai потрібен виконавець фонових задач.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1175"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1241"/>
         <source>Installing local AnimeJaNai runtime and selected backend dependencies...</source>
         <translation>Встановлення локального середовища AnimeJaNai та залежностей вибраного бекенду...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1180"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1246"/>
         <source>Downloading %1 upscaling models...</source>
         <translation>Завантаження моделей масштабування (%1)...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1072"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1130"/>
         <source>%1 component items active</source>
         <translation>Активних компонентів: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1078"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="281"/>
+        <source>%1 backend closure</source>
+        <translation>Середовище бекенду %1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1136"/>
         <source>Installing selected components...</source>
         <translation>Встановлення вибраних компонентів...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1142"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1179"/>
+        <source>TensorRT for RTX closure: %1</source>
+        <translation>Середовище TensorRT for RTX: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1208"/>
         <source>Installing the selected AnimeJaNai %1 closure needs a runner.</source>
         <translation>Для встановлення середовища AnimeJaNai %1 потрібен виконавець фонових задач.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1150"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1216"/>
         <source>Local AnimeJaNai runtime installation failed.</source>
         <translation>Не вдалося встановити локальне середовище AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1153"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1219"/>
         <source>Local AnimeJaNai runtime installed.</source>
         <translation>Локальне середовище AnimeJaNai встановлено.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1138"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1204"/>
         <source>No selected missing packs need installation.</source>
         <translation>Усі вибрані пакети вже встановлено та не потребують оновлення.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1280"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1500"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="215"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="285"/>
         <source>RIFE 3.7.0 archive pack (all 47 graphs)</source>
         <translation>Архівний пакет RIFE 3.7.0 (усі 47 графів)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="653"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="790"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1308"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="687"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="841"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1528"/>
         <source>RIFE interpolation models</source>
         <translation>Моделі інтерполяції RIFE</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="798"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="849"/>
         <source>Re-check every installed element against its digest</source>
         <translation>Повторно перевірити контрольні суми всіх встановлених елементів</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="802"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="803"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="853"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="854"/>
         <source>Refresh</source>
         <translation>Оновити</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="234"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="307"/>
         <source>Review installation</source>
         <translation>Перевірка встановлення</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="371"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="442"/>
         <source>Select AnimeJaNai runtime directory</source>
         <translation>Виберіть папку середовища виконання AnimeJaNai</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1311"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1531"/>
         <source>Select all five pinned upscaling graphs for download or repair.</source>
         <translation>Вибрати всі п’ять закріплених графів масштабування для завантаження або відновлення.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="504"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="816"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1276"/>
         <source>TensorRT (CUDA / NVDEC)</source>
         <translation>TensorRT (CUDA / NVDEC)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="332"/>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="360"/>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1085"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1267"/>
         <source>TensorRT / CUDA 13</source>
         <translation>TensorRT / CUDA 13</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1105"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1163"/>
         <source>TensorRT / CUDA 13 closure: %1</source>
         <translation>Середовище TensorRT / CUDA 13: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="657"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="795"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1312"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="691"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="846"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1532"/>
         <source>TensorRT kernels for this GPU</source>
         <translation>Ядра TensorRT для цього GPU</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="647"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="650"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="784"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="787"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1307"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1293"/>
         <source>TensorRT runtime</source>
         <translation>Середовище TensorRT</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="865"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="923"/>
         <source>The RIFE archive could not be verified.</source>
         <translation>Не вдалося перевірити архів RIFE.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="584"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="639"/>
         <source>The RIFE archive download needs a runner.</source>
         <translation>Для завантаження архіву RIFE потрібен виконавець фонових задач.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="553"/>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1162"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="608"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1228"/>
         <source>The compatible TensorRT component pack is missing, but no component provisioner is available.</source>
         <translation>Сумісний пакет компонентів TensorRT відсутній, але сервіс завантаження компонентів недоступний.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1134"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1200"/>
         <source>The components could not be verified: %1</source>
         <translation>Не вдалося перевірити компоненти: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="231"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="304"/>
         <source>The following selected packs are missing or need repair:
 %1
 
@@ -4469,61 +4703,62 @@ Continue?</source>
 Продовжити?</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="837"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="895"/>
         <source>The requested backend installation could not be verified.</source>
         <translation>Не вдалося перевірити встановлення запитаного бекенду.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="872"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="930"/>
         <source>The requested upscaling model is not installed: %1</source>
         <translation>Запитану модель масштабування не встановлено: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="233"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="306"/>
         <source>Unknown</source>
         <translation>Невідомо</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1155"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1221"/>
         <source>Verification was cancelled.</source>
         <translation>Перевірку було скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="797"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="848"/>
         <source>Verify</source>
         <translation>Перевірити</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1076"/>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1182"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1134"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1248"/>
         <source>Verifying installed components...</source>
         <translation>Перевірка встановлених компонентів...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1095"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1153"/>
         <source>Verifying the installed components needs a runner.</source>
         <translation>Для перевірки встановлених компонентів потрібен виконавець фонових задач.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1184"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1250"/>
         <source>Verifying the installed components...</source>
         <translation>Перевірка встановлених компонентів...</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1262"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1277"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1471"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1486"/>
         <source>installed</source>
         <translation>встановлено</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1109"/>
-        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1117"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1167"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1175"/>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="1183"/>
         <source>one or more required dependencies are missing or corrupt</source>
         <translation>одна або кілька необхідних залежностей відсутні чи пошкоджені</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1277"/>
-        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1280"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1486"/>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1500"/>
         <source>optional</source>
         <translation>необов’язково</translation>
     </message>
@@ -4579,11 +4814,6 @@ Continue?</source>
         <location filename="../src/app/pages/MainWindow.cpp" line="615"/>
         <source>GPU components missing</source>
         <translation>Відсутні компоненти GPU</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="258"/>
-        <source>Preparing TensorRT engine</source>
-        <translation>Підготовка рушія TensorRT</translation>
     </message>
     <message>
         <location filename="../src/app/pages/MainWindow.cpp" line="262"/>
@@ -4642,6 +4872,11 @@ Continue?</source>
         <location filename="../src/app/pages/MainWindow.cpp" line="249"/>
         <source>Mikai Ja Nai</source>
         <translation>Mikai Ja Nai</translation>
+    </message>
+    <message>
+        <location filename="../src/app/pages/MainWindow.cpp" line="258"/>
+        <source>Preparing enhancement</source>
+        <translation>Підготовка покращення</translation>
     </message>
     <message>
         <location filename="../src/app/pages/MainWindow.cpp" line="616"/>
@@ -4703,7 +4938,7 @@ Without them, preparing a TensorRT engine fails.</source>
         <translation>Імпорт уже виконується; зачекайте завершення або скасуйте його.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1189"/>
+        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1196"/>
         <source>Build every stage of the selected recipe into the owned artifact cache.</source>
         <translation>Зібрати кожен етап вибраного рецепта у власний кеш артефактів.</translation>
     </message>
@@ -4883,7 +5118,7 @@ Without them, preparing a TensorRT engine fails.</source>
     </message>
     <message>
         <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1062"/>
-        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1275"/>
+        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1282"/>
         <source>No native probe path is wired, so the live source&apos;s geometry and device cannot be observed.</source>
         <translation>Шлях нативного зондування не підключено, тому геометрію та пристрій джерела неможливо визначити.</translation>
     </message>
@@ -4914,7 +5149,7 @@ Without them, preparing a TensorRT engine fails.</source>
         <translation>Шлях захоплення сирих кадрів не підключено, тому декодований кадр неможливо запросити.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1298"/>
+        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1305"/>
         <source>No scratch directory could be created for the reference lineage.</source>
         <translation>Не вдалося створити тимчасову папку для еталонних даних.</translation>
     </message>
@@ -4948,7 +5183,7 @@ Without them, preparing a TensorRT engine fails.</source>
     </message>
     <message>
         <location filename="../src/app/dialogs/NativeAssetsPanel.cpp" line="497"/>
-        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1186"/>
+        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1193"/>
         <source>Prepare artifact</source>
         <translation>Підготувати артефакт</translation>
     </message>
@@ -4975,12 +5210,12 @@ Without them, preparing a TensorRT engine fails.</source>
         <translation>Підготовка етапу %1: %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1199"/>
+        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1206"/>
         <source>Preparing the selected recipe…</source>
         <translation>Підготовка вибраного рецепта…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1187"/>
+        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1194"/>
         <source>Probe and prepare</source>
         <translation>Перевірити та підготувати</translation>
     </message>
@@ -5000,7 +5235,7 @@ Without them, preparing a TensorRT engine fails.</source>
         <translation>Опубліковано етапів у кеші артефактів: %1.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1204"/>
+        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1211"/>
         <source>Ready to prepare: the source, the toolchain and every owned model this recipe needs are observed.</source>
         <translation>Готово до підготовки: джерело, інструментарій та всі потрібні моделі в наявності.</translation>
     </message>
@@ -5186,7 +5421,7 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
     </message>
     <message>
         <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="913"/>
-        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1554"/>
+        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1578"/>
         <source>The preparation was cancelled while probing; nothing was built.</source>
         <translation>Підготовку скасовано під час перевірки джерела; нічого не зібрано.</translation>
     </message>
@@ -5212,7 +5447,7 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
     </message>
     <message>
         <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="579"/>
-        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1529"/>
+        <location filename="../src/app/dialogs/NativeAssetsPanelWorkflow.cpp" line="1553"/>
         <source>This build was made without the ONNX Runtime inspector.</source>
         <translation>Цю збірку створено без інспектора ONNX Runtime.</translation>
     </message>
@@ -6245,8 +6480,8 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
         <translation>Тонмапінг HDR</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="143"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="786"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="160"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="803"/>
         <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="45"/>
         <source>Benchmark</source>
         <translation>Бенчмарк</translation>
@@ -6322,8 +6557,8 @@ Active: %1 · queued: %2</source>
         <translation>Застосовується миттєво до відкритих вікон, включно з активним плеєром.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="142"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="459"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="183"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="502"/>
         <source>Backend</source>
         <translation>Бекенд</translation>
     </message>
@@ -6832,77 +7067,65 @@ Automatic startup could not be restored: %1. Its current state is %2.</source>
         <translation>Токен доступу Mikai API</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="98"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="484"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="125"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="538"/>
         <source>Native</source>
         <translation>Нативний</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="118"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="489"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="145"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="543"/>
         <source>AnimeJaNai model and profile manager</source>
         <translation>Менеджер моделей і профілів AnimeJaNai</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="129"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="463"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="156"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="506"/>
         <source>Native backend</source>
         <translation>Нативний бекенд</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="193"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="493"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="234"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="547"/>
         <source>Native model assets</source>
         <translation>Нативні моделі та артефакти</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="400"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="441"/>
         <source>Runtime will change to %1 after restarting Mikai Ja Nai.</source>
         <translation>Середовище виконання зміниться на %1 після перезапуску Mikai Ja Nai.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="478"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="532"/>
         <source>Native processing availability</source>
         <translation>Доступність нативної обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="168"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="209"/>
         <source>Native processing status</source>
         <translation>Стан нативної обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="46"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="453"/>
-        <source>Standard AnimeJaNai requires an NVIDIA GPU and TensorRT. DirectML and the private Native runtime are Windows-only.</source>
-        <translation>Стандартний AnimeJaNai потребує графічного процесора NVIDIA та TensorRT. DirectML і приватне середовище виконання Native доступні лише у Windows.</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="48"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="456"/>
-        <source>Standard manages official AnimeJaNai models and profiles. Select Native to configure the separate private Native workflow.</source>
-        <translation>Standard керує офіційними моделями та профілями AnimeJaNai. Виберіть Native для налаштування окремого приватного робочого процесу Native.</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="146"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="464"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="187"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="518"/>
         <source>Native recipe</source>
         <translation>Нативний рецепт</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="430"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="476"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="471"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="530"/>
         <source>No native recipe is available in this build.</source>
         <translation>У цій збірці немає доступних нативних рецептів.</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/SettingsDialog.cpp" line="229"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="206"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="247"/>
         <source>No source-presence path is wired, so there is no live video to prepare for.</source>
         <translation>Джерело відтворення не підключено, тому немає активного відео для підготовки.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="413"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="473"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="454"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="527"/>
         <source>None (original pipeline)</source>
         <translation>Немає (оригінальний конвеєр)</translation>
     </message>
@@ -6918,28 +7141,40 @@ Automatic startup could not be restored: %1. Its current state is %2.</source>
         <translation>Обробка</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="44"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="451"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="71"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="492"/>
         <source>Processing runtime</source>
         <translation>Середовище обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="248"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="254"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="487"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="496"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="73"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="495"/>
+        <source>Standard AnimeJaNai runs on TensorRT here. DirectML, TensorRT for RTX, and the private Native runtime are Windows-only.</source>
+        <translation>Стандартний AnimeJaNai тут працює на TensorRT. DirectML, TensorRT for RTX і приватне середовище виконання Native доступні лише у Windows.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="75"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="499"/>
+        <source>Standard manages official AnimeJaNai models and profiles, including TensorRT for RTX. Select Native to configure the separate private Native workflow.</source>
+        <translation>Стандартний режим керує офіційними моделями та профілями AnimeJaNai, зокрема TensorRT for RTX. Виберіть Native, щоб налаштувати окремий приватний робочий процес Native.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="289"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="295"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="541"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="550"/>
         <source>RIFE interpolation</source>
         <translation>Інтерполяція RIFE</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="150"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="460"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="191"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="503"/>
         <source>Recipe</source>
         <translation>Рецепт</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="107"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="461"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="134"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="504"/>
         <source>Runtime module</source>
         <translation>Модуль середовища</translation>
     </message>
@@ -6962,8 +7197,8 @@ Automatic startup could not be restored: %1. Its current state is %2.</source>
         <translation>Комбінація клавіш для %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="95"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="483"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="122"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="537"/>
         <source>Standard</source>
         <translation>Стандартний</translation>
     </message>
@@ -7021,7 +7256,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Українська</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="340"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="381"/>
         <source>Unavailable: %1</source>
         <translation>Недоступно: %1</translation>
     </message>
@@ -7093,8 +7328,8 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>mk_... (залиште порожнім для анонімного доступу)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="93"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="485"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="120"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="539"/>
         <source>mpv runtime</source>
         <translation>Середовище mpv</translation>
     </message>
@@ -7104,309 +7339,309 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>не вдалося записати файл ключа</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="269"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="801"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="286"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="818"/>
         <source>Available benchmark models</source>
         <translation>Доступні моделі бенчмарку</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="592"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="609"/>
         <source>Anime4K</source>
         <translation>Anime4K</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="601"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="618"/>
         <source>AnimeJaNai</source>
         <translation>AnimeJaNai</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="606"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="617"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="626"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="623"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="634"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="643"/>
         <source>slot %1 · %2</source>
         <translation>слот %1 · %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="608"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="625"/>
         <source>built-in chain</source>
         <translation>вбудований ланцюжок</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="613"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="630"/>
         <source>Spatial</source>
         <translation>Просторові</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="622"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="639"/>
         <source>RIFE</source>
         <translation>RIFE</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="361"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="794"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="378"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="811"/>
         <source>Results</source>
         <translation>Результати</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="162"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="788"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="179"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="805"/>
         <source>Video clips</source>
         <translation>Відеокліпи</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="761"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="768"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="778"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="785"/>
         <source>Clear selection</source>
         <translation>Очистити вибір</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="233"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="789"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="250"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="806"/>
         <source>Enhancement models</source>
         <translation>Моделі покращення</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="169"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="240"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="762"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="769"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="186"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="257"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="779"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="786"/>
         <source>Select all</source>
         <translation>Вибрати все</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="253"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="790"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="270"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="807"/>
         <source>Filter by model or group</source>
         <translation>Фільтр за моделлю або групою</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="256"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="791"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="273"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="808"/>
         <source>Filter benchmark models</source>
         <translation>Фільтр моделей бенчмарку</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="216"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="792"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="233"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="809"/>
         <source>Include the unfiltered baseline</source>
         <translation>Додати базовий конвеєр без обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="499"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="793"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1290"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="516"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="810"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1321"/>
         <source>Run benchmark</source>
         <translation>Запустити бенчмарк</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="364"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="803"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="381"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="820"/>
         <source>Ready</source>
         <translation>Готово</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="380"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="799"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="397"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="816"/>
         <source>Benchmark run progress</source>
         <translation>Прогрес бенчмарку</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="978"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1004"/>
         <source>TensorRT engine build elapsed · %1</source>
         <translation>Час збирання рушія TensorRT · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="429"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="797"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="446"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="814"/>
         <source>Run a benchmark to see throughput for each selected clip and model.</source>
         <translation>Запустіть бенчмарк, щоб побачити швидкість для кожного вибраного кліпу й моделі.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="148"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="787"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="165"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="804"/>
         <source>Compare rendering speed at 2× input resolution.</source>
         <translation>Порівняйте швидкість рендерингу з подвоєною роздільністю виходу.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="398"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="800"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="415"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="817"/>
         <source>Engine build progress; indeterminate</source>
         <translation>Прогрес збирання рушія; відсоток не визначено</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="414"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="431"/>
         <source>Engine build elapsed · %1</source>
         <translation>Час збирання рушія · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="373"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="795"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="390"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="812"/>
         <source>Preparation excluded from FPS.</source>
         <translation>Час підготовки не враховується у FPS.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="439"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="798"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="456"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="815"/>
         <source>Model</source>
         <translation>Модель</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="439"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="798"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="456"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="815"/>
         <source>Clip</source>
         <translation>Кліп</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="439"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="798"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="456"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="815"/>
         <source>Throughput</source>
         <translation>Кадрів за секунду</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="643"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="660"/>
         <source>%1 (unavailable)</source>
         <translation>%1 (недоступно)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="649"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="666"/>
         <source>This model is no longer in the catalogue; it will not run.</source>
         <translation>Цієї моделі більше немає в каталозі; вона не запускатиметься.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="760"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="764"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="777"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="781"/>
         <source>%1 / %2 selected</source>
         <translation>Вибрано %1 з %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="773"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="790"/>
         <source>Clips: %1</source>
         <translation>Кліпи: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="774"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="791"/>
         <source>Models: %1</source>
         <translation>Моделі: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="775"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="792"/>
         <source>Runs: %1</source>
         <translation>Запуски: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="777"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="794"/>
         <source>%1 unavailable</source>
         <translation>%1 недоступно</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="856"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="873"/>
         <source>Could not create the offscreen OpenGL surface.</source>
         <translation>Не вдалося створити позаекранну поверхню OpenGL.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="870"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1062"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="887"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1088"/>
         <source>Benchmark running · %1 / %2</source>
         <translation>Бенчмарк виконується · %1 / %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="874"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="891"/>
         <source>Starting benchmark…</source>
         <translation>Запуск бенчмарку…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="876"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="893"/>
         <source>Running…</source>
         <translation>Виконується…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="983"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1009"/>
         <source>Building TensorRT engine · %1</source>
         <translation>Збирання рушія TensorRT · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="994"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1020"/>
         <source>TensorRT engine ready after %1</source>
         <translation>Рушій TensorRT готовий за %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="996"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1022"/>
         <source>TensorRT engine build failed after %1</source>
         <translation>Збірка рушія TensorRT не вдалася; минуло %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1001"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1027"/>
         <source>Engine ready; measuring throughput · %1</source>
         <translation>Рушій готовий; вимірювання швидкості · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1003"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1029"/>
         <source>TensorRT engine build failed · %1</source>
         <translation>Збірка рушія TensorRT не вдалася · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1035"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1283"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1061"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1314"/>
         <source>Failed</source>
         <translation>Помилка</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1099"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1125"/>
         <source>clip not found</source>
         <translation>кліп не знайдено</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1111"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1137"/>
         <source>could not read the clip&apos;s dimensions</source>
         <translation>не вдалося прочитати розміри кліпу</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1123"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1149"/>
         <source>Loading clip · %1</source>
         <translation>Завантаження кліпу · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1152"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1178"/>
         <source>Baseline</source>
         <translation>Без обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1140"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1166"/>
         <source>%1 fps</source>
         <translation>%1 fps</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1163"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1189"/>
         <source>shader chain is not available</source>
         <translation>ланцюжок шейдерів недоступний</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1195"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1221"/>
         <source>plan is not available</source>
         <translation>план недоступний</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1246"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1277"/>
         <source>Report saved · %1</source>
         <translation>Звіт збережено · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1252"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1283"/>
         <source>Report not saved · %1</source>
         <translation>Звіт не збережено · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1267"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1298"/>
         <source>Benchmark cancelled.</source>
         <translation>Бенчмарк скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1268"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1299"/>
         <source>Complete · %1 results</source>
         <translation>Завершено · результатів: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1269"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1300"/>
         <source>Complete · %1 results · %2 failed</source>
         <translation>Завершено · результатів: %1 · невдалих: %2</translation>
     </message>
@@ -8245,58 +8480,101 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     <name>mplayer::VideoSurface</name>
     <message>
         <location filename="../src/player/core/VideoSurface.cpp" line="3048"/>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="286"/>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="812"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="292"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="867"/>
         <source>Skipped on HDR: native stages force 8-bit NV12</source>
         <translation>Пропущено на HDR: нативні етапи примусово перетворюють у 8-бітний NV12</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="843"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="847"/>
         <source>A reference capture requires playback to be paused first.</source>
         <translation>Для захоплення еталонного кадру спочатку потрібно призупинити відтворення.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="830"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="834"/>
         <source>A reference capture cannot be asked for frame %1.</source>
         <translation>Неможливо запросити еталонне захоплення для кадру %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="855"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="859"/>
         <source>A reference capture is already in flight.</source>
         <translation>Захоплення еталонного кадру вже виконується.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="490"/>
-        <source>Building TensorRT engine…</source>
-        <translation>Збирання рушія TensorRT…</translation>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="262"/>
+        <source>%1 engine build cancelled.</source>
+        <translation>Збирання рушія %1 скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="499"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="264"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="326"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="466"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="652"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="801"/>
+        <source>TensorRT for RTX</source>
+        <translation>TensorRT for RTX</translation>
+    </message>
+    <message>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="265"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="327"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="467"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="653"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="802"/>
+        <source>TensorRT</source>
+        <translation>TensorRT</translation>
+    </message>
+    <message>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="324"/>
+        <source>Previous %1 engine build stopped.</source>
+        <translation>Попереднє збирання рушія %1 зупинено.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="482"/>
+        <source>TensorRT for RTX failed and the core fell back to TensorRT; the requested backend is not running.</source>
+        <translation>TensorRT for RTX зазнав помилки, і ядро перейшло на TensorRT; запитаний бекенд не працює.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="511"/>
+        <source>%1 engine warm-up failed; loading the cached engine directly.</source>
+        <translation>Прогрів рушія %1 не вдався; кешований рушій завантажується напряму.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="531"/>
+        <source>Preparing the selected model for this session.</source>
+        <translation>Підготовка вибраної моделі для цього сеансу.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="534"/>
+        <source>Building %1 engine…</source>
+        <translation>Збирання рушія %1…</translation>
+    </message>
+    <message>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="543"/>
         <source>Configured AnimeJaNai stage %1 of %2; waiting for remaining stages.</source>
         <translation>Налаштовано етап AnimeJaNai %1 із %2; очікування решти етапів.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="505"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="549"/>
         <source>Waiting for all AnimeJaNai engine builds to finish.</source>
         <translation>Очікування завершення всіх збірок рушіїв AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="602"/>
-        <source>TensorRT engine ready; backend configuration observed.</source>
-        <translation>Рушій TensorRT готовий; бекенд підтвердив налаштування.</translation>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="650"/>
+        <source>%1 engine ready; backend configuration observed.</source>
+        <translation>Рушій %1 готовий; конфігурацію бекенду зафіксовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="746"/>
-        <source>Not enough free GPU memory to build the TensorRT engine; free GPU memory and try again.</source>
-        <translation>Недостатньо вільної відеопам’яті для збирання рушія TensorRT; звільніть відеопам’ять і спробуйте ще раз.</translation>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="798"/>
+        <source>Not enough free GPU memory to build the %1 engine; free GPU memory and try again.</source>
+        <translation>Недостатньо вільної пам’яті GPU для збирання рушія %1; звільніть пам’ять GPU і спробуйте ще раз.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="918"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="973"/>
         <source>The engine cache is in use by %1 (%2).</source>
         <translation>Кеш рушія використовує %1 (%2).</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="488"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="532"/>
         <source>Compiling the selected model for this video resolution.</source>
         <translation>Компіляція вибраної моделі для цієї роздільної здатності відео.</translation>
     </message>
@@ -8306,12 +8584,12 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Не вдалося відтворити відео (mpv: %1)</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="872"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="876"/>
         <source>Native processing is active, so the captured frame would not be the Original source.</source>
         <translation>Нативна обробка активна, тому захоплений кадр не буде оригінальним джерелом.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="861"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="865"/>
         <source>No mpv core exists to capture from.</source>
         <translation>Немає активного ядра mpv для захоплення кадру.</translation>
     </message>
@@ -8319,16 +8597,6 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <location filename="../src/player/core/VideoSurface.cpp" line="1548"/>
         <source>Playback closed during engine preparation.</source>
         <translation>Відтворення закрито під час підготовки рушія.</translation>
-    </message>
-    <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="316"/>
-        <source>Previous TensorRT engine build stopped.</source>
-        <translation>Попереднє збирання рушія TensorRT зупинено.</translation>
-    </message>
-    <message>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="259"/>
-        <source>TensorRT engine build cancelled.</source>
-        <translation>Збирання рушія TensorRT скасовано.</translation>
     </message>
     <message>
         <location filename="../src/player/core/VideoSurface.cpp" line="614"/>
@@ -8366,15 +8634,15 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/core/VideoSurface.cpp" line="3049"/>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="287"/>
-        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="813"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="293"/>
+        <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="868"/>
         <source>Skipped: source transfer metadata is unknown</source>
         <translation>Пропущено: метадані передавальної функції джерела невідомі</translation>
     </message>
     <message>
         <location filename="../src/player/core/VideoSurface.cpp" line="3062"/>
-        <source>TensorRT engine build stopped for this source.</source>
-        <translation>Побудову рушія TensorRT для цього джерела зупинено.</translation>
+        <source>Enhancement engine build stopped for this source.</source>
+        <translation>Збирання рушія покращення для цього джерела зупинено.</translation>
     </message>
     <message>
         <location filename="../src/player/core/VideoSurface.cpp" line="3182"/>
@@ -8422,92 +8690,92 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Модуль відтворення не прийняв запит на вибір доріжки.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="885"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="889"/>
         <source>A native preparation build owns the work lease.</source>
         <translation>Підготовка нативного рушія вже утримує робоче блокування.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="920"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="924"/>
         <source>This source is not seekable, so the position it is parked at cannot be restored after a neighbouring frame is taken.</source>
         <translation>Це джерело не підтримує перемотування, тому початкову позицію неможливо відновити після взяття сусіднього кадру.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="936"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="940"/>
         <source>The core would not take the seekability read.</source>
         <translation>Ядро не прийняло запит перевірки можливості перемотування.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1188"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1192"/>
         <source>The core did not return to the parked position (%1s) within the bound, so the neighbouring frame is not reported from a position that was not restored.</source>
         <translation>Ядро не повернулося на початкову позицію (%1 с) у межах допуску, тому сусідній кадр не прийнято.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="956"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="960"/>
         <source>The core has no known playback position for this source yet.</source>
         <translation>Ядро ще не має відомої позиції відтворення для цього джерела.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1236"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1240"/>
         <source>The core is at %1s rather than the parked %2s after %3 restore attempts, so the neighbouring frame is not reported from a position that was not restored.</source>
         <translation>Ядро перебуває на %1 с замість %2 с після %3 спроб відновлення позиції.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1044"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1048"/>
         <source>The core refused the capture (%1).</source>
         <translation>Ядро відхилило запит на захоплення кадру (%1).</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1212"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1216"/>
         <source>The core reported no usable position for the restore, so the parked position cannot be confirmed.</source>
         <translation>Ядро не повідомило коректну позицію після відновлення.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1138"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1142"/>
         <source>The core would not restore the parked position (%1).</source>
         <translation>Ядру не вдалося відновити початкову позицію (%1).</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1254"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1258"/>
         <source>The core would not restore the parked position.</source>
         <translation>Ядру не вдалося відновити початкову позицію.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1015"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1019"/>
         <source>The core would not step to the neighbouring source frame (%1).</source>
         <translation>Ядру не вдалося перейти до сусіднього вихідного кадру (%1).</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1094"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1098"/>
         <source>The core would not take the capture request.</source>
         <translation>Ядро не прийняло запит на захоплення кадру.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1273"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1277"/>
         <source>The core would not take the position read that confirms the restore.</source>
         <translation>Ядро не прийняло запит перевірки відновленої позиції.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="981"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="985"/>
         <source>The core would not take the position read.</source>
         <translation>Ядро не прийняло запит читання позиції.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1266"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1270"/>
         <source>The core would not take the repeated seek that restores the parked position.</source>
         <translation>Ядро не прийняло повторне перемотування для відновлення позиції.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1149"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1153"/>
         <source>The core would not take the seek that restores the parked position.</source>
         <translation>Ядро не прийняло перемотування для відновлення позиції.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="460"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="464"/>
         <source>The core&apos;s decoder was never confirmed for this provider, so the plan cannot be admitted onto it.</source>
         <translation>Декодер ядра не підтверджено для цього провайдера, тому план не може бути застосований.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1063"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1067"/>
         <source>The neighbouring source frame decoded to the same pixels as the previous one, so it cannot serve as a second reference.</source>
         <translation>Сусідній вихідний кадр збігається за пікселями з попереднім, тому не може слугувати другим еталоном.</translation>
     </message>
@@ -8518,42 +8786,42 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Джерело змінилося під час підготовки рушія.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="927"/>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="948"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="931"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="952"/>
         <source>The source changed while the capture was being prepared.</source>
         <translation>Джерело змінилося під час підготовки захоплення кадру.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1033"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1037"/>
         <source>The source changed while the capture was in flight.</source>
         <translation>Джерело змінилося під час виконання захоплення кадру.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="998"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1002"/>
         <source>The source changed while the neighbouring frame was being taken.</source>
         <translation>Джерело змінилося під час отримання сусіднього кадру.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1111"/>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1126"/>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1163"/>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1202"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1115"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1130"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1167"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1206"/>
         <source>The source changed while the position was being restored.</source>
         <translation>Джерело змінилося під час відновлення позиції відтворення.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="904"/>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="968"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="908"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="972"/>
         <source>The source&apos;s frame rate was never observed, so the next frame cannot be named without guessing.</source>
         <translation>Частоту кадрів джерела не вдалося визначити, тому наступний кадр неможливо обчислити точно.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1176"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="1180"/>
         <source>The source&apos;s observed frame rate gives no bound for confirming the restore landed to within half a frame, so the neighbouring frame is not reported from an unconfirmed position.</source>
         <translation>Частота кадрів джерела не дозволяє підтвердити точність повернення на позицію з похибкою до півкадру.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="327"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="331"/>
         <source>This build names no decoder for the requested provider, so nothing can be aligned to it.</source>
         <translation>У цій збірці не вказано декодер для запитаного провайдера.</translation>
     </message>
@@ -8563,27 +8831,27 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Помилка рендерингу відео (mpv: %1)</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="392"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="396"/>
         <source>the core did not report which decoder it is using</source>
         <translation>ядро не повідомило, який декодер використовується</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="395"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="399"/>
         <source>the core is decoding with &apos;%1&apos;, which cannot feed the requested provider (%2)</source>
         <translation>ядро декодує за допомогою «%1», що несумісно із запитаним провайдером (%2)</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="349"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="353"/>
         <source>the core refused the %1 decoder this provider needs (%2)</source>
         <translation>ядро відхилило декодер %1, потрібний цьому провайдеру (%2)</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="423"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="427"/>
         <source>the core would not align to a decoder the requested provider can use</source>
         <translation>ядру не вдалося переключитися на декодер, сумісний із запитаним провайдером</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="371"/>
+        <location filename="../src/player/core/VideoSurfaceNative.cpp" line="375"/>
         <source>the core would not take the decoder read-back</source>
         <translation>ядро не прийняло запит перевірки активного декодера</translation>
     </message>
@@ -8840,21 +9108,21 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::shell::CompareWindow</name>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2366"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2368"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2377"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2379"/>
         <source>%1 unavailable: %2</source>
         <translation>%1 недоступно: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="614"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="850"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1026"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1046"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="625"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="861"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1037"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1057"/>
         <source>%1%</source>
         <translation>%1%</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2372"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2383"/>
         <source>%n native change(s) queued until Compare closes</source>
         <translation>
             <numerusform>%n нативна зміна в черзі до закриття вікна порівняння</numerusform>
@@ -8863,386 +9131,380 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         </translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="649"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="986"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="660"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="997"/>
         <source>Amplify the difference</source>
         <translation>Підсилення різниці</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1128"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1139"/>
         <source>AnimeJaNai</source>
         <translation>AnimeJaNai</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="602"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="831"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="613"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="842"/>
         <source>Bilinear</source>
         <translation>Білінійний</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="670"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1792"/>
-        <source>Build comparison TensorRT engine</source>
-        <translation>Зібрати рушій TensorRT для порівняння</translation>
-    </message>
-    <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2120"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2131"/>
         <source>Export failed</source>
         <translation>Не вдалося експортувати</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2356"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2367"/>
         <source>Capture error: %1</source>
         <translation>Помилка захоплення: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1072"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1923"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1083"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1934"/>
         <source>Comparison engine build cancelled.</source>
         <translation>Збирання рушія порівняння скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1921"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1932"/>
         <source>Comparison engine build failed: %1</source>
         <translation>Помилка збирання рушія порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1919"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1930"/>
         <source>Comparison engine ready.</source>
         <translation>Рушій порівняння готовий.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1744"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1755"/>
         <source>Could not capture a new frame</source>
         <translation>Не вдалося захопити новий кадр</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1733"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1766"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1744"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1777"/>
         <source>Could not capture the playback timestamp</source>
         <translation>Не вдалося отримати часову мітку відтворення</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="647"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="950"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="658"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="961"/>
         <source>Divider position</source>
         <translation>Позиція роздільника</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="606"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="834"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="617"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="845"/>
         <source>Filter</source>
         <translation>Фільтр</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="598"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="825"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="609"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="836"/>
         <source>Filter:</source>
         <translation>Фільтр:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="609"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="841"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="620"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="852"/>
         <source>Fit</source>
         <translation>Вписати</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="611"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="843"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="622"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="854"/>
         <source>Fit the picture</source>
         <translation>Вписати зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="639"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2092"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="650"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2103"/>
         <source>Exporting…</source>
         <translation>Експорт…</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="639"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="901"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2092"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="650"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="912"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2103"/>
         <source>Export…</source>
         <translation>Експортувати…</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="640"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="905"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="651"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="916"/>
         <source>Export the two comparison images</source>
         <translation>Експортувати два зображення порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="641"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="906"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="652"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="917"/>
         <source>Export comparison</source>
         <translation>Експорт порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="645"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="957"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="656"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="968"/>
         <source>Flicker, Hz:</source>
         <translation>Частота, Гц:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="646"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="974"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="657"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="985"/>
         <source>Gain:</source>
         <translation>Підсилення:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="648"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="969"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="659"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="980"/>
         <source>How fast the two pictures alternate</source>
         <translation>Швидкість чергування двох зображень</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="605"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="833"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="616"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="844"/>
         <source>How the picture is scaled</source>
         <translation>Спосіб масштабування зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="586"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="804"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="597"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="815"/>
         <source>Mode:</source>
         <translation>Режим:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2355"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2366"/>
         <source>Native plan not frozen: %1</source>
         <translation>Нативний план не зафіксовано: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="604"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="832"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="615"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="843"/>
         <source>Nearest Neighbor</source>
         <translation>Найближчий сусід</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1976"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1987"/>
         <source>No frame to compare</source>
         <translation>Немає кадру для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1686"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1697"/>
         <source>No playback surface</source>
         <translation>Немає поверхні відтворення</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1690"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1701"/>
         <source>No video to compare</source>
         <translation>Немає відео для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1410"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1421"/>
         <source>Playback advanced after the frozen comparison frame; capture again.</source>
         <translation>Відтворення змістилося після замороженого кадру; захопіть кадр повторно.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2023"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2031"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2034"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2042"/>
         <source>Playback changed during comparison.</source>
         <translation>Відтворення змінилося під час порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1706"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1757"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1717"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1768"/>
         <source>Playback changed during frame capture</source>
         <translation>Відтворення змінилося під час захоплення кадру</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1446"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1457"/>
         <source>Playback could not be held paused for comparison.</source>
         <translation>Не вдалося утримати паузу відтворення для порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1720"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1731"/>
         <source>Playback did not settle while pausing for comparison</source>
         <translation>Відтворення не стабілізувалося під час постановки на паузу для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1393"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1435"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1404"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1446"/>
         <source>Playback resumed during comparison.</source>
         <translation>Відтворення відновилося під час порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1411"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1422"/>
         <source>Playback resumed while the comparison was holding it; waiting for pause.</source>
         <translation>Відтворення відновилося під час порівняння; очікування паузи.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2358"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2369"/>
         <source>Preparing AnimeJaNai %1…</source>
         <translation>Підготовка AnimeJaNai %1…</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="248"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="584"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="259"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="595"/>
         <source>Quality Comparison</source>
         <translation>Порівняння якості</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2359"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2370"/>
         <source>Rendering %1…</source>
         <translation>Рендеринг %1…</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1128"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1139"/>
         <source>Spatial models</source>
         <translation>Просторові моделі</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="644"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="937"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="655"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="948"/>
         <source>Split:</source>
         <translation>Поділ:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="739"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="750"/>
         <source>The native plan cannot be frozen right now.</source>
         <translation>Нативний план наразі неможливо зафіксувати.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1964"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2010"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1975"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2021"/>
         <source>The playback surface was destroyed</source>
         <translation>Поверхню відтворення було знищено</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1767"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1778"/>
         <source>The playback timestamp changed while capturing the frame</source>
         <translation>Часова мітка відтворення змінилася під час захоплення кадру</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1967"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1978"/>
         <source>The source changed after the frame was captured</source>
         <translation>Джерело відео змінилося після захоплення кадру</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2011"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2022"/>
         <source>The source changed during comparison rendering</source>
         <translation>Джерело змінилося під час рендерингу порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="306"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1379"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1426"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="317"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1390"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1437"/>
         <source>The source changed during comparison.</source>
         <translation>Джерело змінилося під час порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1743"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1764"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1754"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1775"/>
         <source>The source changed during frame capture</source>
         <translation>Джерело змінилося під час захоплення кадру</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="615"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="616"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="854"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="855"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="626"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="627"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="865"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="866"/>
         <source>View scale</source>
         <translation>Масштаб перегляду</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2375"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2386"/>
         <source>mean difference %1/255</source>
         <translation>середня різниця %1/255</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="374"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="375"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="629"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="631"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="385"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="386"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="640"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="642"/>
         <source>Pinned</source>
         <translation>Закріплено</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="374"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="375"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="629"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="631"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="882"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="888"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="385"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="386"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="640"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="642"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="893"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="899"/>
         <source>Pin</source>
         <translation>Закріпити</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="470"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="481"/>
         <source>Exit fullscreen mode (F11)</source>
         <translation>Вийти з повноекранного режиму (F11)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="471"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="482"/>
         <source>Enter fullscreen mode (F11)</source>
         <translation>Перейти в повноекранний режим (F11)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="610"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="842"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="621"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="853"/>
         <source>Fit the picture (F)</source>
         <translation>Вписати зображення (F)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="619"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="621"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="864"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="869"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="630"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="632"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="875"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="880"/>
         <source>Swap A ⇄ B</source>
         <translation>Поміняти A ⇄ B</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="620"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="868"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="631"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="879"/>
         <source>Swap Side A and Side B (S)</source>
         <translation>Поміняти місцями сторони A та B (S)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="624"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="626"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="873"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="878"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="635"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="637"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="884"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="889"/>
         <source>Recapture</source>
         <translation>Перезахопити</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="625"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="877"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="636"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="888"/>
         <source>Capture the current player frame (R)</source>
         <translation>Захопити поточний кадр плеєра (R)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="630"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="887"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="641"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="898"/>
         <source>Keep Compare window always on top (P)</source>
         <translation>Закріпити вікно порівняння поверх інших (P)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="634"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="913"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="645"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="924"/>
         <source>Close</source>
         <translation>Закрити</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="635"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="914"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="646"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="925"/>
         <source>Close (Esc)</source>
         <translation>Закрити (Esc)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="636"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="915"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="647"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="926"/>
         <source>Close Compare window</source>
         <translation>Закрити вікно порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1114"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1125"/>
         <source>Missing shader file(s): %1</source>
         <translation>Відсутні файли шейдерів: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2316"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2327"/>
         <source>%1, %2 · %3 (%4, %5, %6)</source>
         <translation>%1, %2 · %3 (%4, %5, %6)</translation>
     </message>
@@ -9823,62 +10085,62 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::shell::PlayerDialog</name>
     <message>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="553"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="566"/>
         <source>%1 Keeping the current picture.</source>
         <translation>%1 Залишаємо поточне зображення.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="554"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="567"/>
         <source>%1 Staying on the Original picture.</source>
         <translation>%1 Залишаємо оригінальне зображення.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1775"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1782"/>
         <source>%1p is not available for this release</source>
         <translation>%1p недоступно для цього релізу</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="721"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="734"/>
         <source>A reference frame capture is already in flight.</source>
         <translation>Захоплення еталонного кадру вже виконується.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="313"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2174"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="320"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2181"/>
         <source>AUDIO</source>
         <translation>ОЗВУЧЕННЯ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="475"/>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="487"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="480"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="497"/>
         <source>Building TensorRT engine</source>
         <translation>Збирання рушія TensorRT</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="498"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2187"/>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="944"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="505"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2194"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="957"/>
         <source>Choose the processing provider</source>
         <translation>Вибрати провайдера обробки</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="690"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="697"/>
         <source>Containing folder opened</source>
         <translation>Папку з файлом відкрито</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="687"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="694"/>
         <source>Could not open the containing folder</source>
         <translation>Не вдалося відкрити папку з файлом</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="814"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1904"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="821"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1911"/>
         <source>Could not play the stream</source>
         <translation>Не вдалося відтворити потік</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1223"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1230"/>
         <source>Could not read the current frame</source>
         <translation>Не вдалося прочитати поточний кадр</translation>
     </message>
@@ -9888,123 +10150,123 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Не вдалося зберегти нативне налаштування: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="450"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="457"/>
         <source>Episode list</source>
         <translation>Список серій</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="449"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1805"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="456"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1812"/>
         <source>Episode list (S)</source>
         <translation>Список серій (S)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1396"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1403"/>
         <source>Episode: %1</source>
         <translation>Серія: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1227"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1234"/>
         <source>Failed to copy frame</source>
         <translation>Не вдалося скопіювати кадр</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="638"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="645"/>
         <source>Failed to copy link</source>
         <translation>Не вдалося скопіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1230"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1237"/>
         <source>Frame copied (%1×%2)</source>
         <translation>Кадр скопійовано (%1×%2)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1597"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1604"/>
         <source>Audio track %1</source>
         <translation>Аудіодоріжка %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1598"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1605"/>
         <source>Subtitle track %1</source>
         <translation>Доріжка субтитрів %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1602"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1609"/>
         <source>%1 ch</source>
         <translation>%1 кан.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1603"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1610"/>
         <source>External</source>
         <translation>Зовнішня</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1604"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1611"/>
         <source>Forced</source>
         <translation>Примусова</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1605"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1612"/>
         <source>Default</source>
         <translation>Типова</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1805"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1812"/>
         <source>Hide episode list (S)</source>
         <translation>Сховати список серій (S)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1970"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1977"/>
         <source>Continue playing</source>
         <translation>Продовжити перегляд</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1971"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1978"/>
         <source>Continue from %1?</source>
         <translation>Продовжити з %1?</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1972"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1979"/>
         <source>You stopped this episode at %1.</source>
         <translation>Ви зупинилися на %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1975"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1982"/>
         <source>Continue</source>
         <translation>Продовжити</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1976"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1983"/>
         <source>Start over</source>
         <translation>Почати спочатку</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1984"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1991"/>
         <source>Continued from %1</source>
         <translation>Продовжено з %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1987"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1994"/>
         <source>Starting from the beginning</source>
         <translation>Початок з нуля</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2031"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2038"/>
         <source>Opening stream…</source>
         <translation>Відкриття потоку…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2440"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2447"/>
         <source>Finishing enhancement…</source>
         <translation>Завершуємо покращення…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2475"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2482"/>
         <source>Native processing did not acknowledge its stop; the player stays open so it can be retried.</source>
         <translation>Нативна обробка не підтвердила зупинку; плеєр залишається відкритим для повторної спроби.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="551"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="564"/>
         <source>Native processing failed.</source>
         <translation>Помилка нативної обробки.</translation>
     </message>
@@ -10014,86 +10276,86 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Нативна обробка вимкнена · Оригінальне зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1218"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1225"/>
         <source>No frame to copy</source>
         <translation>Немає кадру для копіювання</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1493"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1500"/>
         <source>No other audio tracks available</source>
         <translation>Інших аудіодоріжок немає</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="727"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="740"/>
         <source>No playback core can capture a reference frame.</source>
         <translation>Жодне ядро відтворення не може захопити еталонний кадр.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="589"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="602"/>
         <source>No playback core can take a native admission.</source>
         <translation>Жодне ядро відтворення не може прийняти нативний план.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1508"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1515"/>
         <source>No subtitles available</source>
         <translation>Субтитри недоступні</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1075"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1082"/>
         <source>No video to compare</source>
         <translation>Немає відео для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1089"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1096"/>
         <source>Not enough variants to compare</source>
         <translation>Недостатньо варіантів для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="360"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1589"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="367"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1596"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="344"/>
         <source>Off</source>
         <translation>Вимкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2186"/>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="943"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2193"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="956"/>
         <source>Open processing and component settings</source>
         <translation>Відкрити налаштування обробки та компонентів</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="501"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2189"/>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="946"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="508"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2196"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="959"/>
         <source>Original</source>
         <translation>Оригінал</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1379"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1392"/>
         <source>Picture in picture</source>
         <translation>Картинка в картинці</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="232"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1254"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1379"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="235"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1261"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1386"/>
         <source>Player — %1</source>
         <translation>Плеєр — %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1261"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1268"/>
         <source>Playing local file</source>
         <translation>Відтворення локального файлу</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="494"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2180"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="501"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2187"/>
         <source>Prepare</source>
         <translation>Підготувати</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="495"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2181"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="502"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2188"/>
         <source>Prepare the selected recipe</source>
         <translation>Підготувати вибраний рецепт</translation>
     </message>
@@ -10103,88 +10365,88 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Підготовка…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="497"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2184"/>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="941"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="504"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2191"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="954"/>
         <source>Providers</source>
         <translation>Провайдери</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="477"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2177"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="484"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2184"/>
         <source>Retry</source>
         <translation>Повторити</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="478"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="479"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2178"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2179"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="485"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="486"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2185"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2186"/>
         <source>Retry playback</source>
         <translation>Повторити відтворення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1544"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1557"/>
         <source>Returned to window</source>
         <translation>Повернуто у вікно</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="315"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2175"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="322"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2182"/>
         <source>SUBTITLES</source>
         <translation>СУБТИТРИ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2184"/>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="941"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2191"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="954"/>
         <source>Settings</source>
         <translation>Налаштування</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1084"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1091"/>
         <source>Shaders folder not found — comparison is unavailable</source>
         <translation>Папку шейдерів не знайдено — порівняння недоступне</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="502"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2190"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="509"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2197"/>
         <source>Stay on the Original picture</source>
         <translation>Залишити оригінальне зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1443"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1450"/>
         <source>Stream link has expired — refreshing</source>
         <translation>Посилання на потік застаріло — оновлення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1768"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1775"/>
         <source>Switching to %1p…</source>
         <translation>Перемикання на %1p…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1244"/>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1452"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1257"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1465"/>
         <source>The reference capture was asked of the other core.</source>
         <translation>Запит еталонного захоплення було адресовано іншому ядру.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="682"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="689"/>
         <source>The video file is no longer there</source>
         <translation>Відеофайл більше не існує за вказаним шляхом</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="675"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="682"/>
         <source>This source is a stream — it has no folder</source>
         <translation>Це потокове відео — у нього немає локальної папки</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1421"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1428"/>
         <source>Track: %1</source>
         <translation>Доріжка: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2189"/>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="946"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2196"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="959"/>
         <source>Turn off AnimeJaNai</source>
         <translation>Вимкнути AnimeJaNai</translation>
     </message>
@@ -10214,13 +10476,25 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Джерело: %1 × %2</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="477"/>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="509"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="479"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="496"/>
+        <source>Building TensorRT for RTX engine</source>
+        <translation>Збирання рушія TensorRT for RTX</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="482"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="520"/>
+        <source>TensorRT for RTX compilation</source>
+        <translation>Компіляція TensorRT for RTX</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="483"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="521"/>
         <source>TensorRT compilation</source>
         <translation>Компіляція TensorRT</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="641"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="648"/>
         <source>Video link copied</source>
         <translation>Посилання на відео скопійовано</translation>
     </message>
@@ -10228,279 +10502,279 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::shell::PlayerShell</name>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1319"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2714"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1346"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2749"/>
         <source>%1 · Media Lightbox</source>
         <translation>%1 · Медіа-переглядач</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1907"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1942"/>
         <source>Anime4K: %1</source>
         <translation>Anime4K: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="961"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="988"/>
         <source>Compare quality</source>
         <translation>Порівняти якість</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="788"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="815"/>
         <source>In desktop settings, choose Mikai Ja Nai under Default Applications. Your defaults have not been changed.</source>
         <translation>У налаштуваннях робочого середовища виберіть Mikai Ja Nai у розділі «Типові програми». Ваші типові програми не змінено.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="790"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="817"/>
         <source>Choose Mikai Ja Nai in Windows Default Apps. Your defaults have not been changed.</source>
         <translation>Виберіть Mikai Ja Nai у налаштуваннях типових програм Windows. Ваші типові програми не змінено.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="960"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="987"/>
         <source>Copy frame</source>
         <translation>Копіювати кадр</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="962"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="989"/>
         <source>Copy link</source>
         <translation>Копіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="802"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1940"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2315"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="829"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1975"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2350"/>
         <source>ENHANCEMENTS</source>
         <translation>ПОКРАЩЕННЯ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="972"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="999"/>
         <source>Exit  (Esc)</source>
         <translation>Вийти  (Esc)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="590"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="623"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2725"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2727"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="617"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="650"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2760"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2762"/>
         <source>Exit the player  (Esc)</source>
         <translation>Вийти з плеєра  (Esc)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="849"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="850"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2247"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="876"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="877"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2282"/>
         <source>FPS unknown</source>
         <translation>FPS невідомий</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1044"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2745"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1071"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2780"/>
         <source>Fullscreen mode</source>
         <translation>Повноекранний режим</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="971"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="998"/>
         <source>Keyboard shortcuts  (?)</source>
         <translation>Гарячі клавіші  (?)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="387"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="414"/>
         <source>Media Lightbox</source>
         <translation>Медіа-переглядач</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="584"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="613"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2723"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2726"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="611"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="640"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2758"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2761"/>
         <source>Minimize the window</source>
         <translation>Згорнути вікно</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="680"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="683"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="684"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2737"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="707"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="710"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="711"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2772"/>
         <source>Skip forward 85 seconds</source>
         <translation>Перейти вперед на 85 секунд</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="710"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2741"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="737"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2776"/>
         <source>Audio — choose a track  (T)</source>
         <translation>Аудіо — вибрати доріжку  (T)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="730"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2744"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="757"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2779"/>
         <source>Quality and speed</source>
         <translation>Якість та швидкість</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="781"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="808"/>
         <source>Default video player</source>
         <translation>Типовий відеопрогравач</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="969"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="996"/>
         <source>Media information</source>
         <translation>Відомості про медіафайл</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1421"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1423"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1448"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1450"/>
         <source>Preparing enhancement — playback paused</source>
         <translation>Готуємо покращення — відтворення призупинено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1422"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1449"/>
         <source>Playback is paused while the engine prepares its work.</source>
         <translation>Відтворення призупинено, доки рушій готує свою роботу.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1540"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1567"/>
         <source>Skip %1 — jump to %2</source>
         <translation>Пропустити %1 — перейти до %2</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1542"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1569"/>
         <source>Skip %1</source>
         <translation>Пропустити %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1736"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1763"/>
         <source>Muted</source>
         <translation>Звук вимкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1811"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1844"/>
         <source>Unavailable · %1</source>
         <translation>Недоступно · %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1833"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1845"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1866"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1878"/>
         <source>Preparing…</source>
         <translation>Підготовка…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1944"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2063"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1979"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2098"/>
         <source>NATIVE PROCESSING</source>
         <translation>НАТИВНА ОБРОБКА</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="634"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2729"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="661"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2764"/>
         <source>Next episode  (→)</source>
         <translation>Наступна серія  (→)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1666"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1693"/>
         <source>No media loaded — drop a file to begin</source>
         <translation>Медіафайл не завантажено — перетягніть файл сюди</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="404"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="431"/>
         <source>No native status has been read.</source>
         <translation>Стан нативної обробки ще не зчитано.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="965"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="992"/>
         <source>Open containing folder</source>
         <translation>Відкрити папку з файлом</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="725"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2743"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="752"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2778"/>
         <source>Open enhancements</source>
         <translation>Відкрити покращення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="699"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2740"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="726"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2775"/>
         <source>Picture in picture</source>
         <translation>Картинка в картинці</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="677"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2736"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="704"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2771"/>
         <source>Play</source>
         <translation>Відтворити</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="670"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2735"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="697"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2770"/>
         <source>Play / pause  (Space)</source>
         <translation>Відтворити / пауза  (Пробіл)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="630"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2728"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="657"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2763"/>
         <source>Previous episode  (←)</source>
         <translation>Попередня серія  (←)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1743"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1770"/>
         <source>Speed %1x</source>
         <translation>Швидкість %1x</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="718"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2742"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="745"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2777"/>
         <source>Subtitles — choose a track  (C)</source>
         <translation>Субтитри — вибрати доріжку  (C)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="748"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2739"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="775"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2774"/>
         <source>Timeline</source>
         <translation>Шкала часу</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="618"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2724"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="645"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2759"/>
         <source>Toggle fullscreen / windowed</source>
         <translation>Перемкнути повноекранний / віконний режим</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="662"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2738"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="689"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2773"/>
         <source>Volume</source>
         <translation>Гучність</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1589"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1729"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1737"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2392"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1616"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1756"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1764"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2427"/>
         <source>Volume %1%</source>
         <translation>Гучність %1%</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="704"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1043"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2745"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="731"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1070"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2780"/>
         <source>Windowed mode</source>
         <translation>Віконний режим</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2244"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2279"/>
         <source>container source FPS</source>
         <translation>FPS вихідного контейнера</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2886"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2921"/>
         <source>drop a video file here  ·  or pass one as argv[1]</source>
         <translation>перетягніть відеофайл сюди  ·  або передайте його як argv[1]</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2241"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2276"/>
         <source>mpv output FPS</source>
         <translation>вихідний FPS mpv</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1318"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2713"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2885"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1345"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2748"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2920"/>
         <source>no media loaded</source>
         <translation>медіафайл не завантажено</translation>
     </message>

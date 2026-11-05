@@ -16,15 +16,47 @@
   },
   "currentOfficialAjiRelease": {
     "sourceRecord": "sources.json#sources[id=animejanai-inference].currentOfficialRelease",
-    "tag": "v0.17.1",
-    "sourceCommit": "263ff190a2227199a08292bb41508837382eb66d",
+    "tag": "v0.22.2",
+    "sourceCommit": "14b21d14396a3f0a905522b32debc15dea90fabd",
     "abi": 9,
     "platforms": ["windows-x64", "linux-x64"],
     "scope": "Official runtime release assets are distinct from the historical private ABI-8 Native DLLs described by engine.aji-dispatcher, engine.aji-trt and engine.aji-dml below. ABI-9 runtime requires a compatible ABI-9 mpv filter; identity is not runtime proof.",
-    "acquisition": "Only after explicit user action into the per-machine component store; no startup download or public bundling.",
+    "acquisition": "Only after explicit user action into the per-machine component store; no startup download or public bundling. Installations of earlier official releases stay on disk as their own records and are not migrated or treated as this release.",
     "redistribution": "blocked",
     "blockerRef": "ESC-1",
-    "encoder": "The separate Linux aji-encode release asset is an optional offline CLI, not an app playback dependency and not automatically acquired or shipped. FFmpeg dependency and redistribution rights must be assessed separately."
+    "encoder": "The separate Linux aji-encode release asset is an optional offline CLI, not an app playback dependency and not automatically acquired or shipped. FFmpeg dependency and redistribution rights must be assessed separately.",
+    "optionalBackendAssets": {
+      "asset": "aji-trtrtx-windows-x64.zip",
+      "sourceRecord": "sources.json#sources[id=animejanai-inference].currentOfficialRelease.assets[name=aji-trtrtx-windows-x64.zip]",
+      "backend": "TensorRT-RTX is an explicit, selectable Windows Standard AnimeJaNai backend. Display label `TensorRT for RTX`; persisted payload and stable name `tensorrt-rtx`; plan INI `backend=TensorRT-RTX`.",
+      "lifecycle": "Opt-in. Nothing is acquired when the backend is selected or Settings is opened; a user's explicit install action is required, into the per-machine component store root `native/components/aji/v0.22.2/trtrtx`. The archive is not part of the base Windows installer or any distribution and is not downloaded at startup.",
+      "stagedClosure": "Exactly 6 flat files: aji.dll (dispatcher, taken from assets[name=aji-windows-x64.zip], 108,544 bytes, SHA-256 571ba67b30c73188afdeca03e872ad4d27907b1bcebdc3b7b960ea0d6b4c3c3a) plus the overlay's aji_trtrtx.dll, tensorrt_rtx_1_7.dll, tensorrt_onnxparser_rtx_1_7.dll, TensorRT-RTX-NOTICE.txt and TensorRT-RTX-Acknowledgements.txt. Both NVIDIA notices are mandatory members; per-file digests are pinned in sources.json.",
+      "excludedFromClosure": "No classic aji_trt.dll, no nvinfer/nvinfer_plugin/nvonnxparser DLL, no CUDA pack, no per-SM builder resource and no trtexec/trtexec.exe. The released aji_trtrtx.dll imports no cudart, so no cudart requirement is recorded for this backend.",
+      "componentStore": "The Components view gives RTX its own product state (installed, verified, progress) separate from classic TensorRT, with the two archive rows aji-v0.22.2 and aji-trtrtx-v0.22.2 and a missing-download total of those two archives only. Classic GPU-kernel/CUDA tensor packs are unavailable and are never queued for RTX; no component-store pack of its own exists, because RTX is installed directly.",
+      "verification": "Acquisition and re-adoption accept only the pinned dispatcher/overlay pair: exactly those 5 flat overlay members (no directory, symlink, duplicate or unsafe path), matching per-file byte counts and SHA-256 values, a valid x64 PE, and both NVIDIA notices present. An install record may list only the RTX closure files; anything else is rejected instead of accepted as a partial runtime.",
+      "installRecord": "install.json keeps schema `mikai.native.animejanai/3`, version `v0.22.2`, ABI 9, backend `trtrtx`, with acquisitions limited to aji-windows-x64.zip and aji-trtrtx-windows-x64.zip. Earlier v0.17.1 trees are left on disk as distinct orphaned records; there is no cross-version pruning or migration.",
+      "fallbackRefusal": "The RTX root is rejected at acquisition/verification when aji_trt.dll is physically present, so the upstream dispatcher cannot silently fall back to classic TensorRT inside it. The upstream line `TensorRT-RTX failed ...; using TensorRT instead` is classified as a named RTX failure, never as RTX success.",
+      "nvidiaLicence": {
+        "name": "NVIDIA TensorRT for RTX Software License Agreement",
+        "version": "TensorRT-RTX 1.7.1.116 (bundled DLL version 1.7)",
+        "runtimeFiles": [
+          "tensorrt_rtx_1_7.dll (229,312,112 bytes, SHA-256 7b8a06d4b66dfe7da7f1ff48a994ad9dcf107cd28b4822d6f25453528c0db6dd)",
+          "tensorrt_onnxparser_rtx_1_7.dll (2,329,200 bytes, SHA-256 b38d00d107dae534f1fc855df5bc1a04fc0ae25135b5b10d17f9b30cc4c9c411)"
+        ],
+        "requiredNotices": [
+          "TensorRT-RTX-NOTICE.txt (868 bytes, SHA-256 da7aa4b4bba64232bb9e868c5899e14bd74e983c6f5df017febfe24f72e2b5e7)",
+          "TensorRT-RTX-Acknowledgements.txt (107,164 bytes, SHA-256 611660ec0ae19c7b8df4a6442009c8bc85ba9e56d7d5ea042564841e72032d25; LicenseRef-NvidiaProprietary with third-party licences reproduced by NVIDIA)"
+        ],
+        "obligation": "Both notices are staged with the local copy and must remain with it. The NVIDIA runtime files must not be used separately or redistributed except as that agreement permits; this project makes no separate clearance claim for them.",
+        "boundary": "These NVIDIA terms are not a grant for the inference source and are not clearance to redistribute aji_trtrtx.dll or any part of this overlay."
+      },
+      "redistribution": "blocked",
+      "blockerRef": "ESC-1",
+      "blockerScope": "aji_trtrtx.dll is built from the unlicensed upstream inference source (ESC-1); the overlay is acquired locally only. Local acquisition, installation and use do not remove the redistribution blocker and do not establish public distribution rights.",
+      "platforms": "Windows x64 only. No Linux RTX asset is published or offered; a restored or imported Linux RTX request fails by name (\"TensorRT for RTX is available only on Windows.\") and is never clamped to TensorRT or DirectML. The Linux encoder asset remains unrelated and unadopted.",
+      "evidenceBoundary": "Archive identity, member inventory and per-file digests are verified from the published release; the closed-source NVIDIA runtime and the upstream-built aji_trtrtx.dll were not executed, and no inference or performance result is claimed."
+    },
+    "buildRecordBoundary": "Upstream builds against TensorRT 11.4.0.106 and TRT-RTX 1.7.1.116. The pinned classic component packs in this repository remain TensorRT 11.3.0.99, and the assets import nvinfer_11 symbols that any 11.x runtime exports. The opt-in RTX overlay carries NVIDIA's TRT-RTX 1.7 runtime from the release asset itself; it is a separate product, not a classic 11.4 pack. Upstream classic build versions are not a statement of the application's deployed runtime."
   },
   "blockerTaskBindings": {
     "principle": "A blocked component is not a blocked task. A blocker binds the tasks whose own acceptance needs the inference source, the built shim binaries, or a redistributed third-party artefact. Dependency ordering in native/README.md is a planning fact and is not a rights question. This section is retained so the historical binding and its grounds stay auditable.",
@@ -304,7 +336,7 @@
     },
     {
       "id": "engine.aji-dispatcher",
-      "cohort": "historical private Native ABI-8 and official v0.9.0; not the current official v0.17.1 runtime",
+      "cohort": "historical private Native ABI-8 and official v0.9.0; not the current official v0.22.2 runtime",
       "bundle": "native",
       "name": "aji.dll",
       "sourceIdentity": {
@@ -338,7 +370,7 @@
       "licence": {
         "spdx": null,
         "status": "upstream terms not verified",
-        "locatedText": "None. The upstream repository declares no licence: no LICENSE or COPYING file, no SPDX identifier, no per-file licence headers, and the GitHub API reports license=null.",
+        "locatedText": "None. The upstream repository declares no licence: no LICENSE or COPYING file, no SPDX identifier, no per-file licence headers for its own code, and the GitHub API reports license=null. The v0.22.2 source adds ci/windows/TensorRT-RTX-NOTICE.txt, which is NVIDIA's notice for the optional TensorRT-for-RTX overlay and is not an upstream grant.",
         "evidence": [
           "https://api.github.com/repos/the-database/animejanai-inference (license: null)",
           "https://raw.githubusercontent.com/the-database/animejanai-inference/main/LICENSE (HTTP 404)"
@@ -357,7 +389,7 @@
     },
     {
       "id": "engine.aji-trt",
-      "cohort": "historical private Native ABI-8; not the current official v0.17.1 runtime",
+      "cohort": "historical private Native ABI-8; not the current official v0.22.2 runtime",
       "bundle": "native",
       "name": "aji_trt.dll",
       "sourceIdentity": {
@@ -381,7 +413,7 @@
       "licence": {
         "spdx": null,
         "status": "upstream terms not verified",
-        "locatedText": "None. The upstream repository declares no licence: no LICENSE or COPYING file, no SPDX identifier, no per-file licence headers, and the GitHub API reports license=null.",
+        "locatedText": "None. The upstream repository declares no licence: no LICENSE or COPYING file, no SPDX identifier, no per-file licence headers for its own code, and the GitHub API reports license=null. The v0.22.2 source adds ci/windows/TensorRT-RTX-NOTICE.txt, which is NVIDIA's notice for the optional TensorRT-for-RTX overlay and is not an upstream grant.",
         "evidence": [
           "https://api.github.com/repos/the-database/animejanai-inference (license: null)",
           "https://raw.githubusercontent.com/the-database/animejanai-inference/main/LICENSE (HTTP 404)"
@@ -400,7 +432,7 @@
     },
     {
       "id": "engine.aji-dml",
-      "cohort": "historical private Native ABI-8; not the current official v0.17.1 runtime",
+      "cohort": "historical private Native ABI-8; not the current official v0.22.2 runtime",
       "bundle": "native",
       "name": "aji_dml.dll",
       "sourceIdentity": {
@@ -423,7 +455,7 @@
       "licence": {
         "spdx": null,
         "status": "upstream terms not verified",
-        "locatedText": "None. The upstream repository declares no licence: no LICENSE or COPYING file, no SPDX identifier, no per-file licence headers, and the GitHub API reports license=null.",
+        "locatedText": "None. The upstream repository declares no licence: no LICENSE or COPYING file, no SPDX identifier, no per-file licence headers for its own code, and the GitHub API reports license=null. The v0.22.2 source adds ci/windows/TensorRT-RTX-NOTICE.txt, which is NVIDIA's notice for the optional TensorRT-for-RTX overlay and is not an upstream grant.",
         "evidence": [
           "https://api.github.com/repos/the-database/animejanai-inference (license: null)",
           "https://raw.githubusercontent.com/the-database/animejanai-inference/main/LICENSE (HTTP 404)"
@@ -2893,7 +2925,7 @@
     "inferenceSourceSha": {
       "source": "animejanai-inference",
       "commit": "738ce3b3020b3950c48ce3122a08f32af531d4fa",
-      "nineFileDigests": "Historical provenance of the existing private Native build record; retained as-is. Official v0.17.1 and historical v0.9.0 source identities and local-vs-tag reconciliation are recorded in sources.json#sources[id=animejanai-inference].",
+      "nineFileDigests": "Historical provenance of the existing private Native build record; retained as-is. Official v0.22.2 and historical v0.9.0 source identities and local-vs-tag reconciliation are recorded in sources.json#sources[id=animejanai-inference].",
       "licenceStatus": "no upstream licence text located; upstream terms not verified; the draft permission request remains unsent (ESC-1)"
     },
     "fileHashes": "The digests in sources.json#observations - including the four observedBinaries entries - are descriptive measurements of files this repository did not build and are NOT release pins. The digests in installedBundleInventory.files are the installed bundle manifest's own measurements of the installed files; they record which bytes ship, and they are not a claim that those bytes were reproduced from the recorded sources. Where a reproduction claim is warranted it is stated per cohort in verificationMethod.",

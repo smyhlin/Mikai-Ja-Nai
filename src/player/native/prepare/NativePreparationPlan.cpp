@@ -2,6 +2,7 @@
 
 #include <numeric>
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QCryptographicHash>
 
 #include "native/models/NativeRife.hpp"
@@ -468,6 +469,20 @@ PreparationPlan resolvePreparationPlan(const PlanRequest& request) {
   const RecipeVerdict shape = validateRecipe(request.recipe);
   if (!shape.ok) {
     builder.block(shape.reasonKey, shape.reason);
+    finishUnavailable();
+    return plan;
+  }
+  // The private Native ABI-8 producer builds only the backends it carries. A
+  // recipe naming the Standard-only TensorRT for RTX is refused by name here,
+  // before the offered-backend check, so it can never be planned or built and no
+  // other backend is substituted for it.
+  if (!privateNativeCarries(request.recipe.backend)) {
+    builder.block(QStringLiteral("backend.unsupported"),
+                  QCoreApplication::translate(
+                      "NativePreparationPlan",
+                      "recipe %1 asks for the %2 backend, which this private Native ABI does "
+                      "not carry; no other backend is substituted")
+                      .arg(request.recipe.id, stableName(request.recipe.backend)));
     finishUnavailable();
     return plan;
   }

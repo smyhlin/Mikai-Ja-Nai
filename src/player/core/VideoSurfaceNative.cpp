@@ -155,23 +155,27 @@ QByteArray frameDigest(const QByteArray& rgb) {
 /// decode through the same d3d11va methods, but one spelling everywhere keeps
 /// the write/readback comparison honest across every path that aligns a core.
 QString backendHwdec(const native::Backend backend) {
-    return backend == native::Backend::TensorRT ? QStringLiteral("nvdec")
-                                                : QStringLiteral("d3d11");
+    // The TensorRT family, classic and RTX alike, consumes CUDA frames; only
+    // DirectML binds D3D11 textures. TensorRT-RTX never degrades to the
+    // DirectML decoder.
+    return native::isTensorRtFamily(backend) ? QStringLiteral("nvdec")
+                                             : QStringLiteral("d3d11");
 }
 
 /// True when the decoder the core reported actually produces frames `backend`
-/// can consume. TensorRT needs the CUDA interop nvdec produces; DirectML needs
-/// D3D11 textures. A software decoder produces neither, and every `-copy` variant
-/// downloads to system memory, so the frames the backend would receive would
-/// carry no device at all - that is a refusal, not a silent CPU path.
+/// can consume. The TensorRT family (classic and RTX) needs the CUDA interop
+/// nvdec produces; DirectML needs D3D11 textures. A software decoder produces
+/// neither, and every `-copy` variant downloads to system memory, so the frames
+/// the backend would receive would carry no device at all - that is a refusal,
+/// not a silent CPU path.
 bool decoderFeedsBackend(const QString& decoder, const native::Backend backend) {
     const QString name = decoder.trimmed().toLower();
     if (name.isEmpty() || name == QLatin1String("no")) return false;
     // A copying decoder hands mpv software frames: no CUDA context, no D3D11
     // texture, nothing this build's backends bind.
     if (name.endsWith(QLatin1String("-copy"))) return false;
-    return backend == native::Backend::TensorRT ? name.startsWith(QLatin1String("nvdec"))
-                                                : name.startsWith(QLatin1String("d3d11"));
+    return native::isTensorRtFamily(backend) ? name.startsWith(QLatin1String("nvdec"))
+                                             : name.startsWith(QLatin1String("d3d11"));
 }
 
 /// Field-wise identity of two controller statuses, so the status signal fires on

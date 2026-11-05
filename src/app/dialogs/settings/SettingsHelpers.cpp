@@ -16,8 +16,11 @@
 namespace mikai::app {
 
 QString backendLabel(mplayer::native::Backend backend) {
+    // Exhaustive over the persisted vocabulary and never translated: an empty
+    // return is how a combo used to render a third backend as a nameless row.
     switch (backend) {
         case mplayer::native::Backend::TensorRT: return QStringLiteral("TensorRT");
+        case mplayer::native::Backend::TensorRTRTX: return QStringLiteral("TensorRT for RTX");
         case mplayer::native::Backend::DirectML: return QStringLiteral("DirectML");
     }
     return QString();

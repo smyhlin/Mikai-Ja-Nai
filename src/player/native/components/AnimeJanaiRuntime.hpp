@@ -130,6 +130,8 @@ struct AnimeJanaiPlan {
     QString configPath;
     QString modelDir;
     QString rifeModelDir;
+    /// Classic TensorRT only. TensorRT for RTX leaves both empty: the RTX
+    /// backend builds engines in-process and receives no trtexec options.
     QString trtexecPath;
     QString trtexecLibDir;
     QString statsPath;

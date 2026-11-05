@@ -1,5 +1,6 @@
 #include "NativePreparedPlan.hpp"
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonArray>
@@ -117,6 +118,20 @@ bool validateRequest(const PreparedAdmissionRequest& request, QString* key, QStr
     setReason(key, reason, QStringLiteral("admission.requestId.missing"),
               QStringLiteral("the admission request names no request id, so a reply could not be "
                              "matched to it"));
+    return false;
+  }
+  // The private Native ABI-8 producer only builds and admits the backends it
+  // carries. A requested Standard-only backend - TensorRT for RTX - is refused
+  // by name before any command is written, so no unsupported token can reach the
+  // producer and no other backend is substituted for it. The plan and observed
+  // provider must equal this request elsewhere in this function, so this gate
+  // covers all three facts.
+  if (!privateNativeCarries(request.backend)) {
+    setReason(key, reason, QStringLiteral("backend.unsupported"),
+              QCoreApplication::translate(
+                  "NativePreparedPlan",
+                  "The %1 backend is not carried by this private Native ABI.")
+                  .arg(stableName(request.backend)));
     return false;
   }
   if (!request.plan.canPrepare() || request.plan.id.isEmpty()) {

@@ -3059,7 +3059,7 @@ void VideoSurface::enforceAnimeJanaiHdrGate() {
         animeJanaiBusy_ = false;
         if (animeJanaiStageBuildLease_) animeJanaiStageBuildLease_->release();
         animeJanaiStageBuildLease_.reset();
-        finishAnimeJanaiEngineBuild(false, tr("TensorRT engine build stopped for this source."));
+        finishAnimeJanaiEngineBuild(false, tr("Enhancement engine build stopped for this source."));
         setEngineFrameHold(false);
         restoreAnimeJanaiHwdec(epoch, generation);
         setAnimeJanaiStatus(notice);

@@ -23,6 +23,9 @@ QString backendLabel(Backend backend) {
     switch (backend) {
         case Backend::TensorRT: return QStringLiteral("TensorRT");
         case Backend::DirectML: return QStringLiteral("DirectML");
+        // The private Native ABI never offers RTX, but a persisted preference may
+        // still name it. The label stays a proper noun and never goes blank.
+        case Backend::TensorRTRTX: return QStringLiteral("TensorRT for RTX");
     }
     return QString();
 }

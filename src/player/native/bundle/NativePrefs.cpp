@@ -384,11 +384,30 @@ NativeAvailability nativeAvailabilityFor(const RuntimeSelection& runtime,
         return available;
     }
 
-    // 4: an executed success. The engine is available because the runtime factory
-    // really ran against the adopted source and answered at least one role, and the
-    // backend offered is the one it was checked against. This is eligibility, not
-    // activation and not artifact readiness: only the filter's own status reports a
-    // chain running.
+    // The backend the factory was checked against is the only one a request here
+    // can run on. A token this build reads but the private Native ABI-8 producer
+    // does not carry - the Standard-only TensorRT for RTX - is refused by name:
+    // it is never mapped onto TensorRT or DirectML, and no offered backend list
+    // is fabricated for it.
+    const std::optional<Backend> observedBackend = backendFromName(factory->backend);
+    if (!observedBackend.has_value() || !privateNativeCarries(*observedBackend)) {
+        available.engineAvailable = false;
+        available.engineReasonKey = QStringLiteral("native.backendUnsupported");
+        available.engineReason =
+            translated(QT_TRANSLATE_NOOP(
+                "NativePrefs",
+                "The backend %1 is not one the private native pipeline can run on this build."))
+                .arg(factory->backend);
+        available.recipes =
+            unavailableRecipeRows(available.engineReasonKey, available.engineReason);
+        return available;
+    }
+
+    // 4: an executed success on a backend this ABI carries. The engine is
+    // available because the runtime factory really ran against the adopted source
+    // and answered at least one role, and the backend offered is the one it was
+    // checked against. This is eligibility, not activation and not artifact
+    // readiness: only the filter's own status reports a chain running.
     available.engineAvailable = true;
     const NativeCapabilities capabilities = nativeCapabilitiesFrom(*factory);
     if (capabilities.hasTensorRT) {

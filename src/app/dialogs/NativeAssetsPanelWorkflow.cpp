@@ -1114,6 +1114,13 @@ void NativeAssetsPanel::prepareRefusal(QString* reasonKey, QString* reason,
                                               : recipeKey,
                           recipeReason);
         }
+        // The private Native ABI-8 toolchain carries TensorRT and DirectML only.
+        // A recipe naming the Standard-only TensorRT for RTX is refused here, by
+        // name, before any model, probe, plan or build work is submitted.
+        if (!privateNativeCarries(recipe->backend)) {
+            return refuse(PrepareRefusalState::Template::BackendUnavailable,
+                          QStringLiteral("backend.unavailable"), stableName(recipe->backend));
+        }
         for (const SpatialStage& stage : recipe->spatial) {
             bool usable = false;
             for (const StoredModel& row : storedModels_) {
@@ -1363,9 +1370,26 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
                 return QVariant();
             }
             EngineBuildIdentity identity;
-            const QString pluginRevision = recipe->backend == Backend::DirectML
-                                               ? tools.pluginShaDirectMl
-                                               : tools.pluginShaTensorRt;
+            // Every private backend names its own preparation module revision. The
+            // Standard-only TensorRT for RTX has no private module here, so it is
+            // refused by name instead of being handed the TensorRT revision.
+            QString pluginRevision;
+            switch (recipe->backend) {
+                case Backend::TensorRT:
+                    pluginRevision = tools.pluginShaTensorRt;
+                    break;
+                case Backend::DirectML:
+                    pluginRevision = tools.pluginShaDirectMl;
+                    break;
+                case Backend::TensorRTRTX:
+                    result->reasonKey = QStringLiteral("backend.unavailable");
+                    result->reason = QCoreApplication::translate(
+                                         "NativeAssetsPanel",
+                                         "The private Native pipeline does not carry the %1 "
+                                         "backend, so no engine can be built for it.")
+                                         .arg(stableName(recipe->backend));
+                    return QVariant();
+            }
             if (!identityFromDescribe(describe.object(), recipe->backend, tools.coreSha,
                                       tools.sourceAbi, pluginRevision, ctx.device, &identity,
                                       &identityKey, &identityReason)) {

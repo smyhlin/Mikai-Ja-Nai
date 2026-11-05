@@ -72,7 +72,10 @@ struct NativeCapabilities {
 /// answered success for the exact adopted source/device context it names. The
 /// checked backend token then names the backend (`tensorrt` -> `hasTensorRT`,
 /// `directml` -> `hasDirectML`) and the answered RIFE role turns `supportsRife`
-/// on. The spatial role is a ROLE, not a backend, so it never stands in for one;
+/// on. Any other token - including the Standard-only `tensorrt-rtx` - turns no
+/// backend flag on: the private Native ABI-8 producer cannot honour it, so it is
+/// refused by name by the caller rather than mapped onto TensorRT or DirectML.
+/// The spatial role is a ROLE, not a backend, so it never stands in for one;
 /// `runtimeVersion`, `deviceIdentity` and `smMajor`/`smMinor` are observed
 /// identities, not capability flags. An unobserved or refused observation
 /// projects every flag off and carries no claim. Provider strings and

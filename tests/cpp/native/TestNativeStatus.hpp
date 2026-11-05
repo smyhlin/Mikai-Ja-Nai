@@ -13,6 +13,7 @@ class TestNativeStatus : public QObject {
   void exactIntegersSurviveTheWireAndOversizedOnesAreRefused();
   void theOuterFlatMapMustStateItsOwnTyping();
   void aOneToOneSpatialChainStillCarriesRequestedAndEffectiveSeparately();
+  void aPrivateDiagnosticsExportPreservesTheRequestedValueVerbatim();
   void aCadenceOrGeometryThatContradictsTheStageShapeIsRefused();
   void absentRatesAreRefusedForActiveAndNeverSerialisedAsZero();
   void countersMustAgreeWithTheEffectivePlan();

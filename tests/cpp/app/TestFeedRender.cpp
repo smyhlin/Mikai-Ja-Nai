@@ -976,6 +976,56 @@ void TestFeedRender::theEngineBuildGateWithholdsMeasurementUntilTheSlotIsConfigu
             AnimeJanaiBuildLogEvent::None);
   QVERIFY(gate.failed());
   QVERIFY(!gate.readyToMeasure());
+
+  // TensorRT-RTX shares the same gate and slot protocol, but names its own
+  // engine work. Its in-process builder logs both a build start and a separate
+  // warm-up; a warm-up failure is evidence to keep, not a verdict.
+  AnimeJanaiBuildGate rtx;
+  const QString rtxBuild = QStringLiteral("Building TensorRT-RTX engine for spatial");
+  QCOMPARE(classifyAnimeJanaiBuildLog(QStringLiteral("aji"), rtxBuild,
+                                      Backend::TensorRTRTX, kPlanSlot),
+           AnimeJanaiBuildLogEvent::TensorRtBuildStarted);
+  QCOMPARE(rtx.observeLog(QStringLiteral("aji"), rtxBuild, Backend::TensorRTRTX, kPlanSlot),
+           AnimeJanaiBuildLogEvent::TensorRtBuildStarted);
+  QVERIFY(rtx.buildActive());
+  const QString rtxPrep = QStringLiteral("Preparing TensorRT-RTX engine for rife:v4.14");
+  QCOMPARE(rtx.observeLog(QStringLiteral("aji"), rtxPrep, Backend::TensorRTRTX, kPlanSlot),
+           AnimeJanaiBuildLogEvent::TensorRtEnginePrepStarted);
+  QVERIFY(rtx.buildActive());
+  const QString rtxEngine =
+      QDir(QDir::tempPath()).filePath(QStringLiteral("aji-spatial.rtxengine"));
+  const QString warmupFailure =
+      QStringLiteral("background engine warm-up failed: %1 (see .warm.log)").arg(rtxEngine);
+  QCOMPARE(rtx.observeLog(QStringLiteral("aji"), warmupFailure, Backend::TensorRTRTX, kPlanSlot),
+           AnimeJanaiBuildLogEvent::TensorRtEngineWarmupFailed);
+  QCOMPARE(rtx.warmupLogPath(), rtxEngine + QStringLiteral(".warm.log"));
+  QVERIFY(!rtx.failed());
+  QVERIFY(rtx.buildActive());
+  QCOMPARE(rtx.observeLog(QStringLiteral("aji"), configured, Backend::TensorRTRTX, kPlanSlot),
+           AnimeJanaiBuildLogEvent::SlotConfigured);
+  QVERIFY(rtx.readyToMeasure());
+
+  // The upstream dispatcher substituting classic TensorRT is a named failure of
+  // the requested RTX backend, never an RTX success, and it has no build log to
+  // read. Classic TensorRT must not reinterpret the same line, and DirectML is
+  // never offered a TensorRT-family build event.
+  const QString substituted =
+      QStringLiteral("TensorRT-RTX failed (create: aji_trtrtx could not start); "
+                     "using TensorRT instead");
+  AnimeJanaiBuildGate replaced;
+  QCOMPARE(replaced.observeLog(QStringLiteral("aji"), substituted, Backend::TensorRTRTX,
+                               kPlanSlot),
+           AnimeJanaiBuildLogEvent::BackendSubstituted);
+  QVERIFY(replaced.failed());
+  QVERIFY(replaced.backendSubstituted());
+  QVERIFY(replaced.failureLogPath().isEmpty());
+  QVERIFY(animeJanaiBuildFailureEvent(AnimeJanaiBuildLogEvent::BackendSubstituted));
+  QCOMPARE(classifyAnimeJanaiBuildLog(QStringLiteral("aji"), substituted, Backend::TensorRT,
+                                      kPlanSlot),
+           AnimeJanaiBuildLogEvent::None);
+  QCOMPARE(classifyAnimeJanaiBuildLog(QStringLiteral("aji"), rtxBuild, Backend::DirectML,
+                                      kPlanSlot),
+           AnimeJanaiBuildLogEvent::None);
 }
 
 void TestFeedRender::anAuthoritativeBackgroundBuildFailureSurfacesItsBoundedLogTail() {
@@ -1035,6 +1085,32 @@ void TestFeedRender::anAuthoritativeBackgroundBuildFailureSurfacesItsBoundedLogT
                Backend::TensorRT, slot),
            AnimeJanaiBuildLogEvent::None);
   QVERIFY(!diagnosticOnly.failed());
+
+  // An RTX in-process build reports its own engine and log suffix; the same
+  // failure marker must name that log, not be rejected for lacking ".engine".
+  const QString rtxEnginePath = QDir(directory.path()).filePath(
+      QStringLiteral("aji-71de4197.trtrtx-1.7.0.gpu-nvidia-rtx-4090-sm8.rtxengine"));
+  const QString rtxBuildLogPath = rtxEnginePath + QStringLiteral(".build.log");
+  QFile rtxFile(rtxBuildLogPath);
+  QVERIFY(rtxFile.open(QIODevice::WriteOnly | QIODevice::Text));
+  const QByteArray rtxLog =
+      "[11/05/2026-10:14:03] [E] Error[2]: out of memory while building the RTX engine\n";
+  QCOMPARE(rtxFile.write(rtxLog), static_cast<qint64>(rtxLog.size()));
+  rtxFile.close();
+  const QString rtxFailure =
+      QStringLiteral("[aji] background engine build failed: %1 (see .build.log)")
+          .arg(rtxEnginePath);
+  QCOMPARE(mplayer::native::animeJanaiBuildFailureEnginePath(QStringLiteral("aji"), rtxFailure),
+           rtxEnginePath);
+  AnimeJanaiBuildGate rtxGate;
+  QCOMPARE(rtxGate.observeLog(QStringLiteral("aji"), rtxFailure, Backend::TensorRTRTX, slot),
+           AnimeJanaiBuildLogEvent::TensorRtBuildFailed);
+  QVERIFY(rtxGate.failed());
+  QCOMPARE(rtxGate.failureLogPath(), rtxBuildLogPath);
+  const QStringList rtxTail =
+      mplayer::native::readAnimeJanaiBuildLogTail(rtxGate.failureLogPath(), directory.path());
+  QCOMPARE(rtxTail.size(), 1);
+  QVERIFY(rtxTail.at(0).contains(QStringLiteral("out of memory")));
 }
 
 void TestFeedRender::theNewestEngineBuildLogOwnsAnOutOfMemoryAttribution() {
@@ -1079,6 +1155,25 @@ void TestFeedRender::theNewestEngineBuildLogOwnsAnOutOfMemoryAttribution() {
   // A model directory outside the owned store is not evidence, however it reads.
   QVERIFY(mplayer::native::animeJanaiOutOfMemoryEngineBuildEvidence(
               starvedOnly, QDir(alone.path()).filePath(QStringLiteral("elsewhere")))
+              .isEmpty());
+
+  // An RTX in-process build writes ".rtxengine.build.log"; that log owns the
+  // attribution exactly like the classic one, and mixing the two suffixes still
+  // consults only the newest.
+  QTemporaryDir rtx;
+  QVERIFY(rtx.isValid());
+  const QString rtxModels = rtx.path() + QStringLiteral("/spatial");
+  QVERIFY(writeLog(rtxModels,
+                   QStringLiteral("aji-1f13ce41.trtrtx-1.7.0.gpu-sm8.rtxengine.build.log"),
+                   starved));
+  const QString rtxEvidence =
+      mplayer::native::animeJanaiOutOfMemoryEngineBuildEvidence(rtxModels, rtx.path());
+  QVERIFY(rtxEvidence.contains(QStringLiteral("out of memory")));
+  QTest::qWait(5);
+  QVERIFY(writeLog(rtxModels,
+                   QStringLiteral("aji-ac41ab87.trtrtx-1.7.0.gpu-sm8.rtxengine.build.log"),
+                   QByteArray("&&&& PASSED TensorRT.trtexec [TensorRT v110300]\n")));
+  QVERIFY(mplayer::native::animeJanaiOutOfMemoryEngineBuildEvidence(rtxModels, rtx.path())
               .isEmpty());
 }
 

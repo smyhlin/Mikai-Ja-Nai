@@ -307,7 +307,11 @@ signals:
     /// URL, never re-probes a quality and never starts preparation itself:
     /// Original needs no host at all and is answered inside the dialog.
     void processingSettingsRequested(ProcessingSettingsIntent intent);
-    /// AnimeJaNai backend is missing the app-owned installation record.
+    /// AnimeJaNai backend is missing the app-owned installation record, so the
+    /// host should offer the Components setup. Emitted once per dialog. The
+    /// persisted Standard backend (including "tensorrt-rtx") is already written
+    /// before a plan can fail, so the acquisition surface can target the exact
+    /// runtime the viewer chose without a payload here.
     void componentSetupRequested();
 
 protected:
@@ -511,8 +515,9 @@ private:
     // PlayerDialogProcessing.cpp; they live on the class now so the two TUs
     // cannot drift apart.
     static constexpr int kStatusMs = 1900;
-    /// The persisted spelling of a backend name ("tensorrt"/"directml"): one
-    /// writer for the settings key and the shell's selector, defined once.
+    /// The persisted spelling of a backend name, from the shared stable
+    /// vocabulary ("tensorrt"/"directml"/"tensorrt-rtx"): one writer for the
+    /// settings key and the shell's selector, defined once.
     static QString animeJanaiBackendName(native::Backend backend);
     /// Reads the stored Anime4K preset bindings and installs one window shortcut
     /// per usable one. Empty, unparsable, reserved and already-taken sequences

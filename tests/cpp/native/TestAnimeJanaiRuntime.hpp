@@ -19,6 +19,7 @@ class TestAnimeJanaiRuntime : public QObject {
   void shellSafeLibDirAvoidsASplitLibraryPath();
   void linuxOfficialPairRequiresBothPinnedDigests();
   void missingInstallIsNotReady();
+  void rtxRuntimeClosureAndPlatformContract();
   void missingRequiredBackendDependencyIsNotReady();
   void storedFailedRequestReprobesAfterDependencyInstall();
   void backendMismatchIsNotReady();

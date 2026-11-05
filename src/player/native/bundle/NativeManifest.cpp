@@ -915,9 +915,17 @@ bool parseArtifactManifest(const QJsonObject& object, ArtifactManifest* manifest
     return reject(QStringLiteral("manifest.build.provider"), QStringLiteral("provider is required"));
   }
   const auto provider = backendFromName(providerName);
+  // The private Native ABI-8 producer only builds and loads the two backends it
+  // carries. A manifest naming the Standard-only TensorRT for RTX is refused by
+  // name here rather than admitted and mapped onto TensorRT or DirectML.
   if (!provider) {
     return reject(QStringLiteral("manifest.build.provider"),
                   QStringLiteral("'%1' is not a known provider").arg(providerName));
+  }
+  if (!privateNativeCarries(*provider)) {
+    return reject(QStringLiteral("manifest.build.provider"),
+                  QStringLiteral("'%1' is not a provider this private Native ABI carries")
+                      .arg(providerName));
   }
   parsed.build.provider = *provider;
   QString precisionName;

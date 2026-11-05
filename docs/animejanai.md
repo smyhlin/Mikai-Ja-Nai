@@ -34,6 +34,26 @@ directory the process loader searches, and the store is not on `LD_LIBRARY_PATH`
 `vf add`. `trtexec-libdir` is *not* a loader hint for the filter itself — it configures the child
 engine build only.
 
+### TensorRT for RTX has no Linux path
+
+`TensorRT for RTX` is a Windows-only, opt-in Standard backend (`TensorRT for RTX` in the UI,
+persisted as `tensorrt-rtx`). No Linux RTX asset is published or offered, so nothing on Linux can
+stage one:
+
+- There is no Linux overlay archive and no Linux install or download path for RTX.
+- A saved, restored or imported RTX request fails by name — installation/provisioning report
+  `TensorRT for RTX is available only on Windows.`, runtime preparation reports
+  `TensorRT for RTX is not available on this platform.` It is never clamped to TensorRT or DirectML
+  and never silently substitutes the classic closure.
+- The classic Linux contract above is unchanged: `libaji.so` + `libaji_trt.so` with the
+  `libnvinfer`/`libcudart` closure and the child `trtexec` build. RTX-specific behaviour —
+  in-process engine building, no `trtexec`/`trtexec-libdir`, `.trtrtx-<ver>.gpu-<gpu>.rtxengine` and
+  `.jitcache` caches, and only the five RTX builder flags — cannot be exercised here.
+- On Windows, selecting RTX acquires nothing by itself; an explicit install action stages the
+  standard dispatcher plus the five overlay files under `components/aji/v0.22.2/trtrtx`, keeps both
+  NVIDIA notices, and refuses a root that also contains `aji_trt.dll` so the dispatcher cannot fall
+  back to classic TensorRT. Nothing from that overlay is bundled or redistributed.
+
 ## 2. The engine build must receive a shell-safe path
 
 The fork builds TensorRT engines with:
@@ -69,7 +89,7 @@ Run the fork against the same store, module and options the application passes:
 
 ```bash
 S="$HOME/.local/share/Mikai Wrapper/native"
-M="$S/components/aji/v0.17.1/trt"
+M="$S/components/aji/v0.22.2/trt"
 MODELS="$S/animejanai/models/spatial"
 LD_LIBRARY_PATH="$M:/path/to/extracted/mpv" \
   mpv --no-config --vo=gpu --ao=null --loop=inf \
@@ -90,7 +110,10 @@ verified digests in `components/aji/<version>/` must stay as installed.
 ## 5. Where the code and the checks live
 
 - Plan construction: `src/player/native/components/AnimeJanaiRuntime.cpp` (`backendLibDirs`,
-  `detail::shellSafeLibDir`).
+  `detail::shellSafeLibDir`); the RTX branch emits `backend=TensorRT-RTX`, omits the
+  `trtexec`/`trtexec-libdir` options, sanitizes builder flags and hard-fails off Windows.
+- RTX acquisition, per-file verification and the Linux refusal:
+  `src/player/native/components/AnimeJanaiInstallation.cpp`.
 - Attach and preload: `src/player/core/VideoSurfaceAnimeJanai.cpp` (`preloadAnimeJanaiBackendLibs`,
   `animeJanaiFail` logging).
 - Session log location: `src/app/support/CrashLog.cpp` — an AppImage mounts its payload read-only, so

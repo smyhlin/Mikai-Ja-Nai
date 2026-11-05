@@ -200,6 +200,23 @@ void TestNativeBuilder::probeRequestParsesEveryObservedFact() {
   // parser never invents either.
   QVERIFY(request.request.plan.stages.isEmpty());
   QVERIFY(request.request.models.isEmpty());
+
+  // The ABI-8 producer carries TensorRT and DirectML only. A probe naming the
+  // Standard-only RTX backend is refused by name, in either the offer list or
+  // the build provider, instead of being offered to the planner or mapped onto
+  // classic TensorRT.
+  QJsonObject rtxOffers = builderProbeDocument(temp.path());
+  rtxOffers.insert(QStringLiteral("backends"),
+                   QJsonArray{QStringLiteral("tensorrt"), QStringLiteral("tensorrt-rtx")});
+  QVERIFY(!parseBuilderProbeRequest(rtxOffers, &request, &key, &reason));
+  QCOMPARE(key, QStringLiteral("probe.backend"));
+
+  QJsonObject rtxProvider = builderProbeDocument(temp.path());
+  QJsonObject rtxBuild = rtxProvider.value(QStringLiteral("build")).toObject();
+  rtxBuild.insert(QStringLiteral("provider"), QStringLiteral("tensorrt-rtx"));
+  rtxProvider.insert(QStringLiteral("build"), rtxBuild);
+  QVERIFY(!parseBuilderProbeRequest(rtxProvider, &request, &key, &reason));
+  QCOMPARE(key, QStringLiteral("probe.backend"));
 }
 
 void TestNativeBuilder::probeRequestRefusesAnIncompleteBuildIdentity() {

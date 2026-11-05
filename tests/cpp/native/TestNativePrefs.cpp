@@ -106,6 +106,16 @@ void TestNativePrefs::aNativeRequestRoundTripsThroughItsGroup() {
   QCOMPARE(loaded.recipeId, QStringLiteral("janai.spatial.hd2b.v1"));
   QVERIFY(loaded.issues.isEmpty());
   QVERIFY(!loaded.isDefault());
+
+  // A stored RTX request is read back unchanged rather than clamped to classic
+  // TensorRT; whether a runtime offers it is an availability question answered
+  // by evaluateNativeSelection.
+  NativePreferencePatch rtx;
+  rtx.backend = Backend::TensorRTRTX;
+  QVERIFY2(saveNativePreferences(rtx, &reason), qPrintable(reason));
+  const NativePreferences rtxLoaded = loadNativePreferences();
+  QVERIFY(rtxLoaded.backend == Backend::TensorRTRTX);
+  QVERIFY(rtxLoaded.issues.isEmpty());
 }
 
 void TestNativePrefs::theSavedBlockCarriesTheSchemaThisBuildWrites() {
@@ -275,7 +285,9 @@ void TestNativePrefs::anUntouchedUnknownSchemaSurvivesAGeneralSave() {
 void TestNativePrefs::anUnknownRecipeIsKeptAndReportedUnavailable() {
   NativeAvailability available;
   available.engineAvailable = true;
-  available.backends = allBackends();
+  // PreparedNative (ABI-8) offers exactly these two; the shared enum's third
+  // value is a Standard-AJI choice and never appears here.
+  available.backends = {Backend::TensorRT, Backend::DirectML};
 
   NativePreferences request;
   request.enabled = true;
@@ -306,12 +318,22 @@ void TestNativePrefs::anOfferedRecipeOnAnUnavailableBackendStaysRequested() {
   QVERIFY(view.backend == Backend::DirectML);
   QVERIFY(view.availability.value == Availability::Unavailable);
   QCOMPARE(view.availability.reasonKey, QStringLiteral("native.backendUnsupported"));
+
+  // TensorRT-RTX is nameable but not a PreparedNative backend. The request is
+  // kept as asked for and refused by name; it is never mapped to TensorRT.
+  request.backend = Backend::TensorRTRTX;
+  const NativeSelectionView rtx = evaluateNativeSelection(request, available);
+  QVERIFY(!rtx.requestAvailable);
+  QVERIFY(rtx.backend == Backend::TensorRTRTX);
+  QVERIFY(rtx.availability.value == Availability::Unavailable);
+  QCOMPARE(rtx.availability.reasonKey, QStringLiteral("native.backendUnsupported"));
+  QVERIFY(rtx.availability.reason.contains(QStringLiteral("tensorrt-rtx")));
 }
 
 void TestNativePrefs::anAvailableRecipeOnItsBackendIsRequestedButNeverActive() {
   NativeAvailability available;
   available.engineAvailable = true;
-  available.backends = allBackends();
+  available.backends = {Backend::TensorRT, Backend::DirectML};
   available.recipes.append({QStringLiteral("janai.spatial.hd2x.v1"), QStringLiteral("HD 2x"),
                             readyAvailability(), QString()});
 
@@ -560,6 +582,17 @@ void TestNativePrefs::aUsableFactoryObservationPermitsOnlyItsObservedBackend() {
   QCOMPARE(static_cast<int>(fromDirectml.backends.size()), 1);
   QVERIFY(fromDirectml.backends.contains(Backend::DirectML));
   QVERIFY(!fromDirectml.backends.contains(Backend::TensorRT));
+
+  // The private factory can report only the two PreparedNative backends. An RTX
+  // token is refused by name with the same backend-unavailable reason; it is
+  // never mapped onto classic TensorRT and no backend row is fabricated.
+  const NativeFactoryObservation rtx =
+      observedFactory(QStringLiteral("tensorrt-rtx"), true, true);
+  const NativeAvailability fromRtx = nativeAvailabilityFor(runtime, &rtx);
+  QVERIFY(!fromRtx.engineAvailable);
+  QCOMPARE(fromRtx.engineReasonKey, QStringLiteral("native.backendUnsupported"));
+  QVERIFY(!fromRtx.engineReason.isEmpty());
+  QVERIFY(fromRtx.backends.isEmpty());
 
   // An existing curated leaf is the request row: the answered spatial role is
   // what makes it selectable, and no row is invented for it. What was asked for

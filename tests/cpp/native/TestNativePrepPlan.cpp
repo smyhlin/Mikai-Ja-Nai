@@ -582,6 +582,20 @@ void TestNativePrepPlan::anUnavailableBackendRefusesThePlanByName() {
   QVERIFY(!plan.canPrepare());
   QCOMPARE(plan.blockers.first().reasonKey, QStringLiteral("backend.unavailable"));
   QVERIFY(plan.stages.isEmpty());
+
+  // The private ABI-8 producer never builds the Standard-only RTX backend. Even
+  // if a caller offered it, the recipe is refused by name before the offer list
+  // is consulted and no other backend is substituted.
+  PlanRequest rtx = requestOf(
+      spatialRecipe(QStringLiteral("janai.test.spatial.v1"), {stageOf(QStringLiteral("builtin.hd"))}),
+      catalogOf({spatialRow(QStringLiteral("builtin.hd"), kHd2x)}), hdSource());
+  rtx.recipe.backend = Backend::TensorRTRTX;
+  rtx.backends.available = {Backend::TensorRT, Backend::DirectML, Backend::TensorRTRTX};
+  const PreparationPlan refused = resolvePreparationPlan(rtx);
+  QVERIFY(!refused.canPrepare());
+  QCOMPARE(refused.blockers.first().reasonKey, QStringLiteral("backend.unsupported"));
+  QVERIFY(refused.blockers.first().reason.contains(QStringLiteral("tensorrt-rtx")));
+  QVERIFY(refused.stages.isEmpty());
 }
 
 void TestNativePrepPlan::aModelOnTheWrongBackendIsRefused() {

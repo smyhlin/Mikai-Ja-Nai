@@ -798,7 +798,9 @@ bool readFactory(const QJsonValue& value, NativeFactoryObservation* out, QString
   parsed.backend = backend.toString();
   if (!parsed.backend.isEmpty() && !factoryBackendNameOk(parsed.backend)) {
     return reject(QStringLiteral("native.status.factory.backend"),
-                  QStringLiteral("the factory backend is not one this build checks"));
+                  QStringLiteral("the factory backend '%1' is not one this private Native ABI "
+                                 "carries")
+                      .arg(parsed.backend));
   }
 
   const QJsonValue reasonKey = object.value(QStringLiteral("reasonKey"));
@@ -997,9 +999,13 @@ bool parseStatusSnapshot(const QJsonObject& object, StatusSnapshot* snapshot, QS
     }
     const std::optional<Backend> backend =
         backendFromName(jsonString(plan, QStringLiteral("backend")));
-    if (!backend.has_value()) {
+    // A private ABI-8 document may only name a backend this producer carries. The
+    // Standard-only TensorRT for RTX is known to this build's vocabulary but is
+    // refused here by name, rather than read as TensorRT or DirectML.
+    if (!backend.has_value() || !privateNativeCarries(*backend)) {
       return reject(QStringLiteral("native.status.requested.backend.unknown"),
-                    QStringLiteral("requested backend %1 is neither tensorrt nor directml")
+                    QStringLiteral("requested backend %1 is not carried by this private Native "
+                                   "ABI")
                         .arg(jsonString(plan, QStringLiteral("backend"))));
     }
     selection.backend = *backend;
@@ -1203,6 +1209,12 @@ QJsonObject statusSnapshotToJson(const StatusSnapshot& snapshot) {
     document.insert(QStringLiteral("epoch"), QJsonValue(*snapshot.epoch));
   }
   if (snapshot.requested.has_value()) {
+    // Written verbatim: this is a serialization of the snapshot this side
+    // observed (diagnostics and export only - the command actually sent to the
+    // producer is built by the prepared-admission writer), so the requested
+    // backend is never dropped here. An unsupported backend is refused at the two
+    // real boundaries instead: admission never builds a command for it, and
+    // `parseStatusSnapshot` refuses it on read by name.
     QJsonObject requested;
     requested.insert(QStringLiteral("recipe"), snapshot.requested->recipeId);
     requested.insert(QStringLiteral("backend"), stableName(snapshot.requested->backend));

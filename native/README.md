@@ -10,9 +10,9 @@ This directory contains the provenance manifests, license notices, standalone CL
 
 The application supports two distinct neural enhancement contracts alongside the built-in **Anime4K** GLSL shaders:
 
-1. **Standard AnimeJaNai current official runtime (v0.17.1, API/ABI 9):**
+1. **Standard AnimeJaNai current official runtime (v0.22.2, API/ABI 9):**
    - Qt app manager/configuration and runtime planning: `src/app/dialogs/AnimeJanaiManagerPanel.cpp`, `src/player/native/components/AnimeJanaiConfig.{hpp,cpp}`, `AnimeJanaiRuntime.cpp`.
-   - Uses `vf_animejanai` in the pinned mpv runtimes alongside CUDA 13/TensorRT 11 dependencies.
+   - Uses `vf_animejanai` in the pinned mpv runtimes alongside CUDA 13/TensorRT 11 dependencies for the classic TensorRT backend (and DirectML on Windows); the opt-in Windows `TensorRT for RTX` backend uses NVIDIA's TRT-RTX 1.7 runtime from its own overlay instead, not a CUDA/TensorRT 11 pack.
    - `mpv-fork` source entry still identifies ABI-8 commit `63d127174d8f` (full: `native/manifest/sources.json`, `native/manifest/components.json`), not the source identity for the current runtimes.
    - Separate Windows DEV archive record identifies mpv commit `b4f9f5bfed18` (full: same).
    - Linux archive pinned by `cmake/MikaiLinuxMpv.cmake` and `packaging/provenance/linux-runtime.json`; build/source correspondence not established.
@@ -21,6 +21,7 @@ The application supports two distinct neural enhancement contracts alongside the
    - Official Linux and Windows runtime archives are distinct release assets; archive identity alone does not establish source correspondence, hardware operation, or inference.
    - Historical official v0.9.0 ABI-8 pair and separately patched private MSVC AJI ABI-8 build are not substitutes for this runtime.
    - Separate Linux `aji-encode` archive (~80 MB) is an optional offline tool, not a playback dependency; not automatically downloaded/adopted; FFmpeg dependency and redistribution rights unresolved.
+   - Separate Windows TensorRT-for-RTX overlay archive (~95 MB) backs the opt-in Standard `TensorRT for RTX` backend; it is acquired only on explicit user action, is not part of the base installer or distribution, and keeps NVIDIA's proprietary runtime and notices local-only.
    - User-defined model/profile setup: [Standard AnimeJaNai Custom Models & Profiles](#2-standard-animejanai-custom-models--profiles).
 2. **Prepared Native Bundle Track (`mikai_native_support`, `NativePlaybackController`, `NativeBuilder`):**
    - Uses a versioned, manifest-verified bundle under `<nativeRoot>/runtime/<bundle-id>/` (`manifest.json` schema `mikai.native.bundle/1`) together with out-of-process preparation tools (`mikai_native_prep`, `mikai_native_verify`, `native_inspect`) that build and numerically verify TensorRT plans against an ONNX Runtime CPU reference before admitting them into playback.
@@ -145,13 +146,14 @@ resolution and FPS activation bounds:
 - Settings expose temporal frame count (Auto, 1, or odd 3–15), scene
   threshold, upscale enable/disable and temporal-fix controls.
 - Sharp selects the corresponding HD model variant; it does not replace the SD branch.
-- Official v0.17.1 source maps RIFE code 4262 to `rife_v4.26`, not
+- Official v0.22.2 source maps RIFE code 4262 to `rife_v4.26`, not
   `rife_v4.26_heavy`; this source mapping does not prove model availability
   or inference.
 - TensorRT configuration supports Static (match the current video resolution),
   Static ONNX (fixed graph input shape), and Dynamic
   (minimum/optimal/maximum shapes), plus builder optimization levels 0–5 and
-  raw `trtexec` arguments.
+  raw builder arguments (restricted to five flags for `TensorRT for RTX`; see
+  [TensorRT for RTX](#tensorrt-for-rtx-windows-opt-in) below).
 - The built-in Static/Dynamic shape helpers emit the TensorRT input name
   `input`; selecting Dynamic does not inspect the ONNX graph to discover a
   tensor name.
@@ -186,11 +188,70 @@ positive chain and model-step numbers, also serialized in numeric order.
 | `chain_C_model_M_` / ONNX `chain_C_step_S_` | `frames`, `temporal_scene_threshold` | ONNX model temporal window (`0` = detect from its input shape, `1` = single frame, or odd `3`–`15`) and scene threshold (`0.0`–`1.0`, default `0.150`). |
 
 The manager store does not persist a backend selector. Runtime preparation
-emits `backend=TensorRT` or `backend=DirectML` in the generated plan INI from
-the selected backend. Editing a `backend` key in a manager import does not
-change the player's backend selection. Generated plan INIs also replace model
-references with staged SHA-256 stems; they are derived runtime artifacts, not
-the editable source of the profile.
+emits `backend=TensorRT`, `backend=DirectML` or `backend=TensorRT-RTX` in the
+generated plan INI from the selected backend. Editing a `backend` key in a
+manager import does not change the player's backend selection. Generated plan
+INIs also replace model references with staged SHA-256 stems; they are derived
+runtime artifacts, not the editable source of the profile.
+
+### TensorRT for RTX (Windows, opt-in)
+
+`TensorRT for RTX` is an explicit Standard backend choice, not an automatic
+upgrade of an existing TensorRT selection:
+
+- The backend controls in Settings, Components and Benchmark show it on Windows
+  as **TensorRT for RTX**, persisted as `tensorrt-rtx` (lowercase in the saved
+  choice; the plan INI uses `TensorRT-RTX`). A restored or imported RTX choice
+  is kept rather than rewritten, and on Linux it fails by name instead of being
+  clamped to TensorRT or DirectML: installation/provisioning report
+  `TensorRT for RTX is available only on Windows.`, while runtime preparation
+  reports `TensorRT for RTX is not available on this platform.`. No Linux RTX
+  asset is published or offered.
+- Selecting the backend or opening Settings downloads nothing. An explicit
+  install action stages the standard Windows `aji.dll` dispatcher plus the
+  overlay's `aji_trtrtx.dll`, `tensorrt_rtx_1_7.dll`,
+  `tensorrt_onnxparser_rtx_1_7.dll`, `TensorRT-RTX-NOTICE.txt` and
+  `TensorRT-RTX-Acknowledgements.txt` — 6 flat files (~96.25 MB of archives) —
+  under `components/aji/v0.22.2/trtrtx`. No classic `aji_trt.dll`,
+  TensorRT/CUDA DLL, per-SM builder resource, `trtexec` or `cudart` is staged;
+  the released backend imports no `cudart`.
+- Components presents the RTX runtime as its own product with independent
+  installed/verified/progress state and the two archive rows (`aji-v0.22.2`,
+  `aji-trtrtx-v0.22.2`); its missing-download total covers only those two
+  archives. The classic GPU-kernel and CUDA tensor pack cards are unavailable
+  for RTX and are never queued.
+- Both NVIDIA notices are required members and remain with the local copy. The
+  overlay is not part of the base installer or any distribution, and acquiring
+  or using it locally does not clear public redistribution.
+- An RTX root containing `aji_trt.dll` is rejected at acquisition, verification
+  and import, so the upstream dispatcher cannot silently fall back to classic
+  TensorRT inside it. The upstream backend's own
+  `TensorRT-RTX failed ...; using TensorRT instead` line is classified as a
+  named RTX failure, not an RTX success; the pinned upstream DLL is not patched.
+- RTX builds the engine in-process. Plans keep the same pinned dispatcher, the
+  same ONNX bytes, profiles, staged model paths and directory leases as classic
+  TensorRT, leave `trtexecPath`/`trtexecLibDir` empty and omit the `trtexec`
+  and `trtexec-libdir` filter options. No external `trtexec` or resource pack is
+  involved.
+- Raw builder arguments support only `--minShapes=`, `--optShapes=`,
+  `--maxShapes=`, `--builderOptimizationLevel=` and
+  `--memPoolSize=workspace:`. Any other flag is rejected at preparation with a
+  backend-specific error naming it; precision is taken from the ONNX graph, so
+  precision, tactic and timing flags are not pretended to work. An
+  app-generated `--skipInference` is not applicable to in-process building and
+  is stripped with a plan note. Classic TensorRT flags, defaults and
+  shape-template semantics are unchanged.
+- The RTX backend writes `.trtrtx-<ver>.gpu-<gpu>.rtxengine`, `.jitcache`,
+  `.rtxengine.build.log` and `.warm.log`. Existing classic `.engine` caches are
+  untouched. Cancellation is filter removal/`aji_destroy`, not child-process
+  kill.
+- ONNX graph eligibility may reuse the classic TensorRT capability check. No
+  new ABI, config schema, plan key or graph substitution is introduced; the
+  ABI-9 mpv filter already accepts `TensorRT-RTX`.
+- The private Prepared Native ABI-8 path has no RTX offer and keeps its
+  two-value backend list.
+- These are implementation facts, not an inference, engine-build, benchmark or
+  performance result; none of those paths has been executed here.
 
 ### Retired Model-Graph Experiments
 
@@ -225,7 +286,7 @@ source failure without model inference or engine compilation.
 
 ### Distinction from Prepared Native
 
-Standard AJI profiles configure the official AnimeJaNai ABI-9 filter/runtime (v0.17.1);
+Standard AJI profiles configure the official AnimeJaNai ABI-9 filter/runtime (v0.22.2);
 they are not Prepared Native recipes. The tools differ:
 
 - `native_inspect`: inspects ONNX inputs/outputs and can run CPU reference inference.
@@ -245,7 +306,7 @@ Release archives and model graphs are pinned by SHA-256 where indicated; source 
 
 | Manifest File | Schema / Purpose |
 |---|---|
-| `native/manifest/sources.json` | (`mikai.native.sources/1`) Pinned upstream identities and release asset digests, including `mpv-fork` (ABI-8 source commit `63d127174d8f`; full: this file and `native/manifest/components.json`), Windows `mpv-author-winbuild` DEV archive (`2026-10-24`; separate source commit `b4f9f5bfed18`; full: same), and `animejanai-inference` (official `v0.17.1`, historical `v0.9.0`); TensorRT SDK (`11.3.0.99` / CUDA `13.4`), ONNX Runtime DirectML (`1.24.4`), DirectML (`1.15.4`), 5 spatial ONNX models, and RIFE `v4.14` checkpoints. The Linux mpv archive pin is recorded in `cmake/MikaiLinuxMpv.cmake` and `packaging/provenance/linux-runtime.json`. |
+| `native/manifest/sources.json` | (`mikai.native.sources/1`) Pinned upstream identities and release asset digests, including `mpv-fork` (ABI-8 source commit `63d127174d8f`; full: this file and `native/manifest/components.json`), Windows `mpv-author-winbuild` DEV archive (`2026-10-24`; separate source commit `b4f9f5bfed18`; full: same), and `animejanai-inference` (official `v0.22.2`, historical `v0.9.0`); TensorRT SDK (`11.3.0.99` / CUDA `13.4`), ONNX Runtime DirectML (`1.24.4`), DirectML (`1.15.4`), 5 spatial ONNX models, and RIFE `v4.14` checkpoints. The Linux mpv archive pin is recorded in `cmake/MikaiLinuxMpv.cmake` and `packaging/provenance/linux-runtime.json`. |
 | `native/manifest/components.json` | (`mikai.native.components/1`) Per-component licensing, provenance, and redistribution status (`cleared`, `external`, or `blocked` under `ESC-1..6`). |
 | `native/manifest/animejanai-release.json` | Pinned Windows x64 (`component-trt-*.7z`, `component-rife.7z`) and Linux x64 (`component-trt-*-linux-x64.7z`, `component-rife-linux-x64.7z`) asset inventory and file mappings for [`the-database/mpv-AnimeJaNai` `3.7.0`](https://github.com/the-database/mpv-AnimeJaNai/releases/tag/3.7.0). |
 | `native/manifest/videojanai-release.json` | Negative-control record for `VideoJaNai 2.1.0` (TensorRT `11.0.0.114` / CUDA `13.2.75`), documenting why cross-release TensorRT engines and builder resources are binary-incompatible with TensorRT `11.3.0.99`. |
@@ -253,7 +314,7 @@ Release archives and model graphs are pinned by SHA-256 where indicated; source 
 
 ### Pinned `3.7.0` Component Packs (`NativeComponentCatalog.cpp`)
 
-Full digests: `native/manifest/animejanai-release.json` (`assetInventory` / `linuxAssetInventory`); the `aji-v0.17.1` pair is in `native/manifest/sources.json`.
+Full digests: `native/manifest/animejanai-release.json` (`assetInventory` / `linuxAssetInventory`); the `aji-v0.22.2` runtime pair and the opt-in TensorRT-for-RTX overlay it can be paired with are in `native/manifest/sources.json`.
 
 | Pack | Windows x64 asset | Size | SHA-256 | Linux x64 asset | Size | SHA-256 |
 |---|---|---|---|---|---|---|
@@ -267,7 +328,7 @@ Full digests: `native/manifest/animejanai-release.json` (`assetInventory` / `lin
 | `trt-sm120` | `component-trt-sm120.7z` | 229,417,183 B | `954821ef6582` | `component-trt-sm120-linux-x64.7z` | ~220 MiB | `f3f52f355cbe` |
 | `trt-ptx` | `component-trt-ptx.7z` | 208,391,718 B | `7bd93d7f610e` | `component-trt-ptx-linux-x64.7z` | ~199 MiB | `c1061e7b11cb` |
 | `rife-3.7.0` | `component-rife.7z` | 462,444,035 B | `d41de2b56972` | `component-rife-linux-x64.7z` | ~441 MiB | `265797d56fb1` |
-| `aji-v0.17.1` | `aji-windows-x64.zip` | 743,177 B | `9ddf6bb6da0e` | `aji-linux-x64.tar.zst` | 281,391 B | `89ca6cc96188` |
+| `aji-v0.22.2` | `aji-windows-x64.zip` | 901,610 B | `b306b1888a16` | `aji-linux-x64.tar.zst` | 415,415 B | `3d552d59ebf8` |
 
 ### Component store ownership, pack membership and cleanup
 
@@ -321,6 +382,7 @@ Starting the application prunes abandoned work in this store:
   - `ESC-3`: RIFE `v4.14` weight tensors trace byte-for-byte (128/128 FP32→FP16 tensors) to `hzwer/Practical-RIFE` (MIT), while the ONNX exporter wrapper metadata is unattributed; graphs are acquired per-machine into `<nativeRoot>/components/rife/3.7.0`.
   - `ESC-4` *(Resolved)*: DirectML (`Microsoft.AI.DirectML 1.15.4`) and ONNX Runtime DirectML (`1.24.4`) licenses are verified (`LICENSE.txt` + `LICENSE-CODE.txt`).
   - `ESC-5`: `trtexec` is an NVIDIA SDK developer tool; the Prepared Native helper (`mikai_native_prep`) uses the in-process `nvinfer1` C++ builder API without invoking `trtexec`, while the official AnimeJaNai config path extracts `trtexec` only into the user's local component store.
+  - The opt-in Windows `TensorRT for RTX` closure (`components/aji/v0.22.2/trtrtx`) is acquired locally only. Its `aji_trtrtx.dll` falls under ESC-1, and the bundled NVIDIA TensorRT for RTX runtime keeps NVIDIA's own `TensorRT-RTX-NOTICE.txt` / `TensorRT-RTX-Acknowledgements.txt`; no redistribution clearance is claimed, no Linux RTX asset exists, and the base installer/distribution excludes it.
   - `ESC-6`: Tracks GPL/LGPL complete-corresponding-source obligations for the base `mpv` runtime:
     - The pinned Windows DEV and Linux bundle archives are binary releases, not corresponding source.
     - Windows run 37965200722 configure logs are retained privately and establish a GPL-enabled non-LGPL libmpv build with static GPLv3 FFmpeg.

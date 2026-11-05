@@ -17,13 +17,40 @@
 #include <initializer_list>
 
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QFormLayout>
 #include <QLabel>
 #include <QScrollArea>
 #include <QSignalBlocker>
+#include <QStandardItemModel>
 #include <QVBoxLayout>
 
 namespace mikai::app {
+
+namespace {
+
+/// A persisted backend the private ABI-8 workflow cannot carry (today only
+/// TensorRT for RTX) still gets a row: the saved request is shown by name, with
+/// the reason it cannot run here, instead of an empty label the viewer cannot
+/// interpret. Rows are built only from privateNativeCarries(), so the offer
+/// stays the two backends the private producer knows.
+QString privateUnavailableBackendCaption(mplayer::native::Backend backend) {
+    const QString label = backendLabel(backend);
+    const QString name = label.isEmpty()
+        ? QCoreApplication::translate("SettingsDialog", "Unsupported backend")
+        : label;
+    return QCoreApplication::translate("SettingsDialog", "%1 — unavailable for Native").arg(name);
+}
+
+QString privateUnavailableBackendReason() {
+    return QCoreApplication::translate(
+        "SettingsDialog",
+        "The private Native workflow runs only TensorRT and DirectML. "
+        "This saved backend is kept but cannot run here; select TensorRT or DirectML. "
+        "TensorRT for RTX is available from the Standard AnimeJaNai runtime.");
+}
+
+}  // namespace
 
 QWidget* SettingsDialog::buildProcessingTab() {
     auto* scroll = new QScrollArea(this);
@@ -43,9 +70,9 @@ QWidget* SettingsDialog::buildProcessingTab() {
     QFrame* pageHeader = makeSettingsPageHeader(
         page, &nativeHeading_, &nativeDescription_, tr("Processing runtime"),
 #ifdef Q_OS_LINUX
-        tr("Standard AnimeJaNai requires an NVIDIA GPU and TensorRT. DirectML and the private Native runtime are Windows-only."));
+        tr("Standard AnimeJaNai runs on TensorRT here. DirectML, TensorRT for RTX, and the private Native runtime are Windows-only."));
 #else
-        tr("Standard manages official AnimeJaNai models and profiles. "
+        tr("Standard manages official AnimeJaNai models and profiles, including TensorRT for RTX. "
            "Select Native to configure the separate private Native workflow."));
 #endif
     root->addWidget(pageHeader);
@@ -129,11 +156,25 @@ QWidget* SettingsDialog::buildProcessingTab() {
     nativeBackend_->setAccessibleName(tr("Native backend"));
     polishInteractiveControl(nativeBackend_, theme::kSettingsControlSize);
     for (const mplayer::native::Backend backend : nativeAvailability_.backends) {
+        // The private producer carries exactly this vocabulary; never offer a
+        // value from the shared enum that the ABI-8 path would refuse.
+        if (!mplayer::native::privateNativeCarries(backend)) continue;
         nativeBackend_->addItem(backendLabel(backend), static_cast<int>(backend));
     }
     if (nativeBackend_->findData(static_cast<int>(nativePreferences_.backend)) < 0) {
-        nativeBackend_->addItem(backendLabel(nativePreferences_.backend),
-                                static_cast<int>(nativePreferences_.backend));
+        const mplayer::native::Backend stored = nativePreferences_.backend;
+        const bool carried = mplayer::native::privateNativeCarries(stored);
+        nativeBackend_->addItem(carried ? backendLabel(stored)
+                                        : privateUnavailableBackendCaption(stored),
+                                static_cast<int>(stored));
+        const int index = nativeBackend_->count() - 1;
+        if (!carried) {
+            nativeBackend_->setItemData(index, privateUnavailableBackendReason(),
+                                        Qt::ToolTipRole);
+            if (auto* model = qobject_cast<QStandardItemModel*>(nativeBackend_->model())) {
+                if (QStandardItem* item = model->item(index)) item->setEnabled(false);
+            }
+        }
     }
     nativeBackend_->setCurrentIndex(
         nativeBackend_->findData(static_cast<int>(nativePreferences_.backend)));
@@ -450,10 +491,12 @@ void SettingsDialog::applyRequestedRecipe(const QString& recipeId) {
 void SettingsDialog::retranslateProcessingTab() {
     nativeHeading_->setText(tr("Processing runtime"));
 #ifdef Q_OS_LINUX
-    nativeDescription_->setText(tr("Standard AnimeJaNai requires an NVIDIA GPU and TensorRT. DirectML and the private Native runtime are Windows-only."));
+    nativeDescription_->setText(
+        tr("Standard AnimeJaNai runs on TensorRT here. DirectML, TensorRT for RTX, and the "
+           "private Native runtime are Windows-only."));
 #else
     nativeDescription_->setText(
-        tr("Standard manages official AnimeJaNai models and profiles. "
+        tr("Standard manages official AnimeJaNai models and profiles, including TensorRT for RTX. "
            "Select Native to configure the separate private Native workflow."));
 #endif
     backendRowLabel_->setText(tr("Backend"));
@@ -461,6 +504,17 @@ void SettingsDialog::retranslateProcessingTab() {
     runtimeModuleRowLabel_->setText(tr("Runtime module"));
 
     nativeBackend_->setAccessibleName(tr("Native backend"));
+    if (nativeBackend_ != nullptr &&
+        !mplayer::native::privateNativeCarries(nativePreferences_.backend)) {
+        const int index =
+            nativeBackend_->findData(static_cast<int>(nativePreferences_.backend));
+        if (index >= 0) {
+            nativeBackend_->setItemText(index,
+                                        privateUnavailableBackendCaption(nativePreferences_.backend));
+            nativeBackend_->setItemData(index, privateUnavailableBackendReason(),
+                                        Qt::ToolTipRole);
+        }
+    }
     nativeRecipe_->setAccessibleName(tr("Native recipe"));
     if (!unavailableRecipeId_.isEmpty()) {
         const int index = nativeRecipe_->findData(unavailableRecipeId_);

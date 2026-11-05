@@ -47,12 +47,19 @@ namespace {
 
 QString fixtureRoot() {
     return QDir(nativeSubdirectory(QStringLiteral("components")))
-        .filePath(QStringLiteral("aji/v0.17.1"));
+        .filePath(QStringLiteral("aji/v0.22.2"));
 }
 
 QString runtimePath(Backend backend = Backend::TensorRT) {
-    const QString name = backend == Backend::TensorRT ? QStringLiteral("trt") : QStringLiteral("dml");
+    QString name = QStringLiteral("trt");
+    if (backend == Backend::DirectML) name = QStringLiteral("dml");
+    if (backend == Backend::TensorRTRTX) name = QStringLiteral("trtrtx");
     return QDir(fixtureRoot()).filePath(name);
+}
+
+QStringList fixtureRuntimeRoots() {
+    return {runtimePath(Backend::TensorRT), runtimePath(Backend::DirectML),
+            runtimePath(Backend::TensorRTRTX)};
 }
 
 /// A valid identity ModelProto whose metadata tag changes the file size, so a
@@ -184,6 +191,17 @@ QByteArray fixtureImage() {
 }
 
 QStringList required(Backend backend) {
+    // The official RTX closure is the standard dispatcher plus NVIDIA's five
+    // overlay members: no classic backend, CUDA pack, builder resource or
+    // trtexec. It is Windows-only, but the fixture list is platform-neutral so a
+    // refusal can be proven without inventing a Linux RTX closure.
+    if (backend == Backend::TensorRTRTX) {
+        return {QStringLiteral("aji.dll"), QStringLiteral("aji_trtrtx.dll"),
+                QStringLiteral("tensorrt_rtx_1_7.dll"),
+                QStringLiteral("tensorrt_onnxparser_rtx_1_7.dll"),
+                QStringLiteral("TensorRT-RTX-NOTICE.txt"),
+                QStringLiteral("TensorRT-RTX-Acknowledgements.txt")};
+    }
 #ifndef Q_OS_WIN
     if (backend == Backend::TensorRT) {
         const auto& capability = observeComputeCapability();
@@ -239,8 +257,11 @@ bool writeRecord(Backend backend, const QString& recordedBackend = {},
     }
     QJsonObject record;
     record.insert(QStringLiteral("schema"), QStringLiteral("mikai.native.animejanai/3"));
-    record.insert(QStringLiteral("version"), QStringLiteral("v0.17.1"));
-    record.insert(QStringLiteral("backend"), recordedBackend.isEmpty() ? (backend == Backend::TensorRT ? QStringLiteral("trt") : QStringLiteral("dml")) : recordedBackend);
+    record.insert(QStringLiteral("version"), QStringLiteral("v0.22.2"));
+    const QString backendToken = backend == Backend::TensorRT ? QStringLiteral("trt")
+                                   : backend == Backend::TensorRTRTX ? QStringLiteral("trtrtx")
+                                                                     : QStringLiteral("dml");
+    record.insert(QStringLiteral("backend"), recordedBackend.isEmpty() ? backendToken : recordedBackend);
     record.insert(QStringLiteral("abi"), 9);
     record.insert(QStringLiteral("provenance"), QStringLiteral("local"));
     record.insert(QStringLiteral("archiveBytes"), 0);
@@ -282,15 +303,13 @@ void TestAnimeJanaiRuntime::initTestCase() {
 
 void TestAnimeJanaiRuntime::init() {
     QVERIFY(ownsFixture_);
-    QVERIFY(QDir(runtimePath(Backend::DirectML)).removeRecursively());
-    QVERIFY(QDir(runtimePath(Backend::TensorRT)).removeRecursively());
+    for (const QString& root : fixtureRuntimeRoots()) QVERIFY(QDir(root).removeRecursively());
     if (ownsAnimeJanai_) QDir(QDir(nativeRoot()).filePath(QStringLiteral("animejanai"))).removeRecursively();
 }
 
 void TestAnimeJanaiRuntime::cleanup() {
     if (!ownsFixture_) return;
-    QVERIFY(QDir(runtimePath(Backend::DirectML)).removeRecursively());
-    QVERIFY(QDir(runtimePath(Backend::TensorRT)).removeRecursively());
+    for (const QString& root : fixtureRuntimeRoots()) QVERIFY(QDir(root).removeRecursively());
     if (ownsAnimeJanai_) QDir(QDir(nativeRoot()).filePath(QStringLiteral("animejanai"))).removeRecursively();
 }
 
@@ -499,16 +518,16 @@ void TestAnimeJanaiRuntime::shellSafeLibDirAvoidsASplitLibraryPath() {
 }
 
 void TestAnimeJanaiRuntime::linuxOfficialPairRequiresBothPinnedDigests() {
-    const QString dispatcher = QStringLiteral("0d3d15db020c0732cfa2ee448c619db61072c7dab9e54efa74f9bed4d84fe03b");
-    const QString backend = QStringLiteral("19c6f6dde3b1a6307ec60adf34bee13aab7aa31af5db1e9a129d911a4da109d0");
+    const QString dispatcher = QStringLiteral("7aa309ce837d2624eb61e272db062f6568dcd84d6f1dd646fd6de00325adbc6d");
+    const QString backend = QStringLiteral("d4b21b3f5c3af02634873d800760d7653fa5615128545befb2b89f3c68326860");
     QVERIFY(detail::matchesPinnedLinuxAjiPair(dispatcher, backend));
     QVERIFY(!detail::matchesPinnedLinuxAjiPair(QString(64, QLatin1Char('0')), backend));
     QVERIFY(!detail::matchesPinnedLinuxAjiPair(dispatcher, QString(64, QLatin1Char('0'))));
     QVERIFY(!detail::matchesPinnedLinuxAjiPair(backend, dispatcher));
     QVERIFY(!detail::matchesPinnedLinuxAjiPair(
-        QStringLiteral("2a54258a77f2fb8562516252456b6e6514781388b195d66b004d833d8e93f8a6"), backend));
+        QStringLiteral("0d3d15db020c0732cfa2ee448c619db61072c7dab9e54efa74f9bed4d84fe03b"), backend));
     QVERIFY(!detail::matchesPinnedLinuxAjiPair(
-        dispatcher, QStringLiteral("586f47e6cc1d33859ae7279e94c822d193836e86fc6a4ac07515502c8d68df76")));
+        dispatcher, QStringLiteral("19c6f6dde3b1a6307ec60adf34bee13aab7aa31af5db1e9a129d911a4da109d0")));
 }
 
 void TestAnimeJanaiRuntime::directRunRefusesExistingNativeTreeWithoutMutation() {
@@ -559,6 +578,84 @@ void TestAnimeJanaiRuntime::directRunRefusesExistingNativeTreeWithoutMutation() 
     QCOMPARE(dependency.readAll(), dependencyBefore);
     QCOMPARE(QDir(installed.path()).entryList(QDir::Dirs | QDir::NoDotAndDotDot),
              QStringList{QStringLiteral("native")});
+}
+
+void TestAnimeJanaiRuntime::rtxRuntimeClosureAndPlatformContract() {
+    const QString root = runtimePath(Backend::TensorRTRTX);
+#ifdef Q_OS_WIN
+    // The queue is the pinned standard archive plus the NVIDIA overlay, with no
+    // classic TensorRT pack, CUDA pack, builder resource or DirectML row.
+    const QVector<AnimeJanaiMissingDownload> missing =
+        animeJanaiMissingDownloads(Backend::TensorRTRTX);
+    QCOMPARE(missing.size(), 2);
+    QCOMPARE(missing.at(0).label, QStringLiteral("aji-v0.22.2"));
+    QCOMPARE(missing.at(0).bytes, qint64(901610));
+    QCOMPARE(missing.at(1).label, QStringLiteral("aji-trtrtx-v0.22.2"));
+    QCOMPARE(missing.at(1).bytes, qint64(95346303));
+    QCOMPARE(animeJanaiMissingDownloadBytes(Backend::TensorRTRTX), qint64(96247913));
+
+    QVERIFY(writeRecord(Backend::TensorRTRTX));
+    const AnimeJanaiInstallation installed = describeAnimeJanaiInstallation(Backend::TensorRTRTX);
+    QVERIFY2(installed.installed, qPrintable(installed.reason));
+    QCOMPARE(installed.root, root);
+    QVERIFY(animeJanaiMissingDownloads(Backend::TensorRTRTX).isEmpty());
+    QCOMPARE(animeJanaiMissingDownloadBytes(Backend::TensorRTRTX), qint64(0));
+
+    // Upstream falls back to classic TensorRT by looking beside its own
+    // dispatcher, so a managed RTX root that contains that backend is refused
+    // even when the record itself is a valid RTX closure.
+    QVERIFY(writeFile(QDir(root).filePath(QStringLiteral("aji_trt.dll")), minimalX64Pe()));
+    const AnimeJanaiInstallation escaped = describeAnimeJanaiInstallation(Backend::TensorRTRTX);
+    QVERIFY(!escaped.installed);
+    QCOMPARE(escaped.reasonKey, QStringLiteral("animejanai.installation.fallbackBackend"));
+    QVERIFY(!escaped.reason.isEmpty());
+    QVERIFY(QFile::remove(QDir(root).filePath(QStringLiteral("aji_trt.dll"))));
+
+    // A record that names the classic token is not an RTX install, however the
+    // files on disk are arranged.
+    QVERIFY(writeRecord(Backend::TensorRTRTX, QStringLiteral("trt")));
+    const AnimeJanaiInstallation mismatched =
+        describeAnimeJanaiInstallation(Backend::TensorRTRTX);
+    QVERIFY(!mismatched.installed);
+    QCOMPARE(mismatched.reasonKey, QStringLiteral("animejanai.installation.recordInvalid"));
+
+    // Both NVIDIA notices are mandatory closure members, not optional extras.
+    QVERIFY(writeRecord(Backend::TensorRTRTX));
+    const QString acknowledgements =
+        QDir(root).filePath(QStringLiteral("TensorRT-RTX-Acknowledgements.txt"));
+    QVERIFY(QFile::remove(acknowledgements));
+    const AnimeJanaiInstallation noticeMissing =
+        describeAnimeJanaiInstallation(Backend::TensorRTRTX);
+    QVERIFY(!noticeMissing.installed);
+    QCOMPARE(noticeMissing.reasonKey, QStringLiteral("animejanai.installation.fileInvalid"));
+    QVERIFY(noticeMissing.reason.contains(QStringLiteral("TensorRT-RTX-Acknowledgements.txt")));
+#else
+    // No RTX binary is published for Linux, so the requested backend fails by
+    // name; it is never clamped to classic TensorRT or DirectML.
+    const AnimeJanaiInstallation described = describeAnimeJanaiInstallation(Backend::TensorRTRTX);
+    QVERIFY(!described.installed);
+    QCOMPARE(described.reasonKey, QStringLiteral("animejanai.provision.platformUnsupported"));
+    QVERIFY(!described.reason.isEmpty());
+    QVERIFY(animeJanaiMissingDownloads(Backend::TensorRTRTX).isEmpty());
+    QCOMPARE(animeJanaiMissingDownloadBytes(Backend::TensorRTRTX), qint64(0));
+
+    const ComponentProvisionResult provisioned =
+        provisionAnimeJanaiRuntime(Backend::TensorRTRTX, {}, {});
+    QVERIFY(!provisioned.ok);
+    QCOMPARE(provisioned.reasonKey, QStringLiteral("animejanai.provision.platformUnsupported"));
+    const ComponentProvisionResult imported =
+        importAnimeJanaiRuntime(QString(), Backend::TensorRTRTX, {}, {});
+    QVERIFY(!imported.ok);
+    QCOMPARE(imported.reasonKey, QStringLiteral("animejanai.provision.platformUnsupported"));
+
+    // Planning also refuses the unavailable backend by name; it is never
+    // clamped to the classic TensorRT plan.
+    const AnimeJanaiPlan plan =
+        prepareAnimeJanaiPlan(QStringLiteral("builtin1002"), Backend::TensorRTRTX);
+    QVERIFY(!plan.available);
+    QCOMPARE(plan.reasonKey, QStringLiteral("animejanai.runtime.rtxUnsupported"));
+    QVERIFY(plan.backend == Backend::TensorRTRTX);
+#endif
 }
 
 void TestAnimeJanaiRuntime::missingInstallIsNotReady() {
@@ -799,7 +896,7 @@ void TestAnimeJanaiRuntime::unsupportedDispatcherIsNotReady() {
     const auto oldVersion = describeAnimeJanaiInstallation(fixtureBackend(), true);
     QVERIFY(!oldVersion.installed);
     QCOMPARE(oldVersion.reasonKey, QStringLiteral("animejanai.installation.recordInvalid"));
-    object.insert(QStringLiteral("version"), QStringLiteral("v0.17.1"));
+    object.insert(QStringLiteral("version"), QStringLiteral("v0.22.2"));
     object.insert(QStringLiteral("schema"), QStringLiteral("unknown"));
     QVERIFY(writeFile(record.fileName(), QJsonDocument(object).toJson(QJsonDocument::Compact)));
     const auto result = describeAnimeJanaiInstallation(fixtureBackend(), true);

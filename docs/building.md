@@ -213,13 +213,15 @@ ctest --test-dir build/linux-release --output-on-failure -R '^mikai_tests_(TestM
 
 - In Settings → Customization → General → System integration, check Save/Cancel for launch at sign-in and Open With, then check the desktop's application list/default-app settings; defaults require the user's choice.
 - Undo any integrations after testing.
-- In Settings → Processing and Components, verify unsupported choices are reported; on supported NVIDIA hardware with compatible fork libmpv, CUDA 13 and TensorRT 11, acquire the current official AnimeJaNai v0.17.1 API/ABI-9 runtime/model, select it explicitly and verify real processed frames on the same video.
+- In Settings → Processing and Components, verify unsupported choices are reported; on supported NVIDIA hardware with compatible fork libmpv, CUDA 13 and TensorRT 11, acquire the current official AnimeJaNai v0.22.2 API/ABI-9 runtime/model, select it explicitly and verify real processed frames on the same video.
 - The current Windows DEV archive's headers declare ABI 9.
 - The `mpv-fork` source entry still points to ABI-8 commit `63d127174d8f70336c82a22408929e2bc301edcb`; the Windows archive has separate source commit `b4f9f5bfed18d5ce610af28024986410dd9bdaae`, while corresponding-source/build evidence for the Linux runtime is not established.
 - Archive identity does not establish hardware operation or inference.
 - The old official v0.9.0 ABI-8 pair and separately patched private MSVC AJI ABI-8 build are historical, distinct builds, not substitutes.
-- Manager temporal frame count, scene threshold, upscale enable/disable and temporal-fix controls are available in Processing; v0.17.1 source maps RIFE code 4262 to regular `rife_v4.26`, not heavy RIFE, which is not inference evidence.
+- Manager temporal frame count, scene threshold, upscale enable/disable and temporal-fix controls are available in Processing; v0.22.2 source maps RIFE code 4262 to regular `rife_v4.26`, not heavy RIFE, which is not inference evidence.
 - The separate ~80 MB Linux encoder archive is not needed for playback, is not automatically acquired/adopted, and has unresolved FFmpeg/redistribution requirements.
+- The opt-in Windows `TensorRT for RTX` backend has no Linux asset or download path: a restored or imported RTX choice must fail by name (installation reports `TensorRT for RTX is available only on Windows.`, runtime preparation `TensorRT for RTX is not available on this platform.`) and must not clamp to TensorRT or DirectML. On Windows it is acquired only after explicit user action (standard dispatcher plus the five overlay files, ~96.25 MB of archives) and is absent from the base installer and distribution; it builds engines in-process without `trtexec`.
+- The pinned classic component packs stay at TensorRT 11.3 (the Windows RTX overlay carries its own TRT-RTX 1.7 runtime); upstream's 11.4 build line is a source-build fact, not a statement of the deployed runtime.
 - This AI check requires a writable executable-adjacent `native/` directory; use a user-owned portable/build deployment, not a read-only system binary directory.
 - A skipped or unavailable hardware check is not a pass.
 - For Benchmark asset/report requirements, see the [user guide](user-guide.md#benchmarking).

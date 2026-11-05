@@ -154,6 +154,9 @@ private:
     QComboBox* trtOptLevelCombo_ = nullptr;
     QLabel* trtRawArgsLabel_ = nullptr;
     QLineEdit* trtRawArgsEdit_ = nullptr;
+    /// Backend-aware explanation of which engine-settings flags take effect;
+    /// the same sentence is the edit's tooltip.
+    QLabel* trtRawArgsHelp_ = nullptr;
     QPushButton* importConfButton_ = nullptr;
     QPushButton* exportConfButton_ = nullptr;
     QPushButton* resetDefaultsButton_ = nullptr;

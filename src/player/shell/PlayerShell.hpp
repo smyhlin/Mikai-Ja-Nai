@@ -506,6 +506,9 @@ private:
     /// so the chip can be rebuilt in another language: its wording is partly
     /// ours ("Preparing…") and only the host can say what the filter is doing.
     QString animeJanaiStatus_;
+    /// The persisted Standard-AJI backend spelling the host selected:
+    /// "tensorrt", "directml" or "tensorrt-rtx". The default stays classic
+    /// TensorRT, as it was before RTX existed.
     QString animeJanaiBackend_ = QStringLiteral("tensorrt");
     ChromeLabel* lblAnimeJanai_ = nullptr;
     /// Lifetime-owned observation of the catalogue the enhancement tree draws

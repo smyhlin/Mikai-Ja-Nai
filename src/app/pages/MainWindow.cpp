@@ -255,7 +255,7 @@ void MainWindow::retranslateUi() {
 }
 
 QString MainWindow::enginePreparationTitle() const {
-    return tr("Preparing TensorRT engine");
+    return tr("Preparing enhancement");
 }
 
 QString MainWindow::enginePreparationSummary(bool ok) const {

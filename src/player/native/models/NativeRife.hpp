@@ -9,7 +9,7 @@
 //    the archive spelling (`rife_v4.14_lite_ensemble`,
 //    `rife_v4.26_heavy`). `rifeModelCode` is version-aware (414 full, 4141
 //    lite); ensemble is a separate conf key and never changes it. Heavy remains
-//    unavailable with the official Aji v0.17.1 backends: their RIFE model
+//    unavailable with the official Aji v0.22.2 backends: their RIFE model
 //    mapping turns code 4262 into `rife_v4.26`, not `rife_v4.26_heavy`.
 //
 //  * A curated name is a REQUEST, not a graph. Each one carries an exact content

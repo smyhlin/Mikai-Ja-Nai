@@ -1,5 +1,6 @@
 #include "NativeBuilderInternal.hpp"
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QTemporaryDir>
 
 #include <optional>
@@ -1477,6 +1478,16 @@ bool parseBuilderProbeRequest(const QJsonObject& object, BuilderProbeRequest* ou
                     QStringLiteral("'%1' is not a backend this build carries")
                         .arg(entry.toString()));
       }
+      // This ABI-8 producer carries TensorRT and DirectML only. A token this
+      // build reads but the producer cannot run is refused by name rather than
+      // offered to the planner or mapped onto another backend.
+      if (!privateNativeCarries(*backend)) {
+        return fail("probe.backend",
+                    QCoreApplication::translate(
+                        "NativeBuilder",
+                        "the %1 backend is not carried by this private Native ABI")
+                        .arg(entry.toString()));
+      }
       if (!parsed.backends.available.contains(*backend)) {
         parsed.backends.available.append(*backend);
       }
@@ -1511,6 +1522,13 @@ bool parseBuilderProbeRequest(const QJsonObject& object, BuilderProbeRequest* ou
     if (!provider.has_value()) {
       return fail("probe.member",
                   QStringLiteral("build.provider '%1' is not a backend this build carries")
+                      .arg(providerName));
+    }
+    if (!privateNativeCarries(*provider)) {
+      return fail("probe.backend",
+                  QCoreApplication::translate(
+                      "NativeBuilder",
+                      "build.provider '%1' is not carried by this private Native ABI")
                       .arg(providerName));
     }
     build.provider = *provider;

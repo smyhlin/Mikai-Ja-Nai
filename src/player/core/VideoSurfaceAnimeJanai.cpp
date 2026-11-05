@@ -197,6 +197,7 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
         planWillReconfigureOutput && mpv_ != nullptr && currentSourceEpoch != 0 &&
         animeJanaiSourceRequested_ && !pendingOpen_ && !url_.isEmpty();
     if (processingConfigurationChanged) setEngineFrameHold(true);
+    const native::Backend previousBackend = animeJanaiPlan_.backend;
     cancelAnimeJanaiOperation();
     animeJanaiPlan_ = plan;
     if (!samePlan) {
@@ -256,7 +257,12 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
             animeJanaiBusy_ = false;
             if (animeJanaiStageBuildLease_) animeJanaiStageBuildLease_->release();
             animeJanaiStageBuildLease_.reset();
-            finishAnimeJanaiEngineBuild(false, tr("TensorRT engine build cancelled."));
+            finishAnimeJanaiEngineBuild(
+                false,
+                tr("%1 engine build cancelled.")
+                    .arg(animeJanaiPlan_.backend == native::Backend::TensorRTRTX
+                             ? VideoSurface::tr("TensorRT for RTX")
+                             : VideoSurface::tr("TensorRT")));
             setEngineFrameHold(false);
             restoreAnimeJanaiHwdec(epoch, generation);
         });
@@ -308,12 +314,17 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
         const quint64 generation = animeJanaiGeneration_;
         animeJanaiBusy_ = true;
         setAnimeJanaiStatus(QStringLiteral("Switching AnimeJaNai configuration"));
-        removeAnimeJanaiFilters(epoch, generation, [this, epoch, generation] {
+        removeAnimeJanaiFilters(epoch, generation, [this, epoch, generation, previousBackend] {
             animeJanaiBusy_ = false;
             if (animeJanaiStageBuildLease_) animeJanaiStageBuildLease_->release();
             animeJanaiStageBuildLease_.reset();
             animeJanaiReconfigureAfterRestore_ = true;
-            finishAnimeJanaiEngineBuild(false, tr("Previous TensorRT engine build stopped."));
+            finishAnimeJanaiEngineBuild(
+                false,
+                tr("Previous %1 engine build stopped.")
+                    .arg(previousBackend == native::Backend::TensorRTRTX
+                             ? VideoSurface::tr("TensorRT for RTX")
+                             : VideoSurface::tr("TensorRT")));
             restoreAnimeJanaiHwdec(epoch, generation);
         });
         return;
@@ -450,24 +461,54 @@ void VideoSurface::observeAnimeJanaiBackendLog(const QString& prefix, const QStr
         animeJanaiEpoch_ != mpv_->sourceEpoch()) return;
 
     const QString lower = (prefix + QLatin1Char(' ') + line).toLower();
+    const QString product =
+        animeJanaiPlan_.backend == native::Backend::TensorRTRTX
+            ? VideoSurface::tr("TensorRT for RTX")
+            : VideoSurface::tr("TensorRT");
     const int buildLogSlot = animeJanaiPlan_.selectedChainNumber > 0
                                  ? 1 : animeJanaiPlan_.slot;
     const native::AnimeJanaiBuildLogEvent buildLogEvent =
-        animeJanaiPlan_.backend == native::Backend::TensorRT
+        native::isTensorRtFamily(animeJanaiPlan_.backend)
             ? animeJanaiAggregateBuildGate_.observeLog(prefix, line, animeJanaiPlan_.backend,
                                                        buildLogSlot)
             : native::classifyAnimeJanaiBuildLog(prefix, line, animeJanaiPlan_.backend,
                                                  buildLogSlot);
+    if (buildLogEvent == native::AnimeJanaiBuildLogEvent::BackendSubstituted) {
+        // The dispatcher kept playing on the classic backend after the
+        // requested RTX one failed. Reporting the filter as processing would
+        // attribute that run to a backend that never started.
+        animeJanaiFail(
+            QStringLiteral("animejanai.backend.substituted"),
+            VideoSurface::tr("TensorRT for RTX failed and the core fell back to TensorRT; "
+                             "the requested backend is not running.") +
+                QLatin1Char('\n') + line.trimmed());
+        return;
+    }
     if (buildLogEvent == native::AnimeJanaiBuildLogEvent::TensorRtBuildFailed) {
-        const QString enginePath = native::animeJanaiBuildFailureEnginePath(prefix, line);
+        QString failureLogPath = native::animeJanaiBuildFailureLogPath(prefix, line);
+        if (failureLogPath.isEmpty())
+            failureLogPath = native::animeJanaiEngineFailedLogPath(line);
         QStringList failureDetails;
-        if (!enginePath.isEmpty()) {
-            failureDetails = native::readAnimeJanaiBuildLogTail(
-                enginePath + QStringLiteral(".build.log"), native::nativeRoot());
+        if (!failureLogPath.isEmpty()) {
+            failureDetails = native::readAnimeJanaiBuildLogTail(failureLogPath,
+                                                                native::nativeRoot());
         }
         if (failureDetails.isEmpty()) failureDetails << line.trimmed();
         animeJanaiFail(QStringLiteral("animejanai.build.failed"),
                        failureDetails.join(QLatin1Char('\n')));
+        return;
+    }
+    if (buildLogEvent == native::AnimeJanaiBuildLogEvent::TensorRtEngineWarmupFailed) {
+        // The fork retries the cached engine on the caller thread and reports
+        // any real error there, so this stays a warning with its evidence
+        // instead of tearing the filter down before that load runs.
+        const QStringList warmDetails = native::readAnimeJanaiBuildLogTail(
+            animeJanaiAggregateBuildGate_.warmupLogPath(), native::nativeRoot());
+        qWarning().noquote() << "[animejanai] engine warm-up failed:"
+                             << (warmDetails.isEmpty() ? line.trimmed()
+                                                       : warmDetails.join(QLatin1Char('\n')));
+        setAnimeJanaiStatus(
+            tr("%1 engine warm-up failed; loading the cached engine directly.").arg(product));
         return;
     }
     const QString trimmedLine = line.trimmed();
@@ -477,7 +518,7 @@ void VideoSurface::observeAnimeJanaiBackendLog(const QString& prefix, const QStr
             Qt::CaseInsensitive) == 0) {
         animeJanaiBackgroundBuildFinished_ = true;
     }
-    if (buildLogEvent == native::AnimeJanaiBuildLogEvent::TensorRtBuildStarted) {
+    if (native::animeJanaiEnginePrepEvent(buildLogEvent)) {
         ++animeJanaiPendingAjiBuildCount_;
         if (!animeJanaiEngineBuildActive_) {
             animeJanaiBuildPollingRefused_ = false;
@@ -485,9 +526,12 @@ void VideoSurface::observeAnimeJanaiBackendLog(const QString& prefix, const QStr
             animeJanaiBackgroundBuildFinished_ = false;
             beginEnginePause();
         }
-        const QString detail = tr("Compiling the selected model for this video resolution.");
+        const QString detail =
+            buildLogEvent == native::AnimeJanaiBuildLogEvent::TensorRtEnginePrepStarted
+                ? tr("Preparing the selected model for this session.")
+                : tr("Compiling the selected model for this video resolution.");
         setEngineFrameHold(true);
-        setAnimeJanaiStatus(tr("Building TensorRT engine…"));
+        setAnimeJanaiStatus(tr("Building %1 engine…").arg(product));
         emit animeJanaiEngineBuildChanged(true, false, detail);
     }
     if (buildLogEvent == native::AnimeJanaiBuildLogEvent::SlotConfigured) {
@@ -507,9 +551,11 @@ void VideoSurface::observeAnimeJanaiBackendLog(const QString& prefix, const QStr
         }
     }
     const QString backendShort =
-        animeJanaiPlan_.backend == native::Backend::TensorRT
-            ? QStringLiteral("TRT")
-            : QStringLiteral("DML");
+        animeJanaiPlan_.backend == native::Backend::TensorRTRTX
+            ? QStringLiteral("TRT-RTX")
+            : animeJanaiPlan_.backend == native::Backend::TensorRT
+                  ? QStringLiteral("TRT")
+                  : QStringLiteral("DML");
     QString presetLabel = animeJanaiPlan_.presetId;
     for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
         if (preset.id.compare(animeJanaiPlan_.presetId, Qt::CaseInsensitive) == 0) {
@@ -599,7 +645,12 @@ void VideoSurface::publishAnimeJanaiObservation(const QString& status, uint64_t 
     animeJanaiObservedGeneration_ = generation;
     animeJanaiObservedStatus_ = status;
     setAnimeJanaiStatus(status);
-    finishAnimeJanaiEngineBuild(true, tr("TensorRT engine ready; backend configuration observed."));
+    finishAnimeJanaiEngineBuild(
+        true,
+        tr("%1 engine ready; backend configuration observed.")
+            .arg(animeJanaiPlan_.backend == native::Backend::TensorRTRTX
+                     ? VideoSurface::tr("TensorRT for RTX")
+                     : VideoSurface::tr("TensorRT")));
     if (animeJanaiStageBuildLease_) animeJanaiStageBuildLease_->release();
     animeJanaiStageBuildLease_.reset();
 }
@@ -738,14 +789,18 @@ void VideoSurface::finishAnimeJanaiEngineBuild(bool succeeded, const QString& de
 // model shows the GPU ran out of memory, that log is the failure to report.
 void VideoSurface::reportAnimeJanaiBackendError(const QString& line) {
     if (animeJanaiPlan_.enabled && animeJanaiPlan_.available &&
-        animeJanaiPlan_.backend == native::Backend::TensorRT) {
+        native::isTensorRtFamily(animeJanaiPlan_.backend)) {
         const QString evidence = native::animeJanaiOutOfMemoryEngineBuildEvidence(
             animeJanaiPlan_.modelDir, native::nativeRoot());
         if (!evidence.isEmpty()) {
-            animeJanaiFail(QStringLiteral("animejanai.build.outOfMemory"),
-                           tr("Not enough free GPU memory to build the TensorRT engine; "
-                              "free GPU memory and try again.") +
-                               QLatin1Char('\n') + evidence);
+            animeJanaiFail(
+                QStringLiteral("animejanai.build.outOfMemory"),
+                tr("Not enough free GPU memory to build the %1 engine; "
+                   "free GPU memory and try again.")
+                        .arg(animeJanaiPlan_.backend == native::Backend::TensorRTRTX
+                                 ? VideoSurface::tr("TensorRT for RTX")
+                                 : VideoSurface::tr("TensorRT")) +
+                    QLatin1Char('\n') + evidence);
             return;
         }
     }
@@ -853,7 +908,7 @@ void VideoSurface::processAnimeJanaiPlan() {
             // aligned for DirectML - the probe path (backendHwdec) spells it the
             // same way, so the write/readback comparison cannot drift on the
             // legacy `d3d11va` alias.
-            const QString required = animeJanaiPlan_.backend == native::Backend::TensorRT
+            const QString required = native::isTensorRtFamily(animeJanaiPlan_.backend)
                                          ? QStringLiteral("nvdec")
                                          : QStringLiteral("d3d11");
             const auto write = mpv_->commandAsync(

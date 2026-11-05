@@ -563,6 +563,17 @@ NativeAssemblyOutcome assembleNativeAdmission(const NativeAssemblyRequest& input
     return refuse(QStringLiteral("native.assembly.selection"),
                   assemblyText("No native recipe is requested, so there is nothing to prepare."));
   }
+  // The private Native ABI-8 runtime carries TensorRT and DirectML only. A
+  // requested Standard-only backend - TensorRT for RTX - is refused by name
+  // before any toolchain, bundle or build work runs, and is never mapped onto
+  // another backend.
+  if (!mplayer::native::privateNativeCarries(input.selection.backend)) {
+    return refuse(
+        QStringLiteral("native.assembly.backendUnsupported"),
+        assemblyText("The private Native pipeline does not carry the %1 backend, so nothing is "
+                     "prepared or submitted for it.")
+            .arg(mplayer::native::stableName(input.selection.backend)));
+  }
   if (!input.context.source.isKnown()) {
     return refuse(QStringLiteral("native.assembly.sourceUnobserved"),
                   assemblyText("The live source has not reported its display geometry and cadence "
@@ -636,6 +647,16 @@ NativeAssemblyOutcome assembleNativeAdmission(const NativeAssemblyRequest& input
                   recipeReason.isEmpty()
                       ? assemblyText("The requested recipe could not be resolved.")
                       : recipeReason);
+  }
+  // A stored recipe may name its own backend. That backend must be one the
+  // private ABI carries too; otherwise the bundle provider lookup below would
+  // search for a module that does not exist. Refused by name, never substituted.
+  if (!mplayer::native::privateNativeCarries(recipe->backend)) {
+    return refuse(
+        QStringLiteral("native.assembly.backendUnsupported"),
+        assemblyText("The private Native pipeline does not carry the %1 backend this recipe "
+                     "asks for, so nothing is prepared or submitted for it.")
+            .arg(mplayer::native::stableName(recipe->backend)));
   }
 
   // The core provenance and the plugin's content revision come from the validated

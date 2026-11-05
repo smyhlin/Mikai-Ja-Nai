@@ -396,6 +396,16 @@ void TestNativePreparedPlan::aWholeSpatialPlanResolvesToTheAdmissionCommand() {
   QCOMPARE(content.value(QStringLiteral("h")).toInt(), 2160);
   QCOMPARE(entry.value(QStringLiteral("padLeft")).toInt(), 0);
   QCOMPARE(entry.value(QStringLiteral("padTop")).toInt(), 0);
+
+  // The shared Backend vocabulary can name TensorRT-RTX, but this private ABI-8
+  // admission only carries the two PreparedNative backends. The request is
+  // refused by name before any command is written, and nothing is substituted.
+  admissionRequest.backend = Backend::TensorRTRTX;
+  const std::optional<PreparedAdmission> refused =
+      resolvePreparedAdmission(admissionRequest, &reasonKey, &reason);
+  QVERIFY(!refused.has_value());
+  QCOMPARE(reasonKey, QStringLiteral("backend.unsupported"));
+  QVERIFY(reason.contains(QStringLiteral("tensorrt-rtx")));
 }
 
 void TestNativePreparedPlan::anAdmissionHoldsItsArtifactLeasesUntilDropped() {

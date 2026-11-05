@@ -38,6 +38,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSettings>
 #include <QSet>
 #include <QStackedWidget>
 #include <QStyle>
@@ -55,6 +56,7 @@
 #include <exception>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -94,11 +96,26 @@ struct BenchmarkResultRow {
     bool successful = false;
 };
 
-/// The stable identifier a report row carries, never the translated label.
 QString benchmarkBackendId(mplayer::native::Backend backend) {
-    return backend == mplayer::native::Backend::TensorRT ? QStringLiteral("tensorrt")
-                                                         : QStringLiteral("directml");
+    return mplayer::native::stableName(backend);
 }
+
+// Read the player's Standard-AJI choice, not the private Native preference.
+std::optional<mplayer::native::Backend> storedStandardAnimeJanaiBackendChoice() {
+    const QString stored =
+        QSettings().value(QStringLiteral("player/animejanai/backend")).toString();
+    return mplayer::native::backendFromName(stored);
+}
+
+#ifdef Q_OS_WIN
+// Preserve the historical Native preference default when no Standard choice exists.
+mplayer::native::Backend storedStandardAnimeJanaiBackend() {
+    if (const auto backend = storedStandardAnimeJanaiBackendChoice()) {
+        return *backend;
+    }
+    return mplayer::native::loadNativePreferences().backend;
+}
+#endif
 
 QString benchmarkElapsedText(qint64 milliseconds) {
     const qint64 seconds = milliseconds / 1000;
@@ -895,10 +912,19 @@ void SettingsDialog::runBenchmark() {
     const QString reportDirectory = mikai::app::benchmarkReportBaseDirectory();
     const QString applicationVersion = QCoreApplication::applicationVersion();
 #ifdef Q_OS_LINUX
-    const mplayer::native::Backend backend = mplayer::native::Backend::TensorRT;
-#else
+    // There is no published Linux RTX runtime, but a stored/imported RTX name
+    // must not be silently measured as classic TensorRT: keep it so every plan
+    // returns its own platform refusal with the requested backend named. DirectML
+    // keeps the historical Linux clamp, and with no stored Standard choice the
+    // benchmark stays on classic TensorRT exactly as before.
+    const std::optional<mplayer::native::Backend> storedStandard =
+        storedStandardAnimeJanaiBackendChoice();
     const mplayer::native::Backend backend =
-        mplayer::native::loadNativePreferences().backend;
+        storedStandard == mplayer::native::Backend::TensorRTRTX
+            ? *storedStandard
+            : mplayer::native::Backend::TensorRT;
+#else
+    const mplayer::native::Backend backend = storedStandardAnimeJanaiBackend();
 #endif
     QHash<QString, QString> clipPaths;
     for (const QString& clip : clips) clipPaths.insert(clip, locateBenchmarkClip(clip));
@@ -1204,9 +1230,14 @@ void SettingsDialog::runBenchmark() {
                     }
                     std::vector<std::pair<std::string, std::string>> options{
                         {"vf", plan.filterSpec.toStdString()}};
-                    if (plan.requiresAji)
-                        options.emplace_back("hwdec",
-                            plan.backend == mplayer::native::Backend::TensorRT ? "nvdec" : "d3d11va");
+                    if (plan.requiresAji) {
+                        // RTX builds and decodes through the CUDA family, so it
+                        // needs NVDEC like classic TensorRT; only DirectML is a
+                        // D3D11VA backend.
+                        options.emplace_back(
+                            "hwdec", mplayer::native::isTensorRtFamily(plan.backend) ? "nvdec"
+                                                                                     : "d3d11va");
+                    }
                     const int ajiStages = static_cast<int>(std::count_if(
                         plan.stages.cbegin(), plan.stages.cend(),
                         [](const mplayer::native::AnimeJanaiPlanStage& stage) {

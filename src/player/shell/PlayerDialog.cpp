@@ -187,9 +187,12 @@ QIcon glyphIcon(void (*glyph)(QPainter&, qreal, qreal, qreal, const QColor&), qr
 
 // T-404: the one definition of the class's backend spelling; the former
 // duplicate in PlayerDialogProcessing.cpp is gone and its TU uses this member.
+// The stable vocabulary is the persisted contract: "tensorrt", "directml" and
+// "tensorrt-rtx". Spelling it here as a two-way ternary persisted an RTX
+// request as TensorRT, which is exactly the silent substitution the backend
+// contract forbids.
 QString PlayerDialog::animeJanaiBackendName(native::Backend backend) {
-    return backend == native::Backend::DirectML ? QStringLiteral("directml")
-                                                 : QStringLiteral("tensorrt");
+    return native::stableName(backend);
 }
 
 PlayerDialog::PlayerDialog(const QString& caption, const QString& url, QWidget* parent)
@@ -267,7 +270,11 @@ PlayerDialog::PlayerDialog(const QString& caption,
     }
 #ifdef Q_OS_LINUX
     // Settings can be shared with Windows or retain an old Native preference.
-    // DirectML is not a Linux Standard AnimeJaNai backend.
+    // DirectML is not a Linux Standard AnimeJaNai backend, so that historical
+    // clamp stays. TensorRT for RTX has no published Linux runtime either, but
+    // it is deliberately NOT clamped: the request is kept verbatim and the plan
+    // refuses it by name, so the UI never reports a backend the user did not
+    // choose.
     if (animeJanaiBackend_ == native::Backend::DirectML) {
         animeJanaiBackend_ = native::Backend::TensorRT;
     }

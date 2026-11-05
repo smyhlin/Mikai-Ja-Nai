@@ -413,6 +413,12 @@ void TestNativeRecipe::allThreeShapesSurviveTheirOwnRoundTrip() {
   Recipe directml = spatialOnlyRecipe();
   directml.backend = Backend::DirectML;
   QCOMPARE(roundTrip(directml).backend, Backend::DirectML);
+
+  // TensorRT-RTX is a distinct persisted Standard-AJI choice with its own token;
+  // it is never serialized as classic TensorRT.
+  Recipe rtx = spatialOnlyRecipe();
+  rtx.backend = Backend::TensorRTRTX;
+  QCOMPARE(roundTrip(rtx).backend, Backend::TensorRTRTX);
 }
 
 // ---------------------------------------------------------------- parsing
@@ -462,6 +468,11 @@ void TestNativeRecipe::anUnknownEnumValueIsRejectedNotDefaulted() {
   // A backend name differing only in case is still unknown.
   document = recipeToJson(spatialOnlyRecipe());
   document.insert(QStringLiteral("backend"), QStringLiteral("TensorRT"));
+  QCOMPARE(refusalKey(document), QStringLiteral("recipe.backend.unknown"));
+
+  // The dispatcher's alternate RTX spellings are not stored vocabulary.
+  document = recipeToJson(spatialOnlyRecipe());
+  document.insert(QStringLiteral("backend"), QStringLiteral("TensorRT-RTX"));
   QCOMPARE(refusalKey(document), QStringLiteral("recipe.backend.unknown"));
 
   // An unknown variant, with the model, version and ensemble all agreeing so the
@@ -761,6 +772,18 @@ void TestNativeRecipe::aRecipeNamingAnUnavailableBackendIsUnavailableWithAReason
       evaluateEligibility(trt, catalog, BackendAvailability{{Backend::TensorRT}});
   QCOMPARE(ok.availability.value, Availability::Ready);
   QCOMPARE(ok.effective.backend, Backend::TensorRT);
+
+  // The shared vocabulary can name TensorRT-RTX, but the private runtime offer
+  // list still carries only the two PreparedNative backends: the request is
+  // reported unavailable by name and is never redirected to classic TensorRT.
+  Recipe rtx = spatialOnlyRecipe();
+  rtx.backend = Backend::TensorRTRTX;
+  const RecipeEligibility rtxMissing = evaluateEligibility(rtx, catalog, bothBackends());
+  QCOMPARE(rtxMissing.availability.value, Availability::Unavailable);
+  QCOMPARE(rtxMissing.availability.reasonKey, QStringLiteral("backend.unavailable"));
+  QVERIFY(rtxMissing.availability.reason.contains(QStringLiteral("tensorrt-rtx")));
+  QCOMPARE(rtxMissing.requested.backend, Backend::TensorRTRTX);
+  QVERIFY(rtxMissing.effective.isOriginal());
 }
 
 void TestNativeRecipe::aRecipeNamingAModelOnTheWrongBackendIsUnavailable() {

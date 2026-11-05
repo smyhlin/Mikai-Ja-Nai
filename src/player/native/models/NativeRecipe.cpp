@@ -344,6 +344,8 @@ QString stableName(Backend backend) {
       return QStringLiteral("tensorrt");
     case Backend::DirectML:
       return QStringLiteral("directml");
+    case Backend::TensorRTRTX:
+      return QStringLiteral("tensorrt-rtx");
   }
   return QString();
 }
@@ -451,6 +453,7 @@ std::optional<ModelRole> modelRoleFromName(const QString& name) {
 std::optional<Backend> backendFromName(const QString& name) {
   if (name == QLatin1String("tensorrt")) return Backend::TensorRT;
   if (name == QLatin1String("directml")) return Backend::DirectML;
+  if (name == QLatin1String("tensorrt-rtx")) return Backend::TensorRTRTX;
   return std::nullopt;
 }
 
@@ -507,7 +510,7 @@ std::optional<RifeVariant> rifeVariantFromName(const QString& name) {
 }
 
 QVector<Backend> allBackends() {
-  return {Backend::TensorRT, Backend::DirectML};
+  return {Backend::TensorRT, Backend::DirectML, Backend::TensorRTRTX};
 }
 
 QString rifeModelName(RifeVersion version, RifeVariant variant, bool ensemble) {
@@ -1160,7 +1163,7 @@ bool parseRecipe(const QJsonObject& object, Recipe* recipe, QString* errorKey, Q
   const std::optional<Backend> backend = backendFromName(jsonString(object, QStringLiteral("backend")));
   if (!backend.has_value()) {
     return reject(QStringLiteral("recipe.backend.unknown"),
-                  QStringLiteral("recipe backend %1 is neither tensorrt nor directml")
+                  QStringLiteral("recipe backend %1 is not tensorrt, directml or tensorrt-rtx")
                       .arg(jsonString(object, QStringLiteral("backend"))));
   }
 

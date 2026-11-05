@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "EpisodeNavButton.hpp"
 #include "HoverPreview.hpp"
@@ -260,15 +261,41 @@ QVector<MenuEntry> animeJanaiEntries(const QString& levelId, const QString& curr
             entries.append(entry);
         }
     } else if (levelId == QLatin1String(kAnimeJanaiBackend)) {
-        for (const auto& item : {std::make_pair(native::Backend::TensorRT, QObject::tr("TensorRT")),
-                                 std::make_pair(native::Backend::DirectML, QObject::tr("DirectML"))}) {
+        // TensorRT for RTX is a first-class Standard-AJI backend on Windows.
+        // It is listed on every platform so an imported/restored RTX request is
+        // named rather than hidden, but only Windows can select it: there is no
+        // published Linux RTX runtime, and a row that could not run must not
+        // pretend otherwise. The payload is the persisted stable name, never a
+        // label, so "tensorrt-rtx" round-trips through the same store as the
+        // other two.
+        struct BackendRow {
+            native::Backend backend;
+            QString label;
+        };
+        const BackendRow rows[] = {
+            {native::Backend::TensorRT, QObject::tr("TensorRT")},
+            {native::Backend::TensorRTRTX, QObject::tr("TensorRT for RTX")},
+            {native::Backend::DirectML, QObject::tr("DirectML")},
+        };
+        for (const BackendRow& row : rows) {
             MenuEntry entry;
-            entry.text = item.second;
-            const QString backend = item.first == native::Backend::TensorRT
-                                        ? QStringLiteral("tensorrt")
-                                        : QStringLiteral("directml");
+            entry.text = row.label;
+            const QString backend = native::stableName(row.backend);
             entry.payload = QStringLiteral("ajbackend|") + backend;
             entry.current = backend == currentId;
+#ifdef Q_OS_WIN
+            if (row.backend == native::Backend::TensorRTRTX) {
+                entry.tooltip = QObject::tr(
+                    "In-process TensorRT-RTX 1.7 engine builds; CUDA GPUs, Windows only.");
+            }
+#else
+            if (row.backend == native::Backend::TensorRTRTX) {
+                entry.disabled = true;
+                entry.tooltip = QObject::tr(
+                    "TensorRT for RTX has no published runtime on this platform. "
+                    "The saved RTX request is kept but cannot run.");
+            }
+#endif
             entries.append(entry);
         }
     }
@@ -1789,10 +1816,16 @@ void PlayerShell::updateAnimeJanaiChip() {
         if (id.isEmpty()) {
             lblAnimeJanai_->hide();
         } else {
+            // Three real backend values, so the chip names the one actually
+            // requested instead of folding RTX into the classic TRT label.
+            const std::optional<native::Backend> backendValue =
+                native::backendFromName(animeJanaiBackend_);
             const QString backendShort =
-                animeJanaiBackend_.compare(QLatin1String("directml"), Qt::CaseInsensitive) == 0
+                backendValue == native::Backend::DirectML
                     ? QStringLiteral("DML")
-                    : QStringLiteral("TRT");
+                    : (backendValue == native::Backend::TensorRTRTX
+                           ? QStringLiteral("TRT-RTX")
+                           : QStringLiteral("TRT"));
             QString presetLabel = id;
             bool presetInCatalogue = false;
             for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
@@ -1846,7 +1879,9 @@ void PlayerShell::updateAnimeJanaiChip() {
                 }
             }
             const bool alreadyPrefixed =
+                visibleStatus.startsWith(QLatin1String("TRT-RTX ")) ||
                 visibleStatus.startsWith(QLatin1String("TRT ")) ||
+                visibleStatus.startsWith(QLatin1String("RTX ")) ||
                 visibleStatus.startsWith(QLatin1String("DML ")) ||
                 visibleStatus.startsWith(QLatin1String("AnimeJaNai"), Qt::CaseInsensitive);
             lblAnimeJanai_->setText(

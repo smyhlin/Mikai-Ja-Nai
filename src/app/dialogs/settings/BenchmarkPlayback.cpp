@@ -161,7 +161,13 @@ BenchmarkSampleResult runBenchmarkSample(
     BenchmarkFrameSample sample;
     mplayer::native::AnimeJanaiBuildGate buildGate;
     int configuredAjiStages = 0;
-    const bool watchBuild = slot >= 0 && backend == mplayer::native::Backend::TensorRT;
+    // Classic TensorRT and TensorRT-RTX both build asynchronously before their
+    // first frame; DirectML has no build to wait for. The engine-preparation time
+    // must be measured for the whole family, not only for the classic backend.
+    const bool watchBuild = slot >= 0 && mplayer::native::isTensorRtFamily(backend);
+    const QString productLabel = backend == mplayer::native::Backend::TensorRTRTX
+                                     ? PlaybackText::tr("TensorRT for RTX")
+                                     : PlaybackText::tr("TensorRT");
     QElapsedTimer startupTimer;
     QElapsedTimer buildTimer;
     QElapsedTimer clock;
@@ -234,8 +240,18 @@ BenchmarkSampleResult runBenchmarkSample(
             if (buildEvent == mplayer::native::AnimeJanaiBuildLogEvent::SlotConfigured)
                 ++configuredAjiStages;
             const bool authoritativeBuildFailure =
-                buildEvent == mplayer::native::AnimeJanaiBuildLogEvent::TensorRtBuildFailed;
-            if (authoritativeBuildFailure) {
+                mplayer::native::animeJanaiBuildFailureEvent(buildEvent);
+            if (buildEvent == mplayer::native::AnimeJanaiBuildLogEvent::BackendSubstituted) {
+                // The dispatcher kept running on the classic backend after the
+                // requested RTX one failed. A throughput figure measured that way
+                // would be attributed to a backend that never ran.
+                noteBackendLog(prefix + QStringLiteral(": ") + line);
+                playbackError = withDetail(
+                    PlaybackText::tr("%1 did not start and the core fell back to TensorRT; "
+                                     "the requested backend was not measured.")
+                        .arg(productLabel));
+                publishEngine(BenchmarkEngineBuildUpdate::Failed);
+            } else if (authoritativeBuildFailure) {
                 const QStringList buildTail = mplayer::native::readAnimeJanaiBuildLogTail(
                     buildGate.failureLogPath(), mplayer::native::nativeRoot());
                 if (buildTail.isEmpty()) {
@@ -244,6 +260,17 @@ BenchmarkSampleResult runBenchmarkSample(
                     for (const QString& detail : buildTail) noteBackendLog(detail);
                 }
                 publishEngine(BenchmarkEngineBuildUpdate::Failed);
+            } else if (buildEvent ==
+                       mplayer::native::AnimeJanaiBuildLogEvent::TensorRtEngineWarmupFailed) {
+                // The cached engine is loaded again on the caller thread, so
+                // keep the warm log for the verdict that load produces.
+                const QStringList warmTail = mplayer::native::readAnimeJanaiBuildLogTail(
+                    buildGate.warmupLogPath(), mplayer::native::nativeRoot());
+                if (warmTail.isEmpty()) {
+                    noteBackendLog(prefix + QStringLiteral(": ") + line);
+                } else {
+                    for (const QString& detail : warmTail) noteBackendLog(detail);
+                }
             } else if (buildGate.failureLogPath().isEmpty() && message->log_level > 0 &&
                        message->log_level <= MPV_LOG_LEVEL_ERROR) {
                 // END_FILE can precede its source-error log; freeze only an authoritative builder tail.
@@ -258,8 +285,7 @@ BenchmarkSampleResult runBenchmarkSample(
                     noteBackendLog(prefix + QStringLiteral(": ") + line);
                 }
             }
-            if (buildEvent == mplayer::native::AnimeJanaiBuildLogEvent::TensorRtBuildStarted &&
-                !wasBuilding) {
+            if (mplayer::native::animeJanaiEnginePrepEvent(buildEvent) && !wasBuilding) {
                 sample.reset();
                 buildTimer.start();
                 publishEngine(BenchmarkEngineBuildUpdate::Started);
@@ -289,20 +315,23 @@ BenchmarkSampleResult runBenchmarkSample(
                 break;
             }
             if (buildGate.failed()) {
-                result.error = withDetail(PlaybackText::tr("TensorRT engine build failed."));
+                result.error = withDetail(
+                    PlaybackText::tr("%1 engine build failed.").arg(productLabel));
                 break;
             }
             if (watchBuild && buildGate.buildActive()) {
                 if (buildTimer.elapsed() >= kBuildTimeoutMs) {
                     buildGate.fail();
                     publishEngine(BenchmarkEngineBuildUpdate::Failed);
-                    result.error = withDetail(PlaybackText::tr("TensorRT engine build timed out."));
+                    result.error = withDetail(
+                        PlaybackText::tr("%1 engine build timed out.").arg(productLabel));
                     break;
                 }
             } else if (!sample.started() && startupTimer.elapsed() >= kStartupTimeoutMs) {
                 result.error = withDetail(
                     watchBuild && !buildGate.readyToMeasure()
-                        ? PlaybackText::tr("TensorRT did not confirm the selected slot is ready.")
+                        ? PlaybackText::tr("%1 did not confirm the selected slot is ready.")
+                              .arg(productLabel)
                         : PlaybackText::tr("Timed out waiting for rendered video frames."));
                 break;
             }

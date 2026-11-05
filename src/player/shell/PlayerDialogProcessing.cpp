@@ -472,9 +472,16 @@ void PlayerDialog::restateAnimeJanaiBuildLanguage() {
     // Text only. The setters never begin or end a run, move the frame hold,
     // issue a command, bump a generation, restart the elapsed timer or cancel
     // anything, and the stage keeps the index and count the build supplied.
-    retitleEnginePreparation(tr("Building TensorRT engine"));
+    // The overlay names the product actually compiling: an RTX build is
+    // TensorRT for RTX, not classic TensorRT.
+    const bool rtx =
+        animeJanaiBuildingSurface_->animeJanaiPlan().backend == native::Backend::TensorRTRTX;
+    retitleEnginePreparation(rtx ? tr("Building TensorRT for RTX engine")
+                                 : tr("Building TensorRT engine"));
     updateEnginePreparation(animeJanaiBuildStageIndex_, animeJanaiBuildStageCount_,
-                            tr("TensorRT compilation"), animeJanaiBuildDetailText());
+                            rtx ? tr("TensorRT for RTX compilation")
+                                : tr("TensorRT compilation"),
+                            animeJanaiBuildDetailText());
 }
 
 void PlayerDialog::handleAnimeJanaiEngineBuildChanged(VideoSurface* owner, bool active,
@@ -484,7 +491,10 @@ void PlayerDialog::handleAnimeJanaiEngineBuildChanged(VideoSurface* owner, bool 
         if (owner != playbackSurface()) return;
         owner->setEngineFrameHold(true);
         if (animeJanaiBuildingSurface_ != owner) {
-            beginEnginePreparation(tr("Building TensorRT engine"));
+            const native::AnimeJanaiPlan plan = owner->animeJanaiPlan();
+            beginEnginePreparation(plan.backend == native::Backend::TensorRTRTX
+                                       ? tr("Building TensorRT for RTX engine")
+                                       : tr("Building TensorRT engine"));
             animeJanaiBuildGeneration_ = enginePreparationGeneration_;
             animeJanaiBuildingSurface_ = owner;
             // The operation's preset is captured as its catalogue identity,
@@ -492,7 +502,6 @@ void PlayerDialog::handleAnimeJanaiEngineBuildChanged(VideoSurface* owner, bool 
             // only that identity's rendering under the current language and the
             // fallback for a catalogue that no longer lists it; a restatement
             // re-derives it from the id instead of trusting these words.
-            const native::AnimeJanaiPlan plan = owner->animeJanaiPlan();
             animeJanaiBuildPresetId_ = plan.presetId;
             animeJanaiBuildPresetLabel_ =
                 animeJanaiPresetLabel(plan.presetId, plan.presetId);
@@ -505,8 +514,12 @@ void PlayerDialog::handleAnimeJanaiEngineBuildChanged(VideoSurface* owner, bool 
         animeJanaiBuildHeight_ = owner->videoHeight();
         animeJanaiBuildStageIndex_ = -1;
         animeJanaiBuildStageCount_ = 0;
-        updateEnginePreparation(animeJanaiBuildStageIndex_, animeJanaiBuildStageCount_,
-                                tr("TensorRT compilation"), animeJanaiBuildDetailText());
+        updateEnginePreparation(
+            animeJanaiBuildStageIndex_, animeJanaiBuildStageCount_,
+            owner->animeJanaiPlan().backend == native::Backend::TensorRTRTX
+                ? tr("TensorRT for RTX compilation")
+                : tr("TensorRT compilation"),
+            animeJanaiBuildDetailText());
         return;
     }
     if (!owner->animeJanaiEngineBuildActive()) owner->setEngineFrameHold(false);

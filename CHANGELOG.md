@@ -4,6 +4,7 @@ Published changes are recorded with their downloads on the [GitHub releases page
 
 ## Unreleased
 
+- Update Standard AnimeJaNai to v0.22.2 and add opt-in TensorRT for RTX on Windows: verified dispatcher/runtime acquisition, in-process engine builds, separate engine/JIT caches, NVDEC, player/Compare/Benchmark selection and explicit refusal of backend substitution. Keep the classic Linux runtime; upstream publishes no Linux RTX binary.
 - Show the Windows setup Welcome page and offer an explicit update or repair for registered installations, including builds sharing the same version number.
 - Repair Linux AppImage staging: pass `DESTDIR` through CMake's environment launcher and accept both supported Qt platform-plugin layouts.
 

@@ -23,8 +23,16 @@ namespace native {
 enum class ModelRole { Spatial, Temporal };
 
 /// A recipe naming a backend the runtime does not carry fails visibly; it never
-/// runs on the other one.
-enum class Backend { TensorRT, DirectML };
+/// runs on another backend.
+enum class Backend { TensorRT, DirectML, TensorRTRTX };
+
+constexpr bool isTensorRtFamily(Backend backend) {
+  return backend == Backend::TensorRT || backend == Backend::TensorRTRTX;
+}
+
+constexpr bool privateNativeCarries(Backend backend) {
+  return backend == Backend::TensorRT || backend == Backend::DirectML;
+}
 
 enum class Availability { Ready, Preparing, Unavailable };
 

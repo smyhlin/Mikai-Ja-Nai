@@ -316,15 +316,19 @@ bool sameBackendSet(const QVector<Backend>& recorded, const QVector<Backend>& su
 QVector<Backend> supportedBackendsForRole(ModelRole role, const QVector<Backend>& supplied) {
   QVector<Backend> supported;
   for (const Backend backend : supplied) {
-    if (role == ModelRole::Temporal && backend != Backend::TensorRT) continue;
+    // RIFE's N=1/C=11 to N=1/C=3 graph runs on the TensorRT-family builders; the
+    // Standard-only TensorRT for RTX compiles the same ONNX graph, so a row may
+    // record it as graph-compatible. DirectML is still excluded: it cannot run
+    // the temporal graph at all.
+    if (role == ModelRole::Temporal && !isTensorRtFamily(backend)) continue;
     if (!supported.contains(backend)) supported.append(backend);
   }
   return supported;
 }
 
 QString temporalBackendUnavailableReason() {
-  return QStringLiteral("the native temporal route supports TensorRT only; DirectML cannot run "
-                        "the RIFE N=1/C=11 to N=1/C=3 graph");
+  return QStringLiteral("the native temporal route supports the TensorRT family only; DirectML "
+                        "cannot run the RIFE N=1/C=11 to N=1/C=3 graph");
 }
 
 /// Rewrites recorded backend support and, for Temporal rows only, the availability

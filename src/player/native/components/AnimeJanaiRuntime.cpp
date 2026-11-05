@@ -265,21 +265,119 @@ void pruneLegacySdModelOrphans(const QString& modelDir) {
     }
 }
 
-QByteArray globalIniHeader(const AnimeJanaiConfig& managerConf) {
-    const QString defaultTrtSettings = QStringLiteral(
+QString defaultTrtEngineSettings() {
+    return QStringLiteral(
         "--builderOptimizationLevel=5 --optShapes=input:%video_resolution% --skipInference");
+}
+
+/// The exact `[global] backend=` token the dispatcher accepts.
+QString backendIniName(Backend backend) {
+    switch (backend) {
+    case Backend::DirectML:
+        return QStringLiteral("DirectML");
+    case Backend::TensorRTRTX:
+        return QStringLiteral("TensorRT-RTX");
+    case Backend::TensorRT:
+        break;
+    }
+    return QStringLiteral("TensorRT");
+}
+
+bool allDigits(const QString& value) {
+    return !value.isEmpty() &&
+           std::all_of(value.cbegin(), value.cend(),
+                       [](QChar c) { return c >= QLatin1Char('0') && c <= QLatin1Char('9'); });
+}
+
+/// The only trt_engine_settings flags the in-process RTX builder honors; every
+/// other token is rejected instead of being silently ignored.
+bool rtxSupportedEngineFlag(const QString& token) {
+    static const QString optimizationLevel = QStringLiteral("--builderOptimizationLevel=");
+    static const QString memoryPool = QStringLiteral("--memPoolSize=workspace:");
+    if (token.startsWith(optimizationLevel))
+        return allDigits(token.mid(optimizationLevel.size()));
+    if (token.startsWith(memoryPool))
+        return allDigits(token.mid(memoryPool.size()));
+    for (const QString& prefix : {QStringLiteral("--minShapes="), QStringLiteral("--optShapes="),
+                                  QStringLiteral("--maxShapes=")}) {
+        if (token.startsWith(prefix) && token.size() > prefix.size()) return true;
+    }
+    return false;
+}
+
+/// The effective `trt_engine_settings` payload for one plan, plus a user-facing
+/// disclosure when the RTX sanitization changes the requested settings.
+struct IniBackendSettings {
+    QString trtEngineSettings; ///< Empty means the key is omitted.
+    QString note;
+};
+
+bool resolveIniBackendSettings(Backend backend, const QString& raw,
+                               IniBackendSettings* out, QString* errorKey, QString* error) {
+    QString settings = raw.trimmed();
+    settings.remove(QChar::Null);
+    settings.replace(u'\r', u' ');
+    settings.replace(u'\n', u' ');
+    const QString defaultSettings = defaultTrtEngineSettings();
+    if (backend != Backend::TensorRTRTX) {
+        out->trtEngineSettings =
+            (settings.isEmpty() || settings == defaultSettings) ? QString() : settings;
+        return true;
+    }
+    settings = settings.simplified();
+    if (settings.isEmpty()) {
+        out->trtEngineSettings.clear();
+        return true;
+    }
+    QStringList kept;
+    bool droppedSkipInference = false;
+    for (const QString& token : settings.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+        // The app's generated default (and upstream's legacy profiles) carry
+        // --skipInference, which has no meaning for an in-process build.
+        if (token == QStringLiteral("--skipInference")) {
+            droppedSkipInference = true;
+            continue;
+        }
+        if (rtxSupportedEngineFlag(token)) {
+            kept.append(token);
+            continue;
+        }
+        if (errorKey) *errorKey = QStringLiteral("animejanai.config.rtxEngineSettings");
+        if (error)
+            *error = RuntimeText::tr(
+                "TensorRT for RTX builds engines in-process and supports only --minShapes=, "
+                "--optShapes=, --maxShapes=, --builderOptimizationLevel= and "
+                "--memPoolSize=workspace: in trt_engine_settings; '%1' is not supported. "
+                "Precision comes from the ONNX graph.").arg(token);
+        return false;
+    }
+    out->trtEngineSettings = kept.join(QLatin1Char(' '));
+    if (droppedSkipInference)
+        out->note = RuntimeText::tr(
+            "TensorRT for RTX builds the engine in-process, so --skipInference is not used.");
+    return true;
+}
+
+void appendPlanNote(AnimeJanaiPlan& plan, const QString& note) {
+    if (note.isEmpty()) return;
+    if (plan.note.isEmpty()) {
+        plan.note = note;
+    } else {
+        plan.note += QLatin1Char(' ') + note;
+    }
+}
+
+/// Classic TensorRT keeps the raw manager settings verbatim (minus the app
+/// default, which is the backend's own default); DirectML and RTX use the same
+/// `[global]` layout but their own backend token.
+QByteArray globalIniHeader(const AnimeJanaiConfig& managerConf, Backend backend,
+                           const IniBackendSettings& resolved) {
     QByteArray ini = QByteArrayLiteral("[global]\nconfig_version=3\n");
-    ini += QByteArrayLiteral("backend=TensorRT\n");
+    ini += QByteArrayLiteral("backend=") + backendIniName(backend).toUtf8() + '\n';
     ini += managerConf.enableLogging ? QByteArrayLiteral("logging=yes\n")
                                      : QByteArrayLiteral("logging=no\n");
-    if (!managerConf.trtEngineSettings.trimmed().isEmpty() &&
-        managerConf.trtEngineSettings.trimmed() != defaultTrtSettings) {
-        QString settings = managerConf.trtEngineSettings.trimmed();
-        settings.remove(QChar::Null);
-        settings.replace(u'\r', u' ');
-        settings.replace(u'\n', u' ');
-        ini += QByteArrayLiteral("trt_engine_settings=") + settings.toUtf8() + '\n';
-    }
+    if (!resolved.trtEngineSettings.isEmpty())
+        ini += QByteArrayLiteral("trt_engine_settings=") + resolved.trtEngineSettings.toUtf8() + '\n';
     if (managerConf.qualitySharp) {
         ini += QByteArrayLiteral("quality_preset=sharp\n");
     }
@@ -292,7 +390,8 @@ QByteArray globalIniHeader(const AnimeJanaiConfig& managerConf) {
     return ini;
 }
 
-QByteArray builtinIni(const AnimeJanaiConfig& managerConf) {
+QByteArray builtinIni(const AnimeJanaiConfig& managerConf, Backend backend,
+                      const IniBackendSettings& resolved) {
     const QByteArray hdBalanced =
         QByteArrayLiteral("2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16");
     const QByteArray hdBalancedSharp =
@@ -309,7 +408,7 @@ QByteArray builtinIni(const AnimeJanaiConfig& managerConf) {
     const QByteArray performanceHd =
         managerConf.performanceSharp ? hdPerformanceSharp : hdPerformance;
 
-    QByteArray ini = globalIniHeader(managerConf);
+    QByteArray ini = globalIniHeader(managerConf, backend, resolved);
     ini += QByteArrayLiteral("[slot_1001]\nprofile_name=Quality\n");
     ini += QByteArrayLiteral("chain_1_min_resolution=1280x720\nchain_1_max_resolution=1920x1080\nchain_1_max_fps=31\n") + modelLine(1, qualityHd);
     ini += QByteArrayLiteral("chain_2_min_resolution=0x0\nchain_2_max_resolution=1280x720\nchain_2_max_fps=31\n") + modelLine(2, sd);
@@ -562,6 +661,7 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
         fail(plan, QStringLiteral("animejanai.config.invalid"), validationError);
         return plan;
     }
+    IniBackendSettings iniSettings;
     QVector<AnimeJanaiChain> chains = profile.chains;
     std::sort(chains.begin(), chains.end(), [](const AnimeJanaiChain& a, const AnimeJanaiChain& b) {
         return a.number < b.number;
@@ -634,6 +734,16 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
                                     });
     plan.requiresAji = hasAji;
     if (hasAji) {
+        // Only AJI engine builds consume trt_engine_settings; shader-only chains
+        // must not be rejected for settings no backend will read.
+        QString settingsErrorKey;
+        QString settingsError;
+        if (!resolveIniBackendSettings(backend, managerConf.trtEngineSettings, &iniSettings,
+                                       &settingsErrorKey, &settingsError)) {
+            fail(plan, settingsErrorKey, settingsError);
+            return plan;
+        }
+        appendPlanNote(plan, iniSettings.note);
         const QString cacheKey = QDir(ownedRoot).filePath(
             QStringLiteral("models/mixed_%1_cache").arg(profileKey));
         plan.cacheKeys.append(QDir::cleanPath(QFileInfo(cacheKey).absoluteFilePath()));
@@ -692,7 +802,8 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
 #else
         plan.libraryPath = QDir(installation.root).filePath(QStringLiteral("libaji.so"));
 #endif
-        plan.trtexecLibDir = detail::shellSafeLibDir(installation.root);
+        if (backend != Backend::TensorRTRTX)
+            plan.trtexecLibDir = detail::shellSafeLibDir(installation.root);
 #ifndef Q_OS_WIN
         if (backend == Backend::TensorRT)
             plan.backendLibDirs.append(installation.root);
@@ -890,8 +1001,8 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
         const auto order = detail::mixedRifeOrder(true, windows);
         if (order == detail::MixedRifeOrder::After) {
             effectiveChain.rifeBeforeUpscale = false;
-            plan.note = RuntimeText::tr(
-                "RIFE runs after the mixed chain because it contains a temporal model.");
+            appendPlanNote(plan, RuntimeText::tr(
+                "RIFE runs after the mixed chain because it contains a temporal model."));
         } else if (order == detail::MixedRifeOrder::Unknown) {
             fail(plan, QStringLiteral("animejanai.profile.temporalShapeUnknown"),
                  RuntimeText::tr("Cannot read a supported temporal input shape from model '%1' for RIFE ordering. "
@@ -1042,13 +1153,11 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
                              .arg(selected->rifeBeforeUpscale ? QStringLiteral("yes") : QStringLiteral("no"));
         }
         const int generatedSlot = 1;
-        QByteArray ini = globalIniHeader(managerConf);
+        QByteArray ini = globalIniHeader(managerConf, backend, iniSettings);
         ini += QByteArrayLiteral("[slot_1]\nprofile_name=Mixed chain segment\n");
         ini += QByteArrayLiteral("chain_1_min_resolution=0x0\nchain_1_max_resolution=0x0\nchain_1_min_fps=0\nchain_1_max_fps=0\n");
         ini += models.join(QString()).toUtf8();
         ini += rifeConfig.toUtf8();
-        if (backend == Backend::DirectML)
-            ini.replace(QByteArrayLiteral("backend=TensorRT"), QByteArrayLiteral("backend=DirectML"));
         QString error;
         if (!writeIni(ini, configPath, ownedRoot, &error) ||
             !pathInside(ownedRoot, statsPath) ||
@@ -1061,13 +1170,16 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
             {QStringLiteral("lib"), plan.libraryPath},
             {QStringLiteral("conf"), configPath},
             {QStringLiteral("model-dir"), modelDir},
-            {QStringLiteral("rife-model-dir"), rifeModelDir},
-            {QStringLiteral("trtexec"), plan.trtexecPath},
-            {QStringLiteral("trtexec-libdir"), plan.trtexecLibDir},
-            {QStringLiteral("slot"), QString::number(generatedSlot)},
-            {QStringLiteral("stats"), statsPath},
-            {QStringLiteral("output-444"), QStringLiteral("no")},
-            {QStringLiteral("passthrough"), QStringLiteral("no")}};
+            {QStringLiteral("rife-model-dir"), rifeModelDir}};
+        // RTX builds in-process: the fork must not receive trtexec options.
+        if (backend != Backend::TensorRTRTX) {
+            options.append({QStringLiteral("trtexec"), plan.trtexecPath});
+            options.append({QStringLiteral("trtexec-libdir"), plan.trtexecLibDir});
+        }
+        options.append({QStringLiteral("slot"), QString::number(generatedSlot)});
+        options.append({QStringLiteral("stats"), statsPath});
+        options.append({QStringLiteral("output-444"), QStringLiteral("no")});
+        options.append({QStringLiteral("passthrough"), QStringLiteral("no")});
         QString filterError;
         const QByteArray filter = officialFilterSpec(options, &filterError);
         if (filter.isEmpty()) {
@@ -1189,20 +1301,39 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
     plan.presetId = presetId;
     const auto stop = [&] { return cancelled && cancelled(); };
     if (stop()) { fail(plan, QStringLiteral("animejanai.prepare.cancelled"), RuntimeText::tr("AnimeJaNai preparation was cancelled.")); return plan; }
-    if (presetId.startsWith(QStringLiteral("builtin_slot:"))) {
-        QString managerError;
-        const AnimeJanaiConfig earlyConfig = AnimeJanaiConfigStore::load(&managerError);
-        if (!managerError.isEmpty()) {
-            fail(plan, QStringLiteral("animejanai.config.invalid"), managerError);
+#ifndef Q_OS_WIN
+    if (backend == Backend::TensorRTRTX) {
+        fail(plan, QStringLiteral("animejanai.runtime.rtxUnsupported"),
+             RuntimeText::tr("TensorRT for RTX is not available on this platform."));
+        return plan;
+    }
+#endif
+    QString managerError;
+    const AnimeJanaiConfig managerConf = AnimeJanaiConfigStore::load(&managerError);
+    if (!managerError.isEmpty() ||
+        !AnimeJanaiConfigStore::validateAnimeJanaiConfig(managerConf, &managerError)) {
+        fail(plan, QStringLiteral("animejanai.config.invalid"), managerError);
+        return plan;
+    }
+    IniBackendSettings iniSettings;
+    {
+        QString settingsErrorKey;
+        QString settingsError;
+        if (!resolveIniBackendSettings(backend, managerConf.trtEngineSettings, &iniSettings,
+                                       &settingsErrorKey, &settingsError)) {
+            fail(plan, settingsErrorKey, settingsError);
             return plan;
         }
+        appendPlanNote(plan, iniSettings.note);
+    }
+    if (presetId.startsWith(QStringLiteral("builtin_slot:"))) {
         bool slotOk = false;
         const int slotNumber = presetId.mid(QStringLiteral("builtin_slot:").size()).toInt(&slotOk);
-        const auto slot = std::find_if(earlyConfig.customSlots.cbegin(), earlyConfig.customSlots.cend(),
+        const auto slot = std::find_if(managerConf.customSlots.cbegin(), managerConf.customSlots.cend(),
                                        [slotNumber](const AnimeJanaiSlot& candidate) {
                                            return candidate.number == slotNumber;
                                        });
-        if (slotOk && slot != earlyConfig.customSlots.cend()) {
+        if (slotOk && slot != managerConf.customSlots.cend()) {
             const bool hasAnime4K = std::any_of(slot->chains.cbegin(), slot->chains.cend(),
                                                 [](const AnimeJanaiChain& chain) {
                                                     return std::any_of(chain.steps.cbegin(), chain.steps.cend(),
@@ -1212,7 +1343,7 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
                                                 });
             if (hasAnime4K)
                 return prepareMixedProfile(presetId, backend, cancelled, source,
-                                           shaderResolver, earlyConfig, *slot);
+                                           shaderResolver, managerConf, *slot);
         }
     }
     const QVector<AnimeJanaiPreset> presets = animeJanaiPresets();
@@ -1243,7 +1374,8 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
     plan.rifeModelDir = QDir(ownedRoot).filePath(QStringLiteral("models/rife"));
     plan.statsPath = QDir(ownedRoot).filePath(QStringLiteral("stats/") + safeConfigName(presetId) + QStringLiteral(".txt"));
     plan.slot = preset->slot;
-    plan.trtexecLibDir = detail::shellSafeLibDir(installation.root);
+    if (backend != Backend::TensorRTRTX)
+        plan.trtexecLibDir = detail::shellSafeLibDir(installation.root);
 #ifndef Q_OS_WIN
     if (backend == Backend::TensorRT)
         plan.backendLibDirs.append(installation.root);
@@ -1275,13 +1407,6 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
         }
     }
 
-    QString managerError;
-    const AnimeJanaiConfig managerConf = AnimeJanaiConfigStore::load(&managerError);
-    if (!managerError.isEmpty() ||
-        !AnimeJanaiConfigStore::validateAnimeJanaiConfig(managerConf, &managerError)) {
-        fail(plan, QStringLiteral("animejanai.config.invalid"), managerError);
-        return plan;
-    }
     QString ini;
     if (presetId.startsWith(QStringLiteral("builtin_slot:"))) {
         bool slotOk = false;
@@ -1422,7 +1547,7 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
             }
         }
 
-        ini = QString::fromUtf8(globalIniHeader(managerConf)) +
+        ini = QString::fromUtf8(globalIniHeader(managerConf, backend, iniSettings)) +
               AnimeJanaiConfigStore::serializeSlotSection(stagedSlot, plan.slot);
     } else if (presetId.startsWith(QStringLiteral("builtin"))) {
         const auto assets = spatialAssetCatalog();
@@ -1455,7 +1580,7 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
             }
         }
         pruneLegacySdModelOrphans(plan.modelDir);
-        ini = QString::fromUtf8(builtinIni(managerConf));
+        ini = QString::fromUtf8(builtinIni(managerConf, backend, iniSettings));
         for (const SpatialAsset& asset : assets)
             ini.replace(asset.name.chopped(5), asset.sha256);
     } else if (preset->rife) {
@@ -1483,7 +1608,7 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
             fail(plan, QStringLiteral("animejanai.model.provenance"), copyError); return plan;
         }
         const int code = rifeModelCode(pin->version, pin->variant);
-        ini = QString::fromUtf8(globalIniHeader(managerConf)) +
+        ini = QString::fromUtf8(globalIniHeader(managerConf, backend, iniSettings)) +
               QStringLiteral("[slot_%1]\nprofile_name=RIFE 2x\nchain_1_min_resolution=0x0\nchain_1_max_resolution=infxinf\nchain_1_rife=yes\nchain_1_rife_factor_numerator=2\nchain_1_rife_factor_denominator=1\nchain_1_rife_model=%2\nchain_1_rife_ensemble=%3\n")
                   .arg(plan.slot)
                   .arg(code)
@@ -1512,7 +1637,7 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
             fail(plan, QStringLiteral("animejanai.model.stage"), copyError);
             return plan;
         }
-        ini = QString::fromUtf8(globalIniHeader(managerConf)) +
+        ini = QString::fromUtf8(globalIniHeader(managerConf, backend, iniSettings)) +
               QStringLiteral("[slot_%1]\nprofile_name=%2\nchain_1_min_resolution=0x0\nchain_1_max_resolution=infxinf\nchain_1_model_1_name=%3\n")
                   .arg(plan.slot)
                   .arg(customModel->id, safeName);
@@ -1532,14 +1657,12 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
             !retainSpatialLicense(*asset, target, ownedRoot, &copyError)) {
             fail(plan, QStringLiteral("animejanai.model.stage"), copyError); return plan;
         }
-        ini = QString::fromUtf8(globalIniHeader(managerConf)) +
+        ini = QString::fromUtf8(globalIniHeader(managerConf, backend, iniSettings)) +
               QStringLiteral("[slot_%1]\nprofile_name=Spatial model\nchain_1_min_resolution=0x0\nchain_1_max_resolution=infxinf\nchain_1_model_1_name=%2\n")
                   .arg(plan.slot)
                   .arg(safeName);
     }
     if (stop()) { fail(plan, QStringLiteral("animejanai.prepare.cancelled"), RuntimeText::tr("AnimeJaNai preparation was cancelled.")); return plan; }
-    if (backend == Backend::DirectML)
-        ini.replace(QStringLiteral("backend=TensorRT"), QStringLiteral("backend=DirectML"));
     QString configError;
     if (!writeIni(ini.toUtf8(), plan.configPath, ownedRoot, &configError)) {
         fail(plan, QStringLiteral("animejanai.config.write"), configError); return plan;
@@ -1553,13 +1676,16 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
         {QStringLiteral("lib"), plan.libraryPath},
         {QStringLiteral("conf"), plan.configPath},
         {QStringLiteral("model-dir"), plan.modelDir},
-        {QStringLiteral("rife-model-dir"), plan.rifeModelDir},
-        {QStringLiteral("trtexec"), plan.trtexecPath},
-        {QStringLiteral("trtexec-libdir"), plan.trtexecLibDir},
-        {QStringLiteral("slot"), QString::number(plan.slot)},
-        {QStringLiteral("stats"), plan.statsPath},
-        {QStringLiteral("output-444"), QStringLiteral("no")},
-        {QStringLiteral("passthrough"), QStringLiteral("no")}};
+        {QStringLiteral("rife-model-dir"), plan.rifeModelDir}};
+    // RTX builds in-process: the fork must not receive trtexec options.
+    if (backend != Backend::TensorRTRTX) {
+        options.append({QStringLiteral("trtexec"), plan.trtexecPath});
+        options.append({QStringLiteral("trtexec-libdir"), plan.trtexecLibDir});
+    }
+    options.append({QStringLiteral("slot"), QString::number(plan.slot)});
+    options.append({QStringLiteral("stats"), plan.statsPath});
+    options.append({QStringLiteral("output-444"), QStringLiteral("no")});
+    options.append({QStringLiteral("passthrough"), QStringLiteral("no")});
     QString filterError;
     plan.filterSpec = officialFilterSpec(options, &filterError);
     if (plan.filterSpec.isEmpty()) { fail(plan, QStringLiteral("animejanai.filter.spec"), filterError); return plan; }

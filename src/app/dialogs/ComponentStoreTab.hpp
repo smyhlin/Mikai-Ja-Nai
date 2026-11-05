@@ -144,6 +144,23 @@ private:
     void reflowComponentHeaders();
     void updateControls();
     mplayer::native::Backend selectedBackend() const;
+    /// True when this build offers the in-process TensorRT for RTX backend.
+    /// Windows only: no published RTX binary exists for Linux.
+    static bool tensorRtRtxOffered();
+    /// The live product name of a backend, used by the combo row, the status
+    /// line and the failure wording. Every value in the enum has its own
+    /// answer, so nothing here can slip into another backend's wording.
+    QString backendProductName(mplayer::native::Backend backend) const;
+    /// The combo row wording for a backend. An RTX row that is not offered on
+    /// this platform says so in its own text instead of disappearing silently.
+    QString backendChoiceLabel(mplayer::native::Backend backend) const;
+    /// Rewrites the runtime card's product title, description and accessible
+    /// names from the selected backend. Reuses the one runtime card; there is no
+    /// second card and no CUDA-pack or kernel-pack claim for RTX.
+    void updateRuntimeCardText();
+    /// Queues the exact rows the selected backend's runtime closure needs,
+    /// including the RTX dispatcher/overlay archives with their file names.
+    void queueRuntimeClosureRows();
     /// One app-owned status reason: an explicit kind plus the raw values that
     /// kind needs. The wording is looked up in the live translation when the
     /// line is read, so a language switch restates the same state, and no
@@ -403,6 +420,12 @@ private:
     bool rifeInstalled_ = false;
     bool rifeVerified_ = false;
     bool animeJanaiTensorRtInstalled_ = false;
+    /// The RTX closure is its own installation record, under its own backend
+    /// directory, and is never satisfied by a classic TensorRT or DirectML
+    /// record. Its byte count is the two-archive queue, not the classic packs.
+    bool animeJanaiTensorRtRtxInstalled_ = false;
+    qint64 tensorRtRtxClosureBytes_ = 0;
+    QString animeJanaiTensorRtRtxReason_;
     bool componentDirsAvailable_ = false;
     bool inventoryReady_ = false;
     bool inventoryScanning_ = false;

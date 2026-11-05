@@ -66,6 +66,7 @@ void TestNativeTypes::enumNamesRoundTripAndRefuseUnknownValues() {
   QCOMPARE(stableName(ModelRole::Temporal), QStringLiteral("temporal"));
   QCOMPARE(stableName(Backend::TensorRT), QStringLiteral("tensorrt"));
   QCOMPARE(stableName(Backend::DirectML), QStringLiteral("directml"));
+  QCOMPARE(stableName(Backend::TensorRTRTX), QStringLiteral("tensorrt-rtx"));
   QCOMPARE(stableName(Availability::Preparing), QStringLiteral("preparing"));
   QCOMPARE(stableName(SpatialRelation::Identity), QStringLiteral("identity"));
   QCOMPARE(stableName(TemporalOrder::BeforeSpatial), QStringLiteral("beforeSpatial"));
@@ -83,6 +84,16 @@ void TestNativeTypes::enumNamesRoundTripAndRefuseUnknownValues() {
     QCOMPARE(backendFromName(stableName(backend)), std::optional<Backend>(backend));
     QVERIFY(backendFromName(QStringLiteral("nonsense")).has_value() == false);
   }
+  QCOMPARE(backendFromName(QStringLiteral("tensorrt-rtx")), std::optional<Backend>(Backend::TensorRTRTX));
+
+  // The family and private allow-list predicates answer different questions: RTX
+  // shares the TensorRT engine route but is not a PreparedNative (ABI-8) value.
+  QVERIFY(isTensorRtFamily(Backend::TensorRT));
+  QVERIFY(isTensorRtFamily(Backend::TensorRTRTX));
+  QVERIFY(!isTensorRtFamily(Backend::DirectML));
+  QVERIFY(privateNativeCarries(Backend::TensorRT));
+  QVERIFY(privateNativeCarries(Backend::DirectML));
+  QVERIFY(!privateNativeCarries(Backend::TensorRTRTX));
 
   // An ordinal written where a name belongs, a name from a newer schema, and a
   // differently cased spelling are three ways to be unparseable, and none of them
@@ -91,6 +102,11 @@ void TestNativeTypes::enumNamesRoundTripAndRefuseUnknownValues() {
   QVERIFY(!modelRoleFromName(QStringLiteral("0")).has_value());
   QVERIFY(!modelRoleFromName(QString()).has_value());
   QVERIFY(!backendFromName(QStringLiteral("cuda")).has_value());
+  // Only the exact lowercase persisted token is accepted; the dispatcher's other
+  // spellings are a runtime concern, not a stored-format concern.
+  QVERIFY(!backendFromName(QStringLiteral("TensorRT-RTX")).has_value());
+  QVERIFY(!backendFromName(QStringLiteral("tensorrt_rtx")).has_value());
+  QVERIFY(!backendFromName(QStringLiteral("trt-rtx")).has_value());
   QVERIFY(!availabilityFromName(QStringLiteral("Ready")).has_value());
   QVERIFY(!spatialRelationFromName(QStringLiteral("Identity")).has_value());
   QVERIFY(!temporalOrderFromName(QStringLiteral("before")).has_value());

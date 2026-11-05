@@ -477,10 +477,46 @@ void TestNativeStatus::aOneToOneSpatialChainStillCarriesRequestedAndEffectiveSep
   requested.insert(QStringLiteral("backend"), QStringLiteral("cuda"));
   inner.insert(QStringLiteral("requested"), requested);
   QCOMPARE(refusalOf(inner), QStringLiteral("native.status.requested.backend.unknown"));
+  // TensorRT-RTX is a Standard-AJI choice: a private ABI-8 document naming it is
+  // refused by name, never read as classic TensorRT.
+  requested.insert(QStringLiteral("backend"), QStringLiteral("tensorrt-rtx"));
+  inner.insert(QStringLiteral("requested"), requested);
+  QCOMPARE(refusalOf(inner), QStringLiteral("native.status.requested.backend.unknown"));
   // An empty recipe is the untouched Original pipeline, which is a real value.
   requested.insert(QStringLiteral("backend"), QStringLiteral("tensorrt"));
   inner.insert(QStringLiteral("requested"), requested);
   QCOMPARE(refusalOf(inner), QStringLiteral("<accepted>"));
+}
+
+void TestNativeStatus::aPrivateDiagnosticsExportPreservesTheRequestedValueVerbatim() {
+  StatusSnapshot document = oneToOneSpatial();
+  QVERIFY(document.requested.has_value());
+  document.requested->backend = Backend::TensorRTRTX;
+
+  // This writer serializes an observed snapshot for diagnostics and export; it
+  // is not the producer command. It therefore preserves the requested value
+  // verbatim instead of dropping it or rewriting it into another backend.
+  const QJsonObject inner = statusSnapshotToJson(document);
+  QCOMPARE(inner.value(QStringLiteral("requested")).toObject()
+               .value(QStringLiteral("backend"))
+               .toString(),
+           QStringLiteral("tensorrt-rtx"));
+
+  // Reading it back is the real private boundary: the unsupported token is
+  // refused by name rather than accepted or mapped.
+  StatusSnapshot parsed;
+  QString key;
+  QString text;
+  QVERIFY(!parseStatusSnapshot(inner, &parsed, &key, &text));
+  QCOMPARE(key, QStringLiteral("native.status.requested.backend.unknown"));
+
+  // The carried backends still publish exactly as before.
+  document.requested->backend = Backend::DirectML;
+  const QJsonObject carried = statusSnapshotToJson(document);
+  QCOMPARE(carried.value(QStringLiteral("requested")).toObject()
+               .value(QStringLiteral("backend"))
+               .toString(),
+           QStringLiteral("directml"));
 }
 
 void TestNativeStatus::aCadenceOrGeometryThatContradictsTheStageShapeIsRefused() {
@@ -1442,6 +1478,14 @@ void TestNativeStatus::aFactoryClaimsARoleOnlyWhenItsAnswerWasObservedAndRefusal
   QJsonObject unknownBackend = factoryObjectOf(snapshot);
   unknownBackend.insert(QStringLiteral("backend"), QStringLiteral("vulkan"));
   QCOMPARE(refusalOf(documentWithFactory(snapshot, unknownBackend)),
+           QStringLiteral("native.status.factory.backend"));
+
+  // TensorRT-RTX is a Standard-AJI choice; the private factory token list stays
+  // the two PreparedNative backends, so an RTX token is refused rather than
+  // mapped onto classic TensorRT.
+  QJsonObject rtxBackend = factoryObjectOf(snapshot);
+  rtxBackend.insert(QStringLiteral("backend"), QStringLiteral("tensorrt-rtx"));
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, rtxBackend)),
            QStringLiteral("native.status.factory.backend"));
 
   QJsonObject noneBackend = factoryObjectOf(snapshot);

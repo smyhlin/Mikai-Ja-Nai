@@ -436,8 +436,19 @@ void AnimeJanaiManagerPanel::buildUi() {
     trtRawArgsEdit_ = new QLineEdit(globalCard);
     trtRawArgsEdit_->setObjectName(QStringLiteral("ajiTrtEngineSettingsEdit"));
     polishInteractiveControl(trtRawArgsEdit_);
-    trtRawArgsLabel_ = makeFieldLabel(tr("trtexec engine arguments"), globalCard, trtRawArgsEdit_);
+    trtRawArgsLabel_ = makeFieldLabel(tr("TensorRT engine arguments"), globalCard,
+                                      trtRawArgsEdit_);
     rawArgsForm->addRow(trtRawArgsLabel_, trtRawArgsEdit_);
+    // The same stored string means different things per backend: classic
+    // TensorRT feeds trtexec, TensorRT for RTX builds in-process and honors a
+    // five-flag subset. Saying so here is the only place the viewer can learn it
+    // before the runtime refuses an unsupported flag.
+    trtRawArgsHelp_ = new QLabel(globalCard);
+    trtRawArgsHelp_->setObjectName(QStringLiteral("ajiTrtEngineSettingsHelp"));
+    trtRawArgsHelp_->setWordWrap(true);
+    yieldCaptionWidth(trtRawArgsHelp_);
+    styleMutedCaption(trtRawArgsHelp_);
+    rawArgsForm->addRow(trtRawArgsHelp_);
     globalLayout->addLayout(rawArgsForm);
 
     auto* confToolbar = new ActionGrid(theme::kSpacingSmall);
@@ -2080,7 +2091,18 @@ void AnimeJanaiManagerPanel::retranslateUi() {
     trtMinResLabel_->setText(tr("Dynamic minimum resolution"));
     trtOptResLabel_->setText(tr("Dynamic optimal resolution"));
     trtMaxResLabel_->setText(tr("Dynamic maximum resolution"));
-    trtRawArgsLabel_->setText(tr("trtexec engine arguments"));
+    trtRawArgsLabel_->setText(tr("TensorRT engine arguments"));
+    if (trtRawArgsHelp_ != nullptr) {
+        const QString help = tr(
+            "Classic TensorRT passes these to trtexec. TensorRT for RTX builds the ONNX graph "
+            "in-process and honors only --minShapes, --optShapes, --maxShapes, "
+            "--builderOptimizationLevel and --memPoolSize=workspace:. Precision comes from the "
+            "ONNX graph, trtexec is not used, --skipInference does not apply to an in-process "
+            "build and is removed from RTX plans, and any other flag is rejected for that "
+            "backend instead of being silently ignored.");
+        trtRawArgsHelp_->setText(help);
+        if (trtRawArgsEdit_ != nullptr) trtRawArgsEdit_->setToolTip(help);
+    }
     importConfButton_->setText(tr("Import animejanai.conf…"));
     exportConfButton_->setText(tr("Export animejanai.conf…"));
     resetDefaultsButton_->setText(tr("Reset Defaults"));

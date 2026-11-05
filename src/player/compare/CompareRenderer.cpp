@@ -83,6 +83,7 @@ struct CompareRenderer::State {
     QString buildDetail;
     bool restarted = false;
     bool processingObserved = false;
+    bool backendSubstituted = false;
     bool useUpscaleTarget = false;
     int requestedSlot = 0;
     native::Backend requestedBackend = native::Backend::TensorRT;
@@ -167,9 +168,10 @@ struct CompareRenderer::State {
                     combined.contains(QLatin1String("mikai_aji"), Qt::CaseInsensitive) ||
                     combined.contains(QLatin1String("Configured slot"), Qt::CaseInsensitive) ||
                     combined.contains(QLatin1String("TensorRT engine"), Qt::CaseInsensitive) ||
+                    combined.contains(QLatin1String("tensorrt-rtx"), Qt::CaseInsensitive) ||
                     combined.contains(QLatin1String("building engine:"), Qt::CaseInsensitive);
                 if (!isAjiLog) return;
-                const auto buildEvent = requestedBackend == native::Backend::TensorRT
+                const auto buildEvent = native::isTensorRtFamily(requestedBackend)
                     ? buildGate.observeLog(prefix, text, requestedBackend, requestedSlot)
                     : native::classifyAnimeJanaiBuildLog(prefix, text, requestedBackend,
                                                          requestedSlot);
@@ -177,11 +179,41 @@ struct CompareRenderer::State {
                     ++configuredStages;
                     processingObserved = configuredStages >= ajiLabels.size();
                 }
-                if (text.contains(QStringLiteral("Building TensorRT engine"), Qt::CaseInsensitive) ||
-                    text.contains(QStringLiteral("building engine:"), Qt::CaseInsensitive) ||
-                    text.contains(QStringLiteral("background engine build:"), Qt::CaseInsensitive))
-                    buildDetail = QCoreApplication::translate("CompareRenderer", "Building the comparison TensorRT engine");
-                if (buildGate.failed()) {
+                if (buildEvent == native::AnimeJanaiBuildLogEvent::BackendSubstituted) {
+                    // The dispatcher kept running on the classic backend after
+                    // the requested RTX one failed; the frame would not be the
+                    // chosen pipeline's output.
+                    backendSubstituted = true;
+                    error = QCoreApplication::translate(
+                                "CompareRenderer",
+                                "TensorRT for RTX did not start and the core fell back to "
+                                "TensorRT; the comparison did not run the requested backend: %1")
+                                .arg(text);
+                }
+                if (buildEvent == native::AnimeJanaiBuildLogEvent::TensorRtEngineWarmupFailed) {
+                    // The core retries the cached engine next; keep the warm
+                    // log's errors for whatever verdict that load produces.
+                    const QStringList warmTail = native::readAnimeJanaiBuildLogTail(
+                        buildGate.warmupLogPath(), native::nativeRoot());
+                    for (const QString& detail : warmTail) {
+                        if (!diagnosticTail.contains(detail)) diagnosticTail.append(detail);
+                    }
+                    while (diagnosticTail.size() > 3) diagnosticTail.removeFirst();
+                }
+                if (native::animeJanaiEnginePrepEvent(buildEvent)) {
+                    const bool preparing =
+                        buildEvent == native::AnimeJanaiBuildLogEvent::TensorRtEnginePrepStarted;
+                    if (requestedBackend == native::Backend::TensorRTRTX) {
+                        buildDetail = preparing
+                            ? QCoreApplication::translate("CompareRenderer", "Preparing the comparison TensorRT for RTX engine")
+                            : QCoreApplication::translate("CompareRenderer", "Building the comparison TensorRT for RTX engine");
+                    } else {
+                        buildDetail = preparing
+                            ? QCoreApplication::translate("CompareRenderer", "Preparing the comparison TensorRT engine")
+                            : QCoreApplication::translate("CompareRenderer", "Building the comparison TensorRT engine");
+                    }
+                }
+                if (buildGate.failed() && !backendSubstituted) {
                     const QStringList tail = native::readAnimeJanaiBuildLogTail(
                         buildGate.failureLogPath(), native::nativeRoot());
                     error = QCoreApplication::translate("CompareRenderer", "The comparison model failed: %1")
@@ -458,9 +490,10 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
         // answering for the second. The full ordered plan is then attached as
         // one vf pipeline, with unique app-owned labels for its native stages.
         // T-413: `d3d11` (the canonical mpv spelling), matching backendHwdec and
-        // the AJE alignment path, so every DirectML core writes one token.
+        // the AJE alignment path, so every DirectML core writes one token. The
+        // whole TensorRT family - classic and RTX - decodes through nvdec.
         const std::string targetHwdec =
-            (plan.enabled && plan.backend == native::Backend::DirectML) ? "d3d11" : "nvdec";
+            (plan.enabled && !native::isTensorRtFamily(plan.backend)) ? "d3d11" : "nvdec";
         state.ajiLabels.clear();
         for (const native::AnimeJanaiPlanStage& stage : plan.stages) {
             if (stage.kind == native::AnimeJanaiPlanStage::Kind::Aji)
@@ -520,6 +553,7 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
         state.requestedBackend = plan.backend;
         state.buildGate = {};
         state.configuredStages = 0;
+        state.backendSubstituted = false;
         state.diagnosticTail.clear();
         if (upscaleCapped) {
             // T-313: appended after the clear, so the note survives into the

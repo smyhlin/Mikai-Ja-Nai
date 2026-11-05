@@ -185,9 +185,12 @@ bool isActualDeviceUuid(const QString& value) {
   return !deviceUuidHex(value).isEmpty();
 }
 
-/// The only backend tokens a factory may name as actually checked.
+/// The only backend tokens a factory may name as actually checked: the
+/// private Native ABI-8 allow-list. `tensorrt-rtx` is a Standard-AJI backend the
+/// private producer does not carry, so it is deliberately absent.
 bool factoryBackendOk(const QString& backend) {
-  return backend == QStringLiteral("tensorrt") || backend == QStringLiteral("directml");
+  const std::optional<Backend> parsed = backendFromName(backend);
+  return parsed.has_value() && privateNativeCarries(*parsed);
 }
 
 /// Any backend token the wire may carry. `none` is the honest "nothing was
@@ -539,7 +542,9 @@ bool statusSnapshotIsConsistent(const StatusSnapshot& snapshot, QString* reasonK
     }
     if (!factory.backend.isEmpty() && !factoryBackendNameOk(factory.backend)) {
       return disagree(QStringLiteral("native.status.factory.backend"),
-                      QStringLiteral("the factory backend is not one this build checks"));
+                      QStringLiteral("the factory backend '%1' is not one this private Native "
+                                     "ABI carries")
+                          .arg(factory.backend));
     }
     if (!factory.reasonKey.isEmpty() && !factoryReasonKeyOk(factory.reasonKey)) {
       return disagree(QStringLiteral("native.status.factory.reason"),
