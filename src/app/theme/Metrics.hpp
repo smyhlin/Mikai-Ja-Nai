@@ -43,7 +43,11 @@ inline constexpr int kSettingsControlSize = 36;
 // A settings form's label column: wide enough for the longest translated label
 // the tabs ship, so the fields to its right line up down the page.
 inline constexpr int kSettingsFormLabelMinWidth = 132;
-inline constexpr int kSettingsDialogMinWidth = 580;
+// The floor also has to hold the widest translated control a page puts in one
+// row: the components tab's action captions need 322 px inside the page
+// viewport, which is 312 px at 580. A platform whose font metrics run wider than
+// Windows' would otherwise force horizontal panning at the minimum size.
+inline constexpr int kSettingsDialogMinWidth = 600;
 inline constexpr int kSettingsDialogMinHeight = 600;
 inline constexpr int kSettingsDialogDefaultWidth = 940;
 inline constexpr int kSettingsDialogDefaultHeight = 820;
