@@ -89,6 +89,22 @@ a demonstrated fix.
 
 ## Recorded verification
 
+### 0.2.0 published — 2026-11-05
+
+[Release v0.2.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.0) publishes
+nine assets: the Windows setup, portable ZIP and build receipt; the Linux AppImage,
+tarball, Arch package with its `.SRCINFO`, and Debian package; and one `SHA256SUMS`.
+The Linux artifacts were built from `ae81f59`, the Windows ones from `1e94fc7`, and both
+revisions are stated in the release notes. `main` and the annotated `v0.2.0` tag were
+pushed at `ae81f59`. A downloaded `mikai-0.2.0-linux-x86_64.tar.gz` verified against the
+published manifest.
+
+This upload does not resolve the `publicReleaseReady: false` blockers in
+`packaging/third-party.json`, does not carry the `packaging/ci/release.py` gate's
+verification archives, and is not a passed release gate; it is a local build published at
+the user's instruction. The Windows binaries predate the two Linux-found fixes
+(`b05a90f`, `a7bed6c`).
+
 ### Linux release artifacts rebuilt — 2026-11-05
 
 All four Linux packages were rebuilt at `6ee0c15` and promoted into
