@@ -1,6 +1,6 @@
 # Schema version 6 in CMakePresets.json requires CMake >= 3.25.
 cmake_minimum_required(VERSION 3.25)
-project(mikai VERSION 0.1.0 LANGUAGES CXX)
+project(mikai VERSION 0.2.0 LANGUAGES CXX)
 
 if(WIN32)
   enable_language(RC)
@@ -476,7 +476,7 @@ qt_add_executable(mikai src/app/main.cpp)
 target_link_libraries(mikai PRIVATE mikai_app)
 
 # Every build has to be tellable apart from the last one, or "the update did not
-# apply" cannot be answered. The revision is the build's identity: the tag 0.1.0
+# apply" cannot be answered. The revision is the build's identity: a release tag
 # names the release, not the commit inside it.
 # A cross build runs where the checkout may not be readable (a container with a
 # different owner, or no git at all), so the revision is a cache variable the

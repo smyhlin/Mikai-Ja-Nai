@@ -72,7 +72,7 @@ The over-budget scratch path and DPI event routing were checked against their so
 
 ## API and state boundaries
 
-The API client sends an application/version identity (`Mikai-Wrapper/0.1.0` for this release) rather than impersonating a browser. API keys are optional, remain local configuration and are not compiled into source.
+The API client sends an application/version identity (`Mikai Wrapper/0.2.0` for this release) rather than impersonating a browser. API keys are optional, remain local configuration and are not compiled into source.
 
 The client keeps a bounded in-memory JSON cache keyed by request URL and credential generation. Fresh cache directives can satisfy a request; stale entries can be revalidated with ETag, and `304` reuses the cached body. `no-store`, errors and designated endpoints are not retained. The client's own quota estimate before headers arrive is 299 requests/minute without a key and 599 with one; the API's rate-limit and retry headers remain authoritative, and cached requests do not change server-side semantics. A credential change starts a new generation, so a reply from a superseded key's window cannot describe the new key's quota.
 

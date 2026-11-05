@@ -2,7 +2,7 @@
 
 Published changes are recorded with their downloads on the [GitHub releases page](https://github.com/smyhlin/Mikai-Ja-Nai/releases). Artifact checksums live with each release, not in the documentation.
 
-## Unreleased
+## 0.2.0 — Rendering, RTX and MoonAnime update
 
 - Update Standard AnimeJaNai to v0.22.2 and add opt-in TensorRT for RTX on Windows: verified dispatcher/runtime acquisition, in-process engine builds, separate engine/JIT caches, NVDEC, player/Compare/Benchmark selection and explicit refusal of backend substitution. Keep the classic Linux runtime; upstream publishes no Linux RTX binary.
 - Show the Windows setup Welcome page and offer an explicit update or repair for registered installations, including builds sharing the same version number.
