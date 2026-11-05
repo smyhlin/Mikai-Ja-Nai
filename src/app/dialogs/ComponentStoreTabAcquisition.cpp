@@ -1125,8 +1125,23 @@ void ComponentStoreTab::publishAcquisition() {
     const bool started = !acquisitionAnnounced_;
     acquisitionAnnounced_ = true;
     const int activeItems = activeProgressItemCount();
+    // Bytes the active transfers have actually received, so the hint answers
+    // "is it moving?" with a moving number instead of an item count that stays
+    // constant for the whole run.
+    qint64 received = 0;
+    qint64 total = 0;
+    for (auto item = progressItems_.cbegin(); item != progressItems_.cend(); ++item) {
+        if (item->outcome != ProgressItem::Outcome::Active || item->queued) continue;
+        received += item->received;
+        total += item->total;
+    }
     QString status;
-    if (activeItems > 0) {
+    if (activeItems > 0 && total > 0) {
+        status = tr("Downloading %1 items: %2 of %3")
+                     .arg(activeItems)
+                     .arg(QLocale().formattedDataSize(received),
+                          QLocale().formattedDataSize(total));
+    } else if (activeItems > 0) {
         status = tr("%1 component items active").arg(activeItems);
     } else if (acquisitionChecking_) {
         status = tr("Checking selected components...");
@@ -1135,7 +1150,10 @@ void ComponentStoreTab::publishAcquisition() {
     } else {
         status = tr("Installing selected components...");
     }
-    emit acquisitionProgress(status, started);
+    const int percent =
+        total > 0 ? static_cast<int>(qBound<qint64>(qint64(0), received * 100 / total, qint64(100)))
+                  : -1;
+    emit acquisitionProgress(status, started, percent);
 }
 
 QString ComponentStoreTab::renderStatusReason() const {

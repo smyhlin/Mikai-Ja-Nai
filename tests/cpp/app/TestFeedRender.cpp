@@ -1534,7 +1534,7 @@ void TestFeedRender::settingsClosingDuringAcquisitionRestoresMainWindowInput() {
     if (acquisitionStarted) {
       QMetaObject::invokeMethod(components, "acquisitionProgress", Qt::DirectConnection,
                                 Q_ARG(QString, QStringLiteral("Downloading test pack")),
-                                Q_ARG(bool, true));
+                                Q_ARG(bool, true), Q_ARG(int, 42));
     }
   });
   QTest::mouseClick(settingsButton, Qt::LeftButton);
@@ -1545,7 +1545,13 @@ void TestFeedRender::settingsClosingDuringAcquisitionRestoresMainWindowInput() {
   QVERIFY(acquisitionBar != nullptr);
   QTRY_VERIFY_WITH_TIMEOUT(acquisitionBar->isVisible(), 5000);
   QTRY_VERIFY_WITH_TIMEOUT(QApplication::activeModalWidget() == nullptr, 5000);
-  QVERIFY(acquisitionBar->findChild<QProgressBar*>() == nullptr);
+  // A download must read as activity: the bar carries a moving line beside the
+  // text, never a static sentence that could be a stuck run.
+  auto* acquisitionProgress =
+      acquisitionBar->findChild<QProgressBar*>(QStringLiteral("componentAcquisitionProgress"));
+  QVERIFY(acquisitionProgress != nullptr);
+  QCOMPARE(acquisitionProgress->maximum(), 100);
+  QCOMPARE(acquisitionProgress->value(), 42);
   auto* acquisitionStatus = acquisitionBar->findChild<QLabel*>(QStringLiteral("status"));
   QVERIFY(acquisitionStatus != nullptr);
   QVERIFY(acquisitionStatus->wordWrap());

@@ -12,6 +12,7 @@
 
 class QDialog;
 class QLabel;
+class QProgressBar;
 class QPushButton;
 class QStackedWidget;
 
@@ -121,7 +122,7 @@ private:
     void resumePlaybackAfterComponentAsk();
     /// Shows aggregate acquisition activity on the main window; the first tick
     /// also closes Settings so its catalogue stays clickable while packs download.
-    void noteComponentAcquisition(const QString& status, bool started);
+    void noteComponentAcquisition(const QString& status, bool started, int percent);
     /// Hides Settings without cancelling its download. Queued so a download
     /// that begins before `exec()` still closes the dialog on the first turn
     /// of that loop, instead of being shown again by it.
@@ -195,6 +196,7 @@ private:
     /// two inventory results cannot queue two asks.
     bool setupPromptScheduled_ = false;
     QWidget* acquisitionBar_ = nullptr;
+    QProgressBar* acquisitionProgress_ = nullptr;
     QLabel* acquisitionStatus_ = nullptr;
     QPushButton* acquisitionDetails_ = nullptr;
     QPushButton* acquisitionCancel_ = nullptr;

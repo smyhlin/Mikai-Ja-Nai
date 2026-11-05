@@ -43,6 +43,7 @@
 #include <QFont>
 #include <QLabel>
 #include <QMessageBox>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QScreen>
 #include <QSizePolicy>
@@ -191,7 +192,19 @@ MainWindow::MainWindow(backend::MikaiClient& client, StartupMode startupMode, QW
     acquisitionDetails_->setObjectName(QStringLiteral("componentAcquisitionDetails"));
     acquisitionCancel_ = new QPushButton(tr("Cancel"), acquisitionBar_);
     acquisitionCancel_->setObjectName(QStringLiteral("componentAcquisitionCancel"));
-    acquisitionLayout->addWidget(acquisitionStatus_, 1);
+    // A moving line under the text: the item count alone can stand still for
+    // minutes while bytes are still arriving, which reads as a stuck download.
+    acquisitionProgress_ = new QProgressBar(acquisitionBar_);
+    acquisitionProgress_->setObjectName(QStringLiteral("componentAcquisitionProgress"));
+    acquisitionProgress_->setTextVisible(false);
+    acquisitionProgress_->setFixedHeight(4);
+    acquisitionProgress_->setRange(0, 0);
+    auto* acquisitionColumn = new QVBoxLayout();
+    acquisitionColumn->setContentsMargins(0, 0, 0, 0);
+    acquisitionColumn->setSpacing(theme::kSpacingXs);
+    acquisitionColumn->addWidget(acquisitionStatus_, 1);
+    acquisitionColumn->addWidget(acquisitionProgress_);
+    acquisitionLayout->addLayout(acquisitionColumn, 1);
     acquisitionLayout->addWidget(acquisitionDetails_);
     acquisitionLayout->addWidget(acquisitionCancel_);
     acquisitionBar_->hide();
@@ -833,10 +846,27 @@ void MainWindow::resumePlaybackAfterComponentAsk() {
     if (paused) player->resumePlayback();
 }
 
-void MainWindow::noteComponentAcquisition(const QString& status, bool started) {
+void MainWindow::noteComponentAcquisition(const QString& status, bool started, int percent) {
     if (started) releaseSettingsForAcquisition();
     if (acquisitionBar_ == nullptr) return;
     acquisitionStatus_->setText(status);
+    if (acquisitionProgress_ != nullptr) {
+        // -1 is the honest "cannot say how much is left" state: an indeterminate
+        // line moves, a determinate one fills as bytes arrive.
+        if (percent >= 0) {
+            acquisitionProgress_->setRange(0, 100);
+            acquisitionProgress_->setValue(percent);
+        } else {
+            acquisitionProgress_->setRange(0, 0);
+        }
+    }
+    // The player covers this window: mirror the same line into it so a viewer
+    // watching a video still sees the download moving.
+    if (auto* player = currentMediaPlayer(); player != nullptr) {
+        player->setBackgroundActivity(percent >= 0
+                                          ? tr("%1 (%2%)").arg(status).arg(percent)
+                                          : status);
+    }
     if (auto* cancel = acquisitionBar_->findChild<QPushButton*>(
             QStringLiteral("componentAcquisitionCancel"))) {
         cancel->show();
@@ -860,6 +890,7 @@ void MainWindow::noteComponentAcquisitionIdle() {
                          key != QStringLiteral("native.components.cancelled");
     // A failure has to stay readable after Settings has already closed.
     // Cancel dismisses it; a cancelled or finished run just leaves.
+    if (auto* player = currentMediaPlayer(); player != nullptr) player->setBackgroundActivity({});
     if (!failure) {
         acquisitionBar_->hide();
         return;

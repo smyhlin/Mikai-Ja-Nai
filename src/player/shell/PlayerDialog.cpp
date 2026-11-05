@@ -1966,6 +1966,28 @@ void PlayerDialog::syncStatusVisibility() {
     }
 }
 
+void PlayerDialog::setBackgroundActivity(const QString& message) {
+    if (closed_) return;
+    backgroundActivity_ = message;
+    if (message.isEmpty()) {
+        // A transient message that is already running keeps the panel; anything
+        // else means the activity was the only thing on it.
+        if (statusTimer_ != nullptr && statusTimer_->isActive()) return;
+        if (!errorActive_ && !processingActive_ &&
+            (statusLabel_ == nullptr || statusLabel_->text().isEmpty())) {
+            statusPanel_->hide();
+        }
+        return;
+    }
+    statusLabel_->setText(message);
+    statusLabel_->setToolTip(message);
+    // The panel outlives the flash timer while the activity is live.
+    if (statusTimer_ != nullptr) statusTimer_->stop();
+    layoutPanels();
+    statusPanel_->show();
+    statusPanel_->raise();
+}
+
 void PlayerDialog::flashStatus(const QString& message, bool failure) {
     if (closed_) return;
     // Any other status supersedes the runtime wait's line: the wait is over for

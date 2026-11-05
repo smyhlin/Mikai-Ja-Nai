@@ -20,10 +20,12 @@
 #include <native/components/NativeGpuProbe.hpp>
 #include <native/models/NativeRife.hpp>
 #include <native/models/NativeSpatialAssets.hpp>
+#include <shaders/Anime4K.hpp>
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDebug>
 #include <QtCore/QEvent>
+#include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 #include <QtCore/QLocale>
 #include <QtCore/QMetaObject>
@@ -674,7 +676,13 @@ void ComponentStoreTab::buildUi() {
     auto* rifeCard = makeCard(QStringLiteral("rifeModelsCard"), &rifeCheck_, &rifeState_);
     auto* kernelsCard = makeCard(QStringLiteral("tensorRtKernelsCard"),
                                  &kernelsCheck_, &kernelsState_);
-    for (auto* card : {runtimeCard, spatialCard, rifeCard, kernelsCard}) {
+    // The shaders are built into every artifact from one pinned upstream
+    // commit, so this card reports an inventory and offers nothing to download.
+    auto* anime4kCard = makeCard(QStringLiteral("anime4kShadersCard"),
+                                 &anime4kCheck_, &anime4kState_);
+    anime4kCheck_->hide();
+    anime4kCheck_->setEnabled(false);
+    for (auto* card : {runtimeCard, spatialCard, rifeCard, kernelsCard, anime4kCard}) {
         card->setProperty("componentCard", true);
     }
     auto setCardText = [](QGroupBox* card, const QString& titleText,
@@ -690,6 +698,8 @@ void ComponentStoreTab::buildUi() {
                 tr("All five pinned HD and SD graphs required by the built-in AnimeJaNai profiles."));
     setCardText(kernelsCard, tr("TensorRT kernels for this GPU"),
                 tr("Engine-builder kernels matched to this GPU generation."));
+    setCardText(anime4kCard, tr("Anime4K shaders"),
+                tr("GLSL presets bundled with this build. No download is needed."));
     // The runtime card names the selected backend's product, not a fixed one.
     updateRuntimeCardText();
     auto updateRuntimeSelection = [this](bool checked) {
@@ -1376,6 +1386,27 @@ void ComponentStoreTab::renderCards() {
     updateCardStates();
 }
 
+ComponentStoreTab::ShaderInventory ComponentStoreTab::shaderInventory() const {
+    ShaderInventory inventory;
+    const QString dir = mplayer::anime4k::findShadersDir();
+    if (dir.isEmpty()) return inventory;
+    // "Off" carries no files and is not a preset that can be incomplete.
+    for (const mplayer::anime4k::ModeInfo& mode : mplayer::anime4k::availableModes()) {
+        if (mode.files.isEmpty()) continue;
+        ++inventory.chains;
+        if (mplayer::anime4k::chainIsComplete(
+                mplayer::anime4k::candidateForId(mode.id, dir), dir)) {
+            ++inventory.complete;
+        }
+    }
+    const QDir shaders(dir);
+    const QStringList files =
+        shaders.entryList({QStringLiteral("*.glsl")}, QDir::Files | QDir::Readable);
+    inventory.files = static_cast<int>(files.size());
+    for (const QString& name : files) inventory.bytes += QFileInfo(shaders.filePath(name)).size();
+    return inventory;
+}
+
 void ComponentStoreTab::updateCardStates() {
     const GpuComputeCapability& gpu = observeComputeCapability();
     const ComponentPack* runtimePack = tensorRtRuntimePack();
@@ -1535,6 +1566,26 @@ void ComponentStoreTab::updateCardStates() {
     setBadgeRole(spatialState_, spatialRecommended,
                  !spatialCatalog.isEmpty() && verifiedSpatial == spatialCatalog.size());
     setBadgeRole(kernelsState_, kernelsRecommended, kernelsUsable);
+
+    // The shader card is an inventory: every preset chain either has all of its
+    // files in the shipped tree or it does not, and nothing can be downloaded to
+    // change that. "installed" here means the presets the catalogue offers are
+    // actually servable.
+    const ShaderInventory shaders = shaderInventory();
+    const bool shadersComplete = shaders.chains > 0 && shaders.complete == shaders.chains;
+    setState(anime4kState_, shadersComplete ? tr("installed") : tr("incomplete"));
+    setBadgeRole(anime4kState_, false, shadersComplete);
+    if (auto* size = findChild<QLabel*>(QStringLiteral("anime4kShadersCardSize"))) {
+        size->setText(tr("%1 MB").arg(QLocale().toString(shaders.bytes / 1048576)));
+    }
+    if (auto* counts = findChild<QLabel*>(QStringLiteral("anime4kShadersCardCount"))) {
+        counts->setText(tr("%1 of %2 presets complete · %3 files")
+                            .arg(shaders.complete)
+                            .arg(shaders.chains)
+                            .arg(shaders.files));
+        counts->setVisible(true);
+    }
+    anime4kCheck_->setAccessibleName(tr("Anime4K shaders"));
 
     runtimeCheck_->setAccessibleName(backendProductName(backend));
     rifeCheck_->setAccessibleName(tr("RIFE interpolation models"));
@@ -1897,6 +1948,15 @@ components::CardState ComponentStoreTab::cardStateFor(const QString& cardId) con
                                static_cast<int>(selectedBackend())))
                 ? 1
                 : 0;
+    } else if (cardId == QLatin1String("anime4kShadersCard")) {
+        // The shaders ship with the build: present is installed, and a chain
+        // whose files are all there is the only verification this can offer
+        // without re-hashing the staged tree.
+        const ShaderInventory shaders = shaderInventory();
+        state.inventory.known = true;
+        state.inventory.total = shaders.chains;
+        state.inventory.installed = shaders.complete;
+        state.inventory.verified = shaders.complete;
     } else if (cardId == QLatin1String("rifeModelsCard")) {
         state.inventory.total = rifeModelPins().isEmpty() ? 0 : 1;
         state.inventory.installed = rifeInstalled_ ? 1 : 0;

@@ -140,6 +140,11 @@ public:
     /// started, because nothing has failed yet. What the pending resolution is
     /// actually doing is the runtime layer's own sentence, shown verbatim.
     void showRuntimePendingStatus();
+    /// A persistent background line (a component download, for instance). It
+    /// takes the status panel while it is non-empty and leaves it to the next
+    /// transient message when it is cleared, so a download that runs behind the
+    /// player cannot look like a frozen window.
+    void setBackgroundActivity(const QString& message);
     /// A requested AnimeJaNai preset is saved by stable id and prepared off the
     /// GUI thread; unavailable prerequisites remain visible as a failed request.
     void applyAnimeJanaiRequest(const QString& id);
@@ -614,6 +619,8 @@ private:
     QPushButton* processingProvidersButton_ = nullptr;
     QPushButton* processingOriginalButton_ = nullptr;
     QTimer* statusTimer_ = nullptr;
+    /// Non-empty while an external activity owns the status line.
+    QString backgroundActivity_;
     /// The float on screen, or null when PiP is down. While PiP is up it names
     /// the same object as pipPool_; releasePipPool() is the one place either is
     /// destroyed, and it goes through the pool.

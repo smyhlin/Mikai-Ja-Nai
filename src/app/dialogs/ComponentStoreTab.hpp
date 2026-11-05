@@ -110,9 +110,11 @@ public:
 
 signals:
     void inventoryUpdated();
-    /// Aggregate acquisition activity for the window-level text hint.
-    /// `started` is true only on the transition into a new acquisition.
-    void acquisitionProgress(const QString& status, bool started);
+    /// Aggregate acquisition activity for the window-level hint.
+    /// `started` is true only on the transition into a new acquisition;
+    /// `percent` is 0..100 when the transfer reports byte totals and -1 while it
+    /// cannot say how much is left.
+    void acquisitionProgress(const QString& status, bool started, int percent);
     /// The acquisition that `acquisitionProgress` announced has left the running
     /// state. Verification alone does not emit this.
     void acquisitionIdle();
@@ -261,6 +263,16 @@ private:
     /// Builds the one displayed truth for `cardId` from the transfer items and
     /// the disk inventory. Pure data; no widget is touched.
     components::CardState cardStateFor(const QString& cardId) const;
+    /// What the shipped Anime4K tree contains: the preset chains it can serve
+    /// and the files those chains name. The shaders are bundled with the build,
+    /// so this is an inventory answer, never a download.
+    struct ShaderInventory {
+        int files = 0;
+        int chains = 0;
+        int complete = 0;
+        qint64 bytes = 0;
+    };
+    ShaderInventory shaderInventory() const;
     /// Drops every terminal Installed claim whose bytes the fresh inventory no
     /// longer confirms, so a stale full bar cannot survive a deleted store.
     void reconcileProgressWithInventory();
@@ -359,10 +371,12 @@ private:
     QCheckBox* rifeCheck_ = nullptr;
     QCheckBox* spatialCheck_ = nullptr;
     QCheckBox* kernelsCheck_ = nullptr;
+    QCheckBox* anime4kCheck_ = nullptr;
     QLabel* runtimeState_ = nullptr;
     QLabel* rifeState_ = nullptr;
     QLabel* spatialState_ = nullptr;
     QLabel* kernelsState_ = nullptr;
+    QLabel* anime4kState_ = nullptr;
     QPushButton* verifyButton_ = nullptr;
     QPushButton* downloadButton_ = nullptr;
     QPushButton* importAnimeJanaiButton_ = nullptr;
