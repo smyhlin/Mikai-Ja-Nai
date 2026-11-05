@@ -190,7 +190,7 @@ def main():
         smoke.mkdir()
         executable = smoke / ('mpv_surface_smoke' + suffix)
         shutil.copy2(build / executable.name, executable)
-        shutil.copytree(ROOT / 'shaders', smoke / 'shaders')
+        shutil.copytree(build / 'shaders', smoke / 'shaders')
         runtime_receipt = build / 'mikai-runtime-Release.json'
         if not runtime_receipt.is_file():
             raise RuntimeError(f'CMake runtime receipt missing: {runtime_receipt}')

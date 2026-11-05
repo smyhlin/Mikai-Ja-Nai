@@ -61,7 +61,7 @@ set_target_properties(mikai PROPERTIES
   INSTALL_RPATH_USE_LINK_PATH FALSE
   BUILD_RPATH_USE_ORIGIN TRUE)
 install(TARGETS mikai RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
-install(DIRECTORY "${CMAKE_SOURCE_DIR}/shaders/"
+install(DIRECTORY "${MIKAI_ANIME4K_SHADERS_DIR}/"
   DESTINATION "${CMAKE_INSTALL_DATADIR}/mikai/shaders"
   FILES_MATCHING PATTERN "*.glsl")
 # The shader resolver already supports <executable>/shaders. A relative link

@@ -50,6 +50,8 @@ sudo apt-get install patchelf
 - Its version is `mpv v0.41.0-dev-gb4f9f5bfe` (FFmpeg `N-128018-ga881f0a9a`, upstream commit `b4f9f5bfed18d5ce610af28024986410dd9bdaae`).
 
 - CMake fetches the DEV archive or accepts a local copy through `MIKAI_DIST_MPV_ARCHIVE`, verifying the archive digest.
+
+- The Anime4K shaders are third-party content and are not stored in this repository: `packaging/shaders/anime4k-manifest.json` pins one `bloc97/Anime4K` commit with a SHA-256 per file, and `cmake/FindOrFetchAnime4K.cmake` materialises them into `<build>/shaders` during configure through `cmake -P cmake/FetchAnime4K.cmake` (no interpreter beyond CMake). One tarball of the pinned commit is downloaded into `<build>/_dist-cache/anime4k/`; a staged tree whose pin already matches is reused with no network access, and `-DMIKAI_ANIME4K_ARCHIVE=<local tar.gz>` builds fully offline. Every staged file is digest-checked against the manifest, and the `mikai_anime4k_shaders` CTest entry re-checks the staged tree. See [`packaging/shaders/README.md`](../packaging/shaders/README.md).
 - This is the build/runtime input; the separate CLI/updater archive is neither used nor bundled.
 - The CLI archive, `mpv-x86_64-20261024-git-b4f9f5bfed.7z`, is 33.8 MB (33,755,796 B) with SHA-256 pin `3ba568335b83`; its full digest is in `../packaging/provenance/windows-runtime.json`.
 - It contains no libmpv DLL.

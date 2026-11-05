@@ -1,0 +1,252 @@
+{
+  "upstream": "https://github.com/bloc97/Anime4K",
+  "commit": "7684e9586f8dcc738af08a1cdceb024cc184f426",
+  "license": "MIT and Unlicense, per file header; see licenses/",
+  "files": [
+    {
+      "path": "glsl/Deblur/Anime4K_Deblur_DoG.glsl",
+      "sha256": "480367048caca7520b6f66d4db731c96103677d0e5bad69d72adf46f58a59532",
+      "size": 4552
+    },
+    {
+      "path": "glsl/Deblur/Anime4K_Deblur_Original.glsl",
+      "sha256": "37e96b3225546ea4f2a6ec81cd6fac8f8f1774c62ba62b51ec5f93937d8f9f3d",
+      "size": 6409
+    },
+    {
+      "path": "glsl/Denoise/Anime4K_Denoise_Bilateral_Mean.glsl",
+      "sha256": "bdcbc73cecdbc2fda879824cad822c70cc89c9e93d747fa740c1301c3d270dee",
+      "size": 2782
+    },
+    {
+      "path": "glsl/Denoise/Anime4K_Denoise_Bilateral_Median.glsl",
+      "sha256": "5f9667ae9c2dbbcc460da5a12c5adfae72e7c72c595fa1cec13aa09cb5bd6f52",
+      "size": 4221
+    },
+    {
+      "path": "glsl/Denoise/Anime4K_Denoise_Bilateral_Mode.glsl",
+      "sha256": "1f20a48ff19bf50181ee1ad608defbcb9e5ad3c0d8d6760fd8e1834c194efcb4",
+      "size": 3821
+    },
+    {
+      "path": "glsl/Experimental-Effects/Anime4K_Darken_Fast.glsl",
+      "sha256": "d3adffc7249d6fb9c8474f5ac473f97e1d27501e130fd6d91425af6256be4a20",
+      "size": 6378
+    },
+    {
+      "path": "glsl/Experimental-Effects/Anime4K_Darken_HQ.glsl",
+      "sha256": "7506e41f3c2b031574897a74fc98a7fa478289747e6131b21d25fbc221460e13",
+      "size": 5981
+    },
+    {
+      "path": "glsl/Experimental-Effects/Anime4K_Darken_VeryFast.glsl",
+      "sha256": "a6046bd461026c02d01028c7678b3eee2a74426277dfafcc31b95fa89910c7ca",
+      "size": 6442
+    },
+    {
+      "path": "glsl/Experimental-Effects/Anime4K_Thin_Fast.glsl",
+      "sha256": "6a77b7930b84b2fea7bdb4249f7fcdd1b8799803931c0c98f5994fd01f4390ff",
+      "size": 6248
+    },
+    {
+      "path": "glsl/Experimental-Effects/Anime4K_Thin_HQ.glsl",
+      "sha256": "026e245fb49b1d7ab549043d75fcfe9c1b6a5e3170323861fa9abfdbad5abe61",
+      "size": 5962
+    },
+    {
+      "path": "glsl/Experimental-Effects/Anime4K_Thin_VeryFast.glsl",
+      "sha256": "c7b82480644a1b71b0f519186c58ecffc8cbb629fd87ab952f7e2665a58f810c",
+      "size": 6335
+    },
+    {
+      "path": "glsl/Restore/Anime4K_Clamp_Highlights.glsl",
+      "sha256": "a2a9bf7fbc1d75d09660ca2e701e4d7fb0cf5457b94da47e1825032fa2b3671a",
+      "size": 2795
+    },
+    {
+      "path": "glsl/Restore/Anime4K_Restore_CNN_L.glsl",
+      "sha256": "d6efe215e6ee8af1ec560478a91afc1df83fac4ba43b2c806ee61ca2267ed674",
+      "size": 69921
+    },
+    {
+      "path": "glsl/Restore/Anime4K_Restore_CNN_M.glsl",
+      "sha256": "67ea3ed26539e8de3b7d307688535d2ff17e8d147e11dda0247da7770dbecf41",
+      "size": 35916
+    },
+    {
+      "path": "glsl/Restore/Anime4K_Restore_CNN_S.glsl",
+      "sha256": "97c24dc370ab300c108bfaa09db7f175aeff343674842c299cf3940a3d330427",
+      "size": 17136
+    },
+    {
+      "path": "glsl/Restore/Anime4K_Restore_CNN_Soft_L.glsl",
+      "sha256": "8f2a5c73b526c6e4c67bce0366f7dcd7410bfa4a31e718240d86f53660788e63",
+      "size": 70020
+    },
+    {
+      "path": "glsl/Restore/Anime4K_Restore_CNN_Soft_M.glsl",
+      "sha256": "a78a2c76898e08e09e442a9628c64208c26e8e15789649b8755223f009794c02",
+      "size": 36016
+    },
+    {
+      "path": "glsl/Restore/Anime4K_Restore_CNN_Soft_S.glsl",
+      "sha256": "9f6867f2ef42786729522d86fe24147cb4ea145418e3974df70496acf52dc392",
+      "size": 17198
+    },
+    {
+      "path": "glsl/Restore/Anime4K_Restore_CNN_Soft_UL.glsl",
+      "sha256": "41d71cad7b2f3af9086852fca70046f763272d2cb49dd83de9647d942866cac8",
+      "size": 308873
+    },
+    {
+      "path": "glsl/Restore/Anime4K_Restore_CNN_Soft_VL.glsl",
+      "sha256": "094334b0e20c1a201fe4941c7c68de72451e5aee9efb5524d7fb82b12dca64b9",
+      "size": 144204
+    },
+    {
+      "path": "glsl/Restore/Anime4K_Restore_CNN_UL.glsl",
+      "sha256": "81ec48ff700108c8e1571ed82d4527006ee200c05e94f8b7f836c02179169b40",
+      "size": 308660
+    },
+    {
+      "path": "glsl/Restore/Anime4K_Restore_CNN_VL.glsl",
+      "sha256": "35036722733305cd4d4e57660b883bbe2569ba2914033c254327107d7b77e35e",
+      "size": 144075
+    },
+    {
+      "path": "glsl/Restore/Anime4K_Restore_GAN_UL.glsl",
+      "sha256": "d7a2146b9b1b5a7cfbe3ee0cf9437fbb0761eb999d4b0f284d3489e0a0ff1002",
+      "size": 244350
+    },
+    {
+      "path": "glsl/Restore/Anime4K_Restore_GAN_UUL.glsl",
+      "sha256": "b0f36492734277f4c7cf180047ca827d0af89dafed231aa0ee3d6ca3593d4cc9",
+      "size": 244374
+    },
+    {
+      "path": "glsl/Upscale+Denoise/Anime4K_Upscale_Denoise_CNN_x2_L.glsl",
+      "sha256": "6cc4604c9544fd4fd9e3a75fd797511bf5fe1e626e9e1dbcee03302823a63207",
+      "size": 73584
+    },
+    {
+      "path": "glsl/Upscale+Denoise/Anime4K_Upscale_Denoise_CNN_x2_M.glsl",
+      "sha256": "8c72b042e2301fe66a45c3089720459148e2504cd72af16f9c0d5017ff14181e",
+      "size": 37714
+    },
+    {
+      "path": "glsl/Upscale+Denoise/Anime4K_Upscale_Denoise_CNN_x2_S.glsl",
+      "sha256": "1a45ad3aa20d8368399f2fd46791deed957c2fd0a4afd131cc92516827abab93",
+      "size": 18667
+    },
+    {
+      "path": "glsl/Upscale+Denoise/Anime4K_Upscale_Denoise_CNN_x2_UL.glsl",
+      "sha256": "38bd11e7e92ff1a615a274be912d6f2cfe67f5b43771f0383a91c6ab3d0f8cb6",
+      "size": 290040
+    },
+    {
+      "path": "glsl/Upscale+Denoise/Anime4K_Upscale_Denoise_CNN_x2_VL.glsl",
+      "sha256": "359c48fe5a317fbc6b706ce368401eef496e84ed98abac7a43efebca2b65d79b",
+      "size": 146811
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_3DGraphics_AA_Upscale_x2_US.glsl",
+      "sha256": "e2de24efdb7dc75e1f48d3fd62c50d24a434b129857237c8d3bd24eba1665d75",
+      "size": 11450
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_3DGraphics_Upscale_x2_US.glsl",
+      "sha256": "ccfd16fa65908fbafe27114cf65ddc043bc746d4086716c2a85e97a283d9fe5e",
+      "size": 11341
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_AutoDownscalePre_x2.glsl",
+      "sha256": "8c58291740146bd766a4d73f132775a797fe80f7d07919b5d767e27a5dc85656",
+      "size": 1560
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_AutoDownscalePre_x4.glsl",
+      "sha256": "5af62d8cd844916dc1126613e13bad3beab195787f93a71200b47c6ec78f2e41",
+      "size": 1568
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_CNN_x2_L.glsl",
+      "sha256": "db1fedf7be82f6fd9034e6bf39b64daf2b7576988bb584ec38f24f5236b1cd97",
+      "size": 73443
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_CNN_x2_M.glsl",
+      "sha256": "716e02098a68f0d648761f2b96b4dd139e1cb09b174bb369fca3aa34328fff7e",
+      "size": 37685
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_CNN_x2_S.glsl",
+      "sha256": "4c53ec2e287908f7ee7bcb266b0170421626d663576468b7d7dafc62962649a4",
+      "size": 18638
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_CNN_x2_UL.glsl",
+      "sha256": "fa7cf0ecc1cca84d8291bbff5a42b60f5816d57b4e97d42bc377235ac8db02e8",
+      "size": 290257
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl",
+      "sha256": "5638fe31c37c151a3443fea3451a3ef91af073f4dbb9615f6c0d1e29db11493d",
+      "size": 146743
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_DTD_x2.glsl",
+      "sha256": "b6597cace43fc9a6be57a8eebc540fe20caa8389fae0aad1157a9c15fc410ef3",
+      "size": 15450
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_Deblur_DoG_x2.glsl",
+      "sha256": "2408b7d334803bae2e463f75d4e293146715609ed576dddfd22e2a76189eb161",
+      "size": 4830
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_Deblur_Original_x2.glsl",
+      "sha256": "4a88f9a4437aa5cca1e2055a45db533b58cf9c955763fb64cf38033f0f63904f",
+      "size": 6313
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_DoG_x2.glsl",
+      "sha256": "33dbf76d855575b7a99885885c2c7c692444cf776f22048b4a611dab178e66e3",
+      "size": 4016
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_GAN_x2_M.glsl",
+      "sha256": "8a1d33fddc8939c1e0eb4d6ad6a7baf653dd420d6b713e385b7c73be90d9affe",
+      "size": 146140
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_GAN_x2_S.glsl",
+      "sha256": "ec252b694675ce8e3b3959bd53530a9e94e360ce8a7de95be9a848ac0826649f",
+      "size": 76200
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_GAN_x3_L.glsl",
+      "sha256": "fecde271daf90df63d03f9999da57080b268d085cce1b60c0fbfe4589688da21",
+      "size": 238600
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_GAN_x3_VL.glsl",
+      "sha256": "66d201713e43c74fdfb75cde9732d1b42f3eb30ecdda68f2a6a5caf647c1f76a",
+      "size": 425971
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_GAN_x4_UL.glsl",
+      "sha256": "b1ed2bb1065f84e2cb986d7c5022dc0a926814f37891e6a88b69c9e79c120ae0",
+      "size": 700067
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_GAN_x4_UUL.glsl",
+      "sha256": "f4740658e3b8a15f3eb2e34d73a7b05d130bb2af11f3e71685636e4809e917ee",
+      "size": 1091539
+    },
+    {
+      "path": "glsl/Upscale/Anime4K_Upscale_Original_x2.glsl",
+      "sha256": "ffb1a4a28c5ce80a3e932e9454917ea48a4ba31dadcf274714048693ce387919",
+      "size": 6271
+    }
+  ]
+}

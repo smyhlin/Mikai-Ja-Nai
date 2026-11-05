@@ -45,6 +45,7 @@ if(MIKAI_BUILD_PROBES)
 endif()
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindOrFetchMpv.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindOrFetchAnime4K.cmake)
 
 # Out-of-band manifest verifier CLI
 add_executable(mikai_manifest_check EXCLUDE_FROM_ALL native/tools/manifest_check.cpp)
@@ -570,14 +571,14 @@ if(WIN32 AND MIKAI_MPV_DLL AND EXISTS "${MIKAI_MPV_DLL}")
   )
 endif()
 
-file(GLOB_RECURSE MIKAI_SHADER_FILES CONFIGURE_DEPENDS
-  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*")
+file(GLOB MIKAI_SHADER_FILES CONFIGURE_DEPENDS
+  "${MIKAI_ANIME4K_SHADERS_DIR}/*.glsl")
 set(MIKAI_SHADER_DEPLOYMENT_STAMP
   "${CMAKE_CURRENT_BINARY_DIR}/mikai-shaders-$<CONFIG>.stamp")
 add_custom_command(
   OUTPUT "${MIKAI_SHADER_DEPLOYMENT_STAMP}"
   COMMAND ${CMAKE_COMMAND} -E copy_directory
-    "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+    "${MIKAI_ANIME4K_SHADERS_DIR}"
     "$<TARGET_FILE_DIR:mikai>/shaders"
   COMMAND ${CMAKE_COMMAND} -E touch "${MIKAI_SHADER_DEPLOYMENT_STAMP}"
   DEPENDS ${MIKAI_SHADER_FILES}

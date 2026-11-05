@@ -5,6 +5,9 @@
 
 # Build and release output
 /build/
+# Anime4K shaders are materialised from packaging/shaders/anime4k-manifest.json at
+# build time; a fetched copy inside the checkout must never be committed.
+/shaders/
 /build-*/
 cmake-build-*/
 dist/

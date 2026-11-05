@@ -229,7 +229,10 @@ def main():
         sys.exit(f"Qt plugins missing from the SDK: {missing}")
     validate_qt_mingw_runtime(args.out)
 
-    shutil.copytree(args.source / "shaders", args.out / "shaders")
+    staged_shaders = args.build_dir / "shaders"
+    if not staged_shaders.is_dir():
+        staged_shaders = args.source / "shaders"
+    shutil.copytree(staged_shaders, args.out / "shaders")
     copy_benchmarks(args.source, args.out)
     (args.out / "translations").mkdir(exist_ok=True)
     for name in ("qt_uk.qm", "qtbase_uk.qm"):

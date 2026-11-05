@@ -18,7 +18,7 @@ add_test(NAME LauncherContracts
   COMMAND ${CMAKE_COMMAND}
     -DFIXTURE_EXE=$<TARGET_FILE:mikai_launcher_child>
     -DLAUNCHER_EXE=$<TARGET_FILE:mikai_test_launcher>
-    -DSHADERS_DIR=${CMAKE_SOURCE_DIR}/shaders
+    -DSHADERS_DIR=${MIKAI_ANIME4K_SHADERS_DIR}
     -DMPV_MODULE=${MIKAI_SELECTED_MPV_MODULE}
     -DMPV_RUNTIME_DIR=${MIKAI_SELECTED_MPV_DEPENDENCY_ROOT}
     -DQT_BIN_DIR=$<TARGET_FILE_DIR:Qt6::Core>
@@ -104,6 +104,21 @@ else()
   message(STATUS "mikai_provenance_check and translation completeness check are not registered: "
     "no Python 3 interpreter found")
 endif()
+
+# The Anime4K shader set is staged from one pinned upstream commit; a locally
+# edited, unlisted or missing shader would ship a chain the manifest no longer
+# describes. This check is CMake-only, so it is registered on every host.
+add_test(NAME mikai_anime4k_shaders
+  COMMAND "${CMAKE_COMMAND}"
+    "-DMODE=check"
+    "-DMANIFEST=${MIKAI_ANIME4K_MANIFEST}"
+    "-DSHADERS_DIR=${MIKAI_ANIME4K_SHADERS_DIR}"
+    -P "${CMAKE_SOURCE_DIR}/cmake/FetchAnime4K.cmake"
+)
+set_tests_properties(mikai_anime4k_shaders PROPERTIES
+  TIMEOUT 120
+  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
 
 if(MIKAI_BUILD_PROBES)
   add_test(NAME NativeStageContracts
@@ -297,7 +312,7 @@ if(MIKAI_BUILD_PROBES)
 
   set(_mikai_tests_launcher_args
     "$<TARGET_FILE:mikai_tests>"
-    "${CMAKE_SOURCE_DIR}/shaders"
+    "${MIKAI_ANIME4K_SHADERS_DIR}"
     "${MIKAI_SELECTED_MPV_MODULE}"
     "$<TARGET_FILE_DIR:Qt6::Core>"
     "${MIKAI_TEST_QT_PLUGIN_DIR}"
@@ -431,7 +446,7 @@ if(MIKAI_BUILD_PROBES)
     add_test(NAME HoverPlaybackCanary
       COMMAND mikai_test_launcher
         "$<TARGET_FILE:fullscreen_stability_probe>"
-        "${CMAKE_SOURCE_DIR}/shaders"
+        "${MIKAI_ANIME4K_SHADERS_DIR}"
         "${MIKAI_SELECTED_MPV_MODULE}"
         "$<TARGET_FILE_DIR:Qt6::Core>"
         "${MIKAI_TEST_QT_PLUGIN_DIR}"
@@ -459,7 +474,7 @@ if(MIKAI_BUILD_PROBES)
     add_test(NAME VideoScalingPersistence
       COMMAND mikai_test_launcher
         "$<TARGET_FILE:native_settings_probe>"
-        "${CMAKE_SOURCE_DIR}/shaders"
+        "${MIKAI_ANIME4K_SHADERS_DIR}"
         "${MIKAI_SELECTED_MPV_MODULE}"
         "$<TARGET_FILE_DIR:Qt6::Core>"
         "${MIKAI_TEST_QT_PLUGIN_DIR}"
