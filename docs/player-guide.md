@@ -20,6 +20,10 @@ From the main window, choose **Open video → Video file…** and select a file.
 
 The player does not move or delete a local source file. Local media can have embedded audio/subtitle tracks and exact-match sidecars; unrelated files in the containing folder are not indiscriminately loaded. Use **Audio** and **Subtitles** to choose available tracks; the local subtitle menu includes **Off**. Track rows may include title, language, codec, channels and flags such as external, forced or default. A menu may report that no alternate audio or no subtitles are available when the source has no choices.
 
+![Player window with a paused local colour-pattern video, the dock, timeline and transport controls](images/gallery-2026-11-05/player.png)
+
+*A local file paused mid-playback, original pipeline, no processing preset. The pictured clip is a synthetic project-generated 12-second 320×180 HEVC colour-pattern fixture, not a provider stream or anime footage.*
+
 Catalogue variant selection and local track selection are different operations: a catalogue choice selects a provider variant, while a local-file choice selects a track in the active media.
 
 ## Transport and timeline
@@ -83,6 +87,10 @@ Player badges such as **HDR**, **DV**, **ATMOS**, and the codec name reflect met
 
 For a local file, open the picture context menu and choose **Media information**. The inspector has **Overview**, **Tree**, and **Plain text** views, based on the active playback session. It reports metadata such as filename/path, container, duration, file size, bitrate, dimensions, frame rate and video codec, plus available audio/subtitle track information. Information is gathered asynchronously; unavailable fields/errors are shown rather than guessed. This menu action is offered for local media, not as a general catalogue-stream inspector.
 
+![Media information Overview dialog showing the local fixture's path, container, duration, dimensions, frame rate and HEVC codec](images/gallery-2026-11-05/media-info.png)
+
+*The **Overview** view for the same synthetic fixture; the path shown is the repository's own `tests/fixtures/media` copy. It is not a provider stream and involves no AI processing.*
+
 ## Compare two processing results
 
 With a video active, choose **Compare quality** from the player’s picture context menu. A loading indicator appears at the center of the player while Compare opens. Compare captures the current playback frame and lets you render/select two candidates against that same frame. It holds playback paused while the comparison is open, then resumes it on close only if it was playing beforehand. Use each side’s selector to choose candidates; comparison is for inspecting outputs at a captured position, not a live second playback.
@@ -95,6 +103,10 @@ Choose a view in the mode menu:
 - **Difference** shows the visual difference between the candidates; its gain control applies in this mode.
 
 Choose **Bilinear** or **Nearest Neighbor** for scaling. The mouse wheel zooms around the pointer. Drag the picture to pan; double-click the picture away from the split divider fits the image. **Fit** (or **F**) fits the view. **S** swaps A and B; **R** captures the current player frame again; **P** pins/unpins the Compare window so it stays on top. Hold **Space** to peek at Side A; releasing it restores the selected comparison view, including its zoom and pan. **F11** toggles Compare fullscreen. **Esc** leaves fullscreen first, otherwise closes Compare.
+
+![Compare window in side-by-side mode with the original selected on the left and Anime4K A Fast selected on the right](images/gallery-2026-11-05/compare.png)
+
+*Compare on a paused synthetic 320×180 HEVC colour-pattern clip. Side A is disabled (the original frame); side B has **Anime4K A (Fast)** selected. The window clips that label, and the image does not establish that the shader finished rendering or provide a quality or performance result.*
 
 **Export** is available in Flicker mode when both current A/B renders are ready. Choose an output folder, file name and format: looping GIF, looping animated WebP, or a silent ten-second MP4. GIF uses an adaptive palette of at most 256 colors per frame; use WebP or MP4 when more color detail is needed. MP4 uses Motion JPEG, which may not play in every browser or video player. A short-lived completion window can open the file or its folder, or copy the file to the clipboard. Exports are written atomically; an error or cancellation does not publish a partial file.
 

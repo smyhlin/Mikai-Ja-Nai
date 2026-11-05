@@ -24,12 +24,20 @@ Catalogue browsing works anonymously, subject to the service's anonymous limits.
 
 The Home/Search header’s **RPM** badge shows the most recently reported request usage and limit. Its dot is neutral until quota data arrives; the colour reflects remaining quota, not a general connection-health check.
 
+![Catalogue home showing the sidebar, top search toolbar, request quota badge, currently airing and latest update feeds, and popular titles](images/gallery-2026-11-05/catalogue.png)
+
+*Catalogue home. This capture is a Windows build with the Ukrainian interface and a custom pink accent, so your own accent, language and window size will differ; catalogue content and availability change upstream.*
+
 ## Find titles and filter the catalogue
 
 1. Enter a title or search phrase in the top search field, then press **Enter** or choose **Search**. Clear the field and search again to return to the unfiltered catalogue browse; if catalogue filters remain selected, they still apply.
 2. Open **Filters** (the dialog is titled **Catalogue filters**) to narrow results. It provides genre and tag include/exclude lists; year-from/year-to ranges and a comma-separated list of exact years; format, status, season and studio selections; and sort field/order. The search fields narrow the displayed genre, tag and release-option lists (formats, statuses, seasons and studios).
 3. For selected genres or tags, choose **Match all** or **Match any**. Include and exclude selections let you shape a result set—for example, include a genre and exclude a tag you do not want.
 4. Choose **Apply** to apply the selections, or **Reset** to clear catalogue criteria. Both actions keep the search text. **Cancel** discards edits made in the dialog.
+
+![Catalogue filters dialog with a genre list and the filter, reset and cancel actions](images/gallery-2026-11-05/filters.png)
+
+*The **Catalogue filters** dialog. Selections are applied only when you choose **Apply**; **Cancel** discards them.*
 
 Examples: to look for recent television releases, set a year range and choose the relevant format. Use the sort controls to order by name, year, recently updated, views or MAL rating, ascending or descending. Text searches use relevance ranking, so the selected sort may be overridden. Search results may also show format tabs when the results contain multiple formats; choose a format to filter, or **All** to remove that format filter. Results reflect catalogue data and selected criteria; an empty result does not establish that a title is unavailable from every source.
 

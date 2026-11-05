@@ -33,6 +33,10 @@ In **Customization → Appearance**:
 - A profile created by an older version, which stored a gradient colour separately and had no source setting, keeps that colour as a **Custom** choice. The app cannot tell a deliberately chosen colour from the old default, so it never discards one; pick **Auto (follow accent)** once to join the accent.
 - **Reset** resets the appearance-page choices (accent, radius and background-gradient settings, including the gradient source) to the shipped values. It does not reset the separate General-page choices.
 
+![Appearance settings page with a pink accent swatch selected and a custom background gradient](images/gallery-2026-11-05/settings.png)
+
+*The Appearance page with a custom pink accent and custom gradient — an example choice, not the shipped defaults. The capture was taken with no edit saved.*
+
 Appearance and site/content display changes preview while Settings is open. **Save** keeps them; **Cancel**, Escape, or closing the dialog restores the appearance from when that Settings session opened.
 
 ### Action colours

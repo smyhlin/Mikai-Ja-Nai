@@ -34,6 +34,10 @@ The recommended setup omits optional RIFE interpolation models by default. Selec
 4. Click **Verify** to re-check installed components and model files against their recorded digests. Treat a missing or failed verification result as unavailable until repaired; “installed” and “verified” are distinct states.
 5. Use **Refresh** to update the displayed inventory. On Windows, **Install local runtime...** selects a local AnimeJaNai runtime directory for the selected backend closure (TensorRT, DirectML or TensorRT for RTX); this is a separate action from acquiring the listed packages. Use **Cancel** on the active Components tab to cancel acquisition or verification. Closing Settings does not cancel an active acquisition. Cancel may leave an item absent or unverified; refresh and verify the resulting state before selecting it for playback. Changing the AnimeJaNai backend while a verification/acquisition check is in progress changes which runtime is being checked; prior check results are not fresh evidence for the new backend.
 
+![Components settings page with TensorRT for RTX selected and its runtime listed as not installed](images/gallery-2026-11-05/components.png)
+
+*The Components page with **TensorRT for RTX** selected and its runtime not installed. The capture was taken before any download: **Apply changes** was not used, nothing was installed and no inference was run.*
+
 Runtime and model availability are platform- and GPU-dependent. Linux Standard AnimeJaNai uses TensorRT and requires its compatible runtime closure; there is no Linux TensorRT for RTX runtime. On Windows, TensorRT for RTX is opt-in: selecting it downloads nothing, and its runtime is installed only when you acquire it in Components. RTX builds its plan in-process with NVIDIA's TensorRT-RTX 1.7 runtime instead of the classic CUDA/TensorRT pack and `trtexec`. Read [AnimeJaNai on Linux](animejanai.md) before diagnosing a Linux inference-context or engine-build failure. Do not substitute an unrelated system mpv: the app uses its pinned runtime.
 
 ## Standard AnimeJaNai profiles and custom models

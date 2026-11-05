@@ -39,24 +39,32 @@ Application captures and their provenance are documented in [Screenshot provenan
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/gallery-2026-11-01/catalogue.png" alt="Catalogue page with recommendations and currently airing titles"></td>
-    <td width="50%"><img src="docs/images/gallery-2026-11-01/compare.png" alt="Compare workstation showing the original frame beside a processed candidate"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-05/catalogue.png" alt="Catalogue home with sidebar, search toolbar, request quota badge and currently airing and latest update feeds"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-05/filters.png" alt="Catalogue filters dialog listing genres and other narrowing options"></td>
   </tr>
   <tr>
-    <td align="center"><em><strong>Catalogue.</strong> Search, filters, recommendations, currently airing, latest updates.</em></td>
-    <td align="center"><em><strong>Compare.</strong> One pinned frame, original against a candidate chain, side by side or free.</em></td>
+    <td align="center"><em><strong>Catalogue.</strong> Sidebar, search, request quota, currently airing and latest updates.</em></td>
+    <td align="center"><em><strong>Filters.</strong> Genre and tag include/exclude lists, years, format, status, season, studio and sort.</em></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/gallery-2026-11-01/settings.png" alt="Appearance settings with blue gradient and blue accent"></td>
-    <td width="50%"><img src="docs/images/gallery-2026-11-01/media-info.png" alt="Media information view listing container, codec, dimensions and track inventory"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-05/settings.png" alt="Appearance settings with a pink accent and a custom background gradient"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-05/components.png" alt="Components settings with TensorRT for RTX selected and its runtime reported as not installed"></td>
   </tr>
   <tr>
-    <td align="center"><em><strong>Appearance.</strong> Accent, corner radius and gradient, applied to every surface at once.</em></td>
-    <td align="center"><em><strong>Media information.</strong> What the container actually reports, track by track.</em></td>
+    <td align="center"><em><strong>Appearance.</strong> Accent, corner radius and background gradient, applied to every surface at once.</em></td>
+    <td align="center"><em><strong>Components.</strong> Optional runtime and model inventory; TensorRT for RTX is selected and its runtime is not installed.</em></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/gallery-2026-11-05/player.png" alt="Player window showing a paused local colour-pattern video with its timeline and transport controls"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-05/compare.png" alt="Compare window in side-by-side mode with the original selected on the left and the Anime4K A Fast preset selected on the right"></td>
+  </tr>
+  <tr>
+    <td align="center"><em><strong>Player.</strong> A local file paused mid-playback, with the real decode, timeline and transport chrome.</em></td>
+    <td align="center"><em><strong>Compare.</strong> One captured frame, with the original and an Anime4K preset selected side by side.</em></td>
   </tr>
 </table>
 
-Catalogue artwork and availability can change upstream. These captures do not establish provider playback, AI inference or release QA.
+These manual Windows captures show the Ukrainian interface with a custom pink appearance. Player and Compare use a synthetic local video; Components shows TensorRT for RTX selected but not installed. Catalogue artwork and availability can change upstream. The images do not establish provider playback, AI inference, performance or release QA.
 
 ## Download and install
 
