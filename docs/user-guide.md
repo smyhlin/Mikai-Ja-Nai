@@ -20,7 +20,7 @@ Launch the installed or portable application. The left sidebar provides **Home**
 
 **Open video** is a menu with **Video file…** and **Video URL…**. A chosen file or stream address opens in the player without using the catalogue, and it keeps working when catalogue requests fail; see [local video or URL playback](player-guide.md#local-video-or-url).
 
-The search field (**Search by title…**, with its **Enter ↵** hint), **Search** and the **RPM** quota pill stay in the top toolbar while the Home blocks scroll below. Press **Enter** in the field to search. **Shortcuts** opens the keyboard-shortcut overlay; **Escape** closes it and returns to Home.
+The search field (**Search by title…**, with its **Enter** key hint and return arrow), **Search** and the **RPM** quota pill stay in the top toolbar while the Home blocks scroll below. Press **Enter** in the field to search. **Shortcuts** opens the keyboard-shortcut overlay; **Escape** closes it and returns to Home.
 
 Home stacks **Recently opened** (titles opened on this machine), the **Currently airing** and **Popular on Mikai** carousels, then the **Latest updates** and **Release schedule** lists. Carousel arrows page by the visible cards, and **Alt + mouse wheel** over a carousel scrolls it horizontally; a plain wheel still scrolls the page. The four server-backed blocks can be switched off under **Settings → Access → Home page sections**, and a disabled block is not requested; **Recently opened** stays because it is local. Open a result to see its title page, releases and episodes. Settings groups **Customization** (General, Appearance), **Application** (Access, Keyboard shortcuts) and **Playback** (Processing, Components, Benchmark); its footer holds **Save** and **Cancel**.
 
