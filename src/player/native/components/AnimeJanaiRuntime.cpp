@@ -1466,6 +1466,10 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
             }
             stagedSlot = *slotIt;
         }
+        // The fork treats slot 0 as passthrough, and a slot section written
+        // without a number is the default one: both the INI and the filter option
+        // have to name the same non-zero slot this profile is staged under.
+        if (plan.slot <= 0) plan.slot = stagedSlot.number > 0 ? stagedSlot.number : 1;
         const auto pinnedCatalog = spatialAssetCatalog();
         const auto storedPinned = storedSpatialAssets();
         QSet<QString> stagedSpatialDigests;
