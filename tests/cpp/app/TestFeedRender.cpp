@@ -845,9 +845,13 @@ QPushButton* disclosureAction(const QWidget& root, bool details) {
       details ? QStringLiteral("titleDetailsToggle") : QStringLiteral("titleSynopsisToggle"));
 }
 
-QPushButton* pagerArrow(const QWidget& pager, const QString& glyph) {
+/// The paging arrow for a role ("first", "previous", "next", "last"). The arrows
+/// are theme-drawn icons with no caption text, so they are selected by the
+/// language-independent role property the pager gives each one.
+QPushButton* pagerArrow(const QWidget& pager, const char* role) {
+  const QString wanted = QString::fromLatin1(role);
   for (QPushButton* button : pager.findChildren<QPushButton*>()) {
-    if (button->text() == glyph) {
+    if (button->property("pagerRole").toString() == wanted) {
       return button;
     }
   }
@@ -1741,7 +1745,7 @@ void TestFeedRender::titlePagePrioritizesPlaybackAndAnchorsWithoutChangingSelect
     WatchHistory history;
     historyCurrent = history.current(QString::number(kRef));
   }
-  QPushButton* nextPage = pagerArrow(*pager, QStringLiteral("→"));
+  QPushButton* nextPage = pagerArrow(*pager, "next");
   QVERIFY(nextPage != nullptr);
   QTest::mouseClick(nextPage, Qt::LeftButton);
   QTRY_COMPARE_WITH_TIMEOUT(pager->page(), 2, 5000);
@@ -2308,7 +2312,7 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
                           .arg(pageSize)));
 
   // The second episode page: a page selection, not just the first page.
-  QPushButton* nextPage = pagerArrow(*pager, QStringLiteral("→"));
+  QPushButton* nextPage = pagerArrow(*pager, "next");
   QVERIFY(nextPage != nullptr);
   QTest::mouseClick(nextPage, Qt::LeftButton);
   QTRY_COMPARE_WITH_TIMEOUT(pager->page(), 2, 5000);

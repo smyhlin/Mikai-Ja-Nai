@@ -36,4 +36,16 @@ QIcon playIcon(int size = 0, const QString& color = {}, int trailingGap = 0);
 QIcon chevronLeftIcon(int size = 0);
 QIcon chevronRightIcon(int size = 0);
 
+/// First and last page: one chevron plus the end bar that means "all the way".
+/// A text glyph such as U+23EE falls back to whichever symbol font the platform
+/// picks, so the arrow reaches the pager at a different weight and scale than
+/// the chevrons beside it.
+QIcon firstPageIcon(int size = 0);
+QIcon lastPageIcon(int size = 0);
+
+/// The dismissal cross, for icon-only close buttons. The text glyph it replaces
+/// (U+2715) is drawn by whichever installed face carries it, so its weight and
+/// colour do not follow the chrome around it.
+QIcon closeIcon(int size = 0);
+
 }  // namespace mikai::app::theme

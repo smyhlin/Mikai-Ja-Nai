@@ -21,8 +21,6 @@ class FlowLayout;
 /// lie. One-based `page` throughout, as displayed.
 QString pageRangeLabel(int page, int pageSize, int totalEntries);
 
-/// `⏮ ←  [chips]  → ⏭` plus a page box.
-///
 /// A chip is one page, labelled with the entries that page holds. A window of
 /// `kPagerChipWindow` chips follows the current page, the arrows step one page,
 /// and the page box jumps straight to one.

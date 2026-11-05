@@ -34,6 +34,8 @@
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QIconEngine>
+#include <QImage>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLinearGradient>
@@ -42,6 +44,7 @@
 #include <QOpenGLWidget>
 #include <QPainterPath>
 #include <QPixmap>
+#include <QPixmapCache>
 #include <QPushButton>
 #include <QRegion>
 #include <QResizeEvent>
@@ -151,31 +154,112 @@ QPushButton* makeChip(QWidget* parent, const QString& name, const QString& text)
 }
 
 
-/// Rasterises one painted glyph into an icon. IconPainter already draws into a
-/// 24-unit grid, so this is a straight scale-and-tint with no SVG pipeline.
-QIcon glyphIcon(void (*glyph)(QPainter&, qreal, qreal, qreal, const QColor&), qreal size) {
-    const QColor normal(QStringLiteral("#ffffff"));
-    const QColor disabled(kIconDisabled);
-    QIcon icon;
-    for (const QColor& color : {normal, disabled}) {
-        const QIcon::Mode mode = (color == normal) ? QIcon::Normal : QIcon::Disabled;
-        for (const int dpr : {1, 2, 3}) {
-            const int px = std::max(1, static_cast<int>(std::lround(size * dpr)));
-            QImage img(QSize(px, px), QImage::Format_ARGB32_Premultiplied);
-            img.fill(Qt::transparent);
-            {
-                QPainter painter(&img);
-                painter.setRenderHint(QPainter::Antialiasing, true);
-                painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-                painter.scale(dpr, dpr);
-                glyph(painter, 0.0, 0.0, size, color);
-            }
-            QPixmap pixmap = QPixmap::fromImage(img);
-            pixmap.setDevicePixelRatio(dpr);
-            icon.addPixmap(pixmap, mode);
-        }
+/// One shell glyph as an icon that rasterises itself at the ratio the painter
+/// actually has.
+///
+/// A QIcon preloaded with 1x/2x/3x bitmaps has no entry for the 125/150/175 %
+/// displays Windows uses, so the style hands the 2x bitmap to a 1.5x screen and
+/// Qt resamples it. Drawing on demand instead means the chevron beside a dock
+/// button that is rendered directly by its own paintChrome is the same weight,
+/// and a monitor move needs no rebuild: the next paint asks for the new ratio.
+class ShellGlyphEngine final : public QIconEngine {
+public:
+    using Glyph = void (*)(QPainter&, qreal, qreal, qreal, const QColor&);
+
+    ShellGlyphEngine(Glyph glyph, qreal size, QColor normal, QColor disabled)
+        : glyph_(glyph), size_(size > 0.0 ? size : 1.0), normal_(normal),
+          disabled_(disabled) {}
+
+    QIconEngine* clone() const override { return new ShellGlyphEngine(*this); }
+
+    QString key() const override { return QStringLiteral("MikaiShellGlyph"); }
+
+    void paint(QPainter* painter, const QRect& rect, QIcon::Mode mode,
+               QIcon::State state) override {
+        if (painter == nullptr || !painter->isActive() || rect.isEmpty()) return;
+        const QPaintDevice* device = painter->device();
+        const qreal ratio = device != nullptr ? device->devicePixelRatioF() : qreal(1.0);
+        const QPixmap pixmap = scaledPixmap(rect.size(), mode, state, ratio);
+        if (pixmap.isNull()) return;
+        const qreal tag = pixmap.devicePixelRatio() > 0.0 ? pixmap.devicePixelRatio() : 1.0;
+        const qreal logical = pixmap.width() / tag;
+        // Snapped to the device grid, so the blit is a straight copy: the raster
+        // holds `round(side * ratio)` device pixels and is drawn at exactly that
+        // many. A fractional origin would blend the glyph across two columns.
+        const QPointF at(qRound(rect.x() * ratio) / ratio,
+                         qRound((rect.y() + (rect.height() - logical) / 2.0) * ratio) / ratio);
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
+        painter->drawPixmap(at, pixmap);
+        painter->restore();
     }
-    return icon;
+
+    QPixmap pixmap(const QSize& size, QIcon::Mode mode, QIcon::State state) override {
+        // A caller that names no ratio gets the screen's own, never a 1x raster
+        // that the style then has to upscale.
+        return scaledPixmap(size, mode, state,
+                            qApp != nullptr ? qApp->devicePixelRatio() : qreal(1.0));
+    }
+
+    QPixmap scaledPixmap(const QSize& size, QIcon::Mode mode, QIcon::State state,
+                         qreal scale) override {
+        return raster(mode, state, scale, sideFor(size));
+    }
+
+    QSize actualSize(const QSize& size, QIcon::Mode, QIcon::State) override {
+        const int side = sideFor(size);
+        return QSize(side, side);
+    }
+
+private:
+    /// The square glyph side for a request: the smaller requested dimension so
+    /// a non-square rect never squashes it, falling back to the size this icon
+    /// was built for when no size is named.
+    int sideFor(const QSize& size) const {
+        const int named = std::min(size.width(), size.height());
+        if (named > 0) return named;
+        return std::max(1, static_cast<int>(std::lround(size_)));
+    }
+
+    QPixmap raster(QIcon::Mode mode, QIcon::State, qreal scale, int side) const {
+        const qreal ratio = scale > 0.0 ? scale : 1.0;
+        const QColor color = mode == QIcon::Disabled ? disabled_ : normal_;
+        const int px = std::max(1, static_cast<int>(std::lround(side * ratio)));
+        const QString cacheKey = QStringLiteral("mikai-shell-glyph:%1:%2:%3:%4")
+                                     .arg(reinterpret_cast<quintptr>(glyph_))
+                                     .arg(px)
+                                     .arg(color.name(QColor::HexArgb))
+                                     .arg(ratio, 0, 'g', 8);
+        QPixmap cached;
+        if (QPixmapCache::find(cacheKey, &cached)) return cached;
+
+        QImage image(QSize(px, px), QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        {
+            QPainter painter(&image);
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+            // IconPainter draws into a 24-unit grid sized by its last argument,
+            // so the scale is the raster's own size, not a ratio on top of it.
+            painter.scale(qreal(px) / side, qreal(px) / side);
+            glyph_(painter, 0.0, 0.0, side, color);
+        }
+        QPixmap pixmap = QPixmap::fromImage(image);
+        pixmap.setDevicePixelRatio(ratio);
+        QPixmapCache::insert(cacheKey, pixmap);
+        return pixmap;
+    }
+
+    Glyph glyph_ = nullptr;
+    qreal size_ = 1.0;
+    QColor normal_;
+    QColor disabled_;
+};
+
+QIcon glyphIcon(void (*glyph)(QPainter&, qreal, qreal, qreal, const QColor&), qreal size) {
+    return QIcon(new ShellGlyphEngine(glyph, size, QColor(QStringLiteral("#ffffff")),
+                                      QColor(kIconDisabled)));
 }
 
 }  // namespace

@@ -13,59 +13,56 @@
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QWidget>
 
+#include <algorithm>
+
 using mikai::app::RangePager;
 using mikai::app::layoutEpisodeGrid;
 using mikai::app::pageRangeLabel;
 
 namespace {
 
-// The four paging arrows carry glyph labels; every other button on the pager is
-// a range chip. Reading chips this way keeps the test off the widget's internals
-// while still asserting the labels a user reads.
-bool isArrowLabel(const QString& text) {
-  return text == QStringLiteral("⏮") || text == QStringLiteral("←") ||
-         text == QStringLiteral("→") || text == QStringLiteral("⏭");
-}
-
-QPushButton* arrowButton(const RangePager& pager, const QString& glyph) {
-  const QList<QPushButton*> buttons = pager.findChildren<QPushButton*>();
-  for (QPushButton* button : buttons) {
-    if (button->text() == glyph) {
+// The paging arrows are theme-drawn icons now, so they carry no caption text to
+// look for. They do carry a language-independent role property, and every other
+// button on the pager is a range chip under one of the stylesheet's two object
+// names. Selecting by those reads the pager's public contract, not the icon
+// artwork, the label wording or the order the children happen to be created in.
+QPushButton* arrowButton(const RangePager& pager, const char* role) {
+  const QString wanted = QString::fromLatin1(role);
+  for (QPushButton* button : pager.findChildren<QPushButton*>()) {
+    if (button->property("pagerRole").toString() == wanted) {
       return button;
     }
   }
   return nullptr;
 }
 
-QPushButton* chipAt(const RangePager& pager, int index) {
-  QList<QPushButton*> chips;
-  const QList<QPushButton*> buttons = pager.findChildren<QPushButton*>();
-  for (QPushButton* button : buttons) {
-    if (!isArrowLabel(button->text())) {
-      chips << button;
+QList<QPushButton*> chips(const RangePager& pager) {
+  QList<QPushButton*> found;
+  for (QPushButton* button : pager.findChildren<QPushButton*>()) {
+    const QString name = button->objectName();
+    if (name == QStringLiteral("pagerChip") || name == QStringLiteral("pagerChipActive")) {
+      found << button;
     }
   }
-  return index < chips.size() ? chips.at(index) : nullptr;
+  // The window's order is its page order, which the chips state in pagerPage;
+  // sorting on that keeps the helpers independent of child insertion order.
+  std::sort(found.begin(), found.end(), [](const QPushButton* left, const QPushButton* right) {
+    return left->property("pagerPage").toInt() < right->property("pagerPage").toInt();
+  });
+  return found;
 }
 
-int chipCount(const RangePager& pager) {
-  int count = 0;
-  const QList<QPushButton*> buttons = pager.findChildren<QPushButton*>();
-  for (QPushButton* button : buttons) {
-    if (!isArrowLabel(button->text())) {
-      ++count;
-    }
-  }
-  return count;
+QPushButton* chipAt(const RangePager& pager, int index) {
+  const QList<QPushButton*> all = chips(pager);
+  return index < all.size() ? all.at(index) : nullptr;
 }
+
+int chipCount(const RangePager& pager) { return static_cast<int>(chips(pager).size()); }
 
 QStringList chipLabels(const RangePager& pager) {
   QStringList labels;
-  const QList<QPushButton*> buttons = pager.findChildren<QPushButton*>();
-  for (QPushButton* button : buttons) {
-    if (!isArrowLabel(button->text())) {
-      labels << button->text();
-    }
+  for (const QPushButton* chip : chips(pager)) {
+    labels << chip->text();
   }
   return labels;
 }
@@ -220,10 +217,10 @@ void TestPagers::pagerEmitsTheRequestedPage() {
 void TestPagers::pagerArrowEnablesAtTheEdges() {
   RangePager pager(55);
   pager.setState(1, 3, 132);
-  QPushButton* first = arrowButton(pager, QStringLiteral("⏮"));
-  QPushButton* previous = arrowButton(pager, QStringLiteral("←"));
-  QPushButton* next = arrowButton(pager, QStringLiteral("→"));
-  QPushButton* last = arrowButton(pager, QStringLiteral("⏭"));
+  QPushButton* first = arrowButton(pager, "first");
+  QPushButton* previous = arrowButton(pager, "previous");
+  QPushButton* next = arrowButton(pager, "next");
+  QPushButton* last = arrowButton(pager, "last");
   QVERIFY(first && previous && next && last);
   QVERIFY(!first->isEnabled());
   QVERIFY(!previous->isEnabled());

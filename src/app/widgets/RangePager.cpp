@@ -1,12 +1,15 @@
 #include "widgets/RangePager.hpp"
 
+#include "theme/Icons.hpp"
 #include "theme/Metrics.hpp"
 #include "widgets/FlowLayout.hpp"
 
 #include <QEvent>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QPushButton>
+#include <QSize>
 #include <QSizePolicy>
 #include <QSpinBox>
 #include <QStyle>
@@ -30,9 +33,17 @@ namespace {
 /// once at construction survives every re-label.
 const char* kChipPageProperty = "pagerPage";
 
-QPushButton* makeArrow(const QString& text, const QString& tooltip) {
-    auto* button = new QPushButton(text);
+/// The arrows are painted glyphs, not caption text: a symbol such as U+23EE is
+/// resolved by font fallback, so on Windows it can arrive from an emoji face at
+/// a different weight and colour than the chevrons drawn from the theme engine.
+/// With no caption left to read, the button states its role in a property: the
+/// tooltip and the accessible name are translated, the role is not.
+QPushButton* makeArrow(const QIcon& icon, const char* role, const QString& tooltip) {
+    auto* button = new QPushButton();
     button->setObjectName(QStringLiteral("pagerControl"));
+    button->setProperty("pagerRole", QString::fromLatin1(role));
+    button->setIcon(icon);
+    button->setIconSize(QSize(16, 16));
     button->setToolTip(tooltip);
     button->setAccessibleName(tooltip);
     return button;
@@ -97,15 +108,15 @@ RangePager::RangePager(int pageSize, QWidget* parent)
                             theme::kSpacingXs);
     row->setSpacing(theme::kSpacingSmall);
 
-    firstButton_ = makeArrow(QStringLiteral("⏮"), tr("Go to first page"));
-    prevButton_ = makeArrow(QStringLiteral("←"), tr("Previous page"));
+    firstButton_ = makeArrow(theme::firstPageIcon(), "first", tr("Go to first page"));
+    prevButton_ = makeArrow(theme::chevronLeftIcon(), "previous", tr("Previous page"));
 
     auto* chips = new ChipRow(theme::kSpacingSmall, this);
     chipsHost_ = chips;
     chipLayout_ = chips->flow();
 
-    nextButton_ = makeArrow(QStringLiteral("→"), tr("Next page"));
-    lastButton_ = makeArrow(QStringLiteral("⏭"), tr("Go to last page"));
+    nextButton_ = makeArrow(theme::chevronRightIcon(), "next", tr("Next page"));
+    lastButton_ = makeArrow(theme::lastPageIcon(), "last", tr("Go to last page"));
 
     jumpLabel_ = new QLabel(this);
     jumpLabel_->setObjectName(QStringLiteral("muted"));
@@ -143,6 +154,15 @@ void RangePager::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
+    } else if (event->type() == QEvent::PaletteChange && firstButton_ != nullptr &&
+               lastButton_ != nullptr) {
+        // The glyph engine captures the palette colour it was built with, so the
+        // arrows restate their icons when a theme switch moves that colour. The
+        // page, the chips and the enabled state are untouched by the restate.
+        firstButton_->setIcon(theme::firstPageIcon());
+        prevButton_->setIcon(theme::chevronLeftIcon());
+        nextButton_->setIcon(theme::chevronRightIcon());
+        lastButton_->setIcon(theme::lastPageIcon());
     }
 }
 

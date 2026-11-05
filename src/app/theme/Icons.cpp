@@ -415,6 +415,64 @@ QPixmap renderChevron(int size, const QColor& color, bool left) {
     return pixmap;
 }
 
+/// First/last page: the chevron keeps its shape and stroke, and the bar at the
+/// end of the run sits far enough away that the gap survives the smallest
+/// pager button (16 px, where a 24-unit grid unit is two thirds of a pixel).
+QPixmap renderPageSkip(int size, const QColor& color, bool left) {
+    QPixmap pixmap(size, size);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    const double scale = size / 24.0;
+    painter.scale(scale, scale);
+
+    QPen pen(color);
+    pen.setWidthF(2.2);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+
+    const qreal barX = left ? 6.5 : 17.5;
+    painter.drawLine(QPointF(barX, 6.5), QPointF(barX, 17.5));
+
+    QPainterPath chevron;
+    chevron.moveTo(left ? 17.5 : 6.5, 6.5);
+    chevron.lineTo(12.0, 12.0);
+    chevron.lineTo(left ? 17.5 : 6.5, 17.5);
+    painter.drawPath(chevron);
+    painter.end();
+    return pixmap;
+}
+
+/// The dismissal cross. Two strokes of the chevron's weight crossing at the
+/// centre: the text glyph it replaces is drawn by whichever face carries U+2715,
+/// which is not the face the rest of the chrome uses.
+QPixmap renderClose(int size, const QColor& color) {
+    QPixmap pixmap(size, size);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    const double scale = size / 24.0;
+    painter.scale(scale, scale);
+
+    QPen pen(color);
+    pen.setWidthF(2.2);
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+
+    painter.drawLine(QPointF(6.5, 6.5), QPointF(17.5, 17.5));
+    painter.drawLine(QPointF(17.5, 6.5), QPointF(6.5, 17.5));
+
+    painter.end();
+    return pixmap;
+}
+
 enum class Glyph {
     Gear,
     OutlineGear,
@@ -423,6 +481,9 @@ enum class Glyph {
     Package,
     ChevronLeft,
     ChevronRight,
+    SkipLeft,
+    SkipRight,
+    Close,
     Search,
     Home,
     Filter,
@@ -455,6 +516,9 @@ QPixmap renderGlyph(Glyph glyph, int side, const QColor& color) {
         case Glyph::Package: return renderPackage(side, color);
         case Glyph::ChevronLeft: return renderChevron(side, color, true);
         case Glyph::ChevronRight: return renderChevron(side, color, false);
+        case Glyph::SkipLeft: return renderPageSkip(side, color, true);
+        case Glyph::SkipRight: return renderPageSkip(side, color, false);
+        case Glyph::Close: return renderClose(side, color);
         case Glyph::Search: return renderSearch(side, color);
         case Glyph::Home: return renderHome(side, color);
         case Glyph::Filter: return renderFilter(side, color);
@@ -631,6 +695,27 @@ QIcon chevronLeftIcon(int size) {
 QIcon chevronRightIcon(int size) {
     const QPalette palette = QApplication::palette();
     return glyphIcon(Glyph::ChevronRight, size, palette.color(QPalette::Text),
+                     palette.color(QPalette::Highlight),
+                     palette.color(QPalette::Disabled, QPalette::Text));
+}
+
+QIcon firstPageIcon(int size) {
+    const QPalette palette = QApplication::palette();
+    return glyphIcon(Glyph::SkipLeft, size, palette.color(QPalette::Text),
+                     palette.color(QPalette::Highlight),
+                     palette.color(QPalette::Disabled, QPalette::Text));
+}
+
+QIcon lastPageIcon(int size) {
+    const QPalette palette = QApplication::palette();
+    return glyphIcon(Glyph::SkipRight, size, palette.color(QPalette::Text),
+                     palette.color(QPalette::Highlight),
+                     palette.color(QPalette::Disabled, QPalette::Text));
+}
+
+QIcon closeIcon(int size) {
+    const QPalette palette = QApplication::palette();
+    return glyphIcon(Glyph::Close, size, palette.color(QPalette::Text),
                      palette.color(QPalette::Highlight),
                      palette.color(QPalette::Disabled, QPalette::Text));
 }
