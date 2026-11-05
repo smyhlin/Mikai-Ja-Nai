@@ -137,7 +137,7 @@ struct CompareRenderer::State {
             const std::string startTimestamp = QString::number(timestamp, 'f', 6).toStdString();
             core = std::make_shared<MpvHandle>(
                 std::vector<std::pair<std::string, std::string>>{
-                    {"vo", "libmpv"}, {"hwdec", "nvdec"}, {"pause", "yes"},
+                    {"vo", "libmpv"}, {"hwdec", "auto-safe"}, {"pause", "yes"},
                     {"audio", "no"}, {"sub", "no"}, {"keep-open", "yes"},
                     {"image-display-duration", "inf"}, {"screenshot-sw", "yes"},
                     {"screenshot-format", "png"}, {"input-default-bindings", "no"},
@@ -149,9 +149,13 @@ struct CompareRenderer::State {
                 if (event->event_id == MPV_EVENT_PLAYBACK_RESTART) restarted = true;
                 if (event->event_id == MPV_EVENT_END_FILE && event->data != nullptr) {
                     const auto* ended = static_cast<mpv_event_end_file*>(event->data);
-                    if (ended->reason == MPV_END_FILE_REASON_ERROR)
+                    if (ended->reason == MPV_END_FILE_REASON_ERROR) {
+                        const QString tail = diagnosticTail.join(QStringLiteral(" · "));
                         error = QCoreApplication::translate("CompareRenderer", "The comparison source could not be loaded: %1")
-                                .arg(QString::fromStdString(core->describeError(ended->error)));
+                                    .arg(QString::fromStdString(core->describeError(ended->error))) +
+                                (tail.isEmpty() ? QString()
+                                                : QStringLiteral(" — ") + tail);
+                    }
                 }
                 if (event->event_id != MPV_EVENT_LOG_MESSAGE || event->data == nullptr) return;
                 const auto* message = static_cast<mpv_event_log_message*>(event->data);
