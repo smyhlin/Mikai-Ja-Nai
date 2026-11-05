@@ -28,6 +28,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QEasingCurve>
+#include <QEnterEvent>
 #include <QFileInfo>
 #include <QFrame>
 #include <QClipboard>
@@ -102,31 +103,72 @@ constexpr auto kAnimeJanaiBackendSettingKey = "player/animejanai/backend";
 
 constexpr int kSeriesWidth = 190;
 constexpr int kStripHeight = 30;
+constexpr int kChipRadius = 8;
 // T-404: kStatusMs is declared once on the class (PlayerDialog.hpp); the
 // duplicated file-local copies this TU and PlayerDialogProcessing.cpp used
 // to carry are gone so the two cannot drift.
 constexpr int kStripMargin = 8;
 
+// The sheet paints the bed and its rounding; the chip adds the hairline itself,
+// because a stylesheet border on a 30 px rounded control is a different weight at
+// every display ratio and its corners break up at fractional scales.
 QString chipQss() {
-    // The strip sits on the picture, so its hover is the pushed accent: the only
-    // affordance a viewer has that these chips belong to the window they styled.
     return QStringLiteral(
                "QPushButton {"
                "  color: %1;"
                "  background: rgba(11, 11, 15, 0.72);"
-               "  border: 1px solid %2;"
-               "  border-radius: 8px;"
-               "  padding: 0 %3px;"
+               "  border: none;"
+               "  border-radius: %2px;"
+               "  padding: 0 8px;"
                "  font-size: 12px;"
                "}"
                "QPushButton:hover {"
-               "  background: rgba(%4, 0.18);"
-               "  border-color: rgba(%4, 0.55);"
+               "  background: rgba(%3, 0.18);"
                "}")
-        .arg(kText, kBorder)
-        .arg(kSpacingSmall)
+        .arg(kText)
+        .arg(kChipRadius)
         .arg(rgbaTriplet(accent()));
 }
+
+class ChipButton : public QPushButton {
+public:
+    explicit ChipButton(QWidget* parent = nullptr) : QPushButton(parent) {}
+
+protected:
+    void enterEvent(QEnterEvent* event) override {
+        hovered_ = true;
+        QPushButton::enterEvent(event);
+        update();
+    }
+
+    void leaveEvent(QEvent* event) override {
+        hovered_ = false;
+        QPushButton::leaveEvent(event);
+        update();
+    }
+
+    void paintEvent(QPaintEvent* event) override {
+        QPushButton::paintEvent(event);
+        const bool hovered = hovered_ && isEnabled();
+        const QColor tint = accent();
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        // One logical pixel in from the edge: the stroke then sits entirely inside
+        // the widget at every ratio and cannot lose its last row to the device
+        // clip, which is what a border drawn on the edge did at 1.75.
+        const QRectF frame = QRectF(rect()).adjusted(1.0, 1.0, -1.0, -1.0);
+        QPainterPath shape;
+        shape.addRoundedRect(frame, kChipRadius - 1.0, kChipRadius - 1.0);
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(hovered ? QColor(tint.red(), tint.green(), tint.blue(), 140)
+                                    : QColor(kBorder),
+                            1.0));
+        painter.drawPath(shape);
+    }
+
+private:
+    bool hovered_ = false;
+};
 
 QString panelQss() {
     return QStringLiteral(
@@ -141,7 +183,8 @@ QString panelQss() {
 QString statusTextQss() { return QStringLiteral("color: %1; background: transparent;").arg(kText); }
 
 QPushButton* makeChip(QWidget* parent, const QString& name, const QString& text) {
-    auto* button = new QPushButton(text, parent);
+    auto* button = new ChipButton(parent);
+    button->setText(text);
     button->setObjectName(name);
     // Marks the accent-derived chips so one accent change can restate them all.
     button->setProperty("shellChip", true);
@@ -532,7 +575,7 @@ void PlayerDialog::buildStrip() {
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(kSpacingXS);
 
-    seriesButton_ = new QPushButton(strip_);
+    seriesButton_ = new ChipButton(strip_);
     seriesButton_->setObjectName(QStringLiteral("playerSeriesToggle"));
     seriesButton_->setProperty("shellChip", true);
     seriesButton_->setFixedSize(kStripHeight, kStripHeight);
