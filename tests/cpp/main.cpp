@@ -50,6 +50,7 @@
 #include "TestNativeRecipe.hpp"
 #include "TestNativeProfiles.hpp"
 #include "TestNativeRife.hpp"
+#include "TestUpscalerCatalog.hpp"
 #include "TestNativeStatus.hpp"
 #include "TestPlaybackDiagnostics.hpp"
 #include "TestPlaybackControls.hpp"
@@ -98,7 +99,7 @@ namespace {
 
 constexpr const char* kSuites[] = {
     "TestAnimeJanaiRuntime",
-    "TestRuntimeSelection", "TestNativeTypes", "TestNativeRecipe", "TestNativeProfiles", "TestNativeRife",
+    "TestRuntimeSelection", "TestNativeTypes", "TestNativeRecipe", "TestNativeProfiles", "TestNativeRife", "TestUpscalerCatalog",
     "TestNativeBundle", "TestNativePrepPlan", "TestNativeManifest", "TestNativeBuilder",
     "TestNativePreparationReferences", "TestNativeComponents", "TestNativeStoredModels", "TestNativePreparedPlan", "TestNativePlaybackController", "TestNativeStatus",
     "TestPlaybackDiagnostics", "TestPlaybackControls", "TestSkipSegments", "TestTimelineMarks",
@@ -234,6 +235,7 @@ int main(int argc, char** argv) {
   TestNativeRecipe nativeRecipe;
   TestNativeProfiles nativeProfiles;
   TestNativeRife nativeRife;
+  TestUpscalerCatalog upscalerCatalog;
   TestNativeBundle nativeBundle;
   TestNativePrepPlan nativePrepPlan;
   TestNativeManifest nativeManifest;
@@ -351,6 +353,7 @@ int main(int argc, char** argv) {
   run("TestNativeRecipe", &nativeRecipe, true);
   run("TestNativeProfiles", &nativeProfiles, true);
   run("TestNativeRife", &nativeRife, true);
+  run("TestUpscalerCatalog", &upscalerCatalog, true);
   run("TestNativeBundle", &nativeBundle, true);
   run("TestNativePrepPlan", &nativePrepPlan, true);
   run("TestNativeManifest", &nativeManifest, true);

@@ -225,6 +225,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/native/TestNativeRecipe.cpp
     tests/cpp/native/TestNativeRife.hpp
     tests/cpp/native/TestNativeRife.cpp
+    tests/cpp/native/TestUpscalerCatalog.hpp
+    tests/cpp/native/TestUpscalerCatalog.cpp
     tests/cpp/native/TestNativeStatus.hpp
     tests/cpp/native/TestNativeStatus.cpp
     tests/cpp/native/TestNativeStoredModels.hpp
@@ -344,6 +346,7 @@ if(MIKAI_BUILD_PROBES)
     TestNativeRecipe
     TestNativeProfiles
     TestNativeRife
+    TestUpscalerCatalog
     TestNativeBundle
     TestNativePrepPlan
     TestNativeManifest

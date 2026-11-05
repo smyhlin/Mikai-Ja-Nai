@@ -146,6 +146,8 @@ add_library(mikai_native_support STATIC
   src/player/native/models/NativeRife.hpp
   src/player/native/models/NativeSpatialAssets.cpp
   src/player/native/models/NativeSpatialAssets.hpp
+  src/player/native/models/NativeUpscalers.cpp
+  src/player/native/models/NativeUpscalers.hpp
   src/player/native/models/NativeUserRecipes.cpp
   src/player/native/models/NativeUserRecipes.hpp
   # Native preparation & artifact builder
