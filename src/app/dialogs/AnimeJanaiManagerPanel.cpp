@@ -145,11 +145,25 @@ mplayer::native::AnimeJanaiConfig AnimeJanaiManagerPanel::currentConfig() const 
     return config_;
 }
 
+bool AnimeJanaiManagerPanel::event(QEvent* event) {
+    // QWidget::event() consumes both of these without forwarding them to
+    // changeEvent(), so this override is the only place the rows are told the
+    // ratio changed. The base handler runs first so the equalised widths are
+    // measured with the device font it installs for the new screen.
+    const bool handled = QWidget::event(event);
+    if (event->type() == QEvent::DevicePixelRatioChange ||
+        event->type() == QEvent::ScreenChangeInternal) {
+        for (ActionGrid* row : actionRows_) {
+            if (row != nullptr) row->recalculate();
+        }
+    }
+    return handled;
+}
+
 void AnimeJanaiManagerPanel::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::FontChange || event->type() == QEvent::ApplicationFontChange ||
-        event->type() == QEvent::StyleChange || event->type() == QEvent::DevicePixelRatioChange ||
-        event->type() == QEvent::ScreenChangeInternal) {
+        event->type() == QEvent::StyleChange) {
         for (ActionGrid* row : actionRows_) {
             if (row != nullptr) row->recalculate();
         }

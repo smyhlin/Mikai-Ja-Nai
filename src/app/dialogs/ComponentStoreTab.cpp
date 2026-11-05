@@ -910,6 +910,20 @@ bool ComponentStoreTab::eventFilter(QObject* watched, QEvent* event) {
     return QWidget::eventFilter(watched, event);
 }
 
+bool ComponentStoreTab::event(QEvent* event) {
+    // QWidget::event() consumes both of these without forwarding them to
+    // changeEvent(), so this override is the only place the tab is told the
+    // ratio changed. The base handler runs first: it installs the device font
+    // the equalised widths and the header measurement below are taken from.
+    const bool handled = QWidget::event(event);
+    if (event->type() == QEvent::DevicePixelRatioChange ||
+        event->type() == QEvent::ScreenChangeInternal) {
+        if (actionGrid_ != nullptr) actionGrid_->recalculate();
+        reflowComponentHeaders();
+    }
+    return handled;
+}
+
 void ComponentStoreTab::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
@@ -921,9 +935,7 @@ void ComponentStoreTab::changeEvent(QEvent* event) {
         restateStatus();
     } else if (event->type() == QEvent::FontChange ||
                event->type() == QEvent::ApplicationFontChange ||
-               event->type() == QEvent::StyleChange ||
-               event->type() == QEvent::DevicePixelRatioChange ||
-               event->type() == QEvent::ScreenChangeInternal) {
+               event->type() == QEvent::StyleChange) {
         if (actionGrid_ != nullptr) actionGrid_->recalculate();
         reflowComponentHeaders();
     }

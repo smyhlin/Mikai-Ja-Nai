@@ -574,16 +574,24 @@ void CompareWindow::hideEvent(QHideEvent* event) {
     QDialog::hideEvent(event);
 }
 
+bool CompareWindow::event(QEvent* event) {
+    // DevicePixelRatioChange and ScreenChangeInternal are consumed by
+    // QWidget::event and never forwarded to changeEvent, so the ratio a window
+    // moves to is only visible here.
+    if (event->type() == QEvent::DevicePixelRatioChange ||
+        event->type() == QEvent::ScreenChangeInternal) {
+        // The icon is rasterised for the window's ratio: a window that moves to
+        // a screen with another ratio rebuilds it instead of upscaling the old.
+        syncFullscreenButton();
+    }
+    return QDialog::event(event);
+}
+
 void CompareWindow::changeEvent(QEvent* event) {
     QDialog::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
     } else if (event->type() == QEvent::WindowStateChange) {
-        syncFullscreenButton();
-    } else if (event->type() == QEvent::DevicePixelRatioChange ||
-               event->type() == QEvent::ScreenChangeInternal) {
-        // The icon is rasterised for the window's ratio: a window that moves to
-        // a screen with another ratio rebuilds it instead of upscaling the old.
         syncFullscreenButton();
     }
 }

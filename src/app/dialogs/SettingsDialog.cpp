@@ -286,15 +286,26 @@ void SettingsDialog::failNativePreparationFrame(int frameIndex, const QString& r
     if (assetsPanel_ != nullptr) assetsPanel_->failPreparationFrame(frameIndex, reasonKey, reason);
 }
 
+bool SettingsDialog::event(QEvent* event) {
+    // QWidget::event() consumes both of these without forwarding them to
+    // changeEvent(), so this override is the only place the footer is told the
+    // screen's ratio changed. The equalised width is snapped to even device
+    // pixels, and it would otherwise keep the previous screen's parity.
+    const bool handled = QDialog::event(event);
+    if (event->type() == QEvent::DevicePixelRatioChange ||
+        event->type() == QEvent::ScreenChangeInternal) {
+        theme::equalizeWidths({cancelButton_, saveButton_});
+    }
+    return handled;
+}
+
 void SettingsDialog::changeEvent(QEvent* event) {
     QDialog::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
     } else if (event->type() == QEvent::FontChange ||
                event->type() == QEvent::ApplicationFontChange ||
-               event->type() == QEvent::StyleChange ||
-               event->type() == QEvent::DevicePixelRatioChange ||
-               event->type() == QEvent::ScreenChangeInternal) {
+               event->type() == QEvent::StyleChange) {
         theme::equalizeWidths({cancelButton_, saveButton_});
     }
 }

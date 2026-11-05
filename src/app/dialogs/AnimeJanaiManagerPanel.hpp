@@ -46,6 +46,7 @@ signals:
     void modelsChanged();
 
 protected:
+    bool event(QEvent* event) override;
     void changeEvent(QEvent* event) override;
 
 private:

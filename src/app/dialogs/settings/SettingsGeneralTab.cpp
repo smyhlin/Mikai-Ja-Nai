@@ -22,11 +22,14 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
+#include <QEvent>
 #include "widgets/FlowLayout.hpp"
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPainter>
 #include <QPair>
 #include <QPushButton>
 #include <QScreen>
@@ -38,6 +41,48 @@
 #include <QVBoxLayout>
 
 namespace mikai::app {
+namespace {
+
+/// A QLabel that paints its QIcon instead of a pixmap snapshot. The glyph
+/// engine rasterises for the painter's own device ratio, so the badge is drawn
+/// at the resolution of the screen the dialog is actually on - including after
+/// the window moves to a screen with a different ratio - rather than the ratio
+/// that happened to be current when the page was built.
+class IconLabel final : public QLabel {
+public:
+    IconLabel(const QIcon& icon, int extent, QWidget* parent = nullptr)
+        : QLabel(parent), icon_(icon), extent_(qMax(1, extent)) {
+        setAlignment(Qt::AlignCenter);
+    }
+
+protected:
+    void paintEvent(QPaintEvent* event) override {
+        Q_UNUSED(event);
+        QPainter painter(this);
+        const QRect box(QPoint((width() - extent_) / 2, (height() - extent_) / 2),
+                        QSize(extent_, extent_));
+        icon_.paint(&painter, box, Qt::AlignCenter);
+    }
+
+    bool event(QEvent* e) override {
+        // QWidget::event() consumes both of these without forwarding them to
+        // changeEvent(), so this override is the only place the badge is told
+        // the ratio changed. The engine picks its raster per paint, so a
+        // repaint is all it needs: no cached pixmap and no extra allocation.
+        const bool handled = QLabel::event(e);
+        if (e->type() == QEvent::DevicePixelRatioChange ||
+            e->type() == QEvent::ScreenChangeInternal) {
+            update();
+        }
+        return handled;
+    }
+
+private:
+    QIcon icon_;
+    int extent_ = 0;
+};
+
+}  // namespace
 
 QWidget* SettingsDialog::buildGeneralTab() {
     auto* scroll = new QScrollArea(this);
@@ -68,12 +113,11 @@ QWidget* SettingsDialog::buildGeneralTab() {
     iconBadge->setFixedSize(32, 32);
     auto* iconBadgeLayout = new QHBoxLayout(iconBadge);
     iconBadgeLayout->setContentsMargins(0, 0, 0, 0);
-    auto* iconLabel = new QLabel(iconBadge);
+    auto* iconLabel =
+        new IconLabel(theme::gearIcon(theme::kIconSize,
+                                      theme::paletteFor(currentAppearance()).accent),
+                      theme::kIconSize, iconBadge);
     iconLabel->setObjectName(QStringLiteral("muted"));
-    iconLabel->setAlignment(Qt::AlignCenter);
-    iconLabel->setPixmap(theme::gearIcon(
-                              18, theme::paletteFor(currentAppearance()).accent)
-                              .pixmap(18, 18));
     iconBadgeLayout->addWidget(iconLabel);
 
     tokenHeading_ = new QLabel(tr("Mikai API access token"), apiCard);

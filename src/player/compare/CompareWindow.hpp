@@ -110,6 +110,7 @@ protected:
     void showEvent(QShowEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void hideEvent(QHideEvent* event) override;
+    bool event(QEvent* event) override;
     void changeEvent(QEvent* event) override;
 
 private:

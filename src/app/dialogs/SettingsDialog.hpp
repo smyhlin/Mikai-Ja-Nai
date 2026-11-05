@@ -267,6 +267,7 @@ private:
     void testToken();
     void refreshQuota();
 
+    bool event(QEvent* event) override;
     void changeEvent(QEvent* event) override;
     /// Each showing starts from the language and stored preference that are
     /// live at that moment. A dialog can be exec()d again after Save or Cancel,
