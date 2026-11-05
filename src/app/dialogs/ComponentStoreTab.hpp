@@ -377,6 +377,8 @@ private:
     QLabel* spatialState_ = nullptr;
     QLabel* kernelsState_ = nullptr;
     QLabel* anime4kState_ = nullptr;
+    QCheckBox* upscalerCheck_ = nullptr;
+    QLabel* upscalerState_ = nullptr;
     QPushButton* verifyButton_ = nullptr;
     QPushButton* downloadButton_ = nullptr;
     QPushButton* importAnimeJanaiButton_ = nullptr;

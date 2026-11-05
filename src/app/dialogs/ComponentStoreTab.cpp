@@ -19,6 +19,7 @@
 #include <native/components/NativeComponentProvisioning.hpp>
 #include <native/components/NativeGpuProbe.hpp>
 #include <native/models/NativeRife.hpp>
+#include <native/models/NativeUpscalers.hpp>
 #include <native/models/NativeSpatialAssets.hpp>
 #include <shaders/Anime4K.hpp>
 
@@ -682,7 +683,14 @@ void ComponentStoreTab::buildUi() {
                                  &anime4kCheck_, &anime4kState_);
     anime4kCheck_->hide();
     anime4kCheck_->setEnabled(false);
-    for (auto* card : {runtimeCard, spatialCard, rifeCard, kernelsCard, anime4kCard}) {
+    // The optional ONNX upscalers are downloaded on their own page; this card is
+    // the inventory line the download settings need to show for them.
+    auto* upscalerCard = makeCard(QStringLiteral("upscalerModelsCard"),
+                                  &upscalerCheck_, &upscalerState_);
+    upscalerCheck_->hide();
+    upscalerCheck_->setEnabled(false);
+    for (auto* card :
+         {runtimeCard, spatialCard, rifeCard, kernelsCard, anime4kCard, upscalerCard}) {
         card->setProperty("componentCard", true);
     }
     auto setCardText = [](QGroupBox* card, const QString& titleText,
@@ -700,6 +708,8 @@ void ComponentStoreTab::buildUi() {
                 tr("Engine-builder kernels matched to this GPU generation."));
     setCardText(anime4kCard, tr("Anime4K shaders"),
                 tr("GLSL presets bundled with this build. No download is needed."));
+    setCardText(upscalerCard, tr("Upscale models"),
+                tr("Optional ONNX upscalers, downloaded from the Upscalers page."));
     // The runtime card names the selected backend's product, not a fixed one.
     updateRuntimeCardText();
     auto updateRuntimeSelection = [this](bool checked) {
@@ -1586,6 +1596,30 @@ void ComponentStoreTab::updateCardStates() {
         counts->setVisible(true);
     }
     anime4kCheck_->setAccessibleName(tr("Anime4K shaders"));
+
+    // The upscaler inventory: how many of the pinned optional graphs are in the
+    // store. An empty list of them is a state, not a failure to download.
+    int upscalerInstalled = 0;
+    const QVector<mplayer::native::UpscalerModel> upscalers =
+        mplayer::native::upscalerCatalog();
+    for (const mplayer::native::UpscalerModel& model : upscalers) {
+        if (!mplayer::native::installedUpscalerPath(model).isEmpty()) ++upscalerInstalled;
+    }
+    const bool allUpscalers = !upscalers.isEmpty() && upscalerInstalled == upscalers.size();
+    setState(upscalerState_, allUpscalers ? tr("installed")
+                                          : (upscalerInstalled > 0 ? tr("partial")
+                                                                   : tr("optional")));
+    setBadgeRole(upscalerState_, false, allUpscalers);
+    upscalerCheck_->setAccessibleName(tr("Upscale models"));
+    if (auto* counts = findChild<QLabel*>(QStringLiteral("upscalerModelsCardCount"))) {
+        counts->setText(tr("%1 of %2 upscale models installed")
+                            .arg(upscalerInstalled)
+                            .arg(upscalers.size()));
+        counts->setVisible(true);
+    }
+    if (auto* size = findChild<QLabel*>(QStringLiteral("upscalerModelsCardSize"))) {
+        size->clear();
+    }
 
     runtimeCheck_->setAccessibleName(backendProductName(backend));
     rifeCheck_->setAccessibleName(tr("RIFE interpolation models"));

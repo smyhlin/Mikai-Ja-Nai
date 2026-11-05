@@ -2359,7 +2359,8 @@ void TestPublicApiUi::componentCardsKeepASingleLineBadgeAndASeparateCountLine() 
                             QStringLiteral("animeJanaiModelsCard"),
                             QStringLiteral("rifeModelsCard"),
                             QStringLiteral("tensorRtKernelsCard"),
-                            QStringLiteral("anime4kShadersCard")};
+                            QStringLiteral("anime4kShadersCard"),
+                            QStringLiteral("upscalerModelsCard")};
   for (const QString& cardId : cardIds) {
     auto* badge = tab.findChild<QLabel*>(cardId + QStringLiteral("State"));
     auto* title = tab.findChild<QLabel*>(cardId + QStringLiteral("Title"));
