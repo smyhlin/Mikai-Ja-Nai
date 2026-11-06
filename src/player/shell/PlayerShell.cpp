@@ -634,21 +634,41 @@ void PlayerShell::schedulePreviewPrewarm() {
 }
 
 void PlayerShell::buildWindowControls() {
-    const int radius = static_cast<int>(cornerRadius());
-    windowControls_ = new Panel(blackSoft(), radius, w15(), this);
+    // One capsule holds both controls with no inner padding: the red close cell
+    // reaches the capsule's own edge, which is what makes the pair read as a
+    // single segmented control rather than two buttons on a strip.
+    constexpr int kControlSize = 28;
+    constexpr int kCapsuleRadius = kControlSize / 2 + 4;
+    windowControls_ = new Panel(blackSoft(), kCapsuleRadius, w15(), this);
     auto* lay = new QHBoxLayout(windowControls_);
-    lay->setContentsMargins(4, 4, 4, 4);
-    lay->setSpacing(2);
+    lay->setContentsMargins(0, 0, 0, 0);
+    lay->setSpacing(0);
 
-    // Minimize button: subtle white hover to match close button's visual weight
-    btnMin_ = new IconButton(IconPainter::minimize, tr("Minimize the window"), 28, 15,
-                             windowControls_, QColor(255, 255, 255, 60));
+    btnMin_ = new IconButton(IconPainter::minimize, tr("Minimize the window"), kControlSize, 15,
+                             windowControls_);
+    ButtonChrome minChrome;
+    minChrome.fill = QBrush(Qt::transparent);
+    minChrome.border = QColor(0, 0, 0, 0);
+    minChrome.hoverFill = QBrush(QColor(255, 255, 255, 34));
+    minChrome.hoverBorder = QColor(0, 0, 0, 0);
+    minChrome.radius = kControlSize * 0.42;
+    minChrome.borderWidth = 0;
+    btnMin_->setButtonChrome(minChrome);
     connect(btnMin_, &QPushButton::clicked, this, &QWidget::showMinimized);
     lay->addWidget(btnMin_);
 
-    // Close button: red background with consistent sizing
-    btnClose_ = new IconButton(IconPainter::close, tr("Exit the player  (Esc)"), 28, 15,
-                               windowControls_, QColor(237, 66, 69, 200));
+    btnClose_ = new IconButton(IconPainter::close, tr("Exit the player  (Esc)"), kControlSize, 15,
+                               windowControls_);
+    // The close cell carries its own red fill at rest, so the capsule reads as
+    // "minimise here, close there" before the pointer arrives.
+    ButtonChrome closeChrome;
+    closeChrome.fill = QBrush(QColor(214, 61, 64));
+    closeChrome.border = QColor(0, 0, 0, 0);
+    closeChrome.hoverFill = QBrush(QColor(233, 79, 82));
+    closeChrome.hoverBorder = QColor(255, 255, 255, 46);
+    closeChrome.radius = kControlSize * 0.42;
+    closeChrome.borderWidth = 0;
+    btnClose_->setButtonChrome(closeChrome);
     connect(btnClose_, &QPushButton::clicked, this, &PlayerShell::exitViewer);
     lay->addWidget(btnClose_);
 }
@@ -1323,8 +1343,13 @@ void PlayerShell::layoutChrome() {
     // the ternary used to ask for it twice.
     const int hintedWidth = windowControls_->sizeHint().width();
     const int wcWidth = hintedWidth > 0 ? hintedWidth : 96;
-    const int wcX = std::clamp(static_cast<int>(w * 0.945) + 4, 0, std::max(0, w - wcWidth - 4));
-    windowControls_->setGeometry(wcX, std::max(6, static_cast<int>(h * 0.008)), wcWidth, 36);
+    const int wcHeight = windowControls_->sizeHint().height();
+    // The capsule sits close to the corner: the old geometry added a margin on
+    // top of the panel's own padding, and the padding is gone now.
+    constexpr int kCornerInset = 4;
+    const int wcX = std::clamp(static_cast<int>(w * 0.945) + kCornerInset, 0,
+                               std::max(0, w - wcWidth - kCornerInset));
+    windowControls_->setGeometry(wcX, kCornerInset, wcWidth, wcHeight);
 
     // ── title bar (windowed mode) ──────────────────────────────────
     if (titleBar_ != nullptr) {
