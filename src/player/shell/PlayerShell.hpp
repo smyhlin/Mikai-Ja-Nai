@@ -231,6 +231,16 @@ public:
     /// of walking its own subtree for popovers.
     bool hasVisibleOverlay() const;
     void wake();
+public:
+    /// External tracks belong to local files only: a stream has no folder and no
+    /// filename for the viewer to supply a sibling from. The track popups and the
+    /// picture menu both ask this before offering a file dialog.
+    bool localMediaActive() const;
+    void loadExternalSubtitle();
+    void loadExternalAudio();
+    /// A path that arrived from a drop rather than a dialog.
+    void attachExternalTrack(const QString& path, bool subtitle);
+
 signals:
     // ── shell → host ────────────────────────────────────────────────
     void playPauseRequested();

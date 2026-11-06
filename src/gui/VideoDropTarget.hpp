@@ -26,16 +26,27 @@ public:
     VideoDropTarget(QWidget* host, OverlayMode mode);
     ~VideoDropTarget() override;
     bool active() const { return !path_.isEmpty(); }
+    bool acceptsTracks_ = false;
     void paintIndicator(QPainter& painter, const QRect& bounds) const;
+
+    /// A player that can attach external tracks asks for them; a catalogue
+    /// window keeps refusing a stray subtitle drop.
+    void setAcceptsExternalTracks(bool accepts) { acceptsTracks_ = accepts; }
 
 signals:
     void videoDropped(const QString& path);
+    /// A dropped subtitle or audio file, only emitted when the host asked for
+    /// external tracks.
+    void subtitleDropped(const QString& path);
+    void audioDropped(const QString& path);
     void indicatorChanged();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+    enum class DropKind { None, Video, Subtitle, Audio };
+    static QString classify(const QMimeData* mime, bool allowTracks, DropKind* kind);
     static QString videoPath(const QMimeData* mime);
     void beginIndicator(const QString& path);
     void refreshAppearance();

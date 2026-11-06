@@ -410,6 +410,8 @@ private:
     QVector<MenuEntry> mediaTrackEntries(const QString& kind) const;
     /// Rows for one kind of track, or every kind when `kind` is empty.
     QVector<MenuEntry> trackEntries(const QString& kind) const;
+    /// The local-only "load from disk" row the two track popups end with.
+    void appendExternalTrackEntry(QVector<MenuEntry>& entries, bool subtitle);
     static QString trackRowText(const VariantInfo& variant);
     static QList<QualityEntry> usableQualities(const QList<QualityEntry>& qualities);
     static VariantInfo variantFromMap(const QVariantMap& map);

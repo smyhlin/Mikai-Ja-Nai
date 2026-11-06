@@ -10711,6 +10711,14 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <source>Video link copied</source>
         <translation>Посилання на відео скопійовано</translation>
     </message>
+    <message>
+        <source>Select subtitles from disk…</source>
+        <translation>Вибрати субтитри з диска…</translation>
+    </message>
+    <message>
+        <source>Select audio from disk…</source>
+        <translation>Вибрати звук з диска…</translation>
+    </message>
 </context>
 <context>
     <name>mplayer::shell::PlayerShell</name>
@@ -10990,6 +10998,50 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <location filename="../src/player/shell/PlayerShell.cpp" line="2985"/>
         <source>no media loaded</source>
         <translation>медіафайл не завантажено</translation>
+    </message>
+    <message>
+        <source>Load subtitles from disk…</source>
+        <translation>Завантажити субтитри з диска…</translation>
+    </message>
+    <message>
+        <source>Load audio from disk…</source>
+        <translation>Завантажити звук з диска…</translation>
+    </message>
+    <message>
+        <source>External subtitles need a local video</source>
+        <translation>Зовнішні субтитри потребують локального відео</translation>
+    </message>
+    <message>
+        <source>External audio needs a local video</source>
+        <translation>Зовнішній звук потребує локального відео</translation>
+    </message>
+    <message>
+        <source>External tracks need a local video</source>
+        <translation>Зовнішні доріжки потребують локального відео</translation>
+    </message>
+    <message>
+        <source>The subtitle file could not be loaded</source>
+        <translation>Не вдалося завантажити файл субтитрів</translation>
+    </message>
+    <message>
+        <source>The audio file could not be loaded</source>
+        <translation>Не вдалося завантажити аудіофайл</translation>
+    </message>
+    <message>
+        <source>The track could not be loaded</source>
+        <translation>Не вдалося завантажити доріжку</translation>
+    </message>
+    <message>
+        <source>Loaded %1</source>
+        <translation>Завантажено %1</translation>
+    </message>
+    <message>
+        <source>Subtitles (*.srt *.ass *.ssa *.vtt *.sub *.sup);;All files (*)</source>
+        <translation>Субтитри (*.srt *.ass *.ssa *.vtt *.sub *.sup);;Усі файли (*)</translation>
+    </message>
+    <message>
+        <source>Audio (*.m4a *.aac *.mp3 *.opus *.flac *.wav *.ac3 *.eac3 *.dts *.ogg);;All files (*)</source>
+        <translation>Звук (*.m4a *.aac *.mp3 *.opus *.flac *.wav *.ac3 *.eac3 *.dts *.ogg);;Усі файли (*)</translation>
     </message>
 </context>
 <context>

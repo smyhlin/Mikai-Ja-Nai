@@ -1985,6 +1985,25 @@ bool VideoSurface::probeCycleMpvTrack(const QString& property) {
                               [](const AsyncReply&) {}).valid();
 }
 
+bool VideoSurface::addExternalTrack(const QString& file, bool subtitle, QString* reason) {
+    if (reason != nullptr) reason->clear();
+    const auto fail = [reason](const QString& text) {
+        if (reason != nullptr) *reason = text;
+        return false;
+    };
+    if (mpv_ == nullptr) return fail(QStringLiteral("no playback core"));
+    if (file.isEmpty() || !QFileInfo::exists(file)) return fail(QStringLiteral("file not found"));
+    try {
+        const AsyncRequestId request = mpv_->commandAsync(
+            {subtitle ? "sub-add" : "audio-add", file.toStdString(), "select"},
+            [](const AsyncReply&) {});
+        if (!request.valid()) return fail(QStringLiteral("the core rejected the request"));
+    } catch (const MpvError& error) {
+        return fail(QString::fromUtf8(error.what()));
+    }
+    return true;
+}
+
 void VideoSurface::setPlaying(bool playing) {
     // Announced, not just recorded. The state pump cannot notice a change this
     // class makes itself: it compares the core against this very flag, so

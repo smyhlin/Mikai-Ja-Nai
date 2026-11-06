@@ -11,6 +11,7 @@
 #include <QCoreApplication>
 #include <QCursor>
 #include <QDir>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QGuiApplication>
@@ -530,6 +531,13 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
         this, mikai::gui::VideoDropTarget::OverlayMode::HostPainted);
     connect(videoDrop_, &mikai::gui::VideoDropTarget::videoDropped,
             this, &PlayerShell::mediaDropped);
+    // The player can attach external tracks; a dropped .srt or .m4a becomes an
+    // attached track instead of replacing the picture.
+    videoDrop_->setAcceptsExternalTracks(true);
+    connect(videoDrop_, &mikai::gui::VideoDropTarget::subtitleDropped, this,
+            [this](const QString& path) { attachExternalTrack(path, true); });
+    connect(videoDrop_, &mikai::gui::VideoDropTarget::audioDropped, this,
+            [this](const QString& path) { attachExternalTrack(path, false); });
     connect(videoDrop_, &mikai::gui::VideoDropTarget::indicatorChanged, this, [this] {
         hideTimer_.stop();
         if (videoDrop_->active()) {
@@ -994,6 +1002,10 @@ void PlayerShell::buildPictureMenu() {
             emit openFolderRequested();
         } else if (action == QStringLiteral("information")) {
             emit mediaInformationRequested();
+        } else if (action == QStringLiteral("externalsub")) {
+            loadExternalSubtitle();
+        } else if (action == QStringLiteral("externalaudio")) {
+            loadExternalAudio();
         } else if (action == QStringLiteral("keys")) {
             openKeys();
         } else if (action == QStringLiteral("exit")) {
@@ -1027,9 +1039,70 @@ void PlayerShell::updatePictureMenu() {
                              QUrl::fromUserInput(path_).isLocalFile())) {
         add(tr("Media information"), QStringLiteral("information"));
     }
+    if (localMediaActive()) {
+        // Local-file only: a stream has no sibling files to offer.
+        add(tr("Load subtitles from disk…"), QStringLiteral("externalsub"));
+        add(tr("Load audio from disk…"), QStringLiteral("externalaudio"));
+    }
     add(tr("Keyboard shortcuts  (?)"), QStringLiteral("keys"));
     add(tr("Exit  (Esc)"), QStringLiteral("exit"));
     pictureMenu_->setEntries(entries);
+}
+
+void PlayerShell::attachExternalTrack(const QString& path, bool subtitle) {
+    if (path.isEmpty()) return;
+    if (!localMediaActive()) {
+        if (toast_ != nullptr) toast_->flash(tr("External tracks need a local video"));
+        return;
+    }
+    QString reason;
+    if (surface_ == nullptr || !surface_->addExternalTrack(path, subtitle, &reason)) {
+        if (toast_ != nullptr)
+            toast_->flash(reason.isEmpty() ? tr("The track could not be loaded") : reason);
+        return;
+    }
+    if (toast_ != nullptr) toast_->flash(tr("Loaded %1").arg(QFileInfo(path).fileName()));
+}
+
+bool PlayerShell::localMediaActive() const { return !localMediaFolder().isEmpty(); }
+
+void PlayerShell::loadExternalSubtitle() {
+    if (!localMediaActive()) {
+        if (toast_ != nullptr) toast_->flash(tr("External subtitles need a local video"));
+        return;
+    }
+    const QString file = QFileDialog::getOpenFileName(
+        this, tr("Load subtitles from disk"),
+        localMediaFolder(),
+        tr("Subtitles (*.srt *.ass *.ssa *.vtt *.sub *.sup);;All files (*)"));
+    if (file.isEmpty()) return;
+    QString reason;
+    if (surface_ == nullptr || !surface_->addExternalTrack(file, true, &reason)) {
+        if (toast_ != nullptr)
+            toast_->flash(reason.isEmpty() ? tr("The subtitle file could not be loaded") : reason);
+        return;
+    }
+    if (toast_ != nullptr) toast_->flash(tr("Loaded %1").arg(QFileInfo(file).fileName()));
+}
+
+void PlayerShell::loadExternalAudio() {
+    if (!localMediaActive()) {
+        if (toast_ != nullptr) toast_->flash(tr("External audio needs a local video"));
+        return;
+    }
+    const QString file = QFileDialog::getOpenFileName(
+        this, tr("Load audio from disk"),
+        localMediaFolder(),
+        tr("Audio (*.m4a *.aac *.mp3 *.opus *.flac *.wav *.ac3 *.eac3 *.dts *.ogg);;"
+           "All files (*)"));
+    if (file.isEmpty()) return;
+    QString reason;
+    if (surface_ == nullptr || !surface_->addExternalTrack(file, false, &reason)) {
+        if (toast_ != nullptr)
+            toast_->flash(reason.isEmpty() ? tr("The audio file could not be loaded") : reason);
+        return;
+    }
+    if (toast_ != nullptr) toast_->flash(tr("Loaded %1").arg(QFileInfo(file).fileName()));
 }
 
 QString PlayerShell::localMediaFolder() const {

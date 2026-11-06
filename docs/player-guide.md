@@ -99,6 +99,16 @@ When playback fails, the status strip names the reason and offers **Retry**. Whe
 
 Anime4K presets can also be bound to single keys under **Settings → Application → Keyboard shortcuts**. A bound preset key applies that preset while the player window is active; the player reads its bindings when the window opens, so a new binding applies to the next player window. The player's own keys are reserved, and one combination can belong to only one preset, so a refused binding is explained on the settings page; see the [settings guide](settings-guide.md).
 
+## External subtitles and audio for local videos
+
+A local video can take a subtitle or audio file from disk; a stream cannot, because there is no folder to pick a sibling from. Three entry points do the same thing:
+
+- **Right-click the picture** → **Load subtitles from disk…** or **Load audio from disk…**. The rows exist only while a local file is playing.
+- **The AUDIO and subtitles selectors** on the dock end with **Select subtitles/audio from disk…**, below the tracks the file already carries.
+- **Drop the file on the picture**: `.srt`, `.ass`, `.ssa`, `.vtt`, `.sub`, `.sup` attach as subtitles and `.m4a`, `.aac`, `.mp3`, `.opus`, `.flac`, `.wav`, `.ac3`, `.eac3`, `.dts`, `.ogg` as audio. Dropping a video file still opens it as a new source.
+
+The file is added to mpv and selected, so it appears in the same selectors as an embedded track and can be switched like one. A refusal names its reason in the status toast instead of failing silently.
+
 ## Media information for local files
 
 For a local file, open the picture context menu and choose **Media information**. The inspector has **Overview**, **Tree**, and **Plain text** views, based on the active playback session. It reports metadata such as filename/path, container, duration, file size, bitrate, dimensions, frame rate and video codec, plus available audio/subtitle track information. Information is gathered asynchronously; unavailable fields/errors are shown rather than guessed, and the dialog is non-modal so it can stay beside the picture until you close it. This menu action is offered for local media, not as a general catalogue-stream inspector.

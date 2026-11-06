@@ -460,6 +460,11 @@ public:
     /// Probe-only: asks the embedded core to cycle an audio or subtitle track.
     /// Returns whether the real core accepted the asynchronous command.
     bool probeCycleMpvTrack(const QString& property);
+    /// Loads an external subtitle or audio file into the playing core and selects
+    /// it. A local-file feature: the caller decides whether this source allows
+    /// one. Returns whether the command was accepted; the track appearing is
+    /// reported by the media-track watcher like any other change.
+    bool addExternalTrack(const QString& file, bool subtitle, QString* reason = nullptr);
     /// Reads mpv's current playback timestamp and source epoch asynchronously.
     AsyncRequestId requestPlaybackTimestamp(
         std::function<void(uint64_t, std::optional<double>)> callback);

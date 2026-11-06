@@ -1624,7 +1624,9 @@ void PlayerDialog::openAudioMenu() {
     }
     shell_->dismissOverlay();
     shell_->wake();
-    audioPopup_->setEntries(trackEntries(QStringLiteral("voice")));
+    QVector<MenuEntry> entries = trackEntries(QStringLiteral("voice"));
+    appendExternalTrackEntry(entries, /*subtitle=*/false);
+    audioPopup_->setEntries(entries);
     if (audioPopup_->rowCount() == 0) {
         flashStatus(tr("No other audio tracks available"));
         return;
@@ -1639,13 +1641,28 @@ void PlayerDialog::openSubtitlesMenu() {
     }
     shell_->dismissOverlay();
     shell_->wake();
-    subtitlesPopup_->setEntries(trackEntries(QStringLiteral("sub")));
+    QVector<MenuEntry> entries = trackEntries(QStringLiteral("sub"));
+    appendExternalTrackEntry(entries, /*subtitle=*/true);
+    subtitlesPopup_->setEntries(entries);
     if (subtitlesPopup_->rowCount() == 0) {
         flashStatus(tr("No subtitles available"));
         return;
     }
     probeUnknownTracks();
     subtitlesPopup_->popupNear(settingsAnchor());
+}
+
+void PlayerDialog::appendExternalTrackEntry(QVector<MenuEntry>& entries, bool subtitle) {
+    if (shell_ == nullptr || !shell_->localMediaActive()) return;
+    // A stream cannot attach a sibling file: the row exists only for a local
+    // video, and it sits last so it never displaces the tracks above it.
+    MenuEntry entry;
+    entry.text = subtitle ? tr("Select subtitles from disk…") : tr("Select audio from disk…");
+    QVariantMap payload;
+    payload.insert(QStringLiteral("externalTrack"), subtitle ? QStringLiteral("sub")
+                                                            : QStringLiteral("audio"));
+    entry.payload = payload;
+    entries.append(entry);
 }
 
 QVector<MenuEntry> PlayerDialog::trackEntries(const QString& kind) const {
@@ -1856,6 +1873,14 @@ void PlayerDialog::setTrackQuality(const QString& embed, int quality) {
 void PlayerDialog::onTrackPicked(const QVariant& payload) {
     if (closed_ || payload.typeId() != QMetaType::QVariantMap) return;
     const QVariantMap map = payload.toMap();
+    if (map.contains(QStringLiteral("externalTrack"))) {
+        if (map.value(QStringLiteral("externalTrack")).toString() == QLatin1String("sub")) {
+            shell_->loadExternalSubtitle();
+        } else {
+            shell_->loadExternalAudio();
+        }
+        return;
+    }
     if (directMedia_) {
         const QString type = map.value(QStringLiteral("mediaTrackType")).toString();
         if (type != QLatin1String("audio") && type != QLatin1String("sub")) return;

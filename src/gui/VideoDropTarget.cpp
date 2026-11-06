@@ -141,11 +141,16 @@ VideoDropTarget::~VideoDropTarget() {
     delete overlay_.data();
 }
 
-QString VideoDropTarget::videoPath(const QMimeData* mime) {
+QString VideoDropTarget::classify(const QMimeData* mime, bool allowTracks, DropKind* kind) {
+    if (kind != nullptr) *kind = DropKind::None;
     if (mime == nullptr || !mime->hasUrls()) return {};
-    static constexpr QStringView suffixes[]{
+    static constexpr QStringView videoSuffixes[]{
         u"mp4", u"mkv", u"webm", u"avi", u"mov", u"m4v",
         u"ts", u"flv", u"m2ts", u"mpeg", u"mpg"};
+    static constexpr QStringView subtitleSuffixes[]{
+        u"srt", u"ass", u"ssa", u"vtt", u"sub", u"sup"};
+    static constexpr QStringView audioSuffixes[]{
+        u"m4a", u"aac", u"mp3", u"opus", u"flac", u"wav", u"ac3", u"eac3", u"dts", u"ogg"};
     for (const QUrl& url : mime->urls()) {
         if (!url.isLocalFile()) continue;
         const QString path = url.toLocalFile();
@@ -154,11 +159,33 @@ QString VideoDropTarget::videoPath(const QMimeData* mime) {
         const qsizetype dot = view.lastIndexOf(u'.');
         if (dot <= separator || dot + 1 == view.size()) continue;
         const QStringView suffix = view.sliced(dot + 1);
-        for (const QStringView supported : suffixes) {
-            if (suffix.compare(supported, Qt::CaseInsensitive) == 0) return path;
+        const auto matches = [&suffix](const auto& table) {
+            for (const QStringView supported : table) {
+                if (suffix.compare(supported, Qt::CaseInsensitive) == 0) return true;
+            }
+            return false;
+        };
+        if (matches(videoSuffixes)) {
+            if (kind != nullptr) *kind = DropKind::Video;
+            return path;
+        }
+        if (!allowTracks) continue;
+        if (matches(subtitleSuffixes)) {
+            if (kind != nullptr) *kind = DropKind::Subtitle;
+            return path;
+        }
+        if (matches(audioSuffixes)) {
+            if (kind != nullptr) *kind = DropKind::Audio;
+            return path;
         }
     }
     return {};
+}
+
+QString VideoDropTarget::videoPath(const QMimeData* mime) {
+    DropKind kind = DropKind::None;
+    const QString path = classify(mime, false, &kind);
+    return kind == DropKind::Video ? path : QString();
 }
 
 void VideoDropTarget::refreshAppearance() {
@@ -291,8 +318,9 @@ bool VideoDropTarget::eventFilter(QObject* watched, QEvent* event) {
         clearIndicator();
         return false;
     }
-    const QString path = videoPath(drop->mimeData());
-    if (path.isEmpty()) {
+    DropKind kind = DropKind::None;
+    const QString path = classify(drop->mimeData(), acceptsTracks_, &kind);
+    if (path.isEmpty() || kind == DropKind::None) {
         clearIndicator();
         return false;
     }
@@ -304,7 +332,21 @@ bool VideoDropTarget::eventFilter(QObject* watched, QEvent* event) {
     }
     QPointer<VideoDropTarget> guard(this);
     clearIndicator();
-    if (!guard.isNull()) emit guard->videoDropped(path);
+    if (!guard.isNull()) {
+        switch (kind) {
+            case DropKind::Video:
+                emit guard->videoDropped(path);
+                break;
+            case DropKind::Subtitle:
+                emit guard->subtitleDropped(path);
+                break;
+            case DropKind::Audio:
+                emit guard->audioDropped(path);
+                break;
+            case DropKind::None:
+                break;
+        }
+    }
     return true;
 }
 
