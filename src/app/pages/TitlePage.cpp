@@ -130,7 +130,8 @@ void setLabelState(QLabel* label, const char* state) {
 
 /// Genre and tag chips for the hero, rebuilt from the retained detail so a
 /// language switch re-words them. Purely presentational: no signal, no state.
-void fillHeroChips(QWidget* host, const backend::AnimeDetail& detail) {
+void fillHeroChips(QWidget* host, const backend::AnimeDetail& detail,
+                   QObject* filterOwner) {
     if (host == nullptr || host->layout() == nullptr) {
         return;
     }
@@ -159,6 +160,16 @@ void fillHeroChips(QWidget* host, const backend::AnimeDetail& detail) {
             auto* chip = new QLabel(text, host);
             chip->setObjectName(objectName);
             chip->setTextFormat(Qt::PlainText);
+            // A chip is a link into the catalogue filtered by that term. The
+            // canonical name travels in a property: the visible text follows the
+            // interface language, the filter value does not.
+            chip->setProperty("mikaiGenre", tag.name);
+            chip->setCursor(Qt::PointingHandCursor);
+            // A free function has no tr(): the chips belong to the page's
+            // translation context.
+            chip->setToolTip(TitlePage::tr("Show titles in %1").arg(text));
+            chip->setAccessibleName(TitlePage::tr("Show titles in %1").arg(text));
+            if (filterOwner != nullptr) chip->installEventFilter(filterOwner);
             layout->addWidget(chip);
             ++count;
             ++added;
@@ -1656,7 +1667,7 @@ void TitlePage::refreshDetailTexts() {
     if (!formatText.isEmpty()) facts << formatText;
     if (!seasonText.isEmpty()) facts << seasonText;
     facts_->setText(facts.join(QStringLiteral(" · ")));
-    fillHeroChips(hero_->findChild<QWidget*>(QStringLiteral("titleGenres")), detail_);
+    fillHeroChips(hero_->findChild<QWidget*>(QStringLiteral("titleGenres")), detail_, this);
 
     QVector<std::pair<QString, QString>> rows;
     rows.append({tr("Episode availability"), episodesLabel});
@@ -3202,6 +3213,14 @@ void TitlePage::reflowGrid(int stateIndex) {
 }
 
 bool TitlePage::eventFilter(QObject* watched, QEvent* event) {
+    if (event->type() == QEvent::MouseButtonRelease) {
+        const QVariant genre = watched != nullptr ? watched->property("mikaiGenre") : QVariant();
+        auto* mouse = static_cast<QMouseEvent*>(event);
+        if (genre.isValid() && mouse->button() == Qt::LeftButton) {
+            Q_EMIT genreRequested(genre.toString());
+            return true;
+        }
+    }
     if (overviewScroll_ != nullptr && watched == overviewScroll_->viewport() &&
         event->type() == QEvent::Resize) {
         reflowOverviewHeight();

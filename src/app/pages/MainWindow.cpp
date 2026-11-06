@@ -703,6 +703,16 @@ void MainWindow::openComponentSettings() {
     openSettingsImpl(std::nullopt, {}, true);
 }
 
+void MainWindow::openGenreSearch(const QString& genre) {
+    if (genre.trimmed().isEmpty()) return;
+    if (!disposeTitle()) return;
+    titleHistory_.clear();
+    titleRef_.clear();
+    titlePoster_.clear();
+    stack_->setCurrentWidget(search_);
+    search_->searchGenre(genre);
+}
+
 void MainWindow::openAccessSettings() {
     openSettings();
     if (settingsDialog_ != nullptr) settingsDialog_->showPage(QStringLiteral("access"));
@@ -1267,6 +1277,7 @@ bool MainWindow::openTitle(const QString& ref, const QString& poster, bool prese
                 openRelated(target, targetPoster);
             });
     connect(title_, &TitlePage::recentTitleLoaded, search_, &SearchPage::recordRecentTitle);
+    connect(title_, &TitlePage::genreRequested, this, &MainWindow::openGenreSearch);
     connect(title_, &TitlePage::teamRequested, this, [this](const QString& ref) {
         if (!disposeTitle()) return;
         titleHistory_.clear();

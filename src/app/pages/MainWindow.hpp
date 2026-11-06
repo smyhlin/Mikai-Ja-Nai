@@ -98,6 +98,8 @@ private:
     void openComponentSettings();
     /// Settings on the Access page, where the API key and its quota live.
     void openAccessSettings();
+    /// Leaves the title page for the catalogue, filtered by one genre chip.
+    void openGenreSearch(const QString& genre);
     /// Settings on the Upscalers page, the surface that downloads the optional
     /// ONNX graphs the player menu lists.
     void openUpscalerSettings();

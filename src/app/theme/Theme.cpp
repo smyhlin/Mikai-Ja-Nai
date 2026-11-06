@@ -604,6 +604,12 @@ QWidget#titlePage QPushButton#titleDiscoveryToggle {
     max-height: %47px;
 }
 QWidget#titlePage QLabel#titleLinks { color: %6; font-size: %26px; }
+/* Genre and tag chips are links into the catalogue: the hover says so before the
+   pointer is used. */
+QWidget#titlePage QLabel#titleGenreChip:hover,
+QWidget#titlePage QLabel#titleTagChip:hover {
+    color: %4;
+}
 
 /* Ghost actions: no fill, accent text. The page keeps its own pill geometry so
    the disclosure row still lines up with the hero's type scale, and the shared

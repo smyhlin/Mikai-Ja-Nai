@@ -2531,6 +2531,15 @@ void SearchPage::resetCatalogueFilters() {
     applyCatalogueFilters();
 }
 
+void SearchPage::searchGenre(const QString& genre) {
+    const QString name = genre.trimmed();
+    if (name.isEmpty()) return;
+    query_->clear();
+    catalogueQuery_ = backend::AnimeQuery{};
+    catalogueQuery_.genres = QStringList{name};
+    applyCatalogueFilters();
+}
+
 void SearchPage::applyCatalogueFilters() {
     ++requestSeq_;
     ++catalogueRequestSeq_;

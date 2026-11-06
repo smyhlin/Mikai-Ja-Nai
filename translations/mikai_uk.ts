@@ -8558,6 +8558,10 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <source>Stream expired — refreshing URL…</source>
         <translation>Термін дії потоку минув — оновлення URL…</translation>
     </message>
+    <message>
+        <source>Show titles in %1</source>
+        <translation>Показати тайтли в «%1»</translation>
+    </message>
 </context>
 <context>
     <name>mikai::app::UpscalersPanel</name>
