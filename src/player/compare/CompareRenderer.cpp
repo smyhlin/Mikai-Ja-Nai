@@ -40,6 +40,15 @@ void preloadCompareBackendLibs(const QStringList& dirs) {
         const QFileInfoList entries = dir.entryInfoList(
             {QStringLiteral("*.so"), QStringLiteral("*.so.*")}, QDir::Files, QDir::Name);
         for (const QFileInfo& entry : entries) {
+            // A second copy of the same soname is worse than none: the player has
+            // usually preloaded the closure already, and two TensorRT runtime
+            // images in one process corrupt the heap. RTLD_NOLOAD answers whether
+            // this soname is already resident without loading anything.
+            const QByteArray name = entry.fileName().toUtf8();
+            if (void* resident = ::dlopen(name.constData(), RTLD_NOW | RTLD_NOLOAD)) {
+                ::dlclose(resident);
+                continue;
+            }
             const QByteArray path = entry.absoluteFilePath().toUtf8();
             if (::dlopen(path.constData(), RTLD_NOW | RTLD_GLOBAL) != nullptr) continue;
             qWarning().noquote() << "[animejanai] backend preload failed for"

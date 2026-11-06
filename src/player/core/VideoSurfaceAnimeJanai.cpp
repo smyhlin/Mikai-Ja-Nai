@@ -35,6 +35,14 @@ void preloadAnimeJanaiBackendLibs(const QStringList& dirs) {
         const QFileInfoList entries = dir.entryInfoList(
             {QStringLiteral("*.so"), QStringLiteral("*.so.*")}, QDir::Files, QDir::Name);
         for (const QFileInfo& entry : entries) {
+            // Skip a soname another core or a comparison pane already loaded: a
+            // second TensorRT runtime image in one process is what turns a
+            // working filter into heap corruption.
+            const QByteArray name = entry.fileName().toUtf8();
+            if (void* resident = ::dlopen(name.constData(), RTLD_NOW | RTLD_NOLOAD)) {
+                ::dlclose(resident);
+                continue;
+            }
             const QByteArray path = entry.absoluteFilePath().toUtf8();
             if (::dlopen(path.constData(), RTLD_NOW | RTLD_GLOBAL) != nullptr)
                 continue;

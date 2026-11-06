@@ -80,6 +80,20 @@ int main(int argc, char** argv) {
     dialog->startPlayer();
     dialog->showFullScreen();
 
+    // Optional: bind an AnimeJaNai chain to the playing surface first, so the
+    // comparison pane preloads a closure the player already holds.
+    if (!qEnvironmentVariableIsEmpty("MIKAI_COMPARE_PROBE_PLAYER_AJI")) {
+        QTimer::singleShot(1500, &app, [&] {
+            dialog->applyAnimeJanaiRequest(qEnvironmentVariable("MIKAI_COMPARE_PROBE_PLAYER_AJI"));
+        });
+        QTimer::singleShot(4500, &app, [&] {
+            VideoSurface* surface = dialog->findChild<VideoSurface*>();
+            const auto generation = surface != nullptr ? surface->renderContextGeneration() : 0;
+            std::fprintf(stderr, "     player aji surface generation=%llu\n",
+                         static_cast<unsigned long long>(generation));
+        });
+    }
+
     QTimer::singleShot(5000, &app, [&] {
         auto* shell = dialog->findChild<PlayerShell*>();
         if (shell != nullptr) {
