@@ -474,7 +474,10 @@ void TitlePage::buildUi() {
     // never nests a second scroller.
     overviewScroll_ = new QScrollArea(this);
     overviewScroll_->setObjectName(QStringLiteral("titleOverview"));
-    overviewScroll_->setWidgetResizable(true);
+    // The widget is sized explicitly from the column's own height-for-width in
+    // reflowOverviewHeight(): letting QScrollArea size it from the children's
+    // minimum hints is what produced hundreds of pixels of empty scroll.
+    overviewScroll_->setWidgetResizable(false);
     overviewScroll_->setFrameShape(QFrame::NoFrame);
     overviewScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     overviewScroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -494,6 +497,9 @@ void TitlePage::buildUi() {
     column_->setObjectName(QStringLiteral("titleColumn"));
     column_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     bodyLayout->addWidget(column_, 1);
+    // A scrollbar appearing changes the viewport width, and with it every wrap
+    // point this page measures against.
+    overviewScroll_->viewport()->installEventFilter(this);
 
     columnLayout_ = new QVBoxLayout(column_);
     columnLayout_->setContentsMargins(theme::kTitlePageInset, theme::kTitlePageInset,
@@ -501,6 +507,7 @@ void TitlePage::buildUi() {
     columnLayout_->setSpacing(theme::kTitleSectionSpacing);
 
     buildBody();
+    reflowOverviewHeight();
 
     connect(&appearanceNotifier(), &AppearanceNotifier::changed, this,
             [this](const theme::Appearance& previous) {
@@ -1806,6 +1813,7 @@ void TitlePage::populateRelated(const backend::AnimeDetail& detail) {
         relatedLayout_->addWidget(buildRelatedCarousel(QStringLiteral("similar"), similar));
     }
     setRelatedExpanded(true, false);
+    reflowOverviewHeight();
 }
 
 void TitlePage::loadRecommendations(const backend::AnimeDetail& detail) {
@@ -2097,6 +2105,7 @@ void TitlePage::refreshRelatedPosters() {
 void TitlePage::setRelatedExpanded(bool expanded, bool fromUser) {
     relatedHost_->setVisible(expanded);
     discoveryHost_->setVisible(relatedLayout_->count() > 0);
+    reflowOverviewHeight();
     relatedButton_->setVisible(true);
     relatedButton_->setText(expanded ? tr("Hide") : tr("Show"));
     const QSignalBlocker blocker(relatedButton_);
@@ -3189,6 +3198,10 @@ void TitlePage::reflowGrid(int stateIndex) {
 }
 
 bool TitlePage::eventFilter(QObject* watched, QEvent* event) {
+    if (overviewScroll_ != nullptr && watched == overviewScroll_->viewport() &&
+        event->type() == QEvent::Resize) {
+        reflowOverviewHeight();
+    }
     if ((watched == heading_ || watched == subtitle_) &&
         event->type() == QEvent::MouseButtonRelease) {
         auto* mouse = static_cast<QMouseEvent*>(event);
@@ -3256,9 +3269,29 @@ void TitlePage::keyPressEvent(QKeyEvent* event) {
     QWidget::keyPressEvent(event);
 }
 
+void TitlePage::reflowOverviewHeight() {
+    if (overviewScroll_ == nullptr || body_ == nullptr || column_ == nullptr ||
+        columnLayout_ == nullptr) {
+        return;
+    }
+    const QMargins margins = columnLayout_->contentsMargins();
+    const int viewportWidth = qMax(1, overviewScroll_->viewport()->width());
+    const int bodyWidth = qMax(1, qMin(theme::kTitlePageMaxWidth, viewportWidth));
+    const int contentWidth = qMax(1, bodyWidth - margins.left() - margins.right());
+    // Preferred heights at this width, not minimum hints: a child's minimum may
+    // be larger than what it paints, and that gap was the scrollable emptiness.
+    int contentHeight = columnLayout_->totalHeightForWidth(contentWidth);
+    if (contentHeight < 0) contentHeight = columnLayout_->sizeHint().height();
+    const int viewportHeight = qMax(1, overviewScroll_->viewport()->height());
+    // A short page still fills the viewport (its trailing stretch absorbs the
+    // slack); a long one scrolls exactly to its content.
+    body_->setFixedSize(bodyWidth, qMax(viewportHeight, contentHeight));
+}
+
 void TitlePage::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     applyResponsiveLayout();
+    reflowOverviewHeight();
 }
 
 void TitlePage::changeEvent(QEvent* event) {
@@ -3327,6 +3360,7 @@ void TitlePage::fitEpisodeSection() {
     }
     fittedHeight_ = desired;
     tabs_->setFixedHeight(desired);
+    reflowOverviewHeight();
     updateBackdrop();
 }
 
@@ -4153,6 +4187,7 @@ void TitlePage::retranslateUi() {
     if (discoveryHeading_ != nullptr) {
         discoveryHeading_->setText(tr("More to explore"));
     }
+    reflowOverviewHeight();
     if (hasFailure_) {
         // The view re-words its own canonical line; only the context clause is
         // the page's. setContext restates just that: no re-show, no

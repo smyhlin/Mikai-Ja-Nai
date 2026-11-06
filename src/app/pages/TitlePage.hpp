@@ -180,6 +180,9 @@ private:
     /// `kTitleCompactBreakpoint`, and with it the poster size, the hero axis and
     /// the page inset. Nothing here rebuilds content or refetches anything.
     void applyResponsiveLayout();
+    /// Sizes the overview's scroll widget from the column's preferred height at
+    /// the current width, so no child's minimum can become scrollable emptiness.
+    void reflowOverviewHeight();
     /// Places the fixed details layer and its right-hand sheet over the page.
     void updateDetailsGeometry();
     /// Sizes and lowers the cached composite behind the hero's actual bounds.
