@@ -414,6 +414,8 @@ private:
     QVector<MenuEntry> trackEntries(const QString& kind) const;
     /// The local-only "load from disk" row the two track popups end with.
     void appendExternalTrackEntry(QVector<MenuEntry>& entries, bool subtitle);
+    /// Timing rows the subtitle popup ends with (-0.1 s, +0.1 s, reset).
+    void appendSubtitleDelayEntries(QVector<MenuEntry>& entries);
     /// OpenSubtitles search: query seed from the current caption, language from
     /// the system locale, key from Settings › Access.
     void openSubtitlesSearchDialog();
@@ -421,6 +423,8 @@ private:
     /// Keeps an attached OpenSubtitles file alive for as long as the player is:
     /// mpv reads it lazily when the track is selected.
     std::unique_ptr<QTemporaryDir> subtitleTempDir_;
+    /// Subtitle timing in seconds, positive later; player-lifetime only.
+    double subtitleDelay_ = 0.0;
     static QString trackRowText(const VariantInfo& variant);
     static QList<QualityEntry> usableQualities(const QList<QualityEntry>& qualities);
     static VariantInfo variantFromMap(const QVariantMap& map);

@@ -1985,6 +1985,15 @@ bool VideoSurface::probeCycleMpvTrack(const QString& property) {
                               [](const AsyncReply&) {}).valid();
 }
 
+void VideoSurface::setSubtitleDelay(double seconds) {
+    if (mpv_ == nullptr) return;
+    try {
+        mpv_->setNumber("sub-delay", seconds);
+    } catch (const MpvError&) {
+        // A core that cannot take the property is a core with no subtitles.
+    }
+}
+
 bool VideoSurface::addExternalTrack(const QString& file, bool subtitle, QString* reason) {
     if (reason != nullptr) reason->clear();
     const auto fail = [reason](const QString& text) {

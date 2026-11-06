@@ -10775,6 +10775,26 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <source>%1 · %2 · %3 downloads</source>
         <translation>%1 · %2 · завантажень: %3</translation>
     </message>
+    <message>
+        <source>Subtitle delay · %1 s</source>
+        <translation>Затримка субтитрів · %1 с</translation>
+    </message>
+    <message>
+        <source>0.1 s earlier  (−0.1)</source>
+        <translation>0,1 с раніше  (−0,1)</translation>
+    </message>
+    <message>
+        <source>0.1 s later  (+0.1)</source>
+        <translation>0,1 с пізніше  (+0,1)</translation>
+    </message>
+    <message>
+        <source>Reset delay  (0.0 s)</source>
+        <translation>Скинути затримку  (0,0 с)</translation>
+    </message>
+    <message>
+        <source>Subtitle delay %1 s</source>
+        <translation>Затримка субтитрів %1 с</translation>
+    </message>
 </context>
 <context>
     <name>mplayer::shell::PlayerShell</name>

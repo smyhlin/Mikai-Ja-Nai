@@ -99,6 +99,10 @@ When playback fails, the status strip names the reason and offers **Retry**. Whe
 
 Anime4K presets can also be bound to single keys under **Settings → Application → Keyboard shortcuts**. A bound preset key applies that preset while the player window is active; the player reads its bindings when the window opens, so a new binding applies to the next player window. The player's own keys are reserved, and one combination can belong to only one preset, so a refused binding is explained on the settings page; see the [settings guide](settings-guide.md).
 
+## Subtitle timing
+
+The subtitle selector ends with a **Subtitle delay** group: **0.1 s earlier**, **0.1 s later** and **Reset delay**, with the current value in the group heading. It drives mpv's `sub-delay`, so it moves whatever track is showing — embedded, from disk, or downloaded — and the value lasts for the rest of the player session. Reset is disabled while the delay is already zero.
+
 ## Subtitles from OpenSubtitles
 
 Right-click the picture → **Subtitles ›** offers the two sources: **From disk…** (local videos only) and **OpenSubtitles…**. The second opens a search dialog seeded with the current caption and the system language, with the language list selectable. Enter a free API key from opensubtitles.com — it is stored under `access/openSubtitlesApiKey` and reused — then **Search**, pick a result and **Download and attach**. The file is written to a temporary folder that lives as long as the player and attached with the same `sub-add` path as a disk file, so it appears in the subtitle selector immediately.

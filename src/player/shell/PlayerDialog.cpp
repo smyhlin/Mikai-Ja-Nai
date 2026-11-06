@@ -1654,6 +1654,7 @@ void PlayerDialog::openSubtitlesMenu() {
     shell_->wake();
     QVector<MenuEntry> entries = trackEntries(QStringLiteral("sub"));
     appendExternalTrackEntry(entries, /*subtitle=*/true);
+    appendSubtitleDelayEntries(entries);
     subtitlesPopup_->setEntries(entries);
     if (subtitlesPopup_->rowCount() == 0) {
         flashStatus(tr("No subtitles available"));
@@ -1848,6 +1849,31 @@ void PlayerDialog::openSubtitlesSearchDialog() {
     });
 
     dialog.exec();
+}
+
+void PlayerDialog::appendSubtitleDelayEntries(QVector<MenuEntry>& entries) {
+    // Timing belongs next to the tracks it retimes, and it is a comfort control:
+    // two steps and a reset, with the current value stated where the rows live.
+    MenuEntry heading;
+    heading.heading = tr("Subtitle delay · %1 s").arg(subtitleDelay_, 0, 'f', 1);
+    entries.append(heading);
+    const auto step = [this, &entries](double delta, const QString& text) {
+        MenuEntry entry;
+        entry.text = text;
+        QVariantMap payload;
+        payload.insert(QStringLiteral("subDelay"), subtitleDelay_ + delta);
+        entry.payload = payload;
+        entries.append(entry);
+    };
+    step(-0.1, tr("0.1 s earlier  (−0.1)"));
+    step(0.1, tr("0.1 s later  (+0.1)"));
+    MenuEntry reset;
+    reset.text = tr("Reset delay  (0.0 s)");
+    reset.disabled = qFuzzyIsNull(subtitleDelay_);
+    QVariantMap resetPayload;
+    resetPayload.insert(QStringLiteral("subDelay"), 0.0);
+    reset.payload = resetPayload;
+    entries.append(reset);
 }
 
 void PlayerDialog::appendExternalTrackEntry(QVector<MenuEntry>& entries, bool subtitle) {
@@ -2071,6 +2097,18 @@ void PlayerDialog::setTrackQuality(const QString& embed, int quality) {
 void PlayerDialog::onTrackPicked(const QVariant& payload) {
     if (closed_ || payload.typeId() != QMetaType::QVariantMap) return;
     const QVariantMap map = payload.toMap();
+    if (map.contains(QStringLiteral("subDelay"))) {
+        subtitleDelay_ = std::clamp(map.value(QStringLiteral("subDelay")).toDouble(), -30.0, 30.0);
+        if (surface_ != nullptr) surface_->setSubtitleDelay(subtitleDelay_);
+        flashStatus(tr("Subtitle delay %1 s").arg(subtitleDelay_, 0, 'f', 1));
+        // The popup restates its own heading; reopening is cheaper than mutating
+        // a card that was built from the previous value.
+        if (subtitlesPopup_->isVisible()) {
+            subtitlesPopup_->close();
+            openSubtitlesMenu();
+        }
+        return;
+    }
     if (map.contains(QStringLiteral("externalTrack"))) {
         if (map.value(QStringLiteral("externalTrack")).toString() == QLatin1String("sub")) {
             shell_->loadExternalSubtitle();

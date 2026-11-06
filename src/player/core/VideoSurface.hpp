@@ -465,6 +465,10 @@ public:
     /// one. Returns whether the command was accepted; the track appearing is
     /// reported by the media-track watcher like any other change.
     bool addExternalTrack(const QString& file, bool subtitle, QString* reason = nullptr);
+    /// Subtitle timing, in seconds: positive shows subtitles later. mpv keeps the
+    /// value for the rest of the source, so it is a playback comfort, not a file
+    /// preference.
+    void setSubtitleDelay(double seconds);
     /// Reads mpv's current playback timestamp and source epoch asynchronously.
     AsyncRequestId requestPlaybackTimestamp(
         std::function<void(uint64_t, std::optional<double>)> callback);
