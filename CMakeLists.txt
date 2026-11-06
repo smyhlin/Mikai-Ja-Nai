@@ -359,6 +359,8 @@ set(APP_SOURCES
   src/app/theme/Appearance.cpp
   src/app/theme/Icons.cpp
   src/app/theme/Palette.cpp
+  src/app/theme/AntialiasedStyle.cpp
+  src/app/theme/AntialiasedStyle.hpp
   src/app/theme/Theme.cpp
   src/app/state/AppearanceStore.cpp
   src/app/state/Feeds.cpp

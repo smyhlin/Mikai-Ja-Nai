@@ -4,6 +4,7 @@
 #include "pages/MainWindow.hpp"
 #include "state/AppearanceStore.hpp"
 #include "state/WatchHistory.hpp"
+#include "theme/AntialiasedStyle.hpp"
 #include "theme/Theme.hpp"
 #include "workers/Runner.hpp"
 
@@ -278,7 +279,10 @@ int main(int argc, char** argv) {
         qWarning("mikai: continuing in English; the requested interface language is unavailable");
     }
 
-    app.setStyle(QStringLiteral("Fusion"));
+    // The sheet styles the controls, but Fusion still paints the combo arrow and
+    // the checkbox tick from rasters; the settings pages are made of both, so the
+    // small primitives are drawn antialiased instead.
+    app.setStyle(new mikai::app::theme::AntialiasedStyle(QStringLiteral("Fusion")));
     mikai::app::theme::applyPalette(mikai::app::currentAppearance());
     mplayer::shell::setAccent(mikai::app::theme::accentColor(mikai::app::currentAppearance()));
     mplayer::shell::setCornerRadius(
