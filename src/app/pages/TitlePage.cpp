@@ -2120,6 +2120,7 @@ void TitlePage::setRelatedExpanded(bool expanded, bool fromUser) {
 void TitlePage::toggleDescription() {
     descriptionExpanded_ = !descriptionExpanded_;
     refreshDescriptionPreview();
+    scheduleOverviewReflow();
 }
 
 QString TitlePage::descriptionPreview() const {
@@ -2211,6 +2212,7 @@ void TitlePage::toggleMetadata(bool expanded) {
 }
 
 void TitlePage::setDetailsOpen(bool open) {
+    QTimer::singleShot(0, this, &TitlePage::scheduleOverviewReflow);
     if (detailsOverlay_ == nullptr || open == detailsOpen_) {
         return;
     }
@@ -3267,6 +3269,17 @@ void TitlePage::keyPressEvent(QKeyEvent* event) {
         return;
     }
     QWidget::keyPressEvent(event);
+}
+
+void TitlePage::scheduleOverviewReflow() {
+    // Coalesced: several of these fire from one layout pass, and each reflow
+    // resizes the scroll widget, which is itself a content change.
+    if (overviewReflowPending_) return;
+    overviewReflowPending_ = true;
+    QTimer::singleShot(0, this, [this] {
+        overviewReflowPending_ = false;
+        reflowOverviewHeight();
+    });
 }
 
 void TitlePage::reflowOverviewHeight() {

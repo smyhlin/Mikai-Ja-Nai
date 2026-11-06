@@ -183,6 +183,9 @@ private:
     /// Sizes the overview's scroll widget from the column's preferred height at
     /// the current width, so no child's minimum can become scrollable emptiness.
     void reflowOverviewHeight();
+    /// A coalesced reflow for changes that land after the layout pass that
+    /// caused them (a wrap, an expanded synopsis, a shown watch panel).
+    void scheduleOverviewReflow();
     /// Places the fixed details layer and its right-hand sheet over the page.
     void updateDetailsGeometry();
     /// Sizes and lowers the cached composite behind the hero's actual bounds.
@@ -474,6 +477,7 @@ protected:
     /// Guards `applyResponsiveLayout` against re-entering itself through the
     /// layout invalidation its own margin/axis changes post.
     bool applyingLayout_ = false;
+    bool overviewReflowPending_ = false;
     QSize coverAppliedSize_;
     /// The device ratio the cover frame was painted at; a screen change
     /// repaints it just like a size change does.
