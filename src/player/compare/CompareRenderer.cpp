@@ -131,11 +131,19 @@ struct CompareRenderer::State {
             }
         }
         file.close();
+        // mpv splits this option on commas, not colons; colon-joined pairs are
+        // read as one unknown value and the demuxer falls back to yuv420p, which
+        // turns the still into coloured noise.
         const std::string pixelFormat = "video_size=" + std::to_string(rgb.width()) + "x" +
                                         std::to_string(rgb.height()) +
-                                        ":pixel_format=rgb24:framerate=25";
+                                        ",pixel_format=rgb24,framerate=25";
+        // The lavf selector plus the rawvideo format is what makes the three
+        // options reach libavformat: with `demuxer=rawvideo` alone they were
+        // dropped and the core sized the still at its own default, which is the
+        // diagonal colour noise a wrong stride produces.
         const Cancelled never = [] { return false; };
-        if (!waitForCommand(command({"set", "demuxer", "rawvideo"}), never)) return false;
+        if (!waitForCommand(command({"set", "demuxer", "lavf"}), never)) return false;
+        if (!waitForCommand(command({"set", "demuxer-lavf-format", "rawvideo"}), never)) return false;
         if (!waitForCommand(command({"set", "demuxer-lavf-o", pixelFormat}), never)) return false;
         return true;
     }
