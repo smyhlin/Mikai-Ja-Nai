@@ -706,14 +706,17 @@ void CompareRenderer::stop() {
     }
     const ScopedCurrent current(state.context, &state.target);
     try {
+        // The removal is what joins the fork's builder thread, so its reply has
+        // to be observed before the core is destroyed. A fire-and-forget removal
+        // plus one drain left the TensorRT build running inside a filter the
+        // process was already tearing down - an abort inside the runtime, which
+        // is why the window could vanish without a message.
+        const std::function<bool()> never = [] { return false; };
         for (const QString& filterLabel : state.ajiLabels) {
             const std::string label = "@" + filterLabel.toStdString();
-            state.core->commandAsync({"vf", "remove", label}, [](const AsyncReply&) {});
+            if (!state.waitForCommand(state.command({"vf", "remove", label}), never))
+                state.error.clear();
         }
-        // One drain so the request reaches the core before it is destroyed: the
-        // reply itself is discarded, because a detached filter has nothing left
-        // to say that this caller needs.
-        state.core->drainEvents();
     } catch (const MpvError&) {
         // A core that can no longer answer a removal has nothing to remove from.
     }
