@@ -119,6 +119,16 @@ Platform boundaries are stated in the pages themselves:
 - **Playback → Components** is headed **Backend components**. On Windows the backend selector offers TensorRT, DirectML and **TensorRT for RTX**; on Linux it offers TensorRT only. That selector decides which backend **Apply changes** and **Verify** act on. A stored RTX choice opened on Linux appears as **TensorRT for RTX (unavailable on this platform)**, and the page explains that the runtime is available only on Windows.
 - Opening these pages does not prepare a model or start inference. **Apply changes** downloads the selected missing components, **Verify** re-checks installed elements against their digests, and **Cancel** stops the active acquisition. The downloaded files are the app's own components, not GPU drivers.
 
+**Backend components** also carries two inventory-only rows that never download by themselves. **Anime4K shaders** states how many preset chains the shipped shader tree can serve (`installed` only when every catalogue preset has all of its files). **Upscale models** states how many of the optional ONNX graphs are stored — `optional`, `partial` or `installed` — and selecting it queues the missing graphs with **Apply changes**; the Upscalers page manages them one at a time.
+
+While an acquisition runs, the window-level bar names the bytes received (`Downloading 2 items: 480 MB of 1.2 GB`) and carries a progress line; when a transfer cannot state a total, the line is indeterminate rather than a stalled percentage. The same line is mirrored into the player's status panel, because that window covers the bar while a video is open. Closing Settings does not stop the run.
+
+### Upscalers page
+
+**Playback → Upscalers** lists every optional upscaler the build offers: 4× Real-ESRGAN AnimeVideo v3 in fp32 and fp16, and 2× HFA2kCompact plus its multijpg variant. Each row shows the graph's own scale, precision, publisher and download size, and carries exactly one action: **Download** while it is absent, **Remove** once it is stored. A download verifies the pinned length and SHA-256 before a byte reaches the model folder, refuses to overwrite a same-named graph with different bytes, and reports its own failure text instead of a bare state. Nothing downloads unless a row is pressed, and no Anime4K preset depends on any of them.
+
+The graphs land in the app-owned custom-model directory (`…/animejanai/models/custom/`) and are then selectable as a one-step AnimeJaNai chain in the player and as a comparison candidate. The publisher's model card is the licence record for those bytes; this project does not redistribute them. See [Optional upscalers](processing-guide.md#optional-upscalers-downloaded-onnx-graphs).
+
 ![Components settings page with TensorRT for RTX selected and its runtime reported as not installed](images/gallery-2026-11-05/components.png)
 
 *The Components page during the Windows capture: TensorRT for RTX selected, its runtime reported as not installed, and no download started. The capture does not show a working RTX runtime or any inference result.*

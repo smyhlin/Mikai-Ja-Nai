@@ -178,3 +178,9 @@ Full digests and commit IDs corresponding to the pins above. SHA-256 values are 
 | Superseded Linux build recipe | `f7c36af3bd1e02fb1e0a027cd758a132cbad0baed35ac01a552e44831226067a` |
 | Superseded mpv-winbuild workflow head | `597bab33931cbd2ec29abe9d44a29e6363da7499` |
 | Superseded mpv-winbuild workflow YAML | `cd90a256202223e5eaeb176a541fda24f860ed65414cff7199bc0e5d5973b2f9` |
+
+## Anime4K shaders and optional upscalers
+
+**Anime4K shaders.** The 49 GLSL files are not stored in this repository. `packaging/shaders/anime4k-manifest.json` pins one `bloc97/Anime4K` commit with a SHA-256 per file, `cmake/FetchAnime4K.cmake` materialises that pin at build time, and every staged file is digest-checked. Released packages contain the files with their upstream copyright and licence headers intact; the source archive contains the pin, not the bytes. The project makes no licence claim of its own over them.
+
+**Optional upscalers.** The four ONNX graphs the Upscalers page offers are not bundled and are not redistributed by this project. A viewer downloads a graph from the publisher's own endpoint at their own request; the published model cards declare no licence, and the app states that position on the page and in the catalogue. Packaging, the release artifacts and the source archive contain no upscaler bytes — only the pinned download identities (URL, length, SHA-256) used to verify a download.

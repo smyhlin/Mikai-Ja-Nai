@@ -8,7 +8,7 @@ For the comparison workstation and its controls, see [Compare and GIF export](pl
 
 | Workflow | What it is | Platform and prerequisites |
 |---|---|---|
-| **Anime4K** | Built-in GLSL shader presets using the OpenGL rendering path. No AI model download. | Windows and Linux; requires a usable OpenGL rendering path. |
+| **Anime4K** | GLSL shader presets using the OpenGL rendering path, from the 49 shaders staged at build time from one pinned upstream commit. No AI model download; the v4.1 GAN mode is included. | Windows and Linux; requires a usable OpenGL rendering path. |
 | **Standard AnimeJaNai** | The regular AnimeJaNai manager, profiles and spatial models using the AnimeJaNai filter in the app's pinned mpv runtime. | Linux requires NVIDIA and TensorRT. Windows offers TensorRT, DirectML and the opt-in TensorRT for RTX; RTX is a separate download and is not included in the base package. |
 | **Prepared Native** | A separate, private Native bundle/recipe workflow with distinct preparation, verification and bundle admission. It is not a Standard AnimeJaNai profile. | Windows-only in the app. The Native backend, recipe and required assets must be available for the current build and machine. |
 
@@ -40,6 +40,27 @@ The recommended setup omits optional RIFE interpolation models by default. Selec
 
 Runtime and model availability are platform- and GPU-dependent. Linux Standard AnimeJaNai uses TensorRT and requires its compatible runtime closure; there is no Linux TensorRT for RTX runtime. On Windows, TensorRT for RTX is opt-in: selecting it downloads nothing, and its runtime is installed only when you acquire it in Components. RTX builds its plan in-process with NVIDIA's TensorRT-RTX 1.7 runtime instead of the classic CUDA/TensorRT pack and `trtexec`. Read [AnimeJaNai on Linux](animejanai.md) before diagnosing a Linux inference-context or engine-build failure. Do not substitute an unrelated system mpv: the app uses its pinned runtime.
 
+## Optional upscalers (downloaded ONNX graphs)
+
+Four upscaler graphs are offered beside Anime4K and the AnimeJaNai profiles. They are not bundled: the build ships a pinned catalogue and the viewer downloads a graph on request.
+
+| Graph | Factor | Precision | Download |
+|---|---|---:|---:|
+| Real-ESRGAN AnimeVideo v3 | 4× | fp32 | 2,492,908 B |
+| Real-ESRGAN AnimeVideo v3 | 4× | fp16 | 1,253,495 B |
+| HFA2kCompact | 2× | fp32 | 2,412,381 B |
+| HFA2kCompact multijpg | 2× | fp32 | 2,412,381 B |
+
+Download them on **Settings → Playback → Upscalers**, or select **Upscale models** on the Components page and use **Apply changes**. Each download is proved against the catalogue's length and SHA-256 before it is stored, and the file lands in the app-owned custom-model directory, where it is registered like an imported graph.
+
+Using one:
+
+- **Player:** **Enhancements → Upscalers ›** lists every graph with its stored state. An installed row applies it as a one-step AnimeJaNai chain — the chain carries the graph's own factor (4× or 2×), so the picture grows by exactly that factor before the surface scales it. A missing row opens the page that downloads it.
+- **Compare:** an installed graph is a comparison candidate like any other AnimeJaNai model.
+- The first selection of a given graph at a given size builds a TensorRT engine and can take minutes; later selections reuse it. Switching away or closing while a build runs waits for the filter to detach instead of killing the process.
+
+These graphs are AnimeJaNai chain steps: they need the installed AnimeJaNai runtime for the selected backend, exactly like a spatial model. The publisher's model card is the licence record for the bytes; this project does not redistribute them, and none of them is required for playback or for any Anime4K preset.
+
 ## Standard AnimeJaNai profiles and custom models
 
 ### Edit and save a profile
@@ -62,6 +83,8 @@ The RIFE list includes **RIFE 4.26 Heavy**, but the official v0.22.2 runtime map
 1. Open **Settings → Processing → Standard** and choose **Import .onnx Model…**.
 2. Select the self-contained spatial ONNX graph. The manager describes compatible imports as 4-D `1x3xHxW` RGB graphs from RealESRGAN, Compact (SRVGGNet), SPAN, DAT or SwinIR; the import check itself establishes ModelProto framing only, so that list is guidance rather than a compatibility proof. The app imports the graph into its owned model directory, records integrity/provenance metadata and, when registration completes, makes it available in the model catalog, player spatial-model menu, profiles, Compare and Benchmark.
 3. Confirm the model is shown as registered before using it. Use the manager's **Remove Selected** only when you intend to remove an app-owned imported model or its registration.
+
+Downloaded upscalers are ordinary registered graphs in the same store, so they appear in the model catalog, player menu and Compare alongside a manually imported graph.
 
 An external-model directory is an optional candidate-browsing location. Registering an external graph records a reference and digest; the file is borrowed, not copied, modified or deleted. Removing an external registration leaves the graph in place. A graph pasted directly into the owned directory is only an unregistered candidate; select it and use **Import .onnx Model…** to register it before use.
 

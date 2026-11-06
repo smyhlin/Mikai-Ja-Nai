@@ -132,3 +132,9 @@ verified digests in `components/aji/<version>/` must stay as installed.
   write probe; it does not assume a directory's read-only attribute prevents writes on Windows).
 - Pre-release gate for a packaged Linux artifact: [`releasing.md`](releasing.md), *AnimeJaNai gate for
   a Linux artifact*.
+
+## 6. Optional upscaler graphs
+
+The Upscalers page offers four downloaded ONNX graphs (4× Real-ESRGAN AnimeVideo v3 in fp32/fp16, 2× HFA2kCompact and its multijpg variant) as one-step chains. They enter the same custom-model store as an imported graph, so they plan, verify, cache engines and appear in Compare exactly like a spatial model; the chain carries the graph's own factor, and the first render at a new size builds an engine before it can show a frame.
+
+Two pane-specific notes, both fixed but worth knowing when reading an older log: a comparison pane's core has to preload the backend closure with `RTLD_GLOBAL` (the player's surface does that itself), and preloading a second copy of an already resident `libnvinfer`/`libcudart` soname must be skipped — two runtime images in one process corrupt the heap. Teardown of a pane's filter is synchronous for the same reason: removing the filter is what joins the fork's builder thread.
