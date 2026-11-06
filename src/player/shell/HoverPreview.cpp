@@ -301,6 +301,7 @@ void HoverPreview::place() {
 void HoverPreview::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 void HoverPreview::paintChrome(QPainter& painter) {
+    enableChromeAntialiasing(painter);
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
 

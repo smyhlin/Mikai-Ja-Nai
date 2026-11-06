@@ -131,6 +131,12 @@ void paintRounded(QPainter& painter, const QRectF& rect, double radius, const QC
     painter.drawRoundedRect(rect, radius, radius);
 }
 
+void enableChromeAntialiasing(QPainter& painter) {
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+}
+
 // ── IconPainter ────────────────────────────────────────────────────────────
 
 void IconPainter::stroke(QPainter& p, qreal x, qreal y, qreal size, qreal width) {

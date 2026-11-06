@@ -34,6 +34,8 @@
 #include "HoverPreview.hpp"
 #include "ShellSliders.hpp"
 #include "ShellWidgets.hpp"
+
+#include "ShellTheme.hpp"
 #include "VideoSurface.hpp"
 #include "native/components/AnimeJanaiCatalogWatcher.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
@@ -2968,6 +2970,7 @@ void PlayerShell::paintSurfaceOverlay(QPainter* painter) {
 }
 
 void PlayerShell::paintChrome(QPainter& painter, const QRect& clip) {
+    enableChromeAntialiasing(painter);
     if (videoDrop_ != nullptr && videoDrop_->active()) {
         // Both devices use shell coordinates: the card stays whole across the
         // picture edge without a translucent widget above the GL surface.

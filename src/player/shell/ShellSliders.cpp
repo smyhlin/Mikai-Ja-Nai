@@ -1,5 +1,7 @@
 #include "ShellSliders.hpp"
 
+#include "ShellTheme.hpp"
+
 #include <QCoreApplication>
 #include <QCursor>
 #include <QEvent>
@@ -114,6 +116,7 @@ void RangeSlider::setAccent(const QColor& accent) {
 void RangeSlider::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 void RangeSlider::paintChrome(QPainter& p) {
+    enableChromeAntialiasing(p);
     const double m = margin_;
     const double w = span();
     const double y = height() / 2.0 - track_ / 2.0;
@@ -359,6 +362,7 @@ void ScrubBar::hideEvent(QHideEvent* event) {
 }
 
 void ScrubBar::paintChrome(QPainter& p) {
+    enableChromeAntialiasing(p);
     const QVector<QRect>& bands = segmentBands();
     if (!bands.isEmpty()) {
         QColor tint = accent();
@@ -475,6 +479,7 @@ void VolumeTrack::leaveEvent(QEvent* event) {
 void VolumeTrack::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 void VolumeTrack::paintChrome(QPainter& p) {
+    enableChromeAntialiasing(p);
     const double travel = span();
     const double y = height() / 2.0 - kGroove / 2.0;
     const double cy = height() / 2.0;
@@ -578,6 +583,7 @@ void VolumeGroup::mousePressEvent(QMouseEvent* event) {
 void VolumeGroup::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 void VolumeGroup::paintChrome(QPainter& p) {
+    enableChromeAntialiasing(p);
     const double eff = effective();
     const int iconY = (height() - 16) / 2;
     if (eff == 0.0) {

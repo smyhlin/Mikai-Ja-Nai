@@ -1,5 +1,7 @@
 #include "EpisodeNavButton.hpp"
 
+#include "ShellTheme.hpp"
+
 #include <QEnterEvent>
 
 namespace mplayer {
@@ -33,6 +35,7 @@ void EpisodeNavButton::setDirection(Direction direction) {
 }
 
 void EpisodeNavButton::paintChrome(QPainter& painter) {
+    enableChromeAntialiasing(painter);
     const double radius = cornerRadius();
     const QRectF box(0.5, 0.5, width() - 1.0, height() - 1.0);
 

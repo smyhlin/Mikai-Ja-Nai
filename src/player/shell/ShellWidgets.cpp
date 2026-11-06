@@ -1,6 +1,8 @@
 #include <utility>
 #include "ShellWidgets.hpp"
 
+#include "ShellTheme.hpp"
+
 #include <QCoreApplication>
 #include <QEnterEvent>
 #include <QEvent>
@@ -83,6 +85,7 @@ constexpr int kSkipPillMinText = 64;
 /// standing fill can be the gradient the float's play disc is drawn with.
 void paintRoundedBrush(QPainter& painter, const QRectF& rect, double radius, const QBrush& fill,
                        const QColor& border, double borderWidth) {
+    enableChromeAntialiasing(painter);
     painter.setPen(border.isValid() ? QPen(border, borderWidth) : QPen(Qt::NoPen));
     painter.setBrush(fill);
     painter.drawRoundedRect(rect, radius, radius);
@@ -554,6 +557,7 @@ void Panel::setFill(const QColor& color) {
 }
 
 void Panel::paintChrome(QPainter& painter) {
+    enableChromeAntialiasing(painter);
     paintRounded(painter, QRectF(0.5, 0.5, width() - 1, height() - 1), radius_, fill_, border_);
 }
 
@@ -622,6 +626,7 @@ void IconButton::leaveEvent(QEvent* event) {
 }
 
 void IconButton::paintChrome(QPainter& painter) {
+    enableChromeAntialiasing(painter);
     // Inset by the stroke width, so a bordered button's outline lands inside
     // its own rect rather than being clipped by it.
     const QRectF box(0.5, 0.5, width() - 1.0, height() - 1.0);
@@ -697,6 +702,7 @@ void SkipButton::leaveEvent(QEvent* event) {
 }
 
 void SkipButton::paintChrome(QPainter& painter) {
+    enableChromeAntialiasing(painter);
     // Inset by the stroke, so the outline lands inside the button's own rect.
     const QRectF box(0.5, 0.5, width() - 1.0, height() - 1.0);
     const double radius = std::min(cornerRadius() + 6.0, height() / 2.0);
@@ -1168,6 +1174,7 @@ void ChromeLabel::setChromeColor(const QColor& color) {
 }
 
 void ChromeLabel::paintChrome(QPainter& painter) {
+    enableChromeAntialiasing(painter);
     painter.setFont(font());
     painter.setPen(color_);
     painter.drawText(rect(), alignment(), text());
@@ -1237,6 +1244,7 @@ void CenterGlyph::setLoading(bool loading) {
 void CenterGlyph::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 void CenterGlyph::paintChrome(QPainter& painter) {
+    enableChromeAntialiasing(painter);
     if (!loading_ && kind_ == Kind::None) {
         return;
     }

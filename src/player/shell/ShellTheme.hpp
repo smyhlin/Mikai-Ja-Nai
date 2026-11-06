@@ -11,10 +11,18 @@
 #include <QFontDatabase>
 #include <QFontMetrics>
 #include <QObject>
+#include <QPainter>
 #include <QRectF>
 
 namespace mplayer {
 namespace shell {
+
+/// Chrome is rasterised in several places - a cached pixmap, the raster backing
+/// store, and the picture's GL surface when the cache is over budget - and only
+/// the first two carry render hints from their caller. Each paint routine asks
+/// for them itself, so a glyph never lands on a single-sample framebuffer as
+/// stair steps.
+void enableChromeAntialiasing(QPainter& painter);
 
 // ── geometry ───────────────────────────────────────────────────────────────
 
