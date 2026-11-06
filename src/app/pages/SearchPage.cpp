@@ -1215,6 +1215,50 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& key) {
     return section;
 }
 
+bool SearchPage::handleFeedRowWheel(QScrollArea* scroll, QWheelEvent* event) {
+    if (scroll == nullptr || event == nullptr) return false;
+    QScrollBar* bar = scroll->horizontalScrollBar();
+    if (bar == nullptr || bar->maximum() <= bar->minimum()) return false;
+
+    const QPoint angle = event->angleDelta();
+    const QPoint pixel = event->pixelDelta();
+    const bool shiftHeld = event->modifiers().testFlag(Qt::ShiftModifier);
+    const bool altHeld = event->modifiers().testFlag(Qt::AltModifier);
+    // A plain vertical wheel belongs to the page; only a horizontal gesture, Alt
+    // (smooth) or Shift (strong) is addressed to the row.
+    const bool horizontalGesture = !pixel.isNull() ? pixel.x() != 0 : angle.x() != 0;
+    if (!shiftHeld && !altHeld && !horizontalGesture) return false;
+
+    const int wheelSteps = !angle.isNull() ? angle.y() != 0 ? angle.y() : angle.x()
+                                           : pixel.y() != 0 ? pixel.y() : pixel.x();
+    const int direction = wheelSteps < 0 ? 1 : -1;  // a downward wheel moves right
+    if (shiftHeld) {
+        // Strong: half a viewport per notch, so long titles are reachable in a
+        // couple of gestures without a drag.
+        const int step = qMax(scroll->viewport()->width() / 2, theme::kSpacingLarge * 4);
+        const int before = bar->value();
+        bar->setValue(qBound(bar->minimum(), before + direction * step, bar->maximum()));
+        if (bar->value() != before) {
+            event->accept();
+            return true;
+        }
+        return false;
+    }
+
+    // Alt: the same smooth fractional scrolling the native bar performs for the
+    // carousels, forwarded so the animation curve stays identical.
+    const QPointF local = bar->mapFromGlobal(event->globalPosition());
+    const QPoint forwardedDelta = !angle.isNull() ? QPoint(0, angle.y() != 0 ? angle.y() : angle.x())
+                                                  : QPoint(0, pixel.y() != 0 ? pixel.y() : pixel.x());
+    QWheelEvent forwarded(local, event->globalPosition(), {}, forwardedDelta, event->buttons(),
+                          event->modifiers(), event->phase(), event->inverted(),
+                          event->source(), event->pointingDevice());
+    forwarded.ignore();
+    QCoreApplication::sendEvent(bar, &forwarded);
+    event->setAccepted(forwarded.isAccepted());
+    return event->isAccepted();
+}
+
 void SearchPage::smoothScrollCarousel(CarouselSection& section, int direction) {
     if (section.scroll == nullptr || direction == 0) {
         return;
@@ -1315,6 +1359,13 @@ bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
                 event->ignore();
                 return false;
             }
+        }
+        if (auto* rowScroll = qobject_cast<QScrollArea*>(watched->parentWidget());
+            rowScroll != nullptr &&
+            rowScroll->objectName() == QLatin1String("homeFeedRowScroll")) {
+            if (handleFeedRowWheel(rowScroll, static_cast<QWheelEvent*>(event))) return true;
+            event->ignore();
+            return false;
         }
     }
     return QWidget::eventFilter(watched, event);
@@ -2029,7 +2080,7 @@ void SearchPage::showFeedRows(
         row->setContextMenuPolicy(Qt::CustomContextMenu);
         // Every row is one height, so a feed scans as a list whatever its rows
         // carry.
-        row->setFixedHeight(theme::kRowHeight);
+        row->setMinimumHeight(theme::kRowHeight);
         auto* rowLayout = new QHBoxLayout(row);
         rowLayout->setContentsMargins(theme::kSpacingSmall + 2, theme::kSpacingXs,
                                       theme::kSpacingSmall + 2, theme::kSpacingXs);
@@ -2072,7 +2123,31 @@ void SearchPage::showFeedRows(
         meta->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         rowLayout->addWidget(title, 1);
         rowLayout->addWidget(meta);
-        section->rows->addWidget(row);
+        // A row keeps its full content width and scrolls sideways inside the
+        // page column: the title is a real caption, and eliding it or hiding the
+        // episode line behind the poster was the only alternative on a narrow
+        // window. The minimum comes from the widgets' own hints.
+        title->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+        row->setMinimumWidth(rowLayout->contentsMargins().left() +
+                             theme::kHomeFeedPosterWidth + rowLayout->spacing() +
+                             title->sizeHint().width() + rowLayout->spacing() +
+                             meta->sizeHint().width() + rowLayout->contentsMargins().right());
+        auto* rowScroll = new QScrollArea(section->rowsHost);
+        rowScroll->setObjectName(QStringLiteral("homeFeedRowScroll"));
+        rowScroll->setFrameShape(QFrame::NoFrame);
+        rowScroll->setWidgetResizable(true);
+        rowScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        rowScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        // The horizontal bar's own height is reserved so a row cannot jump when
+        // it appears; the row stretches into the viewport, which keeps every
+        // card the same height whether or not its content overflows.
+        rowScroll->ensurePolished();
+        const int barHeight =
+            qMax(rowScroll->horizontalScrollBar()->sizeHint().height(), theme::kSpacingSmall);
+        rowScroll->setFixedHeight(theme::kRowHeight + barHeight);
+        rowScroll->setWidget(row);
+        rowScroll->viewport()->installEventFilter(this);
+        section->rows->addWidget(rowScroll);
         // Kept with the row so the line can be re-worded in place: the row
         // widget itself, its poster and its order never change for a language.
         section->rowMeta.append(entry.second);

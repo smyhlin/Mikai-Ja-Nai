@@ -199,6 +199,9 @@ private:
 
     void smoothScrollCarousel(CarouselSection& section, int direction);
     bool handleCarouselWheel(CarouselSection& section, QWheelEvent* event);
+    /// Alt scrolls a feed row smoothly (the bar's own animation), Shift jumps by
+    /// half a viewport, a horizontal gesture scrolls it directly.
+    bool handleFeedRowWheel(QScrollArea* scroll, QWheelEvent* event);
     void placeIntro(bool inDiscovery);
     CarouselSection* buildCarousel(const QString& key);
     FeedSection* buildFeedSection(const QString& key);
