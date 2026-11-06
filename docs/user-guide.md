@@ -67,7 +67,7 @@ Episodes appear as numbered buttons under **Episodes**, up to 140 per page with 
 
 **Unavailable** means the API marks that episode unavailable; **No video available** means the app has no playable video for that entry/provider. The app may only learn the latter when it asks for quality options, after which the buttons for that stream are disabled, so a listed episode is not a guarantee of a working stream. If the API marks the title or its player data as licensed, the title page reports playback unavailable due to licensing and shows no releases. If no video is available or a stream request fails, try another episode, provider or release where available. If catalogue requests fail, check the connection and, if you use a key, test it under **Settings → Access**. Provider and playback details are in the [playback guide](player-guide.md).
 
-A title rated 18+ asks **This title is rated 18+. Start playback?** before the first playback; accepting covers the rest of that title, and **Settings → Appearance → 18+ content** turns the warning off.
+Explicit content is allowed by default. With **Settings → Appearance → 18+ content** turned off, a title rated 18+ asks **This title is rated 18+. Start playback?** before its first playback, and accepting covers the rest of that title.
 
 The **More to explore** section groups **Related titles**, **Similar anime** and **Recommended on Mikai**, paged with **Previous page**/**Next page** controls; **Hide** collapses the section and **Show** reopens it. Opening a title there navigates to its title page, and **Back** returns.
 

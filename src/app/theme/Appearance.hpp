@@ -38,7 +38,7 @@ struct Appearance {
     TitleLanguage titleLanguage = TitleLanguage::Ukrainian;
     NameLanguage nameLanguage = NameLanguage::Interface;
     bool coverGradient = true;
-    bool showAdult = false;
+    bool showAdult = true;
     QString accent = QStringLiteral("#bdacff");
     int radiusStep = 1;
     bool backgroundGradient = true;

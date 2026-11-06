@@ -22,7 +22,7 @@ In **Customization → General**:
 - **Content titles language** selects Ukrainian, English or original titles.
 - **Names language** selects **As the interface**, Ukrainian, English or original names.
 - **Gradient overlay** controls the gradient drawn over cover images, including home cards, title-page covers and related-title artwork.
-- **18+ content** shows explicit content without a warning. Turn it off if you do not want that display behavior.
+- **18+ content** allows explicit content without a warning and is **on by default**. Turn it off to be asked before the first playback of a title rated 18+.
 
 In **Customization → Appearance**:
 

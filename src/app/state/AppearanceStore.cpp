@@ -40,8 +40,10 @@ theme::Appearance loadAppearance() {
         settings.value(QString::fromLatin1(kNameLanguageKey)).toString());
     appearance.coverGradient =
         settings.value(QString::fromLatin1(kCoverGradientKey), true).toBool();
+    // Explicit content is allowed unless the viewer turns it off: the warning
+    // dialog is the exception, not the default reading mode.
     appearance.showAdult =
-        settings.value(QString::fromLatin1(kAdultContentKey), false).toBool();
+        settings.value(QString::fromLatin1(kAdultContentKey), true).toBool();
     const QString accent = settings.value(QString::fromLatin1(kAccentKey)).toString();
     if (QColor(accent).isValid()) {
         appearance.accent = accent;
