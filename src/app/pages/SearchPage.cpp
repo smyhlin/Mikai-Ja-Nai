@@ -1135,10 +1135,22 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& key) {
     layout->setSpacing(theme::kSpacingSmall - theme::kSpacingXs);
 
     auto* header = new QHBoxLayout();
+    header->setSpacing(theme::kSpacingSmall);
+    // The caption belongs to the heading, not to the row of controls: the pager
+    // is 40 px tall, and a caption placed under that row floated a pager's height
+    // away from the title it describes. Title and caption share a column; the
+    // controls align to the title's top edge.
+    auto* titleColumn = new QVBoxLayout();
+    titleColumn->setContentsMargins(0, 0, 0, 0);
+    titleColumn->setSpacing(theme::kSpacingXs / 2);
     section->heading = new QLabel(carouselHeading(key), section->section);
     section->heading->setObjectName(QStringLiteral("sectionHeading"));
-    header->addWidget(section->heading);
-    header->addStretch();
+    titleColumn->addWidget(section->heading);
+    section->state = new QLabel(tr("Collection not loaded yet"), section->section);
+    section->state->setObjectName(QStringLiteral("muted"));
+    section->state->setWordWrap(true);
+    titleColumn->addWidget(section->state);
+    header->addLayout(titleColumn, 1);
     section->previous = new QPushButton(section->section);
     section->previous->setIcon(theme::chevronLeftIcon(16));
     section->next = new QPushButton(section->section);
@@ -1147,20 +1159,18 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& key) {
         button->setObjectName(QStringLiteral("carouselControl"));
         button->setIconSize(QSize(16, 16));
         button->setCursor(Qt::PointingHandCursor);
-        header->addWidget(button);
+        header->addWidget(button, 0, Qt::AlignTop);
     }
     layout->addLayout(header);
 
-    auto* stateRow = new QHBoxLayout();
-    section->state = new QLabel(tr("Collection not loaded yet"), section->section);
-    section->state->setObjectName(QStringLiteral("muted"));
-    section->state->setWordWrap(true);
+    // A failure is a whole-row state, so it keeps its own row under the title
+    // block instead of squeezing into the caption's column.
+    auto* failureRow = new QHBoxLayout();
     section->failure = new FailureView(section->section);
     connect(section->failure, &FailureView::retryRequested, this,
             [this, key] { requestRecommendation(key); });
-    stateRow->addWidget(section->state, 1);
-    stateRow->addWidget(section->failure, 1);
-    layout->addLayout(stateRow);
+    failureRow->addWidget(section->failure, 1);
+    layout->addLayout(failureRow);
 
     section->scroll = new QScrollArea(section->section);
     section->scroll->setObjectName(QStringLiteral("animeCarousel"));
@@ -1413,10 +1423,20 @@ SearchPage::FeedSection* SearchPage::buildFeedSection(const QString& key) {
     layout->setSpacing(theme::kSpacingSmall - theme::kSpacingXs);
 
     auto* header = new QHBoxLayout();
+    header->setSpacing(theme::kSpacingSmall);
+    // Same hierarchy as a carousel: heading and count share one column, and the
+    // action sits beside the heading instead of pushing the count a button's
+    // height away from it.
+    auto* titleColumn = new QVBoxLayout();
+    titleColumn->setContentsMargins(0, 0, 0, 0);
+    titleColumn->setSpacing(theme::kSpacingXs / 2);
     section->heading = new QLabel(feedHeading(key), section->section);
     section->heading->setObjectName(QStringLiteral("sectionHeading"));
-    header->addWidget(section->heading);
-    header->addStretch();
+    titleColumn->addWidget(section->heading);
+    section->state = new QLabel(tr("Loading…"), section->section);
+    section->state->setObjectName(QStringLiteral("muted"));
+    titleColumn->addWidget(section->state);
+    header->addLayout(titleColumn, 1);
     section->retry = new QPushButton(tr("Refresh"), section->section);
     section->retry->setObjectName(QStringLiteral("feedRetryAction"));
     theme::applyActionRole(section->retry, theme::ActionRole::Ghost);
@@ -1427,12 +1447,8 @@ SearchPage::FeedSection* SearchPage::buildFeedSection(const QString& key) {
             loadSchedule();
         }
     });
-    header->addWidget(section->retry);
+    header->addWidget(section->retry, 0, Qt::AlignTop);
     layout->addLayout(header);
-
-    section->state = new QLabel(tr("Loading…"), section->section);
-    section->state->setObjectName(QStringLiteral("muted"));
-    layout->addWidget(section->state);
 
     // The row already carries its own always-visible Refresh, so this surface
     // names the cause without putting a second retry beside it.
