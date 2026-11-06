@@ -704,11 +704,18 @@ void TestI18n::titleNamesFollowTheirOwnLanguageAndFallBack() {
 }
 
 void TestI18n::nativePlanErrorsFollowTheActiveLanguage() {
+#ifdef Q_OS_LINUX
+  QSKIP("native runtime localization requires Windows with TensorRT runtime installed");
+#endif
+  // Prime the catalog so the manager knows where to find it for switching.
+  QVERIFY2(primeBuiltCatalogForSwitching(),
+           qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") + builtCatalogPath()));
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
   const auto english = mplayer::native::prepareAnimeJanaiPlan(
       QStringLiteral("unrecognized-preset"), mplayer::native::Backend::TensorRT);
   QVERIFY(!english.available);
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), builtCatalogPath()));
+  QCoreApplication::processEvents();  // Ensure translator is fully installed
   const auto ukrainian = mplayer::native::prepareAnimeJanaiPlan(
       QStringLiteral("unrecognized-preset"), mplayer::native::Backend::TensorRT);
   QCOMPARE(ukrainian.reasonKey, english.reasonKey);
