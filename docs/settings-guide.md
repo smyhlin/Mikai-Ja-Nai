@@ -6,7 +6,7 @@ Open **Settings** from the main window. The settings window has these pages:
 |---|---|---|
 | **Customization** | **General** | Site theme, content/name language, cover display, 18+ display, and system integrations |
 | **Customization** | **Appearance** | Accent, corner radius and background gradient |
-| **Application** | **Access** | Mikai API token, home-page feed sections, interface language, HDR playback and video scaling |
+| **Application** | **Access** | Mikai API token (also reachable from the RPM chip), home-page feed sections, interface language, HDR playback and video scaling |
 | **Application** | **Keyboard shortcuts** | Anime4K preset key bindings |
 | **Playback** | **Processing** | Runtime module selection and the Standard and Native processing workflows |
 | **Playback** | **Components** | Downloadable backend components, models and their install state |
@@ -63,6 +63,8 @@ Choose **Use system language**, **English** or **Ukrainian**. A new choice is ap
 The interface language is independent of the title and name language choices under **Customization → General**.
 
 ### Mikai API access token
+
+The page is also reachable from the header: the **RPM** pill on the main page and the quota line on a title page open Settings directly on **Access**, because the chip reports the key's quota. The **Test** button beside the token field checks a key without saving it.
 
 The token is optional. The advertised public API limits are **299 requests per minute without a key** and **599 with a key**. The client uses these estimates until response headers supply the current quota; server-provided limits take precedence.
 

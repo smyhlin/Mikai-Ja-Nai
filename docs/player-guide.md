@@ -30,7 +30,7 @@ Catalogue variant selection and local track selection are different operations: 
 
 - **Space** toggles play/pause. The player dock also has a play/pause control.
 - The timeline shows playback position and remaining time when duration is known. Drag/scrub it to seek; the final pointer position on left-button release selects the target, even if the last movement event was elsewhere.
-- Hover over a seekable video’s timeline to preview a frame and timestamp without moving playback. Repeated movement over the same preview position keeps the pending decode; the last decoded picture can remain visible while the next one loads. During a drag, the card shows the time without decoding a frame. Unseekable or unavailable sources show a reason instead.
+- Hover over a seekable video’s timeline to preview a frame and timestamp without moving playback. Repeated movement over the same preview position keeps the pending decode; the last decoded picture can remain visible while the next one loads. The card belongs to the bar: moving the pointer off the timeline dismisses it immediately, so it never lingers over the picture. During a drag, the card shows the time without decoding a frame. Unseekable or unavailable sources show a reason instead.
 - MoonAnime **Opening**, **Ending**, **Mixed opening**, **Mixed ending** and **Recap** ranges are tinted with the app accent; the hover card names each range under the pointer.
 - When MoonAnime supplies skip markers, **Skip Opening**, **Skip Ending** and the other segment offers appear above the right side of the player dock while that range is playing. Select one to seek to its end; overlapping segments remain separate offers. Markers depend on the selected episode and provider.
 - The separate **+85** control advances by 85 seconds, bounded by a known duration.
@@ -66,6 +66,10 @@ A left-button double-click on the player picture also toggles fullscreen/windowe
 Catalogue episode progress is saved locally, not synchronized to the Mikai service. Playback starts at the beginning; when a saved position is available, the duration is known and that position is more than five seconds before the end, the player offers **Continue** or **Start over**. Continue seeks to the saved point, clamped to five seconds before the end. Start over clears the saved offset. Dismissing the prompt leaves the offset available for a later attempt.
 
 Progress updates below 30 seconds do not create or replace a resume point. At 90% of a known episode duration, the episode is marked watched; an episode that finishes also becomes watched. Finishing clears its saved offset. On the title page, an unfinished saved position can appear as a progress bar and elapsed/total text, and the action changes to **Continue**. The title-page **Watched** control can manually mark that episode watched or unwatched. These thresholds describe catalogue episode history, not a local-file resume promise.
+
+## Window controls
+
+In a windowed or fullscreen frameless player the top-right corner holds one capsule with **Minimize** and **Exit**: the close cell carries a red fill at rest and both cells share the capsule's rounded ends, so the pair reads as one control. It sits four pixels from the corner. Dragging the title bar moves the window; the capsule never changes the keyboard path (**Esc** still exits).
 
 ## Picture-in-picture
 
