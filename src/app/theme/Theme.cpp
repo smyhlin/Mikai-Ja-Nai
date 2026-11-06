@@ -1138,6 +1138,14 @@ QWidget#searchPage QWidget#searchField {
     max-height: %2px;
 }
 QWidget#searchPage QWidget#searchField[focused="true"] { border-color: @primary; }
+/* The row's three controls share one height: the field and the quota pill are
+   free widgets pinned to the content height above, so the primary action has to
+   give up the two pixels a full control height adds, or the row reads as three
+   boxes of different sizes. */
+QWidget#searchPage QPushButton#searchActionButton {
+    min-height: %2px;
+    max-height: %2px;
+}
 QWidget#searchPage QLineEdit#searchQuery {
     background: transparent;
     border: none;

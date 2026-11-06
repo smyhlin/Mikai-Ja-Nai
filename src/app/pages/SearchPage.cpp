@@ -485,7 +485,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     searchKeycap_->setAccessibleName(tr("Press Enter to search"));
     fieldLayout->addWidget(searchKeycap_, 0, Qt::AlignVCenter);
 
-    headerLayout->addWidget(searchField_, 1);
+    headerLayout->addWidget(searchField_, 1, Qt::AlignVCenter);
 
     searchButton_ = new QPushButton(tr("Search"), header);
     searchButton_->setObjectName(QStringLiteral("searchActionButton"));
@@ -508,7 +508,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
             loadOngoing();
         }
     });
-    headerLayout->addWidget(searchButton_, 0);
+    headerLayout->addWidget(searchButton_, 0, Qt::AlignVCenter);
     // The row's own order: the search takes the free width, its action follows
     // it, and the passive quota pill closes the row.
     headerLayout->addWidget(rateLabel_, 0, Qt::AlignVCenter);
