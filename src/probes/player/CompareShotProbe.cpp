@@ -94,6 +94,41 @@ int main(int argc, char** argv) {
             app.exit(1);
             return;
         }
+        // Optional AJI candidate: exercises the pane's own AnimeJaNai core,
+        // including the backend preload a second core needs.
+        if (!qEnvironmentVariableIsEmpty("MIKAI_COMPARE_PROBE_AJI")) {
+            compare->setCurrentCandidateId(qEnvironmentVariable("MIKAI_COMPARE_PROBE_AJI"));
+            QElapsedTimer ajiWait;
+            ajiWait.start();
+            while (ajiWait.elapsed() < 420000 && compare->comparisonPending()) QTest::qWait(100);
+            std::fprintf(stderr,
+                         "     aji candidate=%s renderedA=%dx%d renderedB=%dx%d pending=%d\n",
+                         qPrintable(qEnvironmentVariable("MIKAI_COMPARE_PROBE_AJI")),
+                         compare->renderedSideA().width(), compare->renderedSideA().height(),
+                         compare->renderedSideB().width(), compare->renderedSideB().height(),
+                         compare->comparisonPending() ? 1 : 0);
+            const QImage a = compare->renderedSideA().convertToFormat(QImage::Format_RGB888);
+            const QImage b = compare->renderedSideB().convertToFormat(QImage::Format_RGB888);
+            if (!a.isNull() && !b.isNull() && a.size() == b.size()) {
+                qint64 diff = 0;
+                qint64 total = 0;
+                for (int y = 0; y < a.height(); y += 3) {
+                    for (int x = 0; x < a.width(); x += 3) {
+                        ++total;
+                        if (a.pixel(x, y) != b.pixel(x, y)) ++diff;
+                    }
+                }
+                std::fprintf(stderr, "     aji panes differ: %.1f%% of samples\n",
+                             total > 0 ? 100.0 * double(diff) / double(total) : 0.0);
+            }
+            for (QLabel* label : compare->findChildren<QLabel*>()) {
+                const QString text = label->text();
+                if (text.contains(QStringLiteral("unavailable"), Qt::CaseInsensitive) ||
+                    text.contains(QStringLiteral("libnvinfer"), Qt::CaseInsensitive)) {
+                    std::fprintf(stderr, "     aji status: %s\n", qPrintable(text));
+                }
+            }
+        }
         compare->resize(1280, 760);
         CompareCanvas* canvas = compare->findChild<CompareCanvas*>(QString::fromLatin1("compareCanvas"));
         check(canvas != nullptr, "the window has a canvas");

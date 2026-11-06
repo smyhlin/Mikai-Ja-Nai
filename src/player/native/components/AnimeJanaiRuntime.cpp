@@ -1329,7 +1329,16 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
     }
     // A downloaded upscaler is selected by its own id and carries none of the
     // preset catalogue's fields, so the preset lookup below must not run for it.
-    const bool isUpscaler = presetId.startsWith(QStringLiteral("upscaler:"));
+    // Compare names a candidate by its stored file, the player by
+    // "upscaler:<file>", so both spellings resolve here.
+    std::optional<UpscalerModel> upscalerSelection;
+    if (presetId.startsWith(QStringLiteral("upscaler:"))) {
+        upscalerSelection = upscalerForId(presetId.mid(QStringLiteral("upscaler:").size()));
+    } else if (const std::optional<UpscalerModel> bare = upscalerForId(presetId);
+               bare.has_value()) {
+        upscalerSelection = bare;
+    }
+    const bool isUpscaler = upscalerSelection.has_value();
     if (!isUpscaler && presetId.startsWith(QStringLiteral("builtin_slot:"))) {
         bool slotOk = false;
         const int slotNumber = presetId.mid(QStringLiteral("builtin_slot:").size()).toInt(&slotOk);
@@ -1394,10 +1403,7 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
     QString busyOwner;
     QString jobLabel = preset != nullptr ? preset->label : QString();
     if (isUpscaler) {
-        if (const std::optional<UpscalerModel> selected = upscalerForId(presetId.mid(9));
-            selected.has_value()) {
-            jobLabel = selected->displayName;
-        }
+        if (upscalerSelection.has_value()) jobLabel = upscalerSelection->displayName;
     }
     plan.cacheLease = AnimeJanaiStageBuildLease::tryAcquire(
         plan.cacheKeys, QStringLiteral("AnimeJaNai %1").arg(jobLabel),
@@ -1428,8 +1434,7 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
             // One downloaded upscaler is a one-step chain of its own: the graph
             // is in the custom-model store, its scale is the catalogue's, and no
             // manager slot has to exist for a viewer to use it.
-            const std::optional<UpscalerModel> model =
-                upscalerForId(presetId.mid(QStringLiteral("upscaler:").size()));
+            const std::optional<UpscalerModel>& model = upscalerSelection;
             if (!model.has_value()) {
                 fail(plan, QStringLiteral("animejanai.preset.invalid"),
                      RuntimeText::tr("The selected upscaler is not recognised."));

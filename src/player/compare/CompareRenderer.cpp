@@ -1,5 +1,9 @@
 #include "CompareRenderer.hpp"
 
+#ifndef Q_OS_WIN
+#include <dlfcn.h>
+#endif
+
 #include "Anime4K.hpp"
 #include "MpvHandle.hpp"
 #include "MpvRenderContext.hpp"
@@ -21,6 +25,33 @@
 #include <cmath>
 
 namespace mplayer::shell {
+
+namespace {
+/// The fork's TensorRT backend resolves libnvinfer by bare soname, so the
+/// closure has to be on the process loader path before the filter initialises.
+/// A comparison pane creates its own core, so it needs the same preload the
+/// playing surface does; without it the pane fails with the opaque "Failed to
+/// create inference context".
+void preloadCompareBackendLibs(const QStringList& dirs) {
+#ifndef Q_OS_WIN
+    for (const QString& dirPath : dirs) {
+        if (dirPath.isEmpty()) continue;
+        const QDir dir(dirPath);
+        const QFileInfoList entries = dir.entryInfoList(
+            {QStringLiteral("*.so"), QStringLiteral("*.so.*")}, QDir::Files, QDir::Name);
+        for (const QFileInfo& entry : entries) {
+            const QByteArray path = entry.absoluteFilePath().toUtf8();
+            if (::dlopen(path.constData(), RTLD_NOW | RTLD_GLOBAL) != nullptr) continue;
+            qWarning().noquote() << "[animejanai] backend preload failed for"
+                                 << entry.fileName() << ":" << ::dlerror();
+        }
+    }
+#else
+    Q_UNUSED(dirs);
+#endif
+}
+}  // namespace
+
 
 namespace {
 constexpr int kPollMs = 40;
@@ -626,6 +657,7 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
             !state.waitForCommand(state.command({"set", "hwdec", targetHwdec}), cancelled) ||
             !state.waitForCommand(state.command({"set", "start", "0"}), cancelled) ||
             !state.waitForCommand(state.command({"set", "glsl-shaders", chain.toStdString()}), cancelled)) return {};
+        if (plan.requiresAji) preloadCompareBackendLibs(plan.backendLibDirs);
         if (!filter.isEmpty()) {
             // Buffered filters need repeated input even though Compare freezes one frame.
             const QString frozenPipeline = QStringLiteral(
