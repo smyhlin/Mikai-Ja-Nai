@@ -1,6 +1,6 @@
 #include "OpenSubtitlesClient.hpp"
 
-#include "HttpTransport.hpp"
+#include <backend/HttpTransport.hpp>
 
 #include <QtCore/QEventLoop>
 #include <QtCore/QJsonArray>

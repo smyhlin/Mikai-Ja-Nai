@@ -39,13 +39,12 @@ private slots:
     void theCardKeepsAnOlderPictureAsExplicitlyStale();
     void aDecodingCardNamesTheWaitAndARefusalStaysNamed();
     void aSameUrlReloadInvalidatesTheStoredFrames();
-    void aPointerBetweenTheBarAndTheCardKeepsIt();
     void aParkedTimelineHoverKeepsTheChromeAwake();
     void aVanishedTimelineEndsTheCardWithoutGrace();
     // ReviewPreviewContracts findings 1 and 2: the newest answer settles, and a
     // rescued card is still ended when the pointer leaves its band.
     void aCachedAnswerForTheNewestRequestSettlesTheCard();
-    void aCardRescuedInTheBandIsDismissedWhenThePointerLeavesIt();
+    void theCardEndsAsSoonAsThePointerLeavesTheBar();
     void aCacheHitSpendsNoSeekAndADecodeCountsItsOwn();
     void shellActivityWithoutAHoverStartsNoPreviewDecoder();
     void theOpeningCardPaintsEveryLetterOfItsWords();

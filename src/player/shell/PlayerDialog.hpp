@@ -18,6 +18,7 @@ class QCloseEvent;
 class QFrame;
 class QKeyEvent;
 class QLabel;
+class QListWidget;
 class QMouseEvent;
 class QMoveEvent;
 class QPainter;
@@ -419,6 +420,13 @@ private:
     /// OpenSubtitles search: query seed from the current caption, language from
     /// the system locale, key from Settings › Access.
     void openSubtitlesSearchDialog();
+    /// GUI half of the two subtitle-search jobs: they run on the pool and hand
+    /// their result here through a queued call.
+    void applySubtitleSearchReply(const QVariantMap& reply, const QString& apiKey,
+                                  QListWidget* results, QLabel* status, QPushButton* search,
+                                  QPushButton* download);
+    void applySubtitleDownloadReply(const QByteArray& bytes, const QString& error, QLabel* status,
+                                    QPushButton* download);
     QString subtitleSearchSeed() const;
     /// Keeps an attached OpenSubtitles file alive for as long as the player is:
     /// mpv reads it lazily when the track is selected.

@@ -2840,16 +2840,16 @@ void TestFeedRender::theTitlePageWatchActionFollowsTheSelectedRelease() {
   QTRY_VERIFY_WITH_TIMEOUT(watchPanel->isVisible(), 5000);
   QTRY_VERIFY_WITH_TIMEOUT(watch->isVisible() && watch->isEnabled(), 5000);
 
-  auto* heroContext =
-      page.findChild<QLabel*>(QStringLiteral("titleHeroWatchContext"));
+  // The hero's duplicate caption line was removed; the watch panel owns the same
+  // facts (episode and provider) and is the surface that has to state them.
   auto* selectedEpisode =
       page.findChild<QLabel*>(QStringLiteral("titleWatchEpisode"));
+  auto* watchMeta = page.findChild<QLabel*>(QStringLiteral("titleWatchMeta"));
   auto* availability =
       page.findChild<QLabel*>(QStringLiteral("episodeAvailabilityLabel"));
-  QVERIFY(heroContext != nullptr && selectedEpisode != nullptr && availability != nullptr);
-  QTRY_VERIFY_WITH_TIMEOUT(heroContext->isVisible() && !heroContext->text().isEmpty(), 5000);
-  QVERIFY(heroContext->text().contains(selectedEpisode->text()));
-  QVERIFY(heroContext->text().contains(tabs->tabText(tabs->currentIndex())));
+  QVERIFY(selectedEpisode != nullptr && watchMeta != nullptr && availability != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(!selectedEpisode->text().isEmpty(), 5000);
+  QVERIFY(watchMeta->text().contains(tabs->tabText(tabs->currentIndex())));
   QVERIFY(availability->isVisible());
   QVERIFY(!availability->text().isEmpty());
 

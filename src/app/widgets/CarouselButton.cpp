@@ -1,7 +1,8 @@
 #include "widgets/CarouselButton.hpp"
 
 #include "theme/Appearance.hpp"
-#include "theme/Theme.hpp"
+#include "state/AppearanceStore.hpp"
+#include "theme/Palette.hpp"
 
 #include <QPainter>
 #include <QPainterPath>
@@ -43,21 +44,21 @@ void CarouselButton::paintEvent(QPaintEvent* event) {
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
-    const theme::Palette palette = theme::paletteFor(currentAppearance());
+    const theme::Palette colors = theme::paletteFor(currentAppearance());
     const bool enabled = isEnabled();
     const bool hovered = underMouse() && enabled;
     const bool pressed = isDown() && enabled;
 
-    QColor fill = QColor(palette.surfaceControlRaised);
-    QColor border = QColor(palette.borderControl);
-    QColor ink = enabled ? QColor(palette.text) : QColor(palette.textDisabled);
+    QColor fill = QColor(colors.surfaceControlRaised);
+    QColor border = QColor(colors.borderControl);
+    QColor ink = enabled ? QColor(colors.text) : QColor(colors.textDisabled);
     if (pressed) {
-        fill = QColor(palette.surfaceActive);
+        fill = QColor(colors.surfaceActive);
     } else if (hovered) {
-        fill = QColor(palette.surfaceHover);
-        border = QColor(palette.accent);
+        fill = QColor(colors.surfaceHover);
+        border = QColor(colors.accent);
     }
-    if (hasFocus() && enabled) border = QColor(palette.accent);
+    if (hasFocus() && enabled) border = QColor(colors.accent);
     if (!enabled) {
         fill.setAlpha(20);
         border.setAlpha(40);

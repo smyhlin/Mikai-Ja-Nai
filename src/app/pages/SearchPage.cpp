@@ -1358,7 +1358,7 @@ bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
                 return false;
             }
         }
-        if (auto* rowScroll = qobject_cast<QScrollArea*>(watched->parentWidget());
+        if (auto* rowScroll = qobject_cast<QScrollArea*>(watched->parent());
             rowScroll != nullptr &&
             rowScroll->objectName() == QLatin1String("homeFeedRowScroll")) {
             if (handleFeedRowWheel(rowScroll, static_cast<QWheelEvent*>(event))) return true;

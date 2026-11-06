@@ -1935,11 +1935,12 @@ void TestPublicApiUi::moonLeadsTheProviderTabsAndReleaseChips() {
   QVERIFY(!ashdiChip->isChecked());
   QVERIFY(!tortugaChip->isChecked());
 
-  // The watch button follows the selected tab, so the hero caption has to name
-  // the same provider the tab does.
-  auto* heroContext = page.findChild<QLabel*>(QStringLiteral("titleHeroWatchContext"));
-  QVERIFY(heroContext != nullptr);
-  QTRY_VERIFY_WITH_TIMEOUT(heroContext->text().contains(QStringLiteral("MoonAnime")), 5000);
+  // The watch button follows the selected tab, so the watch panel's meta line has
+  // to name the same provider the tab does. The hero's duplicate caption line was
+  // removed; the panel that owns the state is the one that states it.
+  auto* watchMeta = page.findChild<QLabel*>(QStringLiteral("titleWatchMeta"));
+  QVERIFY(watchMeta != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(watchMeta->text().contains(QStringLiteral("MoonAnime")), 5000);
 }
 
 void TestPublicApiUi::aTitleWithoutMoonKeepsItsFirstProvider() {

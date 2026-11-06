@@ -996,6 +996,7 @@ void PlayerShell::buildPictureMenu() {
             openPictureSubtitlesMenu();
             return;
         }
+        if (pictureSubtitlesMenu_ != nullptr) pictureSubtitlesMenu_->close();
         if (action == QStringLiteral("frame")) {
             emit frameRequested();
         } else if (action == QStringLiteral("compare")) {
@@ -1176,6 +1177,9 @@ void PlayerShell::openPictureMenu(const QPoint& position) {
     if (pictureMenu_ == nullptr) {
         return;
     }
+    // A level left open by an earlier gesture belongs to a menu that is about to
+    // be rebuilt under the pointer.
+    if (pictureSubtitlesMenu_ != nullptr) pictureSubtitlesMenu_->close();
     pictureMenuAnchor_ = position;
     pictureMenu_->popupNear(mapToGlobal(position));
 }

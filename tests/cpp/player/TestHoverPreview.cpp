@@ -36,7 +36,6 @@ namespace {
 
 using mplayer::shell::FramePreviewService;
 using mplayer::shell::FramePreviewStats;
-using mplayer::shell::hoverCardKeepsPointer;
 using mplayer::shell::HoverPreview;
 using mplayer::shell::PreviewFrame;
 using mplayer::shell::PreviewFrameCache;
@@ -789,21 +788,6 @@ void TestHoverPreview::aSameUrlReloadInvalidatesTheStoredFrames() {
     service.shutdown();
 }
 
-void TestHoverPreview::aPointerBetweenTheBarAndTheCardKeepsIt() {
-    const QRect bar(100, 600, 800, 18);
-    const QRect card(300, 470, 340, 120);
-    QVERIFY2(hoverCardKeepsPointer(bar, card, QPoint(500, 609)),
-             "a pointer on the bar belongs to the card the bar opened");
-    QVERIFY2(hoverCardKeepsPointer(bar, card, QPoint(500, 530)),
-             "a pointer on the card belongs to it");
-    QVERIFY2(hoverCardKeepsPointer(bar, card, QPoint(500, 590)),
-             "a pointer crossing the gap on its way to the card must not end it");
-    QVERIFY(!hoverCardKeepsPointer(bar, card, QPoint(50, 590)));
-    QVERIFY(!hoverCardKeepsPointer(bar, card, QPoint(1150, 700)));
-    QVERIFY2(!hoverCardKeepsPointer(QRect(), card, QPoint(500, 530)),
-             "a hidden bar leaves no band for a pointer to be in");
-}
-
 void TestHoverPreview::aParkedTimelineHoverKeepsTheChromeAwake() {
     mplayer::shell::PlayerShell shell;
     shell.resize(1000, 620);
@@ -894,7 +878,7 @@ void TestHoverPreview::aCachedAnswerForTheNewestRequestSettlesTheCard() {
     card.dismiss();
 }
 
-void TestHoverPreview::aCardRescuedInTheBandIsDismissedWhenThePointerLeavesIt() {
+void TestHoverPreview::theCardEndsAsSoonAsThePointerLeavesTheBar() {
     mplayer::shell::PlayerShell shell;
     shell.resize(1000, 620);
     shell.setMedia(QStringLiteral("band-exit-fixture.mp4"));
@@ -906,37 +890,31 @@ void TestHoverPreview::aCardRescuedInTheBandIsDismissedWhenThePointerLeavesIt() 
     auto* card = shell.findChild<HoverPreview*>(QStringLiteral("playerHoverPreview"));
     QVERIFY(bar != nullptr && card != nullptr);
 
-    // A pointer on the bar, the way a viewer reaches the card.
     const QPoint onBar = bar->rect().center();
     QMouseEvent hoverBar(QEvent::MouseMove, QPointF(onBar), QPointF(bar->mapToGlobal(onBar)),
                          Qt::NoButton, Qt::NoButton, Qt::NoModifier);
     QCoreApplication::sendEvent(bar, &hoverBar);
     QVERIFY2(card->isVisible(), "the hover card did not appear for a pointer on the timeline");
 
-    // On the card itself: inside the band the bar and the card span. A rescue
-    // here is correct - the journey is not an absence - but it must not be the
-    // last word on a pointer that keeps moving.
+    // The card belongs to the bar. A move anywhere that is not the bar - the card
+    // included - ends it; there is no journey band and no grace window left.
     const QPoint onCard = card->mapTo(&shell, card->rect().center());
-    QMouseEvent hoverCard(QEvent::MouseMove, QPointF(onCard),
-                          QPointF(shell.mapToGlobal(onCard)), Qt::NoButton, Qt::NoButton,
-                          Qt::NoModifier);
-    QCoreApplication::sendEvent(&shell, &hoverCard);
-    for (int waited = 0; waited < 400; waited += 50) {
-        QCoreApplication::processEvents();
-        QThread::msleep(50);
-    }
-    QVERIFY2(card->isVisible(), "the card did not survive the pointer resting in its band");
+    QMouseEvent overCard(QEvent::MouseMove, QPointF(onCard),
+                         QPointF(shell.mapToGlobal(onCard)), Qt::NoButton, Qt::NoButton,
+                         Qt::NoModifier);
+    QCoreApplication::sendEvent(&shell, &overCard);
+    QCoreApplication::processEvents();
+    QVERIFY2(!card->isVisible(), "the card survived a move that left the bar");
 
-    // Away from both: the picture, nowhere near the timeline.
+    // Re-opening on the bar works, so the dismissal is not a one-way latch.
+    QCoreApplication::sendEvent(bar, &hoverBar);
+    QVERIFY2(card->isVisible(), "the card did not return to a pointer back on the bar");
     const QPoint away(8, 8);
-    QMouseEvent leaveBand(QEvent::MouseMove, QPointF(away), QPointF(shell.mapToGlobal(away)),
-                          Qt::NoButton, Qt::NoButton, Qt::NoModifier);
-    QCoreApplication::sendEvent(&shell, &leaveBand);
-    for (int waited = 0; waited < 600; waited += 50) {
-        QCoreApplication::processEvents();
-        QThread::msleep(50);
-    }
-    QVERIFY2(!card->isVisible(), "the card outlived the pointer leaving the bar-and-card band");
+    QMouseEvent leave(QEvent::MouseMove, QPointF(away), QPointF(shell.mapToGlobal(away)),
+                      Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(&shell, &leave);
+    QCoreApplication::processEvents();
+    QVERIFY2(!card->isVisible(), "the card outlived the pointer leaving the bar");
 }
 
 void TestHoverPreview::aCacheHitSpendsNoSeekAndADecodeCountsItsOwn() {

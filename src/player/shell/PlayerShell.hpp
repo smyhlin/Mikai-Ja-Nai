@@ -466,6 +466,7 @@ private:
     quint64 backgroundRenderedRevision_ = 0;
 
     MenuPopup* pictureMenu_ = nullptr;
+    MenuPopup* pictureSubtitlesMenu_ = nullptr;
     /// Where the picture menu was opened, in shell coordinates: an open menu is
     /// re-placed against it after a language change, because a longer
     /// translation grows the card and an unrepositioned one is clamped by
