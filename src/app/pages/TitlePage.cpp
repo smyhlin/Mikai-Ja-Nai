@@ -1279,6 +1279,7 @@ void TitlePage::applyResponsiveLayout() {
             setReleaseChipText(chip, label);
         }
     }
+    equalizeReleaseChips();
     refreshDescriptionPreview();
     updateBackdrop();
     updateDetailsGeometry();
@@ -2803,6 +2804,8 @@ void TitlePage::rebuildReleaseChips() {
             setReleaseChipText(chip, label);
         }
     }
+
+    equalizeReleaseChips();
 }
 
 void TitlePage::releaseContextMenu(QPushButton* chip, const QPoint& globalPos) {
@@ -3694,6 +3697,29 @@ QString TitlePage::firstEmbed(const backend::Release& release) const {
     return best;
 }
 
+void TitlePage::equalizeReleaseChips() {
+    // The lanes are a grid the reader scans (a dubbing row, a subtitle row), so
+    // every chip takes the widest caption's width; a short caption keeps the
+    // empty space rather than leaving a ragged edge. A width set by the previous
+    // pass would clamp sizeHint(), so the constraints come off before measuring.
+    int widestChip = 0;
+    for (QPushButton* chip : releaseChips_) {
+        if (chip == nullptr) continue;
+        chip->setMinimumWidth(0);
+        chip->setMaximumWidth(QWIDGETSIZE_MAX);
+        chip->ensurePolished();
+        widestChip = qMax(widestChip, chip->sizeHint().width());
+    }
+    if (widestChip <= 0) return;
+    for (QPushButton* chip : releaseChips_) {
+        if (chip == nullptr) continue;
+        chip->setFixedWidth(widestChip);
+        QSizePolicy policy = chip->sizePolicy();
+        policy.setHorizontalPolicy(QSizePolicy::Fixed);
+        chip->setSizePolicy(policy);
+    }
+}
+
 void TitlePage::applyReleaseQuality(int index, const QMap<int, QString>& qualities, int seq) {
     if (closed_ || seq != releaseProbeSeq_ || index < 0 || index >= releaseChips_.size()) {
         return;
@@ -3708,6 +3734,7 @@ void TitlePage::applyReleaseQuality(int index, const QMap<int, QString>& qualiti
         const QString suffix = QStringLiteral(" · %1p").arg(height);
         setReleaseChipText(chip, releaseChipLabel(releases_.at(index)) + suffix);
         chip->setToolTip(releaseChipToolTip(releases_.at(index)) + suffix);
+        equalizeReleaseChips();
     }
     if (index == activeRelease_) {
         updateWatchPanel();
@@ -4240,6 +4267,7 @@ void TitlePage::refreshReleaseTexts() {
         setReleaseChipText(chip, label);
         chip->setToolTip(tooltip);
     }
+    equalizeReleaseChips();
 }
 
 void TitlePage::refreshEpisodeTexts() {

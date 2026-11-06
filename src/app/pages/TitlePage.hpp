@@ -300,6 +300,10 @@ private:
     QString firstEmbed(const backend::Release& release) const;
     void applyReleaseQuality(int index, const QMap<int, QString>& qualities, int seq);
 
+    /// Every release chip takes the width of the widest caption, so the kind
+    /// lanes line up as columns. Re-run after any label change.
+    void equalizeReleaseChips();
+
     QVector<QVariantMap> episodeVariants(const QString& number) const;
     QVector<QVariantMap> tabPlaylist(int stateIndex, const QString& number, int* currentIndex);
 
