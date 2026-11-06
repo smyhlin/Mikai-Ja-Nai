@@ -1816,8 +1816,16 @@ QImage CompareWindow::renderIsolated(const QString& id) {
         const auto renderer = isolatedRenderer_;
         pendingAjiId_ = id;
         updateInfo();
+        // The untouched frame from the playing surface, filters cleared only for
+        // this read: a stream that refuses a second decode still has an original
+        // to compare against, instead of two blank halves.
+        QImage fallbackSource;
+        if (surface_ != nullptr && surface_->hasVisibleOutputFrame()) {
+            QString fallbackReason;
+            fallbackSource = surface_->grabUnfilteredFrame(&fallbackReason);
+        }
         const bool captured = renderer->capture(surface_->sourceUrl(), *frozenPlaybackTimestamp_,
-                                                frame_.size(), cancelled, progress);
+                                                frame_.size(), cancelled, progress, fallbackSource);
         if (self == nullptr) return {};
         if (!captured) {
             pendingAjiId_.clear();

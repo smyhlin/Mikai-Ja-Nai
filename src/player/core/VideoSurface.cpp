@@ -1735,6 +1735,72 @@ void VideoSurface::requestPausedWrite(bool paused) {
     }
 }
 
+
+QImage VideoSurface::grabUnfilteredFrame(QString* reason) {
+    if (reason != nullptr) reason->clear();
+    if (QThread::currentThread() != thread()) {
+        if (reason != nullptr) *reason = QStringLiteral("not the GUI thread");
+        return {};
+    }
+    if (!mpv_ || !hasVisibleOutputFrame()) {
+        if (reason != nullptr) *reason = QStringLiteral("no decoded frame to capture");
+        return {};
+    }
+    QString filter;
+    QString shaders;
+    try {
+        filter = QString::fromStdString(mpv_->getString("vf"));
+        shaders = QString::fromStdString(mpv_->getString("glsl-shaders"));
+    } catch (const MpvError& error) {
+        if (reason != nullptr) *reason = QString::fromUtf8(error.what());
+        return {};
+    }
+    const double target = position();
+    // Restore is unconditional: a capture that fails must not leave playback
+    // without its processing chain.
+    struct Restore {
+        VideoSurface* surface;
+        const QString filter;
+        const QString shaders;
+        ~Restore() {
+            try {
+                surface->mpv_->setString("vf", filter.toStdString());
+                surface->mpv_->setString("glsl-shaders", shaders.toStdString());
+            } catch (const MpvError&) {
+            }
+            surface->update();
+        }
+    } restore{this, filter, shaders};
+
+    try {
+        mpv_->setString("vf", "");
+        mpv_->setString("glsl-shaders", "");
+    } catch (const MpvError& error) {
+        if (reason != nullptr) *reason = QString::fromUtf8(error.what());
+        return {};
+    }
+    // A paused core does not decode on its own: a small seek back and forward
+    // is what makes mpv produce a frame through the now-empty filter chain.
+    const auto waitForFrame = [this](double seconds) {
+        seek(seconds);
+        QElapsedTimer clock;
+        clock.start();
+        while (clock.elapsed() < 2500) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            if (hasVisibleOutputFrame()) return true;
+            QThread::msleep(10);
+        }
+        return hasVisibleOutputFrame();
+    };
+    if (!waitForFrame(target > 0.1 ? target - 0.1 : 0.0) || !waitForFrame(target)) {
+        if (reason != nullptr) *reason = QStringLiteral("the decoder produced no frame");
+        return {};
+    }
+    const QImage image = grabVideoFramebuffer();
+    if (image.isNull() && reason != nullptr) *reason = QStringLiteral("the framebuffer was empty");
+    return image;
+}
+
 QImage VideoSurface::grabVideoFramebuffer() {
     if (QThread::currentThread() != thread()) {
         qWarning("VideoSurface: grabVideoFramebuffer() is GUI thread only");

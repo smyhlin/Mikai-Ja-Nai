@@ -386,7 +386,8 @@ CompareRenderer::CompareRenderer() : state_(std::make_unique<State>()) {}
 CompareRenderer::~CompareRenderer() = default;
 
 bool CompareRenderer::capture(const QString& source, double timestamp, const QSize& outputSize,
-                              const Cancelled& cancelled, const Progress& progress) {
+                              const Cancelled& cancelled, const Progress& progress,
+                              const QImage& fallbackSource) {
     State& state = *state_;
     state.error.clear();
     state.sourceFrame = {};
@@ -402,8 +403,25 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
             !state.waitForCommand(state.command({"set", "start", startTimestamp}), cancelled)) return false;
         state.restarted = false;
         state.core->loadFile(source.toStdString());
-        const QImage settledSource = state.settle(true, false, cancelled, progress);
-        if (settledSource.isNull()) return false;
+        QImage settledSource = state.settle(true, false, cancelled, progress);
+        if (settledSource.isNull()) {
+            if (fallbackSource.isNull() || cancelled()) return false;
+            // The source refused a second decode. The pixels handed in are the
+            // decoder's own frame from the playing surface, so the comparison
+            // still has a true original to render candidates onto.
+            state.error.clear();
+            state.diagnosticTail.clear();
+            state.framePath = state.files.filePath(QStringLiteral("source.png"));
+            if (!fallbackSource.save(state.framePath, "PNG")) {
+                state.error = QCoreApplication::translate(
+                    "CompareRenderer", "The captured source frame could not be written.");
+                return false;
+            }
+            state.sourceFrame = fallbackSource;
+            state.restarted = false;
+            state.core->loadFile(state.framePath.toStdString());
+            return !state.settle(true, false, cancelled, progress).isNull();
+        }
         state.framePath = state.files.filePath(QStringLiteral("source.png"));
         const bool screenshotComplete = state.waitForCommand(
             state.command({"screenshot-to-file", state.framePath.toStdString(), "video"}), cancelled);

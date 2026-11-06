@@ -437,6 +437,13 @@ public:
     /// needs a framebuffer has to be able to wait for it.
     bool waitForContext(int timeoutMs);
 
+    /// One frame as the decoder produced it, with this surface's own video
+    /// filter and shader list removed for the capture and restored afterwards.
+    /// The playhead returns to where it was. Used where a consumer needs the
+    /// untouched source and cannot open a second decode of it (a signed stream
+    /// URL, for instance). GUI thread only; requires a paused frame.
+    QImage grabUnfilteredFrame(QString* reason = nullptr);
+
     /// The video readback for consumers that must not capture chrome: the same
     /// framebuffer Qt would hand grabFramebuffer(), rendered with this surface's
     /// overlay suppressed. A normal overlay repaint is scheduled before returning,
