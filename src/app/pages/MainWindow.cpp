@@ -222,6 +222,8 @@ MainWindow::MainWindow(backend::MikaiClient& client, StartupMode startupMode, QW
     connect(search_, &SearchPage::openRequested, this,
             [this](const QString& ref, const QString& poster) { openTitle(ref, poster); });
     connect(search_, &SearchPage::settingsRequested, this, &MainWindow::openSettings);
+    connect(search_, &SearchPage::accessSettingsRequested, this,
+            &MainWindow::openAccessSettings);
     connect(search_, &SearchPage::mediaFileRequested, this, &MainWindow::chooseMediaFile);
     connect(search_, &SearchPage::mediaUrlRequested, this, &MainWindow::chooseMediaUrl);
     stack_->addWidget(search_);
@@ -699,6 +701,11 @@ void MainWindow::openSettings() {
 
 void MainWindow::openComponentSettings() {
     openSettingsImpl(std::nullopt, {}, true);
+}
+
+void MainWindow::openAccessSettings() {
+    openSettings();
+    if (settingsDialog_ != nullptr) settingsDialog_->showPage(QStringLiteral("access"));
 }
 
 void MainWindow::openUpscalerSettings() {
@@ -1242,6 +1249,8 @@ bool MainWindow::openTitle(const QString& ref, const QString& poster, bool prese
     connect(title_, &TitlePage::backRequested, this, &MainWindow::goSearch);
     connect(title_, &TitlePage::homeRequested, this, &MainWindow::goHome);
     connect(title_, &TitlePage::settingsRequested, this, &MainWindow::openSettings);
+    connect(title_, &TitlePage::accessSettingsRequested, this,
+            &MainWindow::openAccessSettings);
     // An episode player's processing-failure remedy reaches the same Processing
     // surface as the standalone player's, aimed at the dialog that raised it.
     // The pointer is only used as a QPointer, so a closed or replaced player is

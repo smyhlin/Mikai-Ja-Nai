@@ -392,6 +392,8 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     // The main page presents the shared quota snapshot as the header pill; the
     // catalogue and title page keep its inline line.
     rateLabel_->setPresentation(RateLimitLabel::Presentation::Pill);
+    connect(rateLabel_, &RateLimitLabel::clicked, this,
+            &SearchPage::accessSettingsRequested);
 
     mediaButton_ = new QToolButton(sidebar_);
     mediaButton_->setObjectName(QStringLiteral("openMediaButton"));

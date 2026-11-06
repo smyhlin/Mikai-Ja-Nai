@@ -1234,6 +1234,9 @@ QWidget#searchPage QWidget#ratePill {
     min-height: %2px;
     max-height: %2px;
 }
+/* The pill is also the way into Access: it answers a hover like the actions
+   beside it. */
+QWidget#searchPage QWidget#ratePill:hover { border-color: @primary; }
 QWidget#searchPage QWidget#ratePill QLabel#muted {
     background: transparent;
     border: none;

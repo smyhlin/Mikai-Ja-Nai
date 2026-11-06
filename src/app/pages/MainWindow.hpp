@@ -96,6 +96,8 @@ private:
     /// Opens Settings on the Components tab, landing on the element the startup
     /// prompt warned about. Plain dialog, no intent: nothing is armed.
     void openComponentSettings();
+    /// Settings on the Access page, where the API key and its quota live.
+    void openAccessSettings();
     /// Settings on the Upscalers page, the surface that downloads the optional
     /// ONNX graphs the player menu lists.
     void openUpscalerSettings();

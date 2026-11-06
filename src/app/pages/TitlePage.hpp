@@ -95,6 +95,8 @@ Q_SIGNALS:
     void backRequested();
     void homeRequested();
     void settingsRequested();
+    /// The quota chip was activated: open Settings on its Access page.
+    void accessSettingsRequested();
     /// One of this page's open players raised a processing-failure remedy that needs the
     /// application's Settings surface. `player` is the dialog that raised it, and the
     /// owner answers only while that dialog still owns a stream: the page never keeps it

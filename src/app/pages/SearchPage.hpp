@@ -97,6 +97,8 @@ public:
 Q_SIGNALS:
     void openRequested(const QString& ref, const QString& poster);
     void settingsRequested();
+    /// The quota chip was activated: open Settings on its Access page.
+    void accessSettingsRequested();
     void mediaFileRequested();
     void mediaUrlRequested();
 

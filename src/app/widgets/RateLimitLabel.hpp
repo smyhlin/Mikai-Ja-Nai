@@ -5,6 +5,8 @@
 #include <QWidget>
 
 class QEvent;
+class QKeyEvent;
+class QMouseEvent;
 class QHideEvent;
 class QHBoxLayout;
 class QLabel;
@@ -32,11 +34,21 @@ public:
     void setPresentation(Presentation presentation);
     Presentation presentation() const { return presentation_; }
 
+signals:
+    /// A click on the chip; both pages route it to the Access settings page, the
+    /// one surface that can raise or replace the key the quota belongs to.
+    void clicked();
+
+public:
     /// Re-reads the client's quota snapshot. Cheap and non-blocking: the state
     /// lives behind the client's own lock and never issues a request.
     void refresh();
 
 protected:
+    /// The chip is a shortcut, not decoration: a left click anywhere on it opens
+    /// the Access page. Keyboard activation matches so it is not mouse-only.
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
     /// Restates the line in place after a LanguageChange from the snapshot the
     /// widget already rendered: the quota, the reset window and the queue depth
     /// stay exactly as they were shown, and nothing is asked of the server.

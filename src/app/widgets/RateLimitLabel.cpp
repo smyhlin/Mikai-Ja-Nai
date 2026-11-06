@@ -3,6 +3,8 @@
 #include "theme/Metrics.hpp"
 
 #include <QEvent>
+#include <QKeyEvent>
+#include <QMouseEvent>
 #include <QFont>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -28,6 +30,11 @@ RateLimitLabel::RateLimitLabel(backend::MikaiClient& client, QWidget* parent)
     label_ = new QLabel(this);
     label_->setObjectName(QStringLiteral("muted"));
     label_->installEventFilter(this);
+    // A shortcut, not decoration: the chip opens the page that owns the key the
+    // quota belongs to, so it advertises that with the pointer and the keyboard.
+    setCursor(Qt::PointingHandCursor);
+    setFocusPolicy(Qt::StrongFocus);
+    setAccessibleDescription(tr("Open the API access settings"));
 
     layout_ = new QHBoxLayout(this);
     layout_->setContentsMargins(0, 0, 0, 0);
@@ -217,6 +224,23 @@ void RateLimitLabel::renderState(const backend::RateLimitState& state) {
         // The dot is inside the pill too, so the whole chip explains itself.
         setToolTip(detail);
     }
+}
+
+void RateLimitLabel::mouseReleaseEvent(QMouseEvent* event) {
+    QWidget::mouseReleaseEvent(event);
+    if (event->button() == Qt::LeftButton && rect().contains(event->pos())) {
+        Q_EMIT clicked();
+    }
+}
+
+void RateLimitLabel::keyPressEvent(QKeyEvent* event) {
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter ||
+        event->key() == Qt::Key_Space) {
+        Q_EMIT clicked();
+        event->accept();
+        return;
+    }
+    QWidget::keyPressEvent(event);
 }
 
 }  // namespace mikai::app

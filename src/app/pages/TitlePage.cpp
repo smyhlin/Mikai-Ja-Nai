@@ -622,6 +622,8 @@ void TitlePage::buildHeader() {
     settingsButton_->setFixedSize(theme::kControlHeight, theme::kControlHeight);
 
     rateLabel_ = new RateLimitLabel(client_, headerRow_);
+    connect(rateLabel_, &RateLimitLabel::clicked, this,
+            &TitlePage::accessSettingsRequested);
     headerRowLayout_->addWidget(backButton_);
     headerRowLayout_->addWidget(homeButton_);
     headerRowLayout_->addStretch(1);
