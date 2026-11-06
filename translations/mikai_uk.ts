@@ -937,7 +937,7 @@
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1061"/>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1078"/>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1304"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1698"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1714"/>
         <source>AnimeJaNai preparation was cancelled.</source>
         <translation>Підготовку AnimeJaNai було скасовано.</translation>
     </message>
@@ -1025,13 +1025,13 @@
     </message>
     <message>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="759"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1394"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1407"/>
         <source>The AnimeJaNai engine cache is currently in use by %1.</source>
         <translation>Кеш рушія AnimeJaNai зараз використовує %1.</translation>
     </message>
     <message>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="760"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1395"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1408"/>
         <source>another operation</source>
         <translation>інша операція</translation>
     </message>
@@ -1128,25 +1128,25 @@
     </message>
     <message>
         <location filename="../src/player/compare/CompareWindow.cpp" line="120"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1352"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1360"/>
         <source>The selected AnimeJaNai preset is not recognised.</source>
         <translation>Вибраний пресет AnimeJaNai не розпізнано.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1358"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1363"/>
         <source>The selected RIFE graph has no compiled content pin.</source>
         <translation>Вибраний граф RIFE не має закріпленої контрольної суми.</translation>
     </message>
     <message>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="784"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1363"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1547"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1368"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1563"/>
         <source>This installed AnimeJaNai runtime does not report support for the selected heavy RIFE model.</source>
         <translation>Це встановлене середовище AnimeJaNai не підтримує вибрану важку (Heavy) модель RIFE.</translation>
     </message>
     <message>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="796"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1406"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1419"/>
         <source>The installed TensorRT closure does not include its verified upstream trtexec executable.</source>
         <translation>Встановлене середовище TensorRT не містить перевіреного виконуваного файлу trtexec.</translation>
     </message>
@@ -1156,64 +1156,64 @@
         <translation>TensorRT for RTX недоступний на цій платформі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1423"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1435"/>
         <source>The selected upscaler is not recognised.</source>
         <translation>Вибрану модель збільшення не розпізнано.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1428"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1440"/>
         <source>The upscaler &apos;%1&apos; is not downloaded. Install it in Settings › Upscalers.</source>
         <translation>Модель збільшення «%1» не завантажена. Встановіть її в «Налаштування › Збільшення».</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1452"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1464"/>
         <source>The selected custom AnimeJaNai profile slot is empty or invalid.</source>
         <translation>Вибраний слот користувацького профілю AnimeJaNai порожній або некоректний.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1466"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1482"/>
         <source>Chain %1 in custom profile &apos;%2&apos; has no model or RIFE step.</source>
         <translation>Ланцюжок %1 у користувацькому профілі «%2» не містить моделі або кроку RIFE.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1473"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1489"/>
         <source>A model-only AnimeJaNai profile contains an unsupported step type.</source>
         <translation>Профіль AnimeJaNai лише з моделями містить непідтримуваний тип кроку.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1479"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1495"/>
         <source>Model step %1 in chain %2 of custom profile &apos;%3&apos; has no model.</source>
         <translation>Крок моделі %1 у ланцюжку %2 користувацького профілю «%3» не містить моделі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1491"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1507"/>
         <source>A pinned spatial model required by custom profile &apos;%1&apos; is not installed.</source>
         <translation>Закріплена просторова модель, потрібна користувацькому профілю «%1», не встановлена.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1516"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1532"/>
         <source>Custom profile &apos;%1&apos; references ONNX model &apos;%2&apos;, which is missing or invalid.</source>
         <translation>Користувацький профіль «%1» посилається на модель ONNX «%2», яка відсутня або некоректна.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1541"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1557"/>
         <source>The RIFE model &apos;%1&apos; in custom profile &apos;%2&apos; has no compiled content pin.</source>
         <translation>Модель RIFE «%1» у користувацькому профілі «%2» не має вбудованої контрольної суми вмісту.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1602"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1618"/>
         <source>A required built-in model is absent from the pinned catalogue.</source>
         <translation>Необхідна вбудована модель відсутня в закріпленому каталозі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1605"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1621"/>
         <source>A model required by the built-in AnimeJaNai profiles is not installed.</source>
         <translation>Модель, потрібна для вбудованих профілів AnimeJaNai, не встановлена.</translation>
     </message>
     <message>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1123"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1554"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1623"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1570"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1639"/>
         <source>The selected pinned RIFE graph is missing or corrupt.</source>
         <translation>Вибраний закріплений граф RIFE відсутній або пошкоджений.</translation>
     </message>
@@ -1223,28 +1223,28 @@
         <translation>Граф вибраної моделі відсутній або має неочікуваний розмір.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1654"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1670"/>
         <source>The selected custom ONNX model is not registered.</source>
         <translation>Вибрана користувацька модель ONNX не зареєстрована.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1660"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1676"/>
         <source>The selected custom ONNX model is missing or failed integrity verification.</source>
         <translation>Вибрана користувацька модель ONNX відсутня або не пройшла перевірку цілісності.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1679"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1695"/>
         <source>The selected spatial model is not in the pinned catalogue.</source>
         <translation>Вибрана просторова модель відсутня в закріпленому каталозі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1683"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1699"/>
         <source>The selected spatial model is not installed.</source>
         <translation>Вибрану просторову модель не встановлено.</translation>
     </message>
     <message>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1167"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1705"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1721"/>
         <source>The app-owned AnimeJaNai stats directory is unavailable or redirected.</source>
         <translation>Папка статистики AnimeJaNai недоступна або перенаправлена.</translation>
     </message>
@@ -1477,115 +1477,120 @@
 <context>
     <name>CompareRenderer</name>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="564"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="602"/>
         <source>This source exceeds the internal comparison target, so x2 upscaling candidates may render unchanged.</source>
         <translation>Це джерело перевищує внутрішню ціль порівняння, тому кандидати x2 апскейлінгу можуть відображатися без змін.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="213"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="253"/>
         <source>Building the comparison TensorRT engine</source>
         <translation>Збирання рушія TensorRT для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="116"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="113"/>
+        <source>The comparison source frame is unreadable.</source>
+        <translation>Кадр джерела для порівняння не читається.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="120"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="128"/>
+        <source>The comparison source frame could not be written.</source>
+        <translation>Не вдалося записати кадр джерела для порівняння.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="152"/>
         <source>The comparison OpenGL context could not be created.</source>
         <translation>Не вдалося створити контекст OpenGL для порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="124"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="160"/>
         <source>The comparison OpenGL context is unavailable.</source>
         <translation>Контекст OpenGL для порівняння недоступний.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="187"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="227"/>
         <source>TensorRT for RTX did not start and the core fell back to TensorRT; the comparison did not run the requested backend: %1</source>
         <translation>TensorRT for RTX не запустився, і ядро перейшло на TensorRT; порівняння не виконало запитаний бекенд: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="208"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="248"/>
         <source>Preparing the comparison TensorRT for RTX engine</source>
         <translation>Підготовка рушія TensorRT for RTX для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="209"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="249"/>
         <source>Building the comparison TensorRT for RTX engine</source>
         <translation>Збирання рушія TensorRT for RTX для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="212"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="252"/>
         <source>Preparing the comparison TensorRT engine</source>
         <translation>Підготовка рушія TensorRT для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="263"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="303"/>
         <source>The comparison OpenGL context was lost.</source>
         <translation>Контекст OpenGL для порівняння було втрачено.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="327"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="367"/>
         <source>The comparison command did not complete.</source>
         <translation>Команда порівняння не завершилася вчасно.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="331"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="371"/>
         <source>The comparison command failed: %1</source>
         <translation>Помилка виконання команди порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="505"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="543"/>
         <source>The previous AnimeJaNai comparison pipeline has not been detached.</source>
         <translation>Попередній конвеєр порівняння AnimeJaNai ще не від’єднано.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="512"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="550"/>
         <source>The comparison plan has no owned AnimeJaNai cache keys.</source>
         <translation>План порівняння не містить власних ключів кешу AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="525"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="563"/>
         <source>The AnimeJaNai stage cache %1 is already in use by %2.</source>
         <translation>Кеш етапу AnimeJaNai %1 уже використовує %2.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="109"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="145"/>
         <source>The comparison frame storage or geometry is unavailable.</source>
         <translation>Буфер кадру або геометрія для порівняння недоступні.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="133"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="169"/>
         <source>The comparison framebuffer could not be created.</source>
         <translation>Не вдалося створити буфер кадру (framebuffer) для порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="219"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="259"/>
         <source>The comparison model failed: %1</source>
         <translation>Помилка моделі під час порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="373"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="413"/>
         <source>The comparison output did not settle.</source>
         <translation>Вихідне зображення порівняння не стабілізувалося.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="289"/>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="428"/>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="594"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="329"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="466"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="632"/>
         <source>The comparison renderer failed: %1</source>
         <translation>Помилка рендерера порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="153"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="190"/>
         <source>The comparison source could not be loaded: %1</source>
         <translation>Не вдалося завантажити джерело для порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="410"/>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="420"/>
-        <source>The decoded comparison source frame could not be read.</source>
-        <translation>Не вдалося прочитати декодований вихідний кадр для порівняння.</translation>
-    </message>
-    <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="447"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="485"/>
         <source>The shader chain for %1 could not be resolved.</source>
         <translation>Не вдалося розв’язати ланцюжок шейдерів для %1.</translation>
     </message>
@@ -8683,7 +8688,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::VideoSurface</name>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3196"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3262"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="292"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="867"/>
         <source>Skipped on HDR: native stages force 8-bit NV12</source>
@@ -8806,7 +8811,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <location filename="../src/player/core/VideoSurface.cpp" line="636"/>
         <location filename="../src/player/core/VideoSurface.cpp" line="667"/>
         <location filename="../src/player/core/VideoSurface.cpp" line="694"/>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3136"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3202"/>
         <source>Anime4K skipped: source transfer metadata is unknown or HDR</source>
         <translation>Anime4K пропущено: передавальна функція джерела невідома або відповідає HDR</translation>
     </message>
@@ -8826,70 +8831,70 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Пауза: транспорт mpv не прийняв команду</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1806"/>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3356"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1872"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3422"/>
         <source>%1: %2</source>
         <translation>%1: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1832"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1898"/>
         <source>%1: the mpv transport did not accept the command</source>
         <translation>%1: транспорт mpv не прийняв команду</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3197"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3263"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="293"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="868"/>
         <source>Skipped: source transfer metadata is unknown</source>
         <translation>Пропущено: метадані передавальної функції джерела невідомі</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3210"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3276"/>
         <source>Enhancement engine build stopped for this source.</source>
         <translation>Збирання рушія покращення для цього джерела зупинено.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3330"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3396"/>
         <source>dscale: the core&apos;s default downscaler could not be read (%1). The previous downscaler stays in effect; choose one explicitly or reopen the player.</source>
         <translation>dscale: не вдалося прочитати типовий даунскейлер ядра (%1). Попередній даунскейлер залишається чинним; виберіть його явно або перевідкрийте плеєр.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3678"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3744"/>
         <source>Cannot read audio/subtitle tracks: %1</source>
         <translation>Не вдалося прочитати аудіодоріжки та доріжки субтитрів: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3692"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3758"/>
         <source>The playback core did not accept the track discovery request.</source>
         <translation>Модуль відтворення не прийняв запит на визначення доріжок.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3701"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3767"/>
         <source>The media changed. Reopen the track menu.</source>
         <translation>Медіафайл змінився. Відкрийте меню доріжок знову.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3708"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3774"/>
         <source>The selected track is no longer available.</source>
         <translation>Вибрана доріжка більше не доступна.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3720"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3786"/>
         <source>Cannot select %1: %2</source>
         <translation>Не вдалося вибрати %1: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3721"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3787"/>
         <source>audio track</source>
         <translation>аудіодоріжку</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3721"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3787"/>
         <source>subtitle track</source>
         <translation>доріжку субтитрів</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3733"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3799"/>
         <source>The playback core did not accept the track selection request.</source>
         <translation>Модуль відтворення не прийняв запит на вибір доріжки.</translation>
     </message>
@@ -8985,7 +8990,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/core/VideoSurface.cpp" line="1332"/>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3796"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3862"/>
         <source>The source changed during engine preparation.</source>
         <translation>Джерело змінилося під час підготовки рушія.</translation>
     </message>
@@ -9030,7 +9035,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>У цій збірці не вказано декодер для запитаного провайдера.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="2651"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="2717"/>
         <source>Video render failed (mpv: %1)</source>
         <translation>Помилка рендерингу відео (mpv: %1)</translation>
     </message>
@@ -9312,8 +9317,8 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::shell::CompareWindow</name>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2385"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2387"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2397"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2399"/>
         <source>%1 unavailable: %2</source>
         <translation>%1 недоступно: %2</translation>
     </message>
@@ -9326,7 +9331,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>%1%</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2391"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2403"/>
         <source>%n native change(s) queued until Compare closes</source>
         <translation>
             <numerusform>%n нативна зміна в черзі до закриття вікна порівняння</numerusform>
@@ -9352,28 +9357,28 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Білінійний</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2139"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2151"/>
         <source>Export failed</source>
         <translation>Не вдалося експортувати</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2375"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2387"/>
         <source>Capture error: %1</source>
         <translation>Помилка захоплення: %1</translation>
     </message>
     <message>
         <location filename="../src/player/compare/CompareWindow.cpp" line="1091"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1942"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1954"/>
         <source>Comparison engine build cancelled.</source>
         <translation>Збирання рушія порівняння скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1940"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1952"/>
         <source>Comparison engine build failed: %1</source>
         <translation>Помилка збирання рушія порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1938"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1950"/>
         <source>Comparison engine ready.</source>
         <translation>Рушій порівняння готовий.</translation>
     </message>
@@ -9420,14 +9425,14 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/compare/CompareWindow.cpp" line="658"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2111"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2123"/>
         <source>Exporting…</source>
         <translation>Експорт…</translation>
     </message>
     <message>
         <location filename="../src/player/compare/CompareWindow.cpp" line="658"/>
         <location filename="../src/player/compare/CompareWindow.cpp" line="920"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2111"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2123"/>
         <source>Export…</source>
         <translation>Експортувати…</translation>
     </message>
@@ -9474,7 +9479,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Режим:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2374"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2386"/>
         <source>Native plan not frozen: %1</source>
         <translation>Нативний план не зафіксовано: %1</translation>
     </message>
@@ -9485,7 +9490,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Найближчий сусід</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1995"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2007"/>
         <source>No frame to compare</source>
         <translation>Немає кадру для порівняння</translation>
     </message>
@@ -9505,8 +9510,8 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Відтворення змістилося після замороженого кадру; захопіть кадр повторно.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2042"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2050"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2054"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2062"/>
         <source>Playback changed during comparison.</source>
         <translation>Відтворення змінилося під час порівняння.</translation>
     </message>
@@ -9538,7 +9543,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Відтворення відновилося під час порівняння; очікування паузи.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2377"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2389"/>
         <source>Preparing AnimeJaNai %1…</source>
         <translation>Підготовка AnimeJaNai %1…</translation>
     </message>
@@ -9549,7 +9554,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Порівняння якості</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2378"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2390"/>
         <source>Rendering %1…</source>
         <translation>Рендеринг %1…</translation>
     </message>
@@ -9570,8 +9575,8 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Нативний план наразі неможливо зафіксувати.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1983"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2029"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1995"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2041"/>
         <source>The playback surface was destroyed</source>
         <translation>Поверхню відтворення було знищено</translation>
     </message>
@@ -9581,12 +9586,12 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Часова мітка відтворення змінилася під час захоплення кадру</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1986"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1998"/>
         <source>The source changed after the frame was captured</source>
         <translation>Джерело відео змінилося після захоплення кадру</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2030"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2042"/>
         <source>The source changed during comparison rendering</source>
         <translation>Джерело змінилося під час рендерингу порівняння</translation>
     </message>
@@ -9612,7 +9617,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Масштаб перегляду</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2394"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2406"/>
         <source>mean difference %1/255</source>
         <translation>середня різниця %1/255</translation>
     </message>
@@ -9708,7 +9713,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Відсутні файли шейдерів: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2335"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2347"/>
         <source>%1, %2 · %3 (%4, %5, %6)</source>
         <translation>%1, %2 · %3 (%4, %5, %6)</translation>
     </message>

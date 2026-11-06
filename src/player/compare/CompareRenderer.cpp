@@ -104,6 +104,42 @@ struct CompareRenderer::State {
         core.reset();
     }
 
+    /// Writes the captured frame as raw RGB and points the core at it. The pinned
+    /// runtime has no PNG decoder, so an image file is not something this core
+    /// can open; rawvideo is.
+    bool prepareStillSource(const std::function<bool()>& cancelled) {
+        const QImage rgb = sourceFrame.convertToFormat(QImage::Format_RGB888);
+        if (rgb.isNull() || rgb.width() <= 0 || rgb.height() <= 0) {
+            error = QCoreApplication::translate("CompareRenderer",
+                                                "The comparison source frame is unreadable.");
+            return false;
+        }
+        framePath = files.filePath(QStringLiteral("source.rgb"));
+        QFile file(framePath);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            error = QCoreApplication::translate("CompareRenderer",
+                                                "The comparison source frame could not be written.");
+            return false;
+        }
+        const int rowBytes = rgb.width() * 3;
+        for (int y = 0; y < rgb.height(); ++y) {
+            if (cancelled && cancelled()) return false;
+            if (file.write(reinterpret_cast<const char*>(rgb.constScanLine(y)), rowBytes) != rowBytes) {
+                error = QCoreApplication::translate("CompareRenderer",
+                                                    "The comparison source frame could not be written.");
+                return false;
+            }
+        }
+        file.close();
+        const std::string pixelFormat = "video_size=" + std::to_string(rgb.width()) + "x" +
+                                        std::to_string(rgb.height()) +
+                                        ":pixel_format=rgb24:framerate=25";
+        const Cancelled never = [] { return false; };
+        if (!waitForCommand(command({"set", "demuxer", "rawvideo"}), never)) return false;
+        if (!waitForCommand(command({"set", "demuxer-lavf-o", pixelFormat}), never)) return false;
+        return true;
+    }
+
     bool initialize(const QSize& size, double timestamp) {
         if (!files.isValid() || size.isEmpty() || !std::isfinite(timestamp)) {
             error = QCoreApplication::translate("CompareRenderer", "The comparison frame storage or geometry is unavailable.");
@@ -404,48 +440,28 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
         state.restarted = false;
         state.core->loadFile(source.toStdString());
         QImage settledSource = state.settle(true, false, cancelled, progress);
-        if (settledSource.isNull()) {
-            if (fallbackSource.isNull() || cancelled()) return false;
-            // The source refused a second decode. The pixels handed in are the
-            // decoder's own frame from the playing surface, so the comparison
-            // still has a true original to render candidates onto.
+        if (!settledSource.isNull()) {
+            state.sourceFrame = settledSource;
+        } else if (!fallbackSource.isNull() && !cancelled()) {
+            // The source refused a second decode. These pixels came from the
+            // playing surface with its filters removed, so they are still the
+            // decoder's own frame.
             state.error.clear();
             state.diagnosticTail.clear();
-            state.framePath = state.files.filePath(QStringLiteral("source.png"));
-            if (!fallbackSource.save(state.framePath, "PNG")) {
-                state.error = QCoreApplication::translate(
-                    "CompareRenderer", "The captured source frame could not be written.");
-                return false;
-            }
             state.sourceFrame = fallbackSource;
-            state.restarted = false;
-            state.core->loadFile(state.framePath.toStdString());
-            return !state.settle(true, false, cancelled, progress).isNull();
-        }
-        state.framePath = state.files.filePath(QStringLiteral("source.png"));
-        const bool screenshotComplete = state.waitForCommand(
-            state.command({"screenshot-to-file", state.framePath.toStdString(), "video"}), cancelled);
-        if (cancelled()) return false;
-        if (!screenshotComplete || !QFileInfo::exists(state.framePath)) {
-            state.error.clear();
-            if (!settledSource.save(state.framePath, "PNG")) {
-                state.error = QCoreApplication::translate("CompareRenderer", "The decoded comparison source frame could not be read.");
-                return false;
-            }
-        }
-        state.sourceFrame = QImage(state.framePath);
-        if (state.sourceFrame.isNull() && !settledSource.isNull()) {
-            settledSource.save(state.framePath, "PNG");
-            state.sourceFrame = QImage(state.framePath);
-        }
-        if (state.sourceFrame.isNull()) {
-            state.error = QCoreApplication::translate("CompareRenderer", "The decoded comparison source frame could not be read.");
+        } else {
             return false;
         }
-        if (!state.waitForCommand(state.command({"set", "start", "0"}), cancelled)) return false;
+        // The still goes back into the core for the candidate render, and the
+        // pinned runtime ships no image codecs: a PNG round-trip through mpv
+        // fails there with "Could not open libavcodec encoder for saving
+        // images". Raw RGB is a format this runtime does decode.
+        if (!state.prepareStillSource(cancelled)) return false;
         state.restarted = false;
         state.core->loadFile(state.framePath.toStdString());
-        return !state.settle(true, false, cancelled, progress).isNull();
+        const bool settled = !state.settle(true, false, cancelled, progress).isNull();
+        if (settled) state.error.clear();
+        return settled;
     } catch (const MpvError& error) {
         state.error = QCoreApplication::translate("CompareRenderer", "The comparison renderer failed: %1").arg(QString::fromUtf8(error.what()));
         return false;

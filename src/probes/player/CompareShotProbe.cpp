@@ -66,7 +66,11 @@ int main(int argc, char** argv) {
         return 2;
     }
     static Host host;
-    const QString url = QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25");
+    // A real URL can be supplied to reproduce a source that refuses a second
+    // decode; the default stays synthetic so the probe needs no network.
+    const QString url = qEnvironmentVariableIsEmpty("MIKAI_COMPARE_PROBE_URL")
+                            ? QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25")
+                            : qEnvironmentVariable("MIKAI_COMPARE_PROBE_URL");
     const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};
 
     auto* dialog = new PlayerDialog(QStringLiteral("shot"), url, qualities, 720, &host);
