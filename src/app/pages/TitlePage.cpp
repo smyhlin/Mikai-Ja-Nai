@@ -57,6 +57,7 @@
 #include <QLabel>
 #include <QLocale>
 #include <QLayout>
+#include <QGraphicsDropShadowEffect>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QMessageBox>
@@ -85,6 +86,25 @@
 #include <algorithm>
 
 namespace mikai::app {
+
+namespace {
+/// A soft accent halo, drawn by the widget's own effect rather than the sheet:
+/// no stylesheet shadow exists for a plain widget, and the halo has to follow
+/// the active accent. Zero offset keeps it a glow instead of a drop shadow.
+void applyAccentGlow(QWidget* widget, int blurRadius = 26, int alpha = 150) {
+    if (widget == nullptr) return;
+    auto* effect = new QGraphicsDropShadowEffect(widget);
+    QColor glow = widget->palette().color(QPalette::Highlight);
+    if (!glow.isValid()) glow = widget->palette().color(QPalette::WindowText);
+    glow.setAlpha(alpha);
+    effect->setColor(glow);
+    effect->setOffset(0, 0);
+    effect->setBlurRadius(blurRadius);
+    widget->setGraphicsEffect(effect);
+}
+}  // namespace
+
+
 namespace {
 
 constexpr bool kShowHeroChips = true;
@@ -701,6 +721,7 @@ void TitlePage::buildHero() {
     wrapLabel(scores_);
     scores_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     scores_->hide();
+    applyAccentGlow(scores_);
     // Added without an alignment flag: an aligned item keeps its single-line
     // size hint, which is what clipped a wrapped score line.
     textColumn->addWidget(scores_);
@@ -770,15 +791,11 @@ void TitlePage::buildHero() {
     auto* actionContext = new QVBoxLayout(heroActionContextHost_);
     actionContext->setContentsMargins(0, 0, 0, 0);
     actionContext->setSpacing(theme::kSpacingXs);
-    heroWatchContext_ = new QLabel(heroActionContextHost_);
-    heroWatchContext_->setObjectName(QStringLiteral("titleHeroWatchContext"));
-    heroWatchContext_->setWordWrap(true);
-    heroWatchContext_->setTextFormat(Qt::PlainText);
-    heroWatchContext_->hide();
-    actionContext->addWidget(heroWatchContext_);
     actionContext->addWidget(chipsHost);
     heroActionContextHost_->hide();
     textColumn->addWidget(heroActionContextHost_);
+    applyAccentGlow(heroActionContextHost_->findChild<QWidget*>(QStringLiteral("titleGenres")),
+                    22, 120);
 
     textColumn->addSpacing(theme::kSpacingSmall);
     description_ = new QLabel(hero_);
@@ -1527,9 +1544,6 @@ void TitlePage::onError(const backend::Failure& failure) {
     episodeLegend_->hide();
     watchEntry_ = nullptr;
     updateWatchPanel();
-    if (heroWatchContext_ != nullptr) {
-        heroWatchContext_->clear();
-    }
     rateLabel_->refresh();
     setStatus(backend::failureLine(failure));
     hasFailure_ = true;
@@ -2438,10 +2452,6 @@ void TitlePage::updateWatchPanel() {
     if (!hasEpisode) {
         watchPanel_->hide();
         watchButton_->setEnabled(false);
-        if (heroWatchContext_ != nullptr) {
-            heroWatchContext_->clear();
-            heroWatchContext_->hide();
-        }
         if (heroActionContextHost_ != nullptr) {
             const QWidget* genres = heroActionContextHost_->findChild<QWidget*>(
                 QStringLiteral("titleGenres"));
@@ -2487,13 +2497,6 @@ void TitlePage::updateWatchPanel() {
                               : mplayer::shell::formatTime(offset));
     }
     watchMeta_->setText(meta.join(QStringLiteral(" · ")));
-    if (heroWatchContext_ != nullptr) {
-        heroWatchContext_->setText(meta.isEmpty()
-                                       ? watchEpisode_->text()
-                                       : watchEpisode_->text() + QStringLiteral(" · ") +
-                                             meta.join(QStringLiteral(" · ")));
-        heroWatchContext_->show();
-    }
     if (heroActionContextHost_ != nullptr) {
         heroActionContextHost_->show();
     }
