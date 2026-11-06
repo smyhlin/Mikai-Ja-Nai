@@ -10719,6 +10719,62 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <source>Select audio from disk…</source>
         <translation>Вибрати звук з диска…</translation>
     </message>
+    <message>
+        <source>OpenSubtitles</source>
+        <translation>OpenSubtitles</translation>
+    </message>
+    <message>
+        <source>Title or release name</source>
+        <translation>Назва або ім'я релізу</translation>
+    </message>
+    <message>
+        <source>OpenSubtitles API key</source>
+        <translation>API-ключ OpenSubtitles</translation>
+    </message>
+    <message>
+        <source>A free API key from opensubtitles.com is required.</source>
+        <translation>Потрібен безкоштовний API-ключ з opensubtitles.com.</translation>
+    </message>
+    <message>
+        <source>Download and attach</source>
+        <translation>Завантажити й додати</translation>
+    </message>
+    <message>
+        <source>Enter your OpenSubtitles API key first.</source>
+        <translation>Спершу введіть API-ключ OpenSubtitles.</translation>
+    </message>
+    <message>
+        <source>Nothing found for that title.</source>
+        <translation>За цією назвою нічого не знайдено.</translation>
+    </message>
+    <message>
+        <source>%n subtitle(s) found</source>
+        <translation>Знайдено субтитрів: %n</translation>
+    </message>
+    <message>
+        <source>No temporary folder for the subtitle.</source>
+        <translation>Немає тимчасової папки для субтитрів.</translation>
+    </message>
+    <message>
+        <source>The subtitle could not be written.</source>
+        <translation>Не вдалося записати субтитри.</translation>
+    </message>
+    <message>
+        <source>The subtitle could not be loaded.</source>
+        <translation>Не вдалося завантажити субтитри.</translation>
+    </message>
+    <message>
+        <source>Attached.</source>
+        <translation>Додано.</translation>
+    </message>
+    <message>
+        <source>Subtitle attached</source>
+        <translation>Субтитри додано</translation>
+    </message>
+    <message>
+        <source>%1 · %2 · %3 downloads</source>
+        <translation>%1 · %2 · завантажень: %3</translation>
+    </message>
 </context>
 <context>
     <name>mplayer::shell::PlayerShell</name>
@@ -11042,6 +11098,30 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     <message>
         <source>Audio (*.m4a *.aac *.mp3 *.opus *.flac *.wav *.ac3 *.eac3 *.dts *.ogg);;All files (*)</source>
         <translation>Звук (*.m4a *.aac *.mp3 *.opus *.flac *.wav *.ac3 *.eac3 *.dts *.ogg);;Усі файли (*)</translation>
+    </message>
+    <message>
+        <source>Subtitles  ›</source>
+        <translation>Субтитри  ›</translation>
+    </message>
+    <message>
+        <source>Attach subtitles from disk or search OpenSubtitles</source>
+        <translation>Додати субтитри з диска або знайти в OpenSubtitles</translation>
+    </message>
+    <message>
+        <source>From disk…</source>
+        <translation>З диска…</translation>
+    </message>
+    <message>
+        <source>From disk… (local videos only)</source>
+        <translation>З диска… (лише локальні відео)</translation>
+    </message>
+    <message>
+        <source>OpenSubtitles…</source>
+        <translation>OpenSubtitles…</translation>
+    </message>
+    <message>
+        <source>Search subtitles by title and language</source>
+        <translation>Пошук субтитрів за назвою та мовою</translation>
     </message>
 </context>
 <context>

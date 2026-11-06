@@ -992,6 +992,10 @@ void PlayerShell::buildPictureMenu() {
     connect(pictureMenu_, &MenuPopup::picked, this, [this](const QVariant& payload) {
         pictureMenu_->close();
         const QString action = payload.toString();
+        if (action == QStringLiteral("picture-subtitles")) {
+            openPictureSubtitlesMenu();
+            return;
+        }
         if (action == QStringLiteral("frame")) {
             emit frameRequested();
         } else if (action == QStringLiteral("compare")) {
@@ -1040,9 +1044,17 @@ void PlayerShell::updatePictureMenu() {
         add(tr("Media information"), QStringLiteral("information"));
     }
     if (localMediaActive()) {
-        // Local-file only: a stream has no sibling files to offer.
-        add(tr("Load subtitles from disk…"), QStringLiteral("externalsub"));
         add(tr("Load audio from disk…"), QStringLiteral("externalaudio"));
+    }
+    {
+        // Subtitles now have more than one source, so they get their own level:
+        // a sibling file on disk, or a search on OpenSubtitles.
+        MenuEntry subtitles;
+        subtitles.text = tr("Subtitles  ›");
+        subtitles.tooltip = tr("Attach subtitles from disk or search OpenSubtitles");
+        subtitles.payload = QStringLiteral("picture-subtitles");
+        subtitles.submenu = true;
+        entries.append(subtitles);
     }
     add(tr("Keyboard shortcuts  (?)"), QStringLiteral("keys"));
     add(tr("Exit  (Esc)"), QStringLiteral("exit"));
@@ -1124,6 +1136,40 @@ QString PlayerShell::localMediaFolder() const {
     }
     const QString folder = info.absolutePath();
     return QFileInfo(folder).isDir() ? folder : QString();
+}
+
+void PlayerShell::openPictureSubtitlesMenu() {
+    if (pictureSubtitlesMenu_ == nullptr) {
+        QWidget* overlayHost = parentWidget() != nullptr ? parentWidget() : this;
+        pictureSubtitlesMenu_ = new MenuPopup(tr("Subtitles"), overlayHost);
+        pictureSubtitlesMenu_->setObjectName(QStringLiteral("playerSubtitlesMenu"));
+        pictureSubtitlesMenu_->hide();
+        registerOverlay(pictureSubtitlesMenu_);
+        connect(pictureSubtitlesMenu_, &MenuPopup::picked, this, [this](const QVariant& payload) {
+            pictureSubtitlesMenu_->close();
+            pictureMenu_->close();
+            const QString action = payload.toString();
+            if (action == QLatin1String("disk")) {
+                loadExternalSubtitle();
+            } else if (action == QLatin1String("opensubtitles")) {
+                Q_EMIT openSubtitlesRequested();
+            }
+        });
+    }
+    QVector<MenuEntry> entries;
+    MenuEntry disk;
+    disk.text = localMediaActive() ? tr("From disk…")
+                                   : tr("From disk… (local videos only)");
+    disk.disabled = !localMediaActive();
+    disk.payload = QStringLiteral("disk");
+    entries.append(disk);
+    MenuEntry online;
+    online.text = tr("OpenSubtitles…");
+    online.tooltip = tr("Search subtitles by title and language");
+    online.payload = QStringLiteral("opensubtitles");
+    entries.append(online);
+    pictureSubtitlesMenu_->setEntries(entries);
+    pictureSubtitlesMenu_->popupNear(mapToGlobal(pictureMenuAnchor_));
 }
 
 void PlayerShell::openPictureMenu(const QPoint& position) {

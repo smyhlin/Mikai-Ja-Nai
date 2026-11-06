@@ -195,6 +195,8 @@ public:
     void updatePlayIcon();
     /// Opens the picture context menu at a point in shell coordinates.
     void openPictureMenu(const QPoint& position);
+    /// The Subtitles level of the picture menu: disk and OpenSubtitles.
+    void openPictureSubtitlesMenu();
     void setTrackAvailability(int audioTracks, int subtitleTracks, bool localMedia);
     void setAspectRatio(double ratio);
 
@@ -236,6 +238,8 @@ public:
     /// filename for the viewer to supply a sibling from. The track popups and the
     /// picture menu both ask this before offering a file dialog.
     bool localMediaActive() const;
+    /// The opened path, for callers that need a name from it (subtitle search).
+    QString localMediaPath() const { return path_; }
     void loadExternalSubtitle();
     void loadExternalAudio();
     /// A path that arrived from a drop rather than a dialog.
@@ -265,6 +269,8 @@ signals:
     void prevRequested();
     void downloadRequested();
     void mediaDropped(const QString& path);
+    /// The Subtitles level asked for the OpenSubtitles search.
+    void openSubtitlesRequested();
     void closeRequested();
     /// A right-click on the picture asked for the current frame. The shell owns
     /// no clipboard and no image, so the host reads the surface and copies it.

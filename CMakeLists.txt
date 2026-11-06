@@ -238,6 +238,8 @@ set(PLAYER_SOURCES
   src/player/shell/EpisodeNavButton.cpp
   src/player/shell/FramePreviewService.cpp
   src/player/shell/HoverPreview.cpp
+  src/player/shell/OpenSubtitlesClient.cpp
+  src/player/shell/OpenSubtitlesClient.hpp
   src/player/shell/PipFloat.cpp
   src/player/shell/PlayerDialog.cpp
   src/player/shell/PlayerDialogProcessing.cpp

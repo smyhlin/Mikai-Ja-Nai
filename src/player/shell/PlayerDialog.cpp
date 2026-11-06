@@ -5,7 +5,15 @@
 #include "OpeningOverlay.hpp"
 
 #include <QSettings>
+#include <QLocale>
 
+#include <QComboBox>
+#include <QDialog>
+#include <QFile>
+#include <QLineEdit>
+#include <QListWidget>
+#include <QListWidgetItem>
+#include <QTemporaryDir>
 #include <QApplication>
 #include <QMessageBox>
 #include <QAccessible>
@@ -13,6 +21,7 @@
 #include <QThreadPool>
 #include <QRunnable>
 
+#include "OpenSubtitlesClient.hpp"
 #include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
 #include "PresetShortcuts.hpp"
@@ -695,6 +704,8 @@ void PlayerDialog::connectShell() {
     connect(shell_, &PlayerShell::stateChanged, this, &PlayerDialog::onShellStateChanged);
     connect(shell_, &PlayerShell::audioRequested, this, &PlayerDialog::openAudioMenu);
     connect(shell_, &PlayerShell::subtitlesRequested, this, &PlayerDialog::openSubtitlesMenu);
+    connect(shell_, &PlayerShell::openSubtitlesRequested, this,
+            &PlayerDialog::openSubtitlesSearchDialog);
     connect(shell_, &PlayerShell::qualityRequested, this, &PlayerDialog::onQualityPicked);
     connect(shell_, &PlayerShell::fullscreenChanged, this,
             &PlayerDialog::onShellFullscreenChanged);
@@ -1650,6 +1661,193 @@ void PlayerDialog::openSubtitlesMenu() {
     }
     probeUnknownTracks();
     subtitlesPopup_->popupNear(settingsAnchor());
+}
+
+QString PlayerDialog::subtitleSearchSeed() const {
+    // The caption is the best title the player holds: "<label> · <height>p".
+    QString seed = caption_;
+    const int tail = seed.lastIndexOf(QStringLiteral(" · "));
+    if (tail > 0 && seed.endsWith(QLatin1Char('p'), Qt::CaseInsensitive)) seed.truncate(tail);
+    seed = seed.trimmed();
+    return seed.isEmpty() ? QFileInfo(shell_->localMediaPath()).completeBaseName() : seed;
+}
+
+void PlayerDialog::openSubtitlesSearchDialog() {
+    if (closed_) return;
+    shell_->dismissOverlay();
+    QDialog dialog(this);
+    dialog.setObjectName(QStringLiteral("subtitlesSearchDialog"));
+    dialog.setWindowTitle(tr("OpenSubtitles"));
+    auto* layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(theme::kSpacingMedium, theme::kSpacingMedium,
+                               theme::kSpacingMedium, theme::kSpacingMedium);
+    layout->setSpacing(theme::kSpacingSmall);
+
+    auto* form = new QHBoxLayout();
+    auto* query = new QLineEdit(subtitleSearchSeed(), &dialog);
+    query->setPlaceholderText(tr("Title or release name"));
+    form->addWidget(query, 1);
+    auto* language = new QComboBox(&dialog);
+    // The service takes ISO 639-1; the system locale names the default.
+    const QString systemLanguage = QLocale::system().name().left(2);
+    for (const QString& code :
+         {systemLanguage, QStringLiteral("uk"), QStringLiteral("en"), QStringLiteral("ru"),
+          QStringLiteral("pl"), QStringLiteral("de"), QStringLiteral("es")}) {
+        if (language->findData(code) >= 0) continue;
+        language->addItem(QLocale(code).nativeLanguageName(), code);
+    }
+    language->setCurrentIndex(0);
+    form->addWidget(language, 0);
+    layout->addLayout(form);
+
+    auto* keyRow = new QHBoxLayout();
+    auto* key = new QLineEdit(&dialog);
+    key->setEchoMode(QLineEdit::Password);
+    key->setPlaceholderText(tr("OpenSubtitles API key"));
+    QSettings settings;
+    key->setText(settings.value(QStringLiteral("access/openSubtitlesApiKey")).toString());
+    keyRow->addWidget(key, 1);
+    auto* keyHint = new QLabel(tr("A free API key from opensubtitles.com is required."), &dialog);
+    keyHint->setObjectName(QStringLiteral("muted"));
+    layout->addWidget(keyHint);
+    layout->addLayout(keyRow);
+
+    auto* results = new QListWidget(&dialog);
+    results->setObjectName(QStringLiteral("subtitlesSearchResults"));
+    results->setMinimumHeight(theme::kSpacingLarge * 9);
+    layout->addWidget(results, 1);
+
+    auto* status = new QLabel(&dialog);
+    status->setObjectName(QStringLiteral("muted"));
+    status->setWordWrap(true);
+    layout->addWidget(status);
+
+    auto* actions = new QHBoxLayout();
+    auto* search = new QPushButton(tr("Search"), &dialog);
+    theme::applyActionRole(search, theme::ActionRole::Primary);
+    auto* download = new QPushButton(tr("Download and attach"), &dialog);
+    download->setEnabled(false);
+    actions->addWidget(search);
+    actions->addStretch(1);
+    actions->addWidget(download);
+    layout->addLayout(actions);
+
+    const QPointer<QDialog> guard(&dialog);
+    QObject::connect(search, &QPushButton::clicked, &dialog,
+                     [this, guard, query, language, key, results, status, search, download] {
+        if (guard == nullptr) return;
+        const QString apiKey = key->text().trimmed();
+        if (apiKey.isEmpty()) {
+            status->setText(PlayerDialog::tr("Enter your OpenSubtitles API key first."));
+            key->setFocus();
+            return;
+        }
+        results->clear();
+        download->setEnabled(false);
+        search->setEnabled(false);
+        status->setText(PlayerDialog::tr("Searching…"));
+        const QString text = query->text().trimmed();
+        const QString code = language->currentData().toString();
+        const QPointer<PlayerDialog> self(this);
+        QThreadPool::globalInstance()->start(QRunnable::create([self, apiKey, text, code, results,
+                                                                status, search, download] {
+            const shell::OpenSubtitlesSearch found =
+                shell::searchOpenSubtitles(apiKey, text, code);
+            QVariantMap map;
+            if (!found.error.isEmpty()) {
+                map.insert(QStringLiteral("error"), found.error);
+            } else {
+                QVariantList hits;
+                for (const shell::OpenSubtitlesHit& hit : found.hits) {
+                    QVariantMap row;
+                    row.insert(QStringLiteral("fileId"), hit.fileId);
+                    row.insert(QStringLiteral("language"), hit.language);
+                    row.insert(QStringLiteral("release"), hit.releaseName);
+                    row.insert(QStringLiteral("downloads"), hit.downloads);
+                    hits.append(row);
+                }
+                map.insert(QStringLiteral("hits"), hits);
+            }
+            QMetaObject::invokeMethod(qApp, [self, map, results, status, search, download, apiKey] {
+                if (self == nullptr) return;
+                search->setEnabled(true);
+                if (map.contains(QStringLiteral("error"))) {
+                    status->setText(map.value(QStringLiteral("error")).toString());
+                    return;
+                }
+                QSettings settings;
+                settings.setValue(QStringLiteral("access/openSubtitlesApiKey"), apiKey);
+                const QVariantList hits = map.value(QStringLiteral("hits")).toList();
+                for (const QVariant& entry : hits) {
+                    const QVariantMap row = entry.toMap();
+                    const QString label =
+                        PlayerDialog::tr("%1 · %2 · %3 downloads")
+                            .arg(row.value(QStringLiteral("release")).toString(),
+                                 row.value(QStringLiteral("language")).toString())
+                            .arg(row.value(QStringLiteral("downloads")).toInt());
+                    auto* item = new QListWidgetItem(label, results);
+                    item->setData(Qt::UserRole, row.value(QStringLiteral("fileId")).toInt());
+                    item->setToolTip(label);
+                }
+                status->setText(hits.isEmpty()
+                                    ? PlayerDialog::tr("Nothing found for that title.")
+                                    : PlayerDialog::tr("%n subtitle(s) found", nullptr,
+                                         static_cast<int>(hits.size())));
+                download->setEnabled(!hits.isEmpty());
+                if (!hits.isEmpty()) results->setCurrentRow(0);
+            }, Qt::QueuedConnection);
+        });
+        QObject::connect(key, &QLineEdit::returnPressed, search, &QPushButton::click);
+    });
+
+    QObject::connect(download, &QPushButton::clicked, &dialog,
+                     [this, guard, results, status, key, download] {
+        if (guard == nullptr) return;
+        QListWidgetItem* item = results->currentItem();
+        if (item == nullptr) return;
+        const int fileId = item->data(Qt::UserRole).toInt();
+        const QString apiKey = key->text().trimmed();
+        download->setEnabled(false);
+        status->setText(PlayerDialog::tr("Downloading…"));
+        const QPointer<PlayerDialog> self(this);
+        QThreadPool::globalInstance()->start(QRunnable::create([self, apiKey, fileId, status,
+                                                                download] {
+            QString error;
+            const QByteArray bytes = shell::downloadOpenSubtitles(apiKey, fileId, &error);
+            QMetaObject::invokeMethod(qApp, [self, bytes, error, status, download] {
+                if (self == nullptr) return;
+                download->setEnabled(true);
+                if (!error.isEmpty()) {
+                    status->setText(error);
+                    return;
+                }
+                self->subtitleTempDir_ = std::make_unique<QTemporaryDir>();
+                if (!self->subtitleTempDir_->isValid()) {
+                    status->setText(PlayerDialog::tr("No temporary folder for the subtitle."));
+                    return;
+                }
+                const QString path =
+                    self->subtitleTempDir_->filePath(QStringLiteral("opensubtitles.srt"));
+                QFile file(path);
+                if (!file.open(QIODevice::WriteOnly) || file.write(bytes) <= 0) {
+                    status->setText(PlayerDialog::tr("The subtitle could not be written."));
+                    return;
+                }
+                file.close();
+                QString reason;
+                if (self->surface_ == nullptr ||
+                    !self->surface_->addExternalTrack(path, true, &reason)) {
+                    status->setText(reason.isEmpty() ? PlayerDialog::tr("The subtitle could not be loaded.")
+                                                     : reason);
+                    return;
+                }
+                status->setText(PlayerDialog::tr("Attached."));
+                self->flashStatus(tr("Subtitle attached"));
+            }, Qt::QueuedConnection);
+        });
+    });
+
+    dialog.exec();
 }
 
 void PlayerDialog::appendExternalTrackEntry(QVector<MenuEntry>& entries, bool subtitle) {
