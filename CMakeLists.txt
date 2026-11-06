@@ -377,6 +377,8 @@ set(APP_SOURCES
   src/app/widgets/PageGlow.cpp
   src/app/widgets/SwatchButton.cpp
   src/app/widgets/TitleCard.cpp
+  src/app/widgets/CarouselButton.cpp
+  src/app/widgets/CarouselButton.hpp
   src/app/widgets/ToggleSwitch.cpp
   src/app/dialogs/ComponentStoreTab.cpp
   src/app/dialogs/ComponentStoreTabAcquisition.cpp

@@ -17,6 +17,7 @@
 #include "theme/Palette.hpp"
 #include "theme/Theme.hpp"
 #include "widgets/FailureView.hpp"
+#include "widgets/CarouselButton.hpp"
 #include "widgets/FlowLayout.hpp"
 #include "widgets/RangePager.hpp"
 #include "widgets/TitleCard.hpp"
@@ -1896,17 +1897,12 @@ QWidget* TitlePage::buildRelatedCarousel(
     relatedHeadings_.append({headingKey, title});
     header->addWidget(title);
     header->addStretch();
-    auto* previous = new QPushButton(section);
-    previous->setIcon(theme::chevronLeftIcon(16));
+    auto* previous = new CarouselButton(CarouselButton::Direction::Left, section);
     previous->setToolTip(tr("Previous page"));
-    auto* next = new QPushButton(section);
-    next->setIcon(theme::chevronRightIcon(16));
+    auto* next = new CarouselButton(CarouselButton::Direction::Right, section);
     next->setToolTip(tr("Next page"));
     relatedPagerButtons_.emplaceBack(previous, next);
     for (QPushButton* button : {previous, next}) {
-        button->setObjectName(QStringLiteral("carouselControl"));
-        button->setIconSize(QSize(16, 16));
-        button->setCursor(Qt::PointingHandCursor);
         header->addWidget(button);
     }
     // The disclosure toggle above this pager takes the pager's own width — both

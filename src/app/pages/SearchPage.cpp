@@ -12,6 +12,7 @@
 #include "theme/Metrics.hpp"
 #include "theme/Palette.hpp"
 #include "theme/Theme.hpp"
+#include "widgets/CarouselButton.hpp"
 #include "widgets/RangePager.hpp"
 #include "widgets/RateLimitLabel.hpp"
 #include "widgets/FailureView.hpp"
@@ -1153,14 +1154,9 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& key) {
     section->state->setWordWrap(true);
     titleColumn->addWidget(section->state);
     header->addLayout(titleColumn, 1);
-    section->previous = new QPushButton(section->section);
-    section->previous->setIcon(theme::chevronLeftIcon(16));
-    section->next = new QPushButton(section->section);
-    section->next->setIcon(theme::chevronRightIcon(16));
+    section->previous = new CarouselButton(CarouselButton::Direction::Left, section->section);
+    section->next = new CarouselButton(CarouselButton::Direction::Right, section->section);
     for (QPushButton* button : {section->previous, section->next}) {
-        button->setObjectName(QStringLiteral("carouselControl"));
-        button->setIconSize(QSize(16, 16));
-        button->setCursor(Qt::PointingHandCursor);
         header->addWidget(button, 0, Qt::AlignTop);
     }
     layout->addLayout(header);
