@@ -431,7 +431,7 @@ CompareRenderer::~CompareRenderer() = default;
 
 bool CompareRenderer::capture(const QString& source, double timestamp, const QSize& outputSize,
                               const Cancelled& cancelled, const Progress& progress,
-                              const QImage& fallbackSource) {
+                              const std::function<QImage()>& fallbackProvider) {
     State& state = *state_;
     state.error.clear();
     state.sourceFrame = {};
@@ -441,6 +441,15 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
     state.useUpscaleTarget = false;
     try {
         if (!state.initialize(outputSize, timestamp) || cancelled()) return false;
+        // A previous capture left the core pointed at the raw still; opening the
+        // network source with that selector reads the stream as raw pixels - a
+        // wrong-geometry read that can allocate absurd buffers. Reset the source
+        // selection before every real load.
+        const Cancelled never = [] { return false; };
+        if (!state.waitForCommand(state.command({"set", "demuxer", ""}), never) ||
+            !state.waitForCommand(state.command({"set", "demuxer-lavf-format", ""}), never) ||
+            !state.waitForCommand(state.command({"set", "demuxer-lavf-o", ""}), never))
+            return false;
         const std::string startTimestamp = QString::number(timestamp, 'f', 6).toStdString();
         if (!state.waitForCommand(state.command({"set", "vf", ""}), cancelled) ||
             !state.waitForCommand(state.command({"set", "glsl-shaders", ""}), cancelled) ||
@@ -450,15 +459,15 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
         QImage settledSource = state.settle(true, false, cancelled, progress);
         if (!settledSource.isNull()) {
             state.sourceFrame = settledSource;
-        } else if (!fallbackSource.isNull() && !cancelled()) {
-            // The source refused a second decode. These pixels came from the
-            // playing surface with its filters removed, so they are still the
-            // decoder's own frame.
+        } else {
+            // The source refused a second decode; only now is the playing
+            // surface asked for its untouched frame.
+            const QImage fallback = fallbackProvider && !cancelled() ? fallbackProvider()
+                                                                    : QImage();
+            if (fallback.isNull() || cancelled()) return false;
             state.error.clear();
             state.diagnosticTail.clear();
-            state.sourceFrame = fallbackSource;
-        } else {
-            return false;
+            state.sourceFrame = fallback;
         }
         // The still goes back into the core for the candidate render, and the
         // pinned runtime ships no image codecs: a PNG round-trip through mpv

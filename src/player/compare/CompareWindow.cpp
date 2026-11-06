@@ -1816,20 +1816,26 @@ QImage CompareWindow::renderIsolated(const QString& id) {
         const auto renderer = isolatedRenderer_;
         pendingAjiId_ = id;
         updateInfo();
-        // The untouched frame from the playing surface, filters cleared only for
-        // this read: a stream that refuses a second decode still has an original
-        // to compare against, instead of two blank halves.
-        QImage fallbackSource;
-        if (surface_ != nullptr && surface_->hasVideo()) {
-            QString fallbackReason;
-            fallbackSource = surface_->grabUnfilteredFrame(&fallbackReason);
-            if (fallbackSource.isNull() && !fallbackReason.isEmpty()) {
-                qWarning("CompareWindow: the unfiltered source frame is unavailable: %s",
-                         qPrintable(fallbackReason));
+        // Asked for only if this pane cannot open its own decode: the read
+        // removes the playing surface's filter for a moment, so it must not run
+        // on the path that already works.
+        const QPointer<CompareWindow> lazySelf(this);
+        const std::function<QImage()> fallbackProvider = [lazySelf] {
+            if (lazySelf == nullptr || lazySelf->surface_ == nullptr ||
+                !lazySelf->surface_->hasVideo()) {
+                return QImage();
             }
-        }
+            QString reason;
+            const QImage frame = lazySelf->surface_->grabUnfilteredFrame(&reason);
+            if (frame.isNull() && !reason.isEmpty()) {
+                qWarning("CompareWindow: the unfiltered source frame is unavailable: %s",
+                         qPrintable(reason));
+            }
+            return frame;
+        };
         const bool captured = renderer->capture(surface_->sourceUrl(), *frozenPlaybackTimestamp_,
-                                                frame_.size(), cancelled, progress, fallbackSource);
+                                                frame_.size(), cancelled, progress,
+                                                fallbackProvider);
         if (self == nullptr) return {};
         if (!captured) {
             pendingAjiId_.clear();

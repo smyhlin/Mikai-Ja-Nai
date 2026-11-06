@@ -119,6 +119,37 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "     canvas has picture: %.1f%% of samples in range\n", share);
         check(share > 20.0, "the canvas shows an actual picture, not a blank panel");
 
+        // Optional second capture: a recapture runs the whole still path again on
+        // a core that already carries the raw selector, which is where a stale
+        // demuxer read the network source as pixels.
+        if (!qEnvironmentVariableIsEmpty("MIKAI_COMPARE_PROBE_RECAPTURE")) {
+            auto* recapture = compare->findChild<QPushButton*>(QStringLiteral("compareRecapture"));
+            check(recapture != nullptr, "the compare window exposes its Recapture action");
+            if (recapture != nullptr) {
+                QTest::mouseClick(recapture, Qt::LeftButton);
+                QElapsedTimer recaptureWait;
+                recaptureWait.start();
+                while (recaptureWait.elapsed() < 8000 && compare->comparisonPending())
+                    QTest::qWait(50);
+                const QImage again = canvas->grab().toImage().convertToFormat(QImage::Format_RGB888);
+                again.save(QStringLiteral("compare_canvas_recapture.png"));
+                int variedAgain = 0;
+                int sampledAgain = 0;
+                for (int y = 0; y < again.height(); y += 4) {
+                    for (int x = 0; x < again.width(); x += 4) {
+                        ++sampledAgain;
+                        const int lightness = again.pixelColor(x, y).lightness();
+                        if (lightness > 12 && lightness < 243) ++variedAgain;
+                    }
+                }
+                const double shareAgain =
+                    sampledAgain > 0 ? 100.0 * variedAgain / sampledAgain : 0.0;
+                std::fprintf(stderr, "     recapture canvas has picture: %.1f%% of samples\n",
+                             shareAgain);
+                check(shareAgain > 20.0, "a recapture still shows a real picture");
+            }
+        }
+
         compare->grab().save(QStringLiteral("compare_shot.png"));
         std::fprintf(stderr, "     compare_shot.png saved from the visible window\n");
 

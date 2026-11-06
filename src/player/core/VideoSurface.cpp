@@ -1763,18 +1763,25 @@ QImage VideoSurface::grabUnfilteredFrame(QString* reason) {
         const QString filter;
         const QString shaders;
         ~Restore() {
-            try {
-                surface->mpv_->setString("vf", filter.toStdString());
-                surface->mpv_->setString("glsl-shaders", shaders.toStdString());
-            } catch (const MpvError&) {
+            // The core can be gone (a source change destroyed it) between the
+            // capture and this restore; restoring into a null handle would be
+            // undefined, and the new core has no filter to restore anyway.
+            if (surface->mpv_) {
+                try {
+                    surface->mpv_->setString("vf", filter.toStdString());
+                    surface->mpv_->setString("glsl-shaders", shaders.toStdString());
+                } catch (const MpvError&) {
+                }
             }
             surface->update();
         }
     } restore{this, filter, shaders};
 
     try {
-        mpv_->setString("vf", "");
-        mpv_->setString("glsl-shaders", "");
+        // Toggling a filter that is not there is pure risk: a core with nothing
+        // bound needs no teardown.
+        if (!filter.isEmpty() || !filter.trimmed().isEmpty()) mpv_->setString("vf", "");
+        if (!shaders.isEmpty()) mpv_->setString("glsl-shaders", "");
     } catch (const MpvError& error) {
         if (reason != nullptr) *reason = QString::fromUtf8(error.what());
         return {};
