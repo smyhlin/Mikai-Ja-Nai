@@ -1873,6 +1873,18 @@ QWidget* TitlePage::buildRelatedCarousel(
         button->setCursor(Qt::PointingHandCursor);
         header->addWidget(button);
     }
+    // The disclosure toggle above this pager takes the pager's own width — both
+    // square controls plus the gap — instead of sizing to its caption, so the
+    // three controls read as one column. The geometry comes from the buttons
+    // themselves so a theme change carries over without a magic number here.
+    if (relatedButton_ != nullptr) {
+        previous->ensurePolished();
+        next->ensurePolished();
+        const int pairWidth = previous->sizeHint().width() + next->sizeHint().width() +
+                              header->spacing();
+        if (relatedButton_->minimumWidth() != pairWidth)
+            relatedButton_->setFixedWidth(pairWidth);
+    }
     layout->addWidget(headerHost);
 
     auto* scroll = new QScrollArea(section);
