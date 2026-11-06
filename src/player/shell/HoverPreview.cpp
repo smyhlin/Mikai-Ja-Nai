@@ -77,17 +77,6 @@ bool previewReplyMatches(quint64 replyToken, quint64 currentToken, double replyS
     return std::abs(replySeconds - currentSeconds) <= kSameInstantSec;
 }
 
-bool hoverCardKeepsPointer(const QRect& bar, const QRect& card, const QPoint& cursor) {
-    // A pair needs both rects: with no bar there is nothing the card was opened
-    // from, so the card has no band to keep a pointer in and the shell's own
-    // dismissal of a vanished timeline is what ends it.
-    if (bar.isEmpty() || card.isEmpty()) return false;
-    if (bar.contains(cursor) || card.contains(cursor)) return true;
-    // The band the two rects span: the gap between the bar and the card is part
-    // of the journey, and a pointer crossing it is not a pointer that left.
-    return bar.united(card).contains(cursor);
-}
-
 HoverPreview::HoverPreview(QWidget* host)
     : QWidget(host), service_(new FramePreviewService(this)) {
     setObjectName(QStringLiteral("playerHoverPreview"));

@@ -60,7 +60,6 @@ void skipForwardGlyph(QPainter& painter, qreal x, qreal y, qreal size, const QCo
 /// journey leads to is ended. A move from the bar to the card takes a few tens
 /// of milliseconds; 120 ms covers the crossing without keeping a card alive for
 /// a pointer that really left.
-constexpr int kHoverLeaveGraceMs = 120;
 
 QString stateName(PlayerShell::State state) {
     switch (state) {
@@ -475,26 +474,6 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
 
     hideTimer_.setSingleShot(true);
     connect(&hideTimer_, &QTimer::timeout, this, &PlayerShell::enterAutoHidden);
-    // The gap between the timeline and the card it opened is a journey, not an
-    // absence: the card is only ended once the pointer has really gone.
-    hoverLeaveTimer_.setSingleShot(true);
-    hoverLeaveTimer_.setInterval(kHoverLeaveGraceMs);
-    connect(&hoverLeaveTimer_, &QTimer::timeout, this, [this] {
-        const QPoint cursor = QCursor::pos();
-        const QRect barGlobal(scrub_->mapToGlobal(QPoint(0, 0)), scrub_->size());
-        const QRect cardGlobal(hoverPreview_->mapToGlobal(QPoint(0, 0)), hoverPreview_->size());
-        if (hoverPreview_->isVisible() &&
-            hoverCardKeepsPointer(barGlobal, cardGlobal, cursor)) {
-            // Still on the way to (or on) the card: keep it and the chrome that
-            // carries it awake.
-            wake();
-            // And keep watching the band: one rescue must not be the last word
-            // on a pointer that is still on its way out of it.
-            hoverLeaveTimer_.start();
-            return;
-        }
-        dismissHoverPreview();
-    });
     enhancementHoverTimer_.setSingleShot(true);
     connect(&enhancementHoverTimer_, &QTimer::timeout, this, [this] {
         MenuPopup* panel = pendingEnhancementHoverPanel_.data();
@@ -1765,7 +1744,6 @@ void PlayerShell::onTimelineHover(double seconds, const QPoint& globalPosition) 
     }
     // A reading under the pointer is presence: the chrome the timeline lives in
     // must not be hiding while the viewer reads it.
-    hoverLeaveTimer_.stop();
     wake();
     const QRect barGlobal(dock_->mapToGlobal(QPoint(0, 0)), dock_->size());
     const bool wasVisible = hoverPreview_->isVisible();
@@ -1782,19 +1760,17 @@ void PlayerShell::onTimelineHover(double seconds, const QPoint& globalPosition) 
 }
 
 void PlayerShell::onTimelineHoverLeft() {
-    if (hoverPreview_ == nullptr || !hoverPreview_->isVisible()) return;
-    // Deferred rather than dismissed: the pointer that just left the bar may be
-    // on its way to the card the bar opened.
-    hoverLeaveTimer_.start();
+    // The card belongs to the bar: the instant the pointer is not reading the
+    // bar it has nothing left to describe, so it ends with the hover instead of
+    // lingering over the picture.
+    dismissHoverPreview();
 }
 
 void PlayerShell::onTimelineHoverVanished() {
-    hoverLeaveTimer_.stop();
     dismissHoverPreview();
 }
 
 void PlayerShell::dismissHoverPreview() {
-    hoverLeaveTimer_.stop();
     if (hoverPreview_ != nullptr) {
         hoverPreview_->dismiss();
     }
@@ -2584,18 +2560,11 @@ void PlayerShell::mouseMoveEvent(QMouseEvent* event) {
     wake();
 
     // A move the shell itself sees is a pointer over the picture, not over the
-    // timeline: while a card stands, that is the pointer leaving the band it
-    // spans. The grace timer is what makes it a journey rather than an absence -
-    // the next move can still land on the card - and it re-checks the pointer it
-    // is given rather than assuming the departure held.
+    // timeline: the card describes the bar under the pointer, so the first move
+    // that is not on the bar ends it.
     if (hoverPreview_ != nullptr && hoverPreview_->isVisible() && scrub_ != nullptr) {
         const QRect barGlobal(scrub_->mapToGlobal(QPoint(0, 0)), scrub_->size());
-        const QRect cardGlobal(hoverPreview_->mapToGlobal(QPoint(0, 0)), hoverPreview_->size());
-        if (hoverCardKeepsPointer(barGlobal, cardGlobal, event->globalPosition().toPoint())) {
-            hoverLeaveTimer_.stop();
-        } else {
-            hoverLeaveTimer_.start();
-        }
+        if (!barGlobal.contains(event->globalPosition().toPoint())) dismissHoverPreview();
     }
 
     if (resizingLeft_ || resizingTop_ || resizingRight_ || resizingBottom_) {

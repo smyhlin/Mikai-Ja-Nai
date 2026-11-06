@@ -552,7 +552,7 @@ private:
 
     QTimer hideTimer_;
     /// The bar-to-card grace. One shot, restarted by every leave.
-    QTimer hoverLeaveTimer_;
+
     /// The source epoch the preview decoder was warmed for; 0 until it is.
     quint64 previewPrewarmEpoch_ = 0;
     QTimer enhancementHoverTimer_;

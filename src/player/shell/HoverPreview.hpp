@@ -43,7 +43,6 @@ bool previewReplyMatches(quint64 replyToken, quint64 currentToken, double replyS
 /// rects alone is the answer. All three are in the same (global) coordinates.
 /// Both rects must exist: a bar that is gone leaves no band, and the shell ends
 /// that card itself instead of asking this policy.
-bool hoverCardKeepsPointer(const QRect& bar, const QRect& card, const QPoint& cursor);
 
 /// The hover card of one player window.
 class HoverPreview : public QWidget, public ChromePaint {
