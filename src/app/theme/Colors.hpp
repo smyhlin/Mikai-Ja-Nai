@@ -101,6 +101,10 @@ inline constexpr const char* kTitleSurface = "#16161d";
 inline constexpr const char* kTitleSurfaceHover = "#1e1e26";
 inline constexpr const char* kTitleText = "#ffffff";
 inline constexpr const char* kTitleMuted = "#8a8a98";
+inline constexpr const char* kEpisodeMangaCanon = "#9292ad";
+inline constexpr const char* kEpisodeAnimeCanon = "#10b981";
+inline constexpr const char* kEpisodeMixed = "#a674ff";
+inline constexpr const char* kEpisodeFiller = "#f59e0b";
 // The border and the raised hover fill are the same value in the reference;
 // the two names keep the roles legible at the call site.
 inline constexpr const char* kTitleBorder = "#1e1e26";

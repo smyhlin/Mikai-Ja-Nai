@@ -899,14 +899,7 @@ QWidget#titlePage QPushButton#episodeButton {
     font-size: %26px;
     font-weight: 500;
 }
-QWidget#titlePage QLabel#episodeTypeBadge {
-    background: transparent;
-    border: none;
-    font-size: 9px;
-    color: %7;
-}
-QWidget#titlePage QLabel#episodeTypeBadge[kind="mixed"] { color: %4; }
-QWidget#titlePage QLabel#episodeTypeBadge[kind="filler"] { color: %7; }
+QWidget#titlePage QLabel#episodeTypeBadge { background: transparent; border: none; }
 QWidget#titlePage QPushButton#episodeButton:hover:enabled { border-color: rgba(%9, 0.55); }
 QWidget#titlePage QPushButton#episodeButton:checked { background: %3; border-color: rgba(%9, 0.45); color: %6; }
 QWidget#titlePage QPushButton#episodeButton:checked:hover { border-color: %5; }

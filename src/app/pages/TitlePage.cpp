@@ -166,6 +166,27 @@ void fillHeroChips(QWidget* host, const backend::AnimeDetail& detail,
     host->setVisible(added > 0);
 }
 
+QColor episodeTypeColor(const QString& type) {
+    if (type == QLatin1String("mangaCanon")) return QColor(theme::kEpisodeMangaCanon);
+    if (type == QLatin1String("animeCanon")) return QColor(theme::kEpisodeAnimeCanon);
+    if (type == QLatin1String("mixed")) return QColor(theme::kEpisodeMixed);
+    if (type == QLatin1String("filler")) return QColor(theme::kEpisodeFiller);
+    return {};
+}
+
+QPixmap episodeTypeDot(const QString& type, qreal devicePixelRatio) {
+    constexpr int size = 10;
+    QPixmap pixmap(qRound(size * devicePixelRatio), qRound(size * devicePixelRatio));
+    pixmap.setDevicePixelRatio(devicePixelRatio);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(episodeTypeColor(type));
+    painter.drawEllipse(QRectF(1, 1, size - 2, size - 2));
+    return pixmap;
+}
+
 class ReleaseKindIcon final : public QWidget {
 public:
     ReleaseKindIcon(bool subtitles, QWidget* parent) : QWidget(parent), subtitles_(subtitles) {
@@ -2418,7 +2439,7 @@ void TitlePage::applyEpisodeState(EpisodeEntry* entry) {
     if (!classification.isEmpty()) {
         description += QStringLiteral(" · ") + classification;
     }
-    button->setToolTip(tr("%1 — watch").arg(entry->label));
+    button->setToolTip(description);
     button->setAccessibleDescription(description);
 }
 
@@ -2591,14 +2612,6 @@ QString TitlePage::episodeTypeCaption(const QString& type) const {
     if (type == QLatin1String("animeCanon")) return tr("Anime canon");
     if (type == QLatin1String("filler")) return tr("Filler");
     if (type == QLatin1String("mixed")) return tr("Mixed");
-    return type;
-}
-
-QString TitlePage::episodeTypeBadgeText(const QString& type) const {
-    if (type == QLatin1String("mangaCanon")) return tr("M");
-    if (type == QLatin1String("animeCanon")) return tr("A");
-    if (type == QLatin1String("filler")) return tr("F");
-    if (type == QLatin1String("mixed")) return tr("Mix");
     return type;
 }
 
@@ -3083,6 +3096,10 @@ void TitlePage::fillEpisodes(int index) {
             auto* filter = new QPushButton(type.second, filters);
             filter->setObjectName(QStringLiteral("episodeTypeFilter"));
             filter->setProperty("episodeType", type.first);
+            if (!type.first.isEmpty()) {
+                filter->setIcon(QIcon(episodeTypeDot(type.first, filter->devicePixelRatioF())));
+                filter->setIconSize(QSize(10, 10));
+            }
             filter->setCheckable(true);
             filter->setChecked(type.first.isEmpty());
             filterGroup->addButton(filter);
@@ -3173,18 +3190,15 @@ QPushButton* TitlePage::buildEpisodeButton(EpisodeEntry* entry, QWidget* grid) {
     entry->paintedWatched = false;
     entry->paintedCurrent = false;
     const QString type = episodeType(entry);
-    if (!type.isEmpty()) {
-        auto* badge = new QLabel(episodeTypeBadgeText(type), button);
+    if (episodeTypeColor(type).isValid()) {
+        auto* badge = new QLabel(button);
         badge->setObjectName(QStringLiteral("episodeTypeBadge"));
-        // Canon, anime-canon, filler and mixed each get their own colour; set
-        // before the first size hint so the badge is measured in its final style.
-        badge->setProperty("kind", type);
+        badge->setPixmap(episodeTypeDot(type, button->devicePixelRatioF()));
         badge->setToolTip(episodeTypeCaption(type));
         badge->setAccessibleName(badge->toolTip());
         badge->setAttribute(Qt::WA_TransparentForMouseEvents);
-        badge->setAlignment(Qt::AlignCenter);
-        badge->adjustSize();
-        badge->move(button->width() - badge->sizeHint().width() - theme::kSpacingXs,
+        badge->setFixedSize(10, 10);
+        badge->move(button->width() - badge->width() - theme::kSpacingXs,
                     theme::kSpacingXs);
         entry->typeBadge = badge;
     }
@@ -4549,7 +4563,6 @@ void TitlePage::refreshEpisodeTexts() {
             entry->label = episodeCaption(entry->number);
             if (entry->typeBadge != nullptr) {
                 const QString type = episodeType(entry);
-                entry->typeBadge->setText(episodeTypeBadgeText(type));
                 entry->typeBadge->setToolTip(episodeTypeCaption(type));
                 entry->typeBadge->setAccessibleName(entry->typeBadge->toolTip());
             }

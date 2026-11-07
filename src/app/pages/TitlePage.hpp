@@ -260,7 +260,6 @@ private:
     void updateEpisodeSummary();
     QString episodeType(const EpisodeEntry* entry) const;
     QString episodeTypeCaption(const QString& type) const;
-    QString episodeTypeBadgeText(const QString& type) const;
     void updateLicenseInfo(const backend::PlayerResult& player);
 
     static QString scoresText(const backend::AnimeDetail& detail);
