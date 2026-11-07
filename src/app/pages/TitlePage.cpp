@@ -1927,7 +1927,7 @@ QWidget* TitlePage::buildRelatedCarousel(
     scroll->setWidgetResizable(false);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->setMinimumHeight(theme::kCarouselCardHeight + theme::kSpacingMedium);
+    scroll->setFixedHeight(theme::kCarouselCardHeight + theme::kSpacingMedium);
     auto* track = new QWidget(scroll);
     track->setObjectName(QStringLiteral("animeCarouselTrack"));
     auto* cards = new QHBoxLayout(track);
