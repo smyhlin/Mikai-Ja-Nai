@@ -4,6 +4,13 @@ Published changes are recorded with their downloads on the [GitHub releases page
 
 ## 0.2.1 — Unreleased
 
+- Keep test fixtures in their disposable native store even when `MIKAI_NATIVE_ROOT` is set; direct test runs refuse a different or populated store.
+- Reject component records and files redirected through symlinks or reparse points, and refuse RIFE graphs whose size changes during inspection.
+- Interrupt stream-retry backoff promptly when work is cancelled; preserve an open player's pending quality request when changing releases.
+- Keep AnimeJaNai preset data alive during preparation, propagate native stage-validation failures, validate unknown presets before inspecting the runtime, and restore the previous hardware decoder after an attached filter fails.
+- Make the recursive mpv reply type compile with Clang and libstdc++ without changing its owned-copy semantics.
+- Preserve media-information selections across normalized line breaks, re-fit Compare selector labels on resize, and translate previously unextracted native diagnostics.
+
 - Make title details interactive: open the cover, copy titles, jump to episodes, and browse matching formats, statuses, studios, genres or tags.
 
 - Highlight title-page external links with the selected accent glow on hover.

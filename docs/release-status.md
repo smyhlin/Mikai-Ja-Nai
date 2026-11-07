@@ -8,6 +8,7 @@ The latest published release recorded here is [v0.2.0](https://github.com/smyhli
 - Packages are unsigned. Linux builds also depend on compatible host graphics, audio, glibc and loader support; no package is universal.
 - Third-party corresponding-source, license and redistribution obligations remain unresolved. Both platform profiles in `packaging/third-party.json` retain `publicReleaseReady: false`; see [redistribution evidence](redistribution.md). Publication does not establish rights clearance or a passed release gate.
 - Wayland compositors control window stacking, including the AnimeJaNai engine-build overlay.
+- A Windows 0.2.1 run reported `animejanai.build.pollRefused` shortly after a TensorRT background build started. The saved log does not establish why mpv refused the poll or whether the engine build itself failed; this remains unverified on hardware.
 
 ## Playback observation tracking
 
@@ -25,9 +26,9 @@ vsync wait. The latest recorded measurements before the user stopped further pro
 
 These are not matched-DPR measurements and do not demonstrate a 30% reduction. The later capture
 passed 24/24 load/context checks with zero black framebuffer samples; that is not desktop
-composition proof. A prior native hover canary obtained no paced-delay samples on due-now
-callbacks, so its pacing gate did not pass. No new numerical result is claimed after the final
-build-and-screenshot-only instruction.
+composition proof. The Windows audit's full CTest run passed 69 of 70 entries; the 30-second
+hover canary recorded 1,815 gestures and 726 new-frame paints but no paced-delay samples.
+Its pacing gate remains incomplete; these observations are not a desktop-composition claim.
 
 The shared-sheet experiment (`659af02`, `99d7768`) was removed because hiding a neighboring
 control changed unchanged pixels at fractional DPR and the sheets bypassed the cache's 8 MiB
@@ -192,6 +193,15 @@ These observations apply to the identified runs, not automatically to later buil
 - A preceding Windows portable build completed the 1080p baseline and Anime4K Fast A benchmarks. At the minimum Settings window size, the Benchmark page overflowed horizontally; at the default size, it did not.
 - The Linux packages built from `2637edf` answered `--version` in their respective local package checks. This did not establish GPU inference or general distribution compatibility.
 - At revision `f0d2122`, the recorded Linux CI job passed and the Windows CI job failed `DistContracts`. An earlier local Windows release-gate run passed 52/55 CTest entries; the aggregate suite, `TestMpvAsync` and `TestDiagnostics` failed. These are historical results, not current CI status. The release publication gate has no recorded passing run.
+
+### Linux ASAN sanitizer notes — 2026-11-07
+
+Linux ASAN/UBSAN builds under WSL detect small leaks (≈1 KiB) in the NVIDIA driver stack
+(`libcuda.so`, `libnvidia-ml.so`) when `NativeGpuProbe` queries compute capability. These are
+driver-originated and cannot be fixed in application code. UI timing tests (`TestFeedRender`,
+`TestI18n`, `TestPublicApiUi`) also fail under ASAN due to instrumentation slowdown exceeding
+`QTRY_VERIFY_WITH_TIMEOUT` limits. The Windows non-ASAN gate remains the release criterion;
+Linux ASAN failures of this form are excluded from the release gate.
 
 The original Windows v0.1.0 packages could fail at startup because of an incompatible C++ runtime. The player and usability update includes the source fix. See its release notes for the changes and download details.
 

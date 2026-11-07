@@ -351,9 +351,10 @@ directory accepts a temporary create-and-remove probe, else
 
 Installed packs live in `components/tensorrt/<release>/` with a `component.json`
 record naming each pack and the byte count and SHA-256 of every file it owns.
-`storedPack()` answers existence and size; `verifyPack()` re-hashes and is what a
-preset must consult before claiming a component is usable. A pack's declared
-`files` list is therefore the store's contract, not a hint.
+`storedPack()` checks the record and files for reparse points, then checks file
+existence and size; `verifyPack()` also re-hashes. A preset must consult the
+latter before claiming a component is usable. A pack's declared `files` list is
+therefore the store's contract, not a hint.
 
 On Linux, `trt-runtime` lists the SONAME files the pinned 3.7.0 archive actually
 contains:

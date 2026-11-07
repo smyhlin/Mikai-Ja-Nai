@@ -7,7 +7,6 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-import sys
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
