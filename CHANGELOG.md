@@ -4,6 +4,8 @@ Published changes are recorded with their downloads on the [GitHub releases page
 
 ## 0.2.1 — Unreleased
 
+- Make title details interactive: open the cover, copy titles, jump to episodes, and browse matching formats, statuses, studios, genres or tags.
+
 - Highlight title-page external links with the selected accent glow on hover.
 
 - Keep the engine-build window above competing topmost windows even when the application is inactive, without activating it.

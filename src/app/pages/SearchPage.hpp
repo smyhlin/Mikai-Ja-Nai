@@ -74,10 +74,8 @@ public:
     void refreshFeedSettings();
     /// Open a team's profile and paged anime catalogue.
     void browseTeam(const QString& ref);
-    /// Shows the catalogue filtered by one genre or tag name - the destination a
-    /// title page's chips link to. The criteria are replaced, not merged: a chip
-    /// asks a question of its own.
     void searchGenre(const QString& genre);
+    void searchCatalogue(const backend::AnimeQuery& criteria);
     void returnHome();
 
     /// Put a title at the head of the "recently opened" carousel and persist it.

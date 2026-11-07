@@ -1278,6 +1278,15 @@ bool MainWindow::openTitle(const QString& ref, const QString& poster, bool prese
             });
     connect(title_, &TitlePage::recentTitleLoaded, search_, &SearchPage::recordRecentTitle);
     connect(title_, &TitlePage::genreRequested, this, &MainWindow::openGenreSearch);
+    connect(title_, &TitlePage::catalogueRequested, this,
+            [this](const backend::AnimeQuery& criteria) {
+                if (!disposeTitle()) return;
+                titleHistory_.clear();
+                titleRef_.clear();
+                titlePoster_.clear();
+                stack_->setCurrentWidget(search_);
+                search_->searchCatalogue(criteria);
+            });
     connect(title_, &TitlePage::teamRequested, this, [this](const QString& ref) {
         if (!disposeTitle()) return;
         titleHistory_.clear();

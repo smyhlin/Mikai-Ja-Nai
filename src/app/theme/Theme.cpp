@@ -1038,11 +1038,41 @@ QWidget#titlePage QLabel#titleDetailsTitle {
     font-size: %30px;
     font-weight: 600;
 }
+QWidget#titlePage QLabel#titleDetailsTitle:hover,
+QWidget#titlePage QLabel#titleDetailsTitle:focus {
+    color: %4;
+}
 QWidget#titlePage QWidget#titleDetailsFacts { background: transparent; }
+QWidget#titlePage QPushButton#titleDetailsAction {
+    color: %6;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: %42px;
+    padding: %49px %48px;
+    text-align: left;
+}
+QWidget#titlePage QPushButton#titleDetailsChip {
+    color: %6;
+    background: %3;
+    border: 1px solid %8;
+    border-radius: %42px;
+    padding: %49px %48px;
+}
+QWidget#titlePage QPushButton#titleDetailsAction:hover,
+QWidget#titlePage QPushButton#titleDetailsAction:focus,
+QWidget#titlePage QPushButton#titleDetailsChip:hover,
+QWidget#titlePage QPushButton#titleDetailsChip:focus {
+    color: %4;
+    border-color: %4;
+}
 QWidget#titlePage QLabel#titleDetailsThumb {
     background: %1;
     border: 1px solid %8;
     border-radius: %35px;
+}
+QWidget#titlePage QLabel#titleDetailsThumb:hover,
+QWidget#titlePage QLabel#titleDetailsThumb:focus {
+    border-color: %4;
 }
 QWidget#titlePage QPushButton#titleDetailsClose {
     background: %43;

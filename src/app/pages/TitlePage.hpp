@@ -96,8 +96,8 @@ Q_SIGNALS:
     void backRequested();
     void homeRequested();
     void settingsRequested();
-    /// A genre or tag chip was activated: show the catalogue filtered by it.
     void genreRequested(const QString& genre);
+    void catalogueRequested(const backend::AnimeQuery& query);
     /// The quota chip was activated: open Settings on its Access page.
     void accessSettingsRequested();
     /// One of this page's open players raised a processing-failure remedy that needs the

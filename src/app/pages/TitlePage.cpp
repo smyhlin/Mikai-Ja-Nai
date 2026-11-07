@@ -150,7 +150,8 @@ void fillHeroChips(QWidget* host, const backend::AnimeDetail& detail,
             // A chip is a link into the catalogue filtered by that term. The
             // canonical name travels in a property: the visible text follows the
             // interface language, the filter value does not.
-            chip->setProperty("mikaiGenre", tag.name);
+            chip->setProperty(objectName == QLatin1String("titleTagChip") ? "mikaiTag" : "mikaiGenre",
+                              tag.name);
             chip->setCursor(Qt::PointingHandCursor);
             // A free function has no tr(): the chips belong to the page's
             // translation context.
@@ -579,7 +580,7 @@ void TitlePage::buildUi() {
                 }
                 if ((previous.siteTheme != appearance.siteTheme ||
                      previous.accent != appearance.accent) && hasDetail_) {
-                    refreshLinkTexts();
+                    refreshDetailTexts();
                 }
                 if (previous.radiusStep != appearance.radiusStep) {
                     refreshReleaseChipSizing();
@@ -1240,17 +1241,29 @@ void TitlePage::buildDetailsSheet() {
     detailsThumb_->setAlignment(Qt::AlignCenter);
     detailsThumb_->setWordWrap(true);
     detailsThumb_->setText(tr("No cover"));
-    detailsThumb_->setAttribute(Qt::WA_TransparentForMouseEvents);
+    detailsThumb_->setCursor(Qt::PointingHandCursor);
+    detailsThumb_->setFocusPolicy(Qt::StrongFocus);
+    detailsThumb_->setToolTip(QCoreApplication::translate("TitlePage", "Click to open the cover"));
+    detailsThumb_->setAccessibleName(QCoreApplication::translate("TitlePage", "Click to open the cover"));
+    detailsThumb_->installEventFilter(this);
     auto* identityText = new QVBoxLayout();
     identityText->setContentsMargins(0, 0, 0, 0);
     identityText->setSpacing(theme::kSpacingXs);
     detailsTitle_ = new QLabel(metaHost_);
     detailsTitle_->setObjectName(QStringLiteral("titleDetailsTitle"));
     detailsTitle_->setTextFormat(Qt::PlainText);
+    detailsTitle_->setCursor(Qt::PointingHandCursor);
+    detailsTitle_->setFocusPolicy(Qt::StrongFocus);
+    detailsTitle_->setToolTip(tr("Copy title"));
+    detailsTitle_->installEventFilter(this);
     wrapLabel(detailsTitle_);
     detailsOriginal_ = new QLabel(metaHost_);
     detailsOriginal_->setObjectName(QStringLiteral("muted"));
     detailsOriginal_->setTextFormat(Qt::PlainText);
+    detailsOriginal_->setCursor(Qt::PointingHandCursor);
+    detailsOriginal_->setFocusPolicy(Qt::StrongFocus);
+    detailsOriginal_->setToolTip(tr("Copy title"));
+    detailsOriginal_->installEventFilter(this);
     wrapLabel(detailsOriginal_);
     detailsScore_ = new QLabel(metaHost_);
     detailsScore_->setObjectName(QStringLiteral("titleScores"));
@@ -1668,6 +1681,7 @@ void TitlePage::refreshDetailTexts() {
     while (detailsFactsLayout_->count() > 0) {
         QLayoutItem* item = detailsFactsLayout_->takeAt(0);
         if (item->widget() != nullptr) {
+            item->widget()->hide();
             item->widget()->deleteLater();
         }
         delete item;
@@ -1716,40 +1730,38 @@ void TitlePage::refreshDetailTexts() {
     facts_->setText(facts.join(QStringLiteral(" · ")));
     fillHeroChips(hero_->findChild<QWidget*>(QStringLiteral("titleGenres")), detail_, this);
 
-    QVector<std::pair<QString, QString>> rows;
-    rows.append({tr("Episode availability"), episodesLabel});
-    if (!formatText.isEmpty()) rows.append({tr("Type"), formatText});
-    if (episodes.duration_min.value_or(0) > 0) {
-        rows.append({tr("Duration"), tr("%1 min").arg(*episodes.duration_min)});
+    struct DetailRow {
+        QString title;
+        QString value;
+        backend::AnimeQuery criteria;
+        bool episodes = false;
+    };
+    QVector<DetailRow> rows;
+    rows.append({tr("Episode availability"), episodesLabel, {}, true});
+    if (!formatText.isEmpty()) {
+        backend::AnimeQuery criteria;
+        criteria.formats = {detail_.format};
+        rows.append({tr("Type"), formatText, criteria});
     }
-    if (!statusText.isEmpty()) rows.append({tr("Status"), statusText});
-    if (!seasonText.isEmpty()) rows.append({tr("Season"), seasonText});
-    if (!detail_.source.isEmpty()) {
-        rows.append({tr("Original source"), labels::source(detail_.source)});
+    if (episodes.duration_min.value_or(0) > 0)
+        rows.append({tr("Duration"), tr("%1 min").arg(*episodes.duration_min), {}});
+    if (!statusText.isEmpty()) {
+        backend::AnimeQuery criteria;
+        criteria.statuses = {detail_.status};
+        rows.append({tr("Status"), statusText, criteria});
     }
-    if (!detail_.studio.isEmpty()) rows.append({tr("Studio"), detail_.studio});
-    if (!detail_.country.isEmpty()) {
-        rows.append({tr("Country"), labels::country(detail_.country)});
+    if (!seasonText.isEmpty()) rows.append({tr("Season"), seasonText, {}});
+    if (!detail_.source.isEmpty())
+        rows.append({tr("Original source"), labels::source(detail_.source), {}});
+    if (!detail_.studio.isEmpty()) {
+        backend::AnimeQuery criteria;
+        criteria.studios = {detail_.studio};
+        rows.append({tr("Studio"), detail_.studio, criteria});
     }
-    if (!detail_.age_rating.isEmpty()) {
-        rows.append({tr("Age rating"), labels::ageRating(detail_.age_rating)});
-    }
-    QStringList genres;
-    for (const backend::GenreTag& genre : detail_.genres) {
-        const QString text = genre.ua.isEmpty() ? genre.name : genre.ua;
-        if (!text.isEmpty()) {
-            genres << text;
-        }
-    }
-    if (!genres.isEmpty()) rows.append({tr("Genres"), genres.join(QStringLiteral(", "))});
-    QStringList tags;
-    for (const backend::GenreTag& tag : detail_.tags) {
-        const QString text = tag.ua.isEmpty() ? tag.name : tag.ua;
-        if (!text.isEmpty()) {
-            tags << text;
-        }
-    }
-    if (!tags.isEmpty()) rows.append({tr("Tags"), tags.join(QStringLiteral(", "))});
+    if (!detail_.country.isEmpty())
+        rows.append({tr("Country"), labels::country(detail_.country), {}});
+    if (!detail_.age_rating.isEmpty())
+        rows.append({tr("Age rating"), labels::ageRating(detail_.age_rating), {}});
 
     // Two facts per row, label above value, all of them built from the model.
     auto* gridHost = new QWidget(detailsFactsHost_);
@@ -1765,20 +1777,103 @@ void TitlePage::refreshDetailTexts() {
         auto* cellLayout = new QVBoxLayout(cell);
         cellLayout->setContentsMargins(0, 0, 0, 0);
         cellLayout->setSpacing(theme::kSpacingXs);
-        auto* key = new QLabel(entry.first.toUpper(), cell);
+        auto* key = new QLabel(entry.title.toUpper(), cell);
         key->setObjectName(QStringLiteral("muted"));
         key->setWordWrap(true);
-        auto* value = new QLabel(entry.second, cell);
-        value->setObjectName(QStringLiteral("titleDetailsValue"));
-        wrapLabel(value);
-        value->setTextFormat(Qt::PlainText);
-        value->setTextInteractionFlags(Qt::TextSelectableByMouse);
         cellLayout->addWidget(key);
-        cellLayout->addWidget(value);
+        const bool searchable = !entry.criteria.formats.isEmpty() ||
+                                !entry.criteria.statuses.isEmpty() ||
+                                !entry.criteria.studios.isEmpty();
+        if (entry.episodes) {
+            auto* value = new QLabel(entry.value, cell);
+            value->setObjectName(QStringLiteral("titleDetailsValue"));
+            wrapLabel(value);
+            value->setTextFormat(Qt::PlainText);
+            value->setTextInteractionFlags(Qt::TextSelectableByMouse);
+            cellLayout->addWidget(value);
+            auto* button = new QPushButton(tr("Episodes"), cell);
+            button->setObjectName(QStringLiteral("titleDetailsAction"));
+            button->setCursor(Qt::PointingHandCursor);
+            button->setToolTip(tr("Jump to episodes"));
+            connect(button, &QPushButton::clicked, this, [this] {
+                setDetailsOpen(false);
+                scrollToEpisodes();
+            });
+            cellLayout->addWidget(button, 0, Qt::AlignLeft);
+        } else if (searchable) {
+            auto* value = new QLabel(cell);
+            value->setObjectName(QStringLiteral("titleDetailsValue"));
+            value->setTextFormat(Qt::RichText);
+            value->setTextInteractionFlags(Qt::LinksAccessibleByMouse | Qt::LinksAccessibleByKeyboard);
+            value->setText(QStringLiteral("<a href=\"browse\" style=\"color: %1;\">%2</a>")
+                               .arg(theme::paletteFor(currentAppearance()).accent,
+                                    entry.value.toHtmlEscaped()));
+            value->setWordWrap(true);
+            value->setCursor(Qt::PointingHandCursor);
+            value->setToolTip(tr("Show titles in %1").arg(entry.value));
+            connect(value, &QLabel::linkActivated, this,
+                    [this, criteria = entry.criteria](const QString&) {
+                        emit catalogueRequested(criteria);
+                    });
+            cellLayout->addWidget(value);
+        } else {
+            auto* value = new QLabel(entry.value, cell);
+            value->setObjectName(QStringLiteral("titleDetailsValue"));
+            wrapLabel(value);
+            value->setTextFormat(Qt::PlainText);
+            value->setTextInteractionFlags(Qt::TextSelectableByMouse);
+            cellLayout->addWidget(value);
+        }
         grid->addWidget(cell, index / 2, index % 2, Qt::AlignTop);
         ++index;
     }
     detailsFactsLayout_->addWidget(gridHost);
+
+    const auto addTopics = [this](const QString& caption,
+                                  const QVector<backend::GenreTag>& topics, bool tags) {
+        auto* section = new QWidget(detailsFactsHost_);
+        auto* sectionLayout = new QVBoxLayout(section);
+        sectionLayout->setContentsMargins(0, 0, 0, 0);
+        sectionLayout->setSpacing(theme::kSpacingSmall);
+        auto* heading = new QLabel(caption.toUpper(), section);
+        heading->setObjectName(QStringLiteral("muted"));
+        sectionLayout->addWidget(heading);
+        auto* chips = new QWidget(section);
+        chips->setLayout(new FlowLayout(theme::kSpacingSmall, theme::kSpacingXs));
+        QSizePolicy policy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+        policy.setHeightForWidth(true);
+        chips->setSizePolicy(policy);
+        int count = 0;
+        for (const backend::GenreTag& topic : topics) {
+            const QString text = topic.ua.isEmpty() ? topic.name : topic.ua;
+            if (text.isEmpty()) continue;
+            if (topic.name.isEmpty()) {
+                auto* label = new QLabel(text, chips);
+                label->setObjectName(QStringLiteral("titleDetailsValue"));
+                chips->layout()->addWidget(label);
+            } else {
+                auto* button = new QPushButton(text, chips);
+                button->setObjectName(QStringLiteral("titleDetailsChip"));
+                button->setCursor(Qt::PointingHandCursor);
+                button->setToolTip(tr("Show titles in %1").arg(text));
+                backend::AnimeQuery criteria;
+                if (tags) criteria.tags = {topic.name};
+                else criteria.genres = {topic.name};
+                connect(button, &QPushButton::clicked, this,
+                        [this, criteria] { emit catalogueRequested(criteria); });
+                chips->layout()->addWidget(button);
+            }
+            ++count;
+        }
+        if (count == 0) {
+            delete section;
+            return;
+        }
+        sectionLayout->addWidget(chips);
+        detailsFactsLayout_->addWidget(section);
+    };
+    addTopics(tr("Genres"), detail_.genres, false);
+    addTopics(tr("Tags"), detail_.tags, true);
 
     auto* synopsisHost = new QWidget(detailsFactsHost_);
     auto* synopsisLayout = new QVBoxLayout(synopsisHost);
@@ -3463,7 +3558,19 @@ bool TitlePage::eventFilter(QObject* watched, QEvent* event) {
     }
     if (event->type() == QEvent::MouseButtonRelease) {
         const QVariant genre = watched != nullptr ? watched->property("mikaiGenre") : QVariant();
+        const QVariant tag = watched != nullptr ? watched->property("mikaiTag") : QVariant();
         auto* mouse = static_cast<QMouseEvent*>(event);
+        if (tag.isValid() && mouse->button() == Qt::LeftButton) {
+            backend::AnimeQuery criteria;
+            criteria.tags = {tag.toString()};
+            Q_EMIT catalogueRequested(criteria);
+            return true;
+        }
+        if (watched == detailsThumb_ && mouse->button() == Qt::LeftButton &&
+            detailsThumb_->rect().contains(mouse->pos())) {
+            openCoverViewer();
+            return true;
+        }
         if (genre.isValid() && mouse->button() == Qt::LeftButton) {
             Q_EMIT genreRequested(genre.toString());
             return true;
@@ -3473,8 +3580,8 @@ bool TitlePage::eventFilter(QObject* watched, QEvent* event) {
         event->type() == QEvent::Resize) {
         reflowOverviewHeight();
     }
-    if ((watched == heading_ || watched == subtitle_) &&
-        event->type() == QEvent::MouseButtonRelease) {
+    if ((watched == heading_ || watched == subtitle_ || watched == detailsTitle_ ||
+         watched == detailsOriginal_) && event->type() == QEvent::MouseButtonRelease) {
         auto* mouse = static_cast<QMouseEvent*>(event);
         if (mouse->button() == Qt::LeftButton &&
             static_cast<QLabel*>(watched)->rect().contains(mouse->pos())) {
@@ -3487,8 +3594,16 @@ bool TitlePage::eventFilter(QObject* watched, QEvent* event) {
             return true;
         }
     }
-    if ((watched == heading_ || watched == subtitle_) &&
-        event->type() == QEvent::KeyPress) {
+    if (watched == detailsThumb_ && event->type() == QEvent::KeyPress) {
+        auto* key = static_cast<QKeyEvent*>(event);
+        if (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter ||
+            key->key() == Qt::Key_Space) {
+            openCoverViewer();
+            return true;
+        }
+    }
+    if ((watched == heading_ || watched == subtitle_ || watched == detailsTitle_ ||
+         watched == detailsOriginal_) && event->type() == QEvent::KeyPress) {
         auto* key = static_cast<QKeyEvent*>(event);
         if (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter ||
             key->key() == Qt::Key_Space) {

@@ -2570,6 +2570,13 @@ void SearchPage::searchGenre(const QString& genre) {
     applyCatalogueFilters();
 }
 
+void SearchPage::searchCatalogue(const backend::AnimeQuery& criteria) {
+    query_->clear();
+    catalogueQuery_ = criteria;
+    activeFormat_.clear();
+    applyCatalogueFilters();
+}
+
 void SearchPage::applyCatalogueFilters() {
     ++requestSeq_;
     ++catalogueRequestSeq_;
