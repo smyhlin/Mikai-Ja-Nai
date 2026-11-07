@@ -1009,7 +1009,7 @@ void TitlePage::buildEpisodeWorkspace() {
     releaseRowsLayout_ = new QVBoxLayout(releaseChipsHost_);
     releaseRowsLayout_->setContentsMargins(theme::kSpacingSmall, theme::kSpacingSmall,
                                             theme::kSpacingSmall, theme::kSpacingSmall);
-    releaseRowsLayout_->setSpacing(theme::kSpacingXs);
+    releaseRowsLayout_->setSpacing(theme::kSpacingSmall);
     playbackLayout->addWidget(releaseChipsHost_);
 
     releaseGroup_ = new QButtonGroup(this);
@@ -2810,9 +2810,14 @@ void TitlePage::rebuildReleaseChips() {
     QVector<QLabel*> kindLabels;
     bool providerPlaced = false;
     for (const QString& kind : kindOrder) {
+        const bool divided = kind != kindOrder.last();
         auto* rowWidget = new QWidget(releaseChipsHost_);
+        rowWidget->setObjectName(QStringLiteral("releaseLane"));
+        rowWidget->setProperty("divided", divided);
+        rowWidget->setAttribute(Qt::WA_StyledBackground);
         auto* row = new QHBoxLayout(rowWidget);
-        row->setContentsMargins(0, 0, 0, 0);
+        row->setContentsMargins(0, theme::kSpacingXs, 0,
+                               divided ? theme::kSpacingMedium : theme::kSpacingXs);
         row->setSpacing(theme::kSpacingSmall);
 
         auto* kindIcon = new ReleaseKindIcon(kind == QLatin1String("sub"), rowWidget);
@@ -2849,18 +2854,28 @@ void TitlePage::rebuildReleaseChips() {
                     });
         }
         if (kind == QLatin1String("sub") && providerBar_ != nullptr) {
-            row->addWidget(providerSelectorHeading_, 0, Qt::AlignTop);
-            row->addWidget(providerBar_, 0, Qt::AlignTop);
+            auto* divider = new QWidget(rowWidget);
+            divider->setObjectName(QStringLiteral("releaseProviderDivider"));
+            divider->setAttribute(Qt::WA_StyledBackground);
+            divider->setFixedWidth(1);
+            row->addSpacing(theme::kSpacingSmall);
+            row->addWidget(divider);
+            row->addSpacing(theme::kSpacingSmall);
+            row->addWidget(providerSelectorHeading_, 0, Qt::AlignVCenter);
+            row->addWidget(providerBar_, 0, Qt::AlignVCenter);
             providerPlaced = true;
         }
         releaseRowsLayout_->addWidget(rowWidget);
     }
     if (!providerPlaced && providerBar_ != nullptr) {
         auto* providerRow = new QWidget(releaseChipsHost_);
+        providerRow->setObjectName(QStringLiteral("releaseProviderRow"));
+        providerRow->setAttribute(Qt::WA_StyledBackground);
         auto* providerLayout = new QHBoxLayout(providerRow);
-        providerLayout->setContentsMargins(0, 0, 0, 0);
-        providerLayout->addWidget(providerSelectorHeading_);
-        providerLayout->addWidget(providerBar_);
+        providerLayout->setContentsMargins(0, theme::kSpacingSmall, 0, theme::kSpacingXs);
+        providerLayout->setSpacing(theme::kSpacingSmall);
+        providerLayout->addWidget(providerSelectorHeading_, 0, Qt::AlignVCenter);
+        providerLayout->addWidget(providerBar_, 0, Qt::AlignVCenter);
         providerLayout->addStretch();
         releaseRowsLayout_->addWidget(providerRow);
     }

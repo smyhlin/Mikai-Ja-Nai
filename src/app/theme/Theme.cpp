@@ -731,12 +731,24 @@ QWidget#titlePage QPushButton#titleHeroWatchButton:disabled {
     color: %7;
 }
 
-QWidget#titlePage QLabel#releaseKind {
+QWidget#titlePage QLabel#releaseKind,
+QWidget#titlePage QLabel#providerSelectorHeading {
     color: %7;
     font-size: %26px;
     font-weight: 500;
 }
 QWidget#titlePage QWidget#releaseChipsHost { background: transparent; }
+QWidget#titlePage QWidget#releaseLane {
+    background: transparent;
+    border: none;
+}
+QWidget#titlePage QWidget#releaseLane[divided="true"] { border-bottom: 1px solid %8; }
+QWidget#titlePage QWidget#releaseProviderDivider { background: %8; border: none; }
+QWidget#titlePage QWidget#releaseProviderRow {
+    background: transparent;
+    border: none;
+    border-top: 1px solid %8;
+}
 QWidget#titlePage QPushButton#releaseChip {
     background: %43;
     color: %7;
