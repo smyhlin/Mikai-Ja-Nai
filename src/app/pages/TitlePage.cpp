@@ -1043,12 +1043,9 @@ void TitlePage::buildEpisodeWorkspace() {
     });
     auto* watchActions = new QWidget(watchPanel_);
     watchActions->setObjectName(QStringLiteral("titleWatchActions"));
-    QSizePolicy actionsPolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
-    actionsPolicy.setHeightForWidth(true);
-    watchActions->setSizePolicy(actionsPolicy);
-    auto* watchActionsLayout =
-        new FlowLayout(theme::kTitleWatchPanelGap, theme::kTitleWatchPanelGap);
-    watchActions->setLayout(watchActionsLayout);
+    auto* watchActionsLayout = new QVBoxLayout(watchActions);
+    watchActionsLayout->setContentsMargins(0, 0, 0, 0);
+    watchActionsLayout->setSpacing(theme::kTitleWatchPanelGap);
     watchActionsLayout->addWidget(watchWatchedButton_);
     watchActionsLayout->addWidget(watchButton_);
     refreshActionWidths();
