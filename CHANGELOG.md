@@ -4,6 +4,8 @@ Published changes are recorded with their downloads on the [GitHub releases page
 
 ## 0.2.1 — Unreleased
 
+- Keep the engine-build window above competing topmost windows even when the application is inactive, without activating it.
+
 - Default video scaling to native aspect ratio, including fullscreen; reset older scaling-mode preferences once so existing installations also start in Native.
 
 - Rework title and episode selection: provider/release controls, bounded episode ranges and pages, protected scrolling, non-clipping actions, and provider-reported episode classifications shown with a color key.

@@ -154,14 +154,10 @@ void TestWindowRaise::processingOverlayReassertsWindowsTopmostWithoutActivation(
     owner.show();
     pump();
 
-    // The overlay reasserts its stacking only for the foreground application, so
-    // this suite has to own the foreground for the reassertion to be observable
-    // at all. A platform that refuses is named rather than silently unmeasured.
     const HWND ownerHandle = reinterpret_cast<HWND>(owner.winId());
     QVERIFY(ownerHandle != nullptr);
     if (!takeForeground(ownerHandle)) {
-        QSKIP("the platform refused to give this process the foreground; the overlay's "
-              "foreground-only stacking poll cannot be observed here");
+        QSKIP("the platform refused to give this process the foreground");
     }
     pump();
     if (QGuiApplication::applicationState() != Qt::ApplicationActive) {
@@ -219,11 +215,7 @@ void TestWindowRaise::processingOverlayReassertsWindowsTopmostWithoutActivation(
     QTRY_VERIFY_WITH_TIMEOUT(isAbove(overlayHandle, blockerHandle), 3000);
     QVERIFY(GetForegroundWindow() != overlayHandle);
 
-    // The negative half of the same contract: while another application owns the
-    // foreground the poll must stay off, so a competing topmost window keeps the
-    // tool behind it instead of the app fighting the switch every 250 ms. The
-    // desktop shell is a real other-process window; driving it through the
-    // foreground is what makes this an inactive application and not a guess.
+    // The shell provides a real foreground window in another process.
     const HWND shellHandle = GetShellWindow();
     QVERIFY2(shellHandle != nullptr, "the desktop shell window was not found");
     if (!SetForegroundWindow(shellHandle)) {
@@ -242,31 +234,17 @@ void TestWindowRaise::processingOverlayReassertsWindowsTopmostWithoutActivation(
     }
     QVERIFY(SetWindowPos(blockerHandle, HWND_TOPMOST, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE));
-    QTRY_VERIFY_WITH_TIMEOUT(isAbove(blockerHandle, overlayHandle), 1000);
-    QTest::qWait(1200);
-    const bool stillAway = QGuiApplication::applicationState() != Qt::ApplicationActive;
-    QVERIFY2(stillAway, "this application took the foreground back during the background "
-                        "poll window, so the negative case was not observed");
-    // The observable half of "the poll is off": a live timer that only no-ops in
-    // maintainTopmost() would keep the blocker below for the same 1200 ms, so the
-    // z-order alone cannot tell the stop path from the guard.
-    QVERIFY2(!overlay.stackingPollActive(),
-             "the overlay's stacking poll kept running while another application owned the "
-             "foreground; it must be stopped, not merely no-op");
-    QVERIFY2(isAbove(blockerHandle, overlayHandle),
-             "the overlay reasserted topmost while another application owned the "
-             "foreground; the stacking poll must stay stopped while away");
+    QTRY_VERIFY_WITH_TIMEOUT(isAbove(overlayHandle, blockerHandle), 3000);
+    QVERIFY2(QGuiApplication::applicationState() != Qt::ApplicationActive,
+             "the overlay took the foreground while reasserting topmost");
+    QVERIFY(overlay.stackingPollActive());
     QVERIFY2(IsWindowVisible(overlayHandle),
              "the overlay hid itself while another application owned the foreground");
 
-    // Back to this process: the poll starts again, which the blocker re-raise has
-    // to lose again - otherwise "stopped while away" could just be a dead timer.
     QVERIFY2(takeForeground(ownerHandle),
              "could not take this process's foreground back after the away poll");
     QTRY_VERIFY_WITH_TIMEOUT(QGuiApplication::applicationState() == Qt::ApplicationActive,
                              2000);
-    // And it really restarts: "stopped while away" must not be a timer that never
-    // came back, which would break the build overlay's topmost promise at home.
     QTRY_VERIFY_WITH_TIMEOUT(overlay.stackingPollActive(), 2000);
     QVERIFY(SetWindowPos(blockerHandle, HWND_TOPMOST, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE));

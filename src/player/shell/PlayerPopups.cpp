@@ -699,10 +699,6 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
         stackingTimer_ = new QTimer(this);
         stackingTimer_->setInterval(250);
         connect(stackingTimer_, &QTimer::timeout, this, &ProcessingOverlay::maintainTopmost);
-        // The application-level signal, not a widget event: this window never
-        // takes activation, so activation events for it never arrive.
-        connect(qApp, &QGuiApplication::applicationStateChanged, this,
-                [this] { syncStackingTimer(); });
     }
 
     cancel_ = new QPushButton(this);
@@ -818,7 +814,7 @@ void ProcessingOverlay::showEvent(QShowEvent* event) {
 }
 
 void ProcessingOverlay::hideEvent(QHideEvent* event) {
-    stopStackingTimer(false);
+    stopStackingTimer();
     QFrame::hideEvent(event);
 }
 
@@ -826,32 +822,24 @@ bool ProcessingOverlay::stackingPollActive() const {
     return stackingTimer_ != nullptr && stackingTimer_->isActive();
 }
 
-void ProcessingOverlay::stopStackingTimer(bool away) {
+void ProcessingOverlay::stopStackingTimer() {
     if (stackingTimer_ == nullptr || !stackingTimer_->isActive()) return;
     stackingTimer_->stop();
-    if (away) mikai::gui::uiprofile::noteAwayStackingStop();
 }
 
 void ProcessingOverlay::syncStackingTimer() {
     if (stackingTimer_ == nullptr) return;
-    const bool foreground = QGuiApplication::applicationState() == Qt::ApplicationActive;
-    if (isVisible() && run_ != Run::Idle && foreground) {
+    if (isVisible() && run_ != Run::Idle) {
         maintainTopmost();
         if (!stackingTimer_->isActive()) stackingTimer_->start();
         return;
     }
-    stopStackingTimer(!foreground);
+    stopStackingTimer();
 }
 
 void ProcessingOverlay::maintainTopmost() {
     if (!isVisible()) {
-        stopStackingTimer(false);
-        return;
-    }
-    // A background application has nothing to reassert: the window the viewer
-    // switched to is the one that must stay above this tool.
-    if (QGuiApplication::applicationState() != Qt::ApplicationActive) {
-        stopStackingTimer(true);
+        stopStackingTimer();
         return;
     }
 #ifdef Q_OS_WIN

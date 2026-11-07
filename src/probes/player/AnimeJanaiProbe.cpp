@@ -4540,14 +4540,12 @@ int main(int argc, char** argv) {
                "the shipping raise policy made zero thread-input attaches across every verified "
                "peer-foreground interval");
         if (!attachProved) ++failures;
-        const bool stackingProved = focusBuild.stackingPollActiveAway == 0 &&
-            focusBuild.stackingPollInactiveForeground == 0 &&
-            focusBuild.awayStackingStops >=
-                static_cast<quint64>(focusBuild.cyclesCompleted) &&
-            focusBuild.cyclesCompleted > 0;
+        const bool stackingProved = focusBuild.cyclesCompleted > 0 &&
+            focusBuild.stackingPollActiveAway == focusBuild.cyclesCompleted &&
+            focusBuild.stackingPollInactiveForeground == 0;
         result(stackingProved,
-               "the real processing overlay's stacking poll ran while this application owned "
-               "the foreground and stopped while the peer owned it");
+               "the real processing overlay's stacking poll stayed active during "
+               "foreground and peer-foreground intervals");
         if (!stackingProved) ++failures;
         const bool continuityProved = focusBuild.contextGenerationChanges == 0 &&
             focusBuild.retainedFrameMismatches == 0 &&

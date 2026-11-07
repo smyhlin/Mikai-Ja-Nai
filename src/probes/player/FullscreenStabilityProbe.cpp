@@ -1291,10 +1291,7 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
     runs.append(runActivationCycles(dialog, surface, peer, QStringLiteral("engine-overlay"),
                                     std::max(1, std::min(5, seconds / 6)), knownBright, record));
 
-    // The overlay's stacking poll must be on while this application owns the
-    // foreground and off the moment another application does: reasserting a tool
-    // window from the background only fights the switch, and a raise retry from
-    // the background must not borrow the other process's input queue.
+    // The overlay stays topmost without borrowing the foreground process's input queue.
     {
         const QString platform = QGuiApplication::platformName();
         const bool pollSupported = platform == QStringLiteral("windows") ||
@@ -1362,12 +1359,9 @@ int runFocusSwitchMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
             : !awayOwned
                 ? QStringLiteral("the foreground helper did not hold the foreground for the "
                                  "overlay check")
-            : pollActiveWhileAway
-                ? QStringLiteral("the overlay kept its stacking poll running while another "
+            : !pollActiveWhileAway
+                ? QStringLiteral("the overlay stopped its stacking poll while another "
                                  "application owned the foreground")
-            : stopsWhileAway <= 0
-                ? QStringLiteral("the stacking poll was running before the switch away but no "
-                                 "away stop was counted, so the stop path is unproven")
             : attachesWhileAway != 0
                 ? QStringLiteral("the overlay contacted another process's input queue while "
                                  "away (attaches=%1)")
