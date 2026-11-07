@@ -3236,14 +3236,34 @@ If a portable folder was moved, disable startup from the old location before mov
 <context>
     <name>VideoDropTarget</name>
     <message>
-        <location filename="../src/gui/VideoDropTarget.cpp" line="193"/>
+        <location filename="../src/gui/VideoDropTarget.cpp" line="194"/>
         <source>Release to open video</source>
         <translation>Відпустіть, щоб відкрити відео</translation>
     </message>
     <message>
-        <location filename="../src/gui/VideoDropTarget.cpp" line="194"/>
+        <location filename="../src/gui/VideoDropTarget.cpp" line="196"/>
         <source>Drop the file anywhere in this window</source>
         <translation>Відпустіть файл будь-де в цьому вікні</translation>
+    </message>
+    <message>
+        <location filename="../src/gui/VideoDropTarget.cpp" line="199"/>
+        <source>Release to attach subtitles</source>
+        <translation>Відпустіть, щоб додати субтитри</translation>
+    </message>
+    <message>
+        <location filename="../src/gui/VideoDropTarget.cpp" line="201"/>
+        <source>Drop a subtitle file anywhere in this window</source>
+        <translation>Перетягніть файл субтитрів будь-де у це вікно</translation>
+    </message>
+    <message>
+        <location filename="../src/gui/VideoDropTarget.cpp" line="204"/>
+        <source>Release to add audio track</source>
+        <translation>Відпустіть, щоб додати аудіодоріжку</translation>
+    </message>
+    <message>
+        <location filename="../src/gui/VideoDropTarget.cpp" line="206"/>
+        <source>Drop an audio file anywhere in this window</source>
+        <translation>Перетягніть аудіофайл будь-де у це вікно</translation>
     </message>
 </context>
 <context>

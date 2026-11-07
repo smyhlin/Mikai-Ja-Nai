@@ -190,8 +190,25 @@ QString VideoDropTarget::videoPath(const QMimeData* mime) {
 
 void VideoDropTarget::refreshAppearance() {
     if (host_.isNull()) return;
-    title_ = QCoreApplication::translate("VideoDropTarget", "Release to open video");
-    hint_ = QCoreApplication::translate("VideoDropTarget", "Drop the file anywhere in this window");
+    switch (indicatorKind_) {
+        case DropKind::Video:
+            title_ = QCoreApplication::translate("VideoDropTarget", "Release to open video");
+            hint_ = QCoreApplication::translate(
+                "VideoDropTarget", "Drop the file anywhere in this window");
+            break;
+        case DropKind::Subtitle:
+            title_ = QCoreApplication::translate("VideoDropTarget", "Release to attach subtitles");
+            hint_ = QCoreApplication::translate(
+                "VideoDropTarget", "Drop a subtitle file anywhere in this window");
+            break;
+        case DropKind::Audio:
+            title_ = QCoreApplication::translate("VideoDropTarget", "Release to add audio track");
+            hint_ = QCoreApplication::translate(
+                "VideoDropTarget", "Drop an audio file anywhere in this window");
+            break;
+        case DropKind::None:
+            return;
+    }
     bodyFont_ = host_->font();
     titleFont_ = bodyFont_;
     titleFont_.setBold(true);
@@ -219,11 +236,12 @@ void VideoDropTarget::refreshAppearance() {
     }
 }
 
-void VideoDropTarget::beginIndicator(const QString& path) {
+void VideoDropTarget::beginIndicator(const QString& path, DropKind kind) {
     ++dragGeneration_;
     leaveTimer_.stop();
-    if (path_ == path) return;
+    if (path_ == path && indicatorKind_ == kind) return;
     path_ = path;
+    indicatorKind_ = kind;
     const qsizetype separator = std::max(path.lastIndexOf(u'/'), path.lastIndexOf(u'\\'));
     fileName_ = path.sliced(separator + 1);
     refreshAppearance();
@@ -240,6 +258,7 @@ void VideoDropTarget::clearIndicator() {
     leaveTimer_.stop();
     if (path_.isEmpty()) return;
     path_.clear();
+    indicatorKind_ = DropKind::None;
     dropLayers();
     if (!overlay_.isNull()) overlay_->hide();
     emit indicatorChanged();
@@ -327,7 +346,7 @@ bool VideoDropTarget::eventFilter(QObject* watched, QEvent* event) {
     drop->setDropAction(Qt::CopyAction);
     drop->accept();
     if (type != QEvent::Drop) {
-        beginIndicator(path);
+        beginIndicator(path, kind);
         return true;
     }
     QPointer<VideoDropTarget> guard(this);
@@ -505,8 +524,20 @@ void VideoDropTarget::paintCard(QPainter& painter, const QRect& card, int paddin
         constexpr QPointF play[]{QPointF(0.42, 0.42), QPointF(0.42, 0.72), QPointF(0.65, 0.57)};
         painter.drawPolygon(file, 5);
         painter.drawPolyline(fold, 3);
-        painter.setBrush(foreground_);
-        painter.drawPolygon(play, 3);
+        if (indicatorKind_ == DropKind::Video) {
+            painter.setBrush(foreground_);
+            painter.drawPolygon(play, 3);
+        } else if (indicatorKind_ == DropKind::Subtitle) {
+            painter.drawLine(QPointF(0.32, 0.46), QPointF(0.68, 0.46));
+            painter.drawLine(QPointF(0.32, 0.57), QPointF(0.68, 0.57));
+            painter.drawLine(QPointF(0.32, 0.68), QPointF(0.58, 0.68));
+        } else if (indicatorKind_ == DropKind::Audio) {
+            painter.drawLine(QPointF(0.32, 0.53), QPointF(0.32, 0.63));
+            painter.drawLine(QPointF(0.42, 0.42), QPointF(0.42, 0.74));
+            painter.drawLine(QPointF(0.52, 0.32), QPointF(0.52, 0.84));
+            painter.drawLine(QPointF(0.62, 0.42), QPointF(0.62, 0.74));
+            painter.drawLine(QPointF(0.72, 0.53), QPointF(0.72, 0.63));
+        }
         painter.restore();
         y += kIconSize + kGap;
     }

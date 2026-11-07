@@ -48,7 +48,7 @@ private:
     enum class DropKind { None, Video, Subtitle, Audio };
     static QString classify(const QMimeData* mime, bool allowTracks, DropKind* kind);
     static QString videoPath(const QMimeData* mime);
-    void beginIndicator(const QString& path);
+    void beginIndicator(const QString& path, DropKind kind);
     void refreshAppearance();
     void clearIndicator();
 
@@ -89,6 +89,7 @@ private:
     QPointer<QWidget> overlay_;
     QString path_;
     QString fileName_;
+    DropKind indicatorKind_ = DropKind::None;
     QString title_;
     QString hint_;
     QFont titleFont_;
