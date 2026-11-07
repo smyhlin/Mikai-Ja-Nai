@@ -321,7 +321,7 @@ std::vector<VideoScaleOption> videoScaleOptions(const VideoScalePolicy& policy,
 QString videoScaleModeLabel(VideoScaleMode mode) {
     switch (mode) {
         case VideoScaleMode::Fit:
-            return QCoreApplication::translate("mplayer::videoscale", "Fit to window");
+            return QCoreApplication::translate("mplayer::videoscale", "Native (fit to window)");
         case VideoScaleMode::Fill:
             return QCoreApplication::translate("mplayer::videoscale", "Fill (crop edges)");
         case VideoScaleMode::Stretch:

@@ -11425,8 +11425,8 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     <name>mplayer::videoscale</name>
     <message>
         <location filename="../src/player/core/VideoSurface.cpp" line="324"/>
-        <source>Fit to window</source>
-        <translation>Вписати у вікно</translation>
+        <source>Native (fit to window)</source>
+        <translation>Оригінальні пропорції (вписати у вікно)</translation>
     </message>
     <message>
         <location filename="../src/player/core/VideoSurface.cpp" line="326"/>

@@ -4,6 +4,8 @@ Published changes are recorded with their downloads on the [GitHub releases page
 
 ## 0.2.1 — Unreleased
 
+- Default video scaling to native aspect ratio, including fullscreen; reset older scaling-mode preferences once so existing installations also start in Native.
+
 - Rework title and episode selection: provider/release controls, bounded episode ranges and pages, protected scrolling, non-clipping actions, and provider-reported episode classifications shown with a color key.
 - Bring title, release, provider, genre and player controls into line with shared app sizing, antialiasing and corner-radius rules; refine the title hero hierarchy.
 - Add OpenSubtitles API-key settings and a registration link. Local subtitle files can be selected or dropped onto network streams; the drag overlay identifies subtitle, audio and video actions correctly. External audio remains local-video-only.

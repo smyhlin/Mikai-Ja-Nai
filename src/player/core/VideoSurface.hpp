@@ -351,7 +351,7 @@ public:
     /// and survive a mode change.
     static void setVideoScaleMode(VideoScaleMode mode);
     static int videoScalePolicyRevision();
-    inline static constexpr char kVideoScaleModeSettingKey[] = "playback/videoScaleMode";
+    inline static constexpr char kVideoScaleModeSettingKey[] = "playback/videoScaleModeNativeDefault";
     inline static constexpr char kVideoZoomSettingKey[] = "playback/videoZoomPercent";
     inline static constexpr char kVideoUpscaleSettingKey[] = "playback/videoScale";
     inline static constexpr char kVideoDownscaleSettingKey[] = "playback/videoDownscale";

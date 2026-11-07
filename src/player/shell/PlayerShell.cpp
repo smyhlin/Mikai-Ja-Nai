@@ -1367,15 +1367,10 @@ void PlayerShell::wake() {
 // ═════════════════════════════════════════════════════════════════════════════
 
 QSize PlayerShell::fitted() const {
-    if (fullscreen_) {
-        // Fullscreen is the whole monitor: the surface takes the window edge to
-        // edge, no letterboxing, no design margin, no aspect bars.
-        return {width(), height()};
-    }
     const int pad = kFrameMargin;
     const int chromeHeight = 150 + titleBarOffset_;
-    const int vw = std::max(160, width() - 2 * (pad + 24));
-    const int vh = std::max(100, height() - chromeHeight);
+    const int vw = fullscreen_ ? width() : std::max(160, width() - 2 * (pad + 24));
+    const int vh = fullscreen_ ? height() : std::max(100, height() - chromeHeight);
     // Fill and Stretch are the picture area itself: mpv crops or distorts inside
     // a surface that already spans it, so aspect-fitting here would leave the
     // bars those modes exist to remove. Compare holds Fit on this surface, so a
