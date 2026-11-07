@@ -1868,7 +1868,7 @@ void TitlePage::populateRelated(const backend::AnimeDetail& detail) {
         relatedLayout_->addWidget(buildRelatedCarousel(QStringLiteral("similar"), similar));
     }
     setRelatedExpanded(true, false);
-    reflowOverviewHeight();
+    scheduleOverviewReflow();
 }
 
 void TitlePage::loadRecommendations(const backend::AnimeDetail& detail) {
@@ -1912,6 +1912,7 @@ void TitlePage::loadRecommendations(const backend::AnimeDetail& detail) {
             self->relatedLayout_->addWidget(
                 self->buildRelatedCarousel(QStringLiteral("recommendation"), entries));
             self->setRelatedExpanded(expand, false);
+            self->scheduleOverviewReflow();
         },
         [](const backend::Failure&) {});
 }
@@ -2036,7 +2037,11 @@ QWidget* TitlePage::buildRelatedCarousel(
             requestRelatedPoster(relatedPosters_.size() - 1);
         }
     }
-    track->adjustSize();
+    const int cardCount = entries.size();
+    const int trackWidth = 2 * theme::kCarouselTrackInset +
+                           cardCount * theme::kCarouselCardWidth +
+                           qMax(0, cardCount - 1) * theme::kCarouselCardSpacing;
+    track->setFixedSize(trackWidth, theme::kCarouselCardHeight + 2 * theme::kCarouselTrackInset);
     scroll->setWidget(track);
     layout->addWidget(scroll);
 
