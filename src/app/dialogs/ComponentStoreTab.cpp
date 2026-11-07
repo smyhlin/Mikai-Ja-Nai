@@ -452,12 +452,15 @@ QString ComponentStoreTab::setupPrompt(qint64* bytes) const {
         }
     }
     if (missingSpatialCount > 0)
-        append(tr("Upscaling models (%1 of %2 missing)")
+        append(tr("AnimeJaNai spatial models (%1 of %2 missing)")
                    .arg(missingSpatialCount).arg(spatialCatalog.size()),
                missingSpatialBytes);
+    if (!rifeVerified_) {
+        append(tr("RIFE 3.7.0 models (47 graphs)"), rifeArchivePack().assetBytes);
+    }
     if (bytes != nullptr) *bytes = totalBytes;
     if (missing.isEmpty()) return {};
-    return tr("For AI upscaling, download these optional components. Normal playback works without them.")
+    return tr("Anime4K shaders are included with the app. For AnimeJaNai AI upscaling, download these optional components. Normal playback works without them.")
         + QStringLiteral("<ul>") + missing.join(QString()) + QStringLiteral("</ul>")
         + tr("Download these optional components (%1)?")
               .arg(QLocale().formattedDataSize(totalBytes));
