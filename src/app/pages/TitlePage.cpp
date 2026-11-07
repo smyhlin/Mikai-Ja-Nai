@@ -580,6 +580,10 @@ void TitlePage::buildUi() {
                      previous.accent != appearance.accent) && hasDetail_) {
                     refreshLinkTexts();
                 }
+                if (previous.radiusStep != appearance.radiusStep) {
+                    refreshReleaseChipSizing();
+                    scheduleFit();
+                }
                 if (previous.radiusStep != appearance.radiusStep ||
                     previous.coverGradient != appearance.coverGradient) {
                     // The radius and the shade are baked into the frame, so a
@@ -3996,8 +4000,11 @@ QString TitlePage::firstEmbed(const backend::Release& release) const {
 }
 
 void TitlePage::refreshReleaseChipSizing() {
+    const int chipHeight = qMax(theme::kControlHeight - theme::kSpacingSmall,
+                                2 * theme::radiusSmall(currentAppearance()) + 2);
     for (QPushButton* chip : releaseChips_) {
         if (chip == nullptr) continue;
+        chip->setFixedHeight(chipHeight);
         chip->setMinimumWidth(0);
         chip->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
         chip->updateGeometry();
