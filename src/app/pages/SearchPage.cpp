@@ -513,6 +513,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
             loadOngoing();
         }
     });
+    rateLabel_->setFixedWidth(searchButton_->sizeHint().width());
     headerLayout->addWidget(searchButton_, 0, Qt::AlignVCenter);
     // The row's own order: the search takes the free width, its action follows
     // it, and the passive quota pill closes the row.
