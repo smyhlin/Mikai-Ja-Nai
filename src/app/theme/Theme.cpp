@@ -592,9 +592,22 @@ QWidget#titlePage QLabel#titleStudio {
 }
 QWidget#titlePage QLabel#titleFacts { color: %7; font-size: %26px; }
 QWidget#titlePage QLabel#titleScores {
-    color: %7;
+    color: %6;
     font-size: %26px;
     font-weight: 500;
+    background: %2;
+    border: 1px solid %8;
+    border-radius: 8px;
+    padding: 5px 10px;
+}
+QWidget#titlePage QLabel#titleGenreChip,
+QWidget#titlePage QLabel#titleTagChip {
+    color: %7;
+    background: %2;
+    border: 1px solid %8;
+    border-radius: 12px;
+    padding: 3px 9px;
+    font-size: %26px;
 }
 QWidget#titlePage QLabel#titleDescription { color: %6; font-size: %24px; }
 QWidget#titlePage QPushButton#titleSynopsisToggle,
