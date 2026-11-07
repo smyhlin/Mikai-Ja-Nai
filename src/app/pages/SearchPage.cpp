@@ -48,6 +48,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPixmap>
 #include <QPainter>
 #include <QPainterPath>
@@ -299,9 +300,11 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
 
     headerLogo_ = new QLabel(sidebar_);
     headerLogo_->setObjectName(QStringLiteral("headerLogo"));
-    headerLogo_->setAccessibleName(QString());
-    headerLogo_->setAccessibleDescription(QString());
+    headerLogo_->setAccessibleName(tr("Mikai Ja Nai on GitHub"));
+    headerLogo_->setAccessibleDescription(tr("Open the project page on GitHub"));
     headerLogo_->setFocusPolicy(Qt::NoFocus);
+    headerLogo_->setCursor(Qt::PointingHandCursor);
+    headerLogo_->setToolTip(tr("Open project on GitHub"));
     headerLogo_->installEventFilter(this);
     headerLogo_->setFixedSize(theme::kSearchSidebarBrandIconSize,
                               theme::kSearchSidebarBrandIconSize);
@@ -309,7 +312,12 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     sidebarBrandLayout_->addWidget(headerLogo_, 0, Qt::AlignVCenter);
     sidebarBrandName_ = new QLabel(tr("Mikai Ja Nai"), sidebar_);
     sidebarBrandName_->setObjectName(QStringLiteral("sidebarBrandName"));
+    sidebarBrandName_->setAccessibleName(tr("Mikai Ja Nai on GitHub"));
+    sidebarBrandName_->setAccessibleDescription(tr("Open the project page on GitHub"));
     sidebarBrandName_->setFocusPolicy(Qt::NoFocus);
+    sidebarBrandName_->setCursor(Qt::PointingHandCursor);
+    sidebarBrandName_->setToolTip(tr("Open project on GitHub"));
+    sidebarBrandName_->installEventFilter(this);
     {
         QFont brandFont = sidebarBrandName_->font();
         brandFont.setPixelSize(theme::kSearchSidebarBrandFontSize);
@@ -1323,6 +1331,16 @@ void SearchPage::smoothScrollCarousel(CarouselSection& section, int direction) {
 }
 
 bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
+    if ((watched == headerLogo_ || watched == sidebarBrandName_) &&
+        event->type() == QEvent::MouseButtonPress) {
+        const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        if (mouseEvent->button() != Qt::LeftButton) return false;
+        if (!QDesktopServices::openUrl(
+                QUrl(QStringLiteral("https://github.com/smyhlin/Mikai-Ja-Nai")))) {
+            reportFailure(Notice::Browser);
+        }
+        return true;
+    }
     if (watched == headerLogo_ &&
         (event->type() == QEvent::PaletteChange ||
          event->type() == QEvent::ApplicationPaletteChange ||
