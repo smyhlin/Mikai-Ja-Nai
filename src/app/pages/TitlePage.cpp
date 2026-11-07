@@ -2719,7 +2719,7 @@ void TitlePage::setReleaseChipText(QPushButton* chip, const QString& text) {
         }
     }
     const int available = qMax(
-        80, rowWidth - theme::kSpacingSmall * 3 - kindWidth -
+        80, rowWidth - theme::kSpacingSmall * 4 - kindWidth - theme::kIconSize -
                 theme::kTitleChipPaddingH * 2);
     chip->setMinimumWidth(0);
     chip->setMaximumWidth(available);
@@ -2777,11 +2777,18 @@ void TitlePage::rebuildReleaseChips() {
         row->setContentsMargins(0, 0, 0, 0);
         row->setSpacing(theme::kSpacingSmall);
 
+        auto* kindIcon = new QLabel(rowWidget);
+        kindIcon->setFixedSize(theme::kIconSize, theme::kIconSize);
+        const QStyle::StandardPixmap iconKind =
+            kind == QLatin1String("sub") ? QStyle::SP_FileDialogDetailedView
+                                         : QStyle::SP_MediaVolume;
+        kindIcon->setPixmap(style()->standardIcon(iconKind).pixmap(theme::kIconSize));
+        kindIcon->setAttribute(Qt::WA_TransparentForMouseEvents);
+        row->addWidget(kindIcon, 0, Qt::AlignVCenter);
+
         auto* kindLabel = new QLabel(labels::kind(kind), rowWidget);
         kindLabel->setObjectName(QStringLiteral("releaseKind"));
-        // The caption centres on the chip row beside it rather than hanging from
-        // the top of it.
-        kindLabel->setFixedHeight(theme::kControlHeight);
+        kindLabel->setFixedHeight(theme::kControlHeight - theme::kSpacingSmall);
         kindLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         // Keyed by the raw kind so a language switch re-words the row's caption
         // in place rather than rebuilding the chips and their selection.
@@ -2798,7 +2805,7 @@ void TitlePage::rebuildReleaseChips() {
             chip->setCheckable(true);
             chip->setCursor(Qt::PointingHandCursor);
             chip->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-            chip->setFixedHeight(theme::kControlHeight);
+            chip->setFixedHeight(theme::kControlHeight - theme::kSpacingSmall);
             setReleaseChipText(chip, releaseChipLabel(releases_.at(index)));
             releaseGroup_->addButton(chip, index);
             releaseChips_[index] = chip;
