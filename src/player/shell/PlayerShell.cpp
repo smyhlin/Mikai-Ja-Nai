@@ -638,7 +638,7 @@ void PlayerShell::buildWindowControls() {
     minChrome.border = QColor(0, 0, 0, 0);
     minChrome.hoverFill = QBrush(QColor(255, 255, 255, 34));
     minChrome.hoverBorder = QColor(0, 0, 0, 0);
-    minChrome.radius = kControlSize * 0.42;
+    minChrome.radius = cornerRadius();
     minChrome.borderWidth = 0;
     btnMin_->setButtonChrome(minChrome);
     connect(btnMin_, &QPushButton::clicked, this, &QWidget::showMinimized);
@@ -653,7 +653,7 @@ void PlayerShell::buildWindowControls() {
     closeChrome.border = QColor(0, 0, 0, 0);
     closeChrome.hoverFill = QBrush(QColor(233, 79, 82));
     closeChrome.hoverBorder = QColor(255, 255, 255, 46);
-    closeChrome.radius = kControlSize * 0.42;
+    closeChrome.radius = cornerRadius();
     closeChrome.borderWidth = 0;
     btnClose_->setButtonChrome(closeChrome);
     connect(btnClose_, &QPushButton::clicked, this, &PlayerShell::exitViewer);
