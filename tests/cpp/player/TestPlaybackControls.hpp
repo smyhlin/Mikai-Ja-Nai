@@ -29,6 +29,7 @@ private slots:
     void volumeWheelAdjustsTheTrackAndSpeaker();
     void volumeWheelFollowsPlaybackIntoPip();
     void aNewPlayerStartsAtTheShownVolume();
+    void closingSubtitleSearchBeforeItsReplyKeepsThePlayerUsable();
     void aPipKeepsItsVolumeAndMuteBeforeOpening();
 
     void aPiPArrowStepIsResolvedByTheCoreWhenThePumpIsSuspended_data();

@@ -226,8 +226,12 @@ int main(int argc, char** argv) {
     const QCommandLineOption parkMsOption(QStringList() << QStringLiteral("park-ms"),
                                           QStringLiteral("Internal: park duration in ms."),
                                           QStringLiteral("ms"));
+    const QCommandLineOption printEnvironmentOption(
+        QStringList() << QStringLiteral("print-environment"),
+        QStringLiteral("Print selected environment values for launcher contracts."));
     parser.addOptions({hangOption, exitCodeOption, printIdOption, descendantIdOption,
-                        descendantMsOption, parkOnlyOption, parkMsOption});
+                        descendantMsOption, parkOnlyOption, parkMsOption,
+                        printEnvironmentOption});
     parser.process(application);
 
     // Internal descendant mode. This is the process a correct launcher reaps
@@ -239,6 +243,13 @@ int main(int argc, char** argv) {
         writeIdentityFile(parser.value(printIdOption));
         QTimer::singleShot(parkMs, &application, &QCoreApplication::quit);
         return application.exec();
+    }
+
+    if (parser.isSet(printEnvironmentOption)) {
+        std::printf("MIKAI_NATIVE_ROOT=%s\n",
+                    qEnvironmentVariableIsSet("MIKAI_NATIVE_ROOT") ? "set" : "unset");
+        std::printf("MIKAI_TEST_TIMEOUT_MS=%s\n",
+                    qEnvironmentVariable("MIKAI_TEST_TIMEOUT_MS").toUtf8().constData());
     }
 
     if (parser.isSet(hangOption)) {

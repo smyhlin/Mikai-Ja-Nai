@@ -1,5 +1,6 @@
 #include "TestCompareLoading.hpp"
 
+#include <player/compare/ComparePane.hpp>
 #include <player/shell/PlayerShell.hpp>
 #include <player/shell/ShellTheme.hpp>
 #include <player/shell/ShellWidgets.hpp>
@@ -7,6 +8,7 @@
 #include <QCoreApplication>
 #include <QImage>
 #include <QPainter>
+#include <QToolButton>
 #include <QWidget>
 
 namespace {
@@ -82,4 +84,25 @@ void TestCompareLoading::loadingSurvivesHudPlaybackAndMediaChangesThenRestoresLa
     QVERIFY(!center->isVisible());
     player.wake();
     QVERIFY(center->isVisible());
+}
+
+void TestCompareLoading::selectorLabelRefitsAfterBadgeResize() {
+    mplayer::shell::ComparePane pane;
+    pane.resize(70, 160);
+    pane.setContent(QStringLiteral("test"), QImage(1, 1, QImage::Format_ARGB32), QStringLiteral("Short"));
+    pane.show();
+    QCoreApplication::processEvents();
+
+    auto* badge = pane.findChild<QToolButton*>();
+    QVERIFY(badge != nullptr);
+    const QString fullLabel = QStringLiteral("A · Short  ▾");
+    QVERIFY(badge->width() <= pane.width());
+    QVERIFY(badge->fontMetrics().horizontalAdvance(badge->text()) <= badge->width());
+    QVERIFY(badge->text() != fullLabel);
+
+    pane.resize(500, 160);
+    QCoreApplication::processEvents();
+
+    QVERIFY(badge->width() > 70);
+    QCOMPARE(badge->text(), fullLabel);
 }

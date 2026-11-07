@@ -11,6 +11,7 @@ class TestAnimeJanaiRuntime : public QObject {
   void cleanup();
   void cleanupTestCase();
   void directRunRefusesExistingNativeTreeWithoutMutation();
+  void directRunRefusesNativeRootOverrideWithoutMutation();
   void archiveListingValidatesTarMembersAndLinks();
   void linuxRejectsDirectMlBeforeAcquisition();
   void linuxRejectsWindowsRuntimeAndPeDisguisedAsElf();

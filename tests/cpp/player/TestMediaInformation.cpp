@@ -13,6 +13,7 @@
 #include <QLineEdit>
 #include <QLocale>
 #include <QPointer>
+#include <QRegularExpression>
 #include <QScrollBar>
 #include <QSignalSpy>
 #include <QTextCursor>
@@ -163,6 +164,61 @@ void TestMediaInformation::overviewKeepsSelectedTextWhenAnotherPartOfTheValueCha
     QCOMPARE(editor->textCursor().selectedText(), kept);
     QCOMPARE(editor->textCursor().position(), 0);
     QCOMPARE(editor->textCursor().anchor(), kept.size());
+}
+
+void TestMediaInformation::overviewNormalizesLineBreaksAndKeepsSelectionInRange_data() {
+    QTest::addColumn<QString>("input");
+    QTest::addColumn<QString>("normalized");
+
+    QTest::newRow("crlf") << QStringLiteral("new\r\ntext") << QStringLiteral("new\ntext");
+    QTest::newRow("cr") << QStringLiteral("new\rtext") << QStringLiteral("new\ntext");
+    QTest::newRow("line-separator")
+        << QStringLiteral("new") + QChar(0x2028) + QStringLiteral("text")
+        << QStringLiteral("new\ntext");
+    QTest::newRow("paragraph-separator")
+        << QStringLiteral("new") + QChar(0x2029) + QStringLiteral("text")
+        << QStringLiteral("new\ntext");
+    QTest::newRow("non-breaking-space")
+        << QStringLiteral("new") + QChar(0x00a0) + QStringLiteral("text")
+        << QStringLiteral("new text");
+}
+
+void TestMediaInformation::overviewNormalizesLineBreaksAndKeepsSelectionInRange() {
+    QFETCH(QString, input);
+    QFETCH(QString, normalized);
+
+    MediaInformationOverview overview;
+    MediaInformationDocument document{{QStringLiteral("file"), QStringLiteral("File"), {}, {
+        {QStringLiteral("file.path"), QStringLiteral("Path"), QStringLiteral("old"), {}}}}};
+    overview.setDocument(document);
+    QTextEdit* editor = findEditor(overview, QStringLiteral("old"));
+    QVERIFY(editor != nullptr);
+    QTextCursor selection(editor->document());
+    selection.setPosition(1);
+    selection.setPosition(3, QTextCursor::KeepAnchor);
+    editor->setTextCursor(selection);
+
+    QTest::failOnWarning(QRegularExpression(QStringLiteral("QTextCursor::setPosition.*out of range")));
+    document[0].children[0].value = input;
+    overview.setDocument(document);
+
+    QCOMPARE(editor->toPlainText(), normalized);
+    const QTextCursor updated = editor->textCursor();
+    QCOMPARE(updated.anchor(), 1);
+    QCOMPARE(updated.position(), normalized.size());
+    QVERIFY(updated.anchor() <= editor->document()->characterCount() - 1);
+    QVERIFY(updated.position() <= editor->document()->characterCount() - 1);
+}
+
+void TestMediaInformation::overviewPreservesNonbreakingSpaceInSelection() {
+    MediaInformationOverview overview;
+    const QString value = QStringLiteral("before") + QChar(0x00a0) + QStringLiteral("after");
+    overview.setDocument({{QStringLiteral("file"), QStringLiteral("File"), {}, {
+        {QStringLiteral("file.path"), QStringLiteral("Path"), value, {}}}}});
+    QTextEdit* editor = findEditor(overview, QStringLiteral("before after"));
+    QVERIFY(editor != nullptr);
+    editor->selectAll();
+    QCOMPARE(editor->textCursor().selectedText(), value);
 }
 
 void TestMediaInformation::treeKeepsValuesVisibleWhenThePropertyHeaderIsDragged() {

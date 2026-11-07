@@ -72,6 +72,9 @@ class TestFeedRender : public QObject {
   /// second canned release, pressing it resolves that release's first episode
   /// embed and not the first release's.
   void theTitlePageWatchActionFollowsTheSelectedRelease();
+  /// A release switch retires the old episode pill's pending playback callback
+  /// without dropping an already-open player's pending request for that embed.
+  void switchingReleasePreservesAnOpenPlayerQualityRequest();
 
   void episodeMarksPersistAcrossReopenAndViewChanges();
   void episodeContextMenuActionsUpdateOnlyTheOrderedPreviousEpisodes();

@@ -63,6 +63,7 @@
 #include "TestHoverPreview.hpp"
 #include "TestNativeTypes.hpp"
 #include "TestRuntimeSelection.hpp"
+#include "native/bundle/NativePaths.hpp"
 #ifdef MIKAI_WITH_MODEL_INSPECTION
 #include "TestNativeCatalog.hpp"
 #endif
@@ -124,6 +125,18 @@ constexpr const char* kSuites[] = {
 bool nativeFixtureRootIsSafe() {
   const QString path = QDir(QCoreApplication::applicationDirPath())
                            .filePath(QStringLiteral("native"));
+  const QString resolvedRoot = QDir::cleanPath(mplayer::native::nativeRoot());
+#ifdef Q_OS_WIN
+  if (QString::compare(resolvedRoot, QDir::cleanPath(path), Qt::CaseInsensitive) != 0) {
+#else
+  if (resolvedRoot != QDir::cleanPath(path)) {
+#endif
+    std::fprintf(stderr,
+                 "[mikai_tests] refusing native fixture mutation: resolved native root is not "
+                 "the executable-adjacent native directory: %s\n",
+                 qPrintable(resolvedRoot));
+    return false;
+  }
 #ifdef Q_OS_WIN
   const DWORD attributes = GetFileAttributesW(
       reinterpret_cast<LPCWSTR>(path.utf16()));

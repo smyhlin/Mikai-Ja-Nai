@@ -530,6 +530,49 @@ void TestAnimeJanaiRuntime::linuxOfficialPairRequiresBothPinnedDigests() {
         dispatcher, QStringLiteral("19c6f6dde3b1a6307ec60adf34bee13aab7aa31af5db1e9a129d911a4da109d0")));
 }
 
+void TestAnimeJanaiRuntime::directRunRefusesNativeRootOverrideWithoutMutation() {
+    QTemporaryDir installed;
+    QTemporaryDir overrideStore;
+    QVERIFY(installed.isValid());
+    QVERIFY(overrideStore.isValid());
+    const QString executable = QDir(installed.path())
+        .filePath(QFileInfo(QCoreApplication::applicationFilePath()).fileName());
+    QVERIFY(QFile::copy(QCoreApplication::applicationFilePath(), executable));
+    const QString sentinelPath = QDir(overrideStore.path()).filePath(QStringLiteral("native/sentinel.bin"));
+    const QByteArray sentinelBefore = QByteArrayLiteral("user-owned override sentinel");
+    QVERIFY(writeFile(sentinelPath, sentinelBefore));
+
+    QProcess child;
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    environment.insert(QStringLiteral("PATH"),
+        QLibraryInfo::path(QLibraryInfo::BinariesPath) + QDir::listSeparator() +
+        environment.value(QStringLiteral("PATH")));
+    environment.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
+    environment.insert(QStringLiteral("QT_PLUGIN_PATH"),
+        QLibraryInfo::path(QLibraryInfo::PluginsPath));
+    environment.insert(QStringLiteral("QT_QPA_PLATFORM_PLUGIN_PATH"),
+        QDir(QLibraryInfo::path(QLibraryInfo::PluginsPath)).filePath(QStringLiteral("platforms")));
+    environment.insert(QStringLiteral("MIKAI_NATIVE_ROOT"),
+                       QDir(overrideStore.path()).filePath(QStringLiteral("native")));
+    child.setProcessEnvironment(environment);
+    child.setWorkingDirectory(installed.path());
+    child.start(executable, {QStringLiteral("TestAnimeJanaiRuntime"),
+                             QStringLiteral("cancelledImportDoesNotPublish")});
+    QVERIFY2(child.waitForStarted(), qPrintable(child.errorString()));
+    if (!child.waitForFinished(30000)) {
+        child.kill();
+        child.waitForFinished();
+        QFAIL("direct test invocation did not finish");
+    }
+    QCOMPARE(child.exitStatus(), QProcess::NormalExit);
+    QCOMPARE(child.exitCode(), 2);
+    QVERIFY(child.readAllStandardError().contains("resolved native root"));
+    QFile sentinel(sentinelPath);
+    QVERIFY(sentinel.open(QIODevice::ReadOnly));
+    QCOMPARE(sentinel.readAll(), sentinelBefore);
+    QVERIFY(!QFileInfo::exists(QDir(installed.path()).filePath(QStringLiteral("native"))));
+}
+
 void TestAnimeJanaiRuntime::directRunRefusesExistingNativeTreeWithoutMutation() {
     QTemporaryDir installed;
     QVERIFY(installed.isValid());
@@ -547,6 +590,7 @@ void TestAnimeJanaiRuntime::directRunRefusesExistingNativeTreeWithoutMutation() 
 
     QProcess child;
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    environment.remove(QStringLiteral("MIKAI_NATIVE_ROOT"));
     environment.insert(QStringLiteral("PATH"),
         QLibraryInfo::path(QLibraryInfo::BinariesPath) + QDir::listSeparator() +
         environment.value(QStringLiteral("PATH")));

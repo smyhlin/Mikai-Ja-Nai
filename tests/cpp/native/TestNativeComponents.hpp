@@ -39,6 +39,8 @@ class TestNativeComponents : public QObject {
   void storeRefusesAnUnknownRecordKey();
   void storeRefusesAnUnsafeRecordPath();
 
+  void storeRejectsSymlinkedComponentFiles();
+
   // The manual check behind the tab's Verify button re-hashes the bytes rather
   // than trusting the recorded size, so a file replaced in place is caught.
   void verifyPackCatchesReplacedBytes();

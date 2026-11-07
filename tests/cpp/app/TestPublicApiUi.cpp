@@ -43,6 +43,7 @@
 #include <QtCore/QUrlQuery>
 #include <QtGui/QDesktopServices>
 #include <QtGui/QFontDatabase>
+#include <QtGui/QContextMenuEvent>
 #include <QtGui/QImage>
 #include <QtGui/QPainter>
 #include <QtGui/QTextBlock>
@@ -647,6 +648,21 @@ bool catalogueShows(const QWidget& page, const QString& text) {
   }
   return false;
 }
+bool indicatorChangesRendering(QWidget* surface, QWidget* indicator) {
+  if (surface == nullptr || indicator == nullptr || !indicator->isVisible()) return false;
+  const auto renderSurface = [surface] {
+    QImage image(surface->size(), QImage::Format_ARGB32);
+    image.fill(Qt::transparent);
+    QPainter painter(&image);
+    surface->render(&painter);
+    return image;
+  };
+  const QImage withIndicator = renderSurface();
+  indicator->hide();
+  const QImage withoutIndicator = renderSurface();
+  indicator->show();
+  return withIndicator != withoutIndicator;
+}
 
 // One modal session on the team picker. The modal dialog blocks the caller, so
 // the session runs from a timer while it is open.
@@ -698,18 +714,23 @@ void TestPublicApiUi::titleMetadataPreservesUnknownCountsBadgesAndFutureAiring()
   QTRY_VERIFY_WITH_TIMEOUT(
       !page.findChildren<QPushButton*>(QStringLiteral("episodeButton")).isEmpty(), 20000);
   const auto buttons = page.findChildren<QPushButton*>(QStringLiteral("episodeButton"));
-  bool sawFiller = false;
-  bool sawBadgeAndMarkTogether = false;
-  for (const QPushButton* pill : buttons) {
-    const auto* badge = pill->findChild<QLabel*>(QStringLiteral("episodeTypeBadge"));
-    const auto* mark = pill->findChild<QWidget*>(QStringLiteral("episodeWatchedMark"));
-    if (badge == nullptr) continue;
-    if (badge->text() == QStringLiteral("F")) sawFiller = true;
-    if (mark != nullptr) sawBadgeAndMarkTogether = true;
+  bool sawFillerClassification = false;
+  bool sawVisibleFillerIndicator = false;
+  for (QPushButton* pill : buttons) {
+    auto* classification = pill->findChild<QLabel*>(QStringLiteral("episodeTypeBadge"));
+    if (classification == nullptr ||
+        !classification->toolTip().contains(QStringLiteral("Filler"), Qt::CaseInsensitive) ||
+        !pill->toolTip().contains(QStringLiteral("Filler"), Qt::CaseInsensitive)) {
+      continue;
+    }
+    sawFillerClassification = true;
+    sawVisibleFillerIndicator =
+        indicatorChangesRendering(pill, classification) || sawVisibleFillerIndicator;
   }
-  QVERIFY2(sawFiller, "no episode carries the filler badge");
-  QVERIFY2(sawBadgeAndMarkTogether,
-           "no episode pill carries both its classification and its watch mark");
+  QVERIFY2(sawFillerClassification,
+           "no episode visibly identifies its filler classification");
+  QVERIFY2(sawVisibleFillerIndicator,
+           "the filler classification has no visible color indicator");
 
   QTRY_VERIFY_WITH_TIMEOUT(
       !page.findChildren<QPushButton*>(QStringLiteral("releaseChip")).isEmpty(), 20000);
@@ -769,9 +790,6 @@ void TestPublicApiUi::titleMetadataPreservesUnknownCountsBadgesAndFutureAiring()
 
 void TestPublicApiUi::aWatchedFractionalEpisodeKeepsItsClassificationBadge() {
   IsolatedSettings settings;
-  mikai::app::WatchHistory history;
-  history.setCurrent(QStringLiteral("7428"), QStringLiteral("2.5"));
-  history.setWatched(QStringLiteral("7428"), QStringLiteral("2.5"), true);
   ApiFixture api;
   QVERIFY(api.start());
   mikai::backend::MikaiClient client(kFixtureKey, api.base());
@@ -788,23 +806,65 @@ void TestPublicApiUi::aWatchedFractionalEpisodeKeepsItsClassificationBadge() {
   QTRY_VERIFY_WITH_TIMEOUT(
       !page.findChildren<QPushButton*>(QStringLiteral("episodeButton")).isEmpty(), 20000);
   const auto buttons = page.findChildren<QPushButton*>(QStringLiteral("episodeButton"));
-  QPushButton* fillerPill = nullptr;
+  QPushButton* fractionalFiller = nullptr;
   for (QPushButton* pill : buttons) {
-    auto* badge = pill->findChild<QLabel*>(QStringLiteral("episodeTypeBadge"));
-    if (badge != nullptr && badge->text() == QStringLiteral("F")) {
-      fillerPill = pill;
+    auto* classification = pill->findChild<QLabel*>(QStringLiteral("episodeTypeBadge"));
+    if (pill->text() == QStringLiteral("2.5") && classification != nullptr &&
+        classification->toolTip().contains(QStringLiteral("Filler"), Qt::CaseInsensitive)) {
+      fractionalFiller = pill;
       break;
     }
   }
-  QVERIFY2(fillerPill != nullptr, "no episode pill carries the filler badge");
+  QVERIFY2(fractionalFiller != nullptr,
+           "the fractional episode does not visibly identify its filler classification");
 
-  QCOMPARE(fillerPill->text(), QStringLiteral("2.5"));
-  QTRY_VERIFY_WITH_TIMEOUT(fillerPill->findChild<QWidget*>(QStringLiteral("episodeWatchedMark")) != nullptr &&
-                                fillerPill->findChild<QWidget*>(QStringLiteral("episodeWatchedMark"))->isVisible(),
-                            5000);
-  auto* badge = fillerPill->findChild<QLabel*>(QStringLiteral("episodeTypeBadge"));
-  QVERIFY2(badge != nullptr, "the classification badge was taken by the watch mark");
-  QCOMPARE(badge->text(), QStringLiteral("F"));
+  auto* fractionalClassification =
+      fractionalFiller->findChild<QLabel*>(QStringLiteral("episodeTypeBadge"));
+  QVERIFY(fractionalClassification != nullptr);
+  QVERIFY2(indicatorChangesRendering(fractionalFiller, fractionalClassification),
+           "the fractional episode's filler indicator does not affect its appearance");
+  auto* watchedMark =
+      fractionalFiller->findChild<QWidget*>(QStringLiteral("episodeWatchedMark"));
+  QVERIFY(watchedMark != nullptr);
+  QVERIFY(!watchedMark->isVisible());
+  QVERIFY(!fractionalFiller->toolTip().contains(QStringLiteral("watched episode"),
+                                                 Qt::CaseInsensitive));
+
+  QTimer menuDriver;
+  menuDriver.setInterval(20);
+  QObject::connect(&menuDriver, &QTimer::timeout, &page, [&menuDriver] {
+    auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+    if (menu == nullptr) return;
+    for (QAction* action : menu->actions()) {
+      if (action->text().contains(QStringLiteral("Mark as watched"),
+                                  Qt::CaseInsensitive) &&
+          action->isEnabled()) {
+        action->trigger();
+        menu->close();
+        menuDriver.stop();
+        return;
+      }
+    }
+  });
+  menuDriver.start();
+  const QPoint menuPosition = fractionalFiller->rect().center();
+  QContextMenuEvent contextMenuEvent(
+      QContextMenuEvent::Mouse, menuPosition, fractionalFiller->mapToGlobal(menuPosition));
+  QApplication::sendEvent(fractionalFiller, &contextMenuEvent);
+  menuDriver.stop();
+
+  QTRY_VERIFY_WITH_TIMEOUT(watchedMark->isVisible(), 5000);
+  QVERIFY2(fractionalFiller->toolTip().contains(QStringLiteral("watched episode"),
+                                                 Qt::CaseInsensitive),
+           qPrintable(fractionalFiller->toolTip()));
+  QVERIFY2(fractionalFiller->toolTip().contains(QStringLiteral("Filler"),
+                                                 Qt::CaseInsensitive),
+           qPrintable(fractionalFiller->toolTip()));
+  QVERIFY2(fractionalFiller->findChild<QLabel*>(QStringLiteral("episodeTypeBadge"))->toolTip()
+               .contains(QStringLiteral("Filler"), Qt::CaseInsensitive),
+           "the classification is no longer presented after marking the episode watched");
+  QVERIFY2(indicatorChangesRendering(fractionalFiller, fractionalClassification),
+           "the filler indicator disappeared after marking the episode watched");
 }
 
 void TestPublicApiUi::licensedTitleShowsLegalInformation() {

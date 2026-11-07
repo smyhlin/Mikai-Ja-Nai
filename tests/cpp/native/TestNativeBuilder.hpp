@@ -7,6 +7,7 @@ class TestNativeBuilder : public QObject {
 
  private slots:
   void anUnobservedDecoderCannotStartPreparation();
+  void aStageValidationFailureReturnsItsActualKeyWithoutLaunchingTools();
   void cancellationPreventsPublication();
   void committedPublicationCannotBeReportedCancelled();
   void concurrentCancellationAndPublicationHaveOneWinner();

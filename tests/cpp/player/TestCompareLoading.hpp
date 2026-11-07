@@ -8,4 +8,5 @@ class TestCompareLoading : public QObject {
 private slots:
     void centeredIndicatorRendersAndIsAccessible();
     void loadingSurvivesHudPlaybackAndMediaChangesThenRestoresLatestGlyph();
+    void selectorLabelRefitsAfterBadgeResize();
 };

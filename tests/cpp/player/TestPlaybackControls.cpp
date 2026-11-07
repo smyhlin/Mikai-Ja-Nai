@@ -8,6 +8,13 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QKeyEvent>
+#include <QLineEdit>
+#include <QNetworkProxy>
+#include <QScopeGuard>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QThreadPool>
+#include <QTimer>
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QThread>
@@ -383,6 +390,69 @@ void TestPlaybackControls::aPiPArrowStepIsResolvedByTheCoreWhenThePumpIsSuspende
                             .arg(expected)
                             .arg(settled)));
     QVERIFY2(coreIsPaused(surface), "seeking must not unpause the float");
+}
+
+void TestPlaybackControls::closingSubtitleSearchBeforeItsReplyKeepsThePlayerUsable() {
+    if (!requireRuntime()) return;
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    const QNetworkProxy previousProxy = QNetworkProxy::applicationProxy();
+    const auto restoreProxy = qScopeGuard([previousProxy] {
+        QNetworkProxy::setApplicationProxy(previousProxy);
+    });
+    QNetworkProxy::setApplicationProxy(
+        QNetworkProxy(QNetworkProxy::HttpProxy, QStringLiteral("127.0.0.1"), server.serverPort()));
+
+    const std::unique_ptr<mplayer::shell::PlayerDialog> player(
+        new mplayer::shell::PlayerDialog(QStringLiteral("subtitle search"), fixtureClip()));
+    auto* shell = player->findChild<mplayer::shell::PlayerShell*>();
+    QVERIFY(shell != nullptr);
+    player->show();
+
+    bool requested = false;
+    bool replied = false;
+    QByteArray request;
+    connect(&server, &QTcpServer::newConnection, &server, [&] {
+        QTcpSocket* socket = server.nextPendingConnection();
+        connect(socket, &QTcpSocket::readyRead, socket, [&, socket] {
+            request += socket->readAll();
+            if (requested || !request.contains("\r\n\r\n")) return;
+            requested = true;
+            if (auto* modal = qobject_cast<QDialog*>(QApplication::activeModalWidget())) {
+                modal->reject();
+            }
+            QTimer::singleShot(50, socket, [&, socket] {
+                socket->write("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n");
+                socket->flush();
+                socket->disconnectFromHost();
+                replied = true;
+            });
+        });
+    });
+    QTimer::singleShot(0, player.get(), [&] {
+        auto* dialog = player->findChild<QDialog*>(QStringLiteral("subtitlesSearchDialog"));
+        if (dialog == nullptr) return;
+        for (QLineEdit* field : dialog->findChildren<QLineEdit*>()) {
+            if (field->echoMode() == QLineEdit::Password) field->setText(QStringLiteral("fixture"));
+        }
+        for (QPushButton* button : dialog->findChildren<QPushButton*>()) {
+            if (button->text() == mplayer::shell::PlayerDialog::tr("Search")) {
+                button->click();
+                break;
+            }
+        }
+    });
+    QTimer::singleShot(10000, player.get(), [&] {
+        if (auto* modal = qobject_cast<QDialog*>(QApplication::activeModalWidget())) modal->reject();
+    });
+
+    QVERIFY(QMetaObject::invokeMethod(shell, "openSubtitlesRequested", Qt::DirectConnection));
+    QVERIFY2(requested, "the subtitle search did not reach the local proxy");
+    QTRY_VERIFY_WITH_TIMEOUT(replied, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(QThreadPool::globalInstance()->activeThreadCount() == 0, 10000);
+    QCoreApplication::processEvents();
+    QVERIFY(player->isVisible());
 }
 
 void TestPlaybackControls::volumeWheelAdjustsTheTrackAndSpeaker() {

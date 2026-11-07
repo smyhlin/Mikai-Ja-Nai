@@ -5,6 +5,8 @@
 
 #include <stdexcept>
 #include <atomic>
+#include <chrono>
+#include <thread>
 
 #include <QtCore/QByteArray>
 #include <QtCore/QStringList>
@@ -413,6 +415,60 @@ void TestStreams::cancellingAQuietProviderFetchReturnsPromptly() {
   QVERIFY2(failure.contains(QStringLiteral("cancelled"), Qt::CaseInsensitive),
            qPrintable(failure));
   QVERIFY2(elapsed.elapsed() < 2000, "cancellation waited for the provider timeout");
+}
+
+void TestStreams::cancellingDuringRetryBackoffDoesNotRetry() {
+  QTcpServer server;
+  QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+  int requests = 0;
+  std::atomic_bool responseSent{false};
+  connect(&server, &QTcpServer::newConnection, &server, [&] {
+    while (QTcpSocket* socket = server.nextPendingConnection()) {
+      connect(socket, &QTcpSocket::readyRead, &server, [&, socket] {
+        socket->readAll();
+        ++requests;
+        socket->write("HTTP/1.1 429 Too Many Requests\r\nRetry-After: 2\r\n"
+                      "Content-Length: 0\r\nConnection: close\r\n\r\n");
+        socket->flush();
+        responseSent.store(true);
+      });
+    }
+  });
+
+  std::atomic_bool cancelled{false};
+  QNetworkAccessManager manager;
+  const mikai::backend::WorkCancellationScope scope(&cancelled);
+  std::atomic<qint64> cancelledAt{-1};
+  QElapsedTimer elapsed;
+  elapsed.start();
+  std::thread cancelThread([&] {
+    for (int i = 0; i < 100 && !responseSent.load(); ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    if (responseSent.load()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      cancelledAt.store(elapsed.elapsed());
+      cancelled.store(true);
+    }
+  });
+  bool failed = false;
+  QString failure;
+  try {
+    mikai::backend::fetchText(
+        &manager, QStringLiteral("http://127.0.0.1:%1/retry").arg(server.serverPort()), {});
+  } catch (const StreamError& caught) {
+    failed = true;
+    failure = QString::fromUtf8(caught.what());
+  }
+  cancelThread.join();
+
+  QVERIFY(failed);
+  QVERIFY2(failure.contains(QStringLiteral("cancelled"), Qt::CaseInsensitive),
+           qPrintable(failure));
+  QCOMPARE(requests, 1);
+  QVERIFY(cancelledAt.load() >= 0);
+  QVERIFY2(elapsed.elapsed() - cancelledAt.load() < 1000,
+           "cancellation did not interrupt retry backoff promptly");
 }
 
 void TestStreams::theTimeoutIsTwentySeconds() {

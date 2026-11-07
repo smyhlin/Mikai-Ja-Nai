@@ -8,7 +8,13 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
 #include <QtCore/QTemporaryDir>
+#include <QtCore/QCoreApplication>
+#include <QtCore/QFile>
+#include <QtCore/QScopeGuard>
+#include <QtCore/QUuid>
 
+#include "native/bundle/NativePaths.hpp"
+#include "native/models/NativeModelInventory.hpp"
 #include "native/prepare/NativeBuilder.hpp"
 #include "native/prepare/NativeWorkLease.hpp"
 
@@ -21,6 +27,111 @@ void TestNativeBuilder::anUnobservedDecoderCannotStartPreparation() {
   QVERIFY(!result.ok);
   QCOMPARE(result.reasonKey, QStringLiteral("plan.preparing"));
   QVERIFY(result.stages.isEmpty());
+}
+
+void TestNativeBuilder::aStageValidationFailureReturnsItsActualKeyWithoutLaunchingTools() {
+  QString pathReason;
+  const QString modelsBase = nativeSubdirectory(QStringLiteral("models"), &pathReason);
+  QVERIFY2(!modelsBase.isEmpty(), qPrintable(pathReason));
+  const QString artifactsBase = nativeSubdirectory(QStringLiteral("artifacts"), &pathReason);
+  QVERIFY2(!artifactsBase.isEmpty(), qPrintable(pathReason));
+  const QString token = QStringLiteral("unit-%1").arg(
+      QUuid::createUuid().toString(QUuid::WithoutBraces));
+  const QString modelRoot = QDir(modelsBase).filePath(token);
+  const QString artifactRoot = QDir(artifactsBase).filePath(token);
+  QVERIFY(QDir().mkpath(modelRoot));
+  QVERIFY(QDir().mkpath(artifactRoot));
+  const auto cleanup = qScopeGuard([&] {
+    QDir(modelRoot).removeRecursively();
+    QDir(artifactRoot).removeRecursively();
+  });
+
+  TensorProfile input;
+  input.dtype = QStringLiteral("fp16");
+  input.rank = 4;
+  input.batch = 1;
+  input.channels = 3;
+  input.height = 64;
+  input.width = 64;
+  TensorProfile output = input;
+  output.height = 128;
+  output.width = 128;
+  ModelProfile profile;
+  profile.input = input;
+  profile.output = output;
+  InspectionResult inspection;
+  inspection.ok = true;
+  inspection.inputName = QStringLiteral("X");
+  inspection.outputName = QStringLiteral("Y");
+  inspection.declared = profile;
+  BackendAvailability backends;
+  backends.available = {Backend::TensorRT};
+  const QByteArray modelBytes = QByteArrayLiteral("fixed builder validation fixture");
+  ModelInventory inventory(modelRoot);
+  const ModelImportOutcome published =
+      inventory.publish(modelBytes, inspection, QStringLiteral("fixture.onnx"),
+                        QStringLiteral("fixture"), backends);
+  QVERIFY2(published.ok, qPrintable(published.reasonKey));
+
+  DeviceIdentity device;
+  device.decoderDeviceUuid = QStringLiteral("GPU-dec0");
+  device.computeDeviceUuid = QStringLiteral("GPU-cmp0");
+  device.smMajor = 12;
+  device.smMinor = 0;
+
+  BuilderRequest request;
+  request.plan.id = QStringLiteral("sha256:") + QString(64, QLatin1Char('a'));
+  request.plan.backend = Backend::TensorRT;
+  request.plan.device = device;
+  ResolvedStage stage;
+  stage.kind = StageKind::Spatial;
+  stage.role = ModelRole::Spatial;
+  stage.modelId = published.model.record.id;
+  stage.modelContentId = QStringLiteral("sha256:") + QString(64, QLatin1Char('b'));
+  stage.inputGeometry = QSize(64, 64);
+  stage.outputGeometry = QSize(128, 128);
+  stage.inputChannels = 3;
+  stage.outputChannels = 3;
+  request.plan.stages = {stage};
+  request.models = {published.model};
+  request.references = {BuilderStageReference{}};
+  request.modelRoot = modelRoot;
+  request.store = ArtifactStore(artifactRoot);
+  request.workspaceBytes = 268435456;
+  request.build.provider = Backend::TensorRT;
+  request.build.runtimeVersion = QStringLiteral("10.7.0");
+  request.build.pluginVersion = QStringLiteral("10.7.0");
+  request.build.coreSha = QString(40, QLatin1Char('a'));
+  request.build.sourceAbi = 1;
+  request.build.deviceUuid = device.computeDeviceUuid;
+  request.build.smMajor = device.smMajor;
+  request.build.smMinor = device.smMinor;
+  request.build.cudaVersion = QStringLiteral("12.8");
+  request.build.driverVersion = QStringLiteral("561.09");
+  request.build.stronglyTyped = true;
+  request.build.skipInference = true;
+  request.build.options = {
+      BuildOption{QStringLiteral("builderOptimizationLevel"), QStringLiteral("3"), true}};
+  const QString appExecutable = QCoreApplication::applicationFilePath();
+  request.tools.inspectExecutable = appExecutable;
+  request.tools.prepExecutable = appExecutable;
+  request.tools.verifierExecutable = appExecutable;
+  QTemporaryDir runtime;
+  QVERIFY(runtime.isValid());
+  QFile ort(QDir(runtime.path()).filePath(QStringLiteral("onnxruntime.dll")));
+  QVERIFY(ort.open(QIODevice::WriteOnly));
+  ort.close();
+  request.tools.ortRuntimeDir = runtime.path();
+
+  QVector<QString> phases;
+  const BuilderResult result = runNativeBuild(
+      request, nullptr, [&phases](const BuilderProgress& progress) {
+        phases.append(progress.phase);
+      });
+  QVERIFY(!result.ok);
+  QCOMPARE(result.reasonKey, QStringLiteral("model.owned.identity"));
+  QVERIFY(!phases.contains(QStringLiteral("reference")));
+  QVERIFY(!phases.contains(QStringLiteral("build")));
 }
 
 void TestNativeBuilder::cancellationPreventsPublication() {

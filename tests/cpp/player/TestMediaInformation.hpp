@@ -10,6 +10,9 @@ private slots:
     void overviewWrapsAndCopiesLiteralUnbrokenMetadata();
     void overviewKeepsSelectionAndScrollWhenSectionsChange();
     void overviewKeepsSelectedTextWhenAnotherPartOfTheValueChanges();
+    void overviewNormalizesLineBreaksAndKeepsSelectionInRange_data();
+    void overviewNormalizesLineBreaksAndKeepsSelectionInRange();
+    void overviewPreservesNonbreakingSpaceInSelection();
     void treeKeepsValuesVisibleWhenThePropertyHeaderIsDragged();
     void treeKeepsExpansionSelectionAndScrollAcrossRefresh();
     void treeDoesNotRecreateAClearedSelection();

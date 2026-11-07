@@ -14,6 +14,13 @@
 
 #include <iterator>
 
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QEvent>
@@ -883,6 +890,77 @@ void TestNativeComponents::verifyPackAcceptsTheRecordedBytes() {
     QVERIFY(verified.installed);
     QVERIFY(verified.reasonKey.isEmpty());
     QVERIFY(verified.bytes > 0);
+}
+
+void TestNativeComponents::storeRejectsSymlinkedComponentFiles() {
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+    const ComponentStore store{root.path()};
+    const ComponentPack* pack = packNamed(QStringLiteral("trt-sm120"));
+    QVERIFY(pack != nullptr);
+    QVERIFY(populateStore(store, {*pack}));
+
+    const QString name = pack->files.first();
+    const QByteArray content = filePayload(name);
+    const QString componentPath = QDir(componentReleaseDirectory(store)).filePath(name);
+    QTemporaryDir externalDirectory;
+    QVERIFY(externalDirectory.isValid());
+    const QString externalPath = QDir(externalDirectory.path()).filePath(name);
+    QVERIFY(writeBytes(externalPath, content));
+    QVERIFY(QFile::remove(componentPath));
+
+#ifdef Q_OS_WIN
+    if (!CreateSymbolicLinkW(reinterpret_cast<LPCWSTR>(componentPath.utf16()),
+                              reinterpret_cast<LPCWSTR>(externalPath.utf16()),
+                              SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE)) {
+        QSKIP("Windows refused creation of the component symlink");
+    }
+#else
+    if (!QFile::link(externalPath, componentPath)) {
+        QSKIP("Unable to create the component symlink");
+    }
+#endif
+
+    QCOMPARE(QFileInfo(componentPath).size(), static_cast<qint64>(content.size()));
+    const StoredPack stored = storedPack(store, *pack);
+    QVERIFY(!stored.installed);
+    const StoredPack verified = verifyPack(store, *pack);
+    QVERIFY(!verified.installed);
+
+    QFile external(externalPath);
+    QVERIFY(external.open(QIODevice::ReadOnly));
+    QCOMPARE(external.readAll(), content);
+    external.close();
+
+    QVERIFY(QFile::remove(componentPath));
+    QVERIFY(writeBytes(componentPath, content));
+    QVERIFY(storedPack(store, *pack).installed);
+    const QString recordPath = QDir(componentReleaseDirectory(store))
+                                   .filePath(QStringLiteral("component.json"));
+    QFile record(recordPath);
+    QVERIFY(record.open(QIODevice::ReadOnly));
+    const QByteArray recordContent = record.readAll();
+    record.close();
+    const QString externalRecord = QDir(externalDirectory.path()).filePath(QStringLiteral("component.json"));
+    QVERIFY(writeBytes(externalRecord, recordContent));
+    QVERIFY(QFile::remove(recordPath));
+#ifdef Q_OS_WIN
+    if (!CreateSymbolicLinkW(reinterpret_cast<LPCWSTR>(recordPath.utf16()),
+                              reinterpret_cast<LPCWSTR>(externalRecord.utf16()),
+                              SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE)) {
+        QSKIP("Windows refused creation of the component record symlink");
+    }
+#else
+    if (!QFile::link(externalRecord, recordPath)) {
+        QSKIP("Unable to create the component record symlink");
+    }
+#endif
+    const StoredPack redirectedRecord = storedPack(store, *pack);
+    QVERIFY(!redirectedRecord.installed);
+    QCOMPARE(redirectedRecord.reasonKey, QStringLiteral("native.components.record"));
+    QFile externalRecordFile(externalRecord);
+    QVERIFY(externalRecordFile.open(QIODevice::ReadOnly));
+    QCOMPARE(externalRecordFile.readAll(), recordContent);
 }
 
 void TestNativeComponents::verifyPackCatchesReplacedBytes() {

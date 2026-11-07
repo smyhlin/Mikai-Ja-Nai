@@ -402,7 +402,30 @@ reap("${_fixture_name}" "${_child_pid}|${_child_creation}"
 cleanup("${_hang_parent}")
 
 # ===========================================================================
-# Scenario 3: a normal child, with and without an explicit deadline
+# Scenario 3: inherited native-store overrides are stripped from the child
+# ===========================================================================
+
+set(_native_root_backup "$ENV{MIKAI_NATIVE_ROOT}")
+set(_timeout_backup "$ENV{MIKAI_TEST_TIMEOUT_MS}")
+set(ENV{MIKAI_NATIVE_ROOT} "${_workspace}/user-owned-native-store-sentinel")
+set(ENV{MIKAI_TEST_TIMEOUT_MS} "4321")
+set(_environment_parent "${_workspace}/environment-parent")
+file(MAKE_DIRECTORY "${_environment_parent}")
+run_launcher(_rc _out _err "${_environment_parent}"
+  --exit-code 0 --print-environment)
+check(_rc EQUAL 0 "environment-isolation child exits successfully")
+check(_out MATCHES "MIKAI_NATIVE_ROOT=unset"
+       "the child does not inherit the parent's MIKAI_NATIVE_ROOT override")
+check(_out MATCHES "MIKAI_TEST_TIMEOUT_MS=4321"
+       "other inherited environment variables remain available to the child")
+set(ENV{MIKAI_NATIVE_ROOT} "${_native_root_backup}")
+set(ENV{MIKAI_TEST_TIMEOUT_MS} "${_timeout_backup}")
+collect_leaks(_environment_leftover "${_environment_parent}")
+check(NOT _environment_leftover "environment-isolation child removes its owned scratch")
+cleanup("${_environment_parent}")
+
+# ===========================================================================
+# Scenario 4: a normal child, with and without an explicit deadline
 # ===========================================================================
 
 set(_normal_parent "${_workspace}/normal-parent")
