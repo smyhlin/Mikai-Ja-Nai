@@ -218,6 +218,7 @@ void RateLimitLabel::renderState(const backend::RateLimitState& state) {
     renderedText_ = text;
     renderedDetail_ = detail;
     label_->setText(text);
+    Q_EMIT textChanged();
     label_->setToolTip(detail);
     label_->setAccessibleName(detail);
     if (presentation_ == Presentation::Pill) {

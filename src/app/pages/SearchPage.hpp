@@ -224,6 +224,7 @@ private:
     /// the logo is re-tinted, so an icon can never stay on the previous theme's
     /// ink while its button moves.
     void refreshHeaderIcons();
+    void refreshHeaderActionWidths();
     /// The sidebar's state for the page width it now has. Called from
     /// resizeEvent, and forced once after construction and after a
     /// retranslation that changes what the rail measures. Only a change of mode

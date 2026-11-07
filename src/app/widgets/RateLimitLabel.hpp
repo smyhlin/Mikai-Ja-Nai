@@ -38,6 +38,7 @@ signals:
     /// A click on the chip; both pages route it to the Access settings page, the
     /// one surface that can raise or replace the key the quota belongs to.
     void clicked();
+    void textChanged();
 
 public:
     /// Re-reads the client's quota snapshot. Cheap and non-blocking: the state

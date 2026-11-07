@@ -513,7 +513,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
             loadOngoing();
         }
     });
-    rateLabel_->setFixedWidth(searchButton_->sizeHint().width());
+    connect(rateLabel_, &RateLimitLabel::textChanged, this, &SearchPage::refreshHeaderActionWidths);
     headerLayout->addWidget(searchButton_, 0, Qt::AlignVCenter);
     // The row's own order: the search takes the free width, its action follows
     // it, and the passive quota pill closes the row.
@@ -749,6 +749,15 @@ void SearchPage::refreshHeaderLogo() {
     headerLogoDpr_ = dpr;
 }
 
+void SearchPage::refreshHeaderActionWidths() {
+    if (searchButton_ == nullptr || rateLabel_ == nullptr || rateLabel_->layout() == nullptr) return;
+    searchButton_->ensurePolished();
+    rateLabel_->ensurePolished();
+    const int width = qMax(searchButton_->sizeHint().width(), rateLabel_->layout()->sizeHint().width());
+    searchButton_->setFixedWidth(width);
+    rateLabel_->setFixedWidth(width);
+}
+
 void SearchPage::refreshHeaderIcons() {
     // The glyphs resolve their ink when they are built, so every path that
     // re-tints the brand logo also rebuilds them: a theme switch cannot leave a
@@ -776,6 +785,7 @@ void SearchPage::refreshHeaderIcons() {
     }
     if (searchButton_ != nullptr) {
         searchButton_->setIcon(theme::searchIcon(theme::kIconSize, onPrimary.name(), trailing));
+        refreshHeaderActionWidths();
     }
     if (keysButton_ != nullptr) {
         keysButton_->setIcon(theme::keyboardIcon(sidebarGlyph, ink.name(), trailing));
@@ -885,7 +895,10 @@ void SearchPage::retranslateUi() {
         settingsButton_->setToolTip(tr("API token settings"));
         settingsButton_->setAccessibleName(tr("API token settings"));
     }
-    if (searchButton_ != nullptr) searchButton_->setText(tr("Search"));
+    if (searchButton_ != nullptr) {
+        searchButton_->setText(tr("Search"));
+        refreshHeaderActionWidths();
+    }
     if (filtersButton_ != nullptr) {
         // The tooltip belongs to the dictionary load, which words its own
         // status; only the caption and the accessible name are this pass's.
