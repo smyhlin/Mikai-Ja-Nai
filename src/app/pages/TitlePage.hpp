@@ -509,7 +509,7 @@ protected:
     QLabel* discoveryHeading_ = nullptr;
     /// The scrolling sheet content widget; `titleDetails` carries its name.
     QWidget* metaHost_ = nullptr;
-    QLabel* links_ = nullptr;
+    QWidget* links_ = nullptr;
     QWidget* relatedHost_ = nullptr;
     QVBoxLayout* relatedLayout_ = nullptr;
     QTabWidget* tabs_ = nullptr;

@@ -46,6 +46,7 @@
 #include <QFileDialog>
 #include <QFrame>
 #include <QGraphicsBlurEffect>
+#include <QGraphicsDropShadowEffect>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
 #include <QGridLayout>
@@ -888,11 +889,11 @@ void TitlePage::buildHero() {
     textColumn->addWidget(disclosureRow_);
 
     textColumn->addSpacing(theme::kSpacingMedium);
-    links_ = new QLabel(hero_);
-    links_->setObjectName(QStringLiteral("titleLinks"));
-    links_->setTextFormat(Qt::RichText);
-    links_->setOpenExternalLinks(true);
-    wrapLabel(links_);
+    links_ = new QWidget(hero_);
+    links_->setLayout(new FlowLayout(theme::kSpacingXs, theme::kSpacingXs));
+    QSizePolicy linksPolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    linksPolicy.setHeightForWidth(true);
+    links_->setSizePolicy(linksPolicy);
     textColumn->addWidget(links_);
 
     textColumn->addStretch(1);
@@ -1813,17 +1814,46 @@ void TitlePage::refreshLinkTexts() {
     if (!detail_.ref.isEmpty()) {
         external.prepend({tr("Mikai"), page});
     }
-    const theme::Palette palette = theme::paletteFor(currentAppearance());
-    const QString linkColor = palette.titleMuted;
-    const QString separatorColor = palette.titleMuted;
-    QStringList anchors;
-    for (const auto& link : external) {
-        anchors << QStringLiteral("<a style=\"color: %1; text-decoration: underline; font-weight: 400;\" href=\"%2\">%3</a>")
-                       .arg(linkColor, link.second.toHtmlEscaped(), link.first.toHtmlEscaped());
+    QLayout* layout = links_->layout();
+    while (QLayoutItem* item = layout->takeAt(0)) {
+        if (item->widget() != nullptr) {
+            item->widget()->hide();
+            item->widget()->deleteLater();
+        }
+        delete item;
     }
-    links_->setText(anchors.join(
-        QStringLiteral("<span style=\"color: %1;\"> &nbsp;·&nbsp; </span>")
-            .arg(separatorColor)));
+    const theme::Palette palette = theme::paletteFor(currentAppearance());
+    for (int index = 0; index < external.size(); ++index) {
+        if (index > 0) {
+            auto* separator = new QLabel(QStringLiteral("·"), links_);
+            separator->setObjectName(QStringLiteral("titleLinks"));
+            layout->addWidget(separator);
+        }
+        const auto& link = external.at(index);
+        auto* label = new QLabel(links_);
+        label->setObjectName(QStringLiteral("titleLinks"));
+        label->setTextFormat(Qt::RichText);
+        label->setOpenExternalLinks(true);
+        label->setCursor(Qt::PointingHandCursor);
+        auto* glow = new QGraphicsDropShadowEffect(label);
+        glow->setBlurRadius(10);
+        glow->setOffset(0);
+        glow->setColor(QColor(palette.accent));
+        glow->setEnabled(false);
+        label->setGraphicsEffect(glow);
+        const QString url = link.second.toHtmlEscaped();
+        const QString text = link.first.toHtmlEscaped();
+        const auto render = [label, glow, url, text, palette](bool hovered) {
+            const QString& color = hovered ? palette.accent : palette.titleMuted;
+            label->setText(QStringLiteral("<a style=\"color: %1; text-decoration: underline; font-weight: 400;\" href=\"%2\">%3</a>")
+                               .arg(color, url, text));
+            glow->setEnabled(hovered);
+        };
+        render(false);
+        connect(label, &QLabel::linkHovered, label,
+                [render](const QString& target) { render(!target.isEmpty()); });
+        layout->addWidget(label);
+    }
 }
 
 void TitlePage::populateRelated(const backend::AnimeDetail& detail) {

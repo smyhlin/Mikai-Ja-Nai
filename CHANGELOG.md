@@ -4,6 +4,8 @@ Published changes are recorded with their downloads on the [GitHub releases page
 
 ## 0.2.1 — Unreleased
 
+- Highlight title-page external links with the selected accent glow on hover.
+
 - Keep the engine-build window above competing topmost windows even when the application is inactive, without activating it.
 
 - Default video scaling to native aspect ratio, including fullscreen; reset older scaling-mode preferences once so existing installations also start in Native.
