@@ -83,6 +83,7 @@
 #include <QTextOption>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
 #include <algorithm>
 
@@ -1033,6 +1034,7 @@ void TitlePage::buildEpisodeWorkspace() {
     watchButton_ = new QPushButton(tr("Watch"), watchPanel_);
     watchButton_->setObjectName(QStringLiteral("titleWatchButton"));
     theme::applyActionRole(watchButton_, theme::ActionRole::Primary);
+    watchButton_->setMinimumHeight(theme::kControlHeight);
     watchButton_->setCursor(Qt::PointingHandCursor);
     connect(watchButton_, &QPushButton::clicked, this, [this] {
         if (watchEntry_ != nullptr) {
@@ -1066,6 +1068,7 @@ void TitlePage::buildEpisodeWorkspace() {
     tabs_->tabBar()->setDrawBase(false);
     tabs_->tabBar()->setUsesScrollButtons(true);
     tabs_->tabBar()->setCursor(Qt::PointingHandCursor);
+    tabs_->tabBar()->installEventFilter(this);
     playbackLayout->addWidget(tabs_);
     playbackLayout->addWidget(watchPanel_);
 
@@ -3209,6 +3212,10 @@ void TitlePage::reflowGrid(int stateIndex) {
 }
 
 bool TitlePage::eventFilter(QObject* watched, QEvent* event) {
+    if (tabs_ != nullptr && watched == tabs_->tabBar() && event->type() == QEvent::Wheel &&
+        !static_cast<QWheelEvent*>(event)->modifiers().testFlag(Qt::AltModifier)) {
+        return true;
+    }
     if (event->type() == QEvent::MouseButtonRelease) {
         const QVariant genre = watched != nullptr ? watched->property("mikaiGenre") : QVariant();
         auto* mouse = static_cast<QMouseEvent*>(event);
@@ -3378,6 +3385,13 @@ void TitlePage::fitEpisodeSection() {
     }
     const int frame = style()->pixelMetric(QStyle::PM_DefaultFrameWidth);
     const int tabBarHeight = tabs_->count() > 0 ? tabs_->tabBar()->sizeHint().height() : 0;
+    const int currentIndex = tabs_->currentIndex();
+    if (currentIndex >= 0 && currentIndex < tabStates_.size()) {
+        RangePager* pager = tabStates_.at(currentIndex).pager;
+        if (pager != nullptr && pager->width() > 0) {
+            pager->setMinimumHeight(pager->heightForWidth(pager->width()));
+        }
+    }
     // A pager whose chips wrapped needs the height its width implies; its
     // one-line size hint would clip the second row inside the fixed tab height.
     const int pageHeight = qMax(currentPage->sizeHint().height(),
