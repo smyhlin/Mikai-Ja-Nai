@@ -11175,19 +11175,9 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Завантажити звук з диска…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1084"/>
-        <source>External subtitles need a local video</source>
-        <translation>Зовнішні субтитри потребують локального відео</translation>
-    </message>
-    <message>
         <location filename="../src/player/shell/PlayerShell.cpp" line="1103"/>
         <source>External audio needs a local video</source>
         <translation>Зовнішній звук потребує локального відео</translation>
-    </message>
-    <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1068"/>
-        <source>External tracks need a local video</source>
-        <translation>Зовнішні доріжки потребують локального відео</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerShell.cpp" line="1095"/>
@@ -11235,11 +11225,6 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <location filename="../src/player/shell/PlayerShell.cpp" line="1162"/>
         <source>From disk…</source>
         <translation>З диска…</translation>
-    </message>
-    <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1163"/>
-        <source>From disk… (local videos only)</source>
-        <translation>З диска… (лише локальні відео)</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerShell.cpp" line="1168"/>

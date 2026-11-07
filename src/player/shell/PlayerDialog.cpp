@@ -1881,9 +1881,8 @@ void PlayerDialog::appendSubtitleDelayEntries(QVector<MenuEntry>& entries) {
 }
 
 void PlayerDialog::appendExternalTrackEntry(QVector<MenuEntry>& entries, bool subtitle) {
-    if (shell_ == nullptr || !shell_->localMediaActive()) return;
-    // A stream cannot attach a sibling file: the row exists only for a local
-    // video, and it sits last so it never displaces the tracks above it.
+    if (shell_ == nullptr || (!subtitle && !shell_->localMediaActive())) return;
+    // External audio needs a local video; subtitles can also be added to streams.
     MenuEntry entry;
     entry.text = subtitle ? tr("Select subtitles from disk…") : tr("Select audio from disk…");
     QVariantMap payload;

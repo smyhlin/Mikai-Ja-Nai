@@ -1058,8 +1058,8 @@ void PlayerShell::updatePictureMenu() {
 
 void PlayerShell::attachExternalTrack(const QString& path, bool subtitle) {
     if (path.isEmpty()) return;
-    if (!localMediaActive()) {
-        if (toast_ != nullptr) toast_->flash(tr("External tracks need a local video"));
+    if (!subtitle && !localMediaActive()) {
+        if (toast_ != nullptr) toast_->flash(tr("External audio needs a local video"));
         return;
     }
     QString reason;
@@ -1074,13 +1074,10 @@ void PlayerShell::attachExternalTrack(const QString& path, bool subtitle) {
 bool PlayerShell::localMediaActive() const { return !localMediaFolder().isEmpty(); }
 
 void PlayerShell::loadExternalSubtitle() {
-    if (!localMediaActive()) {
-        if (toast_ != nullptr) toast_->flash(tr("External subtitles need a local video"));
-        return;
-    }
+    const QString folder = localMediaFolder();
     const QString file = QFileDialog::getOpenFileName(
         this, tr("Load subtitles from disk"),
-        localMediaFolder(),
+        folder.isEmpty() ? QDir::homePath() : folder,
         tr("Subtitles (*.srt *.ass *.ssa *.vtt *.sub *.sup);;All files (*)"));
     if (file.isEmpty()) return;
     QString reason;
@@ -1153,9 +1150,7 @@ void PlayerShell::openPictureSubtitlesMenu() {
     }
     QVector<MenuEntry> entries;
     MenuEntry disk;
-    disk.text = localMediaActive() ? tr("From disk…")
-                                   : tr("From disk… (local videos only)");
-    disk.disabled = !localMediaActive();
+    disk.text = tr("From disk…");
     disk.payload = QStringLiteral("disk");
     entries.append(disk);
     MenuEntry online;

@@ -109,17 +109,17 @@ The subtitle selector ends with a **Subtitle delay** group: **0.1 s earlier**, *
 
 ## Subtitles from OpenSubtitles
 
-Right-click the picture → **Subtitles ›** offers the two sources: **From disk…** (local videos only) and **OpenSubtitles…**. The second opens a search dialog seeded with the current caption and the system language, with the language list selectable. Enter a free API key from opensubtitles.com — it is stored under `access/openSubtitlesApiKey` and reused — then **Search**, pick a result and **Download and attach**. The file is written to a temporary folder that lives as long as the player and attached with the same `sub-add` path as a disk file, so it appears in the subtitle selector immediately.
+Right-click the picture → **Subtitles ›** offers **From disk…** for local or network video and **OpenSubtitles…**. The second opens a search dialog seeded with the current caption and the system language, with the language list selectable. Enter a free API key from opensubtitles.com — it is stored under `access/openSubtitlesApiKey` and reused — then **Search**, pick a result and **Download and attach**. The file is written to a temporary folder that lives as long as the player and attached with the same `sub-add` path as a disk file, so it appears in the subtitle selector immediately.
 
 The search is a boundary of its own: it needs network access and the key, and it is the only player feature that talks to a service other than Mikai and the catalogue providers. Nothing is uploaded — the query is the title text you see in the dialog and the language code.
 
-## External subtitles and audio for local videos
+## External subtitles and audio tracks
 
-A local video can take a subtitle or audio file from disk; a stream cannot, because there is no folder to pick a sibling from. Three entry points do the same thing:
+Subtitle files can be selected from disk or dropped onto either a local video or a network stream. Audio files from disk remain limited to local videos.
 
-- **Right-click the picture** → **Load subtitles from disk…** or **Load audio from disk…**. The rows exist only while a local file is playing.
-- **The AUDIO and subtitles selectors** on the dock end with **Select subtitles/audio from disk…**, below the tracks the file already carries.
-- **Drop the file on the picture**: `.srt`, `.ass`, `.ssa`, `.vtt`, `.sub`, `.sup` attach as subtitles and `.m4a`, `.aac`, `.mp3`, `.opus`, `.flac`, `.wav`, `.ac3`, `.eac3`, `.dts`, `.ogg` as audio. Dropping a video file still opens it as a new source.
+- **Right-click the picture** → **Subtitles → From disk…** works with local and network video; **Load audio from disk…** is available for local video.
+- **The subtitles selector** on the dock ends with **Select subtitles from disk…**. The audio selector's disk action remains local-only.
+- **Drop the file on the picture**: `.srt`, `.ass`, `.ssa`, `.vtt`, `.sub` and `.sup` attach as subtitles; `.m4a`, `.aac`, `.mp3`, `.opus`, `.flac`, `.wav`, `.ac3`, `.eac3`, `.dts` and `.ogg` attach as audio on local videos. Dropping a video file still opens it as a new source.
 
 The file is added to mpv and selected, so it appears in the same selectors as an embedded track and can be switched like one. A refusal names its reason in the status toast instead of failing silently.
 
