@@ -741,8 +741,6 @@ QWidget#titlePage QPushButton#releaseChip {
     color: %7;
     border: 1px solid %44;
     border-radius: %42px;
-    min-height: %12px;
-    max-height: %12px;
     padding: 0 %20px;
     font-size: %26px;
     font-weight: 500;

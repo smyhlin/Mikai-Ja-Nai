@@ -2775,13 +2775,14 @@ void TitlePage::rebuildReleaseChips() {
         row->setSpacing(theme::kSpacingSmall);
 
         auto* kindIcon = new QLabel(rowWidget);
-        kindIcon->setFixedSize(theme::kIconSize, theme::kIconSize);
+        kindIcon->setFixedSize(theme::kIconSize, theme::kControlHeight - theme::kSpacingSmall);
+        kindIcon->setAlignment(Qt::AlignCenter);
         const QStyle::StandardPixmap iconKind =
             kind == QLatin1String("sub") ? QStyle::SP_FileDialogDetailedView
                                          : QStyle::SP_MediaVolume;
         kindIcon->setPixmap(style()->standardIcon(iconKind).pixmap(theme::kIconSize));
         kindIcon->setAttribute(Qt::WA_TransparentForMouseEvents);
-        row->addWidget(kindIcon, 0, Qt::AlignVCenter);
+        row->addWidget(kindIcon, 0, Qt::AlignTop);
 
         auto* kindLabel = new QLabel(labels::kind(kind), rowWidget);
         kindLabel->setObjectName(QStringLiteral("releaseKind"));
