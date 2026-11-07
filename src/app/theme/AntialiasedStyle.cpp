@@ -58,6 +58,21 @@ QColor primitiveInk(const QStyleOption* option, const QWidget* widget) {
 
 AntialiasedStyle::AntialiasedStyle(const QString& baseStyle) : QProxyStyle(baseStyle) {}
 
+void AntialiasedStyle::drawControl(ControlElement element, const QStyleOption* option,
+                                   QPainter* painter, const QWidget* widget) const {
+    if (painter == nullptr) {
+        QProxyStyle::drawControl(element, option, painter, widget);
+        return;
+    }
+
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing, true);
+    painter->setRenderHint(QPainter::TextAntialiasing, true);
+    painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
+    QProxyStyle::drawControl(element, option, painter, widget);
+    painter->restore();
+}
+
 void AntialiasedStyle::drawPrimitive(PrimitiveElement element, const QStyleOption* option,
                                      QPainter* painter, const QWidget* widget) const {
     if (painter == nullptr || option == nullptr) {
