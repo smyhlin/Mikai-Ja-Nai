@@ -621,33 +621,41 @@ void PlayerShell::schedulePreviewPrewarm() {
 }
 
 void PlayerShell::buildWindowControls() {
-    constexpr int kControlSize = 28;
-    windowControls_ = new Panel(Qt::transparent, 0, Qt::transparent, this);
+    constexpr int kControlSize = 24;
+    // Match the exact height and style of the info chip (footerLeft_ / FPS badge)
+    const int radius = static_cast<int>(cornerRadius());
+    windowControls_ = new Panel(pill(), radius, w15(), this);
+    windowControls_->setFixedHeight(kInfoChipHeight);
     auto* lay = new QHBoxLayout(windowControls_);
-    lay->setContentsMargins(0, 0, 0, 0);
-    lay->setSpacing(4);
+    lay->setContentsMargins(8, 4, 8, 4);
+    lay->setSpacing(6);
 
+    // Minimize: simple icon inside the shared pill container
     btnMin_ = new IconButton(IconPainter::minimize, tr("Minimize the window"), kControlSize, 15,
                              windowControls_);
     ButtonChrome minChrome;
-    minChrome.fill = QBrush(blackSoft());
+    minChrome.fill = QBrush(Qt::NoBrush);
     minChrome.border = QColor(0, 0, 0, 0);
     minChrome.hoverFill = QBrush(QColor(255, 255, 255, 34));
     minChrome.hoverBorder = QColor(0, 0, 0, 0);
-    minChrome.useThemeRadius = true;
+    minChrome.useThemeRadius = false;
+    minChrome.radius = 4;
     minChrome.borderWidth = 0;
     btnMin_->setButtonChrome(minChrome);
     connect(btnMin_, &QPushButton::clicked, this, &QWidget::showMinimized);
     lay->addWidget(btnMin_);
 
+    // Close: elegant - no heavy red fill on the button. Subtle hover only.
+    // The X will stand out naturally; red tint can be added later via icon color if needed.
     btnClose_ = new IconButton(IconPainter::close, tr("Exit the player  (Esc)"), kControlSize, 15,
                                windowControls_);
     ButtonChrome closeChrome;
-    closeChrome.fill = QBrush(QColor(214, 61, 64));
+    closeChrome.fill = QBrush(Qt::NoBrush);
     closeChrome.border = QColor(0, 0, 0, 0);
-    closeChrome.hoverFill = QBrush(QColor(233, 79, 82));
-    closeChrome.hoverBorder = QColor(255, 255, 255, 46);
-    closeChrome.useThemeRadius = true;
+    closeChrome.hoverFill = QBrush(QColor(214, 61, 64, 90));  // very subtle red on hover
+    closeChrome.hoverBorder = QColor(0, 0, 0, 0);
+    closeChrome.useThemeRadius = false;
+    closeChrome.radius = 4;
     closeChrome.borderWidth = 0;
     btnClose_->setButtonChrome(closeChrome);
     connect(btnClose_, &QPushButton::clicked, this, &PlayerShell::exitViewer);
