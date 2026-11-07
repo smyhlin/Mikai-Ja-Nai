@@ -2971,6 +2971,7 @@ void TitlePage::fillEpisodes(int index) {
         // cannot push it around as it grows.
         auto* pager = new RangePager(theme::kEpisodesPerPage, tabPage);
         state.pager = pager;
+        pager->installEventFilter(this);
         const int stateIndex = tabStates_.size();
         connect(pager, &RangePager::pageRequested, this,
                 [this, stateIndex](int page) { goToEpisodePage(stateIndex, page); });
@@ -3219,7 +3220,15 @@ void TitlePage::reflowGrid(int stateIndex) {
 bool TitlePage::eventFilter(QObject* watched, QEvent* event) {
     if (tabs_ != nullptr && watched == tabs_->tabBar() && event->type() == QEvent::Wheel &&
         !static_cast<QWheelEvent*>(event)->modifiers().testFlag(Qt::AltModifier)) {
+        if (overviewScroll_ != nullptr) {
+            QCoreApplication::sendEvent(overviewScroll_->verticalScrollBar(), event);
+        }
         return true;
+    }
+    if (event->type() == QEvent::Resize && tabs_ != nullptr &&
+        tabs_->currentIndex() >= 0 && tabs_->currentIndex() < tabStates_.size() &&
+        watched == tabStates_.at(tabs_->currentIndex()).pager) {
+        scheduleFit();
     }
     if (event->type() == QEvent::MouseButtonRelease) {
         const QVariant genre = watched != nullptr ? watched->property("mikaiGenre") : QVariant();
@@ -3394,13 +3403,24 @@ void TitlePage::fitEpisodeSection() {
     if (currentIndex >= 0 && currentIndex < tabStates_.size()) {
         RangePager* pager = tabStates_.at(currentIndex).pager;
         if (pager != nullptr && pager->width() > 0) {
-            pager->setMinimumHeight(pager->heightForWidth(pager->width()));
+            pager->setMinimumHeight(qMax(pager->sizeHint().height(),
+                                         pager->heightForWidth(pager->width())));
         }
     }
     // A pager whose chips wrapped needs the height its width implies; its
     // one-line size hint would clip the second row inside the fixed tab height.
-    const int pageHeight = qMax(currentPage->sizeHint().height(),
-                                currentPage->heightForWidth(currentPage->width()));
+    int pageHeight = qMax(currentPage->sizeHint().height(),
+                          currentPage->heightForWidth(currentPage->width()));
+    if (currentIndex >= 0 && currentIndex < tabStates_.size()) {
+        const TabState& state = tabStates_.at(currentIndex);
+        if (state.grid != nullptr && state.pager != nullptr && currentPage->layout() != nullptr) {
+            const QMargins margins = currentPage->layout()->contentsMargins();
+            const int pagerHeight = state.pager->isHidden() ? 0 : state.pager->minimumHeight();
+            const int gap = state.pager->isHidden() ? 0 : currentPage->layout()->spacing();
+            pageHeight = qMax(pageHeight, state.grid->sizeHint().height() + pagerHeight + gap +
+                                          margins.top() + margins.bottom());
+        }
+    }
     // Size from the active page only: a taller grid from another release would
     // leave a blank panel. The page scroll owns the overflow.
     const int desired = tabBarHeight + pageHeight + 2 * frame;
