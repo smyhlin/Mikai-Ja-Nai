@@ -6,7 +6,7 @@ Open **Settings** from the main window. The settings window has these pages:
 |---|---|---|
 | **Customization** | **General** | Site theme, content/name language, cover display, 18+ display, and system integrations |
 | **Customization** | **Appearance** | Accent, corner radius and background gradient |
-| **Application** | **Access** | Mikai API token (also reachable from the RPM chip), home-page feed sections, interface language, HDR playback and video scaling |
+| **Application** | **Access** | Mikai and OpenSubtitles API keys, home-page feed sections, interface language, HDR playback and video scaling |
 | **Application** | **Keyboard shortcuts** | Anime4K preset key bindings |
 | **Playback** | **Processing** | Runtime module selection and the Standard and Native processing workflows |
 | **Playback** | **Components** | Downloadable backend components, models and their install state |

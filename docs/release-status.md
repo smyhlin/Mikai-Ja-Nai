@@ -1,6 +1,7 @@
 # Release status
 
 Published packages, release-specific changes and checksums are available on the [GitHub releases page](https://github.com/smyhlin/Mikai-Ja-Nai/releases). The original [v0.1.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0) was followed by the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101). Local rebuilds produce their own `SHA256SUMS`; a rebuild alone does not require a documentation update.
+The latest published release recorded here is [v0.2.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.0). The current `main` branch contains post-v0.2.0 changes listed as **Unreleased** in the changelog; no release artifacts or release-gate result for those changes are recorded here. Do not present a source build as a new published package. Public release remains blocked by the unresolved rights and verification gates below.
 
 ## What remains open
 

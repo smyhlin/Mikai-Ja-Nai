@@ -31,7 +31,7 @@
 - Skip the openings, endings and recaps the provider publishes for an episode, with accent-tinted timeline ranges and per-segment skip buttons.
 - Preview the timeline on hover with decoded frame thumbnails, and move playback into a floating picture-in-picture window.
 - Change how the picture fills the window: Fit, Fill, Stretch, 16:9, 4:3, original size, zoom, upscaler and downscaler.
-- Inspect local media metadata, manage audio/subtitle tracks, and customize the interface in English or Ukrainian.
+- Load local subtitle files into local videos and network streams, search OpenSubtitles, inspect local media metadata, manage tracks, and customize the interface in English or Ukrainian.
 - Resume where you stopped: playback starts at 00:00 and offers a stored position instead, the episode is marked watched at 90 % of its length, and the title page shows the same progress.
 - Read the source at a glance in the player footer: HDR, Dolby Vision, Dolby Atmos and the video codec, based on what the container reports.
 - Identify the exact binary you are running with `--version`, which prints the commit and build time without needing a desktop session.
@@ -79,7 +79,7 @@ The artifacts are unsigned, and [release status](docs/release-status.md) records
 
 Linux packages include the project's libmpv runtime, but still require compatible host graphics, audio and system libraries. They are not universal Linux bundles. The original Windows v0.1.0 packages have a startup-runtime issue; the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101) includes the fix.
 
-The published packages predate the current source tree: the AnimeJaNai v0.22.2 update, the Windows TensorRT for RTX option, skips, hover previews, video scaling and the rest of the pending work are only in an unreleased build. [Changelog](CHANGELOG.md) separates those from the shipped 0.1.0 packages.
+The latest published packages are for **v0.2.0**. The current source also contains later, unreleased changes; see the **Unreleased** section of the [changelog](CHANGELOG.md). Those changes are not in the v0.2.0 downloads. A new public release remains blocked by the third-party rights and release-verification gates in [release status](docs/release-status.md).
 
 ## Quick start
 

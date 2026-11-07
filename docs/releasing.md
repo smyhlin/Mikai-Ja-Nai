@@ -4,7 +4,7 @@
 
 This guide covers local package generation, not publication.
 
-- Existing public releases include [v0.1.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0) and the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101); do not link users to an unofficial binary mirror.
+- Existing public releases include [v0.2.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.0), the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101), and the original [v0.1.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0); do not link users to an unofficial binary mirror.
 - Source publication and binary publication are separate decisions.
 - See the [current observed release status](release-status.md) for build outcomes and open gates; the commands and expected outputs below describe packaging paths, not proof that those paths succeeded.
 
@@ -50,17 +50,17 @@ Full digests for inputs that do not live in any provenance JSON or `SHA256SUMS` 
 
 ## Canonical product artifacts
 
-For the current `0.1.0`, six product artifacts — two Windows packages and four Linux packages — plus the Windows build receipt and one `SHA256SUMS` form the canonical top-level set, and their names are fixed by the scripts quoted in this guide:
+For the published `0.2.0`, the canonical release comprised six product packages, the Windows build receipt, the Arch `.SRCINFO`, and one `SHA256SUMS`:
 
 | Platform | Product artifact | Written by |
 |---|---|---|
-| Windows x64 | `mikai-0.1.0-windows-x64-portable.zip` | `packaging/windows/package.ps1` |
-| Windows x64 | `mikai-0.1.0-windows-x64-setup.exe` | `packaging/windows/package.ps1` |
-| Windows x64 | `mikai-0.1.0-windows-x64-release.json` (build receipt) | `packaging/windows/package.ps1` |
-| Linux x86_64 | `mikai-0.1.0-linux-x86_64.tar.gz` | `packaging/linux/package.sh` |
-| Linux x86_64 | `mikai-0.1.0-x86_64.AppImage` | `appimage` target / `packaging/linux/appimage.sh` |
-| Linux x86_64 | `mikai-0.1.0-1-x86_64.pkg.tar.zst` (plus `mikai-0.1.0-1.SRCINFO`) | `packaging/linux/arch-package.sh` |
-| Linux x86_64 | `mikai_0.1.0_amd64.deb` | `packaging/linux/deb-package.sh` |
+| Windows x64 | `mikai-0.2.0-windows-x64-portable.zip` | `packaging/windows/package.ps1` |
+| Windows x64 | `mikai-0.2.0-windows-x64-setup.exe` | `packaging/windows/package.ps1` |
+| Windows x64 | `mikai-0.2.0-windows-x64-release.json` (build receipt) | `packaging/windows/package.ps1` |
+| Linux x86_64 | `mikai-0.2.0-linux-x86_64.tar.gz` | `packaging/linux/package.sh` |
+| Linux x86_64 | `mikai-0.2.0-x86_64.AppImage` | `appimage` target / `packaging/linux/appimage.sh` |
+| Linux x86_64 | `mikai-0.2.0-1-x86_64.pkg.tar.zst` (plus `mikai-0.2.0-1.SRCINFO`) | `packaging/linux/arch-package.sh` |
+| Linux x86_64 | `mikai_0.2.0_amd64.deb` | `packaging/linux/deb-package.sh` |
 | both | `SHA256SUMS` | regenerated at the top level over the promoted set |
 
 - Each script writes its own `SHA256SUMS` beside its output; promoting several builds into one directory means regenerating the single top-level manifest so it covers every product file and the receipt.
@@ -91,14 +91,14 @@ Without `-RequirePublicReady` the script warns and prepares **private review** a
 
 Building into a dated or review subdirectory (for example `release-artifacts/windows-runtime-review/`) does **not** refresh existing top-level files in `release-artifacts/`. The canonical delivery paths are the top-level names listed under [Canonical product artifacts](#canonical-product-artifacts). To promote a reviewed build there, back up the previous product files (a `previous-top-level-<timestamp>/` directory is the recorded precedent), copy the verified packages and receipt to the top level, then regenerate the top-level `SHA256SUMS` over the complete product set, the receipt included. Preserve pinned runtime archives, `corresponding-source/` inputs and unrelated output directories.
 
-Verify the executable inside the canonical portable ZIP with `--version`, not only the executable in the build directory. Rebuilds can share the `0.1.0` product number; the embedded source revision and package checksums distinguish their actual contents.
+Verify the executable inside the canonical portable ZIP with `--version`, not only the executable in the build directory. Rebuilds can share the `0.2.0` product number; the embedded source revision and package checksums distinguish their actual contents.
 
 Expected outputs are:
 
-- `mikai-0.1.0-windows-x64-portable.zip`
-- `mikai-0.1.0-windows-x64-setup.exe`
+- `mikai-0.2.0-windows-x64-portable.zip`
+- `mikai-0.2.0-windows-x64-setup.exe`
 - `SHA256SUMS`
-- `mikai-0.1.0-windows-x64-release.json`
+- `mikai-0.2.0-windows-x64-release.json`
 
 - The installer is unsigned and per-user. It does not force associations or enable startup automatically.
 - Setup shows its Welcome page and checks this Windows user's registered installation. An older version is offered as **Update**; a matching version is offered for update or repair because different builds can share the same version number. A newer registered version is refused rather than silently replaced.
@@ -111,7 +111,7 @@ For an isolated per-user install/upgrade/uninstall check after packaging, invoke
 
 ```powershell
 pwsh -NoProfile -File packaging/windows/smoke.ps1 `
-  -Installer release-artifacts/mikai-0.1.0-windows-x64-setup.exe `
+  -Installer release-artifacts/mikai-0.2.0-windows-x64-setup.exe `
   -OutputDir release-artifacts/installer-smoke
 ```
 
@@ -166,8 +166,8 @@ bash packaging/linux/package.sh \
 - The build must be configured and built as Release.
 - The shown Unix Makefiles preset is single-configuration; for a multi-configuration build, pass `--config Release` to the package script.
 - The output directory must not already exist; the package script creates it. CI creates only the output parent and leaves final output creation to the package script; supplying a populated output directory, user data or an existing deployment is refused.
-- The script writes `mikai-0.1.0-linux-x86_64.tar.gz`, `SHA256SUMS`, and a named install tree.
-- The archive extracts to a directory containing `mikai-0.1.0-linux-x86_64/bin/mikai`; run that executable with compatible Qt plugins and desktop OpenGL available.
+- The script writes `mikai-0.2.0-linux-x86_64.tar.gz`, `SHA256SUMS`, and a named install tree.
+- The archive extracts to a directory containing `mikai-0.2.0-linux-x86_64/bin/mikai`; run that executable with compatible Qt plugins and desktop OpenGL available.
 - Its libmpv runtime and private closure sit in `bin/mpv`, so no system mpv is required.
 - When using a custom Qt installation, configure `LD_LIBRARY_PATH` for the Qt libraries only during development; packaged runtime discovery uses relative RPATH and does not require a global `LD_LIBRARY_PATH` for the bundled mpv closure.
 
@@ -287,7 +287,7 @@ bash packaging/linux/deb-package.sh \
 
 - The driver builds `packaging/debian/docker/Dockerfile` into `mikai-deb-builder:trixie` (Ubuntu-style builds are not interchangeable: trixie is the oldest base the package is meant for).
 - It mounts the checkout read-only, the Qt SDK at `/qt` and the runtime archive at `/mpv/runtime.tar.zst`, and runs `packaging/debian/in-container.sh`.
-- That script configures with `MIKAI_LINUX_DEPLOY_QT=ON` and `MIKAI_LINUX_BUNDLE_MPV=ON`, installs into `/usr` with the runtime at `/usr/lib/mikai/mpv`, derives `Depends` from what each shipped object can actually resolve (the runtime is bundled, so no distribution mpv is required), and builds `mikai_0.1.0_amd64.deb` with `dpkg-deb`.
+- That script configures with `MIKAI_LINUX_DEPLOY_QT=ON` and `MIKAI_LINUX_BUNDLE_MPV=ON`, installs into `/usr` with the runtime at `/usr/lib/mikai/mpv`, derives `Depends` from what each shipped object can actually resolve (the runtime is bundled, so no distribution mpv is required), and builds `mikai_0.2.0_amd64.deb` with `dpkg-deb`.
 
 - The Qt 6.12 SDK links ICU 73, which Debian 13 does not provide (it ships ICU 76).
 - ICU 73 is compiled once into the builder image and shipped beside the Qt runtime under `/usr/lib`; every library there resolves its siblings through `$ORIGIN`.
@@ -296,7 +296,7 @@ bash packaging/linux/deb-package.sh \
 
 - The Arch driver does not install the produced package; it runs CTest inside `makepkg` and stages the payload into `$pkgdir`.
 - The Debian script verifies by installing the `.deb`: it prints `--version`, starts the application as an unprivileged user with `QT_QPA_PLATFORM=offscreen`, and removes it, failing if the Qt platform plugin cannot load or the removal leaves the executable behind.
-- A clean `debian:trixie-slim` container with only `apt-get install ./mikai_0.1.0_amd64.deb` was used for the recorded artifact, without the builder image's ICU directory.
+- A clean `debian:trixie-slim` container with only `apt-get install ./mikai_0.2.0_amd64.deb` was used for the recorded artifact, without the builder image's ICU directory.
 
 - What neither format establishes: signing, publication, a physical GPU or audio acceptance run, or playback of provider streams.
 - Both packages bundle the same pinned libmpv runtime; they differ in Qt — the Arch package uses the distribution's Qt 6.12, the Debian package deploys the 6.12 SDK and its ICU closure — so the two are not interchangeable builds of the same binary and must be tested as separate artifacts.
@@ -311,7 +311,7 @@ python packaging/source/package.py \
   --output-dir /tmp/mikai-source-preview
 ```
 
-- The command writes `mikai-0.1.0-source.tar.gz`, `SHA256SUMS`, and `source-provenance.json`.
+- The command writes `mikai-0.2.0-source.tar.gz`, `SHA256SUMS`, and `source-provenance.json`.
 - It packages tracked files present in the worktree plus nonignored untracked files, so local changes and intended new assets are represented; ignored content, build/release outputs, user stores, logs, archives, and secret paths are excluded.
 - Tracked sensitive paths and symlinks fail closed.
 - The output must not exist and must not overlap the source tree.
@@ -320,7 +320,7 @@ python packaging/source/package.py \
 - This is not an atomic filesystem snapshot: a same-size edit before a member is read is represented by the newly archived content, not detected as a mutation.
 - Review provenance and archive contents before sharing.
 
-- Provenance records `format` 1, `artifact` `mikai-0.1.0-source.tar.gz`, `version` `0.1.0`, `snapshot_kind` `local-worktree-source-snapshot`, `head`, `dirty`, `commit_equivalence` `not-claimed`, `tree_sha256`, and `files[{path, sha256}]`.
+- Provenance records `format` 1, `artifact` `mikai-0.2.0-source.tar.gz`, `version` `0.2.0`, `snapshot_kind` `local-worktree-source-snapshot`, `head`, `dirty`, `commit_equivalence` `not-claimed`, `tree_sha256`, and `files[{path, sha256}]`.
 - The tree digest is computed from those archived-byte hashes after archive creation.
 - Selection is tracked files plus nonignored untracked files minus deleted files; exclusions include `.git`, `.omp`, build/release outputs, logs, caches, user stores, native runtime/model data, sensitive paths, symlinks, archives and logs.
 - Production code under `src/player/native/models` is retained.
@@ -338,7 +338,7 @@ The CI workflow handles pushes to `main`, pull requests and manual runs. Its `mi
 - `.github/workflows/nightly.yml` is a separate scheduled soak canary (software GL, null audio sink) that uploads `mikai-nightly-soak-evidence`; it is not a release gate, so its absence does not block packaging.
 - The Windows CI lane configures with `-DMIKAI_DISABLE_IPO=ON` and passes its MinGW `libwinpthread-1.dll` for the dist contract; the Linux lane configures the bundled runtime plus Qt deployment and records the digest of the archive it built (`evidence/linux-mpv-runtime.json`).
 
-The release workflow accepts `v*` tag pushes or a manual run for an existing default-branch tag, validates version/ancestry, and produces a `mikai-source-provenance` artifact containing package binaries, `mikai-0.1.0-source.tar.gz`, per-profile verification archives, `provenance.json`, `third-party.json`, `SHA256SUMS` and `RELEASE-NOTES.txt`.
+The release workflow accepts `v*` tag pushes or a manual run for an existing default-branch tag, validates version/ancestry, and produces a `mikai-source-provenance` artifact containing package binaries, a versioned source archive (for v0.2.0: `mikai-0.2.0-source.tar.gz`), per-profile verification archives, `provenance.json`, `third-party.json`, `SHA256SUMS` and `RELEASE-NOTES.txt`.
 
 Inspect the workflow files and run record for the exact contents and outcome of a particular run. Do not describe a workflow as passing unless its run c…
 

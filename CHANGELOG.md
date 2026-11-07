@@ -2,6 +2,14 @@
 
 Published changes are recorded with their downloads on the [GitHub releases page](https://github.com/smyhlin/Mikai-Ja-Nai/releases). Artifact checksums live with each release, not in the documentation.
 
+## Unreleased
+
+- Rework title and episode selection: provider/release controls, bounded episode ranges and pages, protected scrolling, non-clipping actions, and provider-reported episode classifications shown with a color key.
+- Bring title, release, provider, genre and player controls into line with shared app sizing, antialiasing and corner-radius rules; refine the title hero hierarchy.
+- Add OpenSubtitles API-key settings and a registration link. Local subtitle files can be selected or dropped onto network streams; the drag overlay identifies subtitle, audio and video actions correctly. External audio remains local-video-only.
+- Make the sidebar brand open the project’s GitHub page.
+- Add pinned Anime4K shader assets and optional upscaler models to the component workflow and player processing choices; improve Compare frame handling for sources that reject a second decode.
+
 ## 0.2.0 — Rendering, RTX and MoonAnime update
 
 - Update Standard AnimeJaNai to v0.22.2 and add opt-in TensorRT for RTX on Windows: verified dispatcher/runtime acquisition, in-process engine builds, separate engine/JIT caches, NVDEC, player/Compare/Benchmark selection and explicit refusal of backend substitution. Keep the classic Linux runtime; upstream publishes no Linux RTX binary.
