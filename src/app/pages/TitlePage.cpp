@@ -237,6 +237,144 @@ public:
     }
 };
 
+// Two-line elided title that measures with its live font() and re-elides on
+// font, style, language or DPI changes. Replaces fixed-height QLabel + pre-elide.
+class ElidedTwoLineLabel final : public QWidget {
+public:
+    explicit ElidedTwoLineLabel(const QString& text, QWidget* parent = nullptr)
+        : QWidget(parent), fullText_(text) {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+    }
+
+    void setFullText(const QString& text) {
+        if (fullText_ == text) return;
+        fullText_ = text;
+        updateGeometry();
+        update();
+    }
+
+    QSize sizeHint() const override {
+        const QFontMetrics fm(font());
+        return QSize(10, 2 * fm.lineSpacing());
+    }
+    QSize minimumSizeHint() const override { return sizeHint(); }
+
+protected:
+    void paintEvent(QPaintEvent*) override {
+        if (fullText_.isEmpty()) return;
+        const QString elided = TitleCard::elideTwoLines(fullText_, font(), width());
+        if (elided.isEmpty()) return;
+        QPainter painter(this);
+        painter.setPen(palette().color(QPalette::WindowText));
+        const QFontMetrics fm(font());
+        const int lineH = fm.lineSpacing();
+        const QStringList lines = elided.split(QLatin1Char('\n'));
+        int y = 0;
+        for (const QString& line : lines) {
+            const int textW = fm.horizontalAdvance(line);
+            const int x = (width() - textW) / 2;
+            painter.drawText(x, y + fm.ascent(), line);
+            y += lineH;
+        }
+    }
+
+    void changeEvent(QEvent* e) override {
+        QWidget::changeEvent(e);
+        if (e->type() == QEvent::FontChange ||
+            e->type() == QEvent::StyleChange ||
+            e->type() == QEvent::LanguageChange ||
+            e->type() == QEvent::ScreenChangeInternal) {
+            updateGeometry();
+            update();
+        }
+    }
+
+private:
+    QString fullText_;
+};
+
+}  // namespace
+
+namespace {
+
+void fitCarousel(QScrollArea* scroll, QWidget* track,
+                 const QList<QPointer<QPushButton>>& cards, int inset) {
+    if (!scroll || !track) return;
+
+    int maxCardH = 0;
+    for (const auto& cardPtr : cards) {
+        if (cardPtr.isNull()) continue;
+        QPushButton* card = cardPtr.data();
+        card->ensurePolished();
+        for (QWidget* child : card->findChildren<QWidget*>()) {
+            child->ensurePolished();
+        }
+        if (card->layout()) {
+            card->layout()->invalidate();
+            card->layout()->activate();
+            const int h = card->layout()->sizeHint().height();
+            if (h > maxCardH) maxCardH = h;
+        }
+    }
+    if (maxCardH <= 0) {
+        maxCardH = theme::kCarouselCardHeight;
+    }
+
+    for (const auto& cardPtr : cards) {
+        if (!cardPtr.isNull()) {
+            cardPtr->setFixedHeight(maxCardH);
+        }
+    }
+
+    track->setFixedHeight(maxCardH + 2 * inset);
+    scroll->setFixedHeight(track->height() + 2 * scroll->frameWidth());
+
+    // Debug guard
+    for (const auto& cardPtr : cards) {
+        if (cardPtr.isNull()) continue;
+        if (auto* lay = cardPtr->layout()) {
+            if (lay->minimumSize().height() > cardPtr->height() + 1) {
+                qWarning() << "carousel card content taller than card:"
+                           << "cardH=" << cardPtr->height()
+                           << "minLayoutH=" << lay->minimumSize().height();
+            }
+        }
+    }
+}
+
+// Event filter that triggers refit on style/font/DPI/language changes for a carousel.
+class CarouselFitFilter final : public QObject {
+public:
+    CarouselFitFilter(QScrollArea* s, QWidget* t, const QList<QPointer<QPushButton>>& cs, int ins)
+        : QObject(t), scroll(s), track(t), cards(cs), inset(ins) {}
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched != track) return false;
+        switch (event->type()) {
+        case QEvent::Show:
+        case QEvent::StyleChange:
+        case QEvent::FontChange:
+        case QEvent::ApplicationFontChange:
+        case QEvent::LanguageChange:
+        case QEvent::DevicePixelRatioChange:
+        case QEvent::ScreenChangeInternal:
+            QTimer::singleShot(0, this, [this] {
+                fitCarousel(scroll, track, cards, inset);
+            });
+            break;
+        default: break;
+        }
+        return false;
+    }
+
+private:
+    QPointer<QScrollArea> scroll;
+    QPointer<QWidget> track;
+    QList<QPointer<QPushButton>> cards;
+    int inset;
+};
+
 }  // namespace
 
 /// The cover blurred once per cover, tails included, on a surface small enough
@@ -548,6 +686,7 @@ void TitlePage::buildUi() {
     column_ = new QWidget(body_);
     column_->setObjectName(QStringLiteral("titleColumn"));
     column_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    column_->installEventFilter(this);
     bodyLayout->addWidget(column_, 1);
     // A scrollbar appearing changes the viewport width, and with it every wrap
     // point this page measures against.
@@ -2092,23 +2231,25 @@ QWidget* TitlePage::buildRelatedCarousel(
     }
     layout->addWidget(headerHost);
 
+    const int inset = theme::kCarouselTrackInset;
     auto* scroll = new QScrollArea(section);
     scroll->setObjectName(QStringLiteral("animeCarousel"));
     scroll->setWidgetResizable(false);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->setFixedHeight(theme::kCarouselCardHeight + theme::kSpacingMedium);
+    scroll->setFrameShape(QFrame::NoFrame);
     auto* track = new QWidget(scroll);
     track->setObjectName(QStringLiteral("animeCarouselTrack"));
-    auto* cards = new QHBoxLayout(track);
-    cards->setContentsMargins(2, 2, 2, 2);
-    cards->setSpacing(theme::kCarouselCardSpacing);
+    auto* cardsLayout = new QHBoxLayout(track);
+    cardsLayout->setContentsMargins(inset, inset, inset, inset);
+    cardsLayout->setSpacing(theme::kCarouselCardSpacing);
 
+    QList<QPointer<QPushButton>> createdCards;
     for (const auto& entry : entries) {
         const backend::AnimeSummary& anime = entry.second;
         auto* card = new QPushButton(section);
         card->setObjectName(QStringLiteral("animeCard"));
-        card->setFixedSize(theme::kCarouselCardWidth, theme::kCarouselCardHeight);
+        card->setFixedWidth(theme::kCarouselCardWidth);
         const QString name = labels::titleName(anime.titles);
         card->setToolTip(name);
         const QString ref = anime.ref;
@@ -2123,14 +2264,9 @@ QWidget* TitlePage::buildRelatedCarousel(
         auto* posterLabel = new QLabel(tr("Poster unavailable"), card);
         posterLabel->setObjectName(QStringLiteral("carouselPoster"));
         posterLabel->setAlignment(Qt::AlignCenter);
-        posterLabel->setFixedSize(
-            theme::kCarouselPosterWidth,
-            theme::kCarouselPosterHeight +
-                (headingKey == QLatin1String("related") ? 0 : theme::kTitleTinyPixelSize));
+        posterLabel->setFixedSize(theme::kCarouselPosterWidth, theme::kCarouselPosterHeight);
         posterLabel->setWordWrap(true);
         posterLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-        // Registered only for its fallback: a switch re-words the label while it
-        // is still empty, and leaves a landed poster alone.
         relatedPosterLabels_.append(posterLabel);
         cardLayout->addWidget(posterLabel, 0, Qt::AlignHCenter);
 
@@ -2143,38 +2279,33 @@ QWidget* TitlePage::buildRelatedCarousel(
             cardLayout->addWidget(kind);
         }
 
-        auto* titleLabel = new QLabel(card);
+        auto* titleLabel = new ElidedTwoLineLabel(name, card);
         titleLabel->setObjectName(QStringLiteral("carouselTitle"));
-        titleLabel->setTextFormat(Qt::PlainText);
-        titleLabel->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
-        titleLabel->setWordWrap(false);
-        titleLabel->setFixedHeight(theme::kCarouselTitleHeight);
-        titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-        // Match the carouselTitle rule so the elide is measured in its font.
-        QFont titleFont = titleLabel->font();
-        titleFont.setPixelSize(theme::kTitleMetaPixelSize);
-        titleFont.setWeight(QFont::Medium);
-        const int maxLineWidth = theme::kCarouselCardWidth - 2 * theme::kSpacingSmall - 6;
-        titleLabel->setText(TitleCard::elideTwoLines(name, titleFont, maxLineWidth));
-        cardLayout->addWidget(titleLabel);
-        cards->addWidget(card);
+        cardLayout->addWidget(titleLabel, 1);
+        cardsLayout->addWidget(card);
+        createdCards.append(card);
 
         const QString posterUrl = backend::posterUrl(anime);
         if (!posterUrl.isEmpty()) {
-            // One slot per poster, requested through the same path a later
-            // ratio change uses: a shared poster costs one download and a
-            // fan-out costs no API budget.
             relatedPosters_.append({posterLabel, posterUrl, {}, 0.0, false});
             requestRelatedPoster(relatedPosters_.size() - 1);
         }
     }
+
     const int cardCount = entries.size();
-    const int trackWidth = 2 * theme::kCarouselTrackInset +
+    const int trackWidth = 2 * inset +
                            cardCount * theme::kCarouselCardWidth +
                            qMax(0, cardCount - 1) * theme::kCarouselCardSpacing;
-    track->setFixedSize(trackWidth, theme::kCarouselCardHeight + 2 * theme::kCarouselTrackInset);
+    track->setFixedWidth(trackWidth);
     scroll->setWidget(track);
     layout->addWidget(scroll);
+
+    // Install dynamic refit filter (style, font, DPI, language, show)
+    auto* fitFilter = new CarouselFitFilter(scroll, track, createdCards, inset);
+    track->installEventFilter(fitFilter);
+
+    // Defer actual height fit until after polish and style application.
+    fitCarousel(scroll, track, createdCards, inset);
 
     QScrollBar* bar = scroll->horizontalScrollBar();
     connect(previous, &QPushButton::clicked, this,
@@ -3703,9 +3834,13 @@ void TitlePage::reflowOverviewHeight() {
     int contentHeight = columnLayout_->totalHeightForWidth(contentWidth);
     if (contentHeight < 0) contentHeight = columnLayout_->sizeHint().height();
     const int viewportHeight = qMax(1, overviewScroll_->viewport()->height());
+    const int targetHeight = qMax(viewportHeight, contentHeight);
+    if (body_->size() == QSize(bodyWidth, targetHeight)) {
+        return;
+    }
     // A short page still fills the viewport (its trailing stretch absorbs the
     // slack); a long one scrolls exactly to its content.
-    body_->setFixedSize(bodyWidth, qMax(viewportHeight, contentHeight));
+    body_->setFixedSize(bodyWidth, targetHeight);
 }
 
 void TitlePage::resizeEvent(QResizeEvent* event) {
