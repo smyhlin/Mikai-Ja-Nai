@@ -575,6 +575,7 @@ void SettingsDialog::save() {
     appearanceCommitted_ = true;
     QSettings settings;
     settings.setValue(QString::fromLatin1(kUiLanguageSettingKey), chosenLanguage);
+    settings.setValue(QStringLiteral("access/openSubtitlesApiKey"), openSubtitlesKey_->text().trimmed());
     settings.setValue(feeds::settingsKey(), feeds::serialize(chosen));
     // T-101/T-104: the HDR tone-mapping policy and the native-on-HDR override
     // commit with the rest: the statics are the live truth every engine reads

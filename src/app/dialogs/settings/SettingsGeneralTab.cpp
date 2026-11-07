@@ -193,6 +193,28 @@ QWidget* SettingsDialog::buildGeneralTab() {
     apiLayout->addWidget(quotaSubCard);
     root->addWidget(apiCard);
 
+    QVBoxLayout* subtitlesLayout = nullptr;
+    QFrame* subtitlesCard = makeSettingsCard(page, &subtitlesLayout);
+    subtitlesCard->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    subtitlesLayout->setSpacing(theme::kSpacingSmall);
+    openSubtitlesTitle_ = new QLabel(tr("OpenSubtitles"), subtitlesCard);
+    stylePageHeading(openSubtitlesTitle_);
+    subtitlesLayout->addWidget(openSubtitlesTitle_);
+    openSubtitlesHint_ = new QLabel(
+        tr("Enter your OpenSubtitles API key to search for subtitles in the player."),
+        subtitlesCard);
+    styleMutedCaption(openSubtitlesHint_);
+    subtitlesLayout->addWidget(openSubtitlesHint_);
+    openSubtitlesKey_ = new QLineEdit(subtitlesCard);
+    openSubtitlesKey_->setObjectName(QStringLiteral("openSubtitlesApiKeyEdit"));
+    openSubtitlesKey_->setEchoMode(QLineEdit::Password);
+    openSubtitlesKey_->setClearButtonEnabled(true);
+    openSubtitlesKey_->setMinimumHeight(theme::kSettingsControlSize);
+    openSubtitlesKey_->setText(
+        QSettings().value(QStringLiteral("access/openSubtitlesApiKey")).toString());
+    subtitlesLayout->addWidget(openSubtitlesKey_);
+    root->addWidget(subtitlesCard);
+
     // ── Card 2: Home Page Feed Sections (2-Column Selectable Tile Grid) ──────
     QVBoxLayout* feedsLayout = nullptr;
     QFrame* feedsCard = makeSettingsCard(page, &feedsLayout);
@@ -698,6 +720,11 @@ void SettingsDialog::retranslateGeneralTab() {
     token_->setAccessibleName(tr("Mikai API access token"));
     testButton_->setText(tr("Test"));
     testButton_->setAccessibleName(tr("Test API token"));
+    openSubtitlesTitle_->setText(tr("OpenSubtitles"));
+    openSubtitlesHint_->setText(
+        tr("Enter your OpenSubtitles API key to search for subtitles in the player."));
+    openSubtitlesKey_->setPlaceholderText(tr("OpenSubtitles API key"));
+    openSubtitlesKey_->setAccessibleName(tr("OpenSubtitles API key"));
 
     quotaTitle_->setText(tr("API usage"));
     feedsTitle_->setText(tr("Home page sections"));

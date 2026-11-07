@@ -355,6 +355,9 @@ private:
     backend::MikaiClient& client_;
     Runner& runner_;
     QLineEdit* token_ = nullptr;
+    QLineEdit* openSubtitlesKey_ = nullptr;
+    QLabel* openSubtitlesTitle_ = nullptr;
+    QLabel* openSubtitlesHint_ = nullptr;
     QComboBox* language_ = nullptr;
     // ── HDR playback (T-101/T-104) ───────────────────────────────────────
     QLabel* playbackTitle_ = nullptr;

@@ -76,6 +76,10 @@ The client first checks `.env` in the current working directory, then beside the
 
 The **API usage** readout shows the current limit and, after API responses arrive, usage/remaining requests, active and queued work, and reset countdown where available. It may initially say it is waiting for the next response.
 
+### OpenSubtitles
+
+Enter the OpenSubtitles API key under **Access** and select **Save**. The player uses the same key for its OpenSubtitles search; the key is stored in the application's settings and can also be entered in the search dialog.
+
 ### Home page sections
 
 Check the home-page sections you want loaded. Disabled sections are not loaded and do not use API requests. Search and title pages remain available regardless. Feed choices are saved on **Save**.
