@@ -2,7 +2,7 @@
 
 Published changes are recorded with their downloads on the [GitHub releases page](https://github.com/smyhlin/Mikai-Ja-Nai/releases). Artifact checksums live with each release, not in the documentation.
 
-## Unreleased
+## 0.2.1 — Unreleased
 
 - Rework title and episode selection: provider/release controls, bounded episode ranges and pages, protected scrolling, non-clipping actions, and provider-reported episode classifications shown with a color key.
 - Bring title, release, provider, genre and player controls into line with shared app sizing, antialiasing and corner-radius rules; refine the title hero hierarchy.

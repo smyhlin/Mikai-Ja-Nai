@@ -17,7 +17,7 @@ namespace shell {
 namespace {
 
 constexpr char kBaseUrl[] = "https://api.opensubtitles.com/api/v1";
-constexpr char kUserAgent[] = "Mikai Ja Nai 0.2.0";
+constexpr char kUserAgent[] = "Mikai Ja Nai 0.2.1";
 
 QNetworkRequest makeRequest(const QString& path, const QString& apiKey) {
     QNetworkRequest request{QUrl(QString::fromLatin1(kBaseUrl) + path)};
