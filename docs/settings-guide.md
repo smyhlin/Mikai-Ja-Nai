@@ -78,7 +78,7 @@ The **API usage** readout shows the current limit and, after API responses arriv
 
 ### OpenSubtitles
 
-Enter the OpenSubtitles API key under **Access** and select **Save**. The player uses the same key for its OpenSubtitles search; the key is stored in the application's settings and can also be entered in the search dialog.
+Create an API key on the linked [OpenSubtitles API consumers page](https://www.opensubtitles.com/en/consumers), enter it under **Access** and select **Save**. The player uses the same key for its OpenSubtitles search; the key is stored in the application's settings and can also be entered in the search dialog.
 
 ### Home page sections
 

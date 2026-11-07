@@ -358,6 +358,7 @@ private:
     QLineEdit* openSubtitlesKey_ = nullptr;
     QLabel* openSubtitlesTitle_ = nullptr;
     QLabel* openSubtitlesHint_ = nullptr;
+    QLabel* openSubtitlesLink_ = nullptr;
     QComboBox* language_ = nullptr;
     // ── HDR playback (T-101/T-104) ───────────────────────────────────────
     QLabel* playbackTitle_ = nullptr;

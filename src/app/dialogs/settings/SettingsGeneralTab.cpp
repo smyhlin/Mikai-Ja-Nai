@@ -205,6 +205,13 @@ QWidget* SettingsDialog::buildGeneralTab() {
         subtitlesCard);
     styleMutedCaption(openSubtitlesHint_);
     subtitlesLayout->addWidget(openSubtitlesHint_);
+    openSubtitlesLink_ = new QLabel(subtitlesCard);
+    openSubtitlesLink_->setObjectName(QStringLiteral("muted"));
+    openSubtitlesLink_->setTextFormat(Qt::RichText);
+    openSubtitlesLink_->setOpenExternalLinks(true);
+    openSubtitlesLink_->setWordWrap(true);
+    openSubtitlesLink_->setCursor(Qt::PointingHandCursor);
+    subtitlesLayout->addWidget(openSubtitlesLink_);
     openSubtitlesKey_ = new QLineEdit(subtitlesCard);
     openSubtitlesKey_->setObjectName(QStringLiteral("openSubtitlesApiKeyEdit"));
     openSubtitlesKey_->setEchoMode(QLineEdit::Password);
@@ -723,6 +730,11 @@ void SettingsDialog::retranslateGeneralTab() {
     openSubtitlesTitle_->setText(tr("OpenSubtitles"));
     openSubtitlesHint_->setText(
         tr("Enter your OpenSubtitles API key to search for subtitles in the player."));
+    openSubtitlesLink_->setText(
+        tr("<a style=\"color: %1; text-decoration: none; font-weight: 500;\" "
+           "href=\"https://www.opensubtitles.com/en/consumers\">"
+           "Get a key from the OpenSubtitles API consumers page ↗</a>")
+            .arg(theme::paletteFor(currentAppearance()).accent));
     openSubtitlesKey_->setPlaceholderText(tr("OpenSubtitles API key"));
     openSubtitlesKey_->setAccessibleName(tr("OpenSubtitles API key"));
 
