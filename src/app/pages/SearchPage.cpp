@@ -393,6 +393,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     // The main page presents the shared quota snapshot as the header pill; the
     // catalogue and title page keep its inline line.
     rateLabel_->setPresentation(RateLimitLabel::Presentation::Pill);
+    rateLabel_->setFixedHeight(theme::kControlHeight);
     connect(rateLabel_, &RateLimitLabel::clicked, this,
             &SearchPage::accessSettingsRequested);
 
@@ -493,6 +494,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     searchButton_ = new QPushButton(tr("Search"), header);
     searchButton_->setObjectName(QStringLiteral("searchActionButton"));
     theme::applyActionRole(searchButton_, theme::ActionRole::Primary);
+    searchButton_->setFixedHeight(theme::kControlHeight);
     searchButton_->setIconSize(QSize(theme::kIconSize + theme::kIconGlyphPad, theme::kIconSize));
     connect(query_, &QLineEdit::returnPressed, this, &SearchPage::search);
     connect(searchButton_, &QPushButton::clicked, this, &SearchPage::search);

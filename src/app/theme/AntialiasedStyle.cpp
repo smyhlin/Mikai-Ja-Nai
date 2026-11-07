@@ -69,15 +69,16 @@ void AntialiasedStyle::drawPrimitive(PrimitiveElement element, const QStyleOptio
                        element == PE_IndicatorArrowLeft || element == PE_IndicatorArrowRight;
     const bool tick = element == PE_IndicatorCheckBox ||
                       element == PE_IndicatorItemViewItemCheck;
-    if (!arrow && !tick) {
-        QProxyStyle::drawPrimitive(element, option, painter, widget);
-        return;
-    }
-
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing, true);
     painter->setRenderHint(QPainter::TextAntialiasing, true);
     painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
+
+    if (!arrow && !tick) {
+        QProxyStyle::drawPrimitive(element, option, painter, widget);
+        painter->restore();
+        return;
+    }
 
     if (arrow) {
         const QColor ink = primitiveInk(option, widget);
