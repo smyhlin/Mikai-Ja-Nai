@@ -704,9 +704,6 @@ void TestI18n::titleNamesFollowTheirOwnLanguageAndFallBack() {
 }
 
 void TestI18n::nativePlanErrorsFollowTheActiveLanguage() {
-#ifdef Q_OS_LINUX
-  QSKIP("native runtime localization requires Windows with TensorRT runtime installed");
-#endif
   // Prime the catalog so the manager knows where to find it for switching.
   QVERIFY2(primeBuiltCatalogForSwitching(),
            qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") + builtCatalogPath()));
@@ -714,16 +711,26 @@ void TestI18n::nativePlanErrorsFollowTheActiveLanguage() {
   const auto english = mplayer::native::prepareAnimeJanaiPlan(
       QStringLiteral("unrecognized-preset"), mplayer::native::Backend::TensorRT);
   QVERIFY(!english.available);
+  const auto englishInstallation = mplayer::native::describeAnimeJanaiInstallation(
+      mplayer::native::Backend::TensorRT);
+  QCOMPARE(englishInstallation.reasonKey, QStringLiteral("animejanai.installation.recordMissing"));
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), builtCatalogPath()));
   QCoreApplication::processEvents();  // Ensure translator is fully installed
   const auto ukrainian = mplayer::native::prepareAnimeJanaiPlan(
       QStringLiteral("unrecognized-preset"), mplayer::native::Backend::TensorRT);
   QCOMPARE(ukrainian.reasonKey, english.reasonKey);
   QVERIFY(ukrainian.reason != english.reason);
+  const auto ukrainianInstallation = mplayer::native::describeAnimeJanaiInstallation(
+      mplayer::native::Backend::TensorRT);
+  QCOMPARE(ukrainianInstallation.reasonKey, englishInstallation.reasonKey);
+  QVERIFY(ukrainianInstallation.reason != englishInstallation.reason);
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
   const auto restored = mplayer::native::prepareAnimeJanaiPlan(
       QStringLiteral("unrecognized-preset"), mplayer::native::Backend::TensorRT);
   QCOMPARE(restored.reason, english.reason);
+  const auto restoredInstallation = mplayer::native::describeAnimeJanaiInstallation(
+      mplayer::native::Backend::TensorRT);
+  QCOMPARE(restoredInstallation.reason, englishInstallation.reason);
 }
 
 void TestI18n::failedReplacementPreservesWorkingLanguage() {

@@ -608,6 +608,7 @@ int stageAndRun(const QStringList& arguments, const QString& directory,
     if (timeoutMs < 0) return 2;
 
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    environment.remove(QStringLiteral("MIKAI_NATIVE_ROOT"));
 #ifdef Q_OS_WIN
     environment.insert(QStringLiteral("PATH"), arguments.at(4) + QDir::listSeparator() +
                        environment.value(QStringLiteral("PATH")));
