@@ -602,11 +602,12 @@ QWidget#titlePage QLabel#titleScores {
 QWidget#titlePage QLabel#titleGenreChip,
 QWidget#titlePage QLabel#titleTagChip {
     color: %7;
-    background: %2;
-    border: 1px solid %8;
-    border-radius: 12px;
-    padding: 3px 9px;
+    background: %43;
+    border: 1px solid %44;
+    border-radius: %42px;
+    padding: 3px %20px;
     font-size: %26px;
+    font-weight: 500;
 }
 QWidget#titlePage QLabel#titleDescription { color: %6; font-size: %24px; }
 QWidget#titlePage QPushButton#titleSynopsisToggle,
@@ -620,7 +621,8 @@ QWidget#titlePage QLabel#titleLinks { color: %6; font-size: %26px; }
    pointer is used. */
 QWidget#titlePage QLabel#titleGenreChip:hover,
 QWidget#titlePage QLabel#titleTagChip:hover {
-    color: %4;
+    color: %6;
+    border-color: rgba(%9, 0.55);
 }
 
 /* Ghost actions: no fill, accent text. The page keeps its own pill geometry so
