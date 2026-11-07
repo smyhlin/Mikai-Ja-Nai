@@ -847,7 +847,7 @@ void TitlePage::buildHero() {
 
     heroActionContextHost_ = new QWidget(hero_);
     auto* actionContext = new QVBoxLayout(heroActionContextHost_);
-    actionContext->setContentsMargins(0, 0, 0, 0);
+    actionContext->setContentsMargins(0, theme::kSpacingSmall, 0, 0);
     actionContext->setSpacing(theme::kSpacingXs);
     actionContext->addWidget(chipsHost);
     heroActionContextHost_->hide();
@@ -1810,11 +1810,11 @@ void TitlePage::refreshLinkTexts() {
         external.prepend({tr("Mikai"), page});
     }
     const theme::Palette palette = theme::paletteFor(currentAppearance());
-    const QString linkColor = palette.titleText;
+    const QString linkColor = palette.titleMuted;
     const QString separatorColor = palette.titleMuted;
     QStringList anchors;
     for (const auto& link : external) {
-        anchors << QStringLiteral("<a style=\"color: %1; text-decoration: underline; font-weight: 600;\" href=\"%2\">%3</a>")
+        anchors << QStringLiteral("<a style=\"color: %1; text-decoration: underline; font-weight: 400;\" href=\"%2\">%3</a>")
                        .arg(linkColor, link.second.toHtmlEscaped(), link.first.toHtmlEscaped());
     }
     links_->setText(anchors.join(

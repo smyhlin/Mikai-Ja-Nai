@@ -582,9 +582,6 @@ QWidget#titlePage QLabel#titleFacts,
 QWidget#titlePage QLabel#titleScores,
 QWidget#titlePage QLabel#titleLinks,
 QWidget#titlePage QLabel#titleHeroWatchContext { font-size: %26px; }
-QWidget#titlePage QLabel#titleScores {
-    background: transparent; border: none; padding: 0; color: %7; font-weight: 500;
-}
 QWidget#titlePage QLabel#titleStudio {
     color: %7;
     font-size: %26px;
@@ -602,12 +599,12 @@ QWidget#titlePage QLabel#titleScores {
 QWidget#titlePage QLabel#titleGenreChip,
 QWidget#titlePage QLabel#titleTagChip {
     color: %7;
-    background: %43;
-    border: 1px solid %44;
+    background: transparent;
+    border: 1px solid %8;
     border-radius: %42px;
-    padding: 3px %20px;
+    padding: %49px %48px;
     font-size: %26px;
-    font-weight: 500;
+    font-weight: 400;
 }
 QWidget#titlePage QLabel#titleDescription { color: %6; font-size: %24px; }
 QWidget#titlePage QPushButton#titleSynopsisToggle,
@@ -617,11 +614,10 @@ QWidget#titlePage QPushButton#titleDiscoveryToggle {
     max-height: %47px;
 }
 QWidget#titlePage QLabel#titleLinks { color: %6; font-size: %26px; }
-/* Genre and tag chips are links into the catalogue: the hover says so before the
-   pointer is used. */
 QWidget#titlePage QLabel#titleGenreChip:hover,
 QWidget#titlePage QLabel#titleTagChip:hover {
     color: %6;
+    background: %3;
     border-color: rgba(%9, 0.55);
 }
 
@@ -652,6 +648,21 @@ QWidget#titlePage QPushButton[actionRole="ghost"]:focus { border-color: %4; }
 QWidget#titlePage QPushButton[actionRole="ghost"]:disabled {
     color: %7; background: transparent; border-color: %8;
 }
+QWidget#titlePage QPushButton#titleDetailsToggle,
+QWidget#titlePage QPushButton#titleSynopsisToggle { border-color: transparent; }
+QWidget#titlePage QPushButton#titleDetailsToggle:hover:enabled,
+QWidget#titlePage QPushButton#titleSynopsisToggle:hover:enabled {
+    background: %3;
+    color: %6;
+    border-color: %8;
+}
+QWidget#titlePage QPushButton#titleDetailsToggle:checked,
+QWidget#titlePage QPushButton#titleSynopsisToggle:checked {
+    background: %3;
+    border-color: %4;
+}
+QWidget#titlePage QPushButton#titleDetailsToggle:focus,
+QWidget#titlePage QPushButton#titleSynopsisToggle:focus { border-color: %4; }
 
 QWidget#titlePage QWidget#titlePlaybackControls {
     background: %2;
@@ -1092,7 +1103,9 @@ QWidget#titlePage QPushButton#titleDetailsClose:focus { border-color: %4; }
         .arg(p.borderControl)
         .arg(kWatchCtaContentHeight)   // %45
         .arg(kWatchCtaInsetH)          // %46
-        .arg(kControlContentHeight);   // %47
+        .arg(kControlContentHeight)    // %47
+        .arg(kSpacingSmall)            // %48
+        .arg(kSpacingXs);              // %49
 }
 
 QString searchPageSheet(const Appearance& appearance, const SearchHeaderPalette& roles) {
