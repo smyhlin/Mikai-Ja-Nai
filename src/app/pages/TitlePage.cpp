@@ -1541,6 +1541,7 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
     }
     subtitle_->setText(alternate);
     subtitle_->setVisible(!alternate.isEmpty());
+    scheduleOverviewReflow();
     // Retained before the sheet is restated: its Synopsis block reads this text.
     rawDescription_ = detail.description.trimmed();
     fullDescription_ = rawDescription_.isEmpty() ? tr("No description available.") : rawDescription_;
@@ -1986,6 +1987,7 @@ void TitlePage::populateRelated(const backend::AnimeDetail& detail) {
     if (relations.isEmpty() && similar.isEmpty()) {
         discoveryHost_->hide();
         relatedButton_->hide();
+        scheduleOverviewReflow();
         return;
     }
     discoveryHost_->show();
@@ -3061,6 +3063,19 @@ void TitlePage::fillEpisodes(int index) {
         return;
     }
     activeRelease_ = index;
+    // Keep empty in-flight entries so new waiters join the existing request.
+    for (const TabState& state : tabStates_) {
+        for (EpisodeEntry* entry : state.entries) {
+            if (entry == nullptr) {
+                continue;
+            }
+            entryCallbacks_.remove(entry);
+            auto waiters = fetchWaiters_.find(entry->embedUrl);
+            if (waiters != fetchWaiters_.end()) {
+                waiters.value().removeAll(entry);
+            }
+        }
+    }
     // The tab handler renders a page and re-selects an episode, and both would
     // index the vector being replaced mid-teardown.
     const QSignalBlocker tabsBlocker(tabs_);
@@ -3071,7 +3086,6 @@ void TitlePage::fillEpisodes(int index) {
         tabs_->removeTab(0);
         page->deleteLater();
     }
-    fetchWaiters_.clear();
     tabStates_.clear();
     watchEntry_ = nullptr;
     // The tabs are new widgets at the default height, so the last fit's answer
@@ -3580,6 +3594,15 @@ bool TitlePage::eventFilter(QObject* watched, QEvent* event) {
         event->type() == QEvent::Resize) {
         reflowOverviewHeight();
     }
+    if (watched == column_ && event->type() == QEvent::LayoutRequest) {
+        scheduleOverviewReflow();
+    }
+    if ((watched == heading_ || watched == subtitle_) && event->type() == QEvent::Resize) {
+        scheduleOverviewReflow();
+    }
+    if (watched == hero_ && event->type() == QEvent::Resize) {
+        scheduleOverviewReflow();
+    }
     if ((watched == heading_ || watched == subtitle_ || watched == detailsTitle_ ||
          watched == detailsOriginal_) && event->type() == QEvent::MouseButtonRelease) {
         auto* mouse = static_cast<QMouseEvent*>(event);
@@ -3710,6 +3733,16 @@ bool TitlePage::event(QEvent* event) {
                               event->type() == QEvent::ScreenChangeInternal;
     const bool result = QWidget::event(event);
     if (ratioChanged) {
+        applyResponsiveLayout();
+        scheduleOverviewReflow();
+    }
+    if (event->type() == QEvent::Show) {
+        QTimer::singleShot(0, this, [this] {
+            applyResponsiveLayout();
+            reflowOverviewHeight();
+        });
+    }
+    if (ratioChanged) {
         // The even-width rounding is a device-pixel decision, so a ratio change
         // measures every group again.
         refreshActionWidths();
@@ -3812,8 +3845,13 @@ void TitlePage::ensureQualities(
         callback(entry, cached);
         return;
     }
+    const bool startFetch = !fetchWaiters_.contains(embed);
     QVector<EpisodeEntry*>& waiters = fetchWaiters_[embed];
-    if (waiters.isEmpty()) {
+    if (std::find(waiters.cbegin(), waiters.cend(), entry) == waiters.cend()) {
+        waiters.append(entry);
+    }
+    entryCallbacks_[entry].append(callback);
+    if (startFetch) {
         flashStatus(tr("Loading quality options…"));
         // The stream pool, not the bulk one: this probe's result is what the
         // reader is waiting on to start playback, so it should not queue behind
@@ -3832,10 +3870,6 @@ void TitlePage::ensureQualities(
                 }
             });
     }
-    if (std::find(waiters.cbegin(), waiters.cend(), entry) == waiters.cend()) {
-        waiters.append(entry);
-    }
-    entryCallbacks_[entry].append(callback);
 }
 
 void TitlePage::finishFetch(const QString& embed, const QMap<int, QString>& qualities,

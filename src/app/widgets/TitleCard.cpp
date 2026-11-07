@@ -218,6 +218,10 @@ QPixmap TitleCard::rounded(const QPixmap& pixmap, const QSize& logical, qreal dp
     // radius, the shade and the mask stay in the caller's units while the
     // raster behind them is `ratio` times larger.
     QPixmap out = gui::pixmapForDevice(logical, ratio);
+    // Fill with solid black first: drawPixmap with negative offsets (below) does
+    // not guarantee full coverage, leaving garbage from prior allocations visible
+    // as horizontal striping until a full repaint (e.g. resize) clears it.
+    out.fill(Qt::black);
     QPainter painter(&out);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::SmoothPixmapTransform);
