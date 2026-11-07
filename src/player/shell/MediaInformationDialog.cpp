@@ -246,7 +246,11 @@ void MediaInformationDialog::updateActiveView() {
 }
 
 void MediaInformationDialog::updatePlainText() {
-    const QString text = mediaInformationPlainText(document_);
+    QString text = mediaInformationPlainText(document_);
+    text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    text.replace(QChar(0x2028), QLatin1Char('\n'));
+    text.replace(QChar(0x2029), QLatin1Char('\n'));
     const QString previous = plain_->toPlainText();
     if (previous == text) return;
     const QTextCursor selection = plain_->textCursor();
@@ -263,16 +267,16 @@ void MediaInformationDialog::updatePlainText() {
     while (suffix < commonSize - prefix &&
            previous[previous.size() - suffix - 1] == text[text.size() - suffix - 1]) ++suffix;
     const int oldEnd = static_cast<int>(previous.size() - suffix);
-    const int newEnd = static_cast<int>(text.size() - suffix);
+    QTextCursor edit(plain_->document());
+    edit.setPosition(static_cast<int>(prefix));
+    edit.setPosition(oldEnd, QTextCursor::KeepAnchor);
+    edit.insertText(text.mid(prefix, text.size() - prefix - suffix));
+    const int newEnd = edit.position();
     const auto updatedPosition = [prefix, oldEnd, newEnd](int position) {
         if (position <= prefix) return position;
         if (position >= oldEnd) return position + newEnd - oldEnd;
         return std::min(position, newEnd);
     };
-    QTextCursor edit(plain_->document());
-    edit.setPosition(static_cast<int>(prefix));
-    edit.setPosition(oldEnd, QTextCursor::KeepAnchor);
-    edit.insertText(text.mid(prefix, text.size() - prefix - suffix));
 
     QTextCursor restored(plain_->document());
     restored.setPosition(updatedPosition(anchor));

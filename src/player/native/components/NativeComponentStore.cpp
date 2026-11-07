@@ -343,7 +343,7 @@ bool copyPinnedGraph(const QString& source, const QString& destination,
     for (;;) {
         if (cancelled && cancelled()) {
             output.cancelWriting();
-            *reason = translated("The RIFE graph installation was cancelled.");
+            *reason = translated(QT_TRANSLATE_NOOP("NativeComponentStore", "The RIFE graph installation was cancelled."));
             return false;
         }
         const qint64 count = input.read(buffer, sizeof buffer);
@@ -537,7 +537,7 @@ StoredRifeGraph storedRifeGraph(const RifeArchiveStore& store, const RifeModelPi
     }
     result.path = QDir(store.root).filePath(pin.fileName);
     if (store.root.isEmpty()) {
-        result.reason = translated("The RIFE archive store root is not available");
+        result.reason = translated(QT_TRANSLATE_NOOP("NativeComponentStore", "The RIFE archive store root is not available"));
         return result;
     }
     const QVector<RifeModelPin>& compiled = rifeModelPins();
@@ -562,11 +562,12 @@ StoredRifeGraph storedRifeGraph(const RifeArchiveStore& store, const RifeModelPi
         result.reason = QStringLiteral("%1 is not present as a regular graph file").arg(pin.fileName);
         return result;
     }
-    result.installed = true;
     result.bytes = info.size();
     if (result.bytes != pin.bytes) {
         result.reason = QStringLiteral("%1 is present with an unexpected byte count").arg(pin.fileName);
+        return result;
     }
+    result.installed = true;
     return result;
 }
 
@@ -594,9 +595,9 @@ bool installRifeGraphs(const RifeArchiveStore& store, const QVector<RifeModelPin
     QString pinReason;
     if (store.root.isEmpty() || pins.size() != 47 || !safeRifePins(pins, &pinReason)) {
         return fail(store.root.isEmpty()
-                        ? translated("The RIFE archive store root is not available")
+                        ? translated(QT_TRANSLATE_NOOP("NativeComponentStore", "The RIFE archive store root is not available"))
                         : (pins.size() != 47
-                               ? translated("The pinned RIFE graph inventory must contain 47 files.")
+                               ? translated(QT_TRANSLATE_NOOP("NativeComponentStore", "The pinned RIFE graph inventory must contain 47 files."))
                                : pinReason));
     }
     const QString sourceRoot = QDir(extractionRoot).filePath(QStringLiteral("animejanai/rife"));
@@ -630,7 +631,7 @@ bool installRifeGraphs(const RifeArchiveStore& store, const QVector<RifeModelPin
     if (foundNames != expectedNames || !matchesCompiledRifePins(pins)) {
         return fail(QStringLiteral("the extracted RIFE archive does not contain the exact pinned inventory"));
     }
-    if (cancelled && cancelled()) return fail(translated("The RIFE graph installation was cancelled."));
+    if (cancelled && cancelled()) return fail(translated(QT_TRANSLATE_NOOP("NativeComponentStore", "The RIFE graph installation was cancelled.")));
 
     const QString parent = QFileInfo(store.root).absolutePath();
     if (!pathWithinRoot(nativeRoot(), store.root) ||
@@ -667,7 +668,7 @@ bool installRifeGraphs(const RifeArchiveStore& store, const QVector<RifeModelPin
     }
     if (cancelled && cancelled()) {
         removeStage();
-        return fail(translated("The RIFE graph installation was cancelled."));
+        return fail(translated(QT_TRANSLATE_NOOP("NativeComponentStore", "The RIFE graph installation was cancelled.")));
     }
 
     const bool hadPrevious = QFileInfo::exists(store.root);
@@ -696,7 +697,14 @@ StoredPack storedPack(const ComponentStore& store, const ComponentPack& pack) {
     result.directory = componentReleaseDirectory(store);
     if (store.root.isEmpty()) {
         result.reasonKey = QStringLiteral("native.components.missing");
-        result.reason = translated("The component store root is not available");
+        result.reason = translated(QT_TRANSLATE_NOOP("NativeComponentStore", "The component store root is not available"));
+        return result;
+    }
+    const QString trustRoot = QFileInfo(store.root).absolutePath();
+    const QString recordPath = QDir(result.directory).filePath(QString::fromLatin1(kRecordFile));
+    if (!pathHasNoReparsePoints(trustRoot, recordPath)) {
+        result.reasonKey = QStringLiteral("native.components.record");
+        result.reason = translated(QT_TRANSLATE_NOOP("NativeComponentStore", "The component record is not a safe app-owned file."));
         return result;
     }
     QString error;
@@ -732,9 +740,13 @@ StoredPack storedPack(const ComponentStore& store, const ComponentPack& pack) {
             return result;
         }
         const QFileInfo info(QDir(result.directory).filePath(fileName));
-        if (!info.exists() || info.size() != fileRecord->bytes) {
+        if (!info.isFile() || !pathHasNoReparsePoints(trustRoot, info.filePath()) ||
+            info.size() != fileRecord->bytes) {
             result.reasonKey = QStringLiteral("native.components.missing");
-            result.reason = QStringLiteral("%1 is absent or the wrong size").arg(fileName);
+            result.reason = translated(QT_TRANSLATE_NOOP(
+                                "NativeComponentStore",
+                                "The component file is missing, unsafe, or the wrong size: %1"))
+                                .arg(fileName);
             return result;
         }
         result.bytes += fileRecord->bytes;

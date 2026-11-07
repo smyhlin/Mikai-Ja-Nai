@@ -430,7 +430,6 @@ bool SpatialAssetStore::isOwned(QString* reason) const {
   // explicit root is caller-vouched - a test's temporary directory is the reason
   // the constructor exists - so it is used as given, but never reparse-redirected.
   if (!explicitRoot_) {
-    QString ownedReason;
     const QString ownedRoot = spatialAssetRoot();
     if (ownedRoot.isEmpty()) {
       if (reason)

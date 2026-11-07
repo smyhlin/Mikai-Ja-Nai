@@ -3,9 +3,9 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QTemporaryDir>
 
-#include <optional>
-
 #include <algorithm>
+#include <optional>
+#include <utility>
 
 namespace mplayer {
 namespace native {
@@ -720,17 +720,13 @@ void dropEngines(MainFlow* flow) {
 }
 
 BuilderResult stageRequestFor(const QString& modelRootCanonical, const BuilderRequest& request, const QString& storedCanonical,
-                              int index, BuildRequest* out, QString* key, QString* reason) {
+                              int index, BuildRequest& out) {
   const ResolvedStage& stage = request.plan.stages.at(index);
   const StoredModel& model = request.models.at(index);
   if (model.record.id != stage.modelId) {
-    if (key != nullptr) {
-      *key = QStringLiteral("model.mismatch");
-    }
-    if (reason != nullptr) {
-      *reason = QStringLiteral("the stage model is not the supplied owned copy");
-    }
-    return refuse(*key, *reason, index, QStringLiteral("cache"));
+    return refuse(QStringLiteral("model.mismatch"),
+                  QStringLiteral("the stage model is not the supplied owned copy"),
+                  index, QStringLiteral("cache"));
   }
   FileDigest digest;
   QString canonical;
@@ -773,7 +769,7 @@ BuilderResult stageRequestFor(const QString& modelRootCanonical, const BuilderRe
                   QStringLiteral("the build request records no ") + missing, index,
                   QStringLiteral("cache"));
   }
-  *out = built;
+  out = std::move(built);
   BuilderResult empty;
   return empty;
 }
@@ -796,12 +792,9 @@ BuilderResult buildOneStage(MainFlow* flow, int index) {
     return bad;
   }
   BuildRequest built;
-  QString buildKey;
-  QString buildReason;
   const BuilderResult requestBad = stageRequestFor(
-      checked.modelRootCanonical, request, storedCanonical, index, &built, &buildKey,
-      &buildReason);
-  if (!buildKey.isEmpty() || !buildReason.isEmpty()) {
+      checked.modelRootCanonical, request, storedCanonical, index, built);
+  if (!requestBad.reasonKey.isEmpty() || !requestBad.reason.isEmpty() || requestBad.cancelled) {
     BuilderResult bad = requestBad;
     bad.warnings = flow->warnings;
     return bad;

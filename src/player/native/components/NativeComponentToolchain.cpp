@@ -79,7 +79,7 @@ ComponentBinDirs componentBinDirs(const QString& bundleRoot, const QString& trtD
     const ComponentPack* resourcePack = tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
     if (resourcePack == nullptr) {
         result.reasonKey = QStringLiteral("native.components.missing");
-        result.reason = translated("The release publishes no builder resource for SM %1.%2.")
+        result.reason = translated(QT_TRANSLATE_NOOP("NativeComponentToolchain", "The release publishes no builder resource for SM %1.%2."))
                             .arg(gpu.smMajor)
                             .arg(gpu.smMinor);
         return result;
@@ -107,8 +107,8 @@ ComponentBinDirs componentBinDirs(const QString& bundleRoot, const QString& trtD
     result.trtBinDir.clear();
     result.cudaBinDir.clear();
     result.reasonKey = QStringLiteral("native.components.missing");
-    result.reason = translated("The TensorRT builder resource for this GPU (%1, %2) is not "
-                               "installed; download it before preparing an engine.")
+    result.reason = translated(QT_TRANSLATE_NOOP("NativeComponentToolchain", "The TensorRT builder resource for this GPU (%1, %2) is not "
+                               "installed; download it before preparing an engine."))
                         .arg(resourcePack->name,
                              QLocale().formattedDataSize(resourcePack->assetBytes));
     return result;

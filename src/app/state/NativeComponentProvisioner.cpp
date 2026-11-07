@@ -67,7 +67,7 @@ bool NativeComponentProvisioner::ensure(QString* reason) {
 
     if (storedRuntimeChoice() != RuntimeChoice::Native) {
         return refuse("native.components.notNative",
-                      translated("The selected runtime is not Native."));
+                      translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner", "The selected runtime is not Native.")));
     }
 
     QString bundleRoot;
@@ -88,14 +88,14 @@ bool NativeComponentProvisioner::ensure(QString* reason) {
     }
     if (!bundle.has_value() || !bundle->preparation.has_value()) {
         return refuse("native.components.noBundle",
-                      translated("No native bundle with preparation provenance was found."));
+                      translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner", "No native bundle with preparation provenance was found.")));
     }
 
     const BundlePreparation& preparation = *bundle->preparation;
     const GpuComputeCapability& gpu = observeComputeCapability();
     if (gpu.smMajor <= 0) {
         return refuse("native.components.noGpu",
-                      translated("No NVIDIA device was observed: %1").arg(gpu.reason));
+                      translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner", "No NVIDIA device was observed: %1")).arg(gpu.reason));
     }
 
     const QString trtDirName = preparation.runtime.trt;
@@ -113,18 +113,18 @@ bool NativeComponentProvisioner::ensure(QString* reason) {
                          store);
     if (resolved.reasonKey.isEmpty()) {
         return refuse("native.components.satisfied",
-                      translated("The components for %1 are already available.").arg(computeCapabilityText(gpu)));
+                      translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner", "The components for %1 are already available.")).arg(computeCapabilityText(gpu)));
     }
 
     if (running_) {
-        return refuse("native.components.busy", translated("A component download is already running."));
+        return refuse("native.components.busy", translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner", "A component download is already running.")));
     }
 
     const ComponentPack* runtimePack = tensorRtRuntimePack();
     const ComponentPack* resourcePack = tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
     if (runtimePack == nullptr || resourcePack == nullptr) {
         return refuse("native.components.missing",
-                      translated("The release publishes no component pack for this GPU."));
+                      translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner", "The release publishes no component pack for this GPU.")));
     }
 
     QVector<ComponentPack> packs;
@@ -143,25 +143,25 @@ bool NativeComponentProvisioner::ensureStore(QString* reason) {
     };
     if (running_) {
         return refuse("native.components.busy",
-                      translated("A component download is already running."));
+                      translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner", "A component download is already running.")));
     }
     const GpuComputeCapability& gpu = observeComputeCapability();
     if (gpu.smMajor <= 0) {
         return refuse("native.components.noGpu",
-                      translated("No NVIDIA device was observed: %1").arg(gpu.reason));
+                      translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner", "No NVIDIA device was observed: %1")).arg(gpu.reason));
     }
     const ComponentPack* runtimePack = tensorRtRuntimePack();
     const ComponentPack* resourcePack = tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
     if (runtimePack == nullptr || resourcePack == nullptr) {
         return refuse("native.components.missing",
-                      translated("The release publishes no component pack for this GPU."));
+                      translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner", "The release publishes no component pack for this GPU.")));
     }
     const ComponentStore store = componentStore();
     const bool haveRuntime = storedPack(store, *runtimePack).installed;
     const bool haveResource = storedPack(store, *resourcePack).installed;
     if (haveRuntime && haveResource) {
         return refuse("native.components.satisfied",
-                      translated("The component store already holds the packs for %1.")
+                      translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner", "The component store already holds the packs for %1."))
                           .arg(computeCapabilityText(gpu)));
     }
     QVector<ComponentPack> packs;
@@ -286,7 +286,7 @@ bool NativeComponentProvisioner::startProvisioning(const ComponentStore& store,
         [](const QVariant&) {
             NativeComponentProvisioner* target = currentRun();
             if (target == nullptr) return;
-            target->finish(true, false, translated("Components installed."));
+            target->finish(true, false, translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner", "Components installed.")));
         },
         [](const backend::Failure& failure) {
             // The downloader tags a cancelled run in its own message, so this

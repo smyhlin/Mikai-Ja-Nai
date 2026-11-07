@@ -1359,12 +1359,11 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
                                            shaderResolver, managerConf, *slot);
         }
     }
-    const AnimeJanaiInstallation installation = describeAnimeJanaiInstallation(backend, true);
-    if (!installation.installed) { fail(plan, installation.reasonKey, installation.reason); return plan; }
+    QVector<AnimeJanaiPreset> presets;
     const AnimeJanaiPreset* preset = nullptr;
     const RifeModelPin* selectedRife = nullptr;
     if (!isUpscaler) {
-        const QVector<AnimeJanaiPreset> presets = animeJanaiPresets();
+        presets = animeJanaiPresets();
         preset = findPreset(presetId, presets);
         if (!preset) { fail(plan, QStringLiteral("animejanai.preset.invalid"), RuntimeText::tr("The selected AnimeJaNai preset is not recognised.")); return plan; }
         selectedRife = preset->rife ? rifeModelPinForFileName(preset->modelFile) : nullptr;
@@ -1372,11 +1371,13 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
             fail(plan, QStringLiteral("animejanai.model.pinMissing"), RuntimeText::tr("The selected RIFE graph has no compiled content pin."));
             return plan;
         }
-        if (selectedRife && selectedRife->variant == RifeVariant::Heavy && !installation.heavyRifeSupported) {
-            fail(plan, QStringLiteral("animejanai.preset.rifeHeavyUnsupported"),
-                 RuntimeText::tr("This installed AnimeJaNai runtime does not report support for the selected heavy RIFE model."));
-            return plan;
-        }
+    }
+    const AnimeJanaiInstallation installation = describeAnimeJanaiInstallation(backend, true);
+    if (!installation.installed) { fail(plan, installation.reasonKey, installation.reason); return plan; }
+    if (selectedRife && selectedRife->variant == RifeVariant::Heavy && !installation.heavyRifeSupported) {
+        fail(plan, QStringLiteral("animejanai.preset.rifeHeavyUnsupported"),
+             RuntimeText::tr("This installed AnimeJaNai runtime does not report support for the selected heavy RIFE model."));
+        return plan;
     }
 
     const QString ownedRoot = configRoot();

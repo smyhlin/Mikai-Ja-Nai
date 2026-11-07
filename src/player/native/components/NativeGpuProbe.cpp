@@ -33,7 +33,7 @@ GpuComputeCapability probe() {
     }
     if (nvml == nullptr) {
         cap.reasonKey = QStringLiteral("native.gpu.nvmlMissing");
-        cap.reason = translated("NVIDIA GPU driver (nvml.dll) not found");
+        cap.reason = translated(QT_TRANSLATE_NOOP("NativeGpuProbe", "NVIDIA GPU driver (NVML) not found"));
         return cap;
     }
     auto get = [&](const char* name) { return reinterpret_cast<void*>(GetProcAddress(nvml, name)); };
@@ -51,7 +51,7 @@ GpuComputeCapability probe() {
     }
     if (nvml == nullptr) {
         cap.reasonKey = QStringLiteral("native.gpu.nvmlMissing");
-        cap.reason = translated("NVIDIA GPU driver (nvml.dll) not found");
+        cap.reason = translated(QT_TRANSLATE_NOOP("NativeGpuProbe", "NVIDIA GPU driver (NVML) not found"));
         return cap;
     }
     auto get = [&](const char* name) { return ::dlsym(nvml, name); };
@@ -80,14 +80,14 @@ GpuComputeCapability probe() {
     if (init == nullptr || getHandle == nullptr || getCap == nullptr) {
         closeLib();
         cap.reasonKey = QStringLiteral("native.gpu.nvmlMissing");
-        cap.reason = translated("nvml.dll is missing required entry points");
+        cap.reason = translated(QT_TRANSLATE_NOOP("NativeGpuProbe", "NVIDIA GPU driver (NVML) is missing required entry points"));
         return cap;
     }
 
     if (init() != 0) {
         closeLib();
         cap.reasonKey = QStringLiteral("native.gpu.deviceMissing");
-        cap.reason = translated("nvmlInit failed");
+        cap.reason = translated(QT_TRANSLATE_NOOP("NativeGpuProbe", "nvmlInit failed"));
         return cap;
     }
 
@@ -96,7 +96,7 @@ GpuComputeCapability probe() {
         if (shutdown) shutdown();
         closeLib();
         cap.reasonKey = QStringLiteral("native.gpu.deviceMissing");
-        cap.reason = translated("no NVIDIA device found");
+        cap.reason = translated(QT_TRANSLATE_NOOP("NativeGpuProbe", "no NVIDIA device found"));
         return cap;
     }
 
@@ -105,7 +105,7 @@ GpuComputeCapability probe() {
         if (shutdown) shutdown();
         closeLib();
         cap.reasonKey = QStringLiteral("native.gpu.capabilityUnreported");
-        cap.reason = translated("could not read compute capability");
+        cap.reason = translated(QT_TRANSLATE_NOOP("NativeGpuProbe", "could not read compute capability"));
         return cap;
     }
 
@@ -146,8 +146,8 @@ QString computeCapabilityText(const GpuComputeCapability& capability) {
     if (!capability.nvidia) {
         return capability.reason;
     }
-    return translated("%1 - SM %2.%3")
-        .arg(capability.name.isEmpty() ? translated("NVIDIA GPU") : capability.name)
+    return translated(QT_TRANSLATE_NOOP("NativeGpuProbe", "%1 - SM %2.%3"))
+        .arg(capability.name.isEmpty() ? translated(QT_TRANSLATE_NOOP("NativeGpuProbe", "NVIDIA GPU")) : capability.name)
         .arg(capability.smMajor)
         .arg(capability.smMinor);
 }

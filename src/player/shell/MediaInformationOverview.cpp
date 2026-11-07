@@ -57,33 +57,40 @@ public:
     }
 
     void setValue(const QString& value) {
+        QString normalizedValue = value;
+        normalizedValue.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+        normalizedValue.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+        normalizedValue.replace(QChar(0x2028), QLatin1Char('\n'));
+        normalizedValue.replace(QChar(0x2029), QLatin1Char('\n'));
         const QString previous = toPlainText();
-        if (value == previous) return;
+        if (normalizedValue == previous) return;
         const QTextCursor selection = textCursor();
+        const int selectionAnchor = selection.anchor();
+        const int selectionPosition = selection.position();
         qsizetype prefix = 0;
-        const qsizetype commonSize = std::min(previous.size(), value.size());
-        while (prefix < commonSize && previous[prefix] == value[prefix]) ++prefix;
+        const qsizetype commonSize = std::min(previous.size(), normalizedValue.size());
+        while (prefix < commonSize && previous[prefix] == normalizedValue[prefix]) ++prefix;
         qsizetype suffix = 0;
         while (suffix < commonSize - prefix &&
-               previous[previous.size() - suffix - 1] == value[value.size() - suffix - 1])
+               previous[previous.size() - suffix - 1] == normalizedValue[normalizedValue.size() - suffix - 1])
             ++suffix;
         const int oldEnd = static_cast<int>(previous.size() - suffix);
-        const int newEnd = static_cast<int>(value.size() - suffix);
+        QTextCursor edit(document());
+        edit.setPosition(static_cast<int>(prefix));
+        edit.setPosition(oldEnd, QTextCursor::KeepAnchor);
+        edit.insertText(normalizedValue.mid(prefix, normalizedValue.size() - prefix - suffix));
+        const int newEnd = edit.position();
         const auto updatedPosition = [prefix, oldEnd, newEnd](int position) {
             if (position <= prefix) return position;
             if (position >= oldEnd) return position + newEnd - oldEnd;
             return std::min(position, newEnd);
         };
-        QTextCursor edit(document());
-        edit.setPosition(static_cast<int>(prefix));
-        edit.setPosition(oldEnd, QTextCursor::KeepAnchor);
-        edit.insertText(value.mid(prefix, value.size() - prefix - suffix));
         QTextCursor restored(document());
-        restored.setPosition(updatedPosition(selection.anchor()));
-        restored.setPosition(updatedPosition(selection.position()), QTextCursor::KeepAnchor);
+        restored.setPosition(updatedPosition(selectionAnchor));
+        restored.setPosition(updatedPosition(selectionPosition), QTextCursor::KeepAnchor);
         setTextCursor(restored);
-        measurement_.setPlainText(value);
-        QString escaped = value.toHtmlEscaped();
+        measurement_.setPlainText(normalizedValue);
+        QString escaped = normalizedValue.toHtmlEscaped();
         escaped.replace(QLatin1Char('\n'), QStringLiteral("<br>"));
         setToolTip(QStringLiteral("<qt>%1</qt>").arg(escaped));
         updateGeometry();
