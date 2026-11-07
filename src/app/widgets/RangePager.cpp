@@ -76,7 +76,7 @@ public:
         for (int index = 0; index < flow_->count(); ++index) {
             const QLayoutItem* item = flow_->itemAt(index);
             const QWidget* chip = item != nullptr ? item->widget() : nullptr;
-            if (chip == nullptr || chip->isHidden()) {
+            if (chip == nullptr) {
                 continue;
             }
             width += chip->sizeHint().width();
@@ -164,7 +164,12 @@ void RangePager::setEpisodeMode() {
     jump_->hide();
     QLayoutItem* old = row->replaceWidget(chipsHost_, chipsScroll_);
     delete old;
+    row->setStretch(2, 0);
+    row->setStretch(4, 0);
+    row->setStretchFactor(chipsScroll_, 1);
     chipsScroll_->setWidget(chipsHost_);
+    QSizePolicy policy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    setSizePolicy(policy);
 }
 
 void RangePager::changeEvent(QEvent* event) {
@@ -285,6 +290,7 @@ void RangePager::renderChips() {
         });
         chipLayout_->addWidget(chip);
         chips_.append(chip);
+        chip->show();
     }
     const int first = qBound(0, page_ - 1 - window / 2, qMax(0, pages_ - window));
     for (int offset = 0; offset < window; ++offset) {

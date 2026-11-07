@@ -595,10 +595,9 @@ QWidget#titlePage QLabel#titleScores {
     color: %6;
     font-size: %26px;
     font-weight: 500;
-    background: %2;
-    border: 1px solid %8;
-    border-radius: 8px;
-    padding: 5px 10px;
+    background: transparent;
+    border: none;
+    padding: 0;
 }
 QWidget#titlePage QLabel#titleGenreChip,
 QWidget#titlePage QLabel#titleTagChip {
@@ -758,6 +757,26 @@ QWidget#titlePage QPushButton#releaseChip:checked:hover { border-color: %5; }
 QWidget#titlePage QPushButton#releaseChip:pressed { background: %3; }
 QWidget#titlePage QPushButton#releaseChip:focus { border-color: %4; }
 QWidget#titlePage QPushButton#releaseChip:disabled { color: rgba(%10, 0.45); }
+
+QWidget#titlePage QPushButton#episodeTypeFilter {
+    background: transparent;
+    color: %7;
+    border: 1px solid transparent;
+    border-radius: %42px;
+    min-height: 24px;
+    max-height: 24px;
+    padding: 0 8px;
+    font-size: %28px;
+}
+QWidget#titlePage QPushButton#episodeTypeFilter:hover {
+    color: %6;
+    border-color: %8;
+}
+QWidget#titlePage QPushButton#episodeTypeFilter:checked {
+    background: %3;
+    color: %6;
+    border-color: %4;
+}
 
 QWidget#titlePage QTabWidget#episodeTabs::pane {
     border: none;

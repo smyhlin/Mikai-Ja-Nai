@@ -116,7 +116,6 @@ Q_SIGNALS:
 private:
     struct EpisodeEntry {
         QString number;
-        QVariant sourceNumber;
         QString embedUrl;
         QString label;
         QString kind;

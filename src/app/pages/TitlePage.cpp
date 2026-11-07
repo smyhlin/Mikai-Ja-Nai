@@ -59,7 +59,6 @@
 #include <QLineEdit>
 #include <QLocale>
 #include <QLayout>
-#include <QGraphicsDropShadowEffect>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QMessageBox>
@@ -71,6 +70,7 @@
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QStandardPaths>
@@ -89,23 +89,6 @@
 #include <algorithm>
 
 namespace mikai::app {
-
-namespace {
-/// A soft accent halo, drawn by the widget's own effect rather than the sheet:
-/// no stylesheet shadow exists for a plain widget, and the halo has to follow
-/// the active accent. Zero offset keeps it a glow instead of a drop shadow.
-void applyAccentGlow(QWidget* widget, int blurRadius = 26, int alpha = 150) {
-    if (widget == nullptr) return;
-    auto* effect = new QGraphicsDropShadowEffect(widget);
-    QColor glow = widget->palette().color(QPalette::Highlight);
-    if (!glow.isValid()) glow = widget->palette().color(QPalette::WindowText);
-    glow.setAlpha(alpha);
-    effect->setColor(glow);
-    effect->setOffset(0, 0);
-    effect->setBlurRadius(blurRadius);
-    widget->setGraphicsEffect(effect);
-}
-}  // namespace
 
 
 namespace {
@@ -182,6 +165,38 @@ void fillHeroChips(QWidget* host, const backend::AnimeDetail& detail,
     addChips(detail.tags, kHeroTagMax, QStringLiteral("titleTagChip"));
     host->setVisible(added > 0);
 }
+
+class ReleaseKindIcon final : public QWidget {
+public:
+    ReleaseKindIcon(bool subtitles, QWidget* parent) : QWidget(parent), subtitles_(subtitles) {
+        setFixedSize(theme::kIconSize, theme::kControlHeight - theme::kSpacingSmall);
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(QPen(palette().color(QPalette::PlaceholderText), 1.5,
+                            Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.setBrush(Qt::NoBrush);
+        painter.translate(width() / 2.0, height() / 2.0);
+        if (subtitles_) {
+            painter.drawRoundedRect(QRectF(-7, -5, 14, 10), 2, 2);
+            painter.drawLine(QPointF(-4, -1), QPointF(-1, -1));
+            painter.drawLine(QPointF(1, -1), QPointF(4, -1));
+            painter.drawLine(QPointF(-4, 2), QPointF(4, 2));
+        } else {
+            for (int i = -2; i <= 2; ++i) {
+                const qreal half = i == 0 ? 7 : (qAbs(i) == 1 ? 5 : 2);
+                painter.drawLine(QPointF(i * 3, -half), QPointF(i * 3, half));
+            }
+        }
+    }
+
+private:
+    bool subtitles_;
+};
 
 // Styled pane geometry can omit frame space still reserved by Qt's minimum-size contract.
 class TitlePageTabs final : public QTabWidget {
@@ -744,7 +759,6 @@ void TitlePage::buildHero() {
     wrapLabel(scores_);
     scores_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     scores_->hide();
-    applyAccentGlow(scores_);
     // Added without an alignment flag: an aligned item keeps its single-line
     // size hint, which is what clipped a wrapped score line.
     textColumn->addWidget(scores_);
@@ -817,8 +831,6 @@ void TitlePage::buildHero() {
     actionContext->addWidget(chipsHost);
     heroActionContextHost_->hide();
     textColumn->addWidget(heroActionContextHost_);
-    applyAccentGlow(heroActionContextHost_->findChild<QWidget*>(QStringLiteral("titleGenres")),
-                    22, 120);
 
     textColumn->addSpacing(theme::kSpacingSmall);
     description_ = new QLabel(hero_);
@@ -1069,6 +1081,7 @@ void TitlePage::buildEpisodeWorkspace() {
     providerBar_ = new QTabBar(releaseChipsHost_);
     providerBar_->setObjectName(QStringLiteral("providerBar"));
     providerBar_->setExpanding(false);
+    providerBar_->setDrawBase(false);
     providerBar_->setUsesScrollButtons(true);
     providerBar_->setCursor(Qt::PointingHandCursor);
     providerBar_->installEventFilter(this);
@@ -2570,10 +2583,7 @@ QString TitlePage::episodeType(const EpisodeEntry* entry) const {
     if (entry == nullptr) {
         return {};
     }
-    backend::Episode episode;
-    episode.number = entry->sourceNumber;
-    episode.kind = entry->kind;
-    return backend::episodeKindFor(detail_, episode);
+    return entry->kind;
 }
 
 QString TitlePage::episodeTypeCaption(const QString& type) const {
@@ -2787,14 +2797,7 @@ void TitlePage::rebuildReleaseChips() {
         row->setContentsMargins(0, 0, 0, 0);
         row->setSpacing(theme::kSpacingSmall);
 
-        auto* kindIcon = new QLabel(rowWidget);
-        kindIcon->setFixedSize(theme::kIconSize, theme::kControlHeight - theme::kSpacingSmall);
-        kindIcon->setAlignment(Qt::AlignCenter);
-        const QStyle::StandardPixmap iconKind =
-            kind == QLatin1String("sub") ? QStyle::SP_FileDialogDetailedView
-                                         : QStyle::SP_MediaVolume;
-        kindIcon->setPixmap(style()->standardIcon(iconKind).pixmap(theme::kIconSize));
-        kindIcon->setAttribute(Qt::WA_TransparentForMouseEvents);
+        auto* kindIcon = new ReleaseKindIcon(kind == QLatin1String("sub"), rowWidget);
         row->addWidget(kindIcon, 0, Qt::AlignTop);
 
         auto* kindLabel = new QLabel(labels::kind(kind), rowWidget);
@@ -2925,7 +2928,6 @@ void TitlePage::fillEpisodes(int index) {
             }
             auto* entry = new EpisodeEntry;
             entry->number = number;
-            entry->sourceNumber = episode.number;
             entry->label = episodeCaption(number);
             entry->kind = episode.kind;
             entry->embedUrl = source.embed_url;
@@ -3064,10 +3066,20 @@ void TitlePage::fillEpisodes(int index) {
             {QStringLiteral("mixed"), tr("Mixed")},
             {QStringLiteral("animeCanon"), tr("Anime canon")},
             {QStringLiteral("filler"), tr("Filler")}};
+        QSet<QString> availableTypes;
+        for (const EpisodeEntry* entry : state.entries) {
+            if (entry == nullptr || entry->unavailable) continue;
+            for (const auto& type : types) {
+                if (!type.first.isEmpty() && entry->kind == type.first)
+                    availableTypes.insert(type.first);
+            }
+        }
+        filters->setVisible(!availableTypes.isEmpty());
         auto* filterGroup = new QButtonGroup(filters);
         state.filterGroup = filterGroup;
         filterGroup->setExclusive(true);
         for (const auto& type : types) {
+            if (!type.first.isEmpty() && !availableTypes.contains(type.first)) continue;
             auto* filter = new QPushButton(type.second, filters);
             filter->setObjectName(QStringLiteral("episodeTypeFilter"));
             filter->setProperty("episodeType", type.first);
@@ -3097,6 +3109,8 @@ void TitlePage::fillEpisodes(int index) {
         providerBar_->addTab(providerName);
     }
     providerSelectorHeading_->setVisible(tabs_->count() > 0);
+    providerBar_->ensurePolished();
+    providerBar_->setFixedHeight(qMax(theme::kControlHeight, providerBar_->sizeHint().height()));
     providerBar_->setVisible(tabs_->count() > 0);
     tabs_->setVisible(tabs_->count() > 0);
 
@@ -3549,13 +3563,6 @@ void TitlePage::fitEpisodeSection() {
     const int frame = style()->pixelMetric(QStyle::PM_DefaultFrameWidth);
     const int tabBarHeight = tabs_->tabBar()->isHidden() ? 0 : tabs_->tabBar()->sizeHint().height();
     const int currentIndex = tabs_->currentIndex();
-    if (currentIndex >= 0 && currentIndex < tabStates_.size()) {
-        RangePager* pager = tabStates_.at(currentIndex).pager;
-        if (pager != nullptr && pager->width() > 0) {
-            pager->setMinimumHeight(qMax(pager->sizeHint().height(),
-                                         pager->heightForWidth(pager->width())));
-        }
-    }
     // A pager whose chips wrapped needs the height its width implies; its
     // one-line size hint would clip the second row inside the fixed tab height.
     int pageHeight = qMax(currentPage->sizeHint().height(),

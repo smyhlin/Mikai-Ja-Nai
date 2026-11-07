@@ -26,10 +26,7 @@ inline void layoutEpisodeGrid(QGridLayout* grid, const QVector<QWidget*>& button
             continue;
         }
         const int row = index / resolved;
-        const int firstIndex = row * resolved;
-        const int buttonsInRow = qMin(resolved, buttonCount - firstIndex);
-        const int firstColumn = (resolved - buttonsInRow) / 2;
-        grid->addWidget(buttons.at(index), row, firstColumn + index % resolved,
+        grid->addWidget(buttons.at(index), row, index % resolved,
                         Qt::AlignHCenter | Qt::AlignTop);
     }
     for (int column = 0; column < resolved; ++column) {
