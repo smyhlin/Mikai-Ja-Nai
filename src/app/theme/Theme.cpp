@@ -765,7 +765,8 @@ QWidget#titlePage QTabWidget#episodeTabs::pane {
     padding: 0;
     margin-top: 0;
 }
-QWidget#titlePage QTabWidget#episodeTabs QTabBar::tab {
+QWidget#titlePage QTabWidget#episodeTabs QTabBar::tab,
+QWidget#titlePage QTabBar#providerBar::tab {
     background: %2;
     color: %7;
     border: 1px solid transparent;
@@ -775,16 +776,19 @@ QWidget#titlePage QTabWidget#episodeTabs QTabBar::tab {
     font-size: %26px;
     font-weight: 500;
 }
-QWidget#titlePage QTabWidget#episodeTabs QTabBar::tab:selected {
+QWidget#titlePage QTabWidget#episodeTabs QTabBar::tab:selected,
+QWidget#titlePage QTabBar#providerBar::tab:selected {
     background: %3;
     color: %6;
     border: 1px solid %4;
 }
-QWidget#titlePage QTabWidget#episodeTabs QTabBar::tab:hover:!selected {
+QWidget#titlePage QTabWidget#episodeTabs QTabBar::tab:hover:!selected,
+QWidget#titlePage QTabBar#providerBar::tab:hover:!selected {
     color: %6;
     border-color: rgba(%9, 0.45);
 }
-QWidget#titlePage QTabWidget#episodeTabs QTabBar::tab:disabled { color: rgba(%10, 0.45); }
+QWidget#titlePage QTabWidget#episodeTabs QTabBar::tab:disabled,
+QWidget#titlePage QTabBar#providerBar::tab:disabled { color: rgba(%10, 0.45); }
 
 QWidget#titlePage QLabel#titleSectionHeading,
 QWidget#titlePage QLabel#episodeSectionHeading {
@@ -872,10 +876,18 @@ QWidget#titlePage QPushButton#episodeButton {
     border-radius: %42px;
     min-height: %17px;
     max-height: %17px;
-    padding: 0;
+    padding: 8px 0 0;
     font-size: %26px;
     font-weight: 500;
 }
+QWidget#titlePage QLabel#episodeTypeBadge {
+    background: transparent;
+    border: none;
+    font-size: 9px;
+    color: %7;
+}
+QWidget#titlePage QLabel#episodeTypeBadge[kind="mixed"] { color: %4; }
+QWidget#titlePage QLabel#episodeTypeBadge[kind="filler"] { color: %7; }
 QWidget#titlePage QPushButton#episodeButton:hover:enabled { border-color: rgba(%9, 0.55); }
 QWidget#titlePage QPushButton#episodeButton:checked { background: %3; border-color: rgba(%9, 0.45); color: %6; }
 QWidget#titlePage QPushButton#episodeButton:checked:hover { border-color: %5; }

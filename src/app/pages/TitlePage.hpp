@@ -35,6 +35,7 @@ class QPixmap;
 class QPushButton;
 class QResizeEvent;
 class QScrollArea;
+class QTabBar;
 class QTabWidget;
 class QTimer;
 class QVBoxLayout;
@@ -138,6 +139,13 @@ private:
         QVector<EpisodeEntry*> entries;
         int page = 0;
         int pageSize = 0;
+        int subpage = 0;
+        bool showFullRange = false;
+        QString typeFilter;
+        QButtonGroup* filterGroup = nullptr;
+        QVector<EpisodeEntry*> displayed;
+        QWidget* subpageHost = nullptr;
+        QHBoxLayout* subpageLayout = nullptr;
         QWidget* grid = nullptr;
         QGridLayout* gridLayout = nullptr;
         RangePager* pager = nullptr;
@@ -310,9 +318,7 @@ private:
     QString firstEmbed(const backend::Release& release) const;
     void applyReleaseQuality(int index, const QMap<int, QString>& qualities, int seq);
 
-    /// Every release chip takes the width of the widest caption, so the kind
-    /// lanes line up as columns. Re-run after any label change.
-    void equalizeReleaseChips();
+    void refreshReleaseChipSizing();
 
     QVector<QVariantMap> episodeVariants(const QString& number) const;
     QVector<QVariantMap> tabPlaylist(int stateIndex, const QString& number, int* currentIndex);
@@ -509,6 +515,7 @@ protected:
     QWidget* relatedHost_ = nullptr;
     QVBoxLayout* relatedLayout_ = nullptr;
     QTabWidget* tabs_ = nullptr;
+    QTabBar* providerBar_ = nullptr;
     QWidget* releaseChipsHost_ = nullptr;
     QLabel* releaseSelectorHeading_ = nullptr;
     QLabel* providerSelectorHeading_ = nullptr;

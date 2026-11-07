@@ -56,6 +56,7 @@
 #include <QJsonValue>
 #include <QProgressBar>
 #include <QLabel>
+#include <QLineEdit>
 #include <QLocale>
 #include <QLayout>
 #include <QGraphicsDropShadowEffect>
@@ -1064,8 +1065,14 @@ void TitlePage::buildEpisodeWorkspace() {
     tabs_->tabBar()->setExpanding(false);
     tabs_->tabBar()->setDrawBase(false);
     tabs_->tabBar()->setUsesScrollButtons(true);
-    tabs_->tabBar()->setCursor(Qt::PointingHandCursor);
-    tabs_->tabBar()->installEventFilter(this);
+    tabs_->tabBar()->hide();
+    providerBar_ = new QTabBar(releaseChipsHost_);
+    providerBar_->setObjectName(QStringLiteral("providerBar"));
+    providerBar_->setExpanding(false);
+    providerBar_->setUsesScrollButtons(true);
+    providerBar_->setCursor(Qt::PointingHandCursor);
+    providerBar_->installEventFilter(this);
+    connect(providerBar_, &QTabBar::currentChanged, tabs_, &QTabWidget::setCurrentIndex);
     playbackLayout->addWidget(tabs_);
     playbackLayout->addWidget(watchPanel_);
 
@@ -1317,7 +1324,7 @@ void TitlePage::applyResponsiveLayout() {
             setReleaseChipText(chip, label);
         }
     }
-    equalizeReleaseChips();
+    refreshReleaseChipSizing();
     refreshDescriptionPreview();
     updateBackdrop();
     updateDetailsGeometry();
@@ -2265,11 +2272,15 @@ void TitlePage::selectWatchEntry(EpisodeEntry* entry) {
     // so those are re-worded when their page is built again, never touched here.
     const int stateIndex = tabs_ != nullptr ? tabs_->currentIndex() : -1;
     if (stateIndex >= 0 && stateIndex < tabStates_.size() && tabStates_.at(stateIndex).rendered) {
-        const TabState& state = tabStates_.at(stateIndex);
-        const int start = state.page * state.pageSize;
-        const int end = qMin(start + state.pageSize, state.entries.size());
-        for (int index = start; index < end; ++index) {
-            EpisodeEntry* candidate = state.entries.at(index);
+        TabState& state = tabStates_[stateIndex];
+        const int entryIndex = state.entries.indexOf(entry);
+        if (entryIndex >= 0 && !state.displayed.contains(entry)) {
+            state.page = entryIndex / state.pageSize;
+            state.subpage = (entryIndex % state.pageSize) / 52;
+            state.showFullRange = false;
+            renderTabPage(stateIndex);
+        }
+        for (EpisodeEntry* candidate : state.displayed) {
             if (candidate != nullptr && candidate->button != nullptr) {
                 const QSignalBlocker blocker(candidate->button);
                 candidate->button->setChecked(candidate == entry);
@@ -2403,10 +2414,8 @@ void TitlePage::refreshEpisodeStates() {
         if (!state.rendered) {
             continue;
         }
-        const int start = state.page * state.pageSize;
-        const int end = qMin(start + state.pageSize, state.entries.size());
-        for (int index = start; index < end; ++index) {
-            applyEpisodeState(state.entries.at(index));
+        for (EpisodeEntry* entry : state.displayed) {
+            applyEpisodeState(entry);
         }
     }
     updateWatchPanel();
@@ -2743,12 +2752,15 @@ void TitlePage::setReleaseChipText(QPushButton* chip, const QString& text) {
 
 void TitlePage::rebuildReleaseChips() {
     releaseKindLabels_.clear();
+    if (providerBar_ != nullptr) providerBar_->setParent(releaseChipsHost_);
+    if (providerSelectorHeading_ != nullptr) providerSelectorHeading_->setParent(releaseChipsHost_);
     for (QAbstractButton* button : releaseGroup_->buttons()) {
         releaseGroup_->removeButton(button);
     }
     const auto oldRows = releaseChipsHost_->findChildren<QWidget*>(
         QString(), Qt::FindDirectChildrenOnly);
     for (QWidget* row : oldRows) {
+        if (row == providerBar_ || row == providerSelectorHeading_) continue;
         releaseRowsLayout_->removeWidget(row);
         delete row;
     }
@@ -2768,6 +2780,7 @@ void TitlePage::rebuildReleaseChips() {
     }
 
     QVector<QLabel*> kindLabels;
+    bool providerPlaced = false;
     for (const QString& kind : kindOrder) {
         auto* rowWidget = new QWidget(releaseChipsHost_);
         auto* row = new QHBoxLayout(rowWidget);
@@ -2814,7 +2827,21 @@ void TitlePage::rebuildReleaseChips() {
                         releaseContextMenu(chip, chip->mapToGlobal(position));
                     });
         }
+        if (kind == QLatin1String("sub") && providerBar_ != nullptr) {
+            row->addWidget(providerSelectorHeading_, 0, Qt::AlignTop);
+            row->addWidget(providerBar_, 0, Qt::AlignTop);
+            providerPlaced = true;
+        }
         releaseRowsLayout_->addWidget(rowWidget);
+    }
+    if (!providerPlaced && providerBar_ != nullptr) {
+        auto* providerRow = new QWidget(releaseChipsHost_);
+        auto* providerLayout = new QHBoxLayout(providerRow);
+        providerLayout->setContentsMargins(0, 0, 0, 0);
+        providerLayout->addWidget(providerSelectorHeading_);
+        providerLayout->addWidget(providerBar_);
+        providerLayout->addStretch();
+        releaseRowsLayout_->addWidget(providerRow);
     }
 
     int kindLabelWidth = 0;
@@ -2836,7 +2863,7 @@ void TitlePage::rebuildReleaseChips() {
         }
     }
 
-    equalizeReleaseChips();
+    refreshReleaseChipSizing();
 }
 
 void TitlePage::releaseContextMenu(QPushButton* chip, const QPoint& globalPos) {
@@ -2872,6 +2899,8 @@ void TitlePage::fillEpisodes(int index) {
     // The tab handler renders a page and re-selects an episode, and both would
     // index the vector being replaced mid-teardown.
     const QSignalBlocker tabsBlocker(tabs_);
+    const QSignalBlocker providerBlocker(providerBar_);
+    while (providerBar_->count() > 0) providerBar_->removeTab(0);
     while (tabs_->count() > 0) {
         QWidget* page = tabs_->widget(0);
         tabs_->removeTab(0);
@@ -2970,12 +2999,47 @@ void TitlePage::fillEpisodes(int index) {
         // The pager leads the section: page navigation sits at hand and the grid
         // cannot push it around as it grows.
         auto* pager = new RangePager(theme::kEpisodesPerPage, tabPage);
+        pager->setEpisodeMode();
         state.pager = pager;
         pager->installEventFilter(this);
         const int stateIndex = tabStates_.size();
         connect(pager, &RangePager::pageRequested, this,
                 [this, stateIndex](int page) { goToEpisodePage(stateIndex, page); });
-        tabLayout->addWidget(pager);
+        auto* navigation = new QHBoxLayout();
+        navigation->setContentsMargins(0, 0, 0, 0);
+        navigation->addWidget(pager, 1);
+        auto* jump = new QLineEdit(tabPage);
+        jump->setObjectName(QStringLiteral("episodeJump"));
+        jump->setPlaceholderText(tr("Episode number"));
+        jump->setToolTip(tr("Jump to episode"));
+        jump->setMaximumWidth(theme::kTitleDetailsWidth / 3);
+        connect(jump, &QLineEdit::returnPressed, this, [this, stateIndex, jump] {
+            if (stateIndex < 0 || stateIndex >= tabStates_.size()) return;
+            TabState& current = tabStates_[stateIndex];
+            const QString number = jump->text().trimmed();
+            for (int i = 0; i < current.entries.size(); ++i) {
+                if (current.entries.at(i)->number != number) continue;
+                current.page = i / current.pageSize;
+                current.subpage = (i % current.pageSize) / 52;
+                current.showFullRange = false;
+                current.typeFilter.clear();
+                if (current.filterGroup != nullptr && !current.filterGroup->buttons().isEmpty())
+                    current.filterGroup->buttons().first()->setChecked(true);
+                renderTabPage(stateIndex);
+                if (current.entries.at(i)->button != nullptr)
+                    current.entries.at(i)->button->setFocus(Qt::OtherFocusReason);
+                return;
+            }
+            flashStatus(tr("Episode not found"), true);
+        });
+        navigation->addWidget(jump);
+        tabLayout->addLayout(navigation);
+
+        state.subpageHost = new QWidget(tabPage);
+        state.subpageLayout = new QHBoxLayout(state.subpageHost);
+        state.subpageLayout->setContentsMargins(0, 0, 0, 0);
+        state.subpageLayout->setSpacing(theme::kSpacingXs);
+        tabLayout->addWidget(state.subpageHost);
 
         // The page scroll is the only scroller: a full page makes the title
         // taller instead of opening a nested viewport.
@@ -2988,6 +3052,36 @@ void TitlePage::fillEpisodes(int index) {
         grid->installEventFilter(this);
         tabLayout->addWidget(grid, 1);
 
+        auto* filters = new QWidget(tabPage);
+        auto* filterLayout = new FlowLayout(theme::kSpacingSmall, theme::kSpacingXs);
+        filters->setLayout(filterLayout);
+        QSizePolicy filterPolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+        filterPolicy.setHeightForWidth(true);
+        filters->setSizePolicy(filterPolicy);
+        const QVector<QPair<QString, QString>> types{
+            {QString(), tr("All")},
+            {QStringLiteral("mangaCanon"), tr("Manga canon")},
+            {QStringLiteral("mixed"), tr("Mixed")},
+            {QStringLiteral("animeCanon"), tr("Anime canon")},
+            {QStringLiteral("filler"), tr("Filler")}};
+        auto* filterGroup = new QButtonGroup(filters);
+        state.filterGroup = filterGroup;
+        filterGroup->setExclusive(true);
+        for (const auto& type : types) {
+            auto* filter = new QPushButton(type.second, filters);
+            filter->setObjectName(QStringLiteral("episodeTypeFilter"));
+            filter->setProperty("episodeType", type.first);
+            filter->setCheckable(true);
+            filter->setChecked(type.first.isEmpty());
+            filterGroup->addButton(filter);
+            filterLayout->addWidget(filter);
+            connect(filter, &QPushButton::clicked, this, [this, stateIndex, kind = type.first] {
+                tabStates_[stateIndex].typeFilter = kind;
+                renderTabPage(stateIndex);
+            });
+        }
+        tabLayout->addWidget(filters);
+
         const QString provider = state.provider;
         // Every entry has to know which tab owns it: the grid is built from
         // stateIndex, and the player's episode list is built from the same tab.
@@ -2998,9 +3092,12 @@ void TitlePage::fillEpisodes(int index) {
         }
         tabStates_.append(state);
         const QString known = labels::provider(provider);
-        tabs_->addTab(tabPage, known.isEmpty() ? capitalize(provider) : known);
+        const QString providerName = known.isEmpty() ? capitalize(provider) : known;
+        tabs_->addTab(tabPage, providerName);
+        providerBar_->addTab(providerName);
     }
     providerSelectorHeading_->setVisible(tabs_->count() > 0);
+    providerBar_->setVisible(tabs_->count() > 0);
     tabs_->setVisible(tabs_->count() > 0);
 
     if (tabs_->count() > 0) {
@@ -3015,6 +3112,8 @@ void TitlePage::fillEpisodes(int index) {
             }
         }
         tabs_->setCurrentIndex(index);
+        providerBar_->setCurrentIndex(index);
+        tabs_->tabBar()->hide();
     }
     // Only the visible tab gets its pills. A release can carry three providers
     // and each tab holds up to kEpisodesPerPage buttons, so building them all
@@ -3106,19 +3205,71 @@ void TitlePage::renderTabPage(int stateIndex) {
     }
     TabState& state = tabStates_[stateIndex];
     state.rendered = true;
+    for (EpisodeEntry* entry : state.displayed) {
+        entry->button = nullptr;
+        entry->watchedMark = nullptr;
+        entry->typeBadge = nullptr;
+    }
+    state.displayed.clear();
     while (QLayoutItem* stale = state.gridLayout->takeAt(0)) {
         if (stale->widget() != nullptr) {
+            stale->widget()->hide();
             stale->widget()->deleteLater();
         }
         delete stale;
     }
 
-    // Every entry on this page gets a fresh button: a pill from the previous page
-    // must never still be a click target after it leaves the grid.
-    const int start = state.page * state.pageSize;
-    const int end = qMin(start + state.pageSize, state.entries.size());
+    while (QLayoutItem* item = state.subpageLayout->takeAt(0)) {
+        if (item->widget() != nullptr) {
+            item->widget()->hide();
+            item->widget()->deleteLater();
+        }
+        delete item;
+    }
+    const int rangeStart = state.page * state.pageSize;
+    const int rangeEnd = qMin(rangeStart + state.pageSize, state.entries.size());
+    const int subpages = (rangeEnd - rangeStart + 51) / 52;
+    if (subpages == 0) {
+        state.subpageHost->hide();
+        state.grid->updateGeometry();
+        scheduleFit();
+        return;
+    }
+    state.subpage = qBound(0, state.subpage, subpages - 1);
+    for (int sub = 0; sub < subpages; ++sub) {
+        const int first = rangeStart + sub * 52;
+        const int last = qMin(first + 52, rangeEnd) - 1;
+        auto* button = new QPushButton(
+            QStringLiteral("%1 – %2").arg(state.entries.at(first)->number,
+                                         state.entries.at(last)->number), state.subpageHost);
+        button->setCheckable(true);
+        button->setChecked(!state.showFullRange && sub == state.subpage);
+        connect(button, &QPushButton::clicked, this, [this, stateIndex, sub] {
+            TabState& current = tabStates_[stateIndex];
+            current.subpage = sub;
+            current.showFullRange = false;
+            renderTabPage(stateIndex);
+        });
+        state.subpageLayout->addWidget(button);
+    }
+    auto* all = new QPushButton(tr("Show entire range"), state.subpageHost);
+    all->setObjectName(QStringLiteral("episodeFullRange"));
+    all->setCheckable(true);
+    all->setChecked(state.showFullRange);
+    connect(all, &QPushButton::clicked, this, [this, stateIndex] {
+        tabStates_[stateIndex].showFullRange = true;
+        renderTabPage(stateIndex);
+    });
+    state.subpageLayout->addWidget(all);
+    state.subpageLayout->addStretch();
+    state.subpageHost->setVisible(subpages > 1);
+    const int start = state.showFullRange ? rangeStart : rangeStart + state.subpage * 52;
+    const int end = state.showFullRange ? rangeEnd : qMin(start + 52, rangeEnd);
     for (int index = start; index < end; ++index) {
-        buildEpisodeButton(state.entries.at(index), state.grid);
+        EpisodeEntry* entry = state.entries.at(index);
+        if (!state.typeFilter.isEmpty() && episodeType(entry) != state.typeFilter) continue;
+        state.displayed.append(entry);
+        buildEpisodeButton(entry, state.grid);
     }
 
     const int totalPages = qMax(1, (state.entries.size() + state.pageSize - 1) / state.pageSize);
@@ -3136,14 +3287,13 @@ void TitlePage::renderTabPage(int stateIndex) {
     const int columns = qMax(
         1, (available + spacing) / (theme::kTitleEpisodeButtonWidth + spacing));
     QVector<QWidget*> buttons;
-    buttons.reserve(end - start);
-    for (int index = start; index < end; ++index) {
-        buttons.append(state.entries.at(index)->button);
+    buttons.reserve(state.displayed.size());
+    for (EpisodeEntry* entry : state.displayed) {
+        buttons.append(entry->button);
     }
     layoutEpisodeGrid(state.gridLayout, buttons, columns);
     state.columns = columns;
-    for (int index = start; index < end; ++index) {
-        EpisodeEntry* entry = state.entries.at(index);
+    for (EpisodeEntry* entry : state.displayed) {
         if (entry != nullptr && entry->button != nullptr) {
             const QSignalBlocker blocker(entry->button);
             entry->button->setChecked(entry == watchEntry_);
@@ -3173,6 +3323,7 @@ void TitlePage::goToEpisodePage(int stateIndex, int page) {
     const int index = page - 1;
     if (index >= 0 && index < totalPages && index != state.page) {
         state.page = index;
+        state.subpage = 0;
         renderTabPage(stateIndex);
     }
 }
@@ -3204,12 +3355,10 @@ void TitlePage::reflowGrid(int stateIndex) {
     if (columns == state.columns) {
         return;
     }
-    const int start = state.page * state.pageSize;
-    const int end = qMin(start + state.pageSize, state.entries.size());
     QVector<QWidget*> buttons;
-    buttons.reserve(end - start);
-    for (int index = start; index < end; ++index) {
-        buttons.append(state.entries.at(index)->button);
+    buttons.reserve(state.displayed.size());
+    for (EpisodeEntry* entry : state.displayed) {
+        buttons.append(entry->button);
     }
     layoutEpisodeGrid(state.gridLayout, buttons, columns);
     state.columns = columns;
@@ -3218,7 +3367,7 @@ void TitlePage::reflowGrid(int stateIndex) {
 }
 
 bool TitlePage::eventFilter(QObject* watched, QEvent* event) {
-    if (tabs_ != nullptr && watched == tabs_->tabBar() && event->type() == QEvent::Wheel &&
+    if (providerBar_ != nullptr && watched == providerBar_ && event->type() == QEvent::Wheel &&
         !static_cast<QWheelEvent*>(event)->modifiers().testFlag(Qt::AltModifier)) {
         if (overviewScroll_ != nullptr) {
             QCoreApplication::sendEvent(overviewScroll_->verticalScrollBar(), event);
@@ -3398,7 +3547,7 @@ void TitlePage::fitEpisodeSection() {
         return;
     }
     const int frame = style()->pixelMetric(QStyle::PM_DefaultFrameWidth);
-    const int tabBarHeight = tabs_->count() > 0 ? tabs_->tabBar()->sizeHint().height() : 0;
+    const int tabBarHeight = tabs_->tabBar()->isHidden() ? 0 : tabs_->tabBar()->sizeHint().height();
     const int currentIndex = tabs_->currentIndex();
     if (currentIndex >= 0 && currentIndex < tabStates_.size()) {
         RangePager* pager = tabStates_.at(currentIndex).pager;
@@ -3411,6 +3560,8 @@ void TitlePage::fitEpisodeSection() {
     // one-line size hint would clip the second row inside the fixed tab height.
     int pageHeight = qMax(currentPage->sizeHint().height(),
                           currentPage->heightForWidth(currentPage->width()));
+    if (currentPage->layout() != nullptr)
+        pageHeight = qMax(pageHeight, currentPage->layout()->minimumSize().height());
     if (currentIndex >= 0 && currentIndex < tabStates_.size()) {
         const TabState& state = tabStates_.at(currentIndex);
         if (state.grid != nullptr && state.pager != nullptr && currentPage->layout() != nullptr) {
@@ -3803,26 +3954,12 @@ QString TitlePage::firstEmbed(const backend::Release& release) const {
     return best;
 }
 
-void TitlePage::equalizeReleaseChips() {
-    // The lanes are a grid the reader scans (a dubbing row, a subtitle row), so
-    // every chip takes the widest caption's width; a short caption keeps the
-    // empty space rather than leaving a ragged edge. A width set by the previous
-    // pass would clamp sizeHint(), so the constraints come off before measuring.
-    int widestChip = 0;
+void TitlePage::refreshReleaseChipSizing() {
     for (QPushButton* chip : releaseChips_) {
         if (chip == nullptr) continue;
         chip->setMinimumWidth(0);
-        chip->setMaximumWidth(QWIDGETSIZE_MAX);
-        chip->ensurePolished();
-        widestChip = qMax(widestChip, chip->sizeHint().width());
-    }
-    if (widestChip <= 0) return;
-    for (QPushButton* chip : releaseChips_) {
-        if (chip == nullptr) continue;
-        chip->setFixedWidth(widestChip);
-        QSizePolicy policy = chip->sizePolicy();
-        policy.setHorizontalPolicy(QSizePolicy::Fixed);
-        chip->setSizePolicy(policy);
+        chip->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+        chip->updateGeometry();
     }
 }
 
@@ -3840,7 +3977,7 @@ void TitlePage::applyReleaseQuality(int index, const QMap<int, QString>& qualiti
         const QString suffix = QStringLiteral(" · %1p").arg(height);
         setReleaseChipText(chip, releaseChipLabel(releases_.at(index)) + suffix);
         chip->setToolTip(releaseChipToolTip(releases_.at(index)) + suffix);
-        equalizeReleaseChips();
+        refreshReleaseChipSizing();
     }
     if (index == activeRelease_) {
         updateWatchPanel();
@@ -4374,15 +4511,28 @@ void TitlePage::refreshReleaseTexts() {
         setReleaseChipText(chip, label);
         chip->setToolTip(tooltip);
     }
-    equalizeReleaseChips();
+    refreshReleaseChipSizing();
 }
 
 void TitlePage::refreshEpisodeTexts() {
     if (tabs_ != nullptr) {
+        for (QLineEdit* jump : tabs_->findChildren<QLineEdit*>(QStringLiteral("episodeJump"))) {
+            jump->setPlaceholderText(tr("Episode number"));
+            jump->setToolTip(tr("Jump to episode"));
+        }
+        for (QPushButton* filter : tabs_->findChildren<QPushButton*>(QStringLiteral("episodeTypeFilter"))) {
+            const QString kind = filter->property("episodeType").toString();
+            filter->setText(kind.isEmpty() ? tr("All") : episodeTypeCaption(kind));
+        }
+        for (QPushButton* all : tabs_->findChildren<QPushButton*>(QStringLiteral("episodeFullRange")))
+            all->setText(tr("Show entire range"));
         for (int index = 0; index < tabStates_.size() && index < tabs_->count(); ++index) {
             const QString provider = tabStates_.at(index).provider;
             const QString known = labels::provider(provider);
-            tabs_->setTabText(index, known.isEmpty() ? capitalize(provider) : known);
+            const QString name = known.isEmpty() ? capitalize(provider) : known;
+            tabs_->setTabText(index, name);
+            if (providerBar_ != nullptr && index < providerBar_->count())
+                providerBar_->setTabText(index, name);
         }
     }
     // Labels are plain data: every entry carries one for the player's episode
@@ -4405,10 +4555,7 @@ void TitlePage::refreshEpisodeTexts() {
         if (!state.rendered) {
             continue;
         }
-        const int start = state.page * state.pageSize;
-        const int end = qMin(start + state.pageSize, state.entries.size());
-        for (int index = start; index < end; ++index) {
-            EpisodeEntry* entry = state.entries.at(index);
+        for (EpisodeEntry* entry : state.displayed) {
             if (entry == nullptr || entry->button == nullptr) {
                 continue;
             }

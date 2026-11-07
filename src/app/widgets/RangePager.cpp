@@ -9,6 +9,7 @@
 #include <QIcon>
 #include <QLabel>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSize>
 #include <QSizePolicy>
 #include <QSpinBox>
@@ -150,6 +151,22 @@ RangePager::RangePager(int pageSize, QWidget* parent)
 
 RangePager::~RangePager() = default;
 
+void RangePager::setEpisodeMode() {
+    if (chipsScroll_ != nullptr) return;
+    auto* row = qobject_cast<QHBoxLayout*>(layout());
+    if (row == nullptr) return;
+    chipsScroll_ = new QScrollArea(this);
+    chipsScroll_->setFrameShape(QFrame::NoFrame);
+    chipsScroll_->setWidgetResizable(false);
+    chipsScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    chipsScroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    chipsScroll_->setMinimumWidth(80);
+    jump_->hide();
+    QLayoutItem* old = row->replaceWidget(chipsHost_, chipsScroll_);
+    delete old;
+    chipsScroll_->setWidget(chipsHost_);
+}
+
 void RangePager::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
@@ -185,7 +202,9 @@ void RangePager::retranslateUi() {
     if (!rendered_) {
         return;
     }
-    jumpLabel_->setText(tr("page of %1").arg(pages_));
+    jumpLabel_->setText(chipsScroll_ != nullptr
+                            ? tr("Page %1 of %2").arg(page_).arg(pages_)
+                            : tr("page of %1").arg(pages_));
     // Re-labels the same chips, window and active role through the stored page
     // state; chip labels themselves are entry numbers, not prose.
     renderChips();
@@ -210,7 +229,9 @@ void RangePager::setState(int page, int pages, int entries, const QStringList& n
     numbers_ = numbers;
     renderChips();
     updateEnabled();
-    jumpLabel_->setText(tr("page of %1").arg(pages_));
+    jumpLabel_->setText(chipsScroll_ != nullptr
+                            ? tr("Page %1 of %2").arg(page_).arg(pages_)
+                            : tr("page of %1").arg(pages_));
     syncing_ = true;
     jump_->setRange(1, pages_);
     jump_->setValue(page_);
@@ -239,7 +260,7 @@ void RangePager::renderChips() {
     // and re-labelled: setState lands on every episode page render and every
     // search page change, and building the window afresh there meant a fresh
     // QSS polish and a fresh connect per chip per page.
-    const int window = qMin(theme::kPagerChipWindow, pages_);
+    const int window = qMin(chipsScroll_ != nullptr ? 9 : theme::kPagerChipWindow, pages_);
     // The window shrinks with the page count, and a chip past the window is not
     // part of the pager at all, so it goes now rather than lingering as a hidden
     // button the layout and any child lookup still have to walk past.
@@ -288,6 +309,13 @@ void RangePager::renderChips() {
     // beside the arrows.
     chipLayout_->invalidate();
     chipsHost_->updateGeometry();
+    if (chipsScroll_ != nullptr) {
+        chipsHost_->resize(chipsHost_->sizeHint());
+        chipsScroll_->setFixedHeight(chipsHost_->sizeHint().height());
+        const int active = page_ - first - 1;
+        if (active >= 0 && active < chips_.size())
+            chipsScroll_->ensureWidgetVisible(chips_.at(active));
+    }
     rendered_ = true;
 }
 

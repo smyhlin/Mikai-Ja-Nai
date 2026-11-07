@@ -7,6 +7,7 @@
 class QEvent;
 class QLabel;
 class QPushButton;
+class QScrollArea;
 class QSpinBox;
 
 namespace mikai::app {
@@ -36,6 +37,7 @@ public:
     ~RangePager() override;
 
     int pageSize() const { return pageSize_; }
+    void setEpisodeMode();
 
     /// Point the pager at `page` of `pages` over a result set of `entries` rows,
     /// labelling chips positionally.
@@ -80,6 +82,7 @@ private:
     QPushButton* firstButton_ = nullptr;
     QPushButton* prevButton_ = nullptr;
     QWidget* chipsHost_ = nullptr;
+    QScrollArea* chipsScroll_ = nullptr;
     FlowLayout* chipLayout_ = nullptr;
     /// The fixed-size chip window, built once and re-labelled by renderChips.
     QList<QPushButton*> chips_;
