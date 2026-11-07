@@ -209,6 +209,7 @@ void ComponentStoreTab::finishRecommendedInstall() {
     // This explicit setup approval advertises upscaling only. Reset a prior
     // manual RIFE choice here, never during refresh, retranslation or Apply.
     rifeCheck_->setChecked(false);
+    upscalerCheck_->setChecked(false);
     downloadMissing(false);
 }
 
