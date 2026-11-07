@@ -615,7 +615,6 @@ void VideoSurface::observeAnimeJanaiBackendLog(const QString& prefix, const QStr
                 QStringLiteral("(\\d+)x(\\d+)\\s*->\\s*(\\d+)x(\\d+)"),
                 QRegularExpression::CaseInsensitiveOption);
             if (const QRegularExpressionMatch m = kSlotDimRe.match(line); m.hasMatch()) {
-                inW = m.captured(1).toInt();
                 inH = m.captured(2).toInt();
                 outW = m.captured(3).toInt();
                 outH = m.captured(4).toInt();
@@ -821,10 +820,14 @@ void VideoSurface::animeJanaiFail(const QString& reasonKey, const QString& reaso
         animeJanaiFailureCleanupActive_ = true;
         const uint64_t epoch = mpv_->sourceEpoch();
         const quint64 generation = animeJanaiGeneration_;
-        removeAnimeJanaiFilters(epoch, generation, [this] {
+        removeAnimeJanaiFilters(epoch, generation, [this, epoch, generation] {
             animeJanaiFailureCleanupActive_ = false;
             if (animeJanaiStageBuildLease_) animeJanaiStageBuildLease_->release();
             animeJanaiStageBuildLease_.reset();
+            if (mpv_ != nullptr && epoch == mpv_->sourceEpoch() &&
+                generation == animeJanaiGeneration_) {
+                restoreAnimeJanaiHwdec(epoch, generation);
+            }
         });
     } else if (!animeJanaiFilterBound_) {
         if (animeJanaiStageBuildLease_) animeJanaiStageBuildLease_->release();

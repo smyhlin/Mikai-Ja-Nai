@@ -615,7 +615,8 @@ int main(int argc, char** argv) {
     auto* tree = dialog.findChild<QTreeWidget*>(QStringLiteral("benchmarkModelTree"));
     check(tree != nullptr, "benchmarkModelTree present");
 
-    if (tree != nullptr && parser.isSet(listOpt)) {
+    if (parser.isSet(listOpt)) {
+        if (tree == nullptr) return 1;
         for (int g = 0; g < tree->topLevelItemCount(); ++g) {
             auto* group = tree->topLevelItem(g);
             for (int c = 0; c < group->childCount(); ++c) {
@@ -626,7 +627,7 @@ int main(int argc, char** argv) {
             }
         }
         std::fflush(stdout);
-        return 0;
+        return failures == 0 ? 0 : 1;
     }
 
     if (tree) {

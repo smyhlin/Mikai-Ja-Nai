@@ -66,7 +66,10 @@ void fitSelectorLabel(QToolButton* button, const QString& full) {
     }
     const QFontMetrics fm(button->font());
     const QString elided = fm.elidedText(full, Qt::ElideRight, avail);
-    button->setText((elided.isEmpty() ? full : elided) + suffix);
+    const QString text = (elided.isEmpty() ? full : elided) + suffix;
+    if (button->text() != text) {
+        button->setText(text);
+    }
 }
 
 /// True when two choice lists describe the same menu tree: same entries in the
@@ -509,7 +512,11 @@ void ComparePane::drawForeground(QPainter* painter, const QRectF&) {
 }
 
 bool ComparePane::eventFilter(QObject* watched, QEvent* event) {
-    if (event->type() == QEvent::Wheel && (watched == selectorBar_ || watched == badge_)) {
+    if (watched == badge_ && event->type() == QEvent::Resize) {
+        fitSelectorLabel(badge_, label_);
+    }
+    if (event->type() == QEvent::Wheel &&
+        (watched == selectorBar_ || watched == badge_)) {
         wheelEvent(static_cast<QWheelEvent*>(event));
         return true;
     }

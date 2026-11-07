@@ -51,6 +51,13 @@ private:
 // mpv reclaims reply storage on the next wait_event, so a caller must keep a
 // deep copy; a hand-built node must never go to mpv_free_node_contents.
 struct NodeValue {
+    NodeValue();
+    ~NodeValue();
+    NodeValue(const NodeValue&);
+    NodeValue(NodeValue&&) noexcept;
+    NodeValue& operator=(const NodeValue&);
+    NodeValue& operator=(NodeValue&&) noexcept;
+
     mpv_format format = MPV_FORMAT_NONE;
     bool flag = false;
     int64_t integer = 0;
@@ -63,6 +70,14 @@ struct NodeValue {
     std::vector<NodeValue> list;
     std::vector<std::pair<std::string, NodeValue>> map;
 };
+
+// Define these after NodeValue is complete for Clang with libstdc++.
+inline NodeValue::NodeValue() = default;
+inline NodeValue::~NodeValue() = default;
+inline NodeValue::NodeValue(const NodeValue&) = default;
+inline NodeValue::NodeValue(NodeValue&&) noexcept = default;
+inline NodeValue& NodeValue::operator=(const NodeValue&) = default;
+inline NodeValue& NodeValue::operator=(NodeValue&&) noexcept = default;
 
 // Every payload field is an owned copy: nothing points into mpv storage and
 // nothing has to be freed by the caller.

@@ -78,13 +78,15 @@ void fitSelectorLabel(QToolButton* button, const QString& full) {
     const QString suffix = QStringLiteral("  ▾");
     const int pad = kCompareSelectorInset * 2 + 24;
     const int avail = button->width() - pad;
-    if (avail <= 24) {
-        button->setText(full + suffix);
-        return;
+    QString text = full + suffix;
+    if (avail > 24) {
+        const QFontMetrics fm(button->font());
+        const QString elided = fm.elidedText(full, Qt::ElideRight, avail);
+        text = (elided.isEmpty() ? full : elided) + suffix;
     }
-    const QFontMetrics fm(button->font());
-    const QString elided = fm.elidedText(full, Qt::ElideRight, avail);
-    button->setText((elided.isEmpty() ? full : elided) + suffix);
+    if (button->text() != text) {
+        button->setText(text);
+    }
 }
 
 /// True when two choice lists describe the same menu tree: same entries in the
@@ -804,6 +806,13 @@ void CompareCanvas::resizeEvent(QResizeEvent* event) {
 }
 
 bool CompareCanvas::eventFilter(QObject* watched, QEvent* event) {
+    if (event->type() == QEvent::Resize) {
+        if (watched == badgeA_) {
+            fitSelectorLabel(badgeA_, labelA_);
+        } else if (watched == badgeB_) {
+            fitSelectorLabel(badgeB_, labelB_);
+        }
+    }
     if (event->type() == QEvent::Wheel &&
         (watched == selectorRow_ || watched == badgeA_ || watched == badgeB_)) {
         auto* wheel = static_cast<QWheelEvent*>(event);
