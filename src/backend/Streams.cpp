@@ -1,6 +1,7 @@
 #include "Streams.hpp"
 
 #include "HttpTransport.hpp"
+#include "Cancellation.hpp"
 
 #include <QByteArray>
 #include <QDebug>
@@ -13,6 +14,7 @@
 #include <QThread>
 #include <QUrl>
 
+#include <algorithm>
 #include <cmath>
 
 namespace mikai::backend {
@@ -141,8 +143,21 @@ QString fetchText(QNetworkAccessManager* manager, const QString& url,
         }
         if (retryable) {
             if (attempt < kFetchRetries) {
-                QThread::msleep(static_cast<unsigned long>(
-                    retryDelaySeconds(result.headers, attempt) * 1000.0));
+                int remainingMs =
+                    static_cast<int>(retryDelaySeconds(result.headers, attempt) * 1000.0);
+                while (remainingMs > 0) {
+                    if (WorkCancellationScope::cancellationRequested()) {
+                        throw StreamError(
+                            QStringLiteral("GET failed for %1: the request was cancelled").arg(url));
+                    }
+                    const int sleepMs = std::min(200, remainingMs);
+                    QThread::msleep(static_cast<unsigned long>(sleepMs));
+                    remainingMs -= sleepMs;
+                }
+                if (WorkCancellationScope::cancellationRequested()) {
+                    throw StreamError(
+                        QStringLiteral("GET failed for %1: the request was cancelled").arg(url));
+                }
                 continue;
             }
             // T-305: reachable now that transport classes joined the retry

@@ -249,9 +249,9 @@ QStringList tensorRtClosureFailureLines(const TensorRtClosureStatus& closure,
         return QCoreApplication::translate("mikai::app::ComponentStoreTab", message);
     };
     const QString runtimeMissing = translated(
-        "TensorRT environment (trt-runtime) is not installed — select it and apply changes.");
+        QT_TRANSLATE_NOOP("ComponentStoreTab", "TensorRT environment (trt-runtime) is not installed — select it and apply changes."));
     const QString kernelsMissing =
-        translated("GPU kernels for this device (%1) are not installed.")
+        translated(QT_TRANSLATE_NOOP("ComponentStoreTab", "GPU kernels for this device (%1) are not installed."))
             .arg(kernelsName.isEmpty() ? QStringLiteral("trt-sm") : kernelsName);
     const auto appendUnique = [&failures](const QString& line) {
         if (!line.isEmpty() && !failures.contains(line)) failures.append(line);
