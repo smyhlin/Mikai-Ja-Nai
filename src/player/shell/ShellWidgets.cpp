@@ -1341,6 +1341,10 @@ QVector<std::pair<QString, QString>> KeyHints::shortcutTable() {
         {QStringLiteral("←  →"), tr("Seek ∓5s")},
         {QStringLiteral("↑  ↓"), tr("Volume ±10%")},
         {QStringLiteral("Esc"), tr("Close panel / window")},
+        {QStringLiteral("F11"), tr("Fullscreen / windowed")},
+        {QStringLiteral("?"), tr("Show keyboard shortcuts")},
+        {QStringLiteral("Shift + scroll"), tr("Jump through title rows")},
+        {QStringLiteral("Alt + scroll"), tr("Smooth-scroll title rows")},
     };
 }
 
