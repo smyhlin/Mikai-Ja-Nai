@@ -69,7 +69,7 @@ Progress updates below 30 seconds do not create or replace a resume point. At 90
 
 ## Window controls
 
-In a windowed or fullscreen frameless player the top-right corner holds one capsule with **Minimize** and **Exit**: the close cell carries a red fill at rest and both cells share the capsule's rounded ends, so the pair reads as one control. It sits four pixels from the corner. Dragging the title bar moves the window; the capsule never changes the keyboard path (**Esc** still exits).
+In a windowed or fullscreen frameless player the top-right corner holds **Minimize** and **Exit** controls. The exit button has a red fill, and both controls follow the application corner-radius setting. Dragging the title bar moves the window; **Esc** still exits.
 
 ## Picture-in-picture
 

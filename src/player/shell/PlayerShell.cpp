@@ -621,24 +621,20 @@ void PlayerShell::schedulePreviewPrewarm() {
 }
 
 void PlayerShell::buildWindowControls() {
-    // One capsule holds both controls with no inner padding: the red close cell
-    // reaches the capsule's own edge, which is what makes the pair read as a
-    // single segmented control rather than two buttons on a strip.
     constexpr int kControlSize = 28;
-    constexpr int kCapsuleRadius = kControlSize / 2 + 4;
-    windowControls_ = new Panel(blackSoft(), kCapsuleRadius, w15(), this);
+    windowControls_ = new Panel(Qt::transparent, 0, Qt::transparent, this);
     auto* lay = new QHBoxLayout(windowControls_);
     lay->setContentsMargins(0, 0, 0, 0);
-    lay->setSpacing(0);
+    lay->setSpacing(4);
 
     btnMin_ = new IconButton(IconPainter::minimize, tr("Minimize the window"), kControlSize, 15,
                              windowControls_);
     ButtonChrome minChrome;
-    minChrome.fill = QBrush(Qt::transparent);
+    minChrome.fill = QBrush(blackSoft());
     minChrome.border = QColor(0, 0, 0, 0);
     minChrome.hoverFill = QBrush(QColor(255, 255, 255, 34));
     minChrome.hoverBorder = QColor(0, 0, 0, 0);
-    minChrome.radius = cornerRadius();
+    minChrome.useThemeRadius = true;
     minChrome.borderWidth = 0;
     btnMin_->setButtonChrome(minChrome);
     connect(btnMin_, &QPushButton::clicked, this, &QWidget::showMinimized);
@@ -646,14 +642,12 @@ void PlayerShell::buildWindowControls() {
 
     btnClose_ = new IconButton(IconPainter::close, tr("Exit the player  (Esc)"), kControlSize, 15,
                                windowControls_);
-    // The close cell carries its own red fill at rest, so the capsule reads as
-    // "minimise here, close there" before the pointer arrives.
     ButtonChrome closeChrome;
     closeChrome.fill = QBrush(QColor(214, 61, 64));
     closeChrome.border = QColor(0, 0, 0, 0);
     closeChrome.hoverFill = QBrush(QColor(233, 79, 82));
     closeChrome.hoverBorder = QColor(255, 255, 255, 46);
-    closeChrome.radius = cornerRadius();
+    closeChrome.useThemeRadius = true;
     closeChrome.borderWidth = 0;
     btnClose_->setButtonChrome(closeChrome);
     connect(btnClose_, &QPushButton::clicked, this, &PlayerShell::exitViewer);
@@ -1446,8 +1440,6 @@ void PlayerShell::layoutChrome() {
     const int hintedWidth = windowControls_->sizeHint().width();
     const int wcWidth = hintedWidth > 0 ? hintedWidth : 96;
     const int wcHeight = windowControls_->sizeHint().height();
-    // The capsule sits close to the corner: the old geometry added a margin on
-    // top of the panel's own padding, and the padding is gone now.
     constexpr int kCornerInset = 4;
     const int wcX = std::clamp(static_cast<int>(w * 0.945) + kCornerInset, 0,
                                std::max(0, w - wcWidth - kCornerInset));

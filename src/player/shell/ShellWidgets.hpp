@@ -255,6 +255,7 @@ struct ButtonChrome {
     QColor hoverBorder;
     double radius = 10.0;
     double borderWidth = 1.0;
+    bool useThemeRadius = false;
 };
 
 /// Flat square icon button; the glyph is painted, never a pixmap.
