@@ -40,6 +40,7 @@ class QEnterEvent;
 class QEvent;
 class QMouseEvent;
 class QPainter;
+class QScrollArea;
 class QVBoxLayout;
 QT_END_NAMESPACE
 
@@ -478,6 +479,7 @@ private:
     void retranslate();
 
     QLabel* caption_ = nullptr;
+    QScrollArea* rows_ = nullptr;
     QVector<QLabel*> descriptions_;
 };
 

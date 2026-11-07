@@ -13,6 +13,7 @@
 #include <QPaintEngine>
 #include <QPointF>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -1342,9 +1343,16 @@ QVector<std::pair<QString, QString>> KeyHints::shortcutTable() {
         {QStringLiteral("↑  ↓"), tr("Volume ±10%")},
         {QStringLiteral("Esc"), tr("Close panel / window")},
         {QStringLiteral("F11"), tr("Fullscreen / windowed")},
-        {QStringLiteral("?"), tr("Show keyboard shortcuts")},
-        {QStringLiteral("Shift + scroll"), tr("Jump through title rows")},
-        {QStringLiteral("Alt + scroll"), tr("Smooth-scroll title rows")},
+        {QStringLiteral("? / /"), tr("Show keyboard shortcuts in player")},
+        {QStringLiteral("Enter"), tr("Search from the search field")},
+        {QStringLiteral("Shift + scroll"), tr("Jump through home feed rows")},
+        {QStringLiteral("Alt + scroll"), tr("Scroll title rows or change provider")},
+        {QStringLiteral("Scroll"), tr("Adjust volume over the player volume control")},
+        {QStringLiteral("Double-click"), tr("Toggle player fullscreen")},
+        {QStringLiteral("F / S / R / P"), tr("Compare: fit / swap / recapture / pin")},
+        {QStringLiteral("Space"), tr("Compare: hold to peek at side A")},
+        {QStringLiteral("F11"), tr("Compare: toggle fullscreen")},
+        {QStringLiteral("+ / − / 0"), tr("Cover viewer: zoom in / out / reset")},
     };
 }
 
@@ -1368,6 +1376,18 @@ KeyHints::KeyHints(QWidget* parent) : QFrame(parent) {
     lay->addWidget(caption_);
     lay->addSpacing(2);
 
+    rows_ = new QScrollArea(this);
+    rows_->setFrameShape(QFrame::NoFrame);
+    rows_->setWidgetResizable(true);
+    rows_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    rows_->setStyleSheet(QStringLiteral("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }"));
+    auto* content = new QWidget(rows_);
+    auto* rowsLayout = new QVBoxLayout(content);
+    rowsLayout->setContentsMargins(0, 0, 0, 0);
+    rowsLayout->setSpacing(4);
+    rows_->setWidget(content);
+    lay->addWidget(rows_);
+
     const QVector<std::pair<QString, QString>> table = shortcutTable();
     descriptions_.reserve(table.size());
     for (const auto& entry : table) {
@@ -1384,7 +1404,7 @@ KeyHints::KeyHints(QWidget* parent) : QFrame(parent) {
         row->addWidget(key);
         descriptions_.append(action);
         row->addWidget(action, 1);
-        lay->addLayout(row);
+        rowsLayout->addLayout(row);
     }
 }
 
@@ -1410,7 +1430,10 @@ void KeyHints::retranslate() {
     // clipped by that frozen width.
     layout()->invalidate();
     layout()->activate();
-    setFixedSize(layout()->sizeHint());
+    const QSize contentSize = rows_->widget()->sizeHint();
+    const QSize hostSize = parentWidget() != nullptr ? parentWidget()->size() : QSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+    setFixedSize(qMin(hostSize.width() - 8, contentSize.width() + 48),
+                 qMin(hostSize.height() - 8, contentSize.height() + caption_->sizeHint().height() + 32));
     layout()->activate();
     clampInsideHost(this);
     update();
@@ -1429,7 +1452,10 @@ void KeyHints::popupNear(const QPoint& anchorGlobal) {
     ensurePolished();
     layout()->invalidate();
     layout()->activate();
-    setFixedSize(layout()->sizeHint());
+    const QSize contentSize = rows_->widget()->sizeHint();
+    const QSize hostSize = parentWidget() != nullptr ? parentWidget()->size() : QSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+    setFixedSize(qMin(hostSize.width() - 8, contentSize.width() + 48),
+                 qMin(hostSize.height() - 8, contentSize.height() + caption_->sizeHint().height() + 32));
     layout()->activate();
     QWidget* host = parentWidget();
     if (host == nullptr) {
