@@ -1800,17 +1800,17 @@
     <message>
         <location filename="../src/player/compare/CompareRenderer.cpp" line="507"/>
         <source>The native comparison source geometry is unavailable.</source>
-        <translation type="unfinished"></translation>
+        <translation>Геометрія нативного джерела порівняння недоступна.</translation>
     </message>
     <message>
         <location filename="../src/player/compare/CompareRenderer.cpp" line="519"/>
         <source>The native comparison framebuffer could not be created.</source>
-        <translation type="unfinished"></translation>
+        <translation>Не вдалося створити фреймбуфер нативного порівняння.</translation>
     </message>
     <message>
         <location filename="../src/player/compare/CompareRenderer.cpp" line="589"/>
         <source>The comparison output framebuffer could not be created.</source>
-        <translation type="unfinished"></translation>
+        <translation>Не вдалося створити вихідний фреймбуфер порівняння.</translation>
     </message>
     <message>
         <location filename="../src/player/compare/CompareRenderer.cpp" line="638"/>
@@ -9916,19 +9916,19 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <location filename="../src/player/shell/ClipDialog.cpp" line="439"/>
         <location filename="../src/player/shell/ClipDialog.cpp" line="583"/>
         <source>1080p</source>
-        <translation type="unfinished"></translation>
+        <translation>1080p</translation>
     </message>
     <message>
         <location filename="../src/player/shell/ClipDialog.cpp" line="440"/>
         <location filename="../src/player/shell/ClipDialog.cpp" line="584"/>
         <source>720p</source>
-        <translation type="unfinished"></translation>
+        <translation>720p</translation>
     </message>
     <message>
         <location filename="../src/player/shell/ClipDialog.cpp" line="441"/>
         <location filename="../src/player/shell/ClipDialog.cpp" line="585"/>
         <source>480p</source>
-        <translation type="unfinished"></translation>
+        <translation>480p</translation>
     </message>
     <message>
         <location filename="../src/player/shell/ClipDialog.cpp" line="442"/>
@@ -10703,7 +10703,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     <message>
         <location filename="../src/player/compare/CompareWindow.cpp" line="1170"/>
         <source>Presets</source>
-        <translation type="unfinished">Пресети</translation>
+        <translation>Пресети</translation>
     </message>
     <message>
         <location filename="../src/player/compare/CompareWindow.cpp" line="1187"/>
@@ -10713,22 +10713,22 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     <message>
         <location filename="../src/player/compare/CompareWindow.cpp" line="1195"/>
         <source>Profiles</source>
-        <translation type="unfinished">Профілі</translation>
+        <translation>Профілі</translation>
     </message>
     <message>
         <location filename="../src/player/compare/CompareWindow.cpp" line="1196"/>
         <source>Spatial models</source>
-        <translation type="unfinished">Просторові моделі</translation>
+        <translation>Просторові моделі</translation>
     </message>
     <message>
         <location filename="../src/player/compare/CompareWindow.cpp" line="1197"/>
         <source>Upscalers</source>
-        <translation type="unfinished">Засоби масштабування</translation>
+        <translation>Засоби масштабування</translation>
     </message>
     <message>
         <location filename="../src/player/compare/CompareWindow.cpp" line="1198"/>
         <source>Custom models</source>
-        <translation type="unfinished"></translation>
+        <translation>Власні моделі</translation>
     </message>
     <message>
         <location filename="../src/player/compare/CompareWindow.cpp" line="1242"/>
