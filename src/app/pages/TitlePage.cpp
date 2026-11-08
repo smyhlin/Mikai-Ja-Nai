@@ -831,7 +831,6 @@ void TitlePage::refreshActionWidths() {
     // Captions arrive with the detail, the history and the episode, so the
     // groups are measured again after each of those, not once at construction.
     theme::equalizeWidths({backButton_, homeButton_});
-    theme::equalizeWidths({heroWatchButton_, episodesButton_, metaButton_}, 148);
     theme::equalizeWidths({watchWatchedButton_, watchButton_});
 }
 
@@ -961,17 +960,6 @@ void TitlePage::buildHero() {
 
     heroActions->addWidget(heroWatchButton_);
     heroActions->setAlignment(heroWatchButton_, Qt::AlignVCenter);
-    episodesButton_ = new QPushButton(tr("Episodes"), heroActionsHost);
-    episodesButton_->setObjectName(QStringLiteral("titleEpisodesAnchor"));
-    theme::applyActionRole(episodesButton_, theme::ActionRole::Secondary);
-    episodesButton_->setCursor(Qt::PointingHandCursor);
-    episodesButton_->setToolTip(tr("Jump to episodes"));
-    episodesButton_->setAccessibleDescription(
-        tr("Jump to the available episodes without starting playback"));
-    episodesButton_->setAccessibleName(tr("Episodes"));
-    connect(episodesButton_, &QPushButton::clicked, this, &TitlePage::scrollToEpisodes);
-    heroActions->addWidget(episodesButton_);
-    heroActions->setAlignment(episodesButton_, Qt::AlignVCenter);
     metaButton_ = new QPushButton(tr("More details"), heroActionsHost);
     metaButton_->setObjectName(QStringLiteral("titleDetailsToggle"));
     theme::applyActionRole(metaButton_, theme::ActionRole::Ghost);
@@ -986,8 +974,7 @@ void TitlePage::buildHero() {
     refreshActionWidths();
     QWidget::setTabOrder(heading_, subtitle_);
     QWidget::setTabOrder(subtitle_, heroWatchButton_);
-    QWidget::setTabOrder(heroWatchButton_, episodesButton_);
-    QWidget::setTabOrder(episodesButton_, metaButton_);
+    QWidget::setTabOrder(heroWatchButton_, metaButton_);
     textColumn->addWidget(heroActionsHost);
 
     heroActionContextHost_ = new QWidget(hero_);
@@ -4695,13 +4682,6 @@ void TitlePage::retranslateUi() {
     }
     if (providerSelectorHeading_ != nullptr) {
         providerSelectorHeading_->setText(tr("Provider"));
-    }
-    if (episodesButton_ != nullptr) {
-        episodesButton_->setText(tr("Episodes"));
-        episodesButton_->setAccessibleName(tr("Episodes"));
-        episodesButton_->setToolTip(tr("Jump to episodes"));
-        episodesButton_->setAccessibleDescription(
-            tr("Jump to the available episodes without starting playback"));
     }
     if (heading_ != nullptr) {
         heading_->setToolTip(tr("Copy title"));

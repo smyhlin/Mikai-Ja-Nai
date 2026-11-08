@@ -678,7 +678,6 @@ int runScreenshotReview(QApplication& app, TitlePage* page, const QString& ref,
         add(QStringLiteral("home"), "titleHome");
         add(QStringLiteral("settingsChip"), "settingsChip");
         add(QStringLiteral("heroWatch"), "titleHeroWatchButton");
-        add(QStringLiteral("episodes"), "titleEpisodesAnchor");
         add(QStringLiteral("detailsToggle"), "titleDetailsToggle");
         add(QStringLiteral("watch"), "titleWatchButton");
         add(QStringLiteral("watchedToggle"), "titleWatchWatchedToggle");
@@ -865,8 +864,11 @@ int runScreenshotReview(QApplication& app, TitlePage* page, const QString& ref,
             settle();
             detailsPassed = detailsPassed && !overlay->isVisible();
         }
-        auto* anchor = page->findChild<QPushButton*>(QStringLiteral("titleEpisodesAnchor"));
-        if (anchor != nullptr) anchor->click();
+        if (detailsToggle != nullptr) detailsToggle->click();
+        settle();
+        auto* jumpToEpisodes =
+            page->findChild<QPushButton*>(QStringLiteral("titleDetailsAction"));
+        if (jumpToEpisodes != nullptr) jumpToEpisodes->click();
         settle();
         auto* focused = QApplication::focusWidget();
         const bool focusPassed = focused != nullptr &&

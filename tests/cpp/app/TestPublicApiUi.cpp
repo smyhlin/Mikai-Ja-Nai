@@ -2226,21 +2226,14 @@ void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
   auto* watch = button(page, "titleWatchButton");
   auto* heroWatch = button(page, "titleHeroWatchButton");
   auto* watched = button(page, "titleWatchWatchedToggle");
-  auto* episodes = button(page, "titleEpisodesAnchor");
-  QVERIFY(watch != nullptr && heroWatch != nullptr && watched != nullptr &&
-          episodes != nullptr);
+  QVERIFY(watch != nullptr && heroWatch != nullptr && watched != nullptr);
   QCOMPARE(watch->height(), 44);
   QCOMPARE(heroWatch->height(), 44);
   QCOMPARE(watched->height(), 40);
-  QCOMPARE(episodes->height(), 40);
   QVERIFY2(watch->width() == watched->width(),
            qPrintable(QStringLiteral("the watch pair is %1 / %2 px wide")
                           .arg(watch->width())
                           .arg(watched->width())));
-  QVERIFY2(heroWatch->width() == episodes->width(),
-           qPrintable(QStringLiteral("the hero actions are %1 / %2 px wide")
-                          .arg(heroWatch->width())
-                          .arg(episodes->width())));
 
   // The settings action rows hold the same contract at the dialog minimum.
   mikai::app::ComponentStoreTab tab;
@@ -2278,7 +2271,7 @@ void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
   // paints at: the style rounds its own box model for the device, so a control
   // can ask for a pixel more than the row measured from the font alone, and
   // then paints wider than its equals.
-  QList<QAbstractButton*> equalRow{back, home, watch, heroWatch, watched, episodes};
+  QList<QAbstractButton*> equalRow{back, home, watch, heroWatch, watched};
   for (QPushButton* control : settingsActions) equalRow.append(control);
   for (QAbstractButton* control : equalRow) {
     QVERIFY2(control->sizeHint().width() <= control->width(),

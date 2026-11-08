@@ -427,7 +427,6 @@ protected:
     QVBoxLayout* columnLayout_ = nullptr;
     QWidget* hero_ = nullptr;
     QBoxLayout* heroLayout_ = nullptr;
-    QPushButton* episodesButton_ = nullptr;
     QWidget* heroActionContextHost_ = nullptr;
     QWidget* heroPosterHost_ = nullptr;
     QLabel* studio_ = nullptr;
