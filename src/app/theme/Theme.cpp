@@ -1100,8 +1100,6 @@ QWidget#titlePage QPushButton#titleDetailsClose:focus { border-color: %4; }
         .arg(kTitleSmallPixelSize)
         .arg(kTitleTinyPixelSize)
         .arg(kTitleCaptionPixelSize)
-        .arg(kTitleSmallPixelSize)
-        .arg(kTitleCaptionPixelSize)
         .arg(kTitleWatchEpisodePixelSize)
         .arg(kTitleDetailsHeadingPixelSize)
         .arg(kTitleTabPaddingV)
