@@ -43,6 +43,162 @@ class ClipTranslation {
     Q_DECLARE_TR_FUNCTIONS(mplayer::shell::ClipDialog)
 };
 
+QString clipDialogStyleSheet() {
+    const double radius = cornerRadius() > 0.0 ? cornerRadius() : 8.0;
+    const double cardRadius = radius + 4.0;
+    const QString acc = accent().name(QColor::HexRgb);
+    const QString ink = inkOn(accent()).name(QColor::HexRgb);
+    const QString accRgb = QStringLiteral("%1, %2, %3").arg(accent().red()).arg(accent().green()).arg(accent().blue());
+    const QString hoverHex = accent().lighter(115).name(QColor::HexRgb);
+    return QStringLiteral(
+        "QDialog#clipDialog {"
+        "  background-color: #0e0f14;"
+        "  color: #f4f4f5;"
+        "}"
+        "QFrame#clipCard {"
+        "  background-color: #15171e;"
+        "  border: 1px solid rgba(255, 255, 255, 0.10);"
+        "  border-radius: %1px;"
+        "}"
+        "QLabel {"
+        "  color: #a1a1aa;"
+        "  background: transparent;"
+        "  font-size: 13px;"
+        "}"
+        "QLabel#clipSectionTitle {"
+        "  color: #f4f4f5;"
+        "  font-size: 13px;"
+        "  font-weight: 600;"
+        "}"
+        "QLabel#clipDurationBadge {"
+        "  background-color: rgba(%4, 0.18);"
+        "  color: %2;"
+        "  border: 1px solid rgba(%4, 0.35);"
+        "  border-radius: 4px;"
+        "  padding: 2px 8px;"
+        "  font-size: 12px;"
+        "  font-weight: 600;"
+        "}"
+        "QLabel#clipPreviewTime {"
+        "  color: #e4e4e7;"
+        "  font-size: 12px;"
+        "  font-weight: 500;"
+        "}"
+        "QLabel#clipStatus {"
+        "  color: #a1a1aa;"
+        "  font-size: 12px;"
+        "}"
+        "QComboBox#clipQuality {"
+        "  background-color: #1d2029;"
+        "  color: #f4f4f5;"
+        "  border: 1px solid rgba(255, 255, 255, 0.15);"
+        "  border-radius: %5px;"
+        "  padding: 3px 10px;"
+        "  min-height: 24px;"
+        "  font-size: 13px;"
+        "  font-weight: 500;"
+        "}"
+        "QComboBox#clipQuality:hover {"
+        "  border-color: %2;"
+        "}"
+        "QComboBox#clipQuality QAbstractItemView {"
+        "  background-color: #15171e;"
+        "  color: #f4f4f5;"
+        "  border: 1px solid rgba(255, 255, 255, 0.18);"
+        "  selection-background-color: %2;"
+        "  selection-color: %3;"
+        "}"
+        "QDoubleSpinBox {"
+        "  background-color: #1d2029;"
+        "  color: #f4f4f5;"
+        "  border: 1px solid rgba(255, 255, 255, 0.15);"
+        "  border-radius: %5px;"
+        "  padding: 3px 8px;"
+        "  min-height: 24px;"
+        "  font-size: 13px;"
+        "  font-weight: 500;"
+        "}"
+        "QDoubleSpinBox:focus {"
+        "  border-color: %2;"
+        "  background-color: #242834;"
+        "}"
+        "QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {"
+        "  width: 16px;"
+        "  background: transparent;"
+        "  border: none;"
+        "}"
+        "QPushButton {"
+        "  background-color: #1d2029;"
+        "  color: #f4f4f5;"
+        "  border: 1px solid rgba(255, 255, 255, 0.15);"
+        "  border-radius: %5px;"
+        "  padding: 4px 14px;"
+        "  min-height: 26px;"
+        "  font-size: 13px;"
+        "  font-weight: 500;"
+        "}"
+        "QPushButton:hover {"
+        "  background-color: #272b38;"
+        "  border-color: rgba(255, 255, 255, 0.25);"
+        "  color: #ffffff;"
+        "}"
+        "QPushButton:checked {"
+        "  background-color: rgba(%4, 0.22);"
+        "  border-color: %2;"
+        "  color: %2;"
+        "}"
+        "QPushButton#clipExport {"
+        "  background-color: %2;"
+        "  color: %3;"
+        "  border: 1px solid %2;"
+        "  border-radius: %5px;"
+        "  font-weight: 600;"
+        "  min-height: 30px;"
+        "  padding: 4px 20px;"
+        "}"
+        "QPushButton#clipExport:hover {"
+        "  background-color: %6;"
+        "  border-color: %6;"
+        "}"
+        "QPushButton#clipExport:disabled {"
+        "  background-color: rgba(255, 255, 255, 0.08);"
+        "  color: rgba(255, 255, 255, 0.35);"
+        "  border-color: transparent;"
+        "}"
+        "QProgressBar#clipProgress {"
+        "  background-color: rgba(255, 255, 255, 0.10);"
+        "  border-radius: 3px;"
+        "  border: none;"
+        "  min-height: 6px;"
+        "  max-height: 6px;"
+        "}"
+        "QProgressBar#clipProgress::chunk {"
+        "  background-color: %2;"
+        "  border-radius: 3px;"
+        "}"
+        "QSlider#clipPreviewScrub::groove:horizontal {"
+        "  height: 4px;"
+        "  background: rgba(255, 255, 255, 0.15);"
+        "  border-radius: 2px;"
+        "}"
+        "QSlider#clipPreviewScrub::sub-page:horizontal {"
+        "  background: %2;"
+        "  border-radius: 2px;"
+        "}"
+        "QSlider#clipPreviewScrub::handle:horizontal {"
+        "  width: 14px;"
+        "  height: 14px;"
+        "  margin: -5px 0;"
+        "  border-radius: 7px;"
+        "  background: #ffffff;"
+        "}"
+        "QSlider#clipPreviewScrub::handle:horizontal:hover {"
+        "  background: %2;"
+        "}")
+        .arg(QString::number(cardRadius, 'f', 1), acc, ink, accRgb,
+             QString::number(radius, 'f', 1), hoverHex);
+}
+
 class ClipRange final : public QWidget {
 public:
     explicit ClipRange(QWidget* parent = nullptr) : QWidget(parent) {
@@ -70,18 +226,19 @@ protected:
         const qreal left = 14.0;
         const qreal right = width() - 14.0;
         painter.setPen(Qt::NoPen);
-        painter.setBrush(palette().color(QPalette::Mid));
+        painter.setBrush(QColor(255, 255, 255, 28));
         painter.drawRoundedRect(QRectF(left, y - 3, right - left, 6), 3, 3);
         const qreal a = coordinate(start_);
         const qreal b = coordinate(end_);
-        painter.setBrush(timelinePlayed());
+        painter.setBrush(accent());
         painter.drawRoundedRect(QRectF(a, y - 3, std::max<qreal>(0, b - a), 6), 3, 3);
-        painter.setBrush(palette().color(QPalette::Button));
-        painter.setPen(QPen(palette().color(QPalette::Mid), 1));
-        painter.drawEllipse(QPointF(a, y), 12, 12);
-        painter.drawEllipse(QPointF(b, y), 12, 12);
-        painter.setPen(QPen(timelinePlayed(), 2));
-        painter.drawEllipse(QPointF(activeEnd_ ? b : a, y), 13, 13);
+        painter.setBrush(QColor(240, 240, 245));
+        painter.setPen(QPen(QColor(18, 19, 26), 1.5));
+        painter.drawEllipse(QPointF(a, y), 8, 8);
+        painter.drawEllipse(QPointF(b, y), 8, 8);
+        painter.setPen(QPen(accent(), 2));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(QPointF(activeEnd_ ? b : a, y), 11, 11);
     }
     void mousePressEvent(QMouseEvent* event) override {
         if (event->button() != Qt::LeftButton || duration_ <= 0.0) return;
@@ -268,8 +425,10 @@ public:
         dialog->setWindowTitle(caption.trimmed().isEmpty()
                                    ? ClipTranslation::tr("Cut moment")
                                    : ClipTranslation::tr("Cut moment — %1").arg(caption));
+        dialog->setStyleSheet(clipDialogStyleSheet());
         range->setAccessibleName(ClipTranslation::tr("Clip range"));
         range->setAccessibleDescription(ClipTranslation::tr("Use left and right arrows to adjust the selected clip range."));
+        if (rangeTitle) rangeTitle->setText(ClipTranslation::tr("Clip range"));
         startLabel->setText(ClipTranslation::tr("Start"));
         endLabel->setText(ClipTranslation::tr("End"));
         start->setSuffix(ClipTranslation::tr(" s"));
@@ -320,94 +479,150 @@ public:
         dialog->setObjectName(QStringLiteral("clipDialog"));
         dialog->setWindowTitle(ClipTranslation::tr("Cut moment"));
         dialog->setModal(false);
-        dialog->setMinimumWidth(540);
+        dialog->setMinimumWidth(640);
+        dialog->setMinimumHeight(520);
+        dialog->resize(700, 580);
         dialog->setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
+        const double radius = cornerRadius() > 0.0 ? cornerRadius() : 8.0;
+
         auto* root = new QVBoxLayout(dialog);
-        root->setContentsMargins(18, 16, 18, 16);
-        root->setSpacing(12);
-        preview = new VideoSurface(dialog);
+        root->setContentsMargins(14, 14, 14, 14);
+        root->setSpacing(10);
+
+        // Card 1: Video Preview & Transport Bar
+        previewCard = new QFrame(dialog);
+        previewCard->setObjectName(QStringLiteral("clipCard"));
+        auto* previewLayout = new QVBoxLayout(previewCard);
+        previewLayout->setContentsMargins(10, 10, 10, 10);
+        previewLayout->setSpacing(8);
+
+        preview = new VideoSurface(previewCard);
         preview->setObjectName(QStringLiteral("clipPreview"));
         preview->setMinimumHeight(180);
-        preview->setMaximumHeight(280);
+        preview->setMaximumHeight(320);
+        preview->setDisplayCornerRadius(qMax(4.0, radius));
         preview->setFocusPolicy(Qt::StrongFocus);
-        root->addWidget(preview, 1);
+        previewLayout->addWidget(preview, 1);
+
         auto* previewBar = new QHBoxLayout;
-        playPreview = new QPushButton(ClipTranslation::tr("Play preview"), dialog);
-        previewAudio = new QPushButton(ClipTranslation::tr("Preview audio off"), dialog);
+        previewBar->setContentsMargins(2, 0, 2, 0);
+        previewBar->setSpacing(8);
+        playPreview = new QPushButton(ClipTranslation::tr("Play preview"), previewCard);
+        playPreview->setObjectName(QStringLiteral("clipPreviewPlay"));
+        playPreview->setCheckable(true);
+        previewAudio = new QPushButton(ClipTranslation::tr("Preview audio off"), previewCard);
         previewAudio->setObjectName(QStringLiteral("clipPreviewAudio"));
         previewAudio->setCheckable(true);
-        previewScrub = new QSlider(Qt::Horizontal, dialog);
+        previewScrub = new QSlider(Qt::Horizontal, previewCard);
         previewScrub->setObjectName(QStringLiteral("clipPreviewScrub"));
         previewScrub->setRange(0, 1000);
         previewScrub->setAccessibleName(ClipTranslation::tr("Scrub within selected moment"));
-        playPreview->setCheckable(true);
-        playPreview->setObjectName(QStringLiteral("clipPreviewPlay"));
-        previewTime = new QLabel(ClipTranslation::tr("Preview starts at the selected in point"), dialog);
+        previewScrub->setEnabled(false);
+        previewTime = new QLabel(ClipTranslation::tr("Preview starts at the selected in point"), previewCard);
+        previewTime->setObjectName(QStringLiteral("clipPreviewTime"));
         previewTime->setTextInteractionFlags(Qt::TextSelectableByMouse);
         previewBar->addWidget(playPreview);
         previewBar->addWidget(previewAudio);
         previewBar->addWidget(previewScrub, 1);
         previewBar->addWidget(previewTime);
-        root->addLayout(previewBar);
-        range = new ClipRange(dialog);
-        previewScrub->setEnabled(false);
-        root->addWidget(range);
+        previewLayout->addLayout(previewBar);
+        root->addWidget(previewCard, 1);
+
+        // Card 2: Range & Cut Selection
+        rangeCard = new QFrame(dialog);
+        rangeCard->setObjectName(QStringLiteral("clipCard"));
+        auto* rangeLayout = new QVBoxLayout(rangeCard);
+        rangeLayout->setContentsMargins(12, 10, 12, 10);
+        rangeLayout->setSpacing(8);
+
+        auto* rangeHeader = new QHBoxLayout;
+        rangeHeader->setContentsMargins(0, 0, 0, 0);
+        rangeTitle = new QLabel(ClipTranslation::tr("Clip range"), rangeCard);
+        rangeTitle->setObjectName(QStringLiteral("clipSectionTitle"));
+        rangeHeader->addWidget(rangeTitle);
+        rangeHeader->addStretch(1);
+        durationLabel = new QLabel(rangeCard);
+        durationLabel->setObjectName(QStringLiteral("clipDurationBadge"));
+        rangeHeader->addWidget(durationLabel);
+        rangeLayout->addLayout(rangeHeader);
+
+        range = new ClipRange(rangeCard);
+        rangeLayout->addWidget(range);
+
         auto* times = new QHBoxLayout;
-        startLabel = new QLabel(dialog);
+        times->setContentsMargins(0, 0, 0, 0);
+        times->setSpacing(6);
+        startLabel = new QLabel(rangeCard);
         times->addWidget(startLabel);
-        start = makeTimeSpin(dialog, QStringLiteral("clipStart"));
+        start = makeTimeSpin(rangeCard, QStringLiteral("clipStart"));
         times->addWidget(start);
-        times->addSpacing(8);
-        endLabel = new QLabel(dialog);
+        times->addSpacing(16);
+        endLabel = new QLabel(rangeCard);
         times->addWidget(endLabel);
-        end = makeTimeSpin(dialog, QStringLiteral("clipEnd"));
+        end = makeTimeSpin(rangeCard, QStringLiteral("clipEnd"));
         times->addWidget(end);
         times->addStretch(1);
-        durationLabel = new QLabel(dialog);
-        times->addWidget(durationLabel);
-        root->addLayout(times);
+        rangeLayout->addLayout(times);
+        root->addWidget(rangeCard);
+
+        // Card 3: Export Options & Actions
+        exportCard = new QFrame(dialog);
+        exportCard->setObjectName(QStringLiteral("clipCard"));
+        auto* exportLayout = new QVBoxLayout(exportCard);
+        exportLayout->setContentsMargins(12, 10, 12, 10);
+        exportLayout->setSpacing(8);
+
         auto* qualityRow = new QHBoxLayout;
-        qualityLabel = new QLabel(dialog);
+        qualityRow->setContentsMargins(0, 0, 0, 0);
+        qualityRow->setSpacing(8);
+        qualityLabel = new QLabel(exportCard);
         qualityRow->addWidget(qualityLabel);
-        quality = new QComboBox(dialog);
+        quality = new QComboBox(exportCard);
         quality->setObjectName(QStringLiteral("clipQuality"));
         quality->addItem(ClipTranslation::tr("1080p"), 1080);
         quality->addItem(ClipTranslation::tr("720p"), 720);
         quality->addItem(ClipTranslation::tr("480p"), 480);
         qualityRow->addWidget(quality);
-        qualityRow->addStretch(1);
-        root->addLayout(qualityRow);
-        status = new QLabel(ClipTranslation::tr("Select up to 60 seconds to export as MP4."), dialog);
+        qualityRow->addSpacing(12);
+        status = new QLabel(ClipTranslation::tr("Select up to 60 seconds to export as MP4."), exportCard);
         status->setObjectName(QStringLiteral("clipStatus"));
         status->setWordWrap(true);
-        status->setMinimumHeight(36);
-        root->addWidget(status);
-        progress = new QProgressBar(dialog);
+        qualityRow->addWidget(status, 1);
+        exportLayout->addLayout(qualityRow);
+
+        progress = new QProgressBar(exportCard);
         progress->setObjectName(QStringLiteral("clipProgress"));
         progress->setRange(0, 1000);
         progress->setTextVisible(false);
         progress->setVisible(false);
-        root->addWidget(progress);
-        auto* resultActions = new QHBoxLayout;
-        reveal = new QPushButton(ClipTranslation::tr("Show in folder"), dialog);
-        copyPath = new QPushButton(ClipTranslation::tr("Copy path"), dialog);
-        reveal->setVisible(false);
-        copyPath->setVisible(false);
-        resultActions->addWidget(reveal);
-        resultActions->addWidget(copyPath);
-        resultActions->addStretch(1);
-        root->addLayout(resultActions);
+        exportLayout->addWidget(progress);
+
         auto* actions = new QHBoxLayout;
+        actions->setContentsMargins(0, 0, 0, 0);
+        actions->setSpacing(8);
+        reveal = new QPushButton(ClipTranslation::tr("Show in folder"), exportCard);
+        reveal->setVisible(false);
+        copyPath = new QPushButton(ClipTranslation::tr("Copy path"), exportCard);
+        copyPath->setVisible(false);
+        actions->addWidget(reveal);
+        actions->addWidget(copyPath);
         actions->addStretch(1);
-        cancel = new QPushButton(ClipTranslation::tr("Cancel export"), dialog);
+        cancel = new QPushButton(ClipTranslation::tr("Cancel export"), exportCard);
         cancel->setObjectName(QStringLiteral("clipCancel"));
         cancel->setVisible(false);
-        exportButton = new QPushButton(ClipTranslation::tr("Export MP4…"), dialog);
+        exportButton = new QPushButton(ClipTranslation::tr("Export MP4…"), exportCard);
         exportButton->setObjectName(QStringLiteral("clipExport"));
         exportButton->setDefault(true);
         actions->addWidget(cancel);
         actions->addWidget(exportButton);
-        root->addLayout(actions);
+        exportLayout->addLayout(actions);
+        root->addWidget(exportCard);
+
+        connect(&accentNotifier(), &AccentNotifier::changed, this, [this] {
+            dialog->setStyleSheet(clipDialogStyleSheet());
+            range->update();
+        });
         setStatus("Select up to 60 seconds to export as MP4.");
         range->setChanged([this](double a, double b) { setTimes(a, b, false); });
         connect(start, &QDoubleSpinBox::valueChanged, this, [this](double value) {
@@ -657,7 +872,11 @@ public:
     QLabel* endLabel = nullptr;
     QLabel* qualityLabel = nullptr;
     QLabel* durationLabel = nullptr;
+    QLabel* rangeTitle = nullptr;
     QLabel* previewTime = nullptr;
+    QFrame* previewCard = nullptr;
+    QFrame* rangeCard = nullptr;
+    QFrame* exportCard = nullptr;
     QSlider* previewScrub = nullptr;
     QPushButton* playPreview = nullptr;
     QPushButton* previewAudio = nullptr;
