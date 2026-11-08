@@ -2,7 +2,13 @@
 
 Published changes are recorded with their downloads on the [GitHub releases page](https://github.com/smyhlin/Mikai-Ja-Nai/releases). Artifact checksums live with each release, not in the documentation.
 
-## 0.2.1 — Unreleased
+## 0.2.2 — Unreleased
+
+- Add a Cut moment editor for selecting, previewing and exporting a short MP4.
+- Group processing controls into Restore, Upscale and Interpolation; improve Anime4K shader selection.
+- Refine Compare rendering, antialias settings controls and remove the redundant Episodes button from the title hero.
+
+## 0.2.1 — 2026-11-07
 
 - Keep test fixtures in their disposable native store even when `MIKAI_NATIVE_ROOT` is set; direct test runs refuse a different or populated store.
 - Reject component records and files redirected through symlinks or reparse points, and refuse RIFE graphs whose size changes during inspection.

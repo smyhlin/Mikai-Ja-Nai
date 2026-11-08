@@ -1394,7 +1394,7 @@
         <translation>Вибрану програму шейдерів Anime4K не підготовлено.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="120"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="164"/>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1368"/>
         <source>The selected AnimeJaNai preset is not recognised.</source>
         <translation>Вибраний пресет AnimeJaNai не розпізнано.</translation>
@@ -1744,120 +1744,135 @@
 <context>
     <name>CompareRenderer</name>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="659"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="691"/>
         <source>This source exceeds the internal comparison target, so x2 upscaling candidates may render unchanged.</source>
         <translation>Це джерело перевищує внутрішню ціль порівняння, тому кандидати x2 апскейлінгу можуть відображатися без змін.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="301"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="303"/>
         <source>Building the comparison TensorRT engine</source>
         <translation>Збирання рушія TensorRT для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="153"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="154"/>
         <source>The comparison source frame is unreadable.</source>
         <translation>Кадр джерела для порівняння не читається.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="160"/>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="168"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="161"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="169"/>
         <source>The comparison source frame could not be written.</source>
         <translation>Не вдалося записати кадр джерела для порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="200"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="201"/>
         <source>The comparison OpenGL context could not be created.</source>
         <translation>Не вдалося створити контекст OpenGL для порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="208"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="209"/>
         <source>The comparison OpenGL context is unavailable.</source>
         <translation>Контекст OpenGL для порівняння недоступний.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="275"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="277"/>
         <source>TensorRT for RTX did not start and the core fell back to TensorRT; the comparison did not run the requested backend: %1</source>
         <translation>TensorRT for RTX не запустився, і ядро перейшло на TensorRT; порівняння не виконало запитаний бекенд: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="296"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="298"/>
         <source>Preparing the comparison TensorRT for RTX engine</source>
         <translation>Підготовка рушія TensorRT for RTX для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="297"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="299"/>
         <source>Building the comparison TensorRT for RTX engine</source>
         <translation>Збирання рушія TensorRT for RTX для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="300"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="302"/>
         <source>Preparing the comparison TensorRT engine</source>
         <translation>Підготовка рушія TensorRT для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="351"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="353"/>
         <source>The comparison OpenGL context was lost.</source>
         <translation>Контекст OpenGL для порівняння було втрачено.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="415"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="417"/>
         <source>The comparison command did not complete.</source>
         <translation>Команда порівняння не завершилася вчасно.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="419"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="421"/>
         <source>The comparison command failed: %1</source>
         <translation>Помилка виконання команди порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="600"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="507"/>
+        <source>The native comparison source geometry is unavailable.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="519"/>
+        <source>The native comparison framebuffer could not be created.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="589"/>
+        <source>The comparison output framebuffer could not be created.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="632"/>
         <source>The previous AnimeJaNai comparison pipeline has not been detached.</source>
         <translation>Попередній конвеєр порівняння AnimeJaNai ще не від’єднано.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="607"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="639"/>
         <source>The comparison plan has no owned AnimeJaNai cache keys.</source>
         <translation>План порівняння не містить власних ключів кешу AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="620"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="652"/>
         <source>The AnimeJaNai stage cache %1 is already in use by %2.</source>
         <translation>Кеш етапу AnimeJaNai %1 уже використовує %2.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="193"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="194"/>
         <source>The comparison frame storage or geometry is unavailable.</source>
         <translation>Буфер кадру або геометрія для порівняння недоступні.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="217"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="218"/>
         <source>The comparison framebuffer could not be created.</source>
         <translation>Не вдалося створити буфер кадру (framebuffer) для порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="307"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="309"/>
         <source>The comparison model failed: %1</source>
         <translation>Помилка моделі під час порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="461"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="463"/>
         <source>The comparison output did not settle.</source>
         <translation>Вихідне зображення порівняння не стабілізувалося.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="377"/>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="523"/>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="690"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="379"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="555"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="736"/>
         <source>The comparison renderer failed: %1</source>
         <translation>Помилка рендерера порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="238"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="239"/>
         <source>The comparison source could not be loaded: %1</source>
         <translation>Не вдалося завантажити джерело для порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="542"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="574"/>
         <source>The shader chain for %1 could not be resolved.</source>
         <translation>Не вдалося розв’язати ланцюжок шейдерів для %1.</translation>
     </message>
@@ -1865,12 +1880,12 @@
 <context>
     <name>CompareWindow</name>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="90"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="93"/>
         <source>Build comparison TensorRT for RTX engine</source>
         <translation>Зібрати рушій TensorRT for RTX для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="93"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="96"/>
         <source>Build comparison TensorRT engine</source>
         <translation>Зібрати рушій TensorRT для порівняння</translation>
     </message>
@@ -2307,12 +2322,12 @@
 <context>
     <name>NativeBuilder</name>
     <message>
-        <location filename="../src/player/native/prepare/NativeBuilder.cpp" line="1486"/>
+        <location filename="../src/player/native/prepare/NativeBuilder.cpp" line="1479"/>
         <source>the %1 backend is not carried by this private Native ABI</source>
         <translation>бекенд %1 не підтримується цим приватним ABI Native</translation>
     </message>
     <message>
-        <location filename="../src/player/native/prepare/NativeBuilder.cpp" line="1529"/>
+        <location filename="../src/player/native/prepare/NativeBuilder.cpp" line="1522"/>
         <source>build.provider &apos;%1&apos; is not carried by this private Native ABI</source>
         <translation>build.provider «%1» не підтримується цим приватним ABI Native</translation>
     </message>
@@ -3059,113 +3074,194 @@
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="417"/>
-        <source>AnimeJaNai  ›</source>
-        <translation>AnimeJaNai  ›</translation>
-    </message>
-    <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="418"/>
-        <source>AnimeJaNai official filter</source>
-        <translation>Офіційний фільтр AnimeJaNai</translation>
-    </message>
-    <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="150"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="164"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="169"/>
         <source>BACKEND</source>
         <translation>БЕКЕНД</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="201"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="320"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="402"/>
         <source>Unavailable · %1</source>
         <translation>Недоступно · %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="202"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="321"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="403"/>
         <source>This model is no longer in the catalogue. The selection is kept until you choose another.</source>
         <translation>Цієї моделі більше немає в каталозі. Вибір зберігається, доки ви не оберете іншу.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="212"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="466"/>
+        <source>Settings · manage upscalers</source>
+        <translation>Налаштування · керування засобами масштабування</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="612"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="536"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1169"/>
+        <source>Restore (Anime4K)</source>
+        <translation>Відновлення (Anime4K)</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="537"/>
+        <source>Anime4K restoration shaders</source>
+        <translation>Шейдери відновлення Anime4K</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="629"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="538"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1202"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1237"/>
+        <source>Upscale</source>
+        <translation>Масштабування</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="539"/>
+        <source>AnimeJaNai models, spatial upscalers, and optional graphs</source>
+        <translation>Моделі AnimeJaNai, просторові засоби масштабування та додаткові графи</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="632"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="541"/>
+        <source>Interpolation (RIFE)</source>
+        <translation>Інтерполяція (RIFE)</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="542"/>
+        <source>Temporal frame interpolation models</source>
+        <translation>Моделі інтерполяції кадрів у часі</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="544"/>
         <source>Backend</source>
         <translation>Бекенд</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="282"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="244"/>
         <source>TensorRT for RTX</source>
         <translation>TensorRT for RTX</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="283"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="151"/>
+        <source>RESTORE · ANIME4K</source>
+        <translation>ВІДНОВЛЕННЯ · ANIME4K</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="152"/>
+        <source>UPSCALE</source>
+        <translation>МАСШТАБУВАННЯ</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="153"/>
+        <source>PROFILES</source>
+        <translation>ПРОФІЛІ</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="155"/>
+        <source>PROFILES · PAGE %1</source>
+        <translation>ПРОФІЛІ · СТОРІНКА %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="158"/>
+        <source>CUSTOM SPATIAL MODELS</source>
+        <translation>ВЛАСНІ ПРОСТОРОВІ МОДЕЛІ</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="160"/>
+        <source>CUSTOM SPATIAL · PAGE %1</source>
+        <translation>ВЛАСНІ ПРОСТОРОВІ · СТОРІНКА %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="162"/>
+        <source>OPTIONAL UPSCALERS</source>
+        <translation>ДОДАТКОВІ ЗАСОБИ МАСШТАБУВАННЯ</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="163"/>
+        <source>INTERPOLATION · RIFE</source>
+        <translation>ІНТЕРПОЛЯЦІЯ · RIFE</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="245"/>
         <source>DirectML</source>
         <translation>DirectML</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="293"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="255"/>
         <source>In-process TensorRT-RTX 1.7 engine builds; CUDA GPUs, Windows only.</source>
         <translation>Збирання рушіїв TensorRT-RTX 1.7 у процесі застосунку; GPU CUDA, лише Windows.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="299"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="261"/>
         <source>TensorRT for RTX has no published runtime on this platform. The saved RTX request is kept but cannot run.</source>
         <translation>TensorRT for RTX не має опублікованого середовища виконання на цій платформі. Збережений запит RTX зберігається, але не може виконуватися.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="347"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="314"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="385"/>
+        <source>Disable the Standard AnimeJaNai preset; Anime4K is unchanged.</source>
+        <translation>Вимкнути стандартний пресет AnimeJaNai; Anime4K не зміниться.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="355"/>
+        <source>Models %1–%2</source>
+        <translation>Моделі %1–%2</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="396"/>
+        <source>Profiles</source>
+        <translation>Профілі</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="398"/>
+        <source>Optional upscalers</source>
+        <translation>Додаткові засоби масштабування</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="433"/>
+        <source>Custom models  ›</source>
+        <translation>Власні моделі  ›</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="455"/>
         <source>%1  · installed</source>
         <translation>%1  · встановлено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="348"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="456"/>
         <source>%1  · download…</source>
         <translation>%1  · завантажити…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="350"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="458"/>
         <source>Stored under the app-owned model folder</source>
         <translation>Зберігається в папці моделей застосунку</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="351"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="459"/>
         <source>Opens Settings › Upscalers to download it</source>
         <translation>Відкриває «Налаштування › Збільшення» для завантаження</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="423"/>
-        <source>Upscalers  ›</source>
-        <translation>Збільшувачі  ›</translation>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="545"/>
+        <source>Standard AnimeJaNai execution backend</source>
+        <translation>Стандартний бекенд виконання AnimeJaNai</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="424"/>
-        <source>Optional ONNX upscalers and their downloads</source>
-        <translation>Необов&apos;язкові ONNX-моделі збільшення та їх завантаження</translation>
-    </message>
-    <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="173"/>
-        <source>Disable only AnimeJaNai; Anime4K is unchanged.</source>
-        <translation>Вимкнути лише AnimeJaNai; Anime4K залишається без змін.</translation>
-    </message>
-    <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="172"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="313"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="384"/>
         <source>Off</source>
         <translation>Вимкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="149"/>
-        <source>RIFE MODELS</source>
-        <translation>МОДЕЛІ RIFE</translation>
-    </message>
-    <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="211"/>
-        <source>RIFE models</source>
-        <translation>Моделі RIFE</translation>
-    </message>
-    <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="155"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="250"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="174"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="212"/>
         <source>RIFE v%1</source>
         <translation>RIFE v%1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="107"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="111"/>
         <source>RIFE v4.%1–v4.%2</source>
         <translation>RIFE v4.%1–v4.%2</translation>
     </message>
@@ -3175,23 +3271,23 @@
         <translation>Відмова замінити активний модуль mpv (%1) на інший (%2) під час роботи</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="148"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="157"/>
         <source>SPATIAL MODELS</source>
         <translation>ПРОСТОРОВІ МОДЕЛІ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="210"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="397"/>
         <source>Spatial models</source>
         <translation>Просторові моделі</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="281"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="243"/>
         <source>TensorRT</source>
         <translation>TensorRT</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="221"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="262"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="224"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="335"/>
         <source>Unavailable: %1</source>
         <translation>Недоступно: %1</translation>
     </message>
@@ -3302,9 +3398,104 @@
         <translation>Команд: %1 · сторінка %2 з %3</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="447"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="585"/>
         <source>Team %1</source>
         <translation>Команда %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="36"/>
+        <source>The selected output quality is not supported.</source>
+        <translation>Вибрана якість вихідного відео не підтримується.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="40"/>
+        <source>The source video dimensions are unavailable.</source>
+        <translation>Розміри вихідного відео недоступні.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="58"/>
+        <source>The source video is too small to encode as MP4.</source>
+        <translation>Вихідне відео має замалу роздільність для кодування в MP4.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="66"/>
+        <source>the media source</source>
+        <translation>джерело медіа</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="68"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="71"/>
+        <source>[redacted]</source>
+        <translation>[приховано]</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="279"/>
+        <source>The selected clip range is invalid (clips may be up to 60 seconds).</source>
+        <translation>Вибраний діапазон уривка недійсний (тривалість уривка — до 60 секунд).</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="284"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="388"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="439"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="448"/>
+        <source>Export cancelled.</source>
+        <translation>Експорт скасовано.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="289"/>
+        <source>The destination is a symbolic link and cannot be replaced.</source>
+        <translation>Цільове посилання на символічне посилання замінити неможливо.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="293"/>
+        <source>The destination already exists.</source>
+        <translation>Цільовий файл уже існує.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="296"/>
+        <source>Only an existing regular file may be replaced.</source>
+        <translation>Замінити можна лише наявний звичайний файл.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="300"/>
+        <source>The destination folder does not exist.</source>
+        <translation>Цільова папка не існує.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="307"/>
+        <source>Could not create a temporary MP4 beside the destination: %1</source>
+        <translation>Не вдалося створити тимчасовий файл MP4 поруч із цільовим файлом: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="379"/>
+        <source>H.264</source>
+        <translation>H.264</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="379"/>
+        <source>MPEG-4 Part 2</source>
+        <translation>MPEG-4 Part 2</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="417"/>
+        <source>mpv ended the encode before normal end-of-file (reason %1).</source>
+        <translation>mpv завершив кодування до штатного завершення файлу (причина: %1).</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="430"/>
+        <source>The selected audio track could not be loaded.</source>
+        <translation>Не вдалося завантажити вибрану звукову доріжку.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="444"/>
+        <source>The encoder completed without producing the requested MP4 video and audio streams.</source>
+        <translation>Кодування завершилося, але потрібні відео- та аудіопотоки MP4 не створено.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="454"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="461"/>
+        <source>Could not atomically publish the exported clip: %1</source>
+        <translation>Не вдалося атомарно опублікувати експортований уривок: %1</translation>
     </message>
 </context>
 <context>
@@ -3458,7 +3649,7 @@
     <name>SettingsDialog</name>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="99"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="116"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="160"/>
         <source>%1 (not available)</source>
         <translation>%1 (недоступно)</translation>
     </message>
@@ -3682,10 +3873,10 @@ If a portable folder was moved, disable startup from the old location before mov
 <context>
     <name>TitlePage</name>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1246"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1247"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4304"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4498"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1372"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1373"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4444"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4638"/>
         <source>Click to open the cover</source>
         <translation>Натисніть, щоб відкрити обкладинку</translation>
     </message>
@@ -3700,7 +3891,7 @@ If a portable folder was moved, disable startup from the old location before mov
         <translation>Не вдалося скопіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4326"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4466"/>
         <source>No cover</source>
         <translation>Немає обкладинки</translation>
     </message>
@@ -7138,7 +7329,7 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="160"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="803"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="844"/>
         <location filename="../src/app/dialogs/settings/SettingsCustomizationTab.cpp" line="45"/>
         <source>Benchmark</source>
         <translation>Бенчмарк</translation>
@@ -8020,131 +8211,109 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="286"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="818"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="859"/>
         <source>Available benchmark models</source>
         <translation>Доступні моделі бенчмарку</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="609"/>
-        <source>Anime4K</source>
-        <translation>Anime4K</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="618"/>
-        <source>AnimeJaNai</source>
-        <translation>AnimeJaNai</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="623"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="634"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="643"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="653"/>
         <source>slot %1 · %2</source>
         <translation>слот %1 · %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="625"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="655"/>
         <source>built-in chain</source>
         <translation>вбудований ланцюжок</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="630"/>
-        <source>Spatial</source>
-        <translation>Просторові</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="639"/>
-        <source>RIFE</source>
-        <translation>RIFE</translation>
-    </message>
-    <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="378"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="811"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="852"/>
         <source>Results</source>
         <translation>Результати</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="179"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="805"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="846"/>
         <source>Video clips</source>
         <translation>Відеокліпи</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="778"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="785"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="819"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="826"/>
         <source>Clear selection</source>
         <translation>Очистити вибір</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="250"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="806"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="847"/>
         <source>Enhancement models</source>
         <translation>Моделі покращення</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="186"/>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="257"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="779"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="786"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="820"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="827"/>
         <source>Select all</source>
         <translation>Вибрати все</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="270"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="807"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="848"/>
         <source>Filter by model or group</source>
         <translation>Фільтр за моделлю або групою</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="273"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="808"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="849"/>
         <source>Filter benchmark models</source>
         <translation>Фільтр моделей бенчмарку</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="233"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="809"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="850"/>
         <source>Include the unfiltered baseline</source>
         <translation>Додати базовий конвеєр без обробки</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="516"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="810"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1321"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="851"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1362"/>
         <source>Run benchmark</source>
         <translation>Запустити бенчмарк</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="381"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="820"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="861"/>
         <source>Ready</source>
         <translation>Готово</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="397"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="816"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="857"/>
         <source>Benchmark run progress</source>
         <translation>Прогрес бенчмарку</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1004"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1045"/>
         <source>TensorRT engine build elapsed · %1</source>
         <translation>Час збирання рушія TensorRT · %1</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="446"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="814"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="855"/>
         <source>Run a benchmark to see throughput for each selected clip and model.</source>
         <translation>Запустіть бенчмарк, щоб побачити швидкість для кожного вибраного кліпу й моделі.</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="165"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="804"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="845"/>
         <source>Compare rendering speed at 2× input resolution.</source>
         <translation>Порівняйте швидкість рендерингу з подвоєною роздільністю виходу.</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="415"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="817"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="858"/>
         <source>Engine build progress; indeterminate</source>
         <translation>Прогрес збирання рушія; відсоток не визначено</translation>
     </message>
@@ -8155,173 +8324,193 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="390"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="812"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="853"/>
         <source>Preparation excluded from FPS.</source>
         <translation>Час підготовки не враховується у FPS.</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="456"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="815"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="856"/>
         <source>Model</source>
         <translation>Модель</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="456"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="815"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="856"/>
         <source>Clip</source>
         <translation>Кліп</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="456"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="815"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="856"/>
         <source>Throughput</source>
         <translation>Кадрів за секунду</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="660"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="668"/>
+        <source>Not downloaded. Install this graph from Components.</source>
+        <translation>Не завантажено. Установіть цей граф у розділі «Компоненти».</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="672"/>
+        <source>The installed graph could not be verified.</source>
+        <translation>Не вдалося перевірити встановлений граф.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="686"/>
+        <source>%1× · %2</source>
+        <translation>%1× · %2</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="687"/>
+        <source>Not downloaded. Install this graph from Settings › Upscalers.</source>
+        <translation>Не завантажено. Установіть цей граф у розділі «Налаштування › Засоби масштабування».</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="701"/>
         <source>%1 (unavailable)</source>
         <translation>%1 (недоступно)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="666"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="707"/>
         <source>This model is no longer in the catalogue; it will not run.</source>
         <translation>Цієї моделі більше немає в каталозі; вона не запускатиметься.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="777"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="781"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="818"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="822"/>
         <source>%1 / %2 selected</source>
         <translation>Вибрано %1 з %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="790"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="831"/>
         <source>Clips: %1</source>
         <translation>Кліпи: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="791"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="832"/>
         <source>Models: %1</source>
         <translation>Моделі: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="792"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="833"/>
         <source>Runs: %1</source>
         <translation>Запуски: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="794"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="835"/>
         <source>%1 unavailable</source>
         <translation>%1 недоступно</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="873"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="914"/>
         <source>Could not create the offscreen OpenGL surface.</source>
         <translation>Не вдалося створити позаекранну поверхню OpenGL.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="887"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1088"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="928"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1129"/>
         <source>Benchmark running · %1 / %2</source>
         <translation>Бенчмарк виконується · %1 / %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="891"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="932"/>
         <source>Starting benchmark…</source>
         <translation>Запуск бенчмарку…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="893"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="934"/>
         <source>Running…</source>
         <translation>Виконується…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1009"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1050"/>
         <source>Building TensorRT engine · %1</source>
         <translation>Збирання рушія TensorRT · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1020"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1061"/>
         <source>TensorRT engine ready after %1</source>
         <translation>Рушій TensorRT готовий за %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1022"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1063"/>
         <source>TensorRT engine build failed after %1</source>
         <translation>Збірка рушія TensorRT не вдалася; минуло %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1027"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1068"/>
         <source>Engine ready; measuring throughput · %1</source>
         <translation>Рушій готовий; вимірювання швидкості · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1029"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1070"/>
         <source>TensorRT engine build failed · %1</source>
         <translation>Збірка рушія TensorRT не вдалася · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1061"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1314"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1102"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1355"/>
         <source>Failed</source>
         <translation>Помилка</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1125"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1166"/>
         <source>clip not found</source>
         <translation>кліп не знайдено</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1137"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1178"/>
         <source>could not read the clip&apos;s dimensions</source>
         <translation>не вдалося прочитати розміри кліпу</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1149"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1190"/>
         <source>Loading clip · %1</source>
         <translation>Завантаження кліпу · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1178"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1219"/>
         <source>Baseline</source>
         <translation>Без обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1166"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1207"/>
         <source>%1 fps</source>
         <translation>%1 fps</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1189"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1230"/>
         <source>shader chain is not available</source>
         <translation>ланцюжок шейдерів недоступний</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1221"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1262"/>
         <source>plan is not available</source>
         <translation>план недоступний</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1277"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1318"/>
         <source>Report saved · %1</source>
         <translation>Звіт збережено · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1283"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1324"/>
         <source>Report not saved · %1</source>
         <translation>Звіт не збережено · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1298"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1339"/>
         <source>Benchmark cancelled.</source>
         <translation>Бенчмарк скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1299"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1340"/>
         <source>Complete · %1 results</source>
         <translation>Завершено · результатів: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1300"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1341"/>
         <source>Complete · %1 results · %2 failed</source>
         <translation>Завершено · результатів: %1 · невдалих: %2</translation>
     </message>
@@ -8348,456 +8537,444 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mikai::app::TitlePage</name>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="629"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="636"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4527"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4528"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="768"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="775"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4667"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4668"/>
         <source>Back</source>
         <translation>Назад</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="643"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4531"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="782"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4671"/>
         <source>Home</source>
         <translation>На головну</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="666"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="667"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4534"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4535"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="805"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="806"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4674"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4675"/>
         <source>API token settings</source>
         <translation>Налаштування токена API</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="725"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4458"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4489"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="863"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4598"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4629"/>
         <source>Loading…</source>
         <translation>Завантаження…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="803"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1074"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2659"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2707"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4624"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="941"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1200"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2779"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2827"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4757"/>
         <source>Watch</source>
         <translation>Дивитися</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="809"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2660"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="947"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2780"/>
         <source>Select an available episode to watch</source>
         <translation>Виберіть доступну серію для перегляду</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="825"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="832"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="951"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1794"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4538"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4547"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4548"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1077"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1921"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4678"/>
         <source>Episodes</source>
         <translation>Серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="880"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1555"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2361"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1006"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1682"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2481"/>
         <source>Read more</source>
         <translation>Читати далі</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="836"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="842"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2431"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4592"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="963"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="969"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2551"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4725"/>
         <source>More details</source>
         <translation>Докладніше</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="756"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="757"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="768"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="769"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1257"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1265"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4554"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4555"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4558"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4559"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="894"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="895"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="906"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="907"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1383"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1391"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4687"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4688"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4691"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4692"/>
         <source>Copy title</source>
         <translation>Скопіювати назву</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="829"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1797"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4549"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1924"/>
         <source>Jump to episodes</source>
         <translation>Перейти до серій</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="831"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4551"/>
-        <source>Jump to the available episodes without starting playback</source>
-        <translation>Перейти до доступних серій без початку відтворення</translation>
-    </message>
-    <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="841"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2432"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4594"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="968"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2552"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4727"/>
         <source>Show title details</source>
         <translation>Показати подробиці про тайтл</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="913"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4603"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1039"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4736"/>
         <source>More to explore</source>
         <translation>Більше для перегляду</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="917"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2294"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4600"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1043"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2414"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4733"/>
         <source>Hide</source>
         <translation>Сховати</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1008"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4541"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1134"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4681"/>
         <source>Release</source>
         <translation>Випуск</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1063"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2636"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2724"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1189"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2756"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2844"/>
         <source>Watched</source>
         <translation>Переглянуто</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1095"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4544"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1221"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4684"/>
         <source>Provider</source>
         <translation>Провайдер</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1178"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1203"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4614"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1304"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1329"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4747"/>
         <source>Details</source>
         <translation>Деталі</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1185"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1213"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1214"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4617"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4618"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4621"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1311"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1339"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1340"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4750"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4751"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4754"/>
         <source>Close details</source>
         <translation>Закрити деталі</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1243"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1564"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1565"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1633"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1634"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1896"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4492"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4502"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1369"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1691"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1692"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1760"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1761"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2023"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4632"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4642"/>
         <source>No cover</source>
         <translation>Немає обкладинки</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1546"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1884"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4585"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1673"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2011"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4718"/>
         <source>No description available.</source>
         <translation>Опис відсутній.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1630"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4610"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1757"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4743"/>
         <source>Could not open this title</source>
         <translation>Не вдалося відкрити цей тайтл</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1694"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1821"/>
         <source>unknown</source>
         <translation>невідомо</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1696"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1823"/>
         <source>Aired: %1 · Localized: %2 · Total: %3</source>
         <translation>Випущено: %1 · Локалізовано: %2 · Усього: %3</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1701"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1740"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1828"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1867"/>
         <source>Episode availability</source>
         <translation>Доступність серій</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1711"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1838"/>
         <source>Next episode airing %1 (local time)</source>
         <translation>Наступна серія вийде %1 (за місцевим часом)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1712"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1839"/>
         <source>Episode %1 airs %2 (local time)</source>
         <translation>Серія %1 вийде %2 (за місцевим часом)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1715"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1842"/>
         <source>Next airing: %1</source>
         <translation>Наступний вихід: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1716"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1843"/>
         <source>Episode %1 airing: %2</source>
         <translation>Вихід серії %1: %2</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1744"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1871"/>
         <source>Type</source>
         <translation>Тип</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1747"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1874"/>
         <source>Duration</source>
         <translation>Тривалість</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1747"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1874"/>
         <source>%1 min</source>
         <translation>%1 хв</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1751"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1878"/>
         <source>Status</source>
         <translation>Стан</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1753"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1880"/>
         <source>Season</source>
         <translation>Сезон</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1755"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1882"/>
         <source>Original source</source>
         <translation>Оригінальне джерело</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1759"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1886"/>
         <source>Studio</source>
         <translation>Студія</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1762"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1889"/>
         <source>Country</source>
         <translation>Країна</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1764"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1891"/>
         <source>Age rating</source>
         <translation>Віковий рейтинг</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1875"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2002"/>
         <source>Genres</source>
         <translation>Жанри</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1876"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2003"/>
         <source>Tags</source>
         <translation>Теги</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1882"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2009"/>
         <source>Synopsis</source>
         <translation>Опис</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1910"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2037"/>
         <source>Mikai</source>
         <translation>Mikai</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2072"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4658"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2200"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4791"/>
         <source>Previous page</source>
         <translation>Попередня сторінка</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2074"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4661"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2202"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4794"/>
         <source>Next page</source>
         <translation>Наступна сторінка</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2121"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4676"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2251"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4809"/>
         <source>Poster unavailable</source>
         <translation>Постер недоступний</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2294"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4600"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2414"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4733"/>
         <source>Show</source>
         <translation>Показати</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2361"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2481"/>
         <source>Show less</source>
         <translation>Показати менше</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2431"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4592"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2551"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4725"/>
         <source>Hide details</source>
         <translation>Сховати деталі</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2432"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4593"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2552"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4726"/>
         <source>Hide title details</source>
         <translation>Сховати подробиці про тайтл</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2547"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2667"/>
         <source>%1, %2</source>
         <translation>%1, %2</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2549"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2669"/>
         <source>%1 — unavailable</source>
         <translation>%1 — недоступна</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2558"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2678"/>
         <source>%1 — no video for this player</source>
         <translation>%1 — немає відео для цього плеєра</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2566"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2712"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2716"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2686"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2832"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2836"/>
         <source>%1 — watch</source>
         <translation>%1 — дивитися</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2568"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2688"/>
         <source>current episode</source>
         <translation>поточна серія</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2571"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2691"/>
         <source>watched episode</source>
         <translation>переглянута серія</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2633"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2753"/>
         <source>Current</source>
         <translation>Поточна</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2639"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2684"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2759"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2804"/>
         <source>Unavailable</source>
         <translation>Недоступно</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2686"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3924"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2806"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4064"/>
         <source>No video available</source>
         <translation>Відео недоступне</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2707"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2827"/>
         <source>Continue</source>
         <translation>Продовжити</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2713"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2717"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3822"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3878"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3927"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2833"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2837"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3962"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4018"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4067"/>
         <source>This player has no video for this episode</source>
         <translation>У цьому плеєрі немає відео для цієї серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2724"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3965"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2844"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4105"/>
         <source>Mark as watched</source>
         <translation>Позначити як переглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2725"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2845"/>
         <source>Mark this episode as unwatched</source>
         <translation>Позначити цю серію як непереглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2726"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2846"/>
         <source>Mark this episode as watched</source>
         <translation>Позначити цю серію як переглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2729"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2849"/>
         <source>%1 — mark as unwatched</source>
         <translation>%1 — позначити як непереглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2730"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2850"/>
         <source>%1 — mark as watched</source>
         <translation>%1 — позначити як переглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2745"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3242"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2865"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3359"/>
         <source>Manga canon</source>
         <translation>Канон манґи</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2746"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3244"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2866"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3361"/>
         <source>Anime canon</source>
         <translation>Канон аніме</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2747"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3245"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2867"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3362"/>
         <source>Filler</source>
         <translation>Філер</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2748"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3243"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2868"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3360"/>
         <source>Mixed</source>
         <translation>Змішане</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2762"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2882"/>
         <source>This title is licensed, but license details were not provided by the API.</source>
         <translation>Цей тайтл ліцензовано, але API не надав відомостей про ліцензію.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2763"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2883"/>
         <source>Licensed information: %1</source>
         <translation>Відомості про ліцензію: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2765"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4460"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2885"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4600"/>
         <source>Playback unavailable due to licensing</source>
         <translation>Відтворення недоступне через ліцензійні обмеження</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/app/pages/TitlePage.cpp" line="2780"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2900"/>
         <source>%n episode(s)</source>
         <translation>
             <numerusform>%n серія</numerusform>
@@ -8806,14 +8983,14 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         </translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2818"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2839"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2866"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2938"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2959"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2986"/>
         <source> (collab)</source>
         <translation> (колаб)</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/app/pages/TitlePage.cpp" line="2843"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2963"/>
         <source> · %n episode(s)</source>
         <translation>
             <numerusform> · %n серія</numerusform>
@@ -8822,303 +8999,303 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         </translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2850"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2970"/>
         <source>Right-click to browse releases from %1</source>
         <translation>Правий клік — переглянути релізи %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3047"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3167"/>
         <source>Browse %1 releases</source>
         <translation>Переглянути релізи %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3048"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3168"/>
         <source>Browse titles from %1</source>
         <translation>Переглянути тайтли від %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3192"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4729"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3309"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4862"/>
         <source>Episode number</source>
         <translation>Номер серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3193"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4730"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3310"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4863"/>
         <source>Jump to episode</source>
         <translation>Перейти до серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3212"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3329"/>
         <source>Episode not found</source>
         <translation>Серію не знайдено</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3241"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4734"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3358"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4867"/>
         <source>All</source>
         <translation>Усі</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3447"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4737"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3564"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4870"/>
         <source>Show entire range</source>
         <translation>Показати весь діапазон</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3605"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3627"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3731"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3753"/>
         <source>Failed to copy title</source>
         <translation>Не вдалося скопіювати назву</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3607"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3629"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3733"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3755"/>
         <source>Title copied</source>
         <translation>Назву скопійовано</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3794"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3934"/>
         <source>Explicit content</source>
         <translation>Відвертий контент</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3794"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3934"/>
         <source>This title is rated 18+. Start playback?</source>
         <translation>Цей тайтл має рейтинг 18+. Почати відтворення?</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3837"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3925"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3977"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4065"/>
         <source>Loading quality options…</source>
         <translation>Завантаження варіантів якості…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3880"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4020"/>
         <source>Failed to load episode qualities</source>
         <translation>Не вдалося завантажити варіанти якості серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3888"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4028"/>
         <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="167"/>
         <source>Could not find a stream for this episode</source>
         <translation>Не вдалося знайти потік для цієї серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3918"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4058"/>
         <source>Copy to clipboard</source>
         <translation>Копіювати до буфера обміну</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3919"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4059"/>
         <source>Page URL</source>
         <translation>URL сторінки</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3920"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4060"/>
         <source>Copy the episode page URL</source>
         <translation>Копіювати URL сторінки серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3928"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4068"/>
         <source>Fetching direct video links</source>
         <translation>Отримання прямих посилань на відео</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3938"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4078"/>
         <source>%1p</source>
         <translation>%1p</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3967"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4107"/>
         <source>Add this episode to watched</source>
         <translation>Додати цю серію до переглянутих</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3971"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4111"/>
         <source>Unwatch</source>
         <translation>Позначити як непереглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3973"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4113"/>
         <source>Remove this episode from watched</source>
         <translation>Прибрати цю серію з переглянутих</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4003"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4143"/>
         <source>Watch all previous</source>
         <translation>Позначити всі попередні переглянутими</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4015"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4155"/>
         <source>Unwatch all previous</source>
         <translation>Позначити всі попередні непереглянутими</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4028"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4168"/>
         <source>Open in external player</source>
         <translation>Відкрити у зовнішньому плеєрі</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4029"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4169"/>
         <source>Open the best quality in mpv or VLC</source>
         <translation>Відкрити найкращу якість у mpv або VLC</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4032"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4172"/>
         <source>Open in browser</source>
         <translation>Відкрити у браузері</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4033"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4173"/>
         <source>Open the episode page</source>
         <translation>Відкрити сторінку серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4041"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4181"/>
         <source>Failed to copy link</source>
         <translation>Не вдалося скопіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4044"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4184"/>
         <source>Direct link copied (%1p)</source>
         <translation>Пряме посилання скопійовано (%1p)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4048"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4188"/>
         <source>Failed to copy episode URL</source>
         <translation>Не вдалося скопіювати URL серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4052"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4192"/>
         <source>URL copied (no video available for this player)</source>
         <translation>URL скопійовано (для цього плеєра немає відео)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4053"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4193"/>
         <source>URL copied</source>
         <translation>URL скопійовано</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4058"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4198"/>
         <source>Opened in browser</source>
         <translation>Відкрито у браузері</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4060"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4200"/>
         <source>Failed to open in browser</source>
         <translation>Не вдалося відкрити у браузері</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4073"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4213"/>
         <source>No available video quality found</source>
         <translation>Не знайдено доступних варіантів якості відео</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4087"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4227"/>
         <source>External player not found — install mpv or VLC</source>
         <translation>Зовнішній плеєр не знайдено — встановіть mpv або VLC</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4096"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4236"/>
         <source>Opened in %1 · %2p</source>
         <translation>Відкрито в %1 · %2p</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4098"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4238"/>
         <source>Failed to launch %1</source>
         <translation>Не вдалося запустити %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4362"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4502"/>
         <source>Copy cover URL</source>
         <translation>Копіювати URL обкладинки</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4363"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4503"/>
         <source>Copy image address</source>
         <translation>Копіювати адресу зображення</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4366"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4506"/>
         <source>Save cover…</source>
         <translation>Зберегти обкладинку…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4367"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4507"/>
         <source>Save image to file</source>
         <translation>Зберегти зображення у файл</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4378"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4518"/>
         <source>Failed to copy cover URL</source>
         <translation>Не вдалося скопіювати URL обкладинки</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4381"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4521"/>
         <source>Cover URL copied</source>
         <translation>URL обкладинки скопійовано</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4392"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4532"/>
         <source>Save cover</source>
         <translation>Зберегти обкладинку</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4392"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4532"/>
         <source>cover.%1</source>
         <translation>cover.%1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4393"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4533"/>
         <source>Images (*.png *.jpg *.webp)</source>
         <translation>Зображення (*.png *.jpg *.webp)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4398"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4538"/>
         <source>Cover saved: %1</source>
         <translation>Обкладинку збережено: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4400"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4540"/>
         <source>Failed to save cover</source>
         <translation>Не вдалося зберегти обкладинку</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4432"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4449"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4570"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4572"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4589"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4703"/>
         <source>Episode status</source>
         <translation>Стан серій</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4462"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4602"/>
         <source>No releases available</source>
         <translation>Немає доступних релізів</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4464"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4604"/>
         <source>No sources in this release</source>
         <translation>У цьому релізі немає джерел</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4475"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4615"/>
         <source>Related titles</source>
         <translation>Пов’язані тайтли</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4478"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4618"/>
         <source>Similar anime</source>
         <translation>Схожі аніме</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4481"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4621"/>
         <source>Recommended on Mikai</source>
         <translation>Рекомендоване на Mikai</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2668"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2786"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2788"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2906"/>
         <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="665"/>
         <source>Episode %1</source>
         <translation>Серія %1</translation>
@@ -9131,8 +9308,8 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     <message>
         <location filename="../src/app/pages/TitlePage.cpp" line="158"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="159"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1813"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1858"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1940"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1985"/>
         <source>Show titles in %1</source>
         <translation>Показати тайтли в «%1»</translation>
     </message>
@@ -9266,7 +9443,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::VideoSurface</name>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3297"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3318"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="300"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="878"/>
         <source>Skipped on HDR: native stages force 8-bit NV12</source>
@@ -9381,98 +9558,98 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Немає активного ядра mpv для захоплення кадру.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1585"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1595"/>
         <source>Playback closed during engine preparation.</source>
         <translation>Відтворення закрито під час підготовки рушія.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="636"/>
-        <location filename="../src/player/core/VideoSurface.cpp" line="667"/>
-        <location filename="../src/player/core/VideoSurface.cpp" line="694"/>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3237"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="639"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="674"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="704"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3257"/>
         <source>Anime4K skipped: source transfer metadata is unknown or HDR</source>
         <translation>Anime4K пропущено: передавальна функція джерела невідома або відповідає HDR</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1378"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1388"/>
         <source>Could not activate the video OpenGL context.</source>
         <translation>Не вдалося активувати контекст OpenGL для відео.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1724"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1734"/>
         <source>pause: %1</source>
         <translation>Пауза: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1734"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1744"/>
         <source>pause: the mpv transport did not accept the command</source>
         <translation>Пауза: транспорт mpv не прийняв команду</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1879"/>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3457"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1889"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3478"/>
         <source>%1: %2</source>
         <translation>%1: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1905"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1915"/>
         <source>%1: the mpv transport did not accept the command</source>
         <translation>%1: транспорт mpv не прийняв команду</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3298"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3319"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="301"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="879"/>
         <source>Skipped: source transfer metadata is unknown</source>
         <translation>Пропущено: метадані передавальної функції джерела невідомі</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3311"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3332"/>
         <source>Enhancement engine build stopped for this source.</source>
         <translation>Збирання рушія покращення для цього джерела зупинено.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3431"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3452"/>
         <source>dscale: the core&apos;s default downscaler could not be read (%1). The previous downscaler stays in effect; choose one explicitly or reopen the player.</source>
         <translation>dscale: не вдалося прочитати типовий даунскейлер ядра (%1). Попередній даунскейлер залишається чинним; виберіть його явно або перевідкрийте плеєр.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3779"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3800"/>
         <source>Cannot read audio/subtitle tracks: %1</source>
         <translation>Не вдалося прочитати аудіодоріжки та доріжки субтитрів: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3793"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3814"/>
         <source>The playback core did not accept the track discovery request.</source>
         <translation>Модуль відтворення не прийняв запит на визначення доріжок.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3802"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3823"/>
         <source>The media changed. Reopen the track menu.</source>
         <translation>Медіафайл змінився. Відкрийте меню доріжок знову.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3809"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3830"/>
         <source>The selected track is no longer available.</source>
         <translation>Вибрана доріжка більше не доступна.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3821"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3842"/>
         <source>Cannot select %1: %2</source>
         <translation>Не вдалося вибрати %1: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3822"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3843"/>
         <source>audio track</source>
         <translation>аудіодоріжку</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3822"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3843"/>
         <source>subtitle track</source>
         <translation>доріжку субтитрів</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3834"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3855"/>
         <source>The playback core did not accept the track selection request.</source>
         <translation>Модуль відтворення не прийняв запит на вибір доріжки.</translation>
     </message>
@@ -9567,8 +9744,8 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Сусідній вихідний кадр збігається за пікселями з попереднім, тому не може слугувати другим еталоном.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1332"/>
-        <location filename="../src/player/core/VideoSurface.cpp" line="3897"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1342"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="3918"/>
         <source>The source changed during engine preparation.</source>
         <translation>Джерело змінилося під час підготовки рушія.</translation>
     </message>
@@ -9613,7 +9790,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>У цій збірці не вказано декодер для запитаного провайдера.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="2752"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="2762"/>
         <source>Video render failed (mpv: %1)</source>
         <translation>Помилка рендерингу відео (mpv: %1)</translation>
     </message>
@@ -9654,6 +9831,275 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <location filename="../src/player/shell/ShellWidgets.cpp" line="1233"/>
         <source>A comparison is being prepared.</source>
         <translation>Підготовка порівняння.</translation>
+    </message>
+</context>
+<context>
+    <name>mplayer::shell::ClipDialog</name>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="50"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="271"/>
+        <source>Clip range</source>
+        <translation>Діапазон уривка</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="51"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="272"/>
+        <source>Use left and right arrows to adjust the selected clip range.</source>
+        <translation>Використовуйте стрілки вліво та вправо, щоб змінити діапазон уривка.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="148"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="275"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="277"/>
+        <source> s</source>
+        <translation> с</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="150"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="276"/>
+        <source>Clip start time</source>
+        <translation>Час початку уривка</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="151"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="278"/>
+        <source>Clip end time</source>
+        <translation>Час завершення уривка</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="163"/>
+        <source>The current video source is unavailable.</source>
+        <translation>Поточне джерело відео недоступне.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="171"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="177"/>
+        <source>The video changed. Close this window and open Cut moment again.</source>
+        <translation>Відео змінилося. Закрийте це вікно та знову відкрийте вирізання уривка.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="183"/>
+        <source>The video player was closed.</source>
+        <translation>Відеопрогравач закрито.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="204"/>
+        <source>Preview unavailable: %1</source>
+        <translation>Попередній перегляд недоступний: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="217"/>
+        <source>Encoding MP4 with %1…</source>
+        <translation>Кодування MP4 за допомогою %1…</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="221"/>
+        <source>Encoding MP4 with %1… %2%</source>
+        <translation>Кодування MP4 за допомогою %1… %2%</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="222"/>
+        <source>video</source>
+        <translation>відео</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="236"/>
+        <source>Export failed.</source>
+        <translation>Не вдалося експортувати уривок.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="243"/>
+        <source>Saved %1</source>
+        <translation>Збережено %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="269"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="321"/>
+        <source>Cut moment</source>
+        <translation>Вирізати уривок</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="270"/>
+        <source>Cut moment — %1</source>
+        <translation>Вирізати уривок — %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="273"/>
+        <source>Start</source>
+        <translation>Початок</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="274"/>
+        <source>End</source>
+        <translation>Кінець</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="279"/>
+        <source>Maximum resolution</source>
+        <translation>Максимальна роздільність</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="280"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="374"/>
+        <source>1080p</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="281"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="375"/>
+        <source>720p</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="282"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="376"/>
+        <source>480p</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="283"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="342"/>
+        <source>Scrub within selected moment</source>
+        <translation>Перемотування в межах уривка</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="285"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="445"/>
+        <source>Preview %1</source>
+        <translation>Перегляд %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="286"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="345"/>
+        <source>Preview starts at the selected in point</source>
+        <translation>Перегляд починається з вибраного моменту</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="288"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="539"/>
+        <source>%1 selected</source>
+        <translation>Вибрано %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="289"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="424"/>
+        <source>Pause preview</source>
+        <translation>Призупинити перегляд</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="289"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="335"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="424"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="553"/>
+        <source>Play preview</source>
+        <translation>Відтворити уривок</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="290"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="429"/>
+        <source>Preview audio on</source>
+        <translation>Звук перегляду ввімкнено</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="290"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="336"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="429"/>
+        <source>Preview audio off</source>
+        <translation>Звук перегляду вимкнено</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="291"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="622"/>
+        <source>Exporting…</source>
+        <translation>Експорт…</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="292"/>
+        <source>Try again</source>
+        <translation>Спробувати знову</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="293"/>
+        <source>Export another</source>
+        <translation>Експортувати ще один</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="294"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="405"/>
+        <source>Export MP4…</source>
+        <translation>Експортувати MP4…</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="295"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="402"/>
+        <source>Cancel export</source>
+        <translation>Скасувати експорт</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="296"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="392"/>
+        <source>Show in folder</source>
+        <translation>Показати в теці</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="297"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="393"/>
+        <source>Copy path</source>
+        <translation>Копіювати шлях</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="380"/>
+        <source>Select up to 60 seconds to export as MP4.</source>
+        <translation>Виберіть до 60 секунд для експорту у MP4.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="454"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="704"/>
+        <source>Canceling export…</source>
+        <translation>Скасування експорту…</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="482"/>
+        <source>Choose a moment up to 60 seconds long.</source>
+        <translation>Виберіть уривок тривалістю до 60 секунд.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="579"/>
+        <source>clip</source>
+        <translation>уривок</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="581"/>
+        <source>Save clip</source>
+        <translation>Зберегти уривок</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="582"/>
+        <source>MP4 video (*.mp4)</source>
+        <translation>Відео MP4 (*.mp4)</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="590"/>
+        <source>Replace existing file?</source>
+        <translation>Замінити наявний файл?</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="591"/>
+        <source>%1 already exists. Replace it after the new clip is complete?</source>
+        <translation>%1 уже існує. Замінити його після завершення експорту?</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="628"/>
+        <source>Preparing export…</source>
+        <translation>Підготовка експорту…</translation>
+    </message>
+</context>
+<context>
+    <name>mplayer::shell::ClipExport</name>
+    <message>
+        <location filename="../src/player/shell/ClipExport.cpp" line="258"/>
+        <source>An export is already in progress.</source>
+        <translation>Експорт уже триває.</translation>
     </message>
 </context>
 <context>
@@ -9895,21 +10341,21 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::shell::CompareWindow</name>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2403"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2405"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2515"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2517"/>
         <source>%1 unavailable: %2</source>
         <translation>%1 недоступно: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="633"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="869"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1045"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1065"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="677"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="913"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1089"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1109"/>
         <source>%1%</source>
         <translation>%1%</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2409"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2521"/>
         <source>%n native change(s) queued until Compare closes</source>
         <translation>
             <numerusform>%n нативна зміна в черзі до закриття вікна порівняння</numerusform>
@@ -9918,380 +10364,390 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         </translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="668"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1005"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="712"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1049"/>
         <source>Amplify the difference</source>
         <translation>Підсилення різниці</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1147"/>
-        <source>AnimeJaNai</source>
-        <translation>AnimeJaNai</translation>
-    </message>
-    <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="621"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="850"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="665"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="894"/>
         <source>Bilinear</source>
         <translation>Білінійний</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2157"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1280"/>
+        <source>Temporal interpolation cannot be compared as a still image.</source>
+        <translation>Часову інтерполяцію неможливо порівнювати як статичне зображення.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2269"/>
         <source>Export failed</source>
         <translation>Не вдалося експортувати</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2393"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2505"/>
         <source>Capture error: %1</source>
         <translation>Помилка захоплення: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1091"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1960"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1135"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2072"/>
         <source>Comparison engine build cancelled.</source>
         <translation>Збирання рушія порівняння скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1958"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2070"/>
         <source>Comparison engine build failed: %1</source>
         <translation>Помилка збирання рушія порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1956"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2068"/>
         <source>Comparison engine ready.</source>
         <translation>Рушій порівняння готовий.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1763"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1875"/>
         <source>Could not capture a new frame</source>
         <translation>Не вдалося захопити новий кадр</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1752"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1785"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1864"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1897"/>
         <source>Could not capture the playback timestamp</source>
         <translation>Не вдалося отримати часову мітку відтворення</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="666"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="969"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="710"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1013"/>
         <source>Divider position</source>
         <translation>Позиція роздільника</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="625"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="853"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="669"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="897"/>
         <source>Filter</source>
         <translation>Фільтр</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="617"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="844"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="661"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="888"/>
         <source>Filter:</source>
         <translation>Фільтр:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="628"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="860"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="672"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="904"/>
         <source>Fit</source>
         <translation>Вписати</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="630"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="862"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="674"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="906"/>
         <source>Fit the picture</source>
         <translation>Вписати зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="658"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2129"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="702"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2241"/>
         <source>Exporting…</source>
         <translation>Експорт…</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="658"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="920"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2129"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="702"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="964"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2241"/>
         <source>Export…</source>
         <translation>Експортувати…</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="659"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="924"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="703"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="968"/>
         <source>Export the two comparison images</source>
         <translation>Експортувати два зображення порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="660"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="925"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="704"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="969"/>
         <source>Export comparison</source>
         <translation>Експорт порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="664"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="976"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="708"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1020"/>
         <source>Flicker, Hz:</source>
         <translation>Частота, Гц:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="665"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="993"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="709"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1037"/>
         <source>Gain:</source>
         <translation>Підсилення:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="667"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="988"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="711"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1032"/>
         <source>How fast the two pictures alternate</source>
         <translation>Швидкість чергування двох зображень</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="624"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="852"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="668"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="896"/>
         <source>How the picture is scaled</source>
         <translation>Спосіб масштабування зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="605"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="823"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="649"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="867"/>
         <source>Mode:</source>
         <translation>Режим:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2392"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2504"/>
         <source>Native plan not frozen: %1</source>
         <translation>Нативний план не зафіксовано: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="623"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="851"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="667"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="895"/>
         <source>Nearest Neighbor</source>
         <translation>Найближчий сусід</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2013"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2125"/>
         <source>No frame to compare</source>
         <translation>Немає кадру для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1705"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1817"/>
         <source>No playback surface</source>
         <translation>Немає поверхні відтворення</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1709"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1821"/>
         <source>No video to compare</source>
         <translation>Немає відео для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1429"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1541"/>
         <source>Playback advanced after the frozen comparison frame; capture again.</source>
         <translation>Відтворення змістилося після замороженого кадру; захопіть кадр повторно.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2060"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2068"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2172"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2180"/>
         <source>Playback changed during comparison.</source>
         <translation>Відтворення змінилося під час порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1725"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1776"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1837"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1888"/>
         <source>Playback changed during frame capture</source>
         <translation>Відтворення змінилося під час захоплення кадру</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1465"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1577"/>
         <source>Playback could not be held paused for comparison.</source>
         <translation>Не вдалося утримати паузу відтворення для порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1739"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1851"/>
         <source>Playback did not settle while pausing for comparison</source>
         <translation>Відтворення не стабілізувалося під час постановки на паузу для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1412"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1454"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1524"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1566"/>
         <source>Playback resumed during comparison.</source>
         <translation>Відтворення відновилося під час порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1430"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1542"/>
         <source>Playback resumed while the comparison was holding it; waiting for pause.</source>
         <translation>Відтворення відновилося під час порівняння; очікування паузи.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2395"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2507"/>
         <source>Preparing AnimeJaNai %1…</source>
         <translation>Підготовка AnimeJaNai %1…</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="259"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="603"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="303"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="647"/>
         <source>Quality Comparison</source>
         <translation>Порівняння якості</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2396"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2508"/>
         <source>Rendering %1…</source>
         <translation>Рендеринг %1…</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1147"/>
-        <source>Spatial models</source>
-        <translation>Просторові моделі</translation>
-    </message>
-    <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="663"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="956"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="707"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1000"/>
         <source>Split:</source>
         <translation>Поділ:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="758"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="802"/>
         <source>The native plan cannot be frozen right now.</source>
         <translation>Нативний план наразі неможливо зафіксувати.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2001"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2047"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2113"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2159"/>
         <source>The playback surface was destroyed</source>
         <translation>Поверхню відтворення було знищено</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1786"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1898"/>
         <source>The playback timestamp changed while capturing the frame</source>
         <translation>Часова мітка відтворення змінилася під час захоплення кадру</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2004"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2116"/>
         <source>The source changed after the frame was captured</source>
         <translation>Джерело відео змінилося після захоплення кадру</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2048"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2160"/>
         <source>The source changed during comparison rendering</source>
         <translation>Джерело змінилося під час рендерингу порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="317"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1398"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1445"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="361"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1510"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1557"/>
         <source>The source changed during comparison.</source>
         <translation>Джерело змінилося під час порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1762"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1783"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1874"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1895"/>
         <source>The source changed during frame capture</source>
         <translation>Джерело змінилося під час захоплення кадру</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="634"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="635"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="873"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="874"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="678"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="679"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="917"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="918"/>
         <source>View scale</source>
         <translation>Масштаб перегляду</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2412"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2524"/>
         <source>mean difference %1/255</source>
         <translation>середня різниця %1/255</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="385"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="386"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="648"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="650"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="429"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="430"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="692"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="694"/>
         <source>Pinned</source>
         <translation>Закріплено</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="385"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="386"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="648"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="650"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="901"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="907"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="429"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="430"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="692"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="694"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="945"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="951"/>
         <source>Pin</source>
         <translation>Закріпити</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="481"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="525"/>
         <source>Exit fullscreen mode (F11)</source>
         <translation>Вийти з повноекранного режиму (F11)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="482"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="526"/>
         <source>Enter fullscreen mode (F11)</source>
         <translation>Перейти в повноекранний режим (F11)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="629"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="861"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="673"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="905"/>
         <source>Fit the picture (F)</source>
         <translation>Вписати зображення (F)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="638"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="640"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="883"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="888"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="682"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="684"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="927"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="932"/>
         <source>Swap A ⇄ B</source>
         <translation>Поміняти A ⇄ B</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="639"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="887"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="683"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="931"/>
         <source>Swap Side A and Side B (S)</source>
         <translation>Поміняти місцями сторони A та B (S)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="643"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="645"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="892"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="897"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="687"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="689"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="936"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="941"/>
         <source>Recapture</source>
         <translation>Перезахопити</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="644"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="896"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="688"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="940"/>
         <source>Capture the current player frame (R)</source>
         <translation>Захопити поточний кадр плеєра (R)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="649"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="906"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="693"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="950"/>
         <source>Keep Compare window always on top (P)</source>
         <translation>Закріпити вікно порівняння поверх інших (P)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="653"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="932"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="697"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="976"/>
         <source>Close</source>
         <translation>Закрити</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="654"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="933"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="698"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="977"/>
         <source>Close (Esc)</source>
         <translation>Закрити (Esc)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="655"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="934"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="699"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="978"/>
         <source>Close Compare window</source>
         <translation>Закрити вікно порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1133"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1185"/>
         <source>Missing shader file(s): %1</source>
         <translation>Відсутні файли шейдерів: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2353"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1216"/>
+        <source>Not downloaded. Install this graph from Components.</source>
+        <translation>Не завантажено. Установіть цей граф у розділі «Компоненти».</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1220"/>
+        <source>The installed graph could not be verified.</source>
+        <translation>Не вдалося перевірити встановлений граф.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1240"/>
+        <source>Not downloaded. Install this graph from Settings › Upscalers.</source>
+        <translation>Не завантажено. Установіть цей граф у розділі «Налаштування › Засоби масштабування».</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2465"/>
         <source>%1, %2 · %3 (%4, %5, %6)</source>
         <translation>%1, %2 · %3 (%4, %5, %6)</translation>
     </message>
@@ -10933,7 +11389,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>%1 Залишаємо оригінальне зображення.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2175"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2200"/>
         <source>%1p is not available for this release</source>
         <translation>%1p недоступно для цього релізу</translation>
     </message>
@@ -10943,8 +11399,8 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Захоплення еталонного кадру вже виконується.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="456"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2596"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="457"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2621"/>
         <source>AUDIO</source>
         <translation>ОЗВУЧЕННЯ</translation>
     </message>
@@ -10955,30 +11411,30 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Збирання рушія TensorRT</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="641"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2609"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="649"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2634"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="957"/>
         <source>Choose the processing provider</source>
         <translation>Вибрати провайдера обробки</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="837"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="846"/>
         <source>Containing folder opened</source>
         <translation>Папку з файлом відкрито</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="834"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="843"/>
         <source>Could not open the containing folder</source>
         <translation>Не вдалося відкрити папку з файлом</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="961"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2326"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="970"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2351"/>
         <source>Could not play the stream</source>
         <translation>Не вдалося відтворити потік</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1370"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1395"/>
         <source>Could not read the current frame</source>
         <translation>Не вдалося прочитати поточний кадр</translation>
     </message>
@@ -10988,133 +11444,138 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Не вдалося зберегти нативне налаштування: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="593"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="601"/>
         <source>Episode list</source>
         <translation>Список серій</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="592"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2205"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="600"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2230"/>
         <source>Episode list (S)</source>
         <translation>Список серій (S)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1543"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1568"/>
         <source>Episode: %1</source>
         <translation>Серія: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1374"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1399"/>
         <source>Failed to copy frame</source>
         <translation>Не вдалося скопіювати кадр</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="785"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="794"/>
         <source>Failed to copy link</source>
         <translation>Не вдалося скопіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1377"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1230"/>
+        <source>A seekable video timeline is not available</source>
+        <translation>Шкала часу відео з можливістю перемотування недоступна</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1402"/>
         <source>Frame copied (%1×%2)</source>
         <translation>Кадр скопійовано (%1×%2)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1777"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1802"/>
         <source>Search</source>
         <translation>Пошук</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1799"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1824"/>
         <source>Searching…</source>
         <translation>Пошук…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1840"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1865"/>
         <source>Downloading…</source>
         <translation>Завантаження…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1977"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2002"/>
         <source>Audio track %1</source>
         <translation>Аудіодоріжка %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1978"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2003"/>
         <source>Subtitle track %1</source>
         <translation>Доріжка субтитрів %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1982"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2007"/>
         <source>%1 ch</source>
         <translation>%1 кан.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1983"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2008"/>
         <source>External</source>
         <translation>Зовнішня</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1984"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2009"/>
         <source>Forced</source>
         <translation>Примусова</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1985"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2010"/>
         <source>Default</source>
         <translation>Типова</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2205"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2230"/>
         <source>Hide episode list (S)</source>
         <translation>Сховати список серій (S)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2392"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2417"/>
         <source>Continue playing</source>
         <translation>Продовжити перегляд</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2393"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2418"/>
         <source>Continue from %1?</source>
         <translation>Продовжити з %1?</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2394"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2419"/>
         <source>You stopped this episode at %1.</source>
         <translation>Ви зупинилися на %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2397"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2422"/>
         <source>Continue</source>
         <translation>Продовжити</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2398"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2423"/>
         <source>Start over</source>
         <translation>Почати спочатку</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2406"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2431"/>
         <source>Continued from %1</source>
         <translation>Продовжено з %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2409"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2434"/>
         <source>Starting from the beginning</source>
         <translation>Початок з нуля</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2453"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2478"/>
         <source>Opening stream…</source>
         <translation>Відкриття потоку…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2862"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2890"/>
         <source>Finishing enhancement…</source>
         <translation>Завершуємо покращення…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2897"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2925"/>
         <source>Native processing did not acknowledge its stop; the player stays open so it can be retried.</source>
         <translation>Нативна обробка не підтвердила зупинку; плеєр залишається відкритим для повторної спроби.</translation>
     </message>
@@ -11129,12 +11590,12 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Нативна обробка вимкнена · Оригінальне зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1365"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1390"/>
         <source>No frame to copy</source>
         <translation>Немає кадру для копіювання</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1642"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1667"/>
         <source>No other audio tracks available</source>
         <translation>Інших аудіодоріжок немає</translation>
     </message>
@@ -11149,36 +11610,36 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Жодне ядро відтворення не може прийняти нативний план.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1660"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1685"/>
         <source>No subtitles available</source>
         <translation>Субтитри недоступні</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1222"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1247"/>
         <source>No video to compare</source>
         <translation>Немає відео для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1236"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1261"/>
         <source>Not enough variants to compare</source>
         <translation>Недостатньо варіантів для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="503"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1969"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="511"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1994"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="344"/>
         <source>Off</source>
         <translation>Вимкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2608"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2633"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="956"/>
         <source>Open processing and component settings</source>
         <translation>Відкрити налаштування обробки та компонентів</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="644"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2611"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="652"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2636"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="959"/>
         <source>Original</source>
         <translation>Оригінал</translation>
@@ -11189,26 +11650,26 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Картинка в картинці</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="371"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1401"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1526"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="372"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1426"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1551"/>
         <source>Player — %1</source>
         <translation>Плеєр — %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1408"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1433"/>
         <source>Playing local file</source>
         <translation>Відтворення локального файлу</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="637"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2602"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="645"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2627"/>
         <source>Prepare</source>
         <translation>Підготувати</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="638"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2603"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="646"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2628"/>
         <source>Prepare the selected recipe</source>
         <translation>Підготувати вибраний рецепт</translation>
     </message>
@@ -11218,23 +11679,23 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Підготовка…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="640"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2606"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="648"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2631"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="954"/>
         <source>Providers</source>
         <translation>Провайдери</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="620"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2599"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="628"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2624"/>
         <source>Retry</source>
         <translation>Повторити</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="621"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="622"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2600"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2601"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="629"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="630"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2625"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2626"/>
         <source>Retry playback</source>
         <translation>Повторити відтворення</translation>
     </message>
@@ -11244,35 +11705,35 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Повернуто у вікно</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="458"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2597"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="459"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2622"/>
         <source>SUBTITLES</source>
         <translation>СУБТИТРИ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2606"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2631"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="954"/>
         <source>Settings</source>
         <translation>Налаштування</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1231"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1256"/>
         <source>Shaders folder not found — comparison is unavailable</source>
         <translation>Папку шейдерів не знайдено — порівняння недоступне</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="645"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2612"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="653"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2637"/>
         <source>Stay on the Original picture</source>
         <translation>Залишити оригінальне зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1590"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1615"/>
         <source>Stream link has expired — refreshing</source>
         <translation>Посилання на потік застаріло — оновлення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2168"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2193"/>
         <source>Switching to %1p…</source>
         <translation>Перемикання на %1p…</translation>
     </message>
@@ -11283,22 +11744,22 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Запит еталонного захоплення було адресовано іншому ядру.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="829"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="838"/>
         <source>The video file is no longer there</source>
         <translation>Відеофайл більше не існує за вказаним шляхом</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="822"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="831"/>
         <source>This source is a stream — it has no folder</source>
         <translation>Це потокове відео — у нього немає локальної папки</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1568"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1593"/>
         <source>Track: %1</source>
         <translation>Доріжка: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2611"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2636"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="959"/>
         <source>Turn off AnimeJaNai</source>
         <translation>Вимкнути AnimeJaNai</translation>
@@ -11347,57 +11808,57 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Компіляція TensorRT</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="788"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="797"/>
         <source>Video link copied</source>
         <translation>Посилання на відео скопійовано</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1887"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1912"/>
         <source>Select subtitles from disk…</source>
         <translation>Вибрати субтитри з диска…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1887"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1912"/>
         <source>Select audio from disk…</source>
         <translation>Вибрати звук з диска…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1739"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1764"/>
         <source>OpenSubtitles</source>
         <translation>OpenSubtitles</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1745"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1770"/>
         <source>Title or release name</source>
         <translation>Назва або ім&apos;я релізу</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1761"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1786"/>
         <source>OpenSubtitles API key</source>
         <translation>API-ключ OpenSubtitles</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1764"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1789"/>
         <source>A free API key from opensubtitles.com is required.</source>
         <translation>Потрібен безкоштовний API-ключ з opensubtitles.com.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1779"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1804"/>
         <source>Download and attach</source>
         <translation>Завантажити й додати</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1792"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1817"/>
         <source>Enter your OpenSubtitles API key first.</source>
         <translation>Спершу введіть API-ключ OpenSubtitles.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1698"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1723"/>
         <source>Nothing found for that title.</source>
         <translation>За цією назвою нічого не знайдено.</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1699"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1724"/>
         <source>%n subtitle(s) found</source>
         <translation>
             <numerusform>Знайдено субтитрів: %n</numerusform>
@@ -11406,57 +11867,57 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         </translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1715"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1740"/>
         <source>No temporary folder for the subtitle.</source>
         <translation>Немає тимчасової папки для субтитрів.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1721"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1746"/>
         <source>The subtitle could not be written.</source>
         <translation>Не вдалося записати субтитри.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1727"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1752"/>
         <source>The subtitle could not be loaded.</source>
         <translation>Не вдалося завантажити субтитри.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1730"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1755"/>
         <source>Attached.</source>
         <translation>Додано.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1731"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1756"/>
         <source>Subtitle attached</source>
         <translation>Субтитри додано</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1690"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1715"/>
         <source>%1 · %2 · %3 downloads</source>
         <translation>%1 · %2 · завантажень: %3</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1862"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1887"/>
         <source>Subtitle delay · %1 s</source>
         <translation>Затримка субтитрів · %1 с</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1872"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1897"/>
         <source>0.1 s earlier  (−0.1)</source>
         <translation>0,1 с раніше  (−0,1)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1873"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1898"/>
         <source>0.1 s later  (+0.1)</source>
         <translation>0,1 с пізніше  (+0,1)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1875"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1900"/>
         <source>Reset delay  (0.0 s)</source>
         <translation>Скинути затримку  (0,0 с)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="2106"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2131"/>
         <source>Subtitle delay %1 s</source>
         <translation>Затримка субтитрів %1 с</translation>
     </message>
@@ -11464,362 +11925,376 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::shell::PlayerShell</name>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1488"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2915"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1625"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3071"/>
         <source>%1 · Media Lightbox</source>
         <translation>%1 · Медіа-переглядач</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2091"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2229"/>
         <source>Anime4K: %1</source>
         <translation>Anime4K: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1031"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1167"/>
         <source>Compare quality</source>
         <translation>Порівняти якість</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="849"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="985"/>
         <source>In desktop settings, choose Mikai Ja Nai under Default Applications. Your defaults have not been changed.</source>
         <translation>У налаштуваннях робочого середовища виберіть Mikai Ja Nai у розділі «Типові програми». Ваші типові програми не змінено.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="851"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="987"/>
         <source>Choose Mikai Ja Nai in Windows Default Apps. Your defaults have not been changed.</source>
         <translation>Виберіть Mikai Ja Nai у налаштуваннях типових програм Windows. Ваші типові програми не змінено.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1030"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1166"/>
         <source>Copy frame</source>
         <translation>Копіювати кадр</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1032"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1168"/>
         <source>Copy link</source>
         <translation>Копіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="863"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2124"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2509"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="999"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2262"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2665"/>
         <source>ENHANCEMENTS</source>
         <translation>ПОКРАЩЕННЯ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1055"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1191"/>
         <source>Exit  (Esc)</source>
         <translation>Вийти  (Esc)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="643"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="684"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2926"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2928"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="769"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="811"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3082"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3084"/>
         <source>Exit the player  (Esc)</source>
         <translation>Вийти з плеєра  (Esc)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="910"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="911"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2441"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1046"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1047"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2597"/>
         <source>FPS unknown</source>
         <translation>FPS невідомий</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1215"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2946"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1351"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3105"/>
         <source>Fullscreen mode</source>
         <translation>Повноекранний режим</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1054"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1190"/>
         <source>Keyboard shortcuts  (?)</source>
         <translation>Гарячі клавіші  (?)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="447"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="566"/>
         <source>Media Lightbox</source>
         <translation>Медіа-переглядач</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="630"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="674"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2924"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2927"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="753"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="801"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3080"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3083"/>
         <source>Minimize the window</source>
         <translation>Згорнути вікно</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="741"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="744"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="745"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2938"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="868"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="871"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="872"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3094"/>
         <source>Skip forward 85 seconds</source>
         <translation>Перейти вперед на 85 секунд</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="771"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2942"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="898"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3098"/>
         <source>Audio — choose a track  (T)</source>
         <translation>Аудіо — вибрати доріжку  (T)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="791"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2945"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="913"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="916"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3101"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3102"/>
+        <source>Cut moment…</source>
+        <translation>Вирізати уривок…</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="917"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3103"/>
+        <source>Cut a short clip from this video</source>
+        <translation>Вирізати короткий уривок із цього відео</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="927"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3104"/>
         <source>Quality and speed</source>
         <translation>Якість та швидкість</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="842"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="978"/>
         <source>Default video player</source>
         <translation>Типовий відеопрогравач</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1039"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1175"/>
         <source>Media information</source>
         <translation>Відомості про медіафайл</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1079"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1215"/>
         <source>Load subtitles from disk</source>
         <translation>Завантажити субтитри з диска</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1098"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1234"/>
         <source>Load audio from disk</source>
         <translation>Завантажити аудіо з диска</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1136"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1272"/>
         <source>Subtitles</source>
         <translation>Субтитри</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1590"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1592"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1728"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1730"/>
         <source>Preparing enhancement — playback paused</source>
         <translation>Готуємо покращення — відтворення призупинено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1591"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1729"/>
         <source>Playback is paused while the engine prepares its work.</source>
         <translation>Відтворення призупинено, доки рушій готує свою роботу.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1709"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1847"/>
         <source>Skip %1 — jump to %2</source>
         <translation>Пропустити %1 — перейти до %2</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1711"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1849"/>
         <source>Skip %1</source>
         <translation>Пропустити %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1902"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2040"/>
         <source>Muted</source>
         <translation>Звук вимкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1993"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2131"/>
         <source>Unavailable · %1</source>
         <translation>Недоступно · %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2015"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2027"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2153"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2165"/>
         <source>Preparing…</source>
         <translation>Підготовка…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2128"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2247"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2268"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2392"/>
         <source>NATIVE PROCESSING</source>
         <translation>НАТИВНА ОБРОБКА</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="695"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2930"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="822"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3086"/>
         <source>Next episode  (→)</source>
         <translation>Наступна серія  (→)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1835"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1973"/>
         <source>No media loaded — drop a file to begin</source>
         <translation>Медіафайл не завантажено — перетягніть файл сюди</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="464"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="583"/>
         <source>No native status has been read.</source>
         <translation>Стан нативної обробки ще не зчитано.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1035"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1171"/>
         <source>Open containing folder</source>
         <translation>Відкрити папку з файлом</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="786"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2944"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="922"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3100"/>
         <source>Open enhancements</source>
         <translation>Відкрити покращення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="760"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2941"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="887"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3097"/>
         <source>Picture in picture</source>
         <translation>Картинка в картинці</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="738"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2937"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="865"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3093"/>
         <source>Play</source>
         <translation>Відтворити</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="731"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2936"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="858"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3092"/>
         <source>Play / pause  (Space)</source>
         <translation>Відтворити / пауза  (Пробіл)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="691"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2929"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="818"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3085"/>
         <source>Previous episode  (←)</source>
         <translation>Попередня серія  (←)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1909"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2047"/>
         <source>Speed %1x</source>
         <translation>Швидкість %1x</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="779"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2943"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="906"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3099"/>
         <source>Subtitles — choose a track  (C)</source>
         <translation>Субтитри — вибрати доріжку  (C)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="809"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2940"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="945"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3096"/>
         <source>Timeline</source>
         <translation>Шкала часу</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="679"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2925"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="806"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3081"/>
         <source>Toggle fullscreen / windowed</source>
         <translation>Перемкнути повноекранний / віконний режим</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="723"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2939"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="850"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3095"/>
         <source>Volume</source>
         <translation>Гучність</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1758"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1895"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1903"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2586"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1896"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2033"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2041"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2742"/>
         <source>Volume %1%</source>
         <translation>Гучність %1%</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="765"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1214"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2946"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="892"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1350"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3105"/>
         <source>Windowed mode</source>
         <translation>Віконний режим</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2438"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2594"/>
         <source>container source FPS</source>
         <translation>FPS вихідного контейнера</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="3088"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3247"/>
         <source>drop a video file here  ·  or pass one as argv[1]</source>
         <translation>перетягніть відеофайл сюди  ·  або передайте його як argv[1]</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2435"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2591"/>
         <source>mpv output FPS</source>
         <translation>вихідний FPS mpv</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1487"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2914"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="3087"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1624"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3070"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="3246"/>
         <source>no media loaded</source>
         <translation>медіафайл не завантажено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1042"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1178"/>
         <source>Load audio from disk…</source>
         <translation>Завантажити звук з диска…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1062"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1094"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1198"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1230"/>
         <source>External audio needs a local video</source>
         <translation>Зовнішній звук потребує локального відео</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1086"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1222"/>
         <source>The subtitle file could not be loaded</source>
         <translation>Не вдалося завантажити файл субтитрів</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1106"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1242"/>
         <source>The audio file could not be loaded</source>
         <translation>Не вдалося завантажити аудіофайл</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1068"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1204"/>
         <source>The track could not be loaded</source>
         <translation>Не вдалося завантажити доріжку</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1071"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1089"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1109"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1207"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1225"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1245"/>
         <source>Loaded %1</source>
         <translation>Завантажено %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1081"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1217"/>
         <source>Subtitles (*.srt *.ass *.ssa *.vtt *.sub *.sup);;All files (*)</source>
         <translation>Субтитри (*.srt *.ass *.ssa *.vtt *.sub *.sup);;Усі файли (*)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1100"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1236"/>
         <source>Audio (*.m4a *.aac *.mp3 *.opus *.flac *.wav *.ac3 *.eac3 *.dts *.ogg);;All files (*)</source>
         <translation>Звук (*.m4a *.aac *.mp3 *.opus *.flac *.wav *.ac3 *.eac3 *.dts *.ogg);;Усі файли (*)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1048"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1184"/>
         <source>Subtitles  ›</source>
         <translation>Субтитри  ›</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1049"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1185"/>
         <source>Attach subtitles from disk or search OpenSubtitles</source>
         <translation>Додати субтитри з диска або знайти в OpenSubtitles</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1153"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1289"/>
         <source>From disk…</source>
         <translation>З диска…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1157"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1293"/>
         <source>OpenSubtitles…</source>
         <translation>OpenSubtitles…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="1158"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="1294"/>
         <source>Search subtitles by title and language</source>
         <translation>Пошук субтитрів за назвою та мовою</translation>
     </message>

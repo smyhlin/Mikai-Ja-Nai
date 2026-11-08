@@ -47,6 +47,7 @@
 #include <QSaveFile>
 #include <QStackedWidget>
 #include <QSettings>
+#include <QtCore/QSet>
 #include <QSpinBox>
 #include <QStyle>
 #include <QStyleOptionButton>
@@ -63,6 +64,7 @@
 #include "IdentityOnnxFixture.hpp"
 #include "VideoScalingLiveProbe.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <functional>
@@ -89,6 +91,7 @@
 #include "native/components/NativeGpuProbe.hpp"
 #include "native/models/NativeRife.hpp"
 #include "native/models/NativeSpatialAssets.hpp"
+#include "native/models/NativeUpscalers.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
 #include "native/components/NativeComponentProvisioning.hpp"
 #include "state/NativeComponentProvisioner.hpp"
@@ -693,6 +696,33 @@ mplayer::shell::MenuEntry menuEntryForPayload(mplayer::shell::MenuPopup* menu,
     }
     return {};
 }
+bool compareMenuHasCandidate(mplayer::shell::CompareWindow& comparison,
+                             const QString& candidateId, bool enabled) {
+    auto* canvas = comparison.findChild<mplayer::shell::CompareCanvas*>(
+        QStringLiteral("compareCanvas"));
+    if (canvas == nullptr) return false;
+    for (const QString& badgeName :
+         {QStringLiteral("compareBadgeA"), QStringLiteral("compareBadgeB")}) {
+        auto* badge = canvas->findChild<QToolButton*>(badgeName);
+        QMenu* root = badge != nullptr ? badge->menu() : nullptr;
+        if (root == nullptr) continue;
+        const auto findLeaf = [&candidateId, enabled](const auto& self,
+                                                       const QMenu* menu) -> bool {
+            if (menu == nullptr) return false;
+            for (QAction* action : menu->actions()) {
+                if (action->menu() != nullptr) {
+                    if (self(self, action->menu())) return true;
+                } else if (action->data().toString() == candidateId &&
+                           action->isEnabled() == enabled) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        if (findLeaf(findLeaf, root)) return true;
+    }
+    return false;
+}
 
 bool clickMenuPayload(mplayer::shell::MenuPopup* menu, const QString& payload) {
     if (menu == nullptr) return false;
@@ -1089,6 +1119,12 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
               "the full configuration round-trips through the real import action");
     }
 
+    auto* profileName = panel.findChild<QLineEdit*>(QStringLiteral("ajiProfileNameEdit"));
+    if (profileName != nullptr) mikai::probes::revealWidget(profileName);
+    QApplication::processEvents();
+    check(profileName != nullptr && profileName->isVisibleTo(&managerDialog) &&
+              profileName->visibleRegion().contains(profileName->rect()),
+          "the profile-name header is fully visible in the minimum-size Settings window");
     check(managerDialog.grab().save(QStringLiteral("native-animejanai-manager.png")),
           "the visible manager inside the minimum-size Settings window was captured");
     QPushButton* managerSave = acceptButton(managerDialog.findChild<QDialogButtonBox*>());
@@ -1101,6 +1137,7 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
     QFile savedConfig(mplayer::native::AnimeJanaiConfigStore::configFilePath());
     const QByteArray savedBytes =
         savedConfig.open(QIODevice::ReadOnly) ? savedConfig.readAll() : QByteArray{};
+    savedConfig.close();
     check(savedBytes.contains(QByteArrayLiteral("config_version=3")),
           "the Settings Save action wrote schema version 3");
     check(savedBytes.contains(QByteArrayLiteral("mikai_chain_steps_version=1")),
@@ -1143,21 +1180,168 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
         QStringLiteral("benchmarkModelTree"));
     bool benchmarkCustomPresent = false;
     bool benchmarkSlotPresent = false;
+    bool benchmarkMixedSlotCategorized = false;
+    bool benchmarkCategoriesMatch = false;
+    bool benchmarkTemporalStatusAccurate = true;
+    bool benchmarkUpscalersPresent = true;
+    bool benchmarkUpscalerStatusAccurate = true;
+    bool benchmarkSpatialStatusAccurate = true;
+    QSet<QString> benchmarkIds;
+    const QVector<mplayer::native::UpscalerModel> benchmarkUpscalers =
+        mplayer::native::upscalerCatalog();
+    const QVector<mplayer::native::StoredSpatialAsset> benchmarkStoredSpatial =
+        mplayer::native::storedSpatialAssets();
+    const QVector<mplayer::native::AnimeJanaiPreset> benchmarkPresets =
+        mplayer::native::animeJanaiPresets();
+    const mplayer::native::AnimeJanaiConfig benchmarkConfig =
+        mplayer::native::AnimeJanaiConfigStore::load();
+    const QVector<mplayer::native::AnimeJanaiSlot> benchmarkDefaultProfiles =
+        mplayer::native::AnimeJanaiConfigStore::defaultProfiles(benchmarkConfig);
+    const auto benchmarkPresetUsesRife =
+        [&benchmarkConfig, &benchmarkDefaultProfiles](
+            const mplayer::native::AnimeJanaiPreset& preset) {
+            if (preset.rife || preset.id.startsWith(QLatin1String("rife:"))) return true;
+            const auto& profiles = preset.id.startsWith(QLatin1String("builtin_slot:"))
+                                       ? benchmarkConfig.customSlots
+                                       : benchmarkDefaultProfiles;
+            for (const mplayer::native::AnimeJanaiSlot& profile : profiles) {
+                if (profile.number != preset.slot) continue;
+                return std::any_of(
+                    profile.chains.cbegin(), profile.chains.cend(),
+                    [](const mplayer::native::AnimeJanaiChain& chain) {
+                        return chain.rifeEnabled;
+                    });
+            }
+            return false;
+        };
     if (benchmarkTree != nullptr) {
+        QSet<QString> groupIds;
+        for (int groupIndex = 0; groupIndex < benchmarkTree->topLevelItemCount(); ++groupIndex) {
+            groupIds.insert(
+                benchmarkTree->topLevelItem(groupIndex)->data(0, Qt::UserRole).toString());
+        }
+        benchmarkCategoriesMatch =
+            groupIds.contains(QStringLiteral("processing:restore")) &&
+            groupIds.contains(QStringLiteral("processing:upscale")) &&
+            groupIds.contains(QStringLiteral("processing:interpolation")) &&
+            groupIds.size() == benchmarkTree->topLevelItemCount();
         for (int groupIndex = 0; groupIndex < benchmarkTree->topLevelItemCount(); ++groupIndex) {
             const QTreeWidgetItem* group = benchmarkTree->topLevelItem(groupIndex);
             for (int row = 0; row < group->childCount(); ++row) {
-                const QString id = group->child(row)->data(0, Qt::UserRole + 1).toString();
-                benchmarkCustomPresent |=
-                    id == QStringLiteral("spatial:custom:smoke_model");
-                benchmarkSlotPresent |= id == QStringLiteral("builtin_slot:1");
+                const QTreeWidgetItem* item = group->child(row);
+                const QString id = item->data(0, Qt::UserRole + 1).toString();
+                if (!id.isEmpty()) {
+                    if (benchmarkIds.contains(id)) benchmarkUpscalersPresent = false;
+                    benchmarkIds.insert(id);
+                    const QString groupId = group->data(0, Qt::UserRole).toString();
+                    QString expectedGroup;
+                    if (id.startsWith(QLatin1String("anime4k:"))) {
+                        expectedGroup = QStringLiteral("processing:restore");
+                    } else if (id.startsWith(QLatin1String("upscaler:")) ||
+                               id.startsWith(QLatin1String("spatial:"))) {
+                        expectedGroup = QStringLiteral("processing:upscale");
+                    } else if (id.startsWith(QLatin1String("rife:"))) {
+                        expectedGroup = QStringLiteral("processing:interpolation");
+                    } else {
+                        const auto preset = std::find_if(
+                            benchmarkPresets.cbegin(), benchmarkPresets.cend(),
+                            [&id](const mplayer::native::AnimeJanaiPreset& candidate) {
+                                return candidate.id == id;
+                            });
+                        if (preset != benchmarkPresets.cend()) {
+                            expectedGroup = benchmarkPresetUsesRife(*preset)
+                                                ? QStringLiteral("processing:interpolation")
+                                                : QStringLiteral("processing:upscale");
+                        }
+                    }
+                    if (expectedGroup.isEmpty() || groupId != expectedGroup)
+                        benchmarkCategoriesMatch = false;
+                }
+                benchmarkCustomPresent |= id == QStringLiteral("spatial:custom:smoke_model");
+                if (id == QStringLiteral("builtin_slot:1")) {
+                    benchmarkSlotPresent = true;
+                    const auto preset = std::find_if(
+                        benchmarkPresets.cbegin(), benchmarkPresets.cend(),
+                        [&id](const mplayer::native::AnimeJanaiPreset& candidate) {
+                            return candidate.id == id;
+                        });
+                    benchmarkMixedSlotCategorized =
+                        preset != benchmarkPresets.cend() &&
+                        group->data(0, Qt::UserRole).toString() ==
+                            (benchmarkPresetUsesRife(*preset)
+                                 ? QStringLiteral("processing:interpolation")
+                                 : QStringLiteral("processing:upscale"));
+                }
+                if (id.startsWith(QLatin1String("rife:")) ||
+                    id.startsWith(QLatin1String("builtin_slot:"))) {
+                    const auto preset = std::find_if(
+                        benchmarkPresets.cbegin(),
+                        benchmarkPresets.cend(),
+                        [&id](const mplayer::native::AnimeJanaiPreset& candidate) {
+                            return candidate.id == id;
+                        });
+                    const bool usesRife =
+                        preset != benchmarkPresets.cend() &&
+                        benchmarkPresetUsesRife(*preset);
+                    benchmarkTemporalStatusAccurate &=
+                        (id.startsWith(QLatin1String("rife:")) || usesRife
+                             ? group->data(0, Qt::UserRole).toString() ==
+                                   QStringLiteral("processing:interpolation")
+                             : group->data(0, Qt::UserRole).toString() ==
+                                   QStringLiteral("processing:upscale")) &&
+                        preset != benchmarkPresets.cend() &&
+                        item->data(0, Qt::UserRole + 2).toBool() ==
+                            (preset != benchmarkPresets.cend() && !preset->supported);
+                }
+                if (id.startsWith(QLatin1String("upscaler:"))) {
+                    benchmarkUpscalersPresent &=
+                        group->data(0, Qt::UserRole).toString() ==
+                            QStringLiteral("processing:upscale");
+                    const auto model = mplayer::native::upscalerForId(id.mid(9));
+                    const bool installed =
+                        model.has_value() &&
+                        !mplayer::native::installedUpscalerPath(*model).isEmpty();
+                    benchmarkUpscalerStatusAccurate &=
+                        model.has_value() &&
+                        item->data(0, Qt::UserRole + 2).toBool() == !installed &&
+                        (installed ||
+                         item->toolTip(0).contains(QStringLiteral("Not downloaded")));
+                }
+                if (id.startsWith(QLatin1String("spatial:")) &&
+                    !id.startsWith(QLatin1String("spatial:custom:"))) {
+                    const QString assetId = id.mid(QStringLiteral("spatial:").size());
+                    const mplayer::native::SpatialAsset* asset =
+                        mplayer::native::findSpatialAsset(assetId);
+                    const auto row = std::find_if(
+                        benchmarkStoredSpatial.cbegin(), benchmarkStoredSpatial.cend(),
+                        [&assetId](const mplayer::native::StoredSpatialAsset& candidate) {
+                            return candidate.asset.id == assetId;
+                        });
+                    const bool verified =
+                        row != benchmarkStoredSpatial.cend() && row->verified;
+                    benchmarkSpatialStatusAccurate &=
+                        asset != nullptr &&
+                        item->data(0, Qt::UserRole + 2).toBool() != verified &&
+                        (verified ||
+                         (row == benchmarkStoredSpatial.cend()
+                              ? item->toolTip(0).contains(QStringLiteral("Not downloaded"))
+                              : !item->toolTip(0).isEmpty()));
+                }
             }
         }
     }
     check(benchmarkTree != nullptr && benchmarkNavigated &&
               benchmarkDialog.currentPageId() == QStringLiteral("benchmark") &&
-              benchmarkCustomPresent && benchmarkSlotPresent,
-          "Benchmark's public catalogue includes custom spatial models and custom slots");
+              benchmarkCustomPresent && benchmarkSlotPresent && benchmarkCategoriesMatch &&
+              benchmarkMixedSlotCategorized && benchmarkTemporalStatusAccurate &&
+              benchmarkUpscalersPresent && benchmarkUpscalerStatusAccurate &&
+              benchmarkSpatialStatusAccurate &&
+              std::all_of(benchmarkUpscalers.cbegin(), benchmarkUpscalers.cend(),
+                          [&benchmarkIds](const mplayer::native::UpscalerModel& model) {
+                              return benchmarkIds.contains(
+                                  QStringLiteral("upscaler:") + model.fileName);
+                          }),
+          "Benchmark groups Restore, Upscale and Interpolation routes by effect");
 
     const auto selectedRuntime = mplayer::native::selectStandardRuntime(
         qEnvironmentVariable("MIKAI_MPV_MODULE"));
@@ -1202,37 +1386,98 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
             }
             return static_cast<mplayer::shell::MenuPopup*>(nullptr);
         };
-        const bool enteredAnimeJanai = clickEntry(
-            enhancementRoot, [](const mplayer::shell::MenuEntry& entry) {
-                return entry.payload.toString() == QStringLiteral("level|animejanai");
-            });
-        auto* animeJanaiMenu = levelMenu(QStringLiteral("animejanai"));
-        check(enteredAnimeJanai && animeJanaiMenu != nullptr,
-              "the player menu opens its AnimeJaNai submenu");
-        if (animeJanaiMenu != nullptr) {
-            bool customSlotPresent = false;
-            for (int index = 0; index < animeJanaiMenu->rowCount(); ++index) {
-                customSlotPresent |= animeJanaiMenu->entryAt(index).payload.toString() ==
-                                     QStringLiteral("ajipreset|builtin_slot:1");
-            }
-            check(customSlotPresent, "slot 1 appears as a selectable player-menu preset");
-            const bool enteredSpatial = clickEntry(
-                animeJanaiMenu, [](const mplayer::shell::MenuEntry& entry) {
-                    return entry.payload.toString() ==
-                           QStringLiteral("level|animejanai:spatial");
-                });
-            auto* spatialMenu = levelMenu(QStringLiteral("animejanai:spatial"));
-            bool customModelPresent = false;
-            if (spatialMenu != nullptr) {
-                for (int index = 0; index < spatialMenu->rowCount(); ++index) {
-                    customModelPresent |= spatialMenu->entryAt(index).payload.toString() ==
-                                          QStringLiteral(
-                                              "ajipreset|spatial:custom:smoke_model");
-                }
-            }
-            check(enteredSpatial && customModelPresent,
-                  "the custom ONNX model appears in the player's Spatial menu");
+        bool restoreCategory = false;
+        bool upscaleCategory = false;
+        bool interpolationCategory = false;
+        bool backendCategory = false;
+        for (int index = 0; index < enhancementRoot->rowCount(); ++index) {
+            const QString payload = enhancementRoot->entryAt(index).payload.toString();
+            restoreCategory |= payload == QStringLiteral("level|processing:restore");
+            upscaleCategory |= payload == QStringLiteral("level|processing:upscale");
+            interpolationCategory |=
+                payload == QStringLiteral("level|processing:interpolation");
+            backendCategory |= payload == QStringLiteral("level|animejanai:backend");
         }
+        check(restoreCategory && upscaleCategory && interpolationCategory && backendCategory,
+              "Restore, Upscale, Interpolation and independent backend menus are available");
+        const bool enteredUpscale = clickEntry(
+            enhancementRoot, [](const mplayer::shell::MenuEntry& entry) {
+                return entry.payload.toString() ==
+                       QStringLiteral("level|processing:upscale");
+            });
+        const bool upscaleOpened = waitForUi(
+            [&player, &levelMenu] {
+                auto* menu = levelMenu(QStringLiteral("processing:upscale"));
+                return menu != nullptr && menu->isVisible();
+            },
+            3000);
+        auto* upscaleMenu = levelMenu(QStringLiteral("processing:upscale"));
+        const bool enteredProfiles = upscaleOpened && clickEntry(
+            upscaleMenu, [](const mplayer::shell::MenuEntry& entry) {
+                return entry.payload.toString() ==
+                       QStringLiteral("level|processing:upscale:profiles");
+            });
+        const bool profilesOpened = waitForUi(
+            [&player, &levelMenu] {
+                auto* menu = levelMenu(QStringLiteral("processing:upscale:profiles"));
+                return menu != nullptr && menu->isVisible();
+            },
+            3000);
+        const QString profilesBaseLevel = QStringLiteral("processing:upscale:profiles");
+        const QString profilesBasePayload = QStringLiteral("level|") + profilesBaseLevel;
+        auto* profilesMenu = levelMenu(profilesBaseLevel);
+        bool customSlotPresent = false;
+        const QString customSlotPayload = QStringLiteral("ajipreset|builtin_slot:1");
+        QStringList profilePagePayloads;
+        const auto inspectProfilesMenu = [&customSlotPresent, &customSlotPayload](
+                                             mplayer::shell::MenuPopup* menu) {
+            if (menu == nullptr || !menu->isVisible()) return;
+            for (int index = 0; index < menu->rowCount(); ++index) {
+                customSlotPresent |=
+                    menu->entryAt(index).payload.toString() == customSlotPayload;
+            }
+        };
+        inspectProfilesMenu(profilesMenu);
+        if (!customSlotPresent && profilesMenu != nullptr) {
+            const QString pagePrefix = QStringLiteral("level|") + profilesBaseLevel +
+                                       QStringLiteral(":page:");
+            for (int index = 0; index < profilesMenu->rowCount(); ++index) {
+                const QString payload = profilesMenu->entryAt(index).payload.toString();
+                if (payload.startsWith(pagePrefix)) profilePagePayloads.append(payload);
+            }
+        }
+        for (const QString& pagePayload : profilePagePayloads) {
+            const bool baseOpened = clickEntry(
+                upscaleMenu, [&profilesBasePayload](const mplayer::shell::MenuEntry& entry) {
+                    return entry.payload.toString() == profilesBasePayload;
+                });
+            const bool baseVisible = baseOpened && waitForUi(
+                [&levelMenu, &profilesBaseLevel] {
+                    auto* menu = levelMenu(profilesBaseLevel);
+                    return menu != nullptr && menu->isVisible();
+                },
+                3000);
+            profilesMenu = baseVisible ? levelMenu(profilesBaseLevel) : nullptr;
+            const bool pageOpened = profilesMenu != nullptr && clickEntry(
+                profilesMenu, [&pagePayload](const mplayer::shell::MenuEntry& entry) {
+                    return entry.payload.toString() == pagePayload;
+                });
+            const QString pageLevel = pagePayload.mid(QStringLiteral("level|").size());
+            const bool pageVisible = pageOpened && waitForUi(
+                [&levelMenu, &pageLevel] {
+                    auto* menu = levelMenu(pageLevel);
+                    return menu != nullptr && menu->isVisible();
+                },
+                3000);
+            inspectProfilesMenu(pageVisible ? levelMenu(pageLevel) : nullptr);
+            if (customSlotPresent) {
+                profilesMenu = levelMenu(pageLevel);
+                break;
+            }
+        }
+        check(enteredUpscale && upscaleOpened && enteredProfiles && profilesOpened &&
+                  profilesMenu != nullptr && profilesMenu->isVisible() && customSlotPresent,
+              "Upscale profiles expose the custom slot by stable id");
     }
 
     QImage compareFixture(64, 36, QImage::Format_RGB32);
@@ -1270,6 +1515,20 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
           "two shader-only Compare candidates are available to avoid native inference");
     if (compareSourceReady && shaderCandidates.size() >= 2) {
         mplayer::shell::CompareWindow comparison(compareSurface, shaderCandidate, &player);
+        bool hasInstalledFp32Upscaler = false;
+        bool installedFp32UpscalerSelectable = false;
+        for (const mplayer::native::UpscalerModel& model :
+             mplayer::native::upscalerCatalog()) {
+            if (model.precision != QLatin1String("fp32") ||
+                mplayer::native::installedUpscalerPath(model).isEmpty()) {
+                continue;
+            }
+            hasInstalledFp32Upscaler = true;
+            installedFp32UpscalerSelectable |=
+                comparison.candidateIds().contains(QStringLiteral("upscaler:") + model.fileName);
+        }
+        check(!hasInstalledFp32Upscaler || installedFp32UpscalerSelectable,
+              "Compare selects an installed fp32 upscaler by its stable catalogue id");
         comparison.resize(QSize(900, 600));
         comparison.show();
         const bool frameCaptured = waitForUi(
@@ -1532,13 +1791,13 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
     QTreeWidgetItem* stableBenchmarkRow = benchmarkItem(benchmarkTree, QStringLiteral("builtin1001"));
     check(stableBenchmarkRow != nullptr, "Benchmark offers a stable built-in row to preserve");
     if (stableBenchmarkRow != nullptr) stableBenchmarkRow->setCheckState(0, Qt::Checked);
-    benchmarkSearch->setText(QStringLiteral("spatial"));
+    benchmarkSearch->setText(QStringLiteral("upscale"));
     QApplication::processEvents();
     const QString benchmarkFilter = benchmarkSearch->text();
     const bool stableBenchmarkChecked =
         stableBenchmarkRow != nullptr && stableBenchmarkRow->checkState(0) == Qt::Checked;
-    check(benchmarkFilter == QStringLiteral("spatial") && stableBenchmarkChecked,
-          "Benchmark holds a user filter and checked stable model before the change");
+    check(benchmarkFilter == QStringLiteral("upscale") && stableBenchmarkChecked,
+          "Benchmark holds an Upscale category filter and checked stable model before the change");
     check(benchmarkItem(benchmarkTree, rawPreset) == nullptr,
           "Benchmark does not list an unregistered raw paste");
 
@@ -1560,18 +1819,42 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
     if (enhancementButton == nullptr || enhancementRoot == nullptr) return;
     enhancementButton->click();
     QApplication::processEvents();
-    const bool enteredRoot =
-        clickMenuPayload(enhancementRoot, QStringLiteral("level|animejanai"));
-    auto* animeJanaiMenu = enhancementLevelMenu(player, QStringLiteral("animejanai"));
+    const bool enteredUpscale =
+        clickMenuPayload(enhancementRoot, QStringLiteral("level|processing:upscale"));
+    const bool upscaleOpened = waitForUi(
+        [&player] {
+            auto* menu = enhancementLevelMenu(player, QStringLiteral("processing:upscale"));
+            return menu != nullptr && menu->isVisible();
+        },
+        3000);
+    auto* upscaleRootMenu = enhancementLevelMenu(player, QStringLiteral("processing:upscale"));
     const bool enteredSpatial =
-        animeJanaiMenu != nullptr &&
-        clickMenuPayload(animeJanaiMenu, QStringLiteral("level|animejanai:spatial"));
-    auto* spatialMenu = enhancementLevelMenu(player, QStringLiteral("animejanai:spatial"));
-    check(enteredRoot && enteredSpatial && spatialMenu != nullptr && spatialMenu->isVisible(),
-          "the player's open Spatial menu is visible before the graph is pasted");
+        upscaleOpened && upscaleRootMenu != nullptr &&
+        clickMenuPayload(upscaleRootMenu, QStringLiteral("level|processing:upscale:spatial"));
+    const bool spatialOpened = waitForUi(
+        [&player] {
+            auto* menu = enhancementLevelMenu(
+                player, QStringLiteral("processing:upscale:spatial"));
+            return menu != nullptr && menu->isVisible();
+        },
+        3000);
+    auto* spatialMenu =
+        enhancementLevelMenu(player, QStringLiteral("processing:upscale:spatial"));
+    const bool spatialReady = waitForUi(
+        [&player] {
+            auto* menu = enhancementLevelMenu(
+                player, QStringLiteral("processing:upscale:spatial"));
+            return menu != nullptr && menu->isVisible() && menu->rowCount() > 0;
+        },
+        3000);
+    spatialMenu = enhancementLevelMenu(player, QStringLiteral("processing:upscale:spatial"));
+    mplayer::shell::MenuPopup* upscaleMenu = nullptr;
+    check(enteredUpscale && upscaleOpened && enteredSpatial && spatialOpened && spatialReady &&
+              spatialMenu != nullptr && spatialMenu->isVisible(),
+          "the player's Spatial models menu is open before the graph is pasted");
     if (spatialMenu == nullptr) return;
     check(!menuHasPayload(spatialMenu, QStringLiteral("ajipreset|") + rawPreset),
-          "the player menu does not offer an unregistered raw paste");
+          "the Spatial models menu does not offer an unregistered raw paste");
     auto* playerChip =
         player.findChild<QLabel*>(QStringLiteral("playerAnimeJanaiStatus"));
     check(playerChip != nullptr, "the player exposes its AnimeJaNai status chip");
@@ -1642,7 +1925,7 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
     check(!presetCatalogueHas(rawPreset),
           "the raw owned paste is not a usable preset before explicit registration");
     check(!menuHasPayload(spatialMenu, QStringLiteral("ajipreset|") + rawPreset),
-          "the open player menu refuses the unregistered raw paste");
+          "the open Spatial models menu refuses the unregistered raw paste");
     check(!comparison.candidateAvailable(rawPreset),
           "the open Compare catalogue refuses the unregistered raw paste");
     check(benchmarkItem(benchmarkTree, rawPreset) == nullptr,
@@ -1706,21 +1989,42 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
           "the registered row keeps the original identifier and file");
     check(waitForUi([&] { return presetCatalogueHas(rawPreset); }, 5000),
           "the registered owned graph became a usable catalogue preset");
+    const QString customModelsPayload =
+        QStringLiteral("level|processing:upscale:spatial:custom");
+    const bool customModelsOffered = waitForUi(
+        [&] { return menuHasPayload(spatialMenu, customModelsPayload); }, 15000);
+    const bool enteredCustomModels =
+        customModelsOffered && clickMenuPayload(spatialMenu, customModelsPayload);
+    const bool customModelsOpened = waitForUi(
+        [&player] {
+            auto* menu = enhancementLevelMenu(
+                player, QStringLiteral("processing:upscale:spatial:custom"));
+            return menu != nullptr && menu->isVisible();
+        },
+        3000);
+    upscaleMenu = enhancementLevelMenu(
+        player, QStringLiteral("processing:upscale:spatial:custom"));
+    check(enteredCustomModels && customModelsOpened && upscaleMenu != nullptr,
+          "the open Spatial menu exposes registered custom models");
     const bool playerSawOwned = waitForUi(
         [&] {
             const auto entry =
-                menuEntryForPayload(spatialMenu, QStringLiteral("ajipreset|") + rawPreset);
+                menuEntryForPayload(upscaleMenu, QStringLiteral("ajipreset|") + rawPreset);
             return !entry.text.isEmpty() && !entry.disabled;
         },
         15000);
     check(playerSawOwned,
-          "the open player Spatial menu gained the registered graph without reopening");
+          "the open player Upscale menu gained the registered graph without reopening");
     const bool benchmarkSawOwned = waitForUi(
         [&] { return benchmarkItem(benchmarkTree, rawPreset) != nullptr; }, 15000);
     check(benchmarkSawOwned, "the open Benchmark catalogue gained the registered graph");
     const bool compareSawOwned = waitForUi(
-        [&] { return comparison.candidateAvailable(rawPreset); }, 15000);
-    check(compareSawOwned, "the open Compare catalogue gained the registered graph");
+        [&] {
+            return comparison.candidateAvailable(rawPreset) &&
+                   compareMenuHasCandidate(comparison, rawPreset, true);
+        },
+        15000);
+    check(compareSawOwned, "the open Compare Upscale menu gained the registered graph");
     QTreeWidgetItem* ownedBenchmarkRow = benchmarkItem(benchmarkTree, rawPreset);
     check(ownedBenchmarkRow != nullptr && ownedBenchmarkRow->checkState(0) == Qt::Unchecked,
           "a newly discovered Benchmark model starts unchecked");
@@ -1774,7 +2078,7 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
     check(benchmarkDialog.grab().save(QStringLiteral("native-live-benchmark.png")),
           "Benchmark's live catalogue was captured");
     check(player.grab().save(QStringLiteral("native-live-player-menu.png")),
-          "the player's live Spatial menu was captured");
+          "the player's live Upscale menu was captured");
     check(comparison.grab().save(QStringLiteral("native-live-compare.png")),
           "Compare's live candidate surface was captured");
 
@@ -1797,7 +2101,7 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
           "the open manager presents the external paste as an unregistered candidate");
     check(!presetCatalogueHas(externalPreset),
           "the borrowed external graph is not a preset before explicit registration");
-    check(!menuHasPayload(spatialMenu, QStringLiteral("ajipreset|") + externalPreset),
+    check(!menuHasPayload(upscaleMenu, QStringLiteral("ajipreset|") + externalPreset),
           "the open player menu refuses the unpinned external graph");
     check(!comparison.candidateAvailable(externalPreset) &&
               benchmarkItem(benchmarkTree, externalPreset) == nullptr,
@@ -1828,8 +2132,12 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
     check(waitForUi([&] { return presetCatalogueHas(externalPreset); }, 5000),
           "the pinned external graph became a usable preset");
     check(waitForUi(
-              [&] { return comparison.candidateAvailable(externalPreset); }, 15000),
-          "the open Compare catalogue gained the pinned external graph");
+              [&] {
+                  return comparison.candidateAvailable(externalPreset) &&
+                         compareMenuHasCandidate(comparison, externalPreset, true);
+              },
+              15000),
+          "the open Compare Upscale menu gained the pinned external graph");
     const bool externalInBenchmark = waitForUi(
         [&] { return benchmarkItem(benchmarkTree, externalPreset) != nullptr; }, 15000);
     check(externalInBenchmark,
@@ -1904,11 +2212,11 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
         check(waitForUi(
                   [&] {
                       const auto entry = menuEntryForPayload(
-                          spatialMenu, QStringLiteral("ajipreset|") + externalPreset);
+                          upscaleMenu, QStringLiteral("ajipreset|") + externalPreset);
                       return entry.text.isEmpty();
                   },
                   15000),
-              "the open player Spatial menu dropped the replaced external graph");
+              "the open player Upscale menu dropped the replaced external graph");
         check(waitForUi([&] { return !comparison.candidateAvailable(externalPreset); },
                         15000),
               "the open Compare catalogue dropped the replaced external graph");
@@ -1960,14 +2268,18 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
         check(waitForUi(
                   [&] {
                       const auto entry = menuEntryForPayload(
-                          spatialMenu, QStringLiteral("ajipreset|") + externalPreset);
+                          upscaleMenu, QStringLiteral("ajipreset|") + externalPreset);
                       return !entry.text.isEmpty() && !entry.disabled;
                   },
                   15000),
               "the open player menu offers the re-pinned replacement graph");
-        check(waitForUi([&] { return comparison.candidateAvailable(externalPreset); },
-                        15000),
-              "the open Compare catalogue offers the re-pinned replacement graph");
+        check(waitForUi(
+                  [&] {
+                      return comparison.candidateAvailable(externalPreset) &&
+                             compareMenuHasCandidate(comparison, externalPreset, true);
+                  },
+                  15000),
+              "the open Compare Upscale menu offers the re-pinned replacement graph");
         const bool repinnedInBenchmark = waitForUi(
             [&] {
                 QTreeWidgetItem* row = benchmarkItem(benchmarkTree, externalPreset);
@@ -2061,22 +2373,18 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
     check(!QFileInfo::exists(rawPath) &&
               !QFileInfo::exists(rawPath + QStringLiteral(".source.json")),
           "owned removal deletes the app-owned graph and integrity record");
-    // The retained selection is named in the AnimeJaNai level itself - the level
-    // that lists Off, the built-in models and the explicit "Unavailable · id"
-    // row. The ENHANCEMENTS root only holds the lead-in row that opens that
-    // level, so a lookup of an "ajipreset|" payload there can never find it.
-    // Every catalogue pass retires the level's rows with deleteLater(), so the
-    // level and the chip are reacquired live rather than trusting the handles
-    // recorded before the graph was deleted.
+    // The retained selection is named by an unavailable stable-id row in the
+    // Upscale category. Catalogue refreshes retire old rows with deleteLater(),
+    // so reacquire the category and status chip instead of trusting stale handles.
     const bool playerMissingAfterRemoval = waitForUi(
         [&] {
-            auto* liveAnimeJanaiLevel =
-                enhancementLevelMenu(player, QStringLiteral("animejanai"));
-            if (liveAnimeJanaiLevel == nullptr || !liveAnimeJanaiLevel->isVisible()) {
+            auto* liveUpscaleMenu = enhancementLevelMenu(
+                player, QStringLiteral("processing:upscale:spatial:custom"));
+            if (liveUpscaleMenu == nullptr) {
                 return false;
             }
             const auto missing = menuEntryForPayload(
-                liveAnimeJanaiLevel, QStringLiteral("ajipreset|") + rawPreset);
+                liveUpscaleMenu, QStringLiteral("ajipreset|") + rawPreset);
             auto* liveChip =
                 player.findChild<QLabel*>(QStringLiteral("playerAnimeJanaiStatus"));
             return missing.disabled && missing.current && liveChip != nullptr &&
@@ -2179,12 +2487,29 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
     QApplication::processEvents();
 }
 
-bool componentCardReachable(QWidget& componentTab, const QString& translatedTitle) {
-    for (QLabel* label : componentTab.findChildren<QLabel*>()) {
-        if (label->text() == translatedTitle && label->isVisibleTo(&componentTab))
-            return true;
+bool componentCardReachable(QWidget& componentTab, const QString& cardId) {
+    QGroupBox* card = nullptr;
+    for (QGroupBox* candidate : componentTab.findChildren<QGroupBox*>()) {
+        if (candidate->property("componentCardId").toString() == cardId) {
+            card = candidate;
+            break;
+        }
     }
-    return false;
+    auto* title = componentTab.findChild<QLabel*>(cardId + QStringLiteral("Title"));
+    if (card == nullptr || title == nullptr) return false;
+
+    // Cards continue below the viewport in the compact layout. Scroll the real
+    // title into view before testing its visibility; merely being a child of
+    // the visible tab is not evidence that the heading is on screen.
+    mikai::probes::revealWidget(title);
+    QApplication::processEvents();
+    if (!card->isVisibleTo(&componentTab) || !title->isVisibleTo(&componentTab)) {
+        return false;
+    }
+    const QRegion visible = title->visibleRegion();
+    if (visible.isEmpty() || !visible.contains(title->rect().center())) return false;
+    QAccessibleInterface* accessible = QAccessible::queryAccessibleInterface(title);
+    return accessible != nullptr && !accessible->text(QAccessible::Name).trimmed().isEmpty();
 }
 
 QComboBox* backendSelector(QWidget& componentTab) {
@@ -2511,26 +2836,14 @@ void exerciseComponents(SettingsDialog& dialog, QSize requestedSize, const QStri
     check(directMl >= 0, "the backend selector includes DirectML");
     if (directMl >= 0) backend->setCurrentIndex(directMl);
 
-    check(componentCardReachable(
-              *componentTab,
-              QCoreApplication::translate("mikai::app::ComponentStoreTab",
-                                          "TensorRT runtime")),
-          "the TensorRT runtime card title is reachable");
-    check(componentCardReachable(
-              *componentTab,
-              QCoreApplication::translate("mikai::app::ComponentStoreTab",
-                                          "TensorRT kernels for this GPU")),
-          "the TensorRT GPU kernels card title is reachable");
-    check(componentCardReachable(
-              *componentTab,
-              QCoreApplication::translate("mikai::app::ComponentStoreTab",
-                                          "AnimeJaNai upscaling models")),
-          "the AnimeJaNai upscaling models card title is reachable");
-    check(componentCardReachable(
-              *componentTab,
-              QCoreApplication::translate("mikai::app::ComponentStoreTab",
-                                          "RIFE interpolation models")),
-          "the RIFE card title is reachable");
+    check(componentCardReachable(*componentTab, QStringLiteral("tensorRtRuntimeCard")),
+          "the TensorRT runtime card title is visible and accessible");
+    check(componentCardReachable(*componentTab, QStringLiteral("tensorRtKernelsCard")),
+          "the TensorRT GPU kernels card title is visible and accessible");
+    check(componentCardReachable(*componentTab, QStringLiteral("animeJanaiModelsCard")),
+          "the AnimeJaNai upscaling models card title is visible and accessible");
+    check(componentCardReachable(*componentTab, QStringLiteral("rifeModelsCard")),
+          "the RIFE card title is visible and accessible");
     const QString screenshot =
         QStringLiteral("native-components-%1-%2.png")
             .arg(language, requestedSize.width() <= mikai::app::theme::kSettingsDialogMinWidth

@@ -447,10 +447,7 @@ inline Gate enter(int argc, char** argv, const Options& options) {
         }
     }
 
-#ifndef Q_OS_WIN
-    // A Linux probe resolves its runtime as the executable-adjacent `mpv/`
-    // directory, so the isolated copy needs that directory beside it. Staging it
-    // keeps the copy self-contained and leaves the installed runtime untouched.
+    // Standard runtime selection resolves an executable-adjacent mpv/ payload.
     const QString runtimeModule = qEnvironmentVariable("MIKAI_MPV_MODULE");
     if (QFileInfo(runtimeModule).isAbsolute() && QFileInfo(runtimeModule).isFile()) {
         const QString runtimeDirectory = QFileInfo(runtimeModule).absolutePath();
@@ -462,7 +459,6 @@ inline Gate enter(int argc, char** argv, const Options& options) {
             return Gate::Refused;  // QTemporaryDir removes what it created
         }
     }
-#endif
 
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
     environment.insert(QLatin1String(kMarkerRootEnv), scratch.path());

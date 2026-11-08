@@ -10,7 +10,7 @@ Open **Settings** from the main window. The settings window has these pages:
 | **Application** | **Keyboard shortcuts** | Anime4K preset key bindings |
 | **Playback** | **Processing** | Runtime module selection and the Standard and Native processing workflows |
 | **Playback** | **Components** | Downloadable backend components, models and their install state |
-| **Playback** | **Benchmark** | Rendering throughput comparison |
+| **Playback** | **Benchmark** | Video-clip processing comparison |
 
 The sidebar groups the pages as listed, and the window normally opens on **Customization → General**; an invalid stored preset binding opens **Application → Keyboard shortcuts** instead so the conflict is visible. Page contents scroll independently; the **Save** and **Cancel** buttons stay in the Settings footer. For detailed processing, component installation and benchmark instructions, see the [processing guide](processing-guide.md).
 
@@ -116,8 +116,8 @@ A key combination can belong to only one preset, and built-in player shortcuts a
 
 **Playback → Processing** is headed **Processing runtime**. Its **Runtime module** choice is **Standard**, or **Native** on Windows. Saving stores the choice; when it differs from the runtime the running process loaded, the page says the runtime will change after restarting Mikai Ja Nai, and the dialog does not replace the running core itself.
 
-- **Standard** shows the AnimeJaNai manager card, which owns the official models and profiles, including TensorRT for RTX on Windows.
-- **Native** (Windows only) replaces that card with **Backend**, **Recipe**, the Native model-assets card and **RIFE interpolation**. Only Native fields you actually changed are written, so an untouched preference block survives an unrelated save. Preparation and model work started from these controls is an operation, not a pending preference.
+- **Standard** shows the AnimeJaNai manager card, which owns the official models and profiles, including TensorRT for RTX on Windows. In the player, **Restore**, **Upscale** and **Interpolation** are effect categories; Standard AnimeJaNai (AJI) is an execution path, not an effect category. Choose its backend separately from the effect/model.
+- **Native** (Windows only) replaces that card with **Backend**, **Recipe**, the Native model-assets card and **RIFE interpolation** controls. RIFE is for the separate Interpolation effect, not a spatial upscale choice. Only Native fields you actually changed are written, so an untouched preference block survives an unrelated save. Preparation and model work started from these controls is an operation, not a pending preference.
 
 Platform boundaries are stated in the pages themselves:
 
@@ -133,13 +133,13 @@ While an acquisition runs, the window-level bar names the bytes received (`Downl
 
 **Playback → Upscalers** lists every optional upscaler the build offers: 4× Real-ESRGAN AnimeVideo v3 in fp32 and fp16, and 2× HFA2kCompact plus its multijpg variant. Each row shows the graph's own scale, precision, publisher and download size, and carries exactly one action: **Download** while it is absent, **Remove** once it is stored. A download verifies the pinned length and SHA-256 before a byte reaches the model folder, refuses to overwrite a same-named graph with different bytes, and reports its own failure text instead of a bare state. Nothing downloads unless a row is pressed, and no Anime4K preset depends on any of them.
 
-The graphs land in the app-owned custom-model directory (`…/animejanai/models/custom/`) and are then selectable as a one-step AnimeJaNai chain in the player and as a comparison candidate. The publisher's model card is the licence record for those bytes; this project does not redistribute them. See [Optional upscalers](processing-guide.md#optional-upscalers-downloaded-onnx-graphs).
+The graphs land in the app-owned custom-model directory (`…/animejanai/models/custom/`) and are then selectable as spatial **Upscale** steps executed through AnimeJaNai in the player and as spatial comparison candidates. The publisher's model card is the licence record for those bytes; this project does not redistribute them. See [Optional upscalers](processing-guide.md#optional-upscalers-downloaded-onnx-graphs).
 
 ![Components settings page with TensorRT for RTX selected and its runtime reported as not installed](images/gallery-2026-11-05/components.png)
 
 *The Components page during the Windows capture: TensorRT for RTX selected, its runtime reported as not installed, and no download started. The capture does not show a working RTX runtime or any inference result.*
 
-**Playback → Benchmark** is headed **Benchmark** and compares rendering speed at 2× input resolution. Choose **Video clips** and **Enhancement models**, optionally keep **Include the unfiltered baseline**, then press **Run benchmark**; the **Results** table reports **Model**, **Clip** and **Throughput**, with preparation excluded from FPS. A run is a measurement of the current selection, not a saved preference. For clip locations, reports and the full workflow, see the [processing guide](processing-guide.md).
+**Playback → Benchmark** is headed **Benchmark**. Choose **Video clips** and **Enhancement models**, optionally keep **Include the unfiltered baseline**, then press **Run benchmark**. Its video runs support RIFE interpolation, including RIFE configured in mixed spatial-plus-interpolation profiles; Compare is a separate still-frame workflow and does not run temporal chains. A run uses the current selection and is not a saved preference. For clip locations, reports and limitations, see the [processing guide](processing-guide.md).
 
 ## Windows and Linux system integrations
 
