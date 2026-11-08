@@ -1230,7 +1230,8 @@ void CompareWindow::rebuildCandidates() {
         entry.tooltip = preset.reason;
         baseLabels.insert(preset.id, preset.label);
 
-        if (preset.id.startsWith(QLatin1String("spatial:"))) {
+        if (preset.id.startsWith(QLatin1String("spatial:")) &&
+            !preset.id.startsWith(QLatin1String("spatial:custom:"))) {
             const QString assetId = preset.id.mid(QStringLiteral("spatial:").size());
             const auto stored = std::find_if(
                 storedSpatial.cbegin(), storedSpatial.cend(),

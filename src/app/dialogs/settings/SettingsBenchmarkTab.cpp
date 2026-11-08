@@ -645,7 +645,18 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
         return false;
     };
 
+    QSet<QString> upscalerStems;
+    for (const mplayer::native::UpscalerModel& u : mplayer::native::upscalerCatalog()) {
+        upscalerStems.insert(u.fileName.toLower());
+        upscalerStems.insert(QFileInfo(u.fileName).completeBaseName().toLower());
+    }
+
     for (const mplayer::native::AnimeJanaiPreset& preset : presets) {
+        if (preset.id.startsWith(QLatin1String("spatial:custom:"))) {
+            const QString stem = preset.id.mid(QStringLiteral("spatial:custom:").size()).toLower();
+            if (upscalerStems.contains(stem)) continue;
+        }
+
         const auto& profiles = preset.id.startsWith(QLatin1String("builtin_slot:"))
                                    ? managerConfig.customSlots
                                    : defaultProfiles;
@@ -657,7 +668,8 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
                                                                    : preset.modelFile)
                               : preset.reason;
         bool supported = preset.supported;
-        if (preset.id.startsWith(QLatin1String("spatial:"))) {
+        if (preset.id.startsWith(QLatin1String("spatial:")) &&
+            !preset.id.startsWith(QLatin1String("spatial:custom:"))) {
             const QString assetId = preset.id.mid(QStringLiteral("spatial:").size());
             const auto stored = std::find_if(
                 storedSpatial.cbegin(), storedSpatial.cend(),
