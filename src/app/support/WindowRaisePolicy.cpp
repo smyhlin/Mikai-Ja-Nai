@@ -191,6 +191,28 @@ bool WindowRaisePolicy::eventFilter(QObject* watched, QEvent* event) {
     // fact, not a window one, and raising it would be meaningless work on every
     // frame of a list.
     if (!window->isWindow()) return false;
+
+#ifdef Q_OS_WIN
+    if (window->windowType() == Qt::ToolTip || window->windowType() == Qt::Popup) {
+        HWND popupHwnd = reinterpret_cast<HWND>(window->winId());
+        if (popupHwnd != nullptr && IsWindow(popupHwnd)) {
+            QWidget* ownerCandidate = QApplication::activeWindow();
+            if (ownerCandidate == nullptr) {
+                if (QWidget* atCursor = QApplication::widgetAt(QCursor::pos())) {
+                    ownerCandidate = atCursor->window();
+                }
+            }
+            HWND ownerHwnd = ownerCandidate ? reinterpret_cast<HWND>(ownerCandidate->winId()) : nullptr;
+            if (ownerHwnd != nullptr && IsWindow(ownerHwnd)) {
+                SetWindowLongPtrW(popupHwnd, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(ownerHwnd));
+            }
+            SetWindowPos(popupHwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+        return false;
+    }
+#endif
+
     if (isExempt(window)) return false;
 
     // Wayland deliberately leaves stacking and activation to the compositor.
