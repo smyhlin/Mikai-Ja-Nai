@@ -25,6 +25,7 @@ class TestThemeRoles : public QObject {
   void cleanup();
 
   void actionRoleStatesOnePropertyAndNoSize();
+  void checkboxIndicatorUsesPaletteAndRadiusAtFractionalDpi();
   void searchPrimaryFillIsTheRawAccent();
   void secondaryBoundaryPassesThreeToOneInBothThemes();
   void roleStatesRenderTheirDocumentedContract();

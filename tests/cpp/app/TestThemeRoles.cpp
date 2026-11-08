@@ -18,8 +18,10 @@
 #include <QtGui/QRegion>
 #include <QtWidgets/QAbstractButton>
 #include <QtWidgets/QApplication>
+#include <QtWidgets/QCheckBox>
 #include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QPushButton>
+#include <QtWidgets/QProxyStyle>
 #include <QtWidgets/QStyle>
 #include <QtWidgets/QStyleOptionButton>
 #include <QtWidgets/QVBoxLayout>
@@ -27,6 +29,7 @@
 
 #include "dialogs/settings/SettingsUi.hpp"
 #include "state/AppearanceStore.hpp"
+#include "theme/AntialiasedStyle.hpp"
 #include "theme/Appearance.hpp"
 #include "theme/Colors.hpp"
 #include "theme/Metrics.hpp"
@@ -373,6 +376,110 @@ void TestThemeRoles::cleanup() {
     qApp->setPalette(savedPalette_);
     mplayer::shell::setAccent(savedAccent_);
     QApplication::processEvents();
+}
+
+void TestThemeRoles::checkboxIndicatorUsesPaletteAndRadiusAtFractionalDpi() {
+    mikai::app::theme::AntialiasedStyle style(QStringLiteral("Fusion"));
+    QProxyStyle legacy(QStringLiteral("Fusion"));
+    for (const SiteTheme site : {SiteTheme::Dark, SiteTheme::Light}) {
+        Appearance appearance;
+        appearance.siteTheme = site;
+        for (const int radiusStep : {0, 1}) {
+            appearance.radiusStep = radiusStep;
+            installAppearance(appearance);
+
+            for (const qreal scale : {1.25, 1.75}) {
+                QStyleOptionButton option;
+                option.rect = QRect(2, 2, 13, 13);
+                option.palette = qApp->palette();
+                option.state = QStyle::State_Enabled | QStyle::State_On;
+                QImage image(40, 40, QImage::Format_ARGB32_Premultiplied);
+                image.setDevicePixelRatio(scale);
+                image.fill(Qt::transparent);
+                {
+                    QPainter painter(&image);
+                    style.drawPrimitive(QStyle::PE_IndicatorCheckBox, &option, &painter);
+                }
+
+                int accentPixels = 0;
+                for (int y = 0; y < image.height(); ++y) {
+                    for (int x = 0; x < image.width(); ++x) {
+                        if (image.pixelColor(x, y) == option.palette.color(QPalette::Highlight)) {
+                            ++accentPixels;
+                        }
+                    }
+                }
+                QVERIFY(accentPixels > 0);
+
+                option.state = QStyle::State_Enabled;
+                image.fill(Qt::transparent);
+                {
+                    QPainter painter(&image);
+                    style.drawPrimitive(QStyle::PE_IndicatorCheckBox, &option, &painter);
+                }
+                const qreal physicalScale = scale;
+                const int top = qRound(option.rect.top() * physicalScale);
+                const int center = qRound((option.rect.left() + option.rect.width() / 2.0) *
+                                          physicalScale);
+                QCOMPARE(image.pixelColor(center, top), option.palette.color(QPalette::Mid));
+                QCOMPARE(image.pixelColor(center, top - 1).alpha(), 0);
+
+                QImage legacyImage(40, 40, QImage::Format_ARGB32_Premultiplied);
+                legacyImage.setDevicePixelRatio(scale);
+                legacyImage.fill(Qt::transparent);
+                {
+                    QPainter painter(&legacyImage);
+                    legacy.drawPrimitive(QStyle::PE_IndicatorCheckBox, &option, &painter);
+                }
+                if (radiusStep == 0) {
+                    QCOMPARE(image.pixelColor(top, top).alpha(), 255);
+                    continue;
+                }
+
+                const int cornerX = top + 1;
+                const int cornerY = top + 1;
+                QVERIFY(image.pixelColor(cornerX, cornerY).alpha() <
+                        legacyImage.pixelColor(cornerX, cornerY).alpha());
+
+                bool foundFractionalCornerCoverage = false;
+                for (int offset = 1; offset < qCeil(5 * scale); ++offset) {
+                    const int alpha = image.pixelColor(top + offset, top + offset).alpha();
+                    if (alpha > 0 && alpha < 255) {
+                        foundFractionalCornerCoverage = true;
+                        break;
+                    }
+                }
+                QVERIFY2(foundFractionalCornerCoverage,
+                         "rounded indicator edge must contain real fractional corner coverage");
+
+                option.state = QStyle::State_Enabled | QStyle::State_NoChange;
+                image.fill(Qt::transparent);
+                {
+                    QPainter painter(&image);
+                    style.drawPrimitive(QStyle::PE_IndicatorCheckBox, &option, &painter);
+                }
+                const QColor ink = option.palette.color(QPalette::HighlightedText);
+                QVERIFY(image.pixelColor(center, qRound((option.rect.top() + 6.0) * scale)) == ink);
+
+                option.state = QStyle::State_Enabled | QStyle::State_HasFocus;
+                image.fill(Qt::transparent);
+                {
+                    QPainter painter(&image);
+                    style.drawPrimitive(QStyle::PE_IndicatorCheckBox, &option, &painter);
+                }
+                QCOMPARE(image.pixelColor(center, top), option.palette.color(QPalette::Highlight));
+
+                option.state = QStyle::State_None;
+                image.fill(Qt::transparent);
+                {
+                    QPainter painter(&image);
+                    style.drawPrimitive(QStyle::PE_IndicatorCheckBox, &option, &painter);
+                }
+                QCOMPARE(image.pixelColor(center, top),
+                         option.palette.color(QPalette::Disabled, QPalette::Mid));
+            }
+        }
+    }
 }
 
 void TestThemeRoles::actionRoleStatesOnePropertyAndNoSize() {

@@ -669,23 +669,6 @@ QWidget#titlePage QWidget#titlePlaybackControls {
     border: 1px solid %8;
     border-radius: %14px;
 }
-QWidget#titlePage QPushButton#titleEpisodesAnchor {
-    background: %43;
-    color: %6;
-    border: 1px solid %44;
-    border-radius: %42px;
-    min-height: %47px;
-    max-height: %47px;
-    padding: 0 %37px;
-    font-size: %26px;
-    text-align: center;
-}
-QWidget#titlePage QPushButton#titleEpisodesAnchor:hover:enabled {
-    background: %3; border-color: rgba(%9, 0.60);
-}
-QWidget#titlePage QPushButton#titleEpisodesAnchor:focus {
-    border-color: %4;
-}
 QWidget#titlePage QWidget#titleWatchPanel {
     background: %2;
     border: 1px solid %8;
