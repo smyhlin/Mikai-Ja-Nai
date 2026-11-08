@@ -705,6 +705,7 @@ QWidget#titlePage QPushButton#titleHeroWatchButton {
     border: 1px solid %4;
     border-radius: %42px;
     min-height: %45px;
+    max-height: %45px;
     padding: 0 %46px;
     font-size: %24px;
     font-weight: 600;
@@ -1098,6 +1099,8 @@ QWidget#titlePage QPushButton#titleDetailsClose:focus { border-color: %4; }
         .arg(kTitleMetaPixelSize)
         .arg(kTitleSmallPixelSize)
         .arg(kTitleTinyPixelSize)
+        .arg(kTitleCaptionPixelSize)
+        .arg(kTitleSmallPixelSize)
         .arg(kTitleCaptionPixelSize)
         .arg(kTitleWatchEpisodePixelSize)
         .arg(kTitleDetailsHeadingPixelSize)

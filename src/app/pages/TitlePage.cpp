@@ -1189,6 +1189,7 @@ void TitlePage::buildEpisodeWorkspace() {
     watchWatchedButton_ = new QPushButton(tr("Watched"), watchPanel_);
     watchWatchedButton_->setObjectName(QStringLiteral("titleWatchWatchedToggle"));
     theme::applyActionRole(watchWatchedButton_, theme::ActionRole::Secondary);
+    watchWatchedButton_->setFixedHeight(theme::kControlHeight);
     watchWatchedButton_->setCheckable(true);
     watchWatchedButton_->setCursor(Qt::PointingHandCursor);
     connect(watchWatchedButton_, &QPushButton::toggled, this, [this](bool checked) {
@@ -1200,7 +1201,7 @@ void TitlePage::buildEpisodeWorkspace() {
     watchButton_ = new QPushButton(tr("Watch"), watchPanel_);
     watchButton_->setObjectName(QStringLiteral("titleWatchButton"));
     theme::applyActionRole(watchButton_, theme::ActionRole::Primary);
-    watchButton_->setMinimumHeight(theme::kControlHeight);
+    watchButton_->setFixedHeight(theme::kWatchCtaHeight);
     watchButton_->setCursor(Qt::PointingHandCursor);
     connect(watchButton_, &QPushButton::clicked, this, [this] {
         if (watchEntry_ != nullptr) {
