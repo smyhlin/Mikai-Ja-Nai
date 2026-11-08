@@ -1166,7 +1166,9 @@ void CompareWindow::rebuildCandidates() {
         ChoiceEntry entry;
         entry.id = preset.id;
         entry.label = preset.label;
-        entry.path = {QCoreApplication::translate("QObject", "Restore (Anime4K)")};
+        QString catLabel = anime4k::categoryLabel(preset.category);
+        if (catLabel.isEmpty()) catLabel = tr("Presets");
+        entry.path = {QCoreApplication::translate("QObject", "Restore (Anime4K)"), catLabel};
         baseLabels.insert(preset.id, preset.label);
         if (!complete) {
             entry.disabled = true;
@@ -1189,6 +1191,18 @@ void CompareWindow::rebuildCandidates() {
         choices.append(entry);
     }
 
+    const QString upscaleRoot = QCoreApplication::translate("QObject", "Upscale");
+    const QString profilesGroup = tr("Profiles");
+    const QString spatialGroup = tr("Spatial models");
+    const QString upscalersGroup = tr("Upscalers");
+    const QString customGroup = tr("Custom models");
+
+    QSet<QString> upscalerStems;
+    for (const native::UpscalerModel& u : upscalers) {
+        upscalerStems.insert(u.fileName.toLower());
+        upscalerStems.insert(QFileInfo(u.fileName).completeBaseName().toLower());
+    }
+
     for (const native::AnimeJanaiPreset& preset : ajiPresets) {
         const auto& profiles = preset.id.startsWith(QLatin1String("builtin_slot:"))
                                    ? managerConfig.customSlots
@@ -1196,10 +1210,22 @@ void CompareWindow::rebuildCandidates() {
         if (preset.id.startsWith(QLatin1String("rife:")) ||
             presetUsesRife(preset, profiles, source)) continue;
 
+        // Do not duplicate upscaler models under custom spatial models
+        if (preset.id.startsWith(QLatin1String("spatial:custom:"))) {
+            const QString stem = preset.id.mid(QStringLiteral("spatial:custom:").size()).toLower();
+            if (upscalerStems.contains(stem)) continue;
+        }
+
         ChoiceEntry entry;
         entry.id = preset.id;
         entry.label = preset.label;
-        entry.path = {QCoreApplication::translate("QObject", "Upscale")};
+        if (preset.id.startsWith(QLatin1String("spatial:custom:"))) {
+            entry.path = {upscaleRoot, customGroup};
+        } else if (preset.id.startsWith(QLatin1String("spatial:"))) {
+            entry.path = {upscaleRoot, spatialGroup};
+        } else {
+            entry.path = {upscaleRoot, profilesGroup};
+        }
         entry.disabled = !preset.supported;
         entry.tooltip = preset.reason;
         baseLabels.insert(preset.id, preset.label);
@@ -1234,7 +1260,7 @@ void CompareWindow::rebuildCandidates() {
         ChoiceEntry entry;
         entry.id = id;
         entry.label = model.displayName;
-        entry.path = {QCoreApplication::translate("QObject", "Upscale")};
+        entry.path = {upscaleRoot, upscalersGroup};
         entry.disabled = native::installedUpscalerPath(model).isEmpty();
         if (entry.disabled) {
             entry.tooltip = tr("Not downloaded. Install this graph from Settings › Upscalers.");

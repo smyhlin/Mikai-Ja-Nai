@@ -422,10 +422,19 @@ QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& cur
     if (levelId == QLatin1String(kUpscaleSpatial)) {
         QVector<native::AnimeJanaiPreset> pinned;
         QVector<native::AnimeJanaiPreset> custom;
+        QSet<QString> upscalerStems;
+        for (const native::UpscalerModel& u : native::upscalerCatalog()) {
+            upscalerStems.insert(u.fileName.toLower());
+            upscalerStems.insert(QFileInfo(u.fileName).completeBaseName().toLower());
+        }
         for (const native::AnimeJanaiPreset& preset : presets) {
             if (!preset.id.startsWith(QLatin1String("spatial:")) || preset.rife) continue;
-            if (preset.id.startsWith(QLatin1String("spatial:custom:"))) custom.append(preset);
-            else pinned.append(preset);
+            if (preset.id.startsWith(QLatin1String("spatial:custom:"))) {
+                const QString stem = preset.id.mid(QStringLiteral("spatial:custom:").size()).toLower();
+                if (!upscalerStems.contains(stem)) custom.append(preset);
+            } else {
+                pinned.append(preset);
+            }
         }
         appendPaged(pinned, QString::fromLatin1(kUpscaleSpatial), levelId);
         if (!custom.isEmpty()) {
@@ -440,9 +449,15 @@ QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& cur
     if (levelId == QLatin1String(kUpscaleSpatialCustom) ||
         levelId.startsWith(QLatin1String(kUpscaleSpatialCustom) + QStringLiteral(":page:"))) {
         QVector<native::AnimeJanaiPreset> custom;
+        QSet<QString> upscalerStems;
+        for (const native::UpscalerModel& u : native::upscalerCatalog()) {
+            upscalerStems.insert(u.fileName.toLower());
+            upscalerStems.insert(QFileInfo(u.fileName).completeBaseName().toLower());
+        }
         for (const native::AnimeJanaiPreset& preset : presets) {
             if (preset.id.startsWith(QLatin1String("spatial:custom:")) && !preset.rife) {
-                custom.append(preset);
+                const QString stem = preset.id.mid(QStringLiteral("spatial:custom:").size()).toLower();
+                if (!upscalerStems.contains(stem)) custom.append(preset);
             }
         }
         appendPaged(custom, QString::fromLatin1(kUpscaleSpatialCustom), levelId);
