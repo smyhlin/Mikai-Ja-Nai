@@ -9808,262 +9808,276 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::shell::ClipDialog</name>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="206"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="429"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="431"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="541"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="255"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="604"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="606"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="766"/>
         <source>Clip range</source>
         <translation>Діапазон уривка</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="207"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="430"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="256"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="605"/>
         <source>Use left and right arrows to adjust the selected clip range.</source>
         <translation>Використовуйте стрілки вліво та вправо, щоб змінити діапазон уривка.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="305"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="434"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="436"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="480"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="609"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="611"/>
         <source> s</source>
         <translation> с</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="307"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="435"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="482"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="610"/>
         <source>Clip start time</source>
         <translation>Час початку уривка</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="308"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="437"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="483"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="612"/>
         <source>Clip end time</source>
         <translation>Час завершення уривка</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="320"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="495"/>
         <source>The current video source is unavailable.</source>
         <translation>Поточне джерело відео недоступне.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="328"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="334"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="503"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="509"/>
         <source>The video changed. Close this window and open Cut moment again.</source>
         <translation>Відео змінилося. Закрийте це вікно та знову відкрийте вирізання уривка.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="340"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="515"/>
         <source>The video player was closed.</source>
         <translation>Відеопрогравач закрито.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="361"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="536"/>
         <source>Preview unavailable: %1</source>
         <translation>Попередній перегляд недоступний: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="374"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="549"/>
         <source>Encoding MP4 with %1…</source>
         <translation>Кодування MP4 за допомогою %1…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="378"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="553"/>
         <source>Encoding MP4 with %1… %2%</source>
         <translation>Кодування MP4 за допомогою %1… %2%</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="379"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="554"/>
         <source>video</source>
         <translation>відео</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="393"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="568"/>
         <source>Export failed.</source>
         <translation>Не вдалося експортувати уривок.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="400"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="575"/>
         <source>Saved %1</source>
         <translation>Збережено %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="426"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="480"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="601"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="690"/>
         <source>Cut moment</source>
         <translation>Вирізати уривок</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="427"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="602"/>
         <source>Cut moment — %1</source>
         <translation>Вирізати уривок — %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="432"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="607"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="806"/>
         <source>Start</source>
         <translation>Початок</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="433"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="608"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="823"/>
         <source>End</source>
         <translation>Кінець</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="438"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="613"/>
         <source>Maximum resolution</source>
         <translation>Максимальна роздільність</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="439"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="583"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="614"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="855"/>
         <source>1080p</source>
         <translation>1080p</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="440"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="584"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="615"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="856"/>
         <source>720p</source>
         <translation>720p</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="441"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="585"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="616"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="857"/>
         <source>480p</source>
         <translation>480p</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="442"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="520"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="617"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="739"/>
         <source>Scrub within selected moment</source>
         <translation>Перемотування в межах уривка</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="444"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="660"/>
-        <source>Preview %1</source>
-        <translation>Перегляд %1</translation>
-    </message>
-    <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="445"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="522"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="1024"/>
         <source>Preview starts at the selected in point</source>
         <translation>Перегляд починається з вибраного моменту</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="447"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="754"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="620"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="1108"/>
         <source>%1 selected</source>
         <translation>Вибрано %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="448"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="639"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="622"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="976"/>
         <source>Pause preview</source>
         <translation>Призупинити перегляд</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="448"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="511"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="639"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="768"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="623"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="722"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="976"/>
         <source>Play preview</source>
         <translation>Відтворити уривок</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="449"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="644"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="624"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="733"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="985"/>
         <source>Preview audio on</source>
         <translation>Звук перегляду ввімкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="449"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="514"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="644"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="625"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="985"/>
         <source>Preview audio off</source>
         <translation>Звук перегляду вимкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="450"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="838"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="627"/>
+        <source>Set clip start to current video position ([)</source>
+        <translation>Встановити початок уривка на поточну позицію ([)</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="628"/>
+        <source>Seek preview to clip start</source>
+        <translation>Перейти до початку уривка</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="629"/>
+        <source>Set clip end to current video position (])</source>
+        <translation>Встановити кінець уривка на поточну позицію (])</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="630"/>
+        <source>Seek preview to clip end</source>
+        <translation>Перейти до кінця уривка</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="632"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="1192"/>
         <source>Exporting…</source>
         <translation>Експорт…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="451"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="633"/>
         <source>Try again</source>
         <translation>Спробувати знову</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="452"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="634"/>
         <source>Export another</source>
         <translation>Експортувати ще один</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="453"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="614"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="635"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="891"/>
         <source>Export MP4…</source>
         <translation>Експортувати MP4…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="454"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="611"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="636"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="888"/>
         <source>Cancel export</source>
         <translation>Скасувати експорт</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="455"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="604"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="637"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="881"/>
         <source>Show in folder</source>
         <translation>Показати в теці</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="456"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="606"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="638"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="883"/>
         <source>Copy path</source>
         <translation>Копіювати шлях</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="588"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="865"/>
         <source>Select up to 60 seconds to export as MP4.</source>
         <translation>Виберіть до 60 секунд для експорту у MP4.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="669"/>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="924"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="953"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="1307"/>
         <source>Canceling export…</source>
         <translation>Скасування експорту…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="697"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="1051"/>
         <source>Choose a moment up to 60 seconds long.</source>
         <translation>Виберіть уривок тривалістю до 60 секунд.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="794"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="1148"/>
         <source>clip</source>
         <translation>уривок</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="796"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="1150"/>
         <source>Save clip</source>
         <translation>Зберегти уривок</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="797"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="1151"/>
         <source>MP4 video (*.mp4)</source>
         <translation>Відео MP4 (*.mp4)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="806"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="1160"/>
         <source>Replace existing file?</source>
         <translation>Замінити наявний файл?</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="807"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="1161"/>
         <source>%1 already exists. Replace it after the new clip is complete?</source>
         <translation>%1 уже існує. Замінити його після завершення експорту?</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipDialog.cpp" line="844"/>
+        <location filename="../src/player/shell/ClipDialog.cpp" line="1205"/>
         <source>Preparing export…</source>
         <translation>Підготовка експорту…</translation>
     </message>

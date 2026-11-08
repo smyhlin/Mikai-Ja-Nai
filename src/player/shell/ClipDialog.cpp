@@ -2,32 +2,33 @@
 
 #include "ClipExport.hpp"
 #include "ShellTheme.hpp"
+#include "ShellWidgets.hpp"
 #include "../core/MediaTracks.hpp"
 #include "../core/VideoSurface.hpp"
 
 #include <QCloseEvent>
 #include <QClipboard>
-#include <QCoreApplication>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QDesktopServices>
-#include <QEvent>
 #include <QDoubleSpinBox>
+#include <QEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGuiApplication>
-#include <QKeyEvent>
-#include <QMouseEvent>
-#include <QPaintEvent>
-#include <QPalette>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QMessageBox>
+#include <QMouseEvent>
+#include <QPaintEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QPointer>
-#include <QStringList>
 #include <QSlider>
+#include <QStringList>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -52,12 +53,12 @@ QString clipDialogStyleSheet() {
     const QString hoverHex = accent().lighter(115).name(QColor::HexRgb);
     return QStringLiteral(
         "QDialog#clipDialog {"
-        "  background-color: #0e0f14;"
+        "  background-color: #0d0e13;"
         "  color: #f4f4f5;"
         "}"
         "QFrame#clipCard {"
-        "  background-color: #15171e;"
-        "  border: 1px solid rgba(255, 255, 255, 0.10);"
+        "  background-color: #14161e;"
+        "  border: 1px solid rgba(255, 255, 255, 0.09);"
         "  border-radius: %1px;"
         "}"
         "QLabel {"
@@ -70,31 +71,46 @@ QString clipDialogStyleSheet() {
         "  font-size: 13px;"
         "  font-weight: 600;"
         "}"
+        "QLabel#clipHeaderTag {"
+        "  color: #71717a;"
+        "  font-size: 11px;"
+        "  font-weight: 700;"
+        "  letter-spacing: 0.5px;"
+        "}"
         "QLabel#clipDurationBadge {"
         "  background-color: rgba(%4, 0.18);"
         "  color: %2;"
         "  border: 1px solid rgba(%4, 0.35);"
         "  border-radius: 4px;"
-        "  padding: 2px 8px;"
+        "  padding: 3px 10px;"
         "  font-size: 12px;"
         "  font-weight: 600;"
         "}"
-        "QLabel#clipPreviewTime {"
-        "  color: #e4e4e7;"
+        "QLabel#clipDurationBadge[valid=\"false\"] {"
+        "  background-color: rgba(239, 68, 68, 0.18);"
+        "  color: #ef4444;"
+        "  border-color: rgba(239, 68, 68, 0.35);"
+        "}"
+        "QLabel#clipTimeReadout {"
+        "  background-color: rgba(0, 0, 0, 0.40);"
+        "  color: #f4f4f5;"
+        "  border: 1px solid rgba(255, 255, 255, 0.12);"
+        "  border-radius: 4px;"
+        "  padding: 3px 10px;"
         "  font-size: 12px;"
-        "  font-weight: 500;"
+        "  font-weight: 600;"
         "}"
         "QLabel#clipStatus {"
         "  color: #a1a1aa;"
         "  font-size: 12px;"
         "}"
         "QComboBox#clipQuality {"
-        "  background-color: #1d2029;"
+        "  background-color: #1b1e28;"
         "  color: #f4f4f5;"
         "  border: 1px solid rgba(255, 255, 255, 0.15);"
         "  border-radius: %5px;"
         "  padding: 3px 10px;"
-        "  min-height: 24px;"
+        "  min-height: 26px;"
         "  font-size: 13px;"
         "  font-weight: 500;"
         "}"
@@ -102,25 +118,25 @@ QString clipDialogStyleSheet() {
         "  border-color: %2;"
         "}"
         "QComboBox#clipQuality QAbstractItemView {"
-        "  background-color: #15171e;"
+        "  background-color: #14161e;"
         "  color: #f4f4f5;"
         "  border: 1px solid rgba(255, 255, 255, 0.18);"
         "  selection-background-color: %2;"
         "  selection-color: %3;"
         "}"
         "QDoubleSpinBox {"
-        "  background-color: #1d2029;"
+        "  background-color: #1b1e28;"
         "  color: #f4f4f5;"
         "  border: 1px solid rgba(255, 255, 255, 0.15);"
         "  border-radius: %5px;"
         "  padding: 3px 8px;"
-        "  min-height: 24px;"
+        "  min-height: 26px;"
         "  font-size: 13px;"
         "  font-weight: 500;"
         "}"
         "QDoubleSpinBox:focus {"
         "  border-color: %2;"
-        "  background-color: #242834;"
+        "  background-color: #222634;"
         "}"
         "QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {"
         "  width: 16px;"
@@ -128,24 +144,56 @@ QString clipDialogStyleSheet() {
         "  border: none;"
         "}"
         "QPushButton {"
-        "  background-color: #1d2029;"
+        "  background-color: #1b1e28;"
         "  color: #f4f4f5;"
         "  border: 1px solid rgba(255, 255, 255, 0.15);"
         "  border-radius: %5px;"
-        "  padding: 4px 14px;"
+        "  padding: 4px 12px;"
         "  min-height: 26px;"
         "  font-size: 13px;"
         "  font-weight: 500;"
         "}"
         "QPushButton:hover {"
-        "  background-color: #272b38;"
-        "  border-color: rgba(255, 255, 255, 0.25);"
+        "  background-color: #252a38;"
+        "  border-color: rgba(255, 255, 255, 0.28);"
         "  color: #ffffff;"
+        "}"
+        "QPushButton:pressed {"
+        "  background-color: #141620;"
         "}"
         "QPushButton:checked {"
         "  background-color: rgba(%4, 0.22);"
         "  border-color: %2;"
         "  color: %2;"
+        "}"
+        "QPushButton#clipPresetButton {"
+        "  background-color: rgba(255, 255, 255, 0.06);"
+        "  color: #d4d4d8;"
+        "  border: 1px solid rgba(255, 255, 255, 0.12);"
+        "  border-radius: 4px;"
+        "  padding: 2px 9px;"
+        "  min-height: 22px;"
+        "  font-size: 11px;"
+        "  font-weight: 600;"
+        "}"
+        "QPushButton#clipPresetButton:hover {"
+        "  background-color: rgba(%4, 0.22);"
+        "  border-color: %2;"
+        "  color: %2;"
+        "}"
+        "QPushButton#clipMiniAction {"
+        "  background-color: rgba(255, 255, 255, 0.07);"
+        "  color: #e4e4e7;"
+        "  border: 1px solid rgba(255, 255, 255, 0.14);"
+        "  border-radius: 4px;"
+        "  padding: 3px 8px;"
+        "  min-height: 24px;"
+        "  font-size: 12px;"
+        "  font-weight: 500;"
+        "}"
+        "QPushButton#clipMiniAction:hover {"
+        "  background-color: #262b3a;"
+        "  border-color: %2;"
         "}"
         "QPushButton#clipExport {"
         "  background-color: %2;"
@@ -153,8 +201,9 @@ QString clipDialogStyleSheet() {
         "  border: 1px solid %2;"
         "  border-radius: %5px;"
         "  font-weight: 600;"
-        "  min-height: 30px;"
-        "  padding: 4px 20px;"
+        "  min-height: 32px;"
+        "  padding: 5px 22px;"
+        "  font-size: 13px;"
         "}"
         "QPushButton#clipExport:hover {"
         "  background-color: %6;"
@@ -167,28 +216,28 @@ QString clipDialogStyleSheet() {
         "}"
         "QProgressBar#clipProgress {"
         "  background-color: rgba(255, 255, 255, 0.10);"
-        "  border-radius: 3px;"
+        "  border-radius: 4px;"
         "  border: none;"
-        "  min-height: 6px;"
-        "  max-height: 6px;"
+        "  min-height: 8px;"
+        "  max-height: 8px;"
         "}"
         "QProgressBar#clipProgress::chunk {"
         "  background-color: %2;"
-        "  border-radius: 3px;"
+        "  border-radius: 4px;"
         "}"
         "QSlider#clipPreviewScrub::groove:horizontal {"
-        "  height: 4px;"
+        "  height: 6px;"
         "  background: rgba(255, 255, 255, 0.15);"
-        "  border-radius: 2px;"
+        "  border-radius: 3px;"
         "}"
         "QSlider#clipPreviewScrub::sub-page:horizontal {"
         "  background: %2;"
-        "  border-radius: 2px;"
+        "  border-radius: 3px;"
         "}"
         "QSlider#clipPreviewScrub::handle:horizontal {"
         "  width: 14px;"
         "  height: 14px;"
-        "  margin: -5px 0;"
+        "  margin: -4px 0;"
         "  border-radius: 7px;"
         "  background: #ffffff;"
         "}"
@@ -206,51 +255,145 @@ public:
         setAccessibleName(ClipTranslation::tr("Clip range"));
         setAccessibleDescription(ClipTranslation::tr("Use left and right arrows to adjust the selected clip range."));
         setFocusPolicy(Qt::StrongFocus);
-        setMinimumHeight(36);
-        setMinimumWidth(250);
+        setMinimumHeight(44);
+        setMinimumWidth(280);
+        setMouseTracking(true);
     }
+
     void setRange(double duration, double start, double end) {
         duration_ = std::max(0.0, duration);
         start_ = std::clamp(start, 0.0, duration_);
         end_ = std::clamp(end, start_, duration_);
         update();
     }
+
+    void setPlayhead(double position) {
+        if (qFuzzyCompare(playhead_, position)) return;
+        playhead_ = std::max(0.0, position);
+        update();
+    }
+
     double start() const { return start_; }
     double end() const { return end_; }
     void setChanged(std::function<void(double, double)> changed) { changed_ = std::move(changed); }
+
 protected:
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
         enableChromeAntialiasing(painter);
-        const qreal y = height() / 2.0;
-        const qreal left = 14.0;
-        const qreal right = width() - 14.0;
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(QColor(255, 255, 255, 28));
-        painter.drawRoundedRect(QRectF(left, y - 3, right - left, 6), 3, 3);
+        const qreal h = height();
+        const qreal trackHeight = 12.0;
+        const qreal trackY = (h - trackHeight) / 2.0;
+        const qreal left = 16.0;
+        const qreal right = width() - 16.0;
+        const qreal trackW = std::max<qreal>(1.0, right - left);
+
+        // Rail background with subtle rounded border
+        painter.setPen(QPen(QColor(255, 255, 255, 18), 1.0));
+        painter.setBrush(QColor(18, 20, 26));
+        painter.drawRoundedRect(QRectF(left, trackY, trackW, trackHeight), 6, 6);
+
+        if (duration_ <= 0.0) return;
+
+        // Selected interval
         const qreal a = coordinate(start_);
         const qreal b = coordinate(end_);
-        painter.setBrush(accent());
-        painter.drawRoundedRect(QRectF(a, y - 3, std::max<qreal>(0, b - a), 6), 3, 3);
-        painter.setBrush(QColor(240, 240, 245));
-        painter.setPen(QPen(QColor(18, 19, 26), 1.5));
-        painter.drawEllipse(QPointF(a, y), 8, 8);
-        painter.drawEllipse(QPointF(b, y), 8, 8);
-        painter.setPen(QPen(accent(), 2));
-        painter.setBrush(Qt::NoBrush);
-        painter.drawEllipse(QPointF(activeEnd_ ? b : a, y), 11, 11);
+        const qreal spanW = std::max<qreal>(0.0, b - a);
+
+        QLinearGradient rangeGrad(a, trackY, a, trackY + trackHeight);
+        QColor accColor = accent();
+        rangeGrad.setColorAt(0.0, accColor.lighter(118));
+        rangeGrad.setColorAt(1.0, accColor.darker(108));
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(rangeGrad);
+        painter.drawRoundedRect(QRectF(a, trackY, spanW, trackHeight), 4, 4);
+
+        // Current playhead needle
+        if (playhead_ >= 0.0 && playhead_ <= duration_) {
+            const qreal px = coordinate(playhead_);
+            painter.setPen(QPen(QColor(255, 255, 255, 240), 2.0));
+            painter.drawLine(QPointF(px, trackY - 5), QPointF(px, trackY + trackHeight + 5));
+            painter.setBrush(QColor(255, 255, 255));
+            painter.setPen(QPen(QColor(18, 19, 26), 1.0));
+            painter.drawEllipse(QPointF(px, trackY - 5), 3.5, 3.5);
+        }
+
+        // Handles
+        const auto drawHandle = [&](qreal x, bool isEnd, bool isActive) {
+            const qreal hw = 12.0;
+            const qreal hh = 26.0;
+            const qreal hy = (h - hh) / 2.0;
+            const qreal hx = x - (isEnd ? 2.0 : hw - 2.0);
+            QRectF handleRect(hx, hy, hw, hh);
+
+            painter.setPen(QPen(isActive ? accent() : QColor(255, 255, 255, 70), isActive ? 1.5 : 1.0));
+            painter.setBrush(QColor(240, 242, 248));
+            painter.drawRoundedRect(handleRect, 4, 4);
+
+            // Vertical tactile grip marks
+            painter.setPen(QPen(QColor(60, 64, 78), 1.0));
+            const qreal mx = handleRect.center().x();
+            painter.drawLine(QPointF(mx - 1.5, hy + 7), QPointF(mx - 1.5, hy + hh - 7));
+            painter.drawLine(QPointF(mx + 1.5, hy + 7), QPointF(mx + 1.5, hy + hh - 7));
+
+            if (isActive) {
+                painter.setPen(QPen(accent(), 2.0));
+                painter.setBrush(Qt::NoBrush);
+                painter.drawRoundedRect(handleRect.adjusted(-2, -2, 2, 2), 6, 6);
+            }
+        };
+
+        drawHandle(a, false, !activeEnd_);
+        drawHandle(b, true, activeEnd_);
     }
+
     void mousePressEvent(QMouseEvent* event) override {
         if (event->button() != Qt::LeftButton || duration_ <= 0.0) return;
         setFocus(Qt::MouseFocusReason);
         const double seconds = valueAt(event->position().x());
-        activeEnd_ = std::abs(seconds - end_) < std::abs(seconds - start_);
-        updateValue(seconds);
+        const qreal sx = coordinate(start_);
+        const qreal ex = coordinate(end_);
+        const qreal mx = event->position().x();
+
+        if (std::abs(mx - sx) <= 12.0) {
+            dragMode_ = DragMode::Start;
+            activeEnd_ = false;
+        } else if (std::abs(mx - ex) <= 12.0) {
+            dragMode_ = DragMode::End;
+            activeEnd_ = true;
+        } else if (mx > sx + 12.0 && mx < ex - 12.0) {
+            dragMode_ = DragMode::Span;
+            dragOffset_ = seconds - start_;
+        } else {
+            activeEnd_ = std::abs(seconds - end_) < std::abs(seconds - start_);
+            dragMode_ = activeEnd_ ? DragMode::End : DragMode::Start;
+            updateValue(seconds);
+        }
+        update();
         event->accept();
     }
+
     void mouseMoveEvent(QMouseEvent* event) override {
-        if (event->buttons() & Qt::LeftButton) updateValue(valueAt(event->position().x()));
+        if (event->buttons() & Qt::LeftButton) {
+            const double seconds = valueAt(event->position().x());
+            if (dragMode_ == DragMode::Start) {
+                updateStart(seconds);
+            } else if (dragMode_ == DragMode::End) {
+                updateEnd(seconds);
+            } else if (dragMode_ == DragMode::Span) {
+                slideSpan(seconds - dragOffset_);
+            }
+            event->accept();
+            return;
+        }
+        QWidget::mouseMoveEvent(event);
     }
+
+    void mouseReleaseEvent(QMouseEvent* event) override {
+        dragMode_ = DragMode::None;
+        QWidget::mouseReleaseEvent(event);
+    }
+
     void keyPressEvent(QKeyEvent* event) override {
         if (event->key() == Qt::Key_Tab || event->key() == Qt::Key_Backtab) {
             QWidget::keyPressEvent(event);
@@ -265,15 +408,43 @@ protected:
         updateValue((activeEnd_ ? end_ : start_) + step);
         event->accept();
     }
+
 private:
+    enum class DragMode { None, Start, End, Span };
+
     qreal coordinate(double value) const {
-        constexpr qreal inset = 14.0;
+        constexpr qreal inset = 16.0;
         return inset + (width() - 2.0 * inset) * (duration_ > 0.0 ? value / duration_ : 0.0);
     }
+
     double valueAt(qreal x) const {
-        constexpr qreal inset = 14.0;
+        constexpr qreal inset = 16.0;
         return duration_ * std::clamp((x - inset) / std::max<qreal>(1.0, width() - 2.0 * inset), 0.0, 1.0);
     }
+
+    void updateStart(double val) {
+        val = std::clamp(val, std::max(0.0, end_ - kMaximumClipDuration), end_ - 0.001);
+        start_ = val;
+        update();
+        if (changed_) changed_(start_, end_);
+    }
+
+    void updateEnd(double val) {
+        val = std::clamp(val, start_ + 0.001, std::min(duration_, start_ + kMaximumClipDuration));
+        end_ = val;
+        update();
+        if (changed_) changed_(start_, end_);
+    }
+
+    void slideSpan(double newStart) {
+        const double span = end_ - start_;
+        newStart = std::clamp(newStart, 0.0, std::max(0.0, duration_ - span));
+        start_ = newStart;
+        end_ = newStart + span;
+        update();
+        if (changed_) changed_(start_, end_);
+    }
+
     void updateValue(double value) {
         value = std::clamp(value, 0.0, duration_);
         if (activeEnd_) end_ = std::clamp(value, start_, std::min(duration_, start_ + kMaximumClipDuration));
@@ -281,9 +452,13 @@ private:
         update();
         if (changed_) changed_(start_, end_);
     }
+
     double duration_ = 0.0;
     double start_ = 0.0;
     double end_ = 0.0;
+    double playhead_ = 0.0;
+    DragMode dragMode_ = DragMode::None;
+    double dragOffset_ = 0.0;
     bool activeEnd_ = false;
     std::function<void(double, double)> changed_;
 };
@@ -303,9 +478,9 @@ QDoubleSpinBox* makeTimeSpin(QWidget* parent, const QString& name) {
     spin->setSingleStep(0.1);
     spin->setKeyboardTracking(false);
     spin->setSuffix(ClipTranslation::tr(" s"));
-    spin->setMinimumWidth(112);
+    spin->setMinimumWidth(110);
     spin->setAccessibleName(name == QLatin1String("clipStart") ? ClipTranslation::tr("Clip start time")
-                                                                 : ClipTranslation::tr("Clip end time"));
+                                                               : ClipTranslation::tr("Clip end time"));
     return spin;
 }
 
@@ -440,13 +615,20 @@ public:
         quality->setItemText(1, ClipTranslation::tr("720p"));
         quality->setItemText(2, ClipTranslation::tr("480p"));
         previewScrub->setAccessibleName(ClipTranslation::tr("Scrub within selected moment"));
-        previewTime->setText(previewPositionKnown
-                                 ? ClipTranslation::tr("Preview %1").arg(formatSeconds(previewPosition))
-                                 : ClipTranslation::tr("Preview starts at the selected in point"));
+        updatePositionDisplay();
         if (rangeInitialized)
             durationLabel->setText(ClipTranslation::tr("%1 selected").arg(formatSeconds(end->value() - start->value())));
-        playPreview->setText(playPreview->isChecked() ? ClipTranslation::tr("Pause preview") : ClipTranslation::tr("Play preview"));
-        previewAudio->setText(previewAudio->isChecked() ? ClipTranslation::tr("Preview audio on") : ClipTranslation::tr("Preview audio off"));
+
+        playButton->setToolTip(preview && preview->isPlaying() ? ClipTranslation::tr("Pause preview")
+                                                               : ClipTranslation::tr("Play preview"));
+        muteButton->setToolTip(previewMuted ? ClipTranslation::tr("Preview audio on")
+                                            : ClipTranslation::tr("Preview audio off"));
+
+        btnSetStartCurrent->setToolTip(ClipTranslation::tr("Set clip start to current video position ([)"));
+        btnSeekStart->setToolTip(ClipTranslation::tr("Seek preview to clip start"));
+        btnSetEndCurrent->setToolTip(ClipTranslation::tr("Set clip end to current video position (])"));
+        btnSeekEnd->setToolTip(ClipTranslation::tr("Seek preview to clip end"));
+
         exportButton->setText(exporting ? ClipTranslation::tr("Exporting…")
                                        : exportButtonState == ExportButtonState::Retry ? ClipTranslation::tr("Try again")
                                        : exportButtonState == ExportButtonState::Another ? ClipTranslation::tr("Export another")
@@ -475,13 +657,41 @@ public:
         status->setText(text);
     }
 
+    bool handleKeyPress(QKeyEvent* event) {
+        if (event->key() == Qt::Key_Space) {
+            togglePlay();
+            return true;
+        }
+        if (event->key() == Qt::Key_BracketLeft) {
+            setStartToCurrent();
+            return true;
+        }
+        if (event->key() == Qt::Key_BracketRight) {
+            setEndToCurrent();
+            return true;
+        }
+        if (event->key() == Qt::Key_M) {
+            toggleMute();
+            return true;
+        }
+        if (event->key() == Qt::Key_Left) {
+            stepSeconds(event->modifiers().testFlag(Qt::ShiftModifier) ? -0.1 : -1.0);
+            return true;
+        }
+        if (event->key() == Qt::Key_Right) {
+            stepSeconds(event->modifiers().testFlag(Qt::ShiftModifier) ? 0.1 : 1.0);
+            return true;
+        }
+        return false;
+    }
+
     void build() {
         dialog->setObjectName(QStringLiteral("clipDialog"));
         dialog->setWindowTitle(ClipTranslation::tr("Cut moment"));
         dialog->setModal(false);
-        dialog->setMinimumWidth(640);
-        dialog->setMinimumHeight(520);
-        dialog->resize(700, 580);
+        dialog->setMinimumWidth(720);
+        dialog->setMinimumHeight(600);
+        dialog->resize(760, 640);
         dialog->setWindowFlag(Qt::WindowContextHelpButtonHint, false);
 
         const double radius = cornerRadius() > 0.0 ? cornerRadius() : 8.0;
@@ -490,7 +700,7 @@ public:
         root->setContentsMargins(14, 14, 14, 14);
         root->setSpacing(10);
 
-        // Card 1: Video Preview & Transport Bar
+        // ── Card 1: Video Preview & Transport Bar ──────────────────────────────
         previewCard = new QFrame(dialog);
         previewCard->setObjectName(QStringLiteral("clipCard"));
         auto* previewLayout = new QVBoxLayout(previewCard);
@@ -499,37 +709,50 @@ public:
 
         preview = new VideoSurface(previewCard);
         preview->setObjectName(QStringLiteral("clipPreview"));
-        preview->setMinimumHeight(180);
-        preview->setMaximumHeight(320);
+        preview->setMinimumHeight(200);
+        preview->setMaximumHeight(360);
         preview->setDisplayCornerRadius(qMax(4.0, radius));
         preview->setFocusPolicy(Qt::StrongFocus);
         previewLayout->addWidget(preview, 1);
 
         auto* previewBar = new QHBoxLayout;
         previewBar->setContentsMargins(2, 0, 2, 0);
-        previewBar->setSpacing(8);
-        playPreview = new QPushButton(ClipTranslation::tr("Play preview"), previewCard);
-        playPreview->setObjectName(QStringLiteral("clipPreviewPlay"));
-        playPreview->setCheckable(true);
-        previewAudio = new QPushButton(ClipTranslation::tr("Preview audio off"), previewCard);
-        previewAudio->setObjectName(QStringLiteral("clipPreviewAudio"));
-        previewAudio->setCheckable(true);
+        previewBar->setSpacing(6);
+
+        playButton = new IconButton(IconPainter::play, ClipTranslation::tr("Play preview"), 30, 16, previewCard);
+        playButton->setObjectName(QStringLiteral("clipPlayToggle"));
+
+        btnStepBack = new QPushButton(QStringLiteral("◀ 1s"), previewCard);
+        btnStepBack->setObjectName(QStringLiteral("clipMiniAction"));
+        btnStepBack->setToolTip(QStringLiteral("Step back 1 second (Left arrow)"));
+
+        btnStepForward = new QPushButton(QStringLiteral("1s ▶"), previewCard);
+        btnStepForward->setObjectName(QStringLiteral("clipMiniAction"));
+        btnStepForward->setToolTip(QStringLiteral("Step forward 1 second (Right arrow)"));
+
+        muteButton = new IconButton(IconPainter::mute, ClipTranslation::tr("Preview audio on"), 30, 16, previewCard);
+        muteButton->setObjectName(QStringLiteral("clipMuteToggle"));
+
         previewScrub = new QSlider(Qt::Horizontal, previewCard);
         previewScrub->setObjectName(QStringLiteral("clipPreviewScrub"));
         previewScrub->setRange(0, 1000);
         previewScrub->setAccessibleName(ClipTranslation::tr("Scrub within selected moment"));
         previewScrub->setEnabled(false);
-        previewTime = new QLabel(ClipTranslation::tr("Preview starts at the selected in point"), previewCard);
-        previewTime->setObjectName(QStringLiteral("clipPreviewTime"));
+
+        previewTime = new QLabel(previewCard);
+        previewTime->setObjectName(QStringLiteral("clipTimeReadout"));
         previewTime->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        previewBar->addWidget(playPreview);
-        previewBar->addWidget(previewAudio);
+
+        previewBar->addWidget(playButton);
+        previewBar->addWidget(btnStepBack);
+        previewBar->addWidget(btnStepForward);
+        previewBar->addWidget(muteButton);
         previewBar->addWidget(previewScrub, 1);
         previewBar->addWidget(previewTime);
         previewLayout->addLayout(previewBar);
         root->addWidget(previewCard, 1);
 
-        // Card 2: Range & Cut Selection
+        // ── Card 2: Range & Quick Presets ──────────────────────────────────────
         rangeCard = new QFrame(dialog);
         rangeCard->setObjectName(QStringLiteral("clipCard"));
         auto* rangeLayout = new QVBoxLayout(rangeCard);
@@ -538,35 +761,84 @@ public:
 
         auto* rangeHeader = new QHBoxLayout;
         rangeHeader->setContentsMargins(0, 0, 0, 0);
+        rangeHeader->setSpacing(8);
+
         rangeTitle = new QLabel(ClipTranslation::tr("Clip range"), rangeCard);
         rangeTitle->setObjectName(QStringLiteral("clipSectionTitle"));
         rangeHeader->addWidget(rangeTitle);
+
+        // Quick duration presets
+        auto* presetsRow = new QHBoxLayout;
+        presetsRow->setSpacing(4);
+        const auto addPreset = [this, presetsRow](int seconds) {
+            auto* btn = new QPushButton(QStringLiteral("%1 s").arg(seconds), rangeCard);
+            btn->setObjectName(QStringLiteral("clipPresetButton"));
+            btn->setToolTip(QStringLiteral("Set clip duration to %1 seconds").arg(seconds));
+            connect(btn, &QPushButton::clicked, this, [this, seconds] {
+                applyDurationPreset(static_cast<double>(seconds));
+            });
+            presetsRow->addWidget(btn);
+            presetButtons.append(btn);
+        };
+        addPreset(5);
+        addPreset(10);
+        addPreset(15);
+        addPreset(30);
+        addPreset(60);
+        rangeHeader->addLayout(presetsRow);
+
         rangeHeader->addStretch(1);
         durationLabel = new QLabel(rangeCard);
         durationLabel->setObjectName(QStringLiteral("clipDurationBadge"));
         rangeHeader->addWidget(durationLabel);
         rangeLayout->addLayout(rangeHeader);
 
+        // Timeline scrubber
         range = new ClipRange(rangeCard);
         rangeLayout->addWidget(range);
 
+        // Precision In / Out Controls
         auto* times = new QHBoxLayout;
-        times->setContentsMargins(0, 0, 0, 0);
-        times->setSpacing(6);
-        startLabel = new QLabel(rangeCard);
+        times->setContentsMargins(0, 2, 0, 0);
+        times->setSpacing(8);
+
+        // IN point controls
+        startLabel = new QLabel(ClipTranslation::tr("Start"), rangeCard);
+        startLabel->setObjectName(QStringLiteral("clipHeaderTag"));
         times->addWidget(startLabel);
         start = makeTimeSpin(rangeCard, QStringLiteral("clipStart"));
         times->addWidget(start);
+
+        btnSetStartCurrent = new QPushButton(QStringLiteral("⏱ ["), rangeCard);
+        btnSetStartCurrent->setObjectName(QStringLiteral("clipMiniAction"));
+        times->addWidget(btnSetStartCurrent);
+
+        btnSeekStart = new QPushButton(QStringLiteral("⇤"), rangeCard);
+        btnSeekStart->setObjectName(QStringLiteral("clipMiniAction"));
+        times->addWidget(btnSeekStart);
+
         times->addSpacing(16);
-        endLabel = new QLabel(rangeCard);
+
+        // OUT point controls
+        endLabel = new QLabel(ClipTranslation::tr("End"), rangeCard);
+        endLabel->setObjectName(QStringLiteral("clipHeaderTag"));
         times->addWidget(endLabel);
         end = makeTimeSpin(rangeCard, QStringLiteral("clipEnd"));
         times->addWidget(end);
+
+        btnSetEndCurrent = new QPushButton(QStringLiteral("⏱ ]"), rangeCard);
+        btnSetEndCurrent->setObjectName(QStringLiteral("clipMiniAction"));
+        times->addWidget(btnSetEndCurrent);
+
+        btnSeekEnd = new QPushButton(QStringLiteral("⇥"), rangeCard);
+        btnSeekEnd->setObjectName(QStringLiteral("clipMiniAction"));
+        times->addWidget(btnSeekEnd);
+
         times->addStretch(1);
         rangeLayout->addLayout(times);
         root->addWidget(rangeCard);
 
-        // Card 3: Export Options & Actions
+        // ── Card 3: Export Options & Actions ───────────────────────────────────
         exportCard = new QFrame(dialog);
         exportCard->setObjectName(QStringLiteral("clipCard"));
         auto* exportLayout = new QVBoxLayout(exportCard);
@@ -584,6 +856,11 @@ public:
         quality->addItem(ClipTranslation::tr("720p"), 720);
         quality->addItem(ClipTranslation::tr("480p"), 480);
         qualityRow->addWidget(quality);
+
+        auto* formatBadge = new QLabel(QStringLiteral("MP4 · H.264 / AAC"), exportCard);
+        formatBadge->setObjectName(QStringLiteral("clipHeaderTag"));
+        qualityRow->addWidget(formatBadge);
+
         qualityRow->addSpacing(12);
         status = new QLabel(ClipTranslation::tr("Select up to 60 seconds to export as MP4."), exportCard);
         status->setObjectName(QStringLiteral("clipStatus"));
@@ -623,6 +900,7 @@ public:
             dialog->setStyleSheet(clipDialogStyleSheet());
             range->update();
         });
+
         setStatus("Select up to 60 seconds to export as MP4.");
         range->setChanged([this](double a, double b) { setTimes(a, b, false); });
         connect(start, &QDoubleSpinBox::valueChanged, this, [this](double value) {
@@ -633,16 +911,21 @@ public:
             if (syncing) return;
             setTimes(start->value(), value, 2);
         });
-        connect(playPreview, &QPushButton::toggled, this, [this](bool playing) {
-            if (!preview || invalidated) return;
-            preview->setPaused(!playing);
-            playPreview->setText(playing ? ClipTranslation::tr("Pause preview") : ClipTranslation::tr("Play preview"));
+
+        connect(playButton, &QPushButton::clicked, this, [this] { togglePlay(); });
+        connect(muteButton, &QPushButton::clicked, this, [this] { toggleMute(); });
+        connect(btnStepBack, &QPushButton::clicked, this, [this] { stepSeconds(-1.0); });
+        connect(btnStepForward, &QPushButton::clicked, this, [this] { stepSeconds(1.0); });
+
+        connect(btnSetStartCurrent, &QPushButton::clicked, this, [this] { setStartToCurrent(); });
+        connect(btnSetEndCurrent, &QPushButton::clicked, this, [this] { setEndToCurrent(); });
+        connect(btnSeekStart, &QPushButton::clicked, this, [this] {
+            if (preview && !invalidated) preview->seek(start->value());
         });
-        connect(previewAudio, &QPushButton::toggled, this, [this](bool enabled) {
-            if (!preview || invalidated) return;
-            preview->setMuted(!enabled);
-            previewAudio->setText(enabled ? ClipTranslation::tr("Preview audio on") : ClipTranslation::tr("Preview audio off"));
+        connect(btnSeekEnd, &QPushButton::clicked, this, [this] {
+            if (preview && !invalidated) preview->seek(end->value());
         });
+
         connect(previewScrub, &QSlider::valueChanged, this, [this](int value) {
             if (!scrubbingPreview && preview && duration > 0.0) {
                 preview->seek(start->value() + (end->value() - start->value()) * value / 1000.0);
@@ -657,11 +940,12 @@ public:
             }
             previewPosition = position;
             previewPositionKnown = true;
-            previewTime->setText(ClipTranslation::tr("Preview %1").arg(formatSeconds(position)));
+            range->setPlayhead(position);
+            updatePositionDisplay();
             if (duration > 0.0 && position >= end->value()) {
                 preview->setPaused(true);
                 preview->seek(start->value());
-                playPreview->setChecked(false);
+                updatePlayButton(false);
             }
         });
         connect(exportButton, &QPushButton::clicked, this, [this] { chooseOutput(); });
@@ -679,6 +963,68 @@ public:
         retranslateUi();
     }
 
+    void togglePlay() {
+        if (!preview || invalidated) return;
+        const bool willPlay = !preview->isPlaying();
+        preview->setPaused(!willPlay);
+        updatePlayButton(willPlay);
+    }
+
+    void updatePlayButton(bool playing) {
+        if (playButton == nullptr) return;
+        playButton->setIcon(playing ? IconPainter::pause : IconPainter::play);
+        playButton->setToolTip(playing ? ClipTranslation::tr("Pause preview") : ClipTranslation::tr("Play preview"));
+    }
+
+    void toggleMute() {
+        if (!preview || invalidated) return;
+        previewMuted = !previewMuted;
+        preview->setMuted(previewMuted);
+        if (muteButton != nullptr) {
+            muteButton->setIcon(previewMuted ? IconPainter::mute : IconPainter::volume);
+            muteButton->setToolTip(previewMuted ? ClipTranslation::tr("Preview audio on") : ClipTranslation::tr("Preview audio off"));
+        }
+    }
+
+    void stepSeconds(double delta) {
+        if (!preview || invalidated || duration <= 0.0) return;
+        const double target = std::clamp(previewPosition + delta, 0.0, duration);
+        preview->seek(target);
+    }
+
+    void setStartToCurrent() {
+        if (duration <= 0.0 || invalidated || !rangeInitialized) return;
+        setTimes(previewPosition, end->value(), 1);
+    }
+
+    void setEndToCurrent() {
+        if (duration <= 0.0 || invalidated || !rangeInitialized) return;
+        setTimes(start->value(), previewPosition, 2);
+    }
+
+    void applyDurationPreset(double seconds) {
+        if (duration <= 0.0 || invalidated || !rangeInitialized) return;
+        const double currentStart = start->value();
+        double targetEnd = currentStart + seconds;
+        if (targetEnd > duration) {
+            targetEnd = duration;
+            setTimes(std::max(0.0, targetEnd - seconds), targetEnd, 0);
+        } else {
+            setTimes(currentStart, targetEnd, 2);
+        }
+    }
+
+    void updatePositionDisplay() {
+        if (!previewTime) return;
+        if (previewPositionKnown && rangeInitialized) {
+            const double clipLen = std::max(0.0, end->value() - start->value());
+            previewTime->setText(QStringLiteral("%1 / %2")
+                                     .arg(formatSeconds(previewPosition), formatSeconds(clipLen)));
+        } else {
+            previewTime->setText(ClipTranslation::tr("Preview starts at the selected in point"));
+        }
+    }
+
     void initializeRange() {
         if (rangeInitialized || exporting || invalidated || !std::isfinite(duration) || duration <= 0.0) return;
         const double center = source ? std::clamp(source->position(), 0.0, duration) : 0.0;
@@ -691,7 +1037,15 @@ public:
         start->setEnabled(true);
         end->setEnabled(true);
         quality->setEnabled(true);
-        playPreview->setEnabled(true);
+        for (auto* btn : presetButtons) btn->setEnabled(true);
+        btnSetStartCurrent->setEnabled(true);
+        btnSetEndCurrent->setEnabled(true);
+        btnSeekStart->setEnabled(true);
+        btnSeekEnd->setEnabled(true);
+        btnStepBack->setEnabled(true);
+        btnStepForward->setEnabled(true);
+        playButton->setEnabled(true);
+        muteButton->setEnabled(true);
         previewScrub->setEnabled(true);
         exportButton->setEnabled(size.isValid() && !invalidated);
         setStatus(QT_TRANSLATE_NOOP("mplayer::shell::ClipDialog", "Choose a moment up to 60 seconds long."));
@@ -764,9 +1118,9 @@ public:
         if (preview && !invalidated) {
             preview->setPaused(true);
             preview->seek(a);
-            playPreview->setChecked(false);
-            playPreview->setText(ClipTranslation::tr("Play preview"));
+            updatePlayButton(false);
         }
+        updatePositionDisplay();
     }
 
     bool validRange() const {
@@ -841,6 +1195,13 @@ public:
         end->setEnabled(false);
         range->setEnabled(false);
         quality->setEnabled(false);
+        for (auto* btn : presetButtons) btn->setEnabled(false);
+        btnSetStartCurrent->setEnabled(false);
+        btnSetEndCurrent->setEnabled(false);
+        btnSeekStart->setEnabled(false);
+        btnSeekEnd->setEnabled(false);
+        btnStepBack->setEnabled(false);
+        btnStepForward->setEnabled(false);
         setStatus(QT_TRANSLATE_NOOP("mplayer::shell::ClipDialog", "Preparing export…"));
         exportButtonState = ExportButtonState::Default;
         exportWorker.start(request);
@@ -852,8 +1213,15 @@ public:
         start->setEnabled(false);
         end->setEnabled(false);
         quality->setEnabled(false);
-        playPreview->setEnabled(false);
-        previewAudio->setEnabled(false);
+        for (auto* btn : presetButtons) btn->setEnabled(false);
+        btnSetStartCurrent->setEnabled(false);
+        btnSetEndCurrent->setEnabled(false);
+        btnSeekStart->setEnabled(false);
+        btnSeekEnd->setEnabled(false);
+        btnStepBack->setEnabled(false);
+        btnStepForward->setEnabled(false);
+        playButton->setEnabled(false);
+        muteButton->setEnabled(false);
         previewScrub->setEnabled(false);
         exportButton->setEnabled(false);
     }
@@ -878,8 +1246,15 @@ public:
     QFrame* rangeCard = nullptr;
     QFrame* exportCard = nullptr;
     QSlider* previewScrub = nullptr;
-    QPushButton* playPreview = nullptr;
-    QPushButton* previewAudio = nullptr;
+    IconButton* playButton = nullptr;
+    IconButton* muteButton = nullptr;
+    QPushButton* btnStepBack = nullptr;
+    QPushButton* btnStepForward = nullptr;
+    QPushButton* btnSetStartCurrent = nullptr;
+    QPushButton* btnSeekStart = nullptr;
+    QPushButton* btnSetEndCurrent = nullptr;
+    QPushButton* btnSeekEnd = nullptr;
+    QVector<QPushButton*> presetButtons;
     QPushButton* exportButton = nullptr;
     QPushButton* cancel = nullptr;
     QPushButton* reveal = nullptr;
@@ -897,6 +1272,7 @@ public:
     double previewPosition = 0.0;
     ExportButtonState exportButtonState = ExportButtonState::Default;
     bool previewPositionKnown = false;
+    bool previewMuted = true;
     bool syncing = false;
     bool exporting = false;
     bool rangeInitialized = false;
@@ -913,12 +1289,19 @@ void ClipDialog::changeEvent(QEvent* event) {
     QDialog::changeEvent(event);
 }
 
+void ClipDialog::keyPressEvent(QKeyEvent* event) {
+    if (d_ && d_->handleKeyPress(event)) {
+        event->accept();
+        return;
+    }
+    QDialog::keyPressEvent(event);
+}
+
 ClipDialog::~ClipDialog() = default;
 
 void ClipDialog::closeEvent(QCloseEvent* event) {
     if (d_) {
         if (d_->preview) d_->preview->setPaused(true);
-        if (d_->playPreview) d_->playPreview->setChecked(false);
         if (d_->exporting) {
             d_->exportWorker.cancel();
             d_->setStatus(QT_TRANSLATE_NOOP("mplayer::shell::ClipDialog", "Canceling export…"));
