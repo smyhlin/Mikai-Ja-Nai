@@ -280,6 +280,8 @@ signals:
     /// preference would be stored.
     void compareRequested();
     void copyLinkRequested();
+    /// Opens the source-backed clip export flow at the current playback moment.
+    void cutMomentRequested();
     void openFolderRequested();
     void mediaInformationRequested();
     void stateChanged(const QString& state);
@@ -502,6 +504,7 @@ private:
     IconButton* btnAudio_ = nullptr;
     IconButton* btnSubs_ = nullptr;
     IconButton* btnEnhance_ = nullptr;
+    IconButton* btnCutMoment_ = nullptr;
     IconButton* btnSettings_ = nullptr;
     SettingsFlyout* flyout_ = nullptr;
     /// The enhancement tree: one panel per level, side by side. The first is

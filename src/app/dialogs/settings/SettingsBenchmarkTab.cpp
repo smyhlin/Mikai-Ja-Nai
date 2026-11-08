@@ -15,8 +15,8 @@
 #include <native/components/AnimeJanaiCatalogWatcher.hpp>
 #include <native/components/AnimeJanaiRuntime.hpp>
 #include <native/components/NativeGpuProbe.hpp>
-#include <native/models/NativeRife.hpp>
 #include <native/models/NativeSpatialAssets.hpp>
+#include <native/models/NativeUpscalers.hpp>
 #include <player/shaders/Anime4K.hpp>
 
 #include <QAbstractItemView>
@@ -585,13 +585,14 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
         group->setFont(0, heading);
         group->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
         group->setExpanded(
-            groupExpansion.value(key, key == QLatin1String("animejanai")));
+            groupExpansion.value(key, key == QLatin1String("processing:upscale")));
         return group;
     };
     QSet<QString> presentIds;
     const auto addModel = [this, &checkedIds, &presentIds, hasPreviousCatalogue](
                               QTreeWidgetItem* group, const QString& key, const QString& label,
                               const QString& tooltip, bool defaultChecked, bool supported) {
+        if (key.isEmpty() || presentIds.contains(key)) return;
         auto* item = new QTreeWidgetItem(group);
         item->setText(0, label);
         item->setFlags(supported ? Qt::ItemIsEnabled | Qt::ItemIsUserCheckable
@@ -606,53 +607,93 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
         presentIds.insert(key);
     };
 
-    QTreeWidgetItem* anime4kGroup = addGroup(QStringLiteral("anime4k"), tr("Anime4K"));
+    QTreeWidgetItem* restoreGroup =
+        addGroup(QStringLiteral("processing:restore"),
+                 QCoreApplication::translate("QObject", "Restore (Anime4K)"));
     for (const mplayer::anime4k::ModeInfo& mode : mplayer::anime4k::availableModes()) {
         if (mode.mode == mplayer::anime4k::Mode::Off) continue;
-        addModel(anime4kGroup, QStringLiteral("anime4k:") + mode.id,
+        addModel(restoreGroup, QStringLiteral("anime4k:") + mode.id,
                  mplayer::anime4k::displayLabel(mode.mode), mode.hint, false, true);
     }
 
     const QVector<mplayer::native::AnimeJanaiPreset> presets =
         mplayer::native::animeJanaiPresets();
-    QTreeWidgetItem* animeJanaiGroup = addGroup(QStringLiteral("animejanai"), tr("AnimeJaNai"));
+    const mplayer::native::AnimeJanaiConfig managerConfig =
+        mplayer::native::AnimeJanaiConfigStore::load();
+    const QVector<mplayer::native::AnimeJanaiSlot> defaultProfiles =
+        mplayer::native::AnimeJanaiConfigStore::defaultProfiles(managerConfig);
+    const QVector<mplayer::native::StoredSpatialAsset> storedSpatial =
+        mplayer::native::storedSpatialAssets();
+    QTreeWidgetItem* upscaleGroup =
+        addGroup(QStringLiteral("processing:upscale"),
+                 QCoreApplication::translate("QObject", "Upscale"));
+    QTreeWidgetItem* interpolationGroup =
+        addGroup(QStringLiteral("processing:interpolation"),
+                 QCoreApplication::translate("QObject", "Interpolation (RIFE)"));
+
+    const auto profileUsesRife = [](const mplayer::native::AnimeJanaiPreset& preset,
+                                    const QVector<mplayer::native::AnimeJanaiSlot>& profiles) {
+        if (preset.rife || preset.id.startsWith(QLatin1String("rife:"))) return true;
+        for (const mplayer::native::AnimeJanaiSlot& profile : profiles) {
+            if (profile.number != preset.slot) continue;
+            return std::any_of(profile.chains.cbegin(), profile.chains.cend(),
+                               [](const mplayer::native::AnimeJanaiChain& chain) {
+                                   return chain.rifeEnabled;
+                               });
+        }
+        return false;
+    };
+
     for (const mplayer::native::AnimeJanaiPreset& preset : presets) {
-        if (!preset.id.startsWith(QLatin1String("builtin"))) continue;
-        const QString tooltip =
-            preset.supported
-                ? tr("slot %1 · %2")
-                      .arg(preset.slot)
-                      .arg(preset.modelFile.isEmpty() ? tr("built-in chain") : preset.modelFile)
-                : preset.reason;
-        addModel(animeJanaiGroup, preset.id, preset.label, tooltip, true, preset.supported);
+        const auto& profiles = preset.id.startsWith(QLatin1String("builtin_slot:"))
+                                   ? managerConfig.customSlots
+                                   : defaultProfiles;
+        const bool interpolation = profileUsesRife(preset, profiles);
+        QString tooltip = preset.supported
+                              ? tr("slot %1 · %2")
+                                    .arg(preset.slot)
+                                    .arg(preset.modelFile.isEmpty() ? tr("built-in chain")
+                                                                   : preset.modelFile)
+                              : preset.reason;
+        bool supported = preset.supported;
+        if (preset.id.startsWith(QLatin1String("spatial:"))) {
+            const QString assetId = preset.id.mid(QStringLiteral("spatial:").size());
+            const auto stored = std::find_if(
+                storedSpatial.cbegin(), storedSpatial.cend(),
+                [&assetId](const mplayer::native::StoredSpatialAsset& row) {
+                    return row.asset.id == assetId;
+                });
+            if (stored == storedSpatial.cend()) {
+                supported = false;
+                tooltip = tr("Not downloaded. Install this graph from Components.");
+            } else if (!stored->verified) {
+                supported = false;
+                tooltip = stored->reason.isEmpty()
+                              ? tr("The installed graph could not be verified.")
+                              : stored->reason;
+            }
+        }
+        const bool defaultChecked = preset.id.startsWith(QLatin1String("builtin")) &&
+                                    !interpolation;
+        addModel(interpolation ? interpolationGroup : upscaleGroup, preset.id,
+                 preset.label, tooltip, defaultChecked, supported);
     }
 
-    QTreeWidgetItem* spatialGroup = addGroup(QStringLiteral("spatial"), tr("Spatial"));
-    for (const mplayer::native::AnimeJanaiPreset& preset : presets) {
-        if (!preset.id.startsWith(QLatin1String("spatial:"))) continue;
-        const QString tooltip =
-            preset.supported ? tr("slot %1 · %2").arg(preset.slot).arg(preset.modelFile)
-                             : preset.reason;
-        addModel(spatialGroup, preset.id, preset.label, tooltip, false, preset.supported);
-    }
-
-    QTreeWidgetItem* rifeGroup = addGroup(QStringLiteral("rife"), tr("RIFE"));
-    for (const mplayer::native::AnimeJanaiPreset& preset : presets) {
-        if (!preset.id.startsWith(QLatin1String("rife:"))) continue;
-        const QString tooltip =
-            preset.supported ? tr("slot %1 · %2").arg(preset.slot).arg(preset.modelFile)
-                             : preset.reason;
-        addModel(rifeGroup, preset.id, preset.label, tooltip, false, preset.supported);
+    for (const mplayer::native::UpscalerModel& model : mplayer::native::upscalerCatalog()) {
+        const QString id = QStringLiteral("upscaler:") + model.fileName;
+        const bool installed = !mplayer::native::installedUpscalerPath(model).isEmpty();
+        addModel(upscaleGroup, id, model.displayName,
+                 installed ? tr("%1× · %2").arg(model.scale).arg(model.precision)
+                           : tr("Not downloaded. Install this graph from Settings › Upscalers."),
+                 false, installed);
     }
 
     // A checked model that the live catalogue no longer offers stays visible
     // and named, but cannot be run; it is never replaced by a similar model.
-    const auto groupForId = [anime4kGroup, animeJanaiGroup, spatialGroup,
-                             rifeGroup](const QString& key) {
-        if (key.startsWith(QLatin1String("anime4k:"))) return anime4kGroup;
-        if (key.startsWith(QLatin1String("spatial:"))) return spatialGroup;
-        if (key.startsWith(QLatin1String("rife:"))) return rifeGroup;
-        return animeJanaiGroup;
+    const auto groupForId = [restoreGroup, upscaleGroup, interpolationGroup](const QString& key) {
+        if (key.startsWith(QLatin1String("anime4k:"))) return restoreGroup;
+        if (key.startsWith(QLatin1String("rife:"))) return interpolationGroup;
+        return upscaleGroup;
     };
     for (auto it = checkedIds.cbegin(); it != checkedIds.cend(); ++it) {
         if (presentIds.contains(it.key())) continue;

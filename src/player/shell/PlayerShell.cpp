@@ -80,10 +80,14 @@ constexpr int kEnhancementTreeDepth = 6;
 /// transport bar. They stand over the picture, so the space is the only thing
 /// separating a pill from the dock it sits above.
 constexpr int kSkipOfferGap = 8;
-constexpr auto kAnimeJanaiRoot = "animejanai";
-constexpr auto kUpscalersRoot = "upscalers";
+constexpr auto kUpscalersRoot = "processing:upscale";
+constexpr auto kUpscaleProfiles = "processing:upscale:profiles";
+constexpr auto kUpscaleSpatial = "processing:upscale:spatial";
+constexpr auto kUpscaleSpatialCustom = "processing:upscale:spatial:custom";
+constexpr auto kUpscaleOptional = "processing:upscale:optional";
+constexpr auto kRestoreRoot = "processing:restore";
+constexpr auto kInterpolationRoot = "processing:interpolation";
 constexpr auto kAnimeJanaiRife = "animejanai:rife";
-constexpr auto kAnimeJanaiSpatial = "animejanai:spatial";
 constexpr auto kAnimeJanaiBackend = "animejanai:backend";
 
 QString rifeVersion(const native::AnimeJanaiPreset& preset) {
@@ -143,10 +147,25 @@ bool rifeLevelHasPreset(const QString& levelId,
     return true;
 }
 
+QString processingTitle(const QString& levelId) {
+    if (levelId == QLatin1String(kRestoreRoot)) return QObject::tr("RESTORE · ANIME4K");
+    if (levelId == QLatin1String(kUpscalersRoot)) return QObject::tr("UPSCALE");
+    if (levelId == QLatin1String(kUpscaleProfiles)) return QObject::tr("PROFILES");
+    if (levelId.startsWith(QLatin1String(kUpscaleProfiles) + QStringLiteral(":page:"))) {
+        return QObject::tr("PROFILES · PAGE %1").arg(levelId.section(QLatin1Char(':'), -1));
+    }
+    if (levelId == QLatin1String(kUpscaleSpatial)) return QObject::tr("SPATIAL MODELS");
+    if (levelId == QLatin1String(kUpscaleSpatialCustom)) return QObject::tr("CUSTOM SPATIAL MODELS");
+    if (levelId.startsWith(QLatin1String(kUpscaleSpatialCustom) + QStringLiteral(":page:"))) {
+        return QObject::tr("CUSTOM SPATIAL · PAGE %1").arg(levelId.section(QLatin1Char(':'), -1));
+    }
+    if (levelId == QLatin1String(kUpscaleOptional)) return QObject::tr("OPTIONAL UPSCALERS");
+    if (levelId == QLatin1String(kInterpolationRoot)) return QObject::tr("INTERPOLATION · RIFE");
+    if (levelId == QLatin1String(kAnimeJanaiBackend)) return QObject::tr("BACKEND");
+    return {};
+}
+
 QString animeJanaiTitle(const QString& levelId) {
-    if (levelId == QLatin1String(kAnimeJanaiRoot)) return QStringLiteral("ANIMEJANAI");
-    if (levelId == QLatin1String(kAnimeJanaiSpatial)) return QObject::tr("SPATIAL MODELS");
-    if (levelId == QLatin1String(kAnimeJanaiRife)) return QObject::tr("RIFE MODELS");
     if (levelId == QLatin1String(kAnimeJanaiBackend)) return QObject::tr("BACKEND");
     if (levelId.startsWith(QString::fromLatin1(kAnimeJanaiRife) + QStringLiteral(":range:"))) {
         return rifeRangeLabel(levelId.section(QLatin1Char(':'), -1).toInt());
@@ -167,64 +186,7 @@ QVector<MenuEntry> animeJanaiEntries(const QString& levelId, const QString& curr
         entry.submenu = true;
         entries.append(entry);
     };
-    if (levelId == QLatin1String(kAnimeJanaiRoot)) {
-        MenuEntry off;
-        off.text = QObject::tr("Off");
-        off.tooltip = QObject::tr("Disable only AnimeJaNai; Anime4K is unchanged.");
-        off.payload = QStringLiteral("ajipreset|");
-        off.current = currentId.isEmpty();
-        entries.append(off);
-        for (const native::AnimeJanaiPreset& preset : presets) {
-            if (preset.id.startsWith(QLatin1String("builtin"))) {
-                MenuEntry entry;
-                entry.text = preset.label;
-                entry.tooltip = preset.reason;
-                entry.payload = QStringLiteral("ajipreset|") + preset.id;
-                entry.current = preset.id == currentId;
-                entries.append(entry);
-            }
-        }
-        // A selection whose graph is gone is still the selection: the filter
-        // was asked for that id. It is shown as an explicit unavailable row
-        // rather than falling back to Off or to a model nobody chose, and the
-        // id itself is what the row names, because the catalogue has no label
-        // for it any more.
-        bool selectionInCatalogue = currentId.isEmpty();
-        for (const native::AnimeJanaiPreset& preset : presets) {
-            if (preset.id.compare(currentId, Qt::CaseInsensitive) == 0) {
-                selectionInCatalogue = true;
-                break;
-            }
-        }
-        if (!selectionInCatalogue) {
-            MenuEntry missing;
-            missing.text = QObject::tr("Unavailable · %1").arg(currentId);
-            missing.tooltip = QObject::tr(
-                "This model is no longer in the catalogue. The selection is kept until you choose "
-                "another.");
-            missing.payload = QStringLiteral("ajipreset|") + currentId;
-            missing.current = true;
-            missing.disabled = true;
-            entries.append(missing);
-        }
-        addSubmenu(QObject::tr("Spatial models"), QString::fromLatin1(kAnimeJanaiSpatial));
-        addSubmenu(QObject::tr("RIFE models"), QString::fromLatin1(kAnimeJanaiRife));
-        addSubmenu(QObject::tr("Backend"), QString::fromLatin1(kAnimeJanaiBackend));
-    } else if (levelId == QLatin1String(kAnimeJanaiSpatial)) {
-        for (const native::AnimeJanaiPreset& preset : presets) {
-            if (!preset.id.startsWith(QLatin1String("spatial:")) || preset.rife) {
-                continue;
-            }
-            MenuEntry entry;
-            entry.text = preset.label;
-            entry.tooltip = preset.supported ? preset.reason
-                                            : QObject::tr("Unavailable: %1").arg(preset.reason);
-            entry.payload = QStringLiteral("ajipreset|") + preset.id;
-            entry.current = preset.id == currentId;
-            entry.disabled = !preset.supported;
-            entries.append(entry);
-        }
-    } else if (levelId == QLatin1String(kAnimeJanaiRife)) {
+    if (levelId == QLatin1String(kAnimeJanaiRife)) {
         QMap<int, bool> ranges;
         for (const native::AnimeJanaiPreset& preset : presets) {
             if (preset.rife) ranges.insert(rifeRange(rifeVersion(preset)), true);
@@ -337,10 +299,156 @@ bool sameEntries(const QVector<MenuEntry>& entries, const MenuPopup* panel) {
 QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& currentId,
                                       const native::menu::Inputs& native) {
     QVector<MenuEntry> entries;
+    if (levelId == QLatin1String(kInterpolationRoot)) {
+        QVector<MenuEntry> entries;
+        bool currentIsRife = currentId.startsWith(QLatin1String("rife:"));
+        bool currentRifeFound = false;
+        for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
+            const bool selected = preset.rife &&
+                                  preset.id.compare(currentId, Qt::CaseInsensitive) == 0;
+            currentIsRife |= selected;
+            currentRifeFound |= selected;
+        }
+        MenuEntry off;
+        off.text = QObject::tr("Off");
+        off.tooltip = QObject::tr("Disable the Standard AnimeJaNai preset; Anime4K is unchanged.");
+        off.payload = QStringLiteral("ajipreset|");
+        off.current = !currentIsRife;
+        entries.append(off);
+        if (currentIsRife && !currentRifeFound) {
+            MenuEntry missing;
+            missing.text = QObject::tr("Unavailable · %1").arg(currentId);
+            missing.tooltip = QObject::tr("This model is no longer in the catalogue. The selection is kept until you choose another.");
+            missing.payload = QStringLiteral("ajipreset|") + currentId;
+            missing.current = true;
+            missing.disabled = true;
+            entries.append(missing);
+        }
+        entries += animeJanaiEntries(QString::fromLatin1(kAnimeJanaiRife), currentId);
+        return entries;
+    }
+    const QVector<native::AnimeJanaiPreset> presets = native::animeJanaiPresets();
+    const auto appendPreset = [&entries, &currentId](const native::AnimeJanaiPreset& preset) {
+        MenuEntry entry;
+        entry.text = preset.label;
+        entry.tooltip = preset.supported ? preset.reason
+                                         : QObject::tr("Unavailable: %1").arg(preset.reason);
+        entry.payload = QStringLiteral("ajipreset|") + preset.id;
+        entry.current = preset.id.compare(currentId, Qt::CaseInsensitive) == 0;
+        entry.disabled = !preset.supported;
+        entries.append(entry);
+    };
+    const auto appendPaged = [&entries, &appendPreset](
+                                 const QVector<native::AnimeJanaiPreset>& presetsToShow,
+                                 const QString& baseLevel, const QString& currentLevel) {
+        constexpr int kRowsPerPage = 8;
+        int page = -1;
+        if (currentLevel.startsWith(baseLevel + QStringLiteral(":page:"))) {
+            bool ok = false;
+            page = currentLevel.section(QLatin1Char(':'), -1).toInt(&ok);
+            if (!ok || page < 0) page = -1;
+        }
+        const int pageCount = (presetsToShow.size() + kRowsPerPage - 1) / kRowsPerPage;
+        if (page < 0 && pageCount > 1) {
+            for (int index = 0; index < pageCount; ++index) {
+                MenuEntry entry;
+                entry.text = QObject::tr("Models %1–%2")
+                                 .arg(index * kRowsPerPage + 1)
+                                 .arg(qMin((index + 1) * kRowsPerPage, presetsToShow.size()));
+                entry.payload = QStringLiteral("level|") + baseLevel +
+                                QStringLiteral(":page:") + QString::number(index);
+                entry.submenu = true;
+                entries.append(entry);
+            }
+            return;
+        }
+        if (pageCount == 0) return;
+        if (page < 0) page = 0;
+        page = qMin(page, pageCount - 1);
+        const int first = page * kRowsPerPage;
+        const int last = qMin(first + kRowsPerPage, presetsToShow.size());
+        for (int index = first; index < last; ++index) {
+            appendPreset(presetsToShow.at(index));
+        }
+    };
     if (levelId == QLatin1String(kUpscalersRoot)) {
-        // The optional ONNX graphs are downloads, not a chain this player can
-        // apply yet: the row states what is stored and opens the page that
-        // fetches what is not.
+        bool currentIsRife = currentId.startsWith(QLatin1String("rife:"));
+        bool selectedPresetFound = currentId.isEmpty();
+        for (const native::AnimeJanaiPreset& preset : presets) {
+            currentIsRife |= preset.rife &&
+                             preset.id.compare(currentId, Qt::CaseInsensitive) == 0;
+            selectedPresetFound |= !preset.rife &&
+                                   preset.id.compare(currentId, Qt::CaseInsensitive) == 0;
+        }
+        MenuEntry off;
+        off.text = QObject::tr("Off");
+        off.tooltip = QObject::tr("Disable the Standard AnimeJaNai preset; Anime4K is unchanged.");
+        off.payload = QStringLiteral("ajipreset|");
+        off.current = currentId.isEmpty() || currentIsRife;
+        entries.append(off);
+        const auto addSubmenu = [&entries](const QString& label, const QString& id) {
+            MenuEntry entry;
+            entry.text = label + QStringLiteral("  ›");
+            entry.payload = QStringLiteral("level|") + id;
+            entry.submenu = true;
+            entries.append(entry);
+        };
+        addSubmenu(QObject::tr("Profiles"), QString::fromLatin1(kUpscaleProfiles));
+        addSubmenu(QObject::tr("Spatial models"), QString::fromLatin1(kUpscaleSpatial));
+        addSubmenu(QObject::tr("Optional upscalers"), QString::fromLatin1(kUpscaleOptional));
+        if (!selectedPresetFound && !currentId.isEmpty() && !currentIsRife &&
+            !currentId.startsWith(QLatin1String("upscaler:"))) {
+            MenuEntry missing;
+            missing.text = QObject::tr("Unavailable · %1").arg(currentId);
+            missing.tooltip = QObject::tr("This model is no longer in the catalogue. The selection is kept until you choose another.");
+            missing.payload = QStringLiteral("ajipreset|") + currentId;
+            missing.current = true;
+            missing.disabled = true;
+            entries.append(missing);
+        }
+        return entries;
+    }
+    if (levelId == QLatin1String(kUpscaleProfiles) ||
+        levelId.startsWith(QLatin1String(kUpscaleProfiles) + QStringLiteral(":page:"))) {
+        QVector<native::AnimeJanaiPreset> profiles;
+        for (const native::AnimeJanaiPreset& preset : presets) {
+            if (!preset.rife && !preset.id.startsWith(QLatin1String("spatial:"))) {
+                profiles.append(preset);
+            }
+        }
+        appendPaged(profiles, QString::fromLatin1(kUpscaleProfiles), levelId);
+        return entries;
+    }
+    if (levelId == QLatin1String(kUpscaleSpatial)) {
+        QVector<native::AnimeJanaiPreset> pinned;
+        QVector<native::AnimeJanaiPreset> custom;
+        for (const native::AnimeJanaiPreset& preset : presets) {
+            if (!preset.id.startsWith(QLatin1String("spatial:")) || preset.rife) continue;
+            if (preset.id.startsWith(QLatin1String("spatial:custom:"))) custom.append(preset);
+            else pinned.append(preset);
+        }
+        appendPaged(pinned, QString::fromLatin1(kUpscaleSpatial), levelId);
+        if (!custom.isEmpty()) {
+            MenuEntry entry;
+            entry.text = QObject::tr("Custom models  ›");
+            entry.payload = QStringLiteral("level|") + QString::fromLatin1(kUpscaleSpatialCustom);
+            entry.submenu = true;
+            entries.append(entry);
+        }
+        return entries;
+    }
+    if (levelId == QLatin1String(kUpscaleSpatialCustom) ||
+        levelId.startsWith(QLatin1String(kUpscaleSpatialCustom) + QStringLiteral(":page:"))) {
+        QVector<native::AnimeJanaiPreset> custom;
+        for (const native::AnimeJanaiPreset& preset : presets) {
+            if (preset.id.startsWith(QLatin1String("spatial:custom:")) && !preset.rife) {
+                custom.append(preset);
+            }
+        }
+        appendPaged(custom, QString::fromLatin1(kUpscaleSpatialCustom), levelId);
+        return entries;
+    }
+    if (levelId == QLatin1String(kUpscaleOptional)) {
         for (const native::UpscalerModel& model : native::upscalerCatalog()) {
             MenuEntry entry;
             const bool installed = !native::installedUpscalerPath(model).isEmpty();
@@ -349,19 +457,18 @@ QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& cur
             entry.tooltip = installed
                                 ? QObject::tr("Stored under the app-owned model folder")
                                 : QObject::tr("Opens Settings › Upscalers to download it");
-            // An installed graph is a real chain step: the payload applies it
-            // through the AnimeJaNai plan path. A missing one opens the page
-            // that downloads it.
             entry.payload = installed ? (QStringLiteral("upscaler|") + model.fileName)
                                       : (QStringLiteral("upscalersettings|") + model.fileName);
             entry.current = installed && currentId == QStringLiteral("upscaler:") + model.fileName;
             entries.append(entry);
         }
+        MenuEntry settings;
+        settings.text = QObject::tr("Settings · manage upscalers");
+        settings.payload = QStringLiteral("upscalersettings|");
+        entries.append(settings);
         return entries;
     }
-    if (levelId == QLatin1String(kAnimeJanaiRoot) ||
-        levelId == QLatin1String(kAnimeJanaiSpatial) ||
-        levelId == QLatin1String(kAnimeJanaiRife) ||
+    if (levelId == QLatin1String(kAnimeJanaiRife) ||
         levelId == QLatin1String(kAnimeJanaiBackend) ||
         levelId.startsWith(QLatin1String(kAnimeJanaiRife) + QStringLiteral(":"))) {
         return animeJanaiEntries(levelId, currentId);
@@ -389,7 +496,11 @@ QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& cur
         }
         return entries;
     }
-    for (const anime4k::MenuRow& row : anime4k::menuRows(levelId)) {
+    const QString anime4kLevel =
+        levelId == QLatin1String(kRestoreRoot) ? QString() : levelId;
+    const QVector<anime4k::MenuRow> anime4kRows =
+        levelId.isEmpty() ? QVector<anime4k::MenuRow>{} : anime4k::menuRows(anime4kLevel);
+    for (const anime4k::MenuRow& row : anime4kRows) {
         MenuEntry entry;
         entry.text = row.label;
         entry.tooltip = row.tooltip;
@@ -413,18 +524,26 @@ QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& cur
         entries.append(entry);
     }
     if (levelId.isEmpty()) {
-        MenuEntry aj;
-        aj.text = QObject::tr("AnimeJaNai  ›");
-        aj.tooltip = QObject::tr("AnimeJaNai official filter");
-        aj.payload = QStringLiteral("level|") + QString::fromLatin1(kAnimeJanaiRoot);
-        aj.submenu = true;
-        entries.append(aj);
-        MenuEntry upscalers;
-        upscalers.text = QObject::tr("Upscalers  ›");
-        upscalers.tooltip = QObject::tr("Optional ONNX upscalers and their downloads");
-        upscalers.payload = QStringLiteral("level|") + QString::fromLatin1(kUpscalersRoot);
-        upscalers.submenu = true;
-        entries.append(upscalers);
+        const auto addCategory = [&entries](const QString& text, const QString& tooltip,
+                                            const QString& target) {
+            MenuEntry category;
+            category.text = text + QStringLiteral("  ›");
+            category.tooltip = tooltip;
+            category.payload = QStringLiteral("level|") + target;
+            category.submenu = true;
+            entries.append(category);
+        };
+        addCategory(QObject::tr("Restore (Anime4K)"),
+                    QObject::tr("Anime4K restoration shaders"), QString::fromLatin1(kRestoreRoot));
+        addCategory(QObject::tr("Upscale"),
+                    QObject::tr("AnimeJaNai models, spatial upscalers, and optional graphs"),
+                    QString::fromLatin1(kUpscalersRoot));
+        addCategory(QObject::tr("Interpolation (RIFE)"),
+                    QObject::tr("Temporal frame interpolation models"),
+                    QString::fromLatin1(kInterpolationRoot));
+        addCategory(QObject::tr("Backend"),
+                    QObject::tr("Standard AnimeJaNai execution backend"),
+                    QString::fromLatin1(kAnimeJanaiBackend));
         if (privateNativeRuntime) {
             for (const native::menu::Row& row : native::menu::rootRows(native)) {
                 MenuEntry entry;
@@ -721,7 +840,7 @@ void PlayerShell::buildDock() {
     // A layout host, not a surface: nothing of it is painted, so the dock's own
     // fill is what shows through over the picture.
     auto* volumeHost = new QWidget(dock_);
-    volumeHost->setFixedWidth(kDockSideWidth);
+    volumeHost->setFixedWidth(kDockVolumeSideWidth);
     volumeHost->setAttribute(Qt::WA_StyledBackground, false);
     volumeHost->setAttribute(Qt::WA_TranslucentBackground, true);
     auto* volumeLayout = new QHBoxLayout(volumeHost);
@@ -790,6 +909,15 @@ void PlayerShell::buildDock() {
     connect(btnSubs_, &QPushButton::clicked, this, &PlayerShell::subtitlesRequested);
     btnSubs_->hide();
     actions->addWidget(btnSubs_);
+
+    btnCutMoment_ = new IconButton(IconPainter::clapperboard, tr("Cut moment…"),
+                                   kDockActionSize, kDockActionGlyph, actionHost);
+    btnCutMoment_->setObjectName(QStringLiteral("playerCutMomentButton"));
+    btnCutMoment_->setAccessibleName(tr("Cut moment…"));
+    btnCutMoment_->setToolTip(tr("Cut a short clip from this video"));
+    btnCutMoment_->setEnabled(false);
+    connect(btnCutMoment_, &QPushButton::clicked, this, &PlayerShell::cutMomentRequested);
+    actions->addWidget(btnCutMoment_);
 
     btnEnhance_ = new IconButton(IconPainter::spark, tr("Open enhancements"),
                                  kDockActionSize, kDockActionGlyph, actionHost);
@@ -1488,6 +1616,7 @@ void PlayerShell::setMedia(const QString& path, const QString& origin, const QSt
     }
     previewPrewarmEpoch_ = 0;
     btnSkipForward_->setEnabled(hasMedia_ && duration_ > 0.0);
+    btnCutMoment_->setEnabled(hasMedia_ && std::isfinite(duration_) && duration_ > 0.0);
     if (!origin.isEmpty()) origin_ = origin;
     if (!quality.isEmpty()) setQuality(quality);
 
@@ -1512,6 +1641,7 @@ void PlayerShell::setMedia(const QString& path, const QString& origin, const QSt
 void PlayerShell::setDuration(double seconds) {
     duration_ = std::max(0.0, seconds);
     btnSkipForward_->setEnabled(hasMedia_ && duration_ > 0.0);
+    btnCutMoment_->setEnabled(hasMedia_ && std::isfinite(duration_) && duration_ > 0.0);
     scrub_->setDuration(duration_);
     updateTimeLabels();
 }
@@ -2130,6 +2260,8 @@ void PlayerShell::refreshEnhancementTree() {
         const QString& level = enhancementLevels_.at(depth);
         if (level.isEmpty()) {
             panel->setTitle(tr("ENHANCEMENTS"));
+        } else if (!processingTitle(level).isEmpty()) {
+            panel->setTitle(processingTitle(level));
         } else if (level.startsWith(QLatin1String("animejanai"))) {
             panel->setTitle(animeJanaiTitle(level));
         } else if (level == QLatin1String(native::menu::kNativeLevelId)) {
@@ -2140,12 +2272,15 @@ void PlayerShell::refreshEnhancementTree() {
             const QString label = anime4k::categoryLabel(level);
             panel->setTitle(label.isEmpty() ? QStringLiteral("ANIME4K") : label.toUpper());
         }
+        const QString& entryLevel = enhancementLevels_.at(depth);
+        const bool usesAnimeJanaiSelection =
+            entryLevel.startsWith(QLatin1String(kUpscalersRoot)) ||
+            entryLevel == QLatin1String(kInterpolationRoot) ||
+            entryLevel.startsWith(QLatin1String("animejanai"));
         const QVector<MenuEntry> entries = enhancementEntries(
-            enhancementLevels_.at(depth),
-            enhancementLevels_.at(depth) == QLatin1String(kAnimeJanaiBackend)
-                ? animeJanaiBackend_
-                : (enhancementLevels_.at(depth).startsWith(QLatin1String("animejanai"))
-                       ? animeJanaiPresetId_ : currentId),
+            entryLevel,
+            entryLevel == QLatin1String(kAnimeJanaiBackend)
+                ? animeJanaiBackend_ : (usesAnimeJanaiSelection ? animeJanaiPresetId_ : currentId),
             nativeInputs_);
         if (!sameEntries(entries, panel)) {
             panel->setEntries(entries);
@@ -2249,7 +2384,9 @@ void PlayerShell::showEnhancementLevel(int depth, const QString& levelId, QWidge
         return;
     }
     MenuPopup* panel = enhancementPanels_.at(depth);
-    if (levelId.startsWith(QLatin1String("animejanai"))) {
+    if (!processingTitle(levelId).isEmpty()) {
+        panel->setTitle(processingTitle(levelId));
+    } else if (levelId.startsWith(QLatin1String("animejanai"))) {
         panel->setTitle(animeJanaiTitle(levelId));
     } else if (levelId == QLatin1String(native::menu::kNativeLevelId)) {
         panel->setTitle(tr("NATIVE PROCESSING"));
@@ -2259,11 +2396,15 @@ void PlayerShell::showEnhancementLevel(int depth, const QString& levelId, QWidge
         const QString label = anime4k::categoryLabel(levelId);
         panel->setTitle(label.isEmpty() ? QStringLiteral("ANIME4K") : label.toUpper());
     }
+    const bool usesAnimeJanaiSelection =
+        levelId.startsWith(QLatin1String(kUpscalersRoot)) ||
+        levelId == QLatin1String(kInterpolationRoot) ||
+        levelId.startsWith(QLatin1String("animejanai"));
     panel->setEntries(enhancementEntries(
         levelId, levelId == QLatin1String(kAnimeJanaiBackend)
                      ? animeJanaiBackend_
-                     : (levelId.startsWith(QLatin1String("animejanai"))
-                            ? animeJanaiPresetId_ : anime4k::modeId(anime4kMode_)),
+                     : (usesAnimeJanaiSelection ? animeJanaiPresetId_
+                                                : anime4k::modeId(anime4kMode_)),
         nativeInputs_));
     enhancementLevels_[depth] = levelId;
     panel->setProperty("enhancementLevel", levelId);
@@ -2312,6 +2453,13 @@ void PlayerShell::onEnhancementRow(MenuPopup* panel, int spot, bool activated) {
         return;
     }
     const QString payload = entry.payload.toString();
+    const QString& levelId = enhancementLevels_.at(depth);
+    if (payload == QLatin1String("ajipreset|") && entry.current &&
+        (levelId == QLatin1String(kUpscalersRoot) ||
+         levelId == QLatin1String(kInterpolationRoot))) {
+        dismissOverlay();
+        return;
+    }
     if (payload.startsWith(QLatin1String("ajipreset|"))) {
         const QString id = payload.mid(10);
         emit animeJanaiPresetRequested(id);
@@ -2950,6 +3098,9 @@ void PlayerShell::retranslateUi() {
     relabel(btnAudio_, tr("Audio — choose a track  (T)"));
     relabel(btnSubs_, tr("Subtitles — choose a track  (C)"));
     relabel(btnEnhance_, tr("Open enhancements"));
+    relabel(btnCutMoment_, tr("Cut moment…"));
+    btnCutMoment_->setAccessibleName(tr("Cut moment…"));
+    btnCutMoment_->setToolTip(tr("Cut a short clip from this video"));
     relabel(btnSettings_, tr("Quality and speed"));
     relabel(btnWindowMode_, fullscreen_ ? tr("Windowed mode") : tr("Fullscreen mode"));
 

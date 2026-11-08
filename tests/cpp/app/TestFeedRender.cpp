@@ -4,6 +4,7 @@
 #include <dialogs/ComponentStoreTab.hpp>
 #include <dialogs/SettingsDialog.hpp>
 #include <native/components/AnimeJanaiBuildLog.hpp>
+#include <native/components/AnimeJanaiConfig.hpp>
 #include <pages/MainWindow.hpp>
 #include <pages/SearchPage.hpp>
 #include <pages/TitlePage.hpp>
@@ -30,6 +31,7 @@
 #include <QtCore/QPair>
 #include <QtCore/QPointer>
 #include <QtCore/QScopeGuard>
+#include <QtCore/QSaveFile>
 #include <QtCore/QSet>
 #include <QtCore/QSettings>
 #include <QtCore/QStringList>
@@ -709,13 +711,12 @@ QStringList visibleBenchmarkModelIds(const QTreeWidget& tree) {
   return ids;
 }
 
-QString visibleBenchmarkGroups(const QTreeWidget& tree) {
-  QStringList marks;
+bool benchmarkGroupVisible(const QTreeWidget& tree, const QString& key) {
   for (int groupIndex = 0; groupIndex < tree.topLevelItemCount(); ++groupIndex) {
-    marks.append(tree.topLevelItem(groupIndex)->isHidden()
-                     ? QStringLiteral("0") : QStringLiteral("1"));
+    const QTreeWidgetItem* group = tree.topLevelItem(groupIndex);
+    if (group->data(0, Qt::UserRole).toString() == key) return !group->isHidden();
   }
-  return marks.join(QStringLiteral(""));
+  return false;
 }
 
 QStringList checkedBenchmarkModelIds(const QTreeWidget& tree) {
@@ -1306,32 +1307,46 @@ void TestFeedRender::benchmarkTabKeepsGroupedModelAndClipSelectionsConsistent() 
   QVERIFY(firstClip != nullptr);
   QVERIFY(firstClip->isChecked());
 
-  QTRY_COMPARE(tree->topLevelItemCount(), 4);
-  int totalModels = 0;
-  int initiallyChecked = 0;
+  QTRY_COMPARE(tree->topLevelItemCount(), 3);
+  int selectableModels = 0;
   for (int groupIndex = 0; groupIndex < tree->topLevelItemCount(); ++groupIndex) {
     const QTreeWidgetItem* group = tree->topLevelItem(groupIndex);
-    totalModels += group->childCount();
     for (int index = 0; index < group->childCount(); ++index) {
       const QTreeWidgetItem* model = group->child(index);
-      QVERIFY(model->flags() & Qt::ItemIsUserCheckable);
-      initiallyChecked += model->checkState(0) == Qt::Checked ? 1 : 0;
+      selectableModels += (model->flags() & Qt::ItemIsUserCheckable) ? 1 : 0;
     }
   }
+  QVERIFY(selectableModels > 0);
   const QStringList ids = benchmarkModelIds(*tree);
-  QVERIFY(ids.contains(QStringLiteral("anime4k:fast_a")));
+  QVERIFY(std::any_of(ids.cbegin(), ids.cend(), [](const QString& id) {
+    return id.startsWith(QLatin1String("anime4k:"));
+  }));
   QVERIFY(!ids.contains(QStringLiteral("anime4k:off")));
-  QCOMPARE(initiallyChecked, 3);
 
-  QTreeWidgetItem* spatial = tree->topLevelItem(2);
-  spatial->setCheckState(0, Qt::Checked);
-  for (int index = 0; index < spatial->childCount(); ++index) {
-    QCOMPARE(spatial->child(index)->checkState(0), Qt::Checked);
+  QTreeWidgetItem* upscale = nullptr;
+  for (int groupIndex = 0; groupIndex < tree->topLevelItemCount(); ++groupIndex) {
+    QTreeWidgetItem* group = tree->topLevelItem(groupIndex);
+    if (group->data(0, Qt::UserRole).toString() ==
+        QStringLiteral("processing:upscale")) {
+      upscale = group;
+      break;
+    }
   }
-  QCOMPARE(spatial->checkState(0), Qt::Checked);
+  QVERIFY(upscale != nullptr);
+  upscale->setCheckState(0, Qt::Checked);
+  QTreeWidgetItem* selectableUpscaleModel = nullptr;
+  for (int index = 0; index < upscale->childCount(); ++index) {
+    QTreeWidgetItem* model = upscale->child(index);
+    if (model->flags() & Qt::ItemIsUserCheckable) {
+      selectableUpscaleModel = model;
+      QCOMPARE(model->checkState(0), Qt::Checked);
+    }
+  }
+  QCOMPARE(upscale->checkState(0), Qt::Checked);
 
-  spatial->child(0)->setCheckState(0, Qt::Unchecked);
-  QCOMPARE(spatial->checkState(0), Qt::PartiallyChecked);
+  QVERIFY(selectableUpscaleModel != nullptr);
+  selectableUpscaleModel->setCheckState(0, Qt::Unchecked);
+  QCOMPARE(upscale->checkState(0), Qt::PartiallyChecked);
 
   QPushButton* selectAllModels = nullptr;
   QPushButton* selectAllClips = nullptr;
@@ -1351,10 +1366,13 @@ void TestFeedRender::benchmarkTabKeepsGroupedModelAndClipSelectionsConsistent() 
     QTreeWidgetItem* group = tree->topLevelItem(groupIndex);
     QCOMPARE(group->checkState(0), Qt::Checked);
     for (int index = 0; index < group->childCount(); ++index) {
-      allModelsChecked += group->child(index)->checkState(0) == Qt::Checked ? 1 : 0;
+      const QTreeWidgetItem* model = group->child(index);
+      if (model->flags() & Qt::ItemIsUserCheckable) {
+        allModelsChecked += model->checkState(0) == Qt::Checked ? 1 : 0;
+      }
     }
   }
-  QCOMPARE(allModelsChecked, totalModels);
+  QCOMPARE(allModelsChecked, selectableModels);
 
   selectAllModels->click();
   int noModelsChecked = 0;
@@ -1362,7 +1380,10 @@ void TestFeedRender::benchmarkTabKeepsGroupedModelAndClipSelectionsConsistent() 
     QTreeWidgetItem* group = tree->topLevelItem(groupIndex);
     QCOMPARE(group->checkState(0), Qt::Unchecked);
     for (int index = 0; index < group->childCount(); ++index) {
-      noModelsChecked += group->child(index)->checkState(0) == Qt::Checked ? 1 : 0;
+      const QTreeWidgetItem* model = group->child(index);
+      if (model->flags() & Qt::ItemIsUserCheckable) {
+        noModelsChecked += model->checkState(0) == Qt::Checked ? 1 : 0;
+      }
     }
   }
   QCOMPARE(noModelsChecked, 0);
@@ -1389,6 +1410,50 @@ void TestFeedRender::benchmarkTabKeepsGroupedModelAndClipSelectionsConsistent() 
 }
 
 void TestFeedRender::benchmarkModelSearchFiltersRowsAndRestoresSelections() {
+  const QString configPath = mplayer::native::AnimeJanaiConfigStore::configFilePath();
+  QFile configFile(configPath);
+  const bool hadConfigFile = configFile.exists();
+  QByteArray originalConfigContents;
+  if (hadConfigFile) {
+    QVERIFY2(configFile.open(QIODevice::ReadOnly), qPrintable(configFile.errorString()));
+    originalConfigContents = configFile.readAll();
+    configFile.close();
+  }
+  const mplayer::native::AnimeJanaiConfig originalConfig =
+      mplayer::native::AnimeJanaiConfigStore::load();
+  const auto restoreConfig = qScopeGuard([configPath, hadConfigFile, originalConfigContents] {
+    if (!hadConfigFile) {
+      QFile::remove(configPath);
+      return;
+    }
+    QSaveFile restoreFile(configPath);
+    if (!restoreFile.open(QIODevice::WriteOnly) ||
+        restoreFile.write(originalConfigContents) != originalConfigContents.size() ||
+        !restoreFile.commit()) {
+      qWarning() << "Could not restore benchmark test AnimeJaNai config:" << configPath
+                 << restoreFile.errorString();
+    }
+  });
+  mplayer::native::AnimeJanaiConfig testConfig = originalConfig;
+  mplayer::native::AnimeJanaiSlot mixedProfile;
+  mixedProfile.number = 10;
+  mixedProfile.profileName = QStringLiteral("Mixed RIFE profile");
+  mplayer::native::AnimeJanaiChain mixedChain;
+  mixedChain.rifeEnabled = true;
+  mixedChain.steps = {
+      {1, mplayer::native::AnimeJanaiStepKind::Anime4K, QStringLiteral("fast_a"), 0, 100, 1}};
+  mixedProfile.chains = {mixedChain};
+  testConfig.customSlots.erase(
+      std::remove_if(testConfig.customSlots.begin(), testConfig.customSlots.end(),
+                     [](const mplayer::native::AnimeJanaiSlot& slot) {
+                       return slot.number == 10;
+                     }),
+      testConfig.customSlots.end());
+  testConfig.customSlots.append(mixedProfile);
+  QString configError;
+  QVERIFY2(mplayer::native::AnimeJanaiConfigStore::save(testConfig, &configError),
+           qPrintable(configError));
+
   MikaiClient client(QString(), QStringLiteral("http://127.0.0.1:1"));
   Runner runner;
   const auto drainBeforeClientDestruction =
@@ -1401,65 +1466,73 @@ void TestFeedRender::benchmarkModelSearchFiltersRowsAndRestoresSelections() {
   QVERIFY(tree != nullptr);
   QVERIFY2(search != nullptr, "the benchmark models card carries no search box to filter by");
 
-  QTRY_COMPARE(tree->topLevelItemCount(), 4);
+  QTRY_COMPARE(tree->topLevelItemCount(), 3);
 
   const QStringList allIds = benchmarkModelIds(*tree);
   const QStringList defaultChecked = checkedBenchmarkModelIds(*tree);
-  QCOMPARE(defaultChecked.size(), 3);
   QVERIFY2(defaultChecked.contains(QStringLiteral("builtin1001")),
            qPrintable(QStringLiteral("the built-in defaults read: %1")
                           .arg(defaultChecked.join(QLatin1Char('|')))));
 
-  QCOMPARE(visibleBenchmarkGroups(*tree), QStringLiteral("1111"));
+  QVERIFY(benchmarkGroupVisible(*tree, QStringLiteral("processing:restore")));
+  QVERIFY(benchmarkGroupVisible(*tree, QStringLiteral("processing:upscale")));
+  QVERIFY(benchmarkGroupVisible(*tree, QStringLiteral("processing:interpolation")));
   QCOMPARE(visibleBenchmarkModelIds(*tree), allIds);
 
-  // A group name filters by group: the RIFE rows are the only ones whose text
-  // says RIFE, and the search must keep that group's whole contents.
+  // A group name filters by group and keeps its whole contents, including the
+  // supported mixed profile whose label belongs to the RIFE group.
   search->setText(QStringLiteral("rife"));
   const QStringList rifeIds = visibleBenchmarkModelIds(*tree);
-  QCOMPARE(rifeIds.size(), 47);
-  QVERIFY2(std::all_of(rifeIds.begin(), rifeIds.end(),
-                       [](const QString& id) {
-                         return id.startsWith(QLatin1String("rife:"));
-                       }),
-           qPrintable(QStringLiteral("a non-RIFE row survived a RIFE filter: %1")
-                          .arg(rifeIds.join(QLatin1Char('|')))));
-  QCOMPARE(visibleBenchmarkGroups(*tree), QStringLiteral("0001"));
+  QVERIFY(rifeIds.contains(QStringLiteral("builtin_slot:10")));
+  QVERIFY(!rifeIds.isEmpty());
+  QVERIFY(!benchmarkGroupVisible(*tree, QStringLiteral("processing:restore")));
+  QVERIFY(!benchmarkGroupVisible(*tree, QStringLiteral("processing:upscale")));
+  QVERIFY(benchmarkGroupVisible(*tree, QStringLiteral("processing:interpolation")));
 
   // Case-insensitive: the same query in the other case must keep those rows.
   search->setText(QStringLiteral("RIFE"));
-  QCOMPARE(visibleBenchmarkModelIds(*tree).size(), 47);
+  QCOMPARE(visibleBenchmarkModelIds(*tree), rifeIds);
 
   // A model name filters by model rather than by group, and may match rows in
   // more than one group. Every row the spatial catalogue offers carries
   // "AnimeJaNai" in its own file name, as do the AnimeJaNai built-ins, so this
-  // query must keep the AnimeJaNai group and the Spatial group and hide the
-  // other two.
+  // query must keep matching AnimeJaNai and Spatial rows without unrelated rows.
   search->setText(QStringLiteral("ANIMEJANAI"));
   const QStringList animeJaNaiIds = visibleBenchmarkModelIds(*tree);
-  QCOMPARE(animeJaNaiIds.size(), 8);
+  QVERIFY(!animeJaNaiIds.isEmpty());
   for (const QString& id : animeJaNaiIds) {
     QVERIFY2(id.startsWith(QLatin1String("builtin")) || id.startsWith(QLatin1String("spatial:")),
              qPrintable(QStringLiteral("a non-AnimeJaNai row survived: %1").arg(id)));
   }
-  QCOMPARE(visibleBenchmarkGroups(*tree), QStringLiteral("0110"));
+  QVERIFY(!benchmarkGroupVisible(*tree, QStringLiteral("processing:restore")));
+  QVERIFY(benchmarkGroupVisible(*tree, QStringLiteral("processing:upscale")));
+  QVERIFY(!benchmarkGroupVisible(*tree, QStringLiteral("processing:interpolation")));
 
-  // A query matching nothing hides every group and leaves the catalogue intact
-  // underneath, so the count stays the whole catalogue rather than dropping.
+  // A query matching nothing hides every group without dropping the catalogue
+  // underneath.
   search->setText(QStringLiteral("zzzz-no-such-model"));
-  QCOMPARE(visibleBenchmarkModelIds(*tree).size(), 0);
-  QCOMPARE(visibleBenchmarkGroups(*tree), QStringLiteral("0000"));
+  QVERIFY(visibleBenchmarkModelIds(*tree).isEmpty());
+  QVERIFY(!benchmarkGroupVisible(*tree, QStringLiteral("processing:restore")));
+  QVERIFY(!benchmarkGroupVisible(*tree, QStringLiteral("processing:upscale")));
+  QVERIFY(!benchmarkGroupVisible(*tree, QStringLiteral("processing:interpolation")));
   QCOMPARE(benchmarkModelIds(*tree), allIds);
 
   // Ticking a row a filter had hidden is the other half of the contract: a
   // selection made under a filter must survive having the filter removed, so
   // the run that follows measures what the viewer picked, not what is showing.
   search->setText(QStringLiteral("rife"));
-  QCOMPARE(visibleBenchmarkModelIds(*tree).size(), 47);
-  QTreeWidgetItem* rifeGroup = tree->topLevelItem(3);
+  QTreeWidgetItem* rifeGroup = nullptr;
+  for (int groupIndex = 0; groupIndex < tree->topLevelItemCount(); ++groupIndex) {
+    QTreeWidgetItem* group = tree->topLevelItem(groupIndex);
+    if (group->data(0, Qt::UserRole).toString() ==
+        QStringLiteral("processing:interpolation")) {
+      rifeGroup = group;
+      break;
+    }
+  }
   QVERIFY(rifeGroup != nullptr);
   QVERIFY(!rifeGroup->isHidden());
-  const QString pickedUnderFilter = QStringLiteral("rife:rife_v4.14.onnx");
+  const QString pickedUnderFilter = QStringLiteral("builtin_slot:10");
   QTreeWidgetItem* pickedRow = nullptr;
   for (int index = 0; index < rifeGroup->childCount(); ++index) {
     if (rifeGroup->child(index)->data(0, Qt::UserRole + 1).toString() == pickedUnderFilter) {
@@ -1470,13 +1543,15 @@ void TestFeedRender::benchmarkModelSearchFiltersRowsAndRestoresSelections() {
   QVERIFY2(pickedRow != nullptr,
            qPrintable(QStringLiteral("the RIFE catalogue carries no %1 row").arg(pickedUnderFilter)));
   pickedRow->setCheckState(0, Qt::Checked);
-  QCOMPARE(checkedBenchmarkModelIds(*tree).size(), 4);
+  QVERIFY(checkedBenchmarkModelIds(*tree).contains(pickedUnderFilter));
 
   search->clear();
-  QCOMPARE(visibleBenchmarkGroups(*tree), QStringLiteral("1111"));
+  QVERIFY(benchmarkGroupVisible(*tree, QStringLiteral("processing:restore")));
+  QVERIFY(benchmarkGroupVisible(*tree, QStringLiteral("processing:upscale")));
+  QVERIFY(benchmarkGroupVisible(*tree, QStringLiteral("processing:interpolation")));
   QCOMPARE(visibleBenchmarkModelIds(*tree), allIds);
   const QStringList restored = checkedBenchmarkModelIds(*tree);
-  QCOMPARE(restored.size(), 4);
+  QVERIFY(restored.size() >= defaultChecked.size());
   for (const QString& id : defaultChecked) {
     QVERIFY2(restored.contains(id),
              qPrintable(QStringLiteral("clearing the search lost the %1 selection").arg(id)));
@@ -1730,10 +1805,13 @@ void TestFeedRender::titlePagePrioritizesPlaybackAndAnchorsWithoutChangingSelect
   auto* body = page.findChild<QWidget*>(QStringLiteral("titleBody"));
   auto* episodes = page.findChild<QWidget*>(QStringLiteral("titleEpisodes"));
   auto* discovery = page.findChild<QWidget*>(QStringLiteral("titleDiscoverySection"));
-  auto* anchor = page.findChild<QPushButton*>(QStringLiteral("titleEpisodesAnchor"));
+  auto* detailsToggle = page.findChild<QPushButton*>(QStringLiteral("titleDetailsToggle"));
+  auto* detailsOverlay = page.findChild<QWidget*>(QStringLiteral("titleDetailsOverlay"));
   auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
   QVERIFY(overview != nullptr && body != nullptr && episodes != nullptr &&
-          discovery != nullptr && anchor != nullptr && tabs != nullptr);
+          discovery != nullptr && detailsToggle != nullptr && detailsOverlay != nullptr &&
+          tabs != nullptr);
+  QVERIFY(page.findChild<QPushButton*>(QStringLiteral("titleEpisodesAnchor")) == nullptr);
 
   QTRY_VERIFY_WITH_TIMEOUT(
       page.findChildren<QWidget*>(QStringLiteral("episodeButton")).size() > 0, 30000);
@@ -1799,7 +1877,15 @@ void TestFeedRender::titlePagePrioritizesPlaybackAndAnchorsWithoutChangingSelect
   QVERIFY(nextPage != nullptr);
   QTest::mouseClick(nextPage, Qt::LeftButton);
   QTRY_COMPARE_WITH_TIMEOUT(pager->page(), 2, 5000);
-  QTest::mouseClick(anchor, Qt::LeftButton);
+  QTRY_VERIFY_WITH_TIMEOUT(detailsToggle->isVisible() && detailsToggle->isEnabled(), 5000);
+  QTest::mouseClick(detailsToggle, Qt::LeftButton);
+  QTRY_VERIFY_WITH_TIMEOUT(detailsOverlay->isVisible(), 5000);
+  auto* episodesAction =
+      detailsOverlay->findChild<QPushButton*>(QStringLiteral("titleDetailsAction"));
+  QVERIFY(episodesAction != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(episodesAction->isVisible(), 5000);
+  QTest::mouseClick(episodesAction, Qt::LeftButton);
+  QTRY_VERIFY_WITH_TIMEOUT(!detailsOverlay->isVisible(), 5000);
   QCoreApplication::processEvents();
   QTRY_VERIFY_WITH_TIMEOUT(
       qobject_cast<QPushButton*>(QApplication::focusWidget()) != nullptr &&

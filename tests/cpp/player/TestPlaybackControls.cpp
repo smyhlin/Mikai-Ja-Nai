@@ -11,6 +11,7 @@
 #include <QLineEdit>
 #include <QNetworkProxy>
 #include <QScopeGuard>
+#include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QThreadPool>
@@ -29,6 +30,7 @@
 #include "MpvApi.hpp"
 #include "PipFloat.hpp"
 #include "PlayerDialog.hpp"
+#include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
 #include "ShellSliders.hpp"
 #include "ShellWidgets.hpp"
