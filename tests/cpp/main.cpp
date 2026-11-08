@@ -33,6 +33,7 @@
 #include "TestMpvAsync.hpp"
 #include "TestCompareGif.hpp"
 #include "TestCompareClip.hpp"
+#include "TestClipExport.hpp"
 #include "TestCompareLoading.hpp"
 #include "TestNativeAssets.hpp"
 #include "TestNativeUserRecipes.hpp"
@@ -108,7 +109,7 @@ constexpr const char* kSuites[] = {
     "TestHdrRenderContracts", "TestPacingContract", "TestVideoScaling", "TestHoverPreview",
     "TestNativePrefs",
     "TestNativeMenu", "TestNativeUserRecipes", "TestNativeAssets", "TestMpvAsync", "TestCompareGif",
-    "TestCompareClip", "TestCompareLoading",
+    "TestCompareClip", "TestClipExport", "TestCompareLoading",
 #ifdef MIKAI_WITH_MODEL_INSPECTION
     "TestNativeCatalog",
 #endif
@@ -275,6 +276,7 @@ int main(int argc, char** argv) {
   TestMpvAsync mpvAsync;
   TestCompareGif compareGif;
   TestCompareClip compareClip;
+  TestClipExport clipExport;
   TestCompareLoading compareLoading;
 #ifdef MIKAI_WITH_MODEL_INSPECTION
   TestNativeCatalog nativeCatalog;
@@ -393,6 +395,7 @@ int main(int argc, char** argv) {
   run("TestMpvAsync", &mpvAsync, true);
   run("TestCompareGif", &compareGif, true);
   run("TestCompareClip", &compareClip, true);
+  run("TestClipExport", &clipExport, true);
   run("TestCompareLoading", &compareLoading, true);
   runWrapper("TestDownloads", runTestDownloads);
   runWrapper("TestDiagnostics", runTestDiagnostics);

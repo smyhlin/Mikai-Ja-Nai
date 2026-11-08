@@ -378,6 +378,21 @@ void IconPainter::captions(QPainter& p, qreal x, qreal y, qreal s, const QColor&
     p.restore();
 }
 
+void IconPainter::clapperboard(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
+    const QColor color = resolve(c, w90());
+    stroke(p, x, y, s);
+    p.setPen(glyphPen(color, 1.8 * 24 / s));
+    p.setBrush(Qt::NoBrush);
+    p.drawRoundedRect(QRectF(3, 9, 18, 12), 1.5, 1.5);
+    p.drawLine(QPointF(3.5, 9), QPointF(20.5, 9));
+    p.drawLine(QPointF(5, 5), QPointF(21, 5));
+    p.drawLine(QPointF(5, 5), QPointF(3, 9));
+    p.drawLine(QPointF(10, 5), QPointF(8, 9));
+    p.drawLine(QPointF(15, 5), QPointF(13, 9));
+    p.drawLine(QPointF(20, 5), QPointF(18, 9));
+    p.restore();
+}
+
 void IconPainter::keyboard(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
     const QColor color = resolve(c, w90());
     stroke(p, x, y, s);

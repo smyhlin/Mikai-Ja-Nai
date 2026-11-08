@@ -40,8 +40,9 @@ inline constexpr int kDockPlaySize = 48;
 inline constexpr int kDockPlayGlyph = 24;
 inline constexpr int kDockActionSize = 40;
 inline constexpr int kDockActionGlyph = 20;
-// Six action buttons at kDockActionSize plus their spacing.
-inline constexpr int kDockSideWidth = 6 * kDockActionSize + 5 * 4;
+// Seven action buttons at kDockActionSize plus their spacing.
+inline constexpr int kDockSideWidth = 7 * kDockActionSize + 6 * 4;
+inline constexpr int kDockVolumeSideWidth = 6 * kDockActionSize + 5 * 4;
 inline constexpr int kInfoChipHeight = 32;
 // Holds the two chain lines plus the wrapped native-base and queued-change
 // lines, so a frozen native recipe caption is never clipped.
@@ -218,6 +219,8 @@ public:
     static void microphone(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
     /// Subtitles: a caption frame with two letter C shapes.
     static void captions(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
+    /// Clapperboard: cut a source-backed moment into a shareable clip.
+    static void clapperboard(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
     /// HDR badge: "HDR" text in a rounded rectangle.
     static void hdr(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
     /// Dolby Vision badge: "DV" text.

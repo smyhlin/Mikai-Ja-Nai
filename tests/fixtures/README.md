@@ -66,12 +66,18 @@ gate consumes it.
 | `motion_1920x1080_23976fps_8bit_hevc.mp4` | 1920×1080 | 8 | HEVC Main | 24000/1001 | 6 s | HD 23.976. |
 | `fullrange_1920x1080_24fps_8bit_hevc.mp4` | 1920×1080 | 8 | HEVC Main | 24 | 6 s | **Full range (pc)** BT.709. Every other clip is limited range. No range/matrix pass-through code consumes this case today; see “Current consumers” below for what actually reads these fixtures. |
 | `cut_saturated_black_320x180_24fps_8bit_hevc.mp4` | 320×180 | 8 | HEVC Main | 24 | 6 s | Hard cut + saturated + near-black, **with AAC audio**. |
+| `two_audio_tones_320x180.mp4` | 320×180 | 8 | HEVC Main + AAC | 24 | 6 s | Two independently selectable audio tracks: English/default 440 Hz and Ukrainian/non-default 880 Hz; used to prove clip export audio selection by decoded signal. |
 | `nonmult32_motion_1920x1072_24fps_8bit_hevc.mp4` | 1920×1072 | 8 | HEVC Main | 24 | 4 s | Height 1072 is even but **not a multiple of 32** (1072/32 = 33.5) — the dyn-HW graph case. |
 | `portrait_motion_1080x1920_24fps_8bit_hevc.mp4` | 1080×1920 | 8 | HEVC Main | 24 | 4 s | Portrait rotate/fit and preparation-plan geometry. |
 | `hdr_dark_gradient_1280x720_24fps_10bit_pq_hevc.mp4` | 1280×720 | 10 | HEVC Main10, BT.2020 + PQ (SMPTE ST 2084) | 24 | 16 s | Generated, uncommitted 10-bit PQ dark-level ramp with a right-edge 150–1000-nit highlight ramp. |
 | `hdr_dark_noise_1280x720_24fps_10bit_pq_hevc.mp4` | 1280×720 | 10 | HEVC Main10, BT.2020 + PQ | 24 | 16 s | Generated, uncommitted lossless near-black temporal shadow-noise fixture, encoded losslessly to preserve its signal. |
 | `motion_frame_id_1280x720_24fps_10bit_hevc.mp4` | 1280×720 | 10 | HEVC Main10, BT.709 | 24 | 16 s | Generated moving `testsrc2` with an 8-bit per-frame barcode; frame-order soak decodes identity from the rendered framebuffer. |
 | `continuous_frame_id_audio_640x360_24fps_10bit_hevc.mp4` | 640×360 | 10 | HEVC Main10, BT.709 + AAC | 24 | 3660 s | Generated continuous 8-bit frame-ID barcode with 48 kHz stereo AAC for no-loop aging and audio-PTS acceptance. |
+
+`two_audio_tones_320x180.mp4` copies the project-owned saturated/near-black video
+and adds independently generated `sine` sources: default English 440 Hz and
+non-default Ukrainian 880 Hz. Each track contains only its own tone; decoded
+signal checks distinguish them without relying on track labels.
 
 ### The HDR regression clips (blocks 12–13)
 
@@ -778,3 +784,59 @@ the retry cleared. Each new run needs a fresh fixture: the one-shot
 `/retry.mp4` 404 is per-process state (`retryServed_` re-arms on a `/media.mp4`
 fetch), so re-running a probe against a fixture whose 404 was already consumed
 replays bytes where the contract promises a failure.
+### Cut moment UI and source-backed export probe
+
+`clip_probe` is an explicit `EXCLUDE_FROM_ALL` desktop probe. It opens the
+project-owned AAC source `media/cut_saturated_black_320x180_24fps_8bit_hevc.mp4`
+in the real player, clicks its Cut moment action, captures compact and wide
+dialog screenshots, drives the typed range and timeline handle, selects a
+quality, plays the independent source preview, and automates the dialog's real
+Save action to retain an MP4. It repeats a real export from a loopback-only HTTP
+server and checks that the configured `Accept-Language: uk-UA` request header
+arrived. It also cancels an export over the retained local MP4, checks that its
+bytes remain unchanged, and replaces the source while the dialog is open
+to check stale export is disabled.
+
+The probe uses the Standard runtime selection without changing the installed
+runtime. Its Qt settings are redirected to a temporary directory. Use a fresh,
+owned output directory: the two real MP4 exports are retained, along with six
+PNG captures (compact and wide for local, HTTP-cancel and HTTP runs), the
+pre-existing local MP4 preserved by the canceled replacement, and the evidence JSON.
+Exit status is 0 only when the probe checks pass; a watchdog expiration returns
+3. The evidence reports exact check/failure counts. Its scope is UI/lifecycle and
+actual export completion, not throughput or visual quality. Independently
+inspect the selected decoded range with the parent's `ffprobe` workflow; byte
+equality with the encoded output is not expected.
+
+```powershell
+cmake --build build/release --target clip_probe
+$out = (Join-Path $PWD '.probe-out/clip-run')
+New-Item -ItemType Directory -Force $out | Out-Null
+$fixture = (Resolve-Path 'tests/fixtures/media/cut_saturated_black_320x180_24fps_8bit_hevc.mp4').Path
+$env:MIKAI_MPV_MODULE = (Resolve-Path 'build/release/mpv/libmpv-2.dll').Path
+& (Resolve-Path 'build/release/clip_probe.exe').Path `
+  --fixture $fixture `
+  --output-dir $out `
+  --evidence (Join-Path $out 'clip-probe-evidence.json') `
+  --watchdog-ms 240000
+if ($LASTEXITCODE -ne 0) { throw "clip_probe failed: $LASTEXITCODE" }
+```
+
+For Linux, build `clip_probe` from the Linux preset, then run from a native
+desktop session (`xcb` or `wayland`) with the Standard module path:
+
+```bash
+cmake --build build/linux-release --target clip_probe
+out="$(pwd)/.probe-out/clip-run"
+mkdir -p "$out"
+export MIKAI_MPV_MODULE=/absolute/path/to/standard/libmpv.so.2
+QT_QPA_PLATFORM=xcb build/linux-release/clip_probe \\
+  --fixture "$(realpath tests/fixtures/media/cut_saturated_black_320x180_24fps_8bit_hevc.mp4)" \\
+  --output-dir "$out" --evidence "$out/clip-probe-evidence.json" --watchdog-ms 240000
+```
+
+Do not set `MIKAI_PROBE_BUNDLE`; the probe refuses a non-Standard bundle
+selection. `ProbeIsolation` runs a copied executable with an empty, owned
+executable-local native store and redirected app-local state; the named
+Standard mpv module is only read. No external network is used; HTTP export
+traffic is confined to the probe's ephemeral loopback port.

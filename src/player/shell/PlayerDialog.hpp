@@ -58,6 +58,7 @@ namespace shell {
 
 class CompareWindow;
 class MediaInformationDialog;
+class ClipDialog;
 
 class PlayerShell;
 class MenuPopup;
@@ -446,6 +447,7 @@ private:
     void closeMediaInformation();
     /// Opens (or raises) the shader comparison window.
     void openCompareWindow();
+    void openClipDialog();
     void onShellStateChanged(const QString& state);
     void onShellFullscreenChanged(bool fullscreen);
     /// A native row was chosen in the enhancement tree. One handler serves the
@@ -584,6 +586,7 @@ private:
     PlayerHost* host_ = nullptr;
     bool directMedia_ = false;
     QPointer<MediaInformationDialog> mediaInformation_;
+    QPointer<ClipDialog> clipDialog_;
 
     MenuPopup* audioPopup_ = nullptr;
     MenuPopup* subtitlesPopup_ = nullptr;

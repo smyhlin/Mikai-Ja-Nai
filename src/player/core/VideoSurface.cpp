@@ -629,14 +629,16 @@ void VideoSurface::ensureEngine() {
     // first frame.
     const QString chainId =
         anime4kChainId_.isEmpty() ? anime4k::modeId(anime4kMode_) : anime4kChainId_;
-    const QString requested = anime4k::shaderStringForCandidate(chainId);
-    if (!requested.isEmpty()) {
-        const QString shaders = resolvedChainForCurrentSource(chainId);
-        if (shaders.isEmpty()) {
+    QString reason;
+    const QString shaders = resolvedChainForCurrentSource(chainId, &reason);
+    if (!reason.isEmpty() && chainId != QLatin1String("off")) {
+        emit anime4kGated(reason);
+    } else {
+        if (chainId != QLatin1String("off") && hdrFixesEnabled() &&
+            sourceColorProfile_.requiresSdrGate()) {
             emit anime4kGated(tr("Anime4K skipped: source transfer metadata is unknown or HDR"));
-        } else {
-            applyShaderChainRequest(shaders);
         }
+        if (!shaders.isEmpty()) applyShaderChainRequest(shaders);
     }
 }
 
@@ -650,10 +652,16 @@ void VideoSurface::applyShaderChainRequest(const QString& shaders) {
 }
 
 void VideoSurface::setAnime4KChain(const QString& candidateId) {
-    ++anime4KRequestGeneration_;
     if (candidateId == anime4kChainId_) {
         return;
     }
+    QString reason;
+    const QString shaders = resolvedChainForCurrentSource(candidateId, &reason);
+    if (!reason.isEmpty() && candidateId != QLatin1String("off")) {
+        emit anime4kGated(reason);
+        return;
+    }
+    ++anime4KRequestGeneration_;
     anime4kChainId_ = candidateId;
     // A named chain supersedes the enum, but the enum is not cleared: a later
     // setAnime4KMode rewrites both, and leaving it stale would let the two
@@ -661,9 +669,8 @@ void VideoSurface::setAnime4KChain(const QString& candidateId) {
     if (!mpv_) {
         return;
     }
-    const QString requested = anime4k::shaderStringForCandidate(candidateId);
-    const QString shaders = resolvedChainForCurrentSource(candidateId);
-    if (!requested.isEmpty() && shaders.isEmpty()) {
+    if (candidateId != QLatin1String("off") && hdrFixesEnabled() &&
+        sourceColorProfile_.requiresSdrGate()) {
         emit anime4kGated(tr("Anime4K skipped: source transfer metadata is unknown or HDR"));
     }
     applyShaderChainRequest(shaders);
@@ -673,24 +680,27 @@ void VideoSurface::setAnime4KChain(const QString& candidateId) {
     refreshRenderState();
 }
 void VideoSurface::setAnime4KMode(anime4k::Mode mode) {
-    ++anime4KRequestGeneration_;
     // The id is compared too: an override the compare window applied must be
     // taken back when the same mode is picked again.
     const QString id = anime4k::modeId(mode);
     if (mode == anime4kMode_ && id == anime4kChainId_) return;
+    QString reason;
+    const QString shaders = resolvedChainForCurrentSource(id, &reason);
+    if (!reason.isEmpty() && id != QLatin1String("off")) {
+        emit anime4kGated(reason);
+        return;
+    }
+    ++anime4KRequestGeneration_;
     anime4kMode_ = mode;
     // The id is the persistence key, so it is recorded here too: a mode chosen
     // from the menu and a chain chosen in the compare window are the same
     // setting, and whichever came last must be what a restart restores.
     anime4kChainId_ = id;
     if (!mpv_) return;
-    // The id is resolved, so a mode and a chain go through one path - and only
-    // one of the two can name a chain that is not on disk.
-    const QString requested = anime4k::shaderStringForCandidate(anime4kChainId_);
     // Unknown or HDR transfer metadata gates the chain; the requested id remains
     // remembered so it can be restored when a known SDR source arrives.
-    const QString shaders = resolvedChainForCurrentSource(anime4kChainId_);
-    if (!requested.isEmpty() && shaders.isEmpty()) {
+    if (id != QLatin1String("off") && hdrFixesEnabled() &&
+        sourceColorProfile_.requiresSdrGate()) {
         emit anime4kGated(tr("Anime4K skipped: source transfer metadata is unknown or HDR"));
     }
     applyShaderChainRequest(shaders);
@@ -3209,9 +3219,10 @@ void VideoSurface::logFrameTiming(const QString& line) {
     timingLogFlushClock_.restart();
 }
 
-QString VideoSurface::resolvedChainForCurrentSource(const QString& candidateId) const {
-    const QString shaders = anime4k::shaderStringForCandidate(candidateId);
-    if (shaders.isEmpty()) return shaders;  // Off or unknown: not the gate's business
+QString VideoSurface::resolvedChainForCurrentSource(const QString& candidateId,
+                                                    QString* reason) const {
+    const QString shaders = anime4k::shaderStringForCandidate(candidateId, QString(), reason);
+    if (shaders.isEmpty()) return shaders;  // Off, unknown, or an unavailable required stage
     if (hdrFixesEnabled() && sourceColorProfile_.requiresSdrGate()) return QString();
     return shaders;
 }
@@ -3230,13 +3241,23 @@ void VideoSurface::handleSourceColorProfileChanged() {
     if (requiresSdrGate != wasGateRequired || hdr != wasHdr) {
         const QString chainId =
             anime4kChainId_.isEmpty() ? anime4k::modeId(anime4kMode_) : anime4kChainId_;
-        const QString requested = anime4k::shaderStringForCandidate(chainId);
-        if (requiresSdrGate != wasGateRequired && !requested.isEmpty() && mpv_ != nullptr) {
-            const QString allowed = resolvedChainForCurrentSource(chainId);
-            if (allowed.isEmpty()) {
-                emit anime4kGated(tr("Anime4K skipped: source transfer metadata is unknown or HDR"));
+        QString resolveReason;
+        const QString requested =
+            anime4k::shaderStringForCandidate(chainId, QString(), &resolveReason);
+        if (!resolveReason.isEmpty() && chainId != QLatin1String("off")) {
+            emit anime4kGated(resolveReason);
+        } else if (requiresSdrGate != wasGateRequired && !requested.isEmpty() &&
+                   mpv_ != nullptr) {
+            QString reason;
+            const QString allowed = resolvedChainForCurrentSource(chainId, &reason);
+            if (!reason.isEmpty()) {
+                emit anime4kGated(reason);
+            } else {
+                if (allowed.isEmpty()) {
+                    emit anime4kGated(tr("Anime4K skipped: source transfer metadata is unknown or HDR"));
+                }
+                applyShaderChainRequest(allowed);
             }
-            applyShaderChainRequest(allowed);
             // A paused core produces no frame to rebuild the chain on, so the
             // render state is refreshed the same way a user request would be.
             refreshRenderState();

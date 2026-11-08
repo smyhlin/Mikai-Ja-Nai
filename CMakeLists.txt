@@ -1,6 +1,6 @@
 # Schema version 6 in CMakePresets.json requires CMake >= 3.25.
 cmake_minimum_required(VERSION 3.25)
-project(mikai VERSION 0.2.1 LANGUAGES CXX)
+project(mikai VERSION 0.2.2 LANGUAGES CXX)
 
 if(WIN32)
   enable_language(RC)
@@ -242,6 +242,8 @@ set(PLAYER_SOURCES
   src/player/shell/OpenSubtitlesClient.hpp
   src/player/shell/PipFloat.cpp
   src/player/shell/PlayerDialog.cpp
+  src/player/shell/ClipExport.cpp
+  src/player/shell/ClipDialog.cpp
   src/player/shell/PlayerDialogProcessing.cpp
   src/player/shell/MediaInformationDialog.cpp
   src/player/shell/MediaInformationPresentation.cpp
@@ -283,6 +285,8 @@ set(PLAYER_HEADERS
   src/player/shell/FramePreviewService.hpp
   src/player/shell/HoverPreview.hpp
   src/player/shell/PipFloat.hpp
+  src/player/shell/ClipExport.hpp
+  src/player/shell/ClipDialog.hpp
   src/player/shell/PlayerDialog.hpp
   src/player/shell/MediaInformationDialog.hpp
   src/player/shell/MediaInformationPresentation.hpp

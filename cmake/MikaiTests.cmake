@@ -174,6 +174,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/player/TestCompareGif.cpp
     tests/cpp/player/TestCompareClip.hpp
     tests/cpp/player/TestCompareClip.cpp
+    tests/cpp/player/TestClipExport.hpp
+    tests/cpp/player/TestClipExport.cpp
     tests/cpp/player/TestCompareLoading.hpp
     tests/cpp/player/TestCompareLoading.cpp
     tests/cpp/player/TestPlaybackDiagnostics.hpp
@@ -374,6 +376,7 @@ if(MIKAI_BUILD_PROBES)
     TestMpvAsync
     TestCompareGif
     TestCompareClip
+    TestClipExport
     TestCompareLoading
     TestModels
     TestReleases

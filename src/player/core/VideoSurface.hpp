@@ -1200,7 +1200,7 @@ private:
     void applyShaderChainRequest(const QString& shaders);
 
     /// The resolved chain, or empty while source transfer metadata is gated.
-    QString resolvedChainForCurrentSource(const QString& candidateId) const;
+    QString resolvedChainForCurrentSource(const QString& candidateId, QString* reason = nullptr) const;
     /// Re-evaluates shader and AnimeJanai gates after a profile change.
     void handleSourceColorProfileChanged();
     void updateVideoMetadata();

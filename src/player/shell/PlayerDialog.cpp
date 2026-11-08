@@ -1,4 +1,5 @@
 
+#include "ClipDialog.hpp"
 #include "CompareWindow.hpp"
 #include "PlayerDialog.hpp"
 #include "MediaInformationDialog.hpp"
@@ -494,6 +495,13 @@ PlayerDialog::PlayerDialog(const QString& caption,
             &PlayerDialog::onAnimeJanaiSourceContextChanged);
     connect(surface_, &VideoSurface::sourceEpochChanged, this,
             &PlayerDialog::onAnimeJanaiSourceContextChanged);
+    connect(surface_, &VideoSurface::sourceEpochChanged, this, [this](uint64_t) {
+        if (clipDialog_ != nullptr) {
+            clipDialog_->close();
+            clipDialog_->deleteLater();
+            clipDialog_ = nullptr;
+        }
+    });
     connect(surface_, &VideoSurface::sourceEpochChanged, this, [this] {
         if (compareLoadingActive_) {
             finishCompareLoading();
@@ -701,6 +709,7 @@ void PlayerDialog::connectShell() {
     connect(shell_, &PlayerShell::openFolderRequested, this, &PlayerDialog::openMediaFolder);
     connect(shell_, &PlayerShell::mediaInformationRequested, this, &PlayerDialog::openMediaInformation);
     connect(shell_, &PlayerShell::compareRequested, this, &PlayerDialog::openCompareWindow);
+    connect(shell_, &PlayerShell::cutMomentRequested, this, &PlayerDialog::openClipDialog);
     connect(shell_, &PlayerShell::stateChanged, this, &PlayerDialog::onShellStateChanged);
     connect(shell_, &PlayerShell::audioRequested, this, &PlayerDialog::openAudioMenu);
     connect(shell_, &PlayerShell::subtitlesRequested, this, &PlayerDialog::openSubtitlesMenu);
@@ -1213,6 +1222,22 @@ void PlayerDialog::onShellFullscreenChanged(bool fullscreen) {
     transitioning_ = false;
     shell_->setGeometry(rect());
     layoutPanels();
+}
+
+void PlayerDialog::openClipDialog() {
+    if (closed_ || surface_ == nullptr || !surface_->hasVideo() ||
+        !std::isfinite(surface_->duration()) || surface_->duration() <= 0.0) {
+        flashStatus(tr("A seekable video timeline is not available"));
+        return;
+    }
+    if (clipDialog_ != nullptr) {
+        clipDialog_->show();
+        clipDialog_->raise();
+        clipDialog_->activateWindow();
+        return;
+    }
+    clipDialog_ = new ClipDialog(surface_, QString(), this);
+    clipDialog_->show();
 }
 
 void PlayerDialog::openCompareWindow() {
@@ -2753,6 +2778,9 @@ bool PlayerDialog::eventFilter(QObject* watched, QEvent* event) {
 }
 
 void PlayerDialog::closeEvent(QCloseEvent* event) {
+    if (clipDialog_ != nullptr) {
+        clipDialog_->close();
+    }
     if (shuttingDown_) {
         // A reentrant close arrives through the settle below, which spins the
         // event loop, so it must not tear the same cores down twice. A close
