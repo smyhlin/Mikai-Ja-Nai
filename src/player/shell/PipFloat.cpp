@@ -55,16 +55,13 @@ constexpr int kPipBoundsOffset = 24;
 constexpr int kPipBarFadeMs = 160;
 constexpr int kPipBarRevealHoldMs = 1600;
 constexpr int kPipDragThresholdPx = 6;
-constexpr int kPipCenterButtonSize = 68;
-constexpr int kPipCenterIconSize = 28;
-constexpr int kPipFieldHeight = 32;
-// The level pill is always this size: the mute button, a gap, and a slider wide
-// enough to aim at. It was built to grow on hover, which resized the window
-// content under the pointer on every enter and leave.
-constexpr int kPipVolumeWidth = 96;
-constexpr int kPipChipWidth = kPipFieldHeight + 8 + kPipVolumeWidth + 10;
-constexpr int kPipTimelineHeight = 4;
-constexpr int kPipTimelineHandle = 12;
+constexpr int kPipCenterButtonSize = 56;
+constexpr int kPipCenterIconSize = 22;
+constexpr int kPipFieldHeight = 30;
+constexpr int kPipInnerButtonSize = 24;
+constexpr int kPipVolumeWidth = 76;
+constexpr int kPipTimelineHeight = 3;
+constexpr int kPipTimelineHandle = 10;
 
 bool isWayland() {
     return QGuiApplication::platformName().startsWith(QLatin1String("wayland"),
@@ -213,27 +210,30 @@ void PipFloat::buildChrome() {
     // and click-to-pause.
     overlay_->setFocusProxy(this);
 
-    // A container, not a button: the mute button and the level it governs sit
-    // in one pill. It was built to grow on hover, and that read as lag: the
-    // pill resized under the pointer every time it was entered and left, and
-    // the whole strip jumped each time. A fixed pill is one shape, always.
-    volumeChip_ = new Panel(QColor(12, 13, 19, 164), 10.0, QColor(255, 255, 255, 45), overlay_);
+    const double radius = cornerRadius() > 0.0 ? cornerRadius() : 8.0;
+    const double panelRadius = std::min(radius + 2.0, kPipFieldHeight / 2.0);
+    const double innerRadius = qMax(3.0, panelRadius - 2.0);
+
+    // Left cluster: volume pill with mute button and slider in one sleek container
+    volumeChip_ = new Panel(pill(), panelRadius, w15(), overlay_);
     volumeChip_->setObjectName(QStringLiteral("pipVolumeChip"));
     volumeChip_->setFocusPolicy(Qt::NoFocus);
     volumeChip_->setMouseTracking(true);
+    volumeChip_->setFixedHeight(kPipFieldHeight);
     auto* chipLayout = new QHBoxLayout(volumeChip_);
-    chipLayout->setContentsMargins(4, 4, 4, 4);
-    chipLayout->setSpacing(6);
+    chipLayout->setContentsMargins(4, 3, 6, 3);
+    chipLayout->setSpacing(4);
 
-    // A bare glyph, hover highlight only, in the 7px radius the QSS used.
     const QColor muteHoverFill(255, 255, 255, 36);
-    muteButton_ = new IconButton(&IconPainter::volume, tr("Mute audio"), kPipFieldHeight, 18,
+    muteButton_ = new IconButton(&IconPainter::volume, tr("Mute audio"), kPipInnerButtonSize, 14,
                                  volumeChip_, muteHoverFill);
     muteButton_->setObjectName(QStringLiteral("pipMute"));
     muteButton_->setMouseTracking(true);
     ButtonChrome muteChrome;
+    muteChrome.useThemeRadius = false;
     muteChrome.hoverFill = muteHoverFill;
-    muteChrome.radius = 7.0;
+    muteChrome.radius = innerRadius;
+    muteChrome.borderWidth = 0;
     muteButton_->setButtonChrome(muteChrome);
     connect(muteButton_, &QPushButton::clicked, this, [this] {
         setMuted(!muted_);
@@ -246,7 +246,7 @@ void PipFloat::buildChrome() {
     volumeSlider_->setObjectName(QStringLiteral("pipVolume"));
     volumeSlider_->setFocusPolicy(Qt::NoFocus);
     volumeSlider_->setMouseTracking(true);
-    volumeSlider_->setFixedSize(kPipVolumeWidth, kPipFieldHeight);
+    volumeSlider_->setFixedSize(kPipVolumeWidth, kPipInnerButtonSize);
     volumeSlider_->setValueSilent(volume_);
     connect(volumeSlider_, &VolumeTrack::pressed, this, [this] {
         draggingVolume_ = true;
@@ -262,10 +262,6 @@ void PipFloat::buildChrome() {
         emit volumeChanged(volume_);
         revealControls();
     });
-    // The level reaches mpv at the release, not on every tick. Writing the
-    // core on each pixel of travel queued a property change per move, and on
-    // a slow core that queue is what reads as lag. The knob still tracks the
-    // pointer, and the sound lands the moment the button is let go.
     connect(volumeSlider_, &VolumeTrack::valueChanged, this, [this](double value) {
         if (draggingVolume_) {
             volume_ = std::clamp(value, 0.0, 1.0);
@@ -281,37 +277,41 @@ void PipFloat::buildChrome() {
     });
     chipLayout->addWidget(volumeSlider_);
 
-    volumeChip_->setFixedSize(kPipChipWidth, kPipFieldHeight + 8);
-
-    // The standing card the QSS drew, with a hover that says what the button
-    // does - the close one goes red.
-    ButtonChrome restoreChrome;
-    restoreChrome.fill = QColor(12, 13, 19, 164);
-    restoreChrome.border = QColor(255, 255, 255, 51);
-    restoreChrome.radius = 8.0;
-    restoreChrome.hoverFill = QColor(24, 26, 36, 224);
-    restoreChrome.hoverBorder = QColor(255, 255, 255, 107);
+    // Right cluster: symmetrical window controls pill matching volumeChip_ exactly
+    windowControls_ = new Panel(pill(), panelRadius, w15(), overlay_);
+    windowControls_->setObjectName(QStringLiteral("pipWindowControls"));
+    windowControls_->setFocusPolicy(Qt::NoFocus);
+    windowControls_->setMouseTracking(true);
+    windowControls_->setFixedHeight(kPipFieldHeight);
+    auto* controlsLayout = new QHBoxLayout(windowControls_);
+    controlsLayout->setContentsMargins(4, 3, 4, 3);
+    controlsLayout->setSpacing(2);
 
     restoreButton_ = new IconButton(&IconPainter::expand, tr("Return to the window"),
-                                    kPipFieldHeight, 17, overlay_);
+                                    kPipInnerButtonSize, 12, windowControls_);
     restoreButton_->setObjectName(QStringLiteral("pipRestore"));
     restoreButton_->setMouseTracking(true);
+    ButtonChrome restoreChrome;
+    restoreChrome.useThemeRadius = false;
+    restoreChrome.hoverFill = w15();
+    restoreChrome.radius = innerRadius;
+    restoreChrome.borderWidth = 0;
     restoreButton_->setButtonChrome(restoreChrome);
     connect(restoreButton_, &QPushButton::clicked, this, &PipFloat::restoreRequested);
+    controlsLayout->addWidget(restoreButton_);
 
-    ButtonChrome closeChrome;
-    closeChrome.fill = QColor(12, 13, 19, 164);
-    closeChrome.border = QColor(255, 255, 255, 51);
-    closeChrome.radius = 8.0;
-    closeChrome.hoverFill = QColor(220, 53, 69, 217);
-    closeChrome.hoverBorder = QColor(255, 255, 255, 115);
-
-    closeButton_ = new IconButton(&IconPainter::close, tr("Close (Esc)"), kPipFieldHeight, 17,
-                                  overlay_);
+    closeButton_ = new IconButton(&IconPainter::close, tr("Close (Esc)"),
+                                  kPipInnerButtonSize, 12, windowControls_);
     closeButton_->setObjectName(QStringLiteral("pipClose"));
     closeButton_->setMouseTracking(true);
+    ButtonChrome closeChrome;
+    closeChrome.useThemeRadius = false;
+    closeChrome.hoverFill = QColor(220, 53, 69, 215);
+    closeChrome.radius = innerRadius;
+    closeChrome.borderWidth = 0;
     closeButton_->setButtonChrome(closeChrome);
     connect(closeButton_, &QPushButton::clicked, this, &PipFloat::closeRequested);
+    controlsLayout->addWidget(closeButton_);
 
     playButton_ = new IconButton(&IconPainter::pause, tr("Pause (Space)"),
                                  kPipCenterButtonSize, kPipCenterIconSize, overlay_);
@@ -385,9 +385,10 @@ void PipFloat::buildChrome() {
 
     installEventFilter(this);
     surface_->installEventFilter(this);
-    const QVector<QWidget*> watched = {elapsed_,     remaining_,   scrub_,
-                                       playButton_,  muteButton_, restoreButton_,
-                                       closeButton_, volumeChip_, volumeSlider_};
+    const QVector<QWidget*> watched = {elapsed_,        remaining_,      scrub_,
+                                       playButton_,     muteButton_,     restoreButton_,
+                                       closeButton_,    volumeChip_,     volumeSlider_,
+                                       windowControls_};
     for (QWidget* widget : watched) {
         widget->installEventFilter(this);
     }
@@ -1098,19 +1099,16 @@ void PipFloat::fitSurfaces() {
         return;
     }
 
-    // Top-left: the volume pill. The chip is moved, not the button inside it -
-    // placing the button directly left the pill wherever its layout last put it,
-    // so the two drew on top of each other.
+    // Top-left: the volume pill. Sized to its contents and placed with 12px margin.
     if (volumeChip_ != nullptr) {
+        volumeChip_->adjustSize();
         volumeChip_->move(12, 12);
     }
 
-    // Top-right: close button (right: w - 12 - width), restore button (left of close)
-    if (closeButton_ != nullptr) {
-        closeButton_->move(w - 12 - closeButton_->width(), 12);
-    }
-    if (restoreButton_ != nullptr && closeButton_ != nullptr) {
-        restoreButton_->move(closeButton_->x() - 8 - restoreButton_->width(), 12);
+    // Top-right: window controls pill matching volume pill geometry and height
+    if (windowControls_ != nullptr) {
+        windowControls_->adjustSize();
+        windowControls_->move(w - 12 - windowControls_->width(), 12);
     }
 
     // Center: play button

@@ -168,6 +168,7 @@ private:
     IconButton* muteButton_ = nullptr;
     Panel* volumeChip_ = nullptr;
     VolumeTrack* volumeSlider_ = nullptr;
+    Panel* windowControls_ = nullptr;
     IconButton* restoreButton_ = nullptr;
     IconButton* closeButton_ = nullptr;
     IconButton* playButton_ = nullptr;
