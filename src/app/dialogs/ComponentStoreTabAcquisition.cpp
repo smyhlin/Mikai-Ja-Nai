@@ -172,11 +172,9 @@ void ComponentStoreTab::installRecommended() {
                                          static_cast<int>(Backend::TensorRTRTX));
     }
 #endif
-    Backend preferredBackend = preferRestored
-                                   ? *restoredBackend
-                                   : selectedBackend();
-    if (!preferRestored) {
-        preferredBackend = defaultAnimeJanaiBackend(gpu);
+    Backend preferredBackend = selectedBackend();
+    if (preferRestored && restoredBackend.has_value()) {
+        preferredBackend = *restoredBackend;
     }
     const int backendIndex = animeJanaiBackendCombo_->findData(
         static_cast<int>(preferredBackend));

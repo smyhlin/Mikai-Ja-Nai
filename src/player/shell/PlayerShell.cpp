@@ -250,8 +250,13 @@ QVector<MenuEntry> animeJanaiEntries(const QString& levelId, const QString& curr
             const QString backend = native::stableName(row.backend);
             entry.payload = QStringLiteral("ajbackend|") + backend;
             entry.current = backend == currentId;
+            const bool installed =
+                native::describeAnimeJanaiInstallation(row.backend, false).installed;
 #ifdef Q_OS_WIN
-            if (row.backend == native::Backend::TensorRTRTX) {
+            if (!installed) {
+                entry.disabled = true;
+                entry.tooltip = QObject::tr("Not installed. Install it in Settings › Components.");
+            } else if (row.backend == native::Backend::TensorRTRTX) {
                 entry.tooltip = QObject::tr(
                     "In-process TensorRT-RTX 1.7 engine builds; CUDA GPUs, Windows only.");
             }
@@ -261,6 +266,9 @@ QVector<MenuEntry> animeJanaiEntries(const QString& levelId, const QString& curr
                 entry.tooltip = QObject::tr(
                     "TensorRT for RTX has no published runtime on this platform. "
                     "The saved RTX request is kept but cannot run.");
+            } else if (!installed) {
+                entry.disabled = true;
+                entry.tooltip = QObject::tr("Not installed. Install it in Settings › Components.");
             }
 #endif
             entries.append(entry);

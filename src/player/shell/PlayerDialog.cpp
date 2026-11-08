@@ -401,13 +401,21 @@ PlayerDialog::PlayerDialog(const QString& caption,
         animeJanaiSettings.value(kAnimeJanaiBackendSettingKey).toString();
     const auto& gpu = native::observeComputeCapability();
     auto backend = native::backendFromName(storedAnimeJanaiBackend);
-    // On an RTX GPU, promote uninstalled legacy "tensorrt" default to TensorRT for RTX
-    if (native::isNvidiaRtx(gpu) && (!backend.has_value() ||
-        (*backend == native::Backend::TensorRT &&
-         !native::describeAnimeJanaiInstallation(native::Backend::TensorRT, false).installed))) {
-        backend = native::Backend::TensorRTRTX;
-        animeJanaiSettings.setValue(kAnimeJanaiBackendSettingKey,
-                                   animeJanaiBackendName(*backend));
+    // If the configured backend is not installed, fall back to any installed backend
+    if (!backend.has_value() ||
+        !native::describeAnimeJanaiInstallation(*backend, false).installed) {
+        if (native::isNvidiaRtx(gpu) &&
+            native::describeAnimeJanaiInstallation(native::Backend::TensorRTRTX, false).installed) {
+            backend = native::Backend::TensorRTRTX;
+        } else if (native::describeAnimeJanaiInstallation(native::Backend::TensorRT, false).installed) {
+            backend = native::Backend::TensorRT;
+        } else if (native::describeAnimeJanaiInstallation(native::Backend::DirectML, false).installed) {
+            backend = native::Backend::DirectML;
+        }
+        if (backend.has_value()) {
+            animeJanaiSettings.setValue(kAnimeJanaiBackendSettingKey,
+                                       animeJanaiBackendName(*backend));
+        }
     }
     if (backend.has_value()) {
         animeJanaiBackend_ = *backend;

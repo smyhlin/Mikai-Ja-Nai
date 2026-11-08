@@ -374,6 +374,11 @@ void PlayerDialog::onAnimeJanaiSourceContextChanged() {
 void PlayerDialog::applyAnimeJanaiBackend(const QString& backendName) {
     const auto backend = native::backendFromName(backendName);
     if (!backend) return;
+    if (!native::describeAnimeJanaiInstallation(*backend, false).installed) {
+        flashStatus(tr("The %1 backend is not installed; install it in Settings › Components.")
+                        .arg(backendName));
+        return;
+    }
     animeJanaiBackend_ = *backend;
     shell_->setAnimeJanaiBackend(animeJanaiBackendName(*backend));
     QSettings().setValue(kAnimeJanaiBackendSettingKey, animeJanaiBackendName(*backend));
