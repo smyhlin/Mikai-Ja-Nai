@@ -131,8 +131,8 @@ inline constexpr int kTitleDetailsThumbRadius = 8;
 inline constexpr int kTitleWatchPanelPadding = 16;
 inline constexpr int kTitleWatchPanelGap = 12;
 
-inline constexpr int kTitleEpisodeButtonWidth = 64;
-inline constexpr int kTitleEpisodeButtonHeight = 44;
+inline constexpr int kTitleEpisodeButtonWidth = 52;
+inline constexpr int kTitleEpisodeButtonHeight = 36;
 inline constexpr int kTitleWatchedMarkWidth = 12;
 inline constexpr int kTitleWatchedMarkHeight = 2;
 inline constexpr int kTitleWatchedMarkInset = 6;

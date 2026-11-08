@@ -6,7 +6,7 @@ Published changes are recorded with their downloads on the [GitHub releases page
 
 - Add a Cut moment editor for selecting, previewing and exporting a short MP4.
 - Group processing controls into Restore, Upscale and Interpolation; improve Anime4K shader selection.
-- Refine Compare rendering, antialias settings controls and remove the redundant Episodes button from the title hero.
+- Refine Compare rendering, antialias settings controls, make episode buttons more compact and remove the redundant Episodes button from the title hero.
 
 ## 0.2.1 — 2026-11-07
 

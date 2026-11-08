@@ -903,7 +903,7 @@ QWidget#titlePage QPushButton#episodeButton {
     border-radius: %42px;
     min-height: %17px;
     max-height: %17px;
-    padding: 8px 0 0;
+    padding: 4px 0 0;
     font-size: %26px;
     font-weight: 500;
 }
