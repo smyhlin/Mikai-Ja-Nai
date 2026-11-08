@@ -62,8 +62,10 @@ Name: "{autodesktop}\Mikai Ja Nai"; Filename: "{app}\mikai.exe"; WorkingDir: "{a
 [Run]
 Filename: "{app}\mikai.exe"; Description: "Launch Mikai Ja Nai"; Flags: nowait postinstall skipifsilent unchecked
 
-; No [Registry], [InstallDelete] or [UninstallDelete]. Inno removes only files
-; installed by its log; acquired native/models, logs and settings survive.
+[Registry]
+Root: HKCU; Subkey: "Software\Mikai"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Mikai.Video"; Flags: uninsdeletekey
+
 ; Integrations are opt-in within the application. Their cleanup is constrained
 ; below to the exact executable AND ownership marker, never by product name.
 [Code]
@@ -355,4 +357,7 @@ begin
   for I := 0 to GetArrayLength(Extensions) - 1 do
     RemoveContextVerb(Extensions[I], Command, Icon);
   RemoveDefaultRegistration(Command, Icon);
+  // Clear all application settings and state from registry on uninstall
+  RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Mikai');
+  RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\Mikai.Video');
 end;
