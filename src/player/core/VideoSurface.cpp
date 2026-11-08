@@ -401,6 +401,11 @@ void VideoSurface::ensureEngine() {
         // video-timing-offset=0 as an alternative to its render-time wait; this
         // client also schedules against target_time using mpv's own clock.
         {"video-timing-offset", "0"},
+        // Prevent SDR video from incorrectly triggering HDR on the display:
+        // hint colorspace only from source metadata, and keep hints disabled
+        // unless an actual HDR transfer curve (PQ/HLG) is positively identified.
+        {"target-colorspace-hint-mode", "source"},
+        {"target-colorspace-hint", "no"},
     };
     // The display mode is applied before initialize so the first frame is
     // already in it. An Auto downscale is left out here on purpose: dscale's
@@ -1495,6 +1500,10 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
     hasVideo_ = false;
     observedColorProfile_ = {};
     sourceColorProfile_ = {};
+    if (mpv_ != nullptr && hdrRenderingFixesEnabled()) {
+        issueCoreCommand({"set", "target-colorspace-hint", "no"},
+                         "target-colorspace-hint", false);
+    }
     const QString activeChainId =
         anime4kChainId_.isEmpty() ? anime4k::modeId(anime4kMode_) : anime4kChainId_;
     if (!anime4k::shaderStringForCandidate(activeChainId).isEmpty() && hdrFixesEnabled())
@@ -3292,6 +3301,10 @@ void VideoSurface::handleSourceColorProfileChanged() {
     videoMetadata_.hasDolbyAtmos = videoMetadata_.audioCodec.contains(QStringLiteral("eac3")) ||
                                    videoMetadata_.audioCodec.contains(QStringLiteral("truehd"));
     emit videoMetadataChanged(videoMetadata_);
+    if (mpv_ != nullptr && hdrRenderingFixesEnabled()) {
+        issueCoreCommand({"set", "target-colorspace-hint", sourceColorProfile_.isHdr() ? "auto" : "no"},
+                         "target-colorspace-hint", false);
+    }
 }
 
 void VideoSurface::updateVideoMetadata() {
@@ -3356,6 +3369,10 @@ void VideoSurface::applyHdrPolicyToEngine() {
         issueCoreCommand({"set", option.first, option.second}, option.first,
                          /*reportRefusal=*/false);
     }
+    issueCoreCommand({"set", "target-colorspace-hint-mode", "source"},
+                     "target-colorspace-hint-mode", false);
+    issueCoreCommand({"set", "target-colorspace-hint", sourceColorProfile_.isHdr() ? "auto" : "no"},
+                     "target-colorspace-hint", false);
 }
 
 void VideoSurface::setPumpSuspended(bool suspended) {
