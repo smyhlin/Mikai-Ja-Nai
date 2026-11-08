@@ -138,3 +138,54 @@ verified digests in `components/aji/<version>/` must stay as installed.
 The Upscalers page offers four downloaded ONNX graphs (4× Real-ESRGAN AnimeVideo v3 in fp32/fp16, 2× HFA2kCompact and its multijpg variant) as one-step chains. They enter the same custom-model store as an imported graph, so they plan, verify, cache engines and appear in Compare exactly like a spatial model; the chain carries the graph's own factor, and the first render at a new size builds an engine before it can show a frame.
 
 Two pane-specific notes, both fixed but worth knowing when reading an older log: a comparison pane's core has to preload the backend closure with `RTLD_GLOBAL` (the player's surface does that itself), and preloading a second copy of an already resident `libnvinfer`/`libcudart` soname must be skipped — two runtime images in one process corrupt the heap. Teardown of a pane's filter is synchronous for the same reason: removing the filter is what joins the fork's builder thread.
+
+## 7. Version Upgrade Checklist & Multi-Backend Store Caveats
+
+When upgrading AnimeJaNai to a newer upstream release (e.g. `v0.22.x` → `v0.24.0` or beyond), follow this strict checklist to avoid installation record mismatches, missing closure errors, or broken player states.
+
+### 7.1 Backend Separation & Store Layout
+
+Each backend runtime is an independent closure stored in its own versioned directory under `<nativeRoot>/components/aji/<version>/<backend>`:
+
+- `trt`: Classic TensorRT (`aji.dll` / `libaji.so`, `aji_trt.dll` / `libaji_trt.so`, `trtexec`, `nvinfer` / `cudart` closure, `install.json`).
+- `trtrtx`: TensorRT for RTX on Windows (`aji.dll`, `aji_trtrtx.dll`, `tensorrt_rtx_1_7.dll`, `tensorrt_onnxparser_rtx_1_7.dll`, `TensorRT-RTX-NOTICE.txt`, `TensorRT-RTX-Acknowledgements.txt`, `install.json`).
+- `dml`: DirectML on Windows (`aji.dll`, `aji_dml.dll`, `onnxruntime.dll`, `DirectML.dll`, `install.json`).
+
+**Key Invariants:**
+1. **Never conflate backends:** Installing `trtrtx` does **not** install or satisfy `trt`, and vice versa. Each directory must have its own verified `install.json` created by `recordAndVerify()`. An attempt to select or run a backend whose directory lacks `install.json` fails with `animejanai.installation.recordMissing` (*"The app-owned AnimeJaNai installation record is missing"* / *"Запис встановлення AnimeJaNai у сховищі застосунку відсутній"*).
+2. **Version path consistency:** When updating `kAjiVersion` in `AnimeJanaiInstallation.cpp`, the path segment returned by `installationRoot(backend)` changes. Both `installationRoot()` and the download URLs/hashes (`kAjiUrl`, `kAjiSha`, `kRtxOverlayUrl`, `kRtxOverlaySha`) must be updated together.
+3. **RTX Staging Isolation:** The `trtrtx` directory on Windows must **never** contain `aji_trt.dll`, as its presence would allow the dispatcher to silently fall back to classic TensorRT without reporting the failure.
+
+### 7.2 Acquisition & Settings Discipline
+
+1. **Preserve User Backend Choice (`ComponentStoreTabAcquisition.cpp`):**
+   - In `installRecommended()` and `downloadMissing()`, never silently override `selectedBackend()` to RTX or classic TRT when the user actively selected the other backend in `animeJanaiBackendCombo_`.
+   - Automatic promotion to `TensorRTRTX` applies **only** to fresh setups on RTX GPUs where no explicit or stored preference exists.
+   - When downloading a backend, only queue the file items belonging to the selected backend.
+2. **Atomic Staging on the Same Volume:**
+   - Staging directories (`aji-stage-XXXXXX`) must be created on the same volume as the store root so `publishStage()` can rename/move atomically without cross-device copy failures.
+
+### 7.3 Player Menu & Defensive Runtime Fallbacks
+
+1. **Disable Uninstalled Backends in UI (`PlayerShell.cpp`):**
+   - The backend submenu in `PlayerShell` must verify `native::describeAnimeJanaiInstallation(backend).installed` for each row.
+   - Uninstalled backends must be disabled with tooltip `"Not installed. Install it in Settings › Components."` so users cannot switch into a non-functional state.
+2. **Safe Startup Fallback (`PlayerDialog.cpp`):**
+   - On startup, if the configured backend in `QSettings` (`player/animejanai/backend`) is not installed on disk, `PlayerDialog` must gracefully fall back to whichever backend *is* installed (`TensorRTRTX`, `TensorRT`, or `DirectML`) rather than disabling the Quality menu with missing record errors.
+3. **Switching Guard (`PlayerDialogProcessing.cpp`):**
+   - `applyAnimeJanaiBackend()` must check `describeAnimeJanaiInstallation().installed` before modifying `animeJanaiBackend_` and writing settings; if uninstalled, flash a status notice and leave the active pipeline untouched.
+
+### 7.4 Verification & Diagnostics
+
+After updating the AJI version or provisioning closures:
+1. Verify `install.json` across all installed backends:
+   ```bash
+   cat "<nativeRoot>/components/aji/<version>/trt/install.json"
+   cat "<nativeRoot>/components/aji/<version>/trtrtx/install.json"
+   ```
+2. Check engine build logs for diagnostics:
+   - Classic TensorRT: `<nativeRoot>/animejanai/models/spatial/*.engine.build.log`
+   - TensorRT for RTX: `<nativeRoot>/animejanai/models/spatial/*.rtxengine.build.log` and `*.rtxengine.warm.log`
+3. Verify test suites:
+   - Run `TestAnimeJanaiRuntime` and `TestFeedRender` through `mikai_test_launcher`.
+   - Run `benchmark_probe.exe` with `--backend tensorrt` and `--backend tensorrt-rtx` to verify real throughput without UI intervention.
