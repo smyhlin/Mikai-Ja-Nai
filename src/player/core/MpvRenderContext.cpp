@@ -1,12 +1,13 @@
 #include "MpvRenderContext.hpp"
 
+#include <QOpenGLContext>
+
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
 #else
-#include <QOpenGLContext>
 #include <dlfcn.h>
 #endif
 
@@ -19,6 +20,11 @@ namespace mplayer {
 namespace {
 
 void* resolve(const char* name) {
+    if (QOpenGLContext* ctx = QOpenGLContext::currentContext()) {
+        if (QFunctionPointer fn = ctx->getProcAddress(name)) {
+            return reinterpret_cast<void*>(fn);
+        }
+    }
 #ifdef _WIN32
     // System32 only: the OpenGL driver stack is a Windows dependency, and a
     // bare name would let whatever sits in the current directory answer for it.
@@ -29,18 +35,18 @@ void* resolve(const char* name) {
                      reinterpret_cast<void*>(GetProcAddress(opengl, "wglGetProcAddress")))
                : nullptr;
     if (wglGetProcAddress != nullptr) {
-        if (void* p = wglGetProcAddress(name)) return p;
+        void* p = wglGetProcAddress(name);
+        if (p != nullptr && p != reinterpret_cast<void*>(1) &&
+            p != reinterpret_cast<void*>(2) && p != reinterpret_cast<void*>(3) &&
+            p != reinterpret_cast<void*>(-1)) {
+            return p;
+        }
     }
     if (opengl != nullptr) {
         if (void* p = reinterpret_cast<void*>(GetProcAddress(opengl, name))) return p;
     }
     return nullptr;
 #else
-    if (QOpenGLContext* ctx = QOpenGLContext::currentContext()) {
-        if (QFunctionPointer fn = ctx->getProcAddress(name)) {
-            return reinterpret_cast<void*>(fn);
-        }
-    }
     static void* libgl = ::dlopen("libGL.so.1", RTLD_LAZY | RTLD_LOCAL);
     if (libgl == nullptr) {
         libgl = ::dlopen("libOpenGL.so.0", RTLD_LAZY | RTLD_LOCAL);

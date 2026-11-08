@@ -459,6 +459,10 @@ int main(int argc, char** argv) {
     parser.addOption(sizeOpt);
     QCommandLineOption clipOpt(QStringLiteral("clip"), QStringLiteral("clip file"), QStringLiteral("file"));
     parser.addOption(clipOpt);
+    QCommandLineOption backendOpt(QStringLiteral("backend"),
+                                  QStringLiteral("standard AJI backend: tensorrt or tensorrt-rtx"),
+                                  QStringLiteral("backend"));
+    parser.addOption(backendOpt);
     QCommandLineOption expectFailOpt(QStringLiteral("expect-failure"), QStringLiteral("expect explicit unacquired model row to show Failed with UserRole reason (baseline still positive)"));
     parser.addOption(expectFailOpt);
     QCommandLineOption listOpt(QStringLiteral("list-models"),
@@ -552,6 +556,10 @@ int main(int argc, char** argv) {
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+    if (parser.isSet(backendOpt)) {
+        QSettings().setValue(QStringLiteral("player/animejanai/backend"),
+                              parser.value(backendOpt).trimmed().toLower());
+    }
 
     if (!mplayer::probes::selectRuntime()) {
         return 2;
