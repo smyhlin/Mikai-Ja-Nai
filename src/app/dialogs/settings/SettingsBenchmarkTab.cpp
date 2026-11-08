@@ -108,12 +108,13 @@ std::optional<mplayer::native::Backend> storedStandardAnimeJanaiBackendChoice() 
 }
 
 #ifdef Q_OS_WIN
-// Preserve the historical Native preference default when no Standard choice exists.
+// Preserve the GPU-detected default when no Standard choice exists.
 mplayer::native::Backend storedStandardAnimeJanaiBackend() {
     if (const auto backend = storedStandardAnimeJanaiBackendChoice()) {
         return *backend;
     }
-    return mplayer::native::loadNativePreferences().backend;
+    const auto& gpu = mplayer::native::observeComputeCapability();
+    return mplayer::native::defaultAnimeJanaiBackend(gpu);
 }
 #endif
 

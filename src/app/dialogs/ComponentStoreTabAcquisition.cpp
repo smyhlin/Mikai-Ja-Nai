@@ -167,13 +167,8 @@ void ComponentStoreTab::installRecommended() {
     Backend preferredBackend = preferRestored
                                    ? *restoredBackend
                                    : selectedBackend();
-    if (!preferRestored && preferredBackend != Backend::TensorRTRTX) {
-#ifdef Q_OS_WIN
-        preferredBackend = gpu.nvidia ? Backend::TensorRT : Backend::DirectML;
-#else
-        Q_UNUSED(gpu);
-        preferredBackend = Backend::TensorRT;
-#endif
+    if (!preferRestored) {
+        preferredBackend = defaultAnimeJanaiBackend(gpu);
     }
     const int backendIndex = animeJanaiBackendCombo_->findData(
         static_cast<int>(preferredBackend));

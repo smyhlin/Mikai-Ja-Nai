@@ -32,6 +32,7 @@
 #include "ShellWidgets.hpp"
 #include "VideoSurface.hpp"
 #include "native/bundle/NativeRuntimeSelection.hpp"
+#include "native/components/NativeGpuProbe.hpp"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -401,9 +402,10 @@ PlayerDialog::PlayerDialog(const QString& caption,
     if (const auto backend = native::backendFromName(storedAnimeJanaiBackend)) {
         animeJanaiBackend_ = *backend;
     } else {
-        // Native's selected preference is an initial default only; subsequent
-        // AnimeJaNai backend changes are explicit and persisted independently.
-        animeJanaiBackend_ = native::loadNativePreferences().backend;
+        // Automatically default based on detected GPU: TensorRT for RTX on RTX GPUs,
+        // classic TensorRT on GTX/other NVIDIA GPUs, and DirectML on non-NVIDIA.
+        const auto& gpu = native::observeComputeCapability();
+        animeJanaiBackend_ = native::defaultAnimeJanaiBackend(gpu);
     }
 #ifdef Q_OS_LINUX
     // Settings can be shared with Windows or retain an old Native preference.

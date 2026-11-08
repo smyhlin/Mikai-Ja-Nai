@@ -552,6 +552,11 @@ void ComponentStoreTab::buildUi() {
         }
 #endif
         if (restoredIndex >= 0) animeJanaiBackendCombo_->setCurrentIndex(restoredIndex);
+    } else {
+        const auto& gpu = observeComputeCapability();
+        const Backend defBackend = defaultAnimeJanaiBackend(gpu);
+        int defIndex = animeJanaiBackendCombo_->findData(static_cast<int>(defBackend));
+        if (defIndex >= 0) animeJanaiBackendCombo_->setCurrentIndex(defIndex);
     }
     animeJanaiBackendLabel_->setBuddy(animeJanaiBackendCombo_);
     backendRow->addWidget(animeJanaiBackendCombo_, 1, Qt::AlignVCenter);
