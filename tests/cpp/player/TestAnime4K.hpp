@@ -14,6 +14,7 @@ class TestAnime4K : public QObject {
   void rifeLevelLivesInNativeMenuNotCatalogue();
   void offAndUnknownIdsResolveNothing();
   void missingStageMakesTheEntireChainIncomplete();
+  void shaderResolutionReportsExactMissingStage();
   void individualShaderIdsResolveAndDownscaleStagesAreNotStandalone();
   void filterShaderProgramReportsOffAndUnknownCandidates();
   void filterShaderProgramRejectsIncompleteAndUnreadableSources();

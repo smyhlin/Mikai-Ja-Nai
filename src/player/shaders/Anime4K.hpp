@@ -168,7 +168,10 @@ bool chainIsComplete(const Candidate& candidate, const QString& shadersDir = QSt
 
 /// Resolves a candidate's file names into an mpv-compatible `glsl-shaders`
 /// string of absolute paths. Empty for Off, an unknown id, or a missing folder.
-QString shaderStringForCandidate(const QString& id, const QString& shadersDir = QString());
+/// When supplied, `reason` distinguishes a disabled/unknown candidate, an
+/// unavailable shader directory, and the exact missing or unreadable stage.
+QString shaderStringForCandidate(const QString& id, const QString& shadersDir = QString(),
+                                 QString* reason = nullptr);
 /// Resolves a candidate's ordered shader files into one libplacebo custom shader
 /// program. Returns empty on Off, unknown candidates, or source I/O failures;
 /// `reason`, when supplied, identifies the cause. This only assembles source

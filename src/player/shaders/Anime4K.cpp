@@ -668,21 +668,59 @@ QByteArray filterShaderProgramForCandidate(const QString& id, const QString& sha
     return program;
 }
 
-QString shaderStringForCandidate(const QString& id, const QString& shadersDir) {
+QString shaderStringForCandidate(const QString& id, const QString& shadersDir, QString* reason) {
+    if (reason != nullptr) {
+        reason->clear();
+    }
+    if (id == QLatin1String("off")) {
+        if (reason != nullptr) {
+            *reason = QStringLiteral("Anime4K candidate 'off' is disabled");
+        }
+        return QString();
+    }
+
+    const QStringList files = filesForId(id, shadersDir);
+    if (files.isEmpty()) {
+        if (reason != nullptr) {
+            *reason = QStringLiteral("Unknown Anime4K candidate '%1'").arg(id);
+        }
+        return QString();
+    }
+
     const QString dir = shadersDir.isEmpty() ? findShadersDir() : shadersDir;
     if (dir.isEmpty()) {
+        if (reason != nullptr) {
+            *reason = QStringLiteral("Shader directory unavailable for Anime4K candidate '%1'")
+                          .arg(id);
+        }
         return QString();
     }
     // Every file has to exist before the chain is handed over. mpv echoes
     // glsl-shaders back without validating it, so a chain naming a file that
     // is not there reads back complete and fails silently at the next frame;
     // refusing to build it here is the only place that can catch it.
-    const QStringList files = filesForId(id, dir);
     if (files.isEmpty()) {
+        if (reason != nullptr) {
+            *reason = QStringLiteral("Unknown Anime4K candidate '%1'").arg(id);
+        }
         return QString();
     }
     for (const QString& file : files) {
-        if (!QFileInfo::exists(QDir(dir).filePath(file))) {
+        const QString path = QDir(dir).filePath(file);
+        const QFileInfo info(path);
+        if (!info.exists() || !info.isFile()) {
+            if (reason != nullptr) {
+                *reason = QStringLiteral("Missing Anime4K shader '%1' at '%2'")
+                              .arg(file, path);
+            }
+            return QString();
+        }
+        QFile shader(path);
+        if (!shader.open(QIODevice::ReadOnly)) {
+            if (reason != nullptr) {
+                *reason = QStringLiteral("Cannot read Anime4K shader '%1' at '%2': %3")
+                              .arg(file, path, shader.errorString());
+            }
             return QString();
         }
     }

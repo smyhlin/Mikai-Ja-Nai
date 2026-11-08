@@ -338,6 +338,31 @@ void TestAnime4K::missingStageMakesTheEntireChainIncomplete() {
   QCOMPARE(shaderString.split(separator), expectedPaths);
 }
 
+void TestAnime4K::shaderResolutionReportsExactMissingStage() {
+  const QStringList chain = filesForId(QStringLiteral("fast_a"));
+  QVERIFY(chain.size() > 1);
+
+  QTemporaryDir fixture;
+  QVERIFY(fixture.isValid());
+  for (int index = 0; index < chain.size() - 1; ++index) {
+    QFile source(QDir(findShadersDir()).filePath(chain.at(index)));
+    QVERIFY(source.open(QIODevice::ReadOnly));
+    QFile staged(QDir(fixture.path()).filePath(chain.at(index)));
+    QVERIFY(staged.open(QIODevice::WriteOnly));
+    QCOMPARE(staged.write(source.readAll()), source.size());
+  }
+
+  QString reason;
+  QVERIFY(shaderStringForCandidate(QStringLiteral("fast_a"), fixture.path(), &reason).isEmpty());
+  QVERIFY(reason.contains(QStringLiteral("Missing Anime4K shader")));
+  QVERIFY(reason.contains(chain.last()));
+  QVERIFY(!reason.contains(chain.first()));
+
+  reason.clear();
+  QVERIFY(shaderStringForCandidate(QStringLiteral("not-a-preset"), fixture.path(), &reason)
+              .isEmpty());
+  QVERIFY(reason.contains(QStringLiteral("Unknown Anime4K candidate")));
+}
 void TestAnime4K::filterShaderProgramReportsOffAndUnknownCandidates() {
   QString reason;
   QVERIFY(filterShaderProgramForCandidate(QStringLiteral("off"), QStringLiteral("/unused"),

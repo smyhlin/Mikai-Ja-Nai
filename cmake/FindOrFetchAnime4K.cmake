@@ -55,7 +55,35 @@ elseif(NOT MIKAI_ANIME4K_ARCHIVE STREQUAL "")
   message(FATAL_ERROR "MIKAI_ANIME4K_ARCHIVE is not a file: ${MIKAI_ANIME4K_ARCHIVE}")
 endif()
 
-if(NOT _mikai_anime4k_staged_pin STREQUAL MIKAI_ANIME4K_COMMIT)
+set(_mikai_anime4k_staged_tree_valid FALSE)
+if(_mikai_anime4k_staged_pin STREQUAL MIKAI_ANIME4K_COMMIT)
+  # A stamp identifies the intended revision, not the integrity of its
+  # materialised files. Validate every manifest path, byte count and digest
+  # before trusting the stamp (e.g. a partially copied build tree).
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}"
+      "-DMODE=check"
+      "-DMANIFEST=${MIKAI_ANIME4K_MANIFEST}"
+      "-DSHADERS_DIR=${MIKAI_ANIME4K_SHADERS_DIR}"
+      -P "${MIKAI_ANIME4K_FETCH_SCRIPT}"
+    RESULT_VARIABLE _mikai_anime4k_check_result
+    OUTPUT_VARIABLE _mikai_anime4k_check_output
+    ERROR_VARIABLE _mikai_anime4k_check_error)
+  if(_mikai_anime4k_check_result EQUAL 0)
+    set(_mikai_anime4k_staged_tree_valid TRUE)
+    string(STRIP "${_mikai_anime4k_check_output}" _mikai_anime4k_check_output)
+    string(REGEX REPLACE "^(--[ \t]*)+" "" _mikai_anime4k_check_output
+      "${_mikai_anime4k_check_output}")
+    if(_mikai_anime4k_check_output)
+      message(STATUS "${_mikai_anime4k_check_output}")
+    endif()
+  else()
+    string(STRIP "${_mikai_anime4k_check_error}" _mikai_anime4k_check_error)
+    message(STATUS "Anime4K stamped tree is incomplete or changed; repairing it")
+  endif()
+endif()
+
+if(NOT _mikai_anime4k_staged_tree_valid)
   execute_process(
     COMMAND "${CMAKE_COMMAND}"
       "-DMODE=fetch"

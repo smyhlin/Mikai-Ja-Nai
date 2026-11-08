@@ -28,6 +28,7 @@
 #include <QHash>
 #include <QDir>
 #include <QFileInfo>
+#include <QFile>
 #include <QImage>
 #include <QLabel>
 #include <QMenu>
@@ -365,6 +366,218 @@ void saveFrame(const QImage& frame, const QString& name) {
         !frame.isNull() && QDir().mkpath(QFileInfo(path).absolutePath()) && frame.save(path);
     check(written, (QStringLiteral("framebuffer written: ") + name).toUtf8().constData());
 }
+std::optional<QString> textProperty(VideoSurface* surface, const QString& name) {
+    const auto value = surface->probeMpvProperty(name, ProbePropertyKind::Text);
+    if (!value || value->kind != ProbePropertyValue::Kind::Text) return std::nullopt;
+    return value->text;
+}
+
+std::optional<double> numberProperty(VideoSurface* surface, const QString& name) {
+    const auto value = surface->probeMpvProperty(name, ProbePropertyKind::Number);
+    if (!value || !value->isNumeric()) return std::nullopt;
+    return value->asNumber();
+}
+
+PlayerDialog* createDialog(const QString& url);
+bool waitForVideo(VideoSurface* surface, int timeoutMs = 15000);
+
+bool savePixelFrame(VideoSurface* surface, const QString& directory, const QString& stem,
+                   QImage* output) {
+    *output = surface->grabVideoFramebuffer();
+    return !output->isNull() &&
+           output->save(QDir(directory).filePath(stem + QStringLiteral(".png")), "PNG");
+}
+
+bool runMissingStageRefusalSmoke(VideoSurface* surface, const QImage& fastAFrame) {
+    const QString appDir = QFileInfo(QCoreApplication::applicationDirPath()).canonicalFilePath();
+    if (appDir.isEmpty()) {
+        std::fprintf(stderr, "FAIL refusal smoke cannot canonicalize applicationDir\n");
+        return false;
+    }
+    const QString markerPath = QDir(appDir).filePath(QStringLiteral("OWNED-ANIME4K-PIXEL-ROOT"));
+    const QFileInfo marker(markerPath);
+    if (!marker.isFile() || marker.isSymLink()) {
+        std::fprintf(stderr, "FAIL refusal smoke requires a regular nonsymlink OWNED-ANIME4K-PIXEL-ROOT marker in applicationDir\n");
+        return false;
+    }
+
+    const QString shaderDir = anime4k::findShadersDir();
+    const QString expectedShaderDir = QDir(appDir).filePath(QStringLiteral("shaders"));
+    const QFileInfo shaderDirectory(expectedShaderDir);
+    if (shaderDir.isEmpty() || shaderDirectory.isSymLink() || !shaderDirectory.isDir() ||
+        QDir::cleanPath(shaderDir) != QDir::cleanPath(expectedShaderDir) ||
+        shaderDirectory.canonicalFilePath() != QDir::cleanPath(expectedShaderDir)) {
+        std::fprintf(stderr, "FAIL refusal smoke requires findShadersDir to resolve to nonsymlink applicationDir/shaders\n");
+        return false;
+    }
+
+    const QString stageName = QStringLiteral("Anime4K_Clamp_Highlights.glsl");
+    const QString stagePath = QDir(shaderDir).filePath(stageName);
+    const QFileInfo stage(stagePath);
+    const QString expectedStagePath = QDir(expectedShaderDir).filePath(stageName);
+    if (!stage.isFile() || stage.isSymLink() ||
+        stage.canonicalFilePath() != expectedStagePath) {
+        std::fprintf(stderr, "FAIL refusal smoke requires a regular nonsymlink selected stage\n");
+        return false;
+    }
+
+    const anime4k::Candidate fastA = anime4k::candidateForId(QStringLiteral("fast_a"), shaderDir);
+    const anime4k::Candidate fastB = anime4k::candidateForId(QStringLiteral("fast_b"), shaderDir);
+    if (!fastA.files.contains(stageName) || !fastB.files.contains(stageName)) {
+        std::fprintf(stderr, "FAIL refusal smoke selected stage is not shared by fast_a and fast_b\n");
+        return false;
+    }
+
+    const QString parkedPath = QDir(shaderDir).filePath(
+        QStringLiteral("Anime4K_Clamp_Highlights.glsl.refusal-smoke-parked"));
+    const QFileInfo parked(parkedPath);
+    if (parked.exists() || parked.isSymLink()) {
+        std::fprintf(stderr, "FAIL refusal smoke parked shader path already exists\n");
+        return false;
+    }
+    if (surface->anime4KChainId() != QLatin1String("fast_a") ||
+        surface->anime4KMode() != anime4k::Mode::FastA || fastAFrame.isNull()) {
+        std::fprintf(stderr, "FAIL refusal smoke must begin with a captured active fast_a frame\n");
+        return false;
+    }
+
+    struct RestoreStage {
+        QString source;
+        QString parked;
+        bool restored = false;
+        bool restore() {
+            if (restored) return true;
+            if (!QFile::rename(parked, source)) {
+                std::fprintf(stderr, "FAIL refusal smoke could not restore shader stage from %s to %s\n",
+                             qPrintable(parked), qPrintable(source));
+                return false;
+            }
+            restored = true;
+            return true;
+        }
+        ~RestoreStage() {
+            if (!restored) restore();
+        }
+    } restore{stagePath, parkedPath};
+
+    if (!QFile::rename(stagePath, parkedPath)) {
+        std::fprintf(stderr, "FAIL refusal smoke could not park owned shader stage %s\n",
+                     qPrintable(stagePath));
+        return false;
+    }
+
+    QString gateReason;
+    const QMetaObject::Connection gateConnection =
+        QObject::connect(surface, &VideoSurface::anime4kGated, surface,
+                         [&gateReason](const QString& reason) { gateReason = reason; });
+    surface->setAnime4KChain(QStringLiteral("fast_b"));
+    QObject::disconnect(gateConnection);
+    pump(250);
+    const bool refused = !gateReason.trimmed().isEmpty();
+    const bool requestedStatePreserved =
+        surface->anime4KChainId() == QLatin1String("fast_a") &&
+        surface->anime4KMode() == anime4k::Mode::FastA;
+    const QImage actualFrame = settledFrame(surface);
+    const double difference = bandDifference(fastAFrame, actualFrame);
+    const bool actualImagePreserved = difference >= 0.0 && difference <= 0.01;
+
+    std::fprintf(stderr,
+                 "refusal smoke refused-fast_b=%s reason=%s state-preserved=%s image-preserved=%s active-chain=%s active-mode=%s framebuffer=%dx%d fast_a-MAE=%.4f\n",
+                 refused ? "yes" : "NO", refused ? qPrintable(gateReason) : "(empty)",
+                 requestedStatePreserved ? "yes" : "NO",
+                 actualImagePreserved ? "yes" : "NO",
+                 qPrintable(surface->anime4KChainId()),
+                 qPrintable(anime4k::modeId(surface->anime4KMode())),
+                 actualFrame.width(), actualFrame.height(), difference);
+    const bool restored = restore.restore();
+    return refused && requestedStatePreserved && actualImagePreserved && restored;
+}
+
+int runPixelDiagnostic(const QString& directory) {
+    const QString source = QString::fromLocal8Bit(qgetenv("MIKAI_ANIME4K_PIXEL_SOURCE")).trimmed();
+    if (source.isEmpty() || !QDir().mkpath(directory)) {
+        std::fprintf(stderr, "FAIL pixel diagnostic needs MIKAI_ANIME4K_PIXEL_SOURCE and writable output directory\n");
+        return 1;
+    }
+    auto* dialog = createDialog(source);
+    auto* surface = dialog->findChild<VideoSurface*>();
+    if (!waitForVideo(surface, 15000)) {
+        std::fprintf(stderr, "FAIL pixel diagnostic source did not produce a ready video surface\n");
+        delete dialog;
+        return 1;
+    }
+    surface->setPaused(true);
+    const auto pause = surface->probeMpvProperty(QStringLiteral("pause"), ProbePropertyKind::Flag);
+    if (!pause || pause->kind != ProbePropertyValue::Kind::Flag || !pause->flag) {
+        std::fprintf(stderr, "FAIL pixel diagnostic could not confirm paused playback\n");
+        delete dialog;
+        return 1;
+    }
+    const auto time = numberProperty(surface, QStringLiteral("time-pos"));
+    const auto path = textProperty(surface, QStringLiteral("path"));
+    const auto width = numberProperty(surface, QStringLiteral("video-params/w"));
+    const auto height = numberProperty(surface, QStringLiteral("video-params/h"));
+    std::fprintf(stderr, "pixel diagnostic path=%s time-pos=%s source-resolution=%sx%s\n",
+                 path ? qPrintable(*path) : "unavailable",
+                 time ? qPrintable(QString::number(*time, 'f', 3)) : "unavailable",
+                 width ? qPrintable(QString::number(*width, 'f', 0)) : "unavailable",
+                 height ? qPrintable(QString::number(*height, 'f', 0)) : "unavailable");
+    if (!time || !width || !height || *width <= 0 || *height <= 0) {
+        std::fprintf(stderr, "FAIL pixel diagnostic source properties unavailable\n");
+        delete dialog;
+        return 1;
+    }
+    const double dpr = std::max(1.0, surface->devicePixelRatioF());
+    QImage off1, fast1, off2, fast2;
+    const auto captureAt = [&](int multiplier, const QString& mode, QImage* image) {
+        surface->setMinimumSize(0, 0);
+        surface->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+        surface->setFixedSize(qMax(1, qRound(*width * multiplier / dpr)),
+                              qMax(1, qRound(*height * multiplier / dpr)));
+        dialog->adjustSize();
+        pump(500);
+        if (mode == QLatin1String("off")) surface->setAnime4KMode(anime4k::Mode::Off);
+        else surface->setAnime4KMode(anime4k::Mode::FastA);
+        if (mode == QLatin1String("off")) {
+            if (!chainSettlesOff(surface, 6000)) return false;
+        } else if (!chainSettlesTo(surface, QStringLiteral("fast_a"), 6000)) {
+            return false;
+        }
+        pump(700);
+        const auto now = numberProperty(surface, QStringLiteral("time-pos"));
+        return now && std::abs(*now - *time) <= 0.05 &&
+               savePixelFrame(surface, directory,
+                              mode + QStringLiteral("_%1x").arg(multiplier), image);
+    };
+    bool failed = false;
+    const auto capture = [&](int scale, const QString& mode, QImage* image) {
+        if (captureAt(scale, mode, image)) return;
+        std::fprintf(stderr, "FAIL pixel diagnostic capture/refusal mode=%s scale=%dx\n",
+                     qPrintable(mode), scale);
+        failed = true;
+    };
+    capture(1, QStringLiteral("off"), &off1);
+    if (!failed) capture(1, QStringLiteral("fast_a"), &fast1);
+    if (!failed) capture(2, QStringLiteral("off"), &off2);
+    if (!failed) capture(2, QStringLiteral("fast_a"), &fast2);
+    const double one = bandDifference(off1, fast1);
+    const double two = bandDifference(off2, fast2);
+    std::fprintf(stderr, "pixel diagnostic framebuffer=%dx%d/%dx%d DPR=%.3f off-fast MAE 1x=%.4f 2x=%.4f chain=%s\n",
+                 off1.width(), off1.height(), off2.width(), off2.height(), dpr, one, two,
+                 qPrintable(surface->effectiveShaderChain()));
+    if (one < 0 || two < 0 || (one <= 0.05 && two <= 0.05)) {
+        std::fprintf(stderr, "FAIL pixel diagnostic found no real fast_a effect on the fixture\n");
+        failed = true;
+    }
+    if (qgetenv("MIKAI_ANIME4K_REFUSAL_SMOKE") == "1" && !failed) {
+        if (!runMissingStageRefusalSmoke(surface, fast2)) {
+            std::fprintf(stderr, "FAIL pixel diagnostic missing-stage refusal smoke\n");
+            failed = true;
+        }
+    }
+    delete dialog;
+    return failed ? 1 : 0;
+}
 
 // ── the compare chooser, read as a tree ─────────────────────────────────
 
@@ -411,7 +624,7 @@ PlayerDialog* createDialog(const QString& url) {
     return dialog;
 }
 
-bool waitForVideo(VideoSurface* surface, int timeoutMs = 10000) {
+bool waitForVideo(VideoSurface* surface, int timeoutMs) {
     return waitUntil(
         [surface] {
             return surface != nullptr && surface->hasVideo() && surface->isContextReady() &&
@@ -492,6 +705,8 @@ int main(int argc, char** argv) {
     QSettings settings;
     settings.clear();
     settings.sync();
+    const QByteArray pixelDirectory = qgetenv("MIKAI_ANIME4K_PIXEL_DIR");
+    if (!pixelDirectory.isEmpty()) return runPixelDiagnostic(QString::fromLocal8Bit(pixelDirectory));
 
     const QString url = QStringLiteral("av://lavfi:testsrc2=size=480x270:rate=25");
     check(!anime4k::findShadersDir().isEmpty(),
