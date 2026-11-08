@@ -1752,8 +1752,8 @@ QString ComponentStoreTab::progressCardForPack(const QString& pack) const {
 
     // The RTX overlay is part of the runtime closure, not a GPU-kernel pack,
     // so it renders on the runtime card like the dispatcher it accompanies.
-    if (pack == QLatin1String("aji-v0.22.2") ||
-        pack == QLatin1String("aji-trtrtx-v0.22.2") ||
+    if (pack == QLatin1String("aji-v0.24.0") ||
+        pack == QLatin1String("aji-trtrtx-v0.24.0") ||
         pack == QLatin1String("onnxruntime-directml-1.24.4") ||
         pack == QLatin1String("directml-1.15.4") ||
         pack == QLatin1String("trt-runtime-trtexec") ||
@@ -1773,15 +1773,15 @@ QString ComponentStoreTab::progressDisplayName(const QString& pack) const {
         if (component.files.contains(pack)) return pack;
     }
 
-    if (pack == QLatin1String("aji-v0.22.2")) {
+    if (pack == QLatin1String("aji-v0.24.0")) {
 #ifdef Q_OS_WIN
-        return QStringLiteral("aji-v0.22.2 (aji-windows-x64.zip)");
+        return QStringLiteral("aji-v0.24.0 (aji-windows-x64.zip)");
 #else
-        return QStringLiteral("aji-v0.22.2 (aji-linux-x64.tar.zst)");
+        return QStringLiteral("aji-v0.24.0 (aji-linux-x64.tar.zst)");
 #endif
     }
-    if (pack == QLatin1String("aji-trtrtx-v0.22.2"))
-        return QStringLiteral("aji-trtrtx-v0.22.2 (aji-trtrtx-windows-x64.zip)");
+    if (pack == QLatin1String("aji-trtrtx-v0.24.0"))
+        return QStringLiteral("aji-trtrtx-v0.24.0 (aji-trtrtx-windows-x64.zip)");
     if (pack == QLatin1String("onnxruntime-directml-1.24.4"))
         return QStringLiteral("Microsoft.ML.OnnxRuntime.DirectML/1.24.4 "
                               "(microsoft.ml.onnxruntime.directml.1.24.4.nupkg)");

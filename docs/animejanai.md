@@ -50,7 +50,7 @@ stage one:
   in-process engine building, no `trtexec`/`trtexec-libdir`, `.trtrtx-<ver>.gpu-<gpu>.rtxengine` and
   `.jitcache` caches, and only the five RTX builder flags — cannot be exercised here.
 - On Windows, selecting RTX acquires nothing by itself; an explicit install action stages the
-  standard dispatcher plus the five overlay files under `components/aji/v0.22.2/trtrtx`, keeps both
+  standard dispatcher plus the five overlay files under `components/aji/v0.24.0/trtrtx`, keeps both
   NVIDIA notices, and refuses a root that also contains `aji_trt.dll` so the dispatcher cannot fall
   back to classic TensorRT. Nothing from that overlay is bundled or redistributed.
 
@@ -91,7 +91,7 @@ Run the fork against the same store, module and options the application passes:
 
 ```bash
 S="$HOME/.local/share/Mikai/Mikai Wrapper/native"
-M="$S/components/aji/v0.22.2/trt"
+M="$S/components/aji/v0.24.0/trt"
 MODELS="$S/animejanai/models/spatial"
 RIFE="$S/animejanai/models/rife"
 LD_LIBRARY_PATH="$M:/path/to/extracted/mpv" \

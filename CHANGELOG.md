@@ -4,6 +4,7 @@ Published changes are recorded with their downloads on the [GitHub releases page
 
 ## 0.2.2 — Unreleased
 
+- Upgrade Standard AnimeJaNai to v0.24.0 (ABI 9) across Windows and Linux, updating official runtime assets and SHA-256 cryptographic pins.
 - Add a Cut moment editor for selecting, previewing and exporting a short MP4.
 - Group processing controls into Restore, Upscale and Interpolation; improve Anime4K shader selection.
 - Refine Compare rendering, antialias settings controls, make episode buttons more compact and remove the redundant Episodes button from the title hero.

@@ -111,7 +111,7 @@ machine observations are historical only, not an active path.
 
 | | |
 |---|---|
-| Current official source | <https://github.com/the-database/animejanai-inference> @ v0.22.2, commit `14b21d14396a3f0a905522b32debc15dea90fabd`, API/ABI 9 |
+| Current official source | <https://github.com/the-database/animejanai-inference> @ v0.24.0, commit `29dbb2dc65688d6df48e774a409ba552ca3cd2a1`, API/ABI 9 |
 | Historical private Native baseline | v0.9.0, commit `c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3`, ABI 8, with separately recorded local modifications and build |
 | Artefacts | Windows dispatcher and backends; Linux runtime is separately released |
 | Licence | **no upstream grant located; redistribution blocked** |
@@ -171,11 +171,11 @@ artifact hashes are recorded in
 `sources.json#sources[id=animejanai-inference].localBuildObservation`; runtime
 behavior is not established.
 
-The current [v0.22.2 release](https://github.com/the-database/animejanai-inference/releases/tag/v0.22.2)
-has an ABI-9 Windows runtime archive `aji-windows-x64.zip` (901,610 bytes,
-SHA-256 `b306b1888a16`; full digest: [`sources.json`: `currentOfficialRelease.assets[name=aji-windows-x64.zip].sha256`](sources.json))
-and Linux runtime archive `aji-linux-x64.tar.zst` (415,415 bytes,
-SHA-256 `3d552d59ebf8`; full digest: [`sources.json`: `currentOfficialRelease.assets[name=aji-linux-x64.tar.zst].sha256`](sources.json)).
+The current [v0.24.0 release](https://github.com/the-database/animejanai-inference/releases/tag/v0.24.0)
+has an ABI-9 Windows runtime archive `aji-windows-x64.zip` (930,847 bytes,
+SHA-256 `8a90d23c356b`; full digest: [`sources.json`: `currentOfficialRelease.assets[name=aji-windows-x64.zip].sha256`](sources.json))
+and Linux runtime archive `aji-linux-x64.tar.zst` (435,064 bytes,
+SHA-256 `98baeb371278`; full digest: [`sources.json`: `currentOfficialRelease.assets[name=aji-linux-x64.tar.zst].sha256`](sources.json)).
 Its `include/aji.h` is byte-identical to the v0.17.1 header, so the ABI-9
 version field and struct layout are unchanged; `include/aji_image.h` adds a
 separate still-image ABI this application does not consume. These archives are separate from the private
@@ -197,7 +197,7 @@ is the opt-in TensorRT-for-RTX overlay for the Windows Standard AnimeJaNai
 backend. Selecting that backend downloads nothing by itself; explicit user
 action in Components or the missing-downloads flow stages the dispatcher
 `aji.dll` from the standard Windows archive plus all five overlay members into
-the per-machine store under `components/aji/v0.22.2/trtrtx`. The overlay
+the per-machine store under `components/aji/v0.24.0/trtrtx`. The overlay
 contains `aji_trtrtx.dll` together with NVIDIA's proprietary
 `tensorrt_rtx_1_7.dll` (229,312,112 bytes) and
 `tensorrt_onnxparser_rtx_1_7.dll`, plus NVIDIA's own mandatory

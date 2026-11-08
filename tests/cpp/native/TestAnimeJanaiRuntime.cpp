@@ -47,7 +47,7 @@ namespace {
 
 QString fixtureRoot() {
     return QDir(nativeSubdirectory(QStringLiteral("components")))
-        .filePath(QStringLiteral("aji/v0.22.2"));
+        .filePath(QStringLiteral("aji/v0.24.0"));
 }
 
 QString runtimePath(Backend backend = Backend::TensorRT) {
@@ -257,7 +257,7 @@ bool writeRecord(Backend backend, const QString& recordedBackend = {},
     }
     QJsonObject record;
     record.insert(QStringLiteral("schema"), QStringLiteral("mikai.native.animejanai/3"));
-    record.insert(QStringLiteral("version"), QStringLiteral("v0.22.2"));
+    record.insert(QStringLiteral("version"), QStringLiteral("v0.24.0"));
     const QString backendToken = backend == Backend::TensorRT ? QStringLiteral("trt")
                                    : backend == Backend::TensorRTRTX ? QStringLiteral("trtrtx")
                                                                      : QStringLiteral("dml");
@@ -632,11 +632,11 @@ void TestAnimeJanaiRuntime::rtxRuntimeClosureAndPlatformContract() {
     const QVector<AnimeJanaiMissingDownload> missing =
         animeJanaiMissingDownloads(Backend::TensorRTRTX);
     QCOMPARE(missing.size(), 2);
-    QCOMPARE(missing.at(0).label, QStringLiteral("aji-v0.22.2"));
-    QCOMPARE(missing.at(0).bytes, qint64(901610));
-    QCOMPARE(missing.at(1).label, QStringLiteral("aji-trtrtx-v0.22.2"));
-    QCOMPARE(missing.at(1).bytes, qint64(95346303));
-    QCOMPARE(animeJanaiMissingDownloadBytes(Backend::TensorRTRTX), qint64(96247913));
+    QCOMPARE(missing.at(0).label, QStringLiteral("aji-v0.24.0"));
+    QCOMPARE(missing.at(0).bytes, qint64(930847));
+    QCOMPARE(missing.at(1).label, QStringLiteral("aji-trtrtx-v0.24.0"));
+    QCOMPARE(missing.at(1).bytes, qint64(95347435));
+    QCOMPARE(animeJanaiMissingDownloadBytes(Backend::TensorRTRTX), qint64(96278282));
 
     QVERIFY(writeRecord(Backend::TensorRTRTX));
     const AnimeJanaiInstallation installed = describeAnimeJanaiInstallation(Backend::TensorRTRTX);
@@ -940,7 +940,7 @@ void TestAnimeJanaiRuntime::unsupportedDispatcherIsNotReady() {
     const auto oldVersion = describeAnimeJanaiInstallation(fixtureBackend(), true);
     QVERIFY(!oldVersion.installed);
     QCOMPARE(oldVersion.reasonKey, QStringLiteral("animejanai.installation.recordInvalid"));
-    object.insert(QStringLiteral("version"), QStringLiteral("v0.22.2"));
+    object.insert(QStringLiteral("version"), QStringLiteral("v0.24.0"));
     object.insert(QStringLiteral("schema"), QStringLiteral("unknown"));
     QVERIFY(writeFile(record.fileName(), QJsonDocument(object).toJson(QJsonDocument::Compact)));
     const auto result = describeAnimeJanaiInstallation(fixtureBackend(), true);
