@@ -135,10 +135,11 @@ class CompareImageItem final : public QGraphicsItem {
 public:
     CompareImageItem() { setAcceptedMouseButtons(Qt::NoButton); }
 
-    void setImage(const QImage& image) {
+    void setImage(const QImage& image, const QSize& targetSize = QSize()) {
         prepareGeometryChange();
         image_ = image;
-        clip_ = QRectF(image.rect());
+        targetSize_ = targetSize.isValid() ? targetSize : image.size();
+        clip_ = QRectF(QPointF(0, 0), targetSize_);
         update();
     }
     void setClipRect(const QRectF& clip) {
@@ -151,11 +152,20 @@ public:
     void paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) override {
         if (image_.isNull() || clip_.isEmpty()) return;
         painter->setRenderHint(QPainter::SmoothPixmapTransform, smooth_);
-        painter->drawImage(clip_, image_, clip_);
+        if (targetSize_.isValid() && targetSize_ != image_.size()) {
+            const qreal scaleX = qreal(image_.width()) / qreal(targetSize_.width());
+            const qreal scaleY = qreal(image_.height()) / qreal(targetSize_.height());
+            const QRectF srcRect(clip_.x() * scaleX, clip_.y() * scaleY,
+                                 clip_.width() * scaleX, clip_.height() * scaleY);
+            painter->drawImage(clip_, image_, srcRect);
+        } else {
+            painter->drawImage(clip_, image_, clip_);
+        }
     }
 
 private:
     QImage image_;
+    QSize targetSize_;
     QRectF clip_;
     bool smooth_ = true;
 };
@@ -263,18 +273,15 @@ void CompareCanvas::setSideImages(const QImage& a, const QImage& b, const QImage
     imageA_ = a;
     imageB_ = b;
     imageDifference_ = difference;
-    itemA_->setImage(a);
-    itemB_->setImage(b);
-    itemDifference_->setImage(difference);
-    if (!a.isNull()) {
-        imageSize_ = a.size();
-    } else if (!b.isNull()) {
-        imageSize_ = b.size();
-    } else if (!difference.isNull()) {
-        imageSize_ = difference.size();
-    } else {
-        imageSize_ = QSize();
-    }
+    int maxW = 0, maxH = 0;
+    if (!a.isNull()) { maxW = qMax(maxW, a.width()); maxH = qMax(maxH, a.height()); }
+    if (!b.isNull()) { maxW = qMax(maxW, b.width()); maxH = qMax(maxH, b.height()); }
+    if (!difference.isNull()) { maxW = qMax(maxW, difference.width()); maxH = qMax(maxH, difference.height()); }
+    imageSize_ = (maxW > 0 && maxH > 0) ? QSize(maxW, maxH) : QSize();
+
+    itemA_->setImage(a, imageSize_);
+    itemB_->setImage(b, imageSize_);
+    itemDifference_->setImage(difference, imageSize_);
     applyLayout();
     if (viewport() != nullptr) viewport()->update();
 }

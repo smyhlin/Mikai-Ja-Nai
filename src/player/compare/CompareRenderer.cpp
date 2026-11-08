@@ -246,10 +246,18 @@ struct CompareRenderer::State {
                 const auto* message = static_cast<mpv_event_log_message*>(event->data);
                 const QString text = QString::fromUtf8(message->text).trimmed();
                 const QString prefix = QString::fromUtf8(message->prefix);
-                if (message->log_level > 0 && message->log_level <= MPV_LOG_LEVEL_ERROR &&
-                    !diagnosticTail.contains(text)) {
-                    diagnosticTail.append(text);
-                    while (diagnosticTail.size() > 3) diagnosticTail.removeFirst();
+                if (message->log_level > 0 && message->log_level <= MPV_LOG_LEVEL_ERROR) {
+                    if (!diagnosticTail.contains(text)) {
+                        diagnosticTail.append(text);
+                        while (diagnosticTail.size() > 3) diagnosticTail.removeFirst();
+                    }
+                    if (acceptBuildEvidence && (prefix == QLatin1String("vf") || prefix.contains(QLatin1String("aji")))) {
+                        if (error.isEmpty() && (text.contains(QLatin1String("error"), Qt::CaseInsensitive) ||
+                                                text.contains(QLatin1String("failed"), Qt::CaseInsensitive))) {
+                            error = QCoreApplication::translate("CompareRenderer", "The comparison model failed: %1")
+                                        .arg(text);
+                        }
+                    }
                 }
                 const QString combined = prefix + QLatin1Char(' ') + text;
                 const bool isAjiLog =
@@ -378,14 +386,6 @@ struct CompareRenderer::State {
             if (result < 0) {
                 error = QCoreApplication::translate("CompareRenderer", "The comparison renderer failed: %1")
                             .arg(QString::fromStdString(core->describeError(result)));
-            } else if (activeFbo != framebuffer.get() && framebuffer && framebuffer->isValid()) {
-                QOpenGLFramebufferObject::blitFramebuffer(
-                    framebuffer.get(),
-                    QRect(0, 0, framebuffer->width(), framebuffer->height()),
-                    activeFbo,
-                    QRect(0, 0, activeFbo->width(), activeFbo->height()),
-                    GL_COLOR_BUFFER_BIT, GL_LINEAR);
-                image = framebuffer->toImage();
             } else {
                 image = activeFbo->toImage();
             }
@@ -592,19 +592,25 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
             }
         }
 
-        // Anime4K's Upscale stages require an output at least 1.2x the source.
+        int planScale = 1;
+        if (plan.enabled) {
+            for (const auto& stage : plan.stages) {
+                if (stage.scaleFactor > planScale) planScale = stage.scaleFactor;
+            }
+        }
+        const bool a4kUpscale = !plan.enabled && chain.contains(QLatin1String("Upscale"), Qt::CaseInsensitive);
         bool upscaleCapped = false;
-        if (!plan.enabled && chain.contains(QLatin1String("Upscale"), Qt::CaseInsensitive) &&
-            (state.framebuffer->width() <= state.sourceFrame.width() * 1.2 ||
-             state.framebuffer->height() <= state.sourceFrame.height() * 1.2)) {
+        if ((plan.enabled && planScale > 1) || a4kUpscale) {
+            const int scale = plan.enabled ? planScale : 2;
             const QSize upscaleSize(
-                std::min(3840, std::max(state.framebuffer->width(), state.sourceFrame.width() * 2)),
-                std::min(2160, std::max(state.framebuffer->height(), state.sourceFrame.height() * 2)));
+                std::min(7680, std::max(state.framebuffer->width(), state.sourceFrame.width() * scale)),
+                std::min(4320, std::max(state.framebuffer->height(), state.sourceFrame.height() * scale)));
             upscaleCapped = upscaleSize.width() <= state.sourceFrame.width() * 1.2;
-            if (upscaleSize.width() > state.framebuffer->width() &&
-                upscaleSize.height() > state.framebuffer->height() &&
-                state.ensureUpscaleFramebuffer(upscaleSize)) {
-                state.useUpscaleTarget = true;
+            if (upscaleSize.width() > state.framebuffer->width() ||
+                upscaleSize.height() > state.framebuffer->height()) {
+                if (state.ensureUpscaleFramebuffer(upscaleSize)) {
+                    state.useUpscaleTarget = true;
+                }
             }
         }
         // The immutable native RGB source is unchanged; only output allocation varies.

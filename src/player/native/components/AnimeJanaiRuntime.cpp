@@ -1429,6 +1429,11 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
             AnimeJanaiChain chain;
             chain.number = 1;
             chain.steps = {step};
+            chain.upscaleEnabled = true;
+            chain.minResolution = QStringLiteral("0x0");
+            chain.maxResolution = QStringLiteral("infxinf");
+            chain.minFps = 0;
+            chain.maxFps = 0;
             stagedSlot.number = 1;
             stagedSlot.profileName = model->displayName;
             stagedSlot.chains = {chain};

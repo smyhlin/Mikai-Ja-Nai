@@ -1859,7 +1859,7 @@ QString AnimeJanaiConfigStore::serializeSlotSection(const AnimeJanaiSlot& slot,
         putLine(output, p + QStringLiteral("min_resolution"),
                 chain.minResolution.isEmpty() ? QStringLiteral("0x0") : chain.minResolution);
         putLine(output, p + QStringLiteral("max_resolution"),
-                chain.maxResolution.isEmpty() ? QStringLiteral("0x0") : chain.maxResolution);
+                chain.maxResolution.isEmpty() ? QStringLiteral("infxinf") : chain.maxResolution);
         putLine(output, p + QStringLiteral("min_fps"), QString::number(chain.minFps));
         putLine(output, p + QStringLiteral("max_fps"), QString::number(chain.maxFps));
         putLine(output, p + QStringLiteral("upscale"),
