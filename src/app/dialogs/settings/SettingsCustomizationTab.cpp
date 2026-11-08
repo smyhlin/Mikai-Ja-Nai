@@ -42,6 +42,7 @@ QString entryCaption(const QString& id) {
     if (id == QStringLiteral("shortcuts")) return SettingsDialog::tr("Keyboard shortcuts");
     if (id == QStringLiteral("processing")) return SettingsDialog::tr("Processing");
     if (id == QStringLiteral("components")) return SettingsDialog::tr("Components");
+    if (id == QStringLiteral("upscalers")) return SettingsDialog::tr("Upscalers");
     if (id == QStringLiteral("benchmark")) return SettingsDialog::tr("Benchmark");
     return QString();
 }
