@@ -400,15 +400,15 @@ QString officialAjiDigest(const QString& name) {
     // The RTX dispatcher has no aji_api_version export either, so these per-file
     // pins are the only identity gate for an official RTX acquisition.
     if (name == QLatin1String("aji_trtrtx.dll"))
-        return QStringLiteral("b4b0df0f2c3a81c24986d725e8b7f69ef4d534c65ec768f8e5578a03f93aff1d");
+        return QStringLiteral("53a1ac0d931f1973d6e6fe196a87e158648d66c954431dfe6ecb7ec47e85f458");
     if (name == QLatin1String("tensorrt_rtx_1_7.dll"))
-        return QStringLiteral("a57071115348dd428dd0038a8092eeb2b845426604b2f56a970cadf417fae567");
+        return QStringLiteral("7b8a06d4b66dfe7da7f1ff48a994ad9dcf107cd28b4822d6f25453528c0db6dd");
     if (name == QLatin1String("tensorrt_onnxparser_rtx_1_7.dll"))
-        return QStringLiteral("8e8b6322eca6a99e2ee910557bd6615ab14cc8738bff9b80af9880083c0bc382");
+        return QStringLiteral("b38d00d107dae534f1fc855df5bc1a04fc0ae25135b5b10d17f9b30cc4c9c411");
     if (name == QLatin1String("TensorRT-RTX-NOTICE.txt"))
-        return QStringLiteral("8573d63f5cb99c6bc010cf5d59d52f2bf7bee109cd20664ca291889e3d5c7464");
+        return QStringLiteral("da7aa4b4bba64232bb9e868c5899e14bd74e983c6f5df017febfe24f72e2b5e7");
     if (name == QLatin1String("TensorRT-RTX-Acknowledgements.txt"))
-        return QStringLiteral("4999aaf0da4d23ed8e85d2756fc8d7a5cd397b4ced17e4fea62fc1e1c2b24ea0");
+        return QStringLiteral("611660ec0ae19c7b8df4a6442009c8bc85ba9e56d7d5ea042564841e72032d25");
     return {};
 }
 bool matchesPinnedOfficialAbi(const QString& directory, Backend backend) {
