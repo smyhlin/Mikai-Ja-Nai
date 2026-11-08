@@ -428,10 +428,19 @@ QString ComponentStoreTab::setupPrompt(qint64* bytes) const {
 
     // Match the upscaling-only recommendation, not every absent store pack:
     // an installed bundle can already supply the GPU components. The selected
-    // product decides whose closure is quoted and at what size.
-    if (selectedBackend() == Backend::TensorRTRTX) {
-        if (!animeJanaiTensorRtRtxInstalled_ && tensorRtRtxClosureBytes_ > 0)
-            append(tr("TensorRT for RTX runtime"), tensorRtRtxClosureBytes_);
+    // product decides whose closure is quoted and at what size. On RTX GPUs,
+    // always target the RTX runtime unless classic TensorRT is already installed.
+    const Backend promptBackend =
+        (isNvidiaRtx(gpu) && !animeJanaiTensorRtInstalled_)
+            ? Backend::TensorRTRTX
+            : selectedBackend();
+
+    if (promptBackend == Backend::TensorRTRTX) {
+        const qint64 rtxBytes = tensorRtRtxClosureBytes_ > 0
+                                    ? tensorRtRtxClosureBytes_
+                                    : animeJanaiMissingDownloadBytes(Backend::TensorRTRTX);
+        if (!animeJanaiTensorRtRtxInstalled_ && rtxBytes > 0)
+            append(tr("TensorRT for RTX runtime"), rtxBytes);
     } else if (gpu.nvidia) {
         if ((runtimeRecommended_ || kernelsRecommended_) && tensorRtClosureBytes_ > 0) {
             append(tr("Upscaling runtime and GPU components"), tensorRtClosureBytes_);
@@ -532,12 +541,19 @@ void ComponentStoreTab::buildUi() {
     animeJanaiBackendCombo_->addItem(backendChoiceLabel(Backend::TensorRTRTX),
                                      static_cast<int>(Backend::TensorRTRTX));
 #endif
-    // A restored selection is shown, never silently replaced. The stored key is
-    // only read here: this tab writes nothing on open and starts no transfer.
-    const auto restoredBackend = []() -> std::optional<Backend> {
+    const auto& gpu = observeComputeCapability();
+    // A restored selection is shown, but on an RTX GPU an uninstalled classic
+    // TensorRT selection is automatically promoted to the hardware-matched RTX runtime.
+    const auto restoredBackend = [&]() -> std::optional<Backend> {
         QSettings settings;
-        return backendFromName(
+        auto b = backendFromName(
             settings.value(QStringLiteral("player/animejanai/backend")).toString());
+        if (isNvidiaRtx(gpu) && (!b.has_value() || (*b == Backend::TensorRT && !animeJanaiTensorRtInstalled_))) {
+            b = Backend::TensorRTRTX;
+            settings.setValue(QStringLiteral("player/animejanai/backend"),
+                              mplayer::native::stableName(Backend::TensorRTRTX));
+        }
+        return b;
     }();
     if (restoredBackend.has_value()) {
         int restoredIndex = animeJanaiBackendCombo_->findData(
@@ -553,7 +569,6 @@ void ComponentStoreTab::buildUi() {
 #endif
         if (restoredIndex >= 0) animeJanaiBackendCombo_->setCurrentIndex(restoredIndex);
     } else {
-        const auto& gpu = observeComputeCapability();
         const Backend defBackend = defaultAnimeJanaiBackend(gpu);
         int defIndex = animeJanaiBackendCombo_->findData(static_cast<int>(defBackend));
         if (defIndex >= 0) animeJanaiBackendCombo_->setCurrentIndex(defIndex);

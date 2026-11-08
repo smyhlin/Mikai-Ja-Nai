@@ -399,12 +399,19 @@ PlayerDialog::PlayerDialog(const QString& caption,
     QSettings animeJanaiSettings;
     const QString storedAnimeJanaiBackend =
         animeJanaiSettings.value(kAnimeJanaiBackendSettingKey).toString();
-    if (const auto backend = native::backendFromName(storedAnimeJanaiBackend)) {
+    const auto& gpu = native::observeComputeCapability();
+    auto backend = native::backendFromName(storedAnimeJanaiBackend);
+    // On an RTX GPU, promote uninstalled legacy "tensorrt" default to TensorRT for RTX
+    if (native::isNvidiaRtx(gpu) && (!backend.has_value() ||
+        (*backend == native::Backend::TensorRT &&
+         !native::describeAnimeJanaiInstallation(native::Backend::TensorRT, false).installed))) {
+        backend = native::Backend::TensorRTRTX;
+        animeJanaiSettings.setValue(kAnimeJanaiBackendSettingKey,
+                                   animeJanaiBackendName(*backend));
+    }
+    if (backend.has_value()) {
         animeJanaiBackend_ = *backend;
     } else {
-        // Automatically default based on detected GPU: TensorRT for RTX on RTX GPUs,
-        // classic TensorRT on GTX/other NVIDIA GPUs, and DirectML on non-NVIDIA.
-        const auto& gpu = native::observeComputeCapability();
         animeJanaiBackend_ = native::defaultAnimeJanaiBackend(gpu);
     }
 #ifdef Q_OS_LINUX

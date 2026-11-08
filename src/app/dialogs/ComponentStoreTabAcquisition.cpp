@@ -141,15 +141,23 @@ void ComponentStoreTab::installRecommended() {
     // it, including an explicit RTX choice: the classic default must never
     // overwrite the reason the setup was opened. The key is read only; this
     // tab writes nothing.
-    const auto restoredBackend = []() -> std::optional<Backend> {
+    const auto restoredBackend = [&]() -> std::optional<Backend> {
         QSettings settings;
-        return backendFromName(
+        auto b = backendFromName(
             settings.value(QStringLiteral("player/animejanai/backend")).toString());
+        if (isNvidiaRtx(gpu) && (!b.has_value() || (*b == Backend::TensorRT && !animeJanaiTensorRtInstalled_))) {
+            b = Backend::TensorRTRTX;
+        }
+        return b;
     }();
     bool preferRestored = restoredBackend.has_value();
     // An RTX row already selected in this tab is just as explicit as the stored
-    // value; never downgrade it to a non-RTX stored choice.
-    if (selectedBackend() == Backend::TensorRTRTX) preferRestored = false;
+    // value; never downgrade it to a non-RTX stored choice. On an RTX GPU with no
+    // classic TensorRT installed, never install classic TensorRT.
+    if (selectedBackend() == Backend::TensorRTRTX ||
+        (isNvidiaRtx(gpu) && !animeJanaiTensorRtInstalled_)) {
+        preferRestored = false;
+    }
 #ifdef Q_OS_WIN
     if (preferRestored && animeJanaiBackendCombo_->findData(
                               static_cast<int>(*restoredBackend)) < 0)
