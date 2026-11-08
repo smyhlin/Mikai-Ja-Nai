@@ -1016,7 +1016,13 @@ void VideoSurface::processAnimeJanaiPlan() {
                                     // a paused one produces no frame to rebuild
                                     // it on, so the render state is refreshed.
                                     refreshRenderState();
-                                    if (!animeJanaiEngineBuildActive_) setEngineFrameHold(false);
+                                    if (!animeJanaiEngineBuildActive_) {
+                                        setEngineFrameHold(false);
+                                        if (animeJanaiStageBuildLease_) {
+                                            animeJanaiStageBuildLease_->release();
+                                            animeJanaiStageBuildLease_.reset();
+                                        }
+                                    }
                                 });
                             if (!animeJanaiRequest_.valid()) {
                                 animeJanaiReportPending_ = false;

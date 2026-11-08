@@ -748,18 +748,6 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
         const QString cacheKey = QDir(ownedRoot).filePath(
             QStringLiteral("models/mixed_%1_cache").arg(profileKey));
         plan.cacheKeys.append(QDir::cleanPath(QFileInfo(cacheKey).absoluteFilePath()));
-        QString busyKey;
-        QString busyOwner;
-        plan.cacheLease = AnimeJanaiStageBuildLease::tryAcquire(
-            plan.cacheKeys, QStringLiteral("AnimeJaNai %1 chain %2")
-                                .arg(profile.profileName).arg(selected->number),
-            &busyKey, &busyOwner);
-        if (!plan.cacheLease) {
-            fail(plan, QStringLiteral("animejanai.cache.busy"),
-                 RuntimeText::tr("The AnimeJaNai engine cache is currently in use by %1.")
-                     .arg(busyOwner.isEmpty() ? RuntimeText::tr("another operation") : busyOwner));
-            return plan;
-        }
     }
     AnimeJanaiInstallation installation;
     if (hasAji) {
@@ -1400,21 +1388,6 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
     plan.cacheKeys = {
         QDir::cleanPath(QFileInfo(plan.modelDir).absoluteFilePath()),
         QDir::cleanPath(QFileInfo(plan.rifeModelDir).absoluteFilePath())};
-    QString busyKey;
-    QString busyOwner;
-    QString jobLabel = preset != nullptr ? preset->label : QString();
-    if (isUpscaler) {
-        if (upscalerSelection.has_value()) jobLabel = upscalerSelection->displayName;
-    }
-    plan.cacheLease = AnimeJanaiStageBuildLease::tryAcquire(
-        plan.cacheKeys, QStringLiteral("AnimeJaNai %1").arg(jobLabel),
-        &busyKey, &busyOwner);
-    if (!plan.cacheLease) {
-        fail(plan, QStringLiteral("animejanai.cache.busy"),
-             RuntimeText::tr("The AnimeJaNai engine cache is currently in use by %1.")
-                 .arg(busyOwner.isEmpty() ? RuntimeText::tr("another operation") : busyOwner));
-        return plan;
-    }
     if (backend == Backend::TensorRT) {
 #ifdef Q_OS_WIN
         plan.trtexecPath = QDir(installation.root).filePath(QStringLiteral("trtexec.exe"));
