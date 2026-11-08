@@ -123,6 +123,7 @@ struct CompareRenderer::State {
     QString buildDetail;
     bool restarted = false;
     bool processingObserved = false;
+    bool acceptBuildEvidence = false;
     bool backendSubstituted = false;
     bool useUpscaleTarget = false;
     int requestedSlot = 0;
@@ -259,6 +260,7 @@ struct CompareRenderer::State {
                     combined.contains(QLatin1String("tensorrt-rtx"), Qt::CaseInsensitive) ||
                     combined.contains(QLatin1String("building engine:"), Qt::CaseInsensitive);
                 if (!isAjiLog) return;
+                if (!acceptBuildEvidence) return;
                 const auto buildEvent = native::isTensorRtFamily(requestedBackend)
                     ? buildGate.observeLog(prefix, text, requestedBackend, requestedSlot)
                     : native::classifyAnimeJanaiBuildLog(prefix, text, requestedBackend,
@@ -471,7 +473,8 @@ CompareRenderer::~CompareRenderer() = default;
 
 bool CompareRenderer::capture(const QString& source, double timestamp, const QSize& outputSize,
                               const Cancelled& cancelled, const Progress& progress,
-                              const std::function<QImage()>& fallbackProvider) {
+                              const std::function<QImage()>& fallbackProvider,
+                              QImage* capturedSource) {
     State& state = *state_;
     state.error.clear();
     state.sourceFrame = {};
@@ -498,6 +501,32 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
         state.core->loadFile(source.toStdString());
         QImage settledSource = state.settle(true, false, cancelled, progress);
         if (!settledSource.isNull()) {
+            const int nativeWidth = qRound(state.core->getNumber("video-params/w"));
+            const int nativeHeight = qRound(state.core->getNumber("video-params/h"));
+            if (nativeWidth <= 0 || nativeHeight <= 0) {
+                state.error = QCoreApplication::translate(
+                    "CompareRenderer", "The native comparison source geometry is unavailable.");
+                return false;
+            }
+            if (state.framebuffer->size() != QSize(nativeWidth, nativeHeight)) {
+                const ScopedCurrent current(state.context, &state.target);
+                if (!current) return false;
+                QOpenGLFramebufferObjectFormat format;
+                format.setInternalTextureFormat(kGlInternalFormatRgba8);
+                state.framebuffer = std::make_unique<QOpenGLFramebufferObject>(
+                    QSize(nativeWidth, nativeHeight), format);
+                if (!state.framebuffer->isValid()) {
+                    state.error = QCoreApplication::translate(
+                        "CompareRenderer", "The native comparison framebuffer could not be created.");
+                    return false;
+                }
+                // Rerender the same decoded frame into its native geometry. The first
+                // display-sized render is used only to settle source loading.
+                state.restarted = false;
+                state.core->seek(timestamp);
+                settledSource = state.settle(false, false, cancelled, progress);
+            }
+            if (settledSource.isNull()) return false;
             state.sourceFrame = settledSource;
         } else {
             // The source refused a second decode; only now is the playing
@@ -517,7 +546,10 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
         state.restarted = false;
         state.core->loadFile(state.framePath.toStdString());
         const bool settled = !state.settle(true, false, cancelled, progress).isNull();
-        if (settled) state.error.clear();
+        if (settled) {
+            state.error.clear();
+            if (capturedSource != nullptr) *capturedSource = state.sourceFrame;
+        }
         return settled;
     } catch (const MpvError& error) {
         state.error = QCoreApplication::translate("CompareRenderer", "The comparison renderer failed: %1").arg(QString::fromUtf8(error.what()));
@@ -545,19 +577,22 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
                               .arg(shaderId);
             return {};
         }
-        // Anime4K Upscale shaders carry `//!WHEN OUTPUT.w MAIN.w / 1.200 >`.
-        // When the window FBO is smaller than 1.2x the video frame (e.g. a 1080p
-        // video on a 1080p display or in a windowed viewport), rendering into an
-        // internal 2x FBO ensures mpv executes the Upscale stages instead of
-        // skipping them.
-        //
-        // T-313: the old `source <= 1080p` gate left bigger sources rendering
-        // their x2 candidates as silent passthrough (the WHEN condition never
-        // fired), which reported "no difference" as though the shader ran. The
-        // gate is gone: every source gets the same internal target, and the
-        // 3840x2160 clamp bounds the allocation to what a 1080p source already
-        // used to allocate here - no new worst case. A source wider than the
-        // clamp can still not satisfy WHEN (see the annotation below).
+        // Restore the requested output before deciding whether Anime4K needs an internal 2x target.
+        if (state.framebuffer->size() != state.targetOutputSize) {
+            const ScopedCurrent current(state.context, &state.target);
+            if (!current) return {};
+            QOpenGLFramebufferObjectFormat format;
+            format.setInternalTextureFormat(kGlInternalFormatRgba8);
+            state.framebuffer = std::make_unique<QOpenGLFramebufferObject>(
+                state.targetOutputSize, format);
+            if (!state.framebuffer->isValid()) {
+                state.error = QCoreApplication::translate(
+                    "CompareRenderer", "The comparison output framebuffer could not be created.");
+                return {};
+            }
+        }
+
+        // Anime4K's Upscale stages require an output at least 1.2x the source.
         bool upscaleCapped = false;
         if (!plan.enabled && chain.contains(QLatin1String("Upscale"), Qt::CaseInsensitive) &&
             (state.framebuffer->width() <= state.sourceFrame.width() * 1.2 ||
@@ -565,10 +600,6 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
             const QSize upscaleSize(
                 std::min(3840, std::max(state.framebuffer->width(), state.sourceFrame.width() * 2)),
                 std::min(2160, std::max(state.framebuffer->height(), state.sourceFrame.height() * 2)));
-            // T-313: the clamp is what bounds the allocation - and when it bites,
-            // the target still cannot satisfy the WHEN condition, so the
-            // annotation below says so instead of letting the candidate read as
-            // a shader that executed.
             upscaleCapped = upscaleSize.width() <= state.sourceFrame.width() * 1.2;
             if (upscaleSize.width() > state.framebuffer->width() &&
                 upscaleSize.height() > state.framebuffer->height() &&
@@ -576,7 +607,8 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
                 state.useUpscaleTarget = true;
             }
         }
-        // Re-decode the immutable PNG under the new pipeline, never accept the
+        // The immutable native RGB source is unchanged; only output allocation varies.
+        // Re-decode the immutable raw RGB frame under the new pipeline, never accept the
         // old paused frame or an empty reconfiguration framebuffer.
         //
         // The whole vf chain is cleared before the new one goes in: `set vf ""`
@@ -661,6 +693,12 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
                     "This source exceeds the internal comparison target, so x2 upscaling "
                     "candidates may render unchanged."));
         }
+        // Invalidate prior configured-slot evidence before stop/vf-clear can
+        // dispatch queued log events from the previous filter generation.
+        state.processingObserved = false;
+        state.acceptBuildEvidence = false;
+        state.configuredStages = 0;
+        state.buildGate = {};
         if (!state.waitForCommand(state.command({"stop"}), cancelled) ||
             !state.waitForCommand(state.command({"set", "vf", ""}), cancelled) ||
             !state.waitForCommand(state.command({"set", "hwdec", targetHwdec}), cancelled) ||
@@ -668,9 +706,17 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
             !state.waitForCommand(state.command({"set", "glsl-shaders", chain.toStdString()}), cancelled)) return {};
         if (plan.requiresAji) preloadCompareBackendLibs(plan.backendLibDirs);
         if (!filter.isEmpty()) {
+            state.acceptBuildEvidence = true;
             // Buffered filters need repeated input even though Compare freezes one frame.
-            const QString frozenPipeline = QStringLiteral(
-                "@mikai_compare_repeat:lavfi=[loop=loop=-1:size=1:start=0],") + filter;
+            QString frozenPipeline = QStringLiteral(
+                "@mikai_compare_repeat:lavfi=[loop=loop=-1:size=1:start=0],");
+            const bool firstStageNormalizesNv12 =
+                !plan.stages.isEmpty() &&
+                plan.stages.first().kind == native::AnimeJanaiPlanStage::Kind::Anime4K &&
+                plan.stages.first().filterSpec.contains(QByteArrayLiteral("format=fmt=nv12"));
+            if (plan.requiresAji && !firstStageNormalizesNv12)
+                frozenPipeline += QStringLiteral("@mikai_compare_nv12:format=fmt=nv12,");
+            frozenPipeline += filter;
             if (!state.waitForCommand(
                     state.command({"vf", "add", frozenPipeline.toStdString()}), cancelled))
                 return {};

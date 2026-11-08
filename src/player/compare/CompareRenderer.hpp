@@ -30,7 +30,8 @@ public:
     /// must not happen when the pane's own decode already works.
     bool capture(const QString& source, double timestamp, const QSize& outputSize,
                  const Cancelled& cancelled, const Progress& progress,
-                 const std::function<QImage()>& fallbackProvider = {});
+                 const std::function<QImage()>& fallbackProvider = {},
+                 QImage* capturedSource = nullptr);
     QImage render(const QString& shaderId, const native::AnimeJanaiPlan& plan,
                   const Cancelled& cancelled, const Progress& progress);
     void stop();

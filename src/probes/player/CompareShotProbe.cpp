@@ -1,5 +1,10 @@
 #include <QApplication>
+#include <QCryptographicHash>
+#include <QColorSpace>
+#include <QDir>
 #include <QElapsedTimer>
+#include <QFile>
+#include <QFileInfo>
 #include <QImage>
 #include <QPixmap>
 #include <QPointer>
@@ -9,6 +14,11 @@
 #include <QTimer>
 
 #include <cstdio>
+#include <cmath>
+#include <algorithm>
+
+#include "CompareRenderer.hpp"
+#include "native/components/AnimeJanaiRuntime.hpp"
 
 #include "CompareCanvas.hpp"
 #include "CompareWindow.hpp"
@@ -46,6 +56,295 @@ public:
     void playbackFailed() override {}
 };
 
+QString backendName(native::Backend backend) {
+    switch (backend) {
+    case native::Backend::TensorRT: return QStringLiteral("TensorRT");
+    case native::Backend::DirectML: return QStringLiteral("DirectML");
+    case native::Backend::TensorRTRTX: return QStringLiteral("TensorRT-RTX");
+    }
+    return QStringLiteral("unknown");
+}
+
+bool writeText(const QString& path, const QString& text) {
+    QFile file(path);
+    return file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text) &&
+           file.write(text.toUtf8()) == text.toUtf8().size();
+}
+
+QString sha256File(const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) return QStringLiteral("<unreadable>");
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    while (!file.atEnd()) {
+        const QByteArray chunk = file.read(1024 * 1024);
+        if (chunk.isEmpty() && file.error() != QFileDevice::NoError)
+            return QStringLiteral("<read-error>");
+        hash.addData(chunk);
+    }
+    return QString::fromLatin1(hash.result().toHex());
+}
+
+QString imageStats(const QImage& image) {
+    if (image.isNull()) return QStringLiteral("null");
+    const QImage rgb = image.convertToFormat(QImage::Format_RGB888);
+    quint64 count = 0;
+    double sums[3] = {};
+    int mins[3] = {255, 255, 255};
+    int maxs[3] = {};
+    for (int y = 0; y < rgb.height(); y += 4) {
+        const uchar* row = rgb.constScanLine(y);
+        for (int x = 0; x < rgb.width(); x += 4) {
+            for (int c = 0; c < 3; ++c) {
+                const int value = row[x * 3 + c];
+                sums[c] += value;
+                mins[c] = std::min(mins[c], value);
+                maxs[c] = std::max(maxs[c], value);
+            }
+            ++count;
+        }
+    }
+    return QStringLiteral("%1x%2 format=RGB888 colorSpace=%3 sampledMeanRGB=%4,%5,%6 "
+                          "sampledMinRGB=%7,%8,%9 sampledMaxRGB=%10,%11,%12")
+        .arg(image.width()).arg(image.height())
+        .arg(image.colorSpace().description().isEmpty()
+                 ? QStringLiteral("<unset>") : image.colorSpace().description())
+        .arg(count ? sums[0] / count : 0.0, 0, 'f', 2)
+        .arg(count ? sums[1] / count : 0.0, 0, 'f', 2)
+        .arg(count ? sums[2] / count : 0.0, 0, 'f', 2)
+        .arg(mins[0]).arg(mins[1]).arg(mins[2])
+        .arg(maxs[0]).arg(maxs[1]).arg(maxs[2]);
+}
+
+int runDirectDiagnostic(const QString& url) {
+    const QString outputDir = qEnvironmentVariable("MIKAI_COMPARE_PROBE_DIAGNOSTIC_DIR");
+    if (outputDir.isEmpty()) {
+        std::fprintf(stderr, "FAIL diagnostic mode requires MIKAI_COMPARE_PROBE_DIAGNOSTIC_DIR\n");
+        return 2;
+    }
+    if (!QDir().mkpath(outputDir)) {
+        std::fprintf(stderr, "FAIL cannot create diagnostic directory: %s\n", qPrintable(outputDir));
+        return 2;
+    }
+    bool timestampOk = false;
+    const double timestamp = qEnvironmentVariable("MIKAI_COMPARE_PROBE_TIMESTAMP", "2.0")
+                                 .toDouble(&timestampOk);
+    bool widthOk = false;
+    bool heightOk = false;
+    bool sourceWidthOk = false;
+    bool sourceHeightOk = false;
+    bool sourceFpsOk = false;
+    const int width = qEnvironmentVariable("MIKAI_COMPARE_PROBE_WIDTH", "1280").toInt(&widthOk);
+    const int height = qEnvironmentVariable("MIKAI_COMPARE_PROBE_HEIGHT", "720").toInt(&heightOk);
+    const int sourceWidth =
+        qEnvironmentVariable("MIKAI_COMPARE_PROBE_SOURCE_WIDTH").toInt(&sourceWidthOk);
+    const int sourceHeight =
+        qEnvironmentVariable("MIKAI_COMPARE_PROBE_SOURCE_HEIGHT").toInt(&sourceHeightOk);
+    const double sourceFps =
+        qEnvironmentVariable("MIKAI_COMPARE_PROBE_SOURCE_FPS").toDouble(&sourceFpsOk);
+    const QString modelId = qEnvironmentVariable(
+        "MIKAI_COMPARE_PROBE_AJI",
+        "upscaler:realesr-animevideov3-4x-fp32.onnx");
+    native::Backend backend = native::Backend::TensorRT;
+    const QString requestedBackend = qEnvironmentVariable("MIKAI_COMPARE_PROBE_BACKEND", "tensorrt")
+                                         .trimmed().toLower();
+    if (requestedBackend == QLatin1String("directml")) backend = native::Backend::DirectML;
+    else if (requestedBackend == QLatin1String("tensorrt-rtx")) backend = native::Backend::TensorRTRTX;
+    else if (requestedBackend != QLatin1String("tensorrt")) {
+        std::fprintf(stderr, "FAIL unknown diagnostic backend: %s\n", qPrintable(requestedBackend));
+        return 2;
+    }
+    if (!timestampOk || !std::isfinite(timestamp) || timestamp < 0 ||
+        !widthOk || !heightOk || width <= 0 || height <= 0 ||
+        (sourceWidthOk && sourceWidth <= 0) || (sourceHeightOk && sourceHeight <= 0) ||
+        (sourceFpsOk && (!std::isfinite(sourceFps) || sourceFps < 0))) {
+        std::fprintf(stderr, "FAIL invalid diagnostic timestamp or geometry\n");
+        return 2;
+    }
+
+    QStringList log;
+    log << QStringLiteral("mode=direct-compare-renderer")
+        << QStringLiteral("source=%1").arg(url)
+        << QStringLiteral("timestamp=%1").arg(timestamp, 0, 'f', 6)
+        << QStringLiteral("requestedGeometry=%1x%2").arg(width).arg(height)
+        << QStringLiteral("requestedSourceContext=%1x%2 fps=%3")
+               .arg(sourceWidthOk ? sourceWidth : width)
+               .arg(sourceHeightOk ? sourceHeight : height)
+               .arg(sourceFpsOk ? sourceFps : 0.0, 0, 'f', 6)
+        << QStringLiteral("presetId=%1").arg(modelId)
+        << QStringLiteral("backend=%1").arg(backendName(backend))
+        << QStringLiteral("inputSemantics=mpv-decoded/rendered QImage converted to RGB888; "
+                          "this is not original encoded YUV or HDR metadata");
+    const auto progress = [&log](const QString& detail) {
+        log << QStringLiteral("renderer-progress=%1").arg(detail);
+        std::fprintf(stderr, "     renderer: %s\n", qPrintable(detail));
+    };
+    const auto cancelled = [] { return false; };
+    CompareRenderer renderer;
+    QImage raw;
+    if (!renderer.capture(url, timestamp, QSize(width, height), cancelled, progress, {}, &raw)) {
+        log << QStringLiteral("capture-error=%1").arg(renderer.error());
+        writeText(QDir(outputDir).filePath(QStringLiteral("diagnostics.txt")), log.join(QLatin1Char('\n')));
+        std::fprintf(stderr, "FAIL diagnostic source capture: %s\n", qPrintable(renderer.error()));
+        return 1;
+    }
+    const QString rawPath = QDir(outputDir).filePath(QStringLiteral("raw-source.png"));
+    if (!raw.save(rawPath)) {
+        std::fprintf(stderr, "FAIL could not save raw source image\n");
+        return 1;
+    }
+    log << QStringLiteral("rawSource=%1").arg(imageStats(raw))
+        << QStringLiteral("modelInputGeometry=%1x%2 (native decoded RGB; no source enlargement)")
+               .arg(raw.width()).arg(raw.height())
+        << QStringLiteral("rawSourceFile=%1").arg(rawPath);
+
+    const bool sourceGeometryMismatch =
+        (sourceWidthOk && sourceWidth != raw.width()) ||
+        (sourceHeightOk && sourceHeight != raw.height());
+    if (sourceGeometryMismatch) {
+        log << QStringLiteral("result=FAIL requested source geometry %1x%2 differs from captured raw geometry %3x%4")
+                   .arg(sourceWidthOk ? sourceWidth : raw.width())
+                   .arg(sourceHeightOk ? sourceHeight : raw.height())
+                   .arg(raw.width()).arg(raw.height());
+        writeText(QDir(outputDir).filePath(QStringLiteral("diagnostics.txt")),
+                  log.join(QLatin1Char('\n')));
+        std::fprintf(stderr,
+                     "FAIL requested source geometry differs from captured raw geometry (%dx%d vs %dx%d)\n",
+                     sourceWidthOk ? sourceWidth : raw.width(),
+                     sourceHeightOk ? sourceHeight : raw.height(), raw.width(), raw.height());
+        return 1;
+    }
+
+    const native::AnimeJanaiPlan plan = native::prepareAnimeJanaiPlan(
+        modelId, backend, cancelled,
+        native::AnimeJanaiSourceContext{raw.width(), raw.height(),
+                                        sourceFpsOk ? sourceFps : 0.0}, {});
+    log << QStringLiteral("plan.enabled=%1").arg(plan.enabled)
+        << QStringLiteral("plan.available=%1").arg(plan.available)
+        << QStringLiteral("plan.reasonKey=%1").arg(plan.reasonKey)
+        << QStringLiteral("plan.reason=%1").arg(plan.reason)
+        << QStringLiteral("plan.presetId=%1").arg(plan.presetId)
+        << QStringLiteral("plan.backend=%1").arg(backendName(plan.backend))
+        << QStringLiteral("plan.slot=%1").arg(plan.slot)
+        << QStringLiteral("plan.filterSpec=%1").arg(QString::fromUtf8(plan.filterSpec))
+        << QStringLiteral("plan.libraryPath=%1").arg(plan.libraryPath)
+        << QStringLiteral("plan.configPath=%1").arg(plan.configPath)
+        << QStringLiteral("plan.modelDir=%1").arg(plan.modelDir)
+        << QStringLiteral("plan.requiresAji=%1").arg(plan.requiresAji)
+        << QStringLiteral("plan.stageCount=%1").arg(plan.stages.size());
+    for (int i = 0; i < plan.stages.size(); ++i) {
+        const native::AnimeJanaiPlanStage& stage = plan.stages.at(i);
+        log << QStringLiteral("stage[%1].kind=%2").arg(i).arg(
+                   stage.kind == native::AnimeJanaiPlanStage::Kind::Aji
+                       ? QStringLiteral("AJI") : QStringLiteral("Anime4K"))
+            << QStringLiteral("stage[%1].label=%2").arg(i).arg(stage.filterLabel)
+            << QStringLiteral("stage[%1].filterSpec=%2").arg(i).arg(QString::fromUtf8(stage.filterSpec))
+            << QStringLiteral("stage[%1].scaleFactor=%2").arg(i).arg(stage.scaleFactor)
+            << QStringLiteral("stage[%1].configPath=%2").arg(i).arg(stage.configPath);
+        if (!stage.configPath.isEmpty()) {
+            QFile config(stage.configPath);
+            if (config.open(QIODevice::ReadOnly | QIODevice::Text))
+                log << QStringLiteral("stage[%1].configContents:\n%2").arg(i).arg(QString::fromUtf8(config.readAll()));
+        }
+    }
+    const QFileInfoList graphs = QDir(plan.modelDir).entryInfoList(
+        {QStringLiteral("*.onnx")}, QDir::Files, QDir::Name);
+    for (const QFileInfo& graph : graphs)
+        log << QStringLiteral("graph=%1 sha256=%2 bytes=%3")
+                   .arg(graph.absoluteFilePath(), sha256File(graph.absoluteFilePath()))
+                   .arg(graph.size());
+
+    if (!plan.available || !plan.requiresAji || plan.presetId != modelId) {
+        log << QStringLiteral("result=FAIL plan is unavailable, not AJI, or does not match the requested catalog identity");
+        writeText(QDir(outputDir).filePath(QStringLiteral("diagnostics.txt")), log.join(QLatin1Char('\n')));
+        std::fprintf(stderr, "FAIL requested AJI catalog plan unavailable/incorrect: %s\n", qPrintable(plan.reason));
+        return 1;
+    }
+
+    const QImage baseline = renderer.render(QStringLiteral("off"), native::AnimeJanaiPlan{},
+                                           cancelled, progress);
+    if (baseline.isNull()) {
+        log << QStringLiteral("baseline-error=%1").arg(renderer.error());
+        writeText(QDir(outputDir).filePath(QStringLiteral("diagnostics.txt")), log.join(QLatin1Char('\n')));
+        std::fprintf(stderr, "FAIL baseline renderer: %s\n", qPrintable(renderer.error()));
+        return 1;
+    }
+    if (!baseline.save(QDir(outputDir).filePath(QStringLiteral("baseline-off.png")))) {
+        std::fprintf(stderr, "FAIL could not save baseline output\n");
+        return 1;
+    }
+    log << QStringLiteral("baseline=%1").arg(imageStats(baseline));
+
+    const QImage modelOutput = renderer.render(QStringLiteral("off"), plan, cancelled, progress);
+    if (modelOutput.isNull()) {
+        log << QStringLiteral("model-error=%1").arg(renderer.error());
+        writeText(QDir(outputDir).filePath(QStringLiteral("diagnostics.txt")), log.join(QLatin1Char('\n')));
+        std::fprintf(stderr, "FAIL model renderer: %s\n", qPrintable(renderer.error()));
+        return 1;
+    }
+    if (!modelOutput.save(QDir(outputDir).filePath(QStringLiteral("model-output.png")))) {
+        std::fprintf(stderr, "FAIL could not save model output\n");
+        return 1;
+    }
+    log << QStringLiteral("modelOutput=%1").arg(imageStats(modelOutput));
+
+    const QImage offBetween = renderer.render(QStringLiteral("off"), native::AnimeJanaiPlan{},
+                                              cancelled, progress);
+    if (offBetween.isNull() ||
+        !offBetween.save(QDir(outputDir).filePath(QStringLiteral("off-between-runs.png")))) {
+        log << QStringLiteral("intermediateOffError=%1").arg(renderer.error());
+        writeText(QDir(outputDir).filePath(QStringLiteral("diagnostics.txt")),
+                  log.join(QLatin1Char('\n')));
+        return 1;
+    }
+    const QImage repeatedOutput = renderer.render(QStringLiteral("off"), plan, cancelled, progress);
+    if (repeatedOutput.isNull() ||
+        !repeatedOutput.save(QDir(outputDir).filePath(QStringLiteral("model-output-repeat.png")))) {
+        log << QStringLiteral("repeatModelError=%1").arg(renderer.error());
+        writeText(QDir(outputDir).filePath(QStringLiteral("diagnostics.txt")),
+                  log.join(QLatin1Char('\n')));
+        return 1;
+    }
+    log << QStringLiteral("offBetweenRuns=%1").arg(imageStats(offBetween))
+        << QStringLiteral("repeatedModelOutput=%1").arg(imageStats(repeatedOutput));
+    const QImage a = baseline.convertToFormat(QImage::Format_RGB888);
+    const QImage b = modelOutput.convertToFormat(QImage::Format_RGB888);
+    quint64 different = 0;
+    quint64 count = 0;
+    quint64 absoluteError = 0;
+    if (a.size() == b.size()) {
+        for (int y = 0; y < a.height(); ++y) {
+            const uchar* ar = a.constScanLine(y);
+            const uchar* br = b.constScanLine(y);
+            for (int x = 0; x < a.width(); ++x) {
+                bool pixelDiffers = false;
+                for (int c = 0; c < 3; ++c) {
+                    const int delta = int(ar[x * 3 + c]) - int(br[x * 3 + c]);
+                    absoluteError += static_cast<quint64>(std::abs(delta));
+                    pixelDiffers = pixelDiffers || delta != 0;
+                }
+                different += pixelDiffers ? 1 : 0;
+                ++count;
+            }
+        }
+    }
+    const double changedPercent = count ? 100.0 * double(different) / double(count) : 0.0;
+    const double meanAbsoluteError = count ? double(absoluteError) / (3.0 * double(count)) : 0.0;
+    log << QStringLiteral("baselineModelPixelDifference=%1/%2 (%3%) meanAbsoluteErrorRGB=%4")
+               .arg(different).arg(count).arg(changedPercent, 0, 'f', 4)
+               .arg(meanAbsoluteError, 0, 'f', 4)
+        << QStringLiteral("runtimeProcessingObserved=required by CompareRenderer AJI settle path");
+    const bool outputsDifferent = a.size() == b.size() && different != 0;
+    log << QStringLiteral("result=%1").arg(outputsDifferent ? QStringLiteral("PASS")
+                                                           : QStringLiteral("FAIL model output is identical or geometry differs"));
+    const bool diagnosticsSaved = writeText(
+        QDir(outputDir).filePath(QStringLiteral("diagnostics.txt")), log.join(QLatin1Char('\n')));
+    renderer.stop();
+    std::fprintf(stderr, "     diagnostic artifacts: %s\n", qPrintable(outputDir));
+    std::fprintf(stderr, "     baseline/model changed pixels: %.4f%%; MAE %.4f\n",
+                 changedPercent, meanAbsoluteError);
+    return outputsDifferent && diagnosticsSaved ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -65,12 +364,14 @@ int main(int argc, char** argv) {
     if (!mplayer::probes::selectRuntime()) {
         return 2;
     }
-    static Host host;
     // A real URL can be supplied to reproduce a source that refuses a second
     // decode; the default stays synthetic so the probe needs no network.
     const QString url = qEnvironmentVariableIsEmpty("MIKAI_COMPARE_PROBE_URL")
                             ? QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25")
                             : qEnvironmentVariable("MIKAI_COMPARE_PROBE_URL");
+    if (!qEnvironmentVariableIsEmpty("MIKAI_COMPARE_PROBE_DIAGNOSTIC_DIR"))
+        return runDirectDiagnostic(url);
+    static Host host;
     const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};
 
     auto* dialog = new PlayerDialog(QStringLiteral("shot"), url, qualities, 720, &host);

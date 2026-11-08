@@ -12,6 +12,8 @@
 #include "VideoSurface.hpp"
 #include "native/components/AnimeJanaiCatalogWatcher.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
+#include "native/models/NativeSpatialAssets.hpp"
+#include "native/models/NativeUpscalers.hpp"
 #include "native/status/NativePlaybackController.hpp"
 
 #include <QAction>
@@ -60,6 +62,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -93,20 +96,61 @@ QString comparisonEngineBuildTitle(native::Backend backend) {
     return QCoreApplication::translate("CompareWindow", "Build comparison TensorRT engine");
 }
 
-QStringList categoryPath(const QString& categoryId) {
-    QStringList path;
-    QString parent;
-    for (const QString& component : categoryId.split(QLatin1Char('/'), Qt::SkipEmptyParts)) {
-        if (!parent.isEmpty()) {
-            parent += QLatin1Char('/');
-        }
-        parent += component;
-        const QString label = anime4k::categoryLabel(parent);
-        if (!label.isEmpty()) {
-            path.append(label);
+bool presetUsesRife(const native::AnimeJanaiPreset& preset,
+                    const QVector<native::AnimeJanaiSlot>& profiles,
+                    const native::AnimeJanaiSourceContext& source) {
+    if (preset.rife || preset.id.startsWith(QLatin1String("rife:"))) {
+        return true;
+    }
+    const native::AnimeJanaiSlot* selectedProfile = nullptr;
+    for (const native::AnimeJanaiSlot& profile : profiles) {
+        if (profile.number == preset.slot) {
+            selectedProfile = &profile;
+            break;
         }
     }
-    return path;
+    if (selectedProfile == nullptr) return false;
+    if (source.width <= 0 || source.height <= 0 ||
+        !std::isfinite(source.fps) || source.fps <= 0.0) {
+        return std::any_of(selectedProfile->chains.cbegin(), selectedProfile->chains.cend(),
+                           [](const native::AnimeJanaiChain& chain) {
+                               return chain.rifeEnabled;
+                           });
+    }
+    const qint64 sourceArea = qint64(source.width) * source.height;
+    const native::AnimeJanaiChain* selectedChain = nullptr;
+    const auto parseArea = [](const QString& value, qint64* area) {
+        const QString text = value.trimmed().toLower();
+        if (text == QLatin1String("infxinf")) {
+            *area = 0;
+            return true;
+        }
+        const qsizetype separator = text.indexOf(QLatin1Char('x'));
+        if (separator <= 0) return false;
+        bool widthOk = false;
+        bool heightOk = false;
+        const qint64 width = text.left(separator).toLongLong(&widthOk);
+        const qint64 height = text.mid(separator + 1).toLongLong(&heightOk);
+        if (!widthOk || !heightOk || width < 0 || height < 0 ||
+            (height != 0 && width > std::numeric_limits<qint64>::max() / height)) return false;
+        *area = width == 0 || height == 0 ? 0 : width * height;
+        return true;
+    };
+    for (const native::AnimeJanaiChain& chain : selectedProfile->chains) {
+        qint64 minimumArea = 0;
+        qint64 maximumArea = 0;
+        if (!parseArea(chain.minResolution, &minimumArea) ||
+            !parseArea(chain.maxResolution, &maximumArea)) continue;
+        const bool areaMatches = sourceArea >= minimumArea &&
+                                 (maximumArea == 0 || sourceArea <= maximumArea);
+        const bool fpsMatches = source.fps >= chain.minFps &&
+                                (chain.maxFps <= 0 || source.fps <= chain.maxFps);
+        if (areaMatches && fpsMatches &&
+            (selectedChain == nullptr || chain.number < selectedChain->number)) {
+            selectedChain = &chain;
+        }
+    }
+    return selectedChain != nullptr && selectedChain->rifeEnabled;
 }
 
 // A side can keep showing a model the catalogue no longer offers. The caption
@@ -1099,6 +1143,14 @@ void CompareWindow::buildUi() {
 void CompareWindow::rebuildCandidates() {
     const QVector<anime4k::ModeInfo> presets = anime4k::availableModes();
     const QVector<native::AnimeJanaiPreset> ajiPresets = native::animeJanaiPresets();
+    const native::AnimeJanaiConfig managerConfig = native::AnimeJanaiConfigStore::load();
+    const QVector<native::AnimeJanaiSlot> defaultProfiles =
+        native::AnimeJanaiConfigStore::defaultProfiles(managerConfig);
+    const native::AnimeJanaiSourceContext source =
+        surface_ != nullptr ? surface_->animeJanaiSourceContext()
+                            : native::AnimeJanaiSourceContext{};
+    const QVector<native::StoredSpatialAsset> storedSpatial = native::storedSpatialAssets();
+    const QVector<native::UpscalerModel> upscalers = native::upscalerCatalog();
     const QString shadersDir = anime4k::findShadersDir();
     const native::Backend ajiBackend = ajiBackend_;
 
@@ -1106,15 +1158,15 @@ void CompareWindow::rebuildCandidates() {
     QVector<ChoiceEntry> choices;
     QHash<QString, QString> baseLabels;
     QHash<QString, native::Backend> backends;
-    candidates.reserve(presets.size() + ajiPresets.size());
-    choices.reserve(presets.size() + ajiPresets.size());
+    candidates.reserve(presets.size() + ajiPresets.size() + upscalers.size());
+    choices.reserve(presets.size() + ajiPresets.size() + upscalers.size());
     for (const anime4k::ModeInfo& preset : presets) {
         const anime4k::Candidate candidate = anime4k::candidateForId(preset.id, shadersDir);
         const bool complete = anime4k::chainIsComplete(candidate, shadersDir);
         ChoiceEntry entry;
         entry.id = preset.id;
         entry.label = preset.label;
-        entry.path = categoryPath(preset.category);
+        entry.path = {QCoreApplication::translate("QObject", "Restore (Anime4K)")};
         baseLabels.insert(preset.id, preset.label);
         if (!complete) {
             entry.disabled = true;
@@ -1136,18 +1188,63 @@ void CompareWindow::rebuildCandidates() {
         }
         choices.append(entry);
     }
+
     for (const native::AnimeJanaiPreset& preset : ajiPresets) {
-        if (preset.rife || !preset.id.startsWith(QLatin1String("spatial:"))) {
-            continue;
-        }
-        // The registered catalogue is offered exactly as enumerated: an entry
-        // that turns out to be unbuildable names its refusal when it is
-        // rendered, rather than being second-guessed here.
+        const auto& profiles = preset.id.startsWith(QLatin1String("builtin_slot:"))
+                                   ? managerConfig.customSlots
+                                   : defaultProfiles;
+        if (preset.id.startsWith(QLatin1String("rife:")) ||
+            presetUsesRife(preset, profiles, source)) continue;
+
+        ChoiceEntry entry;
+        entry.id = preset.id;
+        entry.label = preset.label;
+        entry.path = {QCoreApplication::translate("QObject", "Upscale")};
+        entry.disabled = !preset.supported;
+        entry.tooltip = preset.reason;
         baseLabels.insert(preset.id, preset.label);
-        choices.append({preset.id, preset.label, {tr("AnimeJaNai"), tr("Spatial models")},
-                        false, {}});
-        candidates.append(preset.id);
-        backends.insert(preset.id, ajiBackend);
+
+        if (preset.id.startsWith(QLatin1String("spatial:"))) {
+            const QString assetId = preset.id.mid(QStringLiteral("spatial:").size());
+            const auto stored = std::find_if(
+                storedSpatial.cbegin(), storedSpatial.cend(),
+                [&assetId](const native::StoredSpatialAsset& row) {
+                    return row.asset.id == assetId;
+                });
+            if (stored == storedSpatial.cend()) {
+                entry.disabled = true;
+                entry.tooltip = tr("Not downloaded. Install this graph from Components.");
+            } else if (!stored->verified) {
+                entry.disabled = true;
+                entry.tooltip = stored->reason.isEmpty()
+                                    ? tr("The installed graph could not be verified.")
+                                    : stored->reason;
+            }
+        }
+
+        if (!entry.disabled) {
+            candidates.append(preset.id);
+            backends.insert(preset.id, ajiBackend);
+        }
+        choices.append(entry);
+    }
+
+    for (const native::UpscalerModel& model : upscalers) {
+        const QString id = QStringLiteral("upscaler:") + model.fileName;
+        ChoiceEntry entry;
+        entry.id = id;
+        entry.label = model.displayName;
+        entry.path = {QCoreApplication::translate("QObject", "Upscale")};
+        entry.disabled = native::installedUpscalerPath(model).isEmpty();
+        if (entry.disabled) {
+            entry.tooltip = tr("Not downloaded. Install this graph from Settings › Upscalers.");
+        }
+        baseLabels.insert(id, model.displayName);
+        if (!entry.disabled) {
+            candidates.append(id);
+            backends.insert(id, ajiBackend);
+        }
+        choices.append(entry);
     }
     // A side keeps the id it was showing. When the catalogue no longer offers
     // it, the window adds one disabled entry so the refusal is visible instead
@@ -1166,6 +1263,23 @@ void CompareWindow::rebuildCandidates() {
         // that already carries the suffix, so refreshes cannot stack
         // "(not available)" on itself.
         QString baseLabel = choiceBaseLabels_.value(selected);
+        QString missingReason = missingCatalogueReason();
+        const auto preset = std::find_if(
+            ajiPresets.cbegin(), ajiPresets.cend(),
+            [&selected](const native::AnimeJanaiPreset& item) {
+                return item.id == selected;
+            });
+        if (preset != ajiPresets.cend()) {
+            if (baseLabel.isEmpty()) baseLabel = preset->label;
+            const auto& profiles =
+                preset->id.startsWith(QLatin1String("builtin_slot:"))
+                    ? managerConfig.customSlots
+                    : defaultProfiles;
+            if (presetUsesRife(*preset, profiles, source)) {
+                missingReason =
+                    tr("Temporal interpolation cannot be compared as a still image.");
+            }
+        }
         if (baseLabel.isEmpty()) {
             const anime4k::Candidate candidate = anime4k::candidateForId(selected);
             baseLabel = candidate.label;
@@ -1177,9 +1291,7 @@ void CompareWindow::rebuildCandidates() {
         missingEntry.id = selected;
         missingEntry.label = unavailableChoiceCaption(baseLabel);
         missingEntry.disabled = true;
-        // The id left the catalogue, so its old reason no longer applies; the
-        // refusal is the catalogue's own "not recognised" wording.
-        missingEntry.tooltip = missingCatalogueReason();
+        missingEntry.tooltip = missingReason;
         baseLabels.insert(selected, baseLabel);
         choices.append(missingEntry);
     }
