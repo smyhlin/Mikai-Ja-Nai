@@ -491,7 +491,9 @@ QScrollBar::handle:horizontal:hover { background: %11; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 QToolTip { background: %8; color: %2; border: 1px solid %10; padding: %15px %3px; }
 QWidget#componentAcquisitionBar { background: %5; border-top: 1px solid %10; }
-QWidget#componentAcquisitionBar QLabel { background: transparent; }
+QWidget#componentAcquisitionBar QLabel { background: transparent; color: %2; font-size: 13px; font-weight: 500; }
+QProgressBar#componentAcquisitionProgress { background: rgba(255, 255, 255, 0.08); border: none; border-radius: 0px; min-height: 3px; max-height: 3px; }
+QProgressBar#componentAcquisitionProgress::chunk { background: %11; }
 QDialog#coverViewer { background: %20; }
 QWidget#coverViewerView { background: transparent; border: none; }
 )QSS");

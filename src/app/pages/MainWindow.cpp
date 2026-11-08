@@ -173,42 +173,57 @@ MainWindow::MainWindow(backend::MikaiClient& client, StartupMode startupMode, QW
 
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
     stack_ = new QStackedWidget(this);
-    root->addWidget(stack_);
+    root->addWidget(stack_, 1);
 
     // The download's own readout. Settings is not where it lives: that dialog
     // is modal for as long as it is open, and a pack transfer has to leave the
     // catalogue clickable.
     acquisitionBar_ = new QWidget(this);
     acquisitionBar_->setObjectName(QStringLiteral("componentAcquisitionBar"));
-    auto* acquisitionLayout = new QHBoxLayout(acquisitionBar_);
-    acquisitionLayout->setContentsMargins(theme::kSpacingMedium, theme::kSpacingSmall,
-                                          theme::kSpacingMedium, theme::kSpacingSmall);
-    acquisitionLayout->setSpacing(theme::kSpacingSmall);
-    acquisitionStatus_ = new QLabel(acquisitionBar_);
+    acquisitionBar_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    acquisitionBar_->setFixedHeight(44);
+
+    auto* acquisitionLayout = new QVBoxLayout(acquisitionBar_);
+    acquisitionLayout->setContentsMargins(0, 0, 0, 0);
+    acquisitionLayout->setSpacing(0);
+
+    auto* acquisitionRow = new QWidget(acquisitionBar_);
+    auto* rowLayout = new QHBoxLayout(acquisitionRow);
+    rowLayout->setContentsMargins(theme::kSpacingMedium, 4, theme::kSpacingMedium, 4);
+    rowLayout->setSpacing(theme::kSpacingSmall);
+
+    acquisitionStatus_ = new QLabel(acquisitionRow);
     acquisitionStatus_->setObjectName(QStringLiteral("status"));
     acquisitionStatus_->setWordWrap(true);
-    acquisitionDetails_ = new QPushButton(tr("Components"), acquisitionBar_);
+    rowLayout->addWidget(acquisitionStatus_, 1, Qt::AlignVCenter);
+
+    acquisitionDetails_ = new QPushButton(tr("Components"), acquisitionRow);
     acquisitionDetails_->setObjectName(QStringLiteral("componentAcquisitionDetails"));
-    acquisitionCancel_ = new QPushButton(tr("Cancel"), acquisitionBar_);
+    acquisitionDetails_->setFixedHeight(28);
+    theme::applyActionRole(acquisitionDetails_, theme::ActionRole::Secondary);
+
+    acquisitionCancel_ = new QPushButton(tr("Cancel"), acquisitionRow);
     acquisitionCancel_->setObjectName(QStringLiteral("componentAcquisitionCancel"));
-    // A moving line under the text: the item count alone can stand still for
-    // minutes while bytes are still arriving, which reads as a stuck download.
+    acquisitionCancel_->setFixedHeight(28);
+    theme::applyActionRole(acquisitionCancel_, theme::ActionRole::Secondary);
+
+    rowLayout->addWidget(acquisitionDetails_, 0, Qt::AlignVCenter);
+    rowLayout->addWidget(acquisitionCancel_, 0, Qt::AlignVCenter);
+    acquisitionLayout->addWidget(acquisitionRow, 1);
+
+    // A moving line along the bottom edge: the item count alone can stand still
+    // for minutes while bytes are still arriving, which reads as a stuck download.
     acquisitionProgress_ = new QProgressBar(acquisitionBar_);
     acquisitionProgress_->setObjectName(QStringLiteral("componentAcquisitionProgress"));
     acquisitionProgress_->setTextVisible(false);
-    acquisitionProgress_->setFixedHeight(4);
+    acquisitionProgress_->setFixedHeight(3);
     acquisitionProgress_->setRange(0, 0);
-    auto* acquisitionColumn = new QVBoxLayout();
-    acquisitionColumn->setContentsMargins(0, 0, 0, 0);
-    acquisitionColumn->setSpacing(theme::kSpacingXs);
-    acquisitionColumn->addWidget(acquisitionStatus_, 1);
-    acquisitionColumn->addWidget(acquisitionProgress_);
-    acquisitionLayout->addLayout(acquisitionColumn, 1);
-    acquisitionLayout->addWidget(acquisitionDetails_);
-    acquisitionLayout->addWidget(acquisitionCancel_);
+    acquisitionLayout->addWidget(acquisitionProgress_, 0);
+
     acquisitionBar_->hide();
-    root->addWidget(acquisitionBar_);
+    root->addWidget(acquisitionBar_, 0);
     connect(acquisitionDetails_, &QPushButton::clicked, this,
             &MainWindow::openComponentSettings);
     connect(acquisitionCancel_, &QPushButton::clicked, this, [this] {
