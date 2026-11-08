@@ -545,10 +545,12 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     // below carry `sectionHeading` too, and two captions under one name make a
     // selector that cannot tell the page's line from a carousel's.
     resultsHeading_->setObjectName(QStringLiteral("pageHeading"));
+    resultsHeading_->setContentsMargins(0, 0, 0, 0);
     introLayout->addWidget(resultsHeading_);
 
     status_ = new QLabel(pageIntro_);
     status_->setObjectName(QStringLiteral("status"));
+    status_->setContentsMargins(theme::kSpacingSmall, 0, 0, 0);
     introLayout->addWidget(status_);
     rootLayout_->addWidget(pageIntro_);
 
@@ -1172,9 +1174,11 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& key) {
     titleColumn->setSpacing(theme::kSpacingXs / 2);
     section->heading = new QLabel(carouselHeading(key), section->section);
     section->heading->setObjectName(QStringLiteral("sectionHeading"));
+    section->heading->setContentsMargins(0, 0, 0, 0);
     titleColumn->addWidget(section->heading);
     section->state = new QLabel(tr("Collection not loaded yet"), section->section);
     section->state->setObjectName(QStringLiteral("muted"));
+    section->state->setContentsMargins(theme::kSpacingSmall, 0, 0, 0);
     section->state->setWordWrap(true);
     titleColumn->addWidget(section->state);
     header->addLayout(titleColumn, 1);
@@ -1515,9 +1519,11 @@ SearchPage::FeedSection* SearchPage::buildFeedSection(const QString& key) {
     titleColumn->setSpacing(theme::kSpacingXs / 2);
     section->heading = new QLabel(feedHeading(key), section->section);
     section->heading->setObjectName(QStringLiteral("sectionHeading"));
+    section->heading->setContentsMargins(0, 0, 0, 0);
     titleColumn->addWidget(section->heading);
     section->state = new QLabel(tr("Loading…"), section->section);
     section->state->setObjectName(QStringLiteral("muted"));
+    section->state->setContentsMargins(theme::kSpacingSmall, 0, 0, 0);
     titleColumn->addWidget(section->state);
     header->addLayout(titleColumn, 1);
     section->retry = new QPushButton(tr("Refresh"), section->section);

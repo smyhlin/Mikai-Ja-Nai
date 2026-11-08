@@ -1774,8 +1774,8 @@ void TestFeedRender::theTitlePageRendersItsEpisodes() {
     labels.insert(push->text());
     // A pill is a real tap target inside the provider tabs, not a leftover.
     QVERIFY2(tabs->isAncestorOf(push), "an episode pill lives outside the provider tabs");
-    QVERIFY2(push->height() >= 44, "an episode pill is shorter than a touch target");
-    QVERIFY2(push->width() >= 44, "an episode pill is narrower than a touch target");
+    QVERIFY2(push->height() >= mikai::app::theme::kTitleEpisodeButtonHeight, "an episode pill is shorter than button height");
+    QVERIFY2(push->width() >= mikai::app::theme::kTitleEpisodeButtonHeight, "an episode pill is narrower than button height");
   }
   QCOMPARE(labels.size(), kEpisodes);
 }

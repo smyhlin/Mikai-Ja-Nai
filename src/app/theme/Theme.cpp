@@ -1335,8 +1335,18 @@ QWidget#searchPage QLabel#rateDot {
     min-height: %10px;
     max-height: %10px;
 }
+QWidget#searchPage QLabel#sectionHeading,
+QWidget#searchPage QLabel#pageHeading {
+    padding-left: 0px;
+    margin-left: 0px;
+}
 QWidget#searchPage QScrollArea#discoveryScroll QWidget#pageIntro QLabel#pageHeading {
     padding-top: 0;
+}
+QWidget#searchPage QScrollArea#discoveryScroll QLabel#muted,
+QWidget#searchPage QWidget#pageIntro QLabel#status {
+    padding-left: %18px;
+    margin-left: 0px;
 }
 QWidget#searchPage QScrollArea#discoveryScroll QScrollBar:vertical {
     background: transparent;
