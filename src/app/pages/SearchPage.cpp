@@ -587,9 +587,12 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     discoveryScroll_->setObjectName(QStringLiteral("discoveryScroll"));
     discoveryScroll_->setWidgetResizable(true);
     discoveryScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    // The bar is always on so its gutter is reserved from the first paint: a
-    // feed that grows past one screen must not narrow the cards underneath.
-    discoveryScroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+    // No bar on the page either: it was the only vertical rule in the content
+    // area and it cost a gutter on every row. The wheel still scrolls, and
+    // Alt + wheel is the explicit gesture (the same modifier the carousels use),
+    // so a reader never loses the ability to reach the rest of the feed.
+    discoveryScroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    discoveryScroll_->viewport()->installEventFilter(this);
     discoveryScroll_->setFrameShape(QFrame::NoFrame);
     discoveryScroll_->setWidget(discovery);
     pageGlow_ = new PageGlow(this);
@@ -1335,6 +1338,26 @@ void SearchPage::smoothScrollCarousel(CarouselSection& section, int direction) {
 }
 
 bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
+    // Alt + wheel scrolls the discovery page even with its bar hidden. A plain
+    // wheel is left to the widget under the pointer, which is the same split the
+    // carousels use for their own Alt gesture.
+    if (discoveryScroll_ != nullptr && watched == discoveryScroll_->viewport() &&
+        event->type() == QEvent::Wheel) {
+        auto* wheel = static_cast<QWheelEvent*>(event);
+        if (wheel->modifiers().testFlag(Qt::AltModifier)) {
+            QScrollBar* bar = discoveryScroll_->verticalScrollBar();
+            if (bar != nullptr && bar->maximum() > bar->minimum()) {
+                const QPoint angle = wheel->angleDelta();
+                const int steps = angle.y() != 0 ? angle.y() : angle.x();
+                if (steps != 0) {
+                    const int delta = qRound(-steps / 120.0 * bar->singleStep() * 3.0);
+                    bar->setValue(qBound(bar->minimum(), bar->value() + delta, bar->maximum()));
+                    wheel->accept();
+                    return true;
+                }
+            }
+        }
+    }
     if ((watched == headerLogo_ || watched == sidebarBrandName_) &&
         event->type() == QEvent::MouseButtonPress) {
         const auto* mouseEvent = static_cast<QMouseEvent*>(event);
