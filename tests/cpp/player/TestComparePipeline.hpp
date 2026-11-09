@@ -8,6 +8,7 @@ class TestComparePipeline : public QObject {
 private slots:
     void metricsMeasureLevelsAndRefuseMismatchedGeometry();
     void metricsSeparateATexturedFrameFromAFlatOne();
+    void detailMeasureSurvivesAUpscaledCanvas();
     void verdictAcceptsAModelEffectAndRejectsAColourShift();
     void verdictRefusesAFlatReferenceFrame();
     void verdictRefusesABlankModelAndADitheredCard();

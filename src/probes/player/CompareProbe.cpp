@@ -1150,15 +1150,17 @@ int runCompareRenderOnly(const QString& video) {
     const double originalEdges = edgeEnergy(original);
 
     QStringList ids;
+    // Custom graphs (the downloaded upscalers) are the models the pane lists
+    // under Upscalers; they are opt-in here because each one is a separate
+    // engine and a 4x output is four times the canvas.
+    const bool includeCustom = qEnvironmentVariableIsSet("COMPARE_PROBE_ALL_MODELS");
     for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
-        if (preset.rife || !preset.id.startsWith(QLatin1String("spatial:")) ||
-            preset.id.startsWith(QLatin1String("spatial:custom:"))) {
-            continue;
-        }
+        if (preset.rife || !preset.id.startsWith(QLatin1String("spatial:"))) continue;
+        if (preset.id.startsWith(QLatin1String("spatial:custom:")) && !includeCustom) continue;
         ids.append(preset.id);
     }
     if (ids.isEmpty()) {
-        std::fprintf(stderr, "FAIL no pinned public spatial model is offered\n");
+        std::fprintf(stderr, "FAIL no pinned spatial model is offered\n");
         return 1;
     }
     int rendered = 0;
@@ -1192,6 +1194,14 @@ int runCompareRenderOnly(const QString& video) {
                                             Qt::SmoothTransformation);
         const double oracleDelta =
             oracleComparable.isNull() ? -1.0 : shell::meanDifference(image, oracleComparable);
+        const QImage gateBaseline = renderer.baseline().isNull() ? original : renderer.baseline();
+        const int baselineRange = shell::pictureRange(gateBaseline);
+        const double baselineEdges = shell::edgeEnergy(gateBaseline);
+        std::fprintf(stderr,
+                     "     baseline: %dx%d edges %.3f range %d%s; model blank=%d\n",
+                     gateBaseline.width(), gateBaseline.height(), baselineEdges, baselineRange,
+                     shell::carriesNoPicture(gateBaseline) ? " (no picture)" : "",
+                     shell::carriesNoPicture(image) ? 1 : 0);
         std::fprintf(stderr,
                      "%s %s: shift %.4f/255, edge gain x%.3f, %dx%d, verdict=%d floor=%.3f "
                      "edgesRef=%.3f, fboVsVo=%.4f, %lld ms, %s\n",

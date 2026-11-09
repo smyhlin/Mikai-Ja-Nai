@@ -48,6 +48,8 @@ double bandMean(const QImage& image) {
 
 }  // namespace
 
+int pictureRange(const QImage& image) { return image.isNull() ? 0 : bandRange(image); }
+
 bool carriesNoPicture(const QImage& image) {
     if (image.isNull()) return true;
     // A real frame has both tone and range; a black card with dither has
@@ -95,6 +97,18 @@ double edgeEnergy(const QImage& image) {
     return counted > 0 ? total / static_cast<double>(counted) : -1.0;
 }
 
+double referenceDetail(const QImage& image) {
+    if (image.isNull()) return -1.0;
+    const int longest = std::max(image.width(), image.height());
+    if (longest <= kDetailReferenceEdge) return edgeEnergy(image);
+    const QImage scaled = longest == image.width()
+                              ? image.scaledToWidth(kDetailReferenceEdge,
+                                                    Qt::SmoothTransformation)
+                              : image.scaledToHeight(kDetailReferenceEdge,
+                                                     Qt::SmoothTransformation);
+    return edgeEnergy(scaled);
+}
+
 EffectVerdict judgeEffect(const QImage& baseline, const QImage& model, double noiseFloor) {
     EffectVerdict verdict;
     if (baseline.isNull() || model.isNull()) return verdict;
@@ -102,12 +116,12 @@ EffectVerdict judgeEffect(const QImage& baseline, const QImage& model, double no
         verdict.kind = EffectVerdict::Kind::GeometryMismatch;
         return verdict;
     }
-    verdict.referenceEdges = edgeEnergy(baseline);
+    verdict.referenceEdges = referenceDetail(baseline);
     if (bandRange(baseline) < kMinimumReferenceRange) {
         verdict.kind = EffectVerdict::Kind::FlatFrame;
         return verdict;
     }
-    if (verdict.referenceEdges >= 0.0 && verdict.referenceEdges < kMinimumReferenceEdges) {
+    if (verdict.referenceEdges >= 0.0 && verdict.referenceEdges < kMinimumReferenceDetail) {
         verdict.kind = EffectVerdict::Kind::FlatFrame;
         return verdict;
     }

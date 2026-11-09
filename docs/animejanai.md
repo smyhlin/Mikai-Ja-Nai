@@ -167,9 +167,14 @@ through the plan's own pipeline, not by pushing the captured still through a fil
   `video-out-params` is set from a real frame in `write_video()`, so it is delivery evidence;
   `vf-metadata`'s `outputSize` is a configure-time declaration and is not.
 - Gate: [`PictureMetrics`](../src/player/compare/PictureMetrics.hpp) in levels (0-255). A size
-  mismatch is a failure, a baseline below `kMinimumReferenceEdges` refuses with *"this frame has too
-  little detail"*, and the threshold is `max(0.25, 4 x noise floor)`. An NV12 round trip plus one
-  resample measures about 0.02, so a recolour cannot pass.
+  mismatch is a failure; a frame is refused as *too flat to compare* only when its band contrast is
+  below `kMinimumReferenceRange` or its detail - `edgeEnergy` of a copy scaled to
+  `kDetailReferenceEdge` on the long side - is below `kMinimumReferenceDetail`. The measure is
+  scale-normalised on purpose: edge energy is a per-pixel gradient, so upscaling to a 4x canvas
+  halves it, and an absolute floor on the canvas refused every 4x upscaler (a real 7680x4320
+  baseline measured 0.32) while accepting its own 2x siblings. The effect threshold is
+  `max(0.25, 4 x noise floor)`; an NV12 round trip plus one resample measures about 0.02, so a
+  recolour cannot pass.
 - The offscreen render loop renders only on `MPV_RENDER_UPDATE_FRAME` and runs without advanced
   control: mpv owns the swap, and a timer-driven render re-read a frame the core had already handed
   over.

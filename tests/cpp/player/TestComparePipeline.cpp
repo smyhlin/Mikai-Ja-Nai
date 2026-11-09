@@ -62,9 +62,9 @@ void TestComparePipeline::metricsMeasureLevelsAndRefuseMismatchedGeometry() {
 
 void TestComparePipeline::metricsSeparateATexturedFrameFromAFlatOne() {
     const double textured = mplayer::shell::edgeEnergy(texturedFrame());
-    const double flat = mplayer::shell::edgeEnergy(flatFrame());
+    const double flat = mplayer::shell::referenceDetail(flatFrame());
     QVERIFY(textured > 5.0);
-    QVERIFY(flat < mplayer::shell::kMinimumReferenceEdges);
+    QVERIFY(flat < mplayer::shell::kMinimumReferenceDetail);
 }
 
 void TestComparePipeline::verdictAcceptsAModelEffectAndRejectsAColourShift() {
@@ -114,8 +114,26 @@ void TestComparePipeline::verdictRefusesABlankModelAndADitheredCard() {
             dithered.setPixel(x, y, qRgb(value, value, value));
         }
     }
-    QVERIFY(mplayer::shell::edgeEnergy(dithered) > mplayer::shell::kMinimumReferenceEdges);
+    // Dither raises the laplacian above the detail floor; the range is what refuses it.
+    QVERIFY(mplayer::shell::referenceDetail(dithered) > mplayer::shell::kMinimumReferenceDetail);
     QCOMPARE(mplayer::shell::judgeEffect(dithered, dithered).kind,
+             mplayer::shell::EffectVerdict::Kind::FlatFrame);
+}
+
+void TestComparePipeline::detailMeasureSurvivesAUpscaledCanvas() {
+    // A 4x canvas halves the per-pixel gradient of the same picture. The gate
+    // must see the picture, not the canvas, or every 4x model is refused.
+    const QImage source = texturedFrame(320, 240);
+    QImage upscaled = source.scaled(1280, 960, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    QVERIFY(mplayer::shell::edgeEnergy(source) > mplayer::shell::edgeEnergy(upscaled));
+    QVERIFY(mplayer::shell::referenceDetail(source) > mplayer::shell::kMinimumReferenceDetail);
+    QVERIFY(mplayer::shell::referenceDetail(upscaled) >
+            mplayer::shell::kMinimumReferenceDetail);
+    // A flat card stays flat at any canvas size.
+    QCOMPARE(mplayer::shell::judgeEffect(upscaled, upscaled).kind,
+             mplayer::shell::EffectVerdict::Kind::NoEffect);
+    QImage flatLarge = flatFrame(1280, 960);
+    QCOMPARE(mplayer::shell::judgeEffect(flatLarge, flatLarge).kind,
              mplayer::shell::EffectVerdict::Kind::FlatFrame);
 }
 
