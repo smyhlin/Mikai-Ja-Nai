@@ -518,16 +518,24 @@ void TestAnimeJanaiRuntime::shellSafeLibDirAvoidsASplitLibraryPath() {
 }
 
 void TestAnimeJanaiRuntime::linuxOfficialPairRequiresBothPinnedDigests() {
-    const QString dispatcher = QStringLiteral("7aa309ce837d2624eb61e272db062f6568dcd84d6f1dd646fd6de00325adbc6d");
-    const QString backend = QStringLiteral("d4b21b3f5c3af02634873d800760d7653fa5615128545befb2b89f3c68326860");
+    // Read the pins from the build instead of copying them: a version bump
+    // re-pins every asset, and a test holding last release's digests then fails
+    // for a reason that has nothing to do with the pair check.
+    const QString dispatcher = detail::officialAjiDigest(QStringLiteral("libaji.so"));
+    const QString backend = detail::officialAjiDigest(QStringLiteral("libaji_trt.so"));
+    QVERIFY(!dispatcher.isEmpty());
+    QVERIFY(!backend.isEmpty());
+    QVERIFY(dispatcher != backend);
     QVERIFY(detail::matchesPinnedLinuxAjiPair(dispatcher, backend));
     QVERIFY(!detail::matchesPinnedLinuxAjiPair(QString(64, QLatin1Char('0')), backend));
     QVERIFY(!detail::matchesPinnedLinuxAjiPair(dispatcher, QString(64, QLatin1Char('0'))));
     QVERIFY(!detail::matchesPinnedLinuxAjiPair(backend, dispatcher));
-    QVERIFY(!detail::matchesPinnedLinuxAjiPair(
-        QStringLiteral("0d3d15db020c0732cfa2ee448c619db61072c7dab9e54efa74f9bed4d84fe03b"), backend));
-    QVERIFY(!detail::matchesPinnedLinuxAjiPair(
-        dispatcher, QStringLiteral("19c6f6dde3b1a6307ec60adf34bee13aab7aa31af5db1e9a129d911a4da109d0")));
+    QString altered = dispatcher;
+    altered[0] = altered[0] == QLatin1Char('0') ? QLatin1Char('1') : QLatin1Char('0');
+    QVERIFY(!detail::matchesPinnedLinuxAjiPair(altered, backend));
+    altered = backend;
+    altered[0] = altered[0] == QLatin1Char('0') ? QLatin1Char('1') : QLatin1Char('0');
+    QVERIFY(!detail::matchesPinnedLinuxAjiPair(dispatcher, altered));
 }
 
 void TestAnimeJanaiRuntime::directRunRefusesNativeRootOverrideWithoutMutation() {

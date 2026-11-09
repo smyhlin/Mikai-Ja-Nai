@@ -395,7 +395,7 @@ QString resolveExtractedSource(const QString& root, const QString& path) {
     }
     return path;
 }
-QString officialAjiDigest(const QString& name) {
+QString pinnedOfficialAjiDigest(const QString& name) {
     if (name == QLatin1String("libaji.so"))
         return QString::fromLatin1(kLinuxAjiDispatcherSha);
     if (name == QLatin1String("libaji_trt.so"))
@@ -430,8 +430,8 @@ bool matchesPinnedOfficialAbi(const QString& directory, Backend backend) {
 #else
     const QString dispatcher = hashFile(QDir(directory).filePath(QStringLiteral("aji.dll")));
     const QString selected = hashFile(QDir(directory).filePath(backendDll(backend)));
-    return dispatcher == officialAjiDigest(QStringLiteral("aji.dll")) &&
-           selected == officialAjiDigest(backendDll(backend));
+    return dispatcher == pinnedOfficialAjiDigest(QStringLiteral("aji.dll")) &&
+           selected == pinnedOfficialAjiDigest(backendDll(backend));
 #endif
 }
 
@@ -475,7 +475,7 @@ bool matchesCompatibleBackend(const QString& directory, Backend backend) {
     const QString name = QStringLiteral("libaji_trt.so");
 #endif
     const QString path = QDir(directory).filePath(name);
-    if (hashFile(path) == officialAjiDigest(name)) return true;
+    if (hashFile(path) == pinnedOfficialAjiDigest(name)) return true;
     int abi = 0;
     bool ignoredHeavy = false;
     return runtimeExports(path, &abi, &ignoredHeavy) && abi == 9;
@@ -768,7 +768,7 @@ bool recordAndVerify(const QString& stage, Backend backend, const QStringList& f
         if (binary && !validBinaryImageX64(name, path)) { *error = QStringLiteral("AnimeJaNai runtime file is not a valid x64 binary image: %1").arg(name); return false; }
         qint64 bytes = 0; const QString digest = hashFile(path, &bytes);
         if (digest.isEmpty() || bytes != info.size()) { *error = QStringLiteral("AnimeJaNai runtime file could not be measured: %1").arg(name); return false; }
-        const QString officialDigest = officialAjiDigest(name);
+        const QString officialDigest = pinnedOfficialAjiDigest(name);
         if (provenance == QLatin1String("official-download") &&
             !officialDigest.isEmpty() && digest != officialDigest) {
             *error = translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The downloaded Aji binary does not match its pinned v0.24.0 identity: %1")).arg(name);
@@ -1052,7 +1052,7 @@ AnimeJanaiInstallation describeAnimeJanaiInstallation(Backend backend, bool reha
         const QString path = QDir(result.root).filePath(name); const QFileInfo info(path); const QJsonObject entry = records.value(name);
         if (!noReparse(result.root, path) || info.size() != entry.value(QStringLiteral("bytes")).toVariant().toLongLong()) return refuse(QStringLiteral("animejanai.installation.fileInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An AnimeJaNai runtime file is missing, unsafe, or has changed size: %1")).arg(name));
         if (rehash && hashFile(path) != entry.value(QStringLiteral("sha256")).toString()) return refuse(QStringLiteral("animejanai.installation.fileInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An AnimeJaNai runtime file failed its recorded SHA-256 check: %1")).arg(name));
-        const QString officialDigest = officialAjiDigest(name);
+        const QString officialDigest = pinnedOfficialAjiDigest(name);
         if (provenance == QLatin1String("official-download") &&
             !officialDigest.isEmpty() && entry.value(QStringLiteral("sha256")).toString() != officialDigest)
             return refuse(QStringLiteral("animejanai.installation.fileInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An official Aji library does not match the pinned v0.24.0 release.")));
@@ -1549,5 +1549,7 @@ ComponentProvisionResult provisionAnimeJanaiRuntime(Backend backend,
     if (progress) progress({ajiDispatcherLabel(), 0, 0, ComponentProvisionStage::Installed});
     ComponentProvisionResult result; result.ok = true; result.installedPacks << ajiDispatcherLabel() << runtime->name << resource->name; return result;
 }
+
+QString detail::officialAjiDigest(const QString& fileName) { return pinnedOfficialAjiDigest(fileName); }
 
 } // namespace mplayer::native

@@ -55,6 +55,10 @@ bool validateAnimeJanaiArchiveListing(const QString& listing, bool allowInternal
                                       bool tarMembers, QString* error,
                                       const QSet<QString>& expectedFiles = {});
 bool matchesPinnedLinuxAjiPair(const QString& dispatcherSha256, const QString& backendSha256);
+/// The digest this build pins for a runtime member. Reading the pin here keeps
+/// a contract test from duplicating a version-specific constant that a version
+/// bump silently invalidates.
+QString officialAjiDigest(const QString& fileName);
 enum class MixedRifeOrder { Before, After, Unknown };
 /// Resolve upstream's chain-wide RIFE order from all ONNX temporal windows.
 MixedRifeOrder mixedRifeOrder(bool requestedBefore, const QVector<std::optional<int>>& windows);
