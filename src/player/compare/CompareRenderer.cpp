@@ -66,11 +66,35 @@ namespace {
 constexpr int kPollMs = 40;
 constexpr int kSourceTimeoutMs = 20000;
 constexpr int kBuildTimeoutMs = 20 * 60 * 1000;
+/// Frames written for the still. A buffered native stage warms up over a
+/// sequence, so one frame is not enough input to answer with.
+constexpr int kStillFrameRepeats = 40;
 
 struct CommandResult {
     bool finished = false;
     int error = 0;
 };
+
+/// A frame that carries no picture. Every pass clears the target to black
+/// before mpv draws, so a refused or stalled frame is distinguishable from a
+/// dark scene only by measuring it: a film's darkest shot still carries some
+/// mid-tones over a whole picture.
+bool carriesNoPicture(const QImage& image) {
+    if (image.isNull()) return true;
+    const QImage gray = image.convertToFormat(QImage::Format_Grayscale8);
+    const QRect band(gray.width() / 8, gray.height() / 8, gray.width() * 3 / 4,
+                     gray.height() * 3 / 4);
+    quint64 total = 0;
+    qint64 counted = 0;
+    for (int y = band.top(); y < band.bottom(); y += 3) {
+        const uchar* row = gray.constScanLine(y);
+        for (int x = band.left(); x < band.right(); x += 3) {
+            total += row[x];
+            ++counted;
+        }
+    }
+    return counted == 0 || total / static_cast<quint64>(counted) < 4;
+}
 
 // GL objects are allocated and released through the driver while mpv's render
 // context and the framebuffer object go, so the context is bound only for that.
@@ -163,12 +187,19 @@ struct CompareRenderer::State {
             return false;
         }
         const int rowBytes = rgb.width() * 3;
-        for (int y = 0; y < rgb.height(); ++y) {
-            if (cancelled && cancelled()) return false;
-            if (file.write(reinterpret_cast<const char*>(rgb.constScanLine(y)), rowBytes) != rowBytes) {
-                error = QCoreApplication::translate("CompareRenderer",
-                                                    "The comparison source frame could not be written.");
-                return false;
+        // A native stage buffers several input frames before it answers, and the
+        // loop filter alone leaves it warming up forever. The same picture is
+        // written as a short sequence instead, so the stage receives the frames
+        // it waits for; every output frame is the same frozen input.
+        for (int repeat = 0; repeat < kStillFrameRepeats; ++repeat) {
+            for (int y = 0; y < rgb.height(); ++y) {
+                if (cancelled && cancelled()) return false;
+                if (file.write(reinterpret_cast<const char*>(rgb.constScanLine(y)), rowBytes) !=
+                    rowBytes) {
+                    error = QCoreApplication::translate(
+                        "CompareRenderer", "The comparison source frame could not be written.");
+                    return false;
+                }
             }
         }
         file.close();
@@ -223,6 +254,11 @@ struct CompareRenderer::State {
             core = std::make_shared<MpvHandle>(
                 std::vector<std::pair<std::string, std::string>>{
                     {"vo", "libmpv"}, {"hwdec", "auto-safe"}, {"pause", "yes"},
+                    // Qt owns presentation: an offscreen FBO never supplies the
+                    // vsync timing the video output would otherwise wait for, so
+                    // a frame-paced core delivers the first picture and then
+                    // stalls - which a buffered native stage reads as "no input".
+                    {"video-timing-offset", "0"},
                     {"audio", "no"}, {"sub", "no"}, {"keep-open", "yes"},
                     {"image-display-duration", "inf"}, {"screenshot-sw", "yes"},
                     {"screenshot-format", "png"}, {"input-default-bindings", "no"},
@@ -318,10 +354,16 @@ struct CompareRenderer::State {
                                 .arg((tail.isEmpty() ? diagnosticTail : tail).join(QLatin1Char('\n')));
                 }
             });
-            // No update callback: this renderer is driven by its own paint path
-            // and never enables advanced control, so nothing waits for one.
+            // Advanced control is required, not optional: a native stage buffers
+            // frames on its own thread, and only the caller-driven render loop
+            // hands those asynchronous frames to the video output. Without it
+            // mpv draws the frame it already had, the stage's declared output
+            // size never becomes a delivered picture, and every model reads as a
+            // recoloured pass-through. The callback is empty because this path
+            // pumps on its own schedule; the loop it must answer is update ->
+            // render -> report_swap, which pump() already performs.
             rendering = std::make_unique<MpvRenderContext>(*core, loadGlApi(),
-                                                           std::function<void()>{});
+                                                           std::function<void()>{}, true);
             rendering->setFlipY(true);
         }
         return true;
@@ -433,11 +475,24 @@ struct CompareRenderer::State {
         QString reported;
         bool processingFrameRequested = false;
         std::shared_ptr<CommandResult> buildPoll;
+        // The frame the pipeline showed before the configured filter could emit
+        // anything: a stall in the vf chain leaves the last rendered picture on
+        // screen, so stability alone would accept an unprocessed frame as the
+        // model's output. The filtered frame has to arrive - either its geometry
+        // changed (the stage upscales) or its pixels differ from that pre-filter
+        // picture - before stability means anything.
+        QImage unfiltered;
+        bool filteredFrameArrived = !requireProcessing;
+        // Read once a frame exists: the property is unavailable before the first
+        // picture reaches the output, and reading it there throws.
+        int tracePumps = 0;
+        int traceWidth = -1;
         while (timer.elapsed() < (requireProcessing && !buildDetail.isEmpty()
                                       ? kBuildTimeoutMs : kSourceTimeoutMs) &&
                error.isEmpty() && !cancelled()) {
             const QImage image = pump();
             if (cancelled() || !error.isEmpty()) return {};
+
             if (requireProcessing && !processingObserved &&
                 (!buildPoll || buildPoll->finished) && !ajiLabels.isEmpty()) {
                 const QString label = ajiLabels.at(ajiPollIndex++ % ajiLabels.size());
@@ -446,21 +501,88 @@ struct CompareRenderer::State {
             if (requireProcessing && processingObserved && !processingFrameRequested) {
                 processingFrameRequested = true;
                 restarted = false;
+                // The picture on screen now is the pipeline's unfiltered output:
+                // keep it as the baseline the model's frame has to differ from.
+                if (!carriesNoPicture(image)) unfiltered = image;
                 previous = {};
                 core->loadFile(framePath.toStdString());
                 continue;
+            }
+            // The baseline is the first picture of the reloaded still, not the
+            // frame that was on screen when the slot finished configuring: that
+            // one belongs to the previous pipeline, and comparing against it
+            // accepted the redrawn still as the model's output.
+            ++tracePumps;
+            try {
+                traceWidth = qRound(core->getNumber("video-out-params/w"));
+            } catch (const MpvError&) {
+                traceWidth = -1;
+            }
+            if (tracePumps == 3 && qEnvironmentVariableIsSet("MIKAI_COMPARE_TRACE")) {
+                try {
+                    std::fprintf(stderr, "[compare] trace vf=%s\n",
+                                 core->getString("vf").c_str());
+                } catch (const MpvError& error) {
+                    std::fprintf(stderr, "[compare] trace vf unavailable: %s\n", error.what());
+                }
+            }
+            if (tracePumps == 60 && qEnvironmentVariableIsSet("MIKAI_COMPARE_TRACE")) {
+                try {
+                    std::fprintf(stderr,
+                                 "[compare] trace: hwdec=%s hwdec-current=%s fmt=%s "
+                                 "paramsW=%g outW=%g\n",
+                                 core->getString("hwdec").c_str(),
+                                 core->getString("hwdec-current").c_str(),
+                                 core->getString("video-out-params/pixelformat").c_str(),
+                                 core->getNumber("video-params/w"),
+                                 core->getNumber("video-out-params/w"));
+                } catch (const MpvError& error) {
+                    std::fprintf(stderr, "[compare] trace unavailable: %s\n", error.what());
+                }
+            }
+            if (requireProcessing && processingFrameRequested && !filteredFrameArrived &&
+                !image.isNull()) {
+                int width = 0;
+                try {
+                    width = qRound(core->getNumber("video-out-params/w"));
+                } catch (const MpvError&) {
+                    width = 0;
+                }
+                // Geometry is the decisive signal: the stage reports the size it
+                // produced, and that size is only reported once its own frame has
+                // reached the video output. A stage that keeps the source size
+                // has no geometry to show, so the picture itself decides.
+                // Only the picture proves delivery: a stage declares its output
+                // size at configure time, before it has handed a frame over.
+                Q_UNUSED(width);
+                filteredFrameArrived = !unfiltered.isNull() && image != unfiltered &&
+                                       !carriesNoPicture(image);
             }
             if (!buildDetail.isEmpty() && buildDetail != reported) {
                 reported = buildDetail;
                 progress(buildDetail);
             }
             if (timer.elapsed() >= 200 && (!requireRestart || restarted) &&
-                (!requireProcessing || processingObserved) && !image.isNull() &&
-                image == previous) return image;
+                (!requireProcessing || (processingObserved && filteredFrameArrived)) &&
+                !image.isNull() && image == previous) return image;
             previous = image;
         }
+        if (!cancelled() && error.isEmpty() && qEnvironmentVariableIsSet("MIKAI_COMPARE_TRACE")) {
+            std::fprintf(stderr,
+                         "[compare] settle trace: pumps=%d restarted=%d configured=%d "
+                         "processingObserved=%d arrived=%d baseline=%d width=%d\n",
+                         tracePumps, restarted ? 1 : 0, configuredStages,
+                         processingObserved ? 1 : 0, filteredFrameArrived ? 1 : 0,
+                         unfiltered.isNull() ? 0 : 1, traceWidth);
+        }
         if (!cancelled() && error.isEmpty()) {
-            error = QCoreApplication::translate("CompareRenderer", "The comparison output did not settle.");
+            error = requireProcessing && processingObserved && !filteredFrameArrived
+                        ? QCoreApplication::translate(
+                              "CompareRenderer",
+                              "The comparison model was configured but produced no frame; "
+                              "the pipeline stalled before its output reached the surface.")
+                        : QCoreApplication::translate("CompareRenderer",
+                                                      "The comparison output did not settle.");
             if (!diagnosticTail.isEmpty())
                 error += QLatin1Char('\n') + diagnosticTail.join(QLatin1Char('\n'));
         }
@@ -723,9 +845,9 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
             if (plan.requiresAji && !firstStageNormalizesNv12)
                 frozenPipeline += QStringLiteral("@mikai_compare_nv12:format=fmt=nv12,");
             frozenPipeline += filter;
-            if (!state.waitForCommand(
-                    state.command({"vf", "add", frozenPipeline.toStdString()}), cancelled))
-                return {};
+            const bool added = state.waitForCommand(
+                state.command({"vf", "add", frozenPipeline.toStdString()}), cancelled);
+            if (!added) return {};
         }
         state.restarted = false;
         state.core->loadFile(state.framePath.toStdString());

@@ -85,6 +85,34 @@ constexpr int kSettleTimeoutMs = 3000;
 constexpr int kPollIntervalMs = 40;
 constexpr int kMaxPauseReassertions = kSettleTimeoutMs / kPollIntervalMs;
 
+/// Mean absolute per-channel difference inside the picture band. A native
+/// stage that never delivered a frame leaves the recoloured pass-through behind:
+/// the same picture for every model, shifted only by the NV12 round-trip. Real
+/// model output moves the picture by whole intensity steps, so a threshold well
+/// above that round-trip separates "processed" from "recoloured".
+double pictureDifference(const QImage& a, const QImage& b) {
+    if (a.isNull() || b.isNull() || a.size() != b.size()) return -1.0;
+    const QRect band(a.width() / 8, a.height() / 8, a.width() * 3 / 4, a.height() * 3 / 4);
+    const QImage left = a.copy(band).convertToFormat(QImage::Format_RGB888);
+    const QImage right = b.copy(band).convertToFormat(QImage::Format_RGB888);
+    double total = 0.0;
+    qint64 counted = 0;
+    for (int y = 0; y < left.height(); ++y) {
+        const uchar* l = left.constScanLine(y);
+        const uchar* r = right.constScanLine(y);
+        for (int x = 0; x < left.width() * 3; ++x) {
+            total += std::abs(int(l[x]) - int(r[x]));
+            ++counted;
+        }
+    }
+    return counted > 0 ? total / static_cast<double>(counted) : -1.0;
+}
+
+/// Below this, a "model" render is the unprocessed frame: the NV12 round-trip
+/// and one resample move the picture by ~0.02/255, while any spatial model moves
+/// it by whole steps.
+constexpr double kMinimumModelEffect = 0.25;
+
 /// The overlay names the engine product actually being built: an RTX run is
 /// TensorRT for RTX, not classic TensorRT, and this wording is the one place the
 /// comparison says which build is in progress.
@@ -2050,6 +2078,24 @@ QImage CompareWindow::renderIsolated(const QString& id) {
     const bool stopped = cancelled();
     if (stopped || image.isNull()) renderer->stop();
     if (self == nullptr) return {};
+    // A native stage that never handed its frame over draws the unprocessed
+    // picture: every model then looks identical and only the NV12 round-trip
+    // shows, which reads as "the model only changed the colours". That is a
+    // failed render, not a result.
+    if (!stopped && !image.isNull() && plan.requiresAji && !isolatedOriginal_.isNull()) {
+        const double effect = pictureDifference(isolatedOriginal_, image);
+        if (effect >= 0.0 && effect < kMinimumModelEffect) {
+            const QString reason =
+                QCoreApplication::translate("CompareWindow",
+                                            "The selected model produced no change in the "
+                                            "comparison frame, so its processing did not run.");
+            renderer->stop();
+            ajiErrors_.insert(id, reason);
+            finishIsolatedBuild(BuildSummaryKind::Failed, reason);
+            pendingAjiId_.clear();
+            return {};
+        }
+    }
     if (!stopped && image.isNull()) {
         ajiErrors_.insert(id, renderer->error());
         finishIsolatedBuild(BuildSummaryKind::Failed, renderer->error());

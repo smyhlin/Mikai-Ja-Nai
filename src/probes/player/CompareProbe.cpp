@@ -39,6 +39,7 @@
 #include "Anime4K.hpp"
 #include "CompareCanvas.hpp"
 #include "ComparePane.hpp"
+#include "CompareRenderer.hpp"
 #include "CompareWindow.hpp"
 #include "PlayerDialog.hpp"
 #include "PlayerShell.hpp"
@@ -949,6 +950,140 @@ bool waitForRenderedSide(CompareWindow* compare, const QString& id, int side,
 
 }  // namespace
 
+namespace {
+
+/// High-frequency energy: the mean absolute Laplacian over the picture band.
+/// A colour-matrix or range shift moves luminance uniformly and leaves this
+/// almost untouched, while a spatial model adds edges and texture, so the pair
+/// (mean shift, edge gain) separates "processed" from "recoloured".
+double edgeEnergy(const QImage& image) {
+    if (image.isNull()) return -1.0;
+    const QImage gray = image.convertToFormat(QImage::Format_Grayscale8);
+    const QRect band(gray.width() / 8, gray.height() / 8, gray.width() * 3 / 4,
+                     gray.height() * 3 / 4);
+    double total = 0.0;
+    qint64 counted = 0;
+    for (int y = band.top() + 1; y < band.bottom() - 1; ++y) {
+        const uchar* above = gray.constScanLine(y - 1);
+        const uchar* row = gray.constScanLine(y);
+        const uchar* below = gray.constScanLine(y + 1);
+        for (int x = band.left() + 1; x < band.right() - 1; ++x) {
+            const int laplacian = 4 * int(row[x]) - int(above[x]) - int(below[x]) -
+                                  int(row[x - 1]) - int(row[x + 1]);
+            total += std::abs(laplacian) / 4.0;
+            ++counted;
+        }
+    }
+    return counted > 0 ? total / static_cast<double>(counted) : -1.0;
+}
+
+/// True once the pinned store reports this backend's verified record.
+QString describePlan(const native::AnimeJanaiPlan& plan) {
+    return QStringLiteral("preset=%1 backend=%2 stages=%3 aji=%4 available=%5 reason=%6")
+        .arg(plan.presetId, native::stableName(plan.backend))
+        .arg(plan.stages.size())
+        .arg(plan.requiresAji ? QStringLiteral("yes") : QStringLiteral("no"),
+             plan.available ? QStringLiteral("yes") : QStringLiteral("no"),
+             plan.reason.isEmpty() ? QStringLiteral("none") : plan.reason);
+}
+
+}  // namespace
+
+/// Renders one held still through CompareRenderer exactly as the Compare window
+/// does, for the unprocessed Original and for each pinned public model, and
+/// reports the pixel shift and the edge gain of every model against it.
+int runCompareRenderOnly(const QString& video) {
+    shell::CompareRenderer renderer;
+    const shell::CompareRenderer::Cancelled never = [] { return false; };
+    const shell::CompareRenderer::Progress progress = [](const QString& detail) {
+        std::fprintf(stderr, "     progress: %s\n", qPrintable(detail));
+    };
+    QElapsedTimer clock;
+    clock.start();
+    if (!renderer.capture(video, 5.0, QSize(1280, 720), never, progress,
+                          std::function<QImage()>{}, nullptr)) {
+        std::fprintf(stderr, "FAIL capture: %s\n", qPrintable(renderer.error()));
+        return 1;
+    }
+    const QImage original = renderer.render(QStringLiteral("off"), {}, never, progress);
+    if (original.isNull()) {
+        std::fprintf(stderr, "FAIL original render: %s\n", qPrintable(renderer.error()));
+        return 1;
+    }
+    std::fprintf(stderr, "ok   the held still renders unprocessed (%dx%d) in %lld ms\n",
+                 original.width(), original.height(), static_cast<long long>(clock.elapsed()));
+    const double originalEdges = edgeEnergy(original);
+
+    QStringList ids;
+    for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
+        if (preset.rife || !preset.id.startsWith(QLatin1String("spatial:")) ||
+            preset.id.startsWith(QLatin1String("spatial:custom:"))) {
+            continue;
+        }
+        ids.append(preset.id);
+    }
+    if (ids.isEmpty()) {
+        std::fprintf(stderr, "FAIL no pinned public spatial model is offered\n");
+        return 1;
+    }
+    int rendered = 0;
+    QHash<QString, QString> seenOutputs;
+    for (const QString& id : ids) {
+        const native::AnimeJanaiPlan plan = native::prepareAnimeJanaiPlan(id, native::Backend::TensorRT);
+        std::fprintf(stderr, "     %s\n", qPrintable(describePlan(plan)));
+        if (!plan.available) continue;
+        clock.restart();
+        const QImage image = renderer.render(id, plan, never, progress);
+        if (image.isNull()) {
+            std::fprintf(stderr, "FAIL %s render: %s\n", qPrintable(id),
+                         qPrintable(renderer.error()));
+            return 1;
+        }
+        ++rendered;
+        const double shift = meanDifference(original, image);
+        const double edges = edgeEnergy(image);
+        const double gain = originalEdges > 0.0 ? edges / originalEdges : 0.0;
+        std::fprintf(stderr,
+                     "%s %s: shift %.4f/255, edge gain x%.3f, %dx%d, %lld ms\n",
+                     shift > 0.01 ? "ok  " : "FAIL", qPrintable(id), shift, gain,
+                     image.width(), image.height(),
+                     static_cast<long long>(clock.elapsed()));
+        image.save(QStringLiteral(".probe-out/compare-render-%1.png")
+                       .arg(QString(id).replace(QLatin1Char(':'), QLatin1Char('_'))));
+        // Two models that return byte-identical pictures did not run: a
+        // recoloured pass-through is the same image for every model, and the
+        // mean shift alone cannot tell that from a real result.
+        const QString signature = QString::number(image.width()) + QLatin1Char('x') +
+                                  QString::number(image.height()) + QLatin1Char(':') +
+                                  QString::number(qHash(image.constBits(), image.sizeInBytes()));
+        if (const auto duplicate = seenOutputs.constFind(signature);
+            duplicate != seenOutputs.cend()) {
+            std::fprintf(stderr,
+                         "FAIL %s produced the same picture as %s: no model ran\n",
+                         qPrintable(id), qPrintable(duplicate.value()));
+            return 1;
+        }
+        seenOutputs.insert(signature, id);
+        // The NV12 round-trip and one resample move the picture by ~0.02/255, so
+        // that is what an unprocessed pass-through looks like. A model that ran
+        // moves it by whole intensity steps.
+        if (shift < 0.25) {
+            std::fprintf(stderr,
+                         "FAIL %s changed the picture by %.4f/255 only: the stage was "
+                         "configured but its frame never reached the surface\n",
+                         qPrintable(id), shift);
+            return 1;
+        }
+    }
+    renderer.stop();
+    if (rendered == 0) {
+        std::fprintf(stderr, "FAIL no model rendered\n");
+        return 1;
+    }
+    std::fprintf(stderr, "DONE %d model(s) rendered through the comparison pipeline\n", rendered);
+    return 0;
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     // Both scopes are redirected into a directory that dies with this process
@@ -983,6 +1118,19 @@ int main(int argc, char** argv) {
     timestampTrace = !qEnvironmentVariableIsEmpty("COMPARE_PROBE_TRACE_TIMESTAMPS");
     if (timestampTrace) {
         std::fprintf(stderr, "TRACE timestamp diagnostics enabled\n");
+    }
+    const bool renderOnly =
+        argc > 1 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--render-only");
+    if (renderOnly) {
+        // The comparison pane itself is the thing under test, not the desktop:
+        // this mode drives CompareRenderer directly so a session without a
+        // composited window can still answer whether a selected model changes
+        // the frame beyond a colour-matrix shift.
+        if (argc != 3) {
+            std::fprintf(stderr, "usage: compare_probe.exe --render-only <video>\n");
+            return 2;
+        }
+        return runCompareRenderOnly(QString::fromLocal8Bit(argv[2]));
     }
     const bool loadingOnly =
         argc > 1 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--loading-only");
@@ -1285,7 +1433,11 @@ int main(int argc, char** argv) {
             check(!ajiSourceBaseline.isNull(), "the unprocessed source frame is captured");
             surface->setAnime4KChain(shaderBeforeAji);
             for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
-                if (!preset.rife && preset.id.startsWith(QLatin1String("spatial:"))) {
+                // The pinned public catalogue is `spatial:<stem>`; imported and
+                // downloaded graphs live at `spatial:custom:<stem>` and must not
+                // inflate this count on a populated store.
+                if (!preset.rife && preset.id.startsWith(QLatin1String("spatial:")) &&
+                    !preset.id.startsWith(QLatin1String("spatial:custom:"))) {
                     publicSpatialIds.append(preset.id);
                 }
             }
@@ -1868,7 +2020,8 @@ int main(int argc, char** argv) {
         const QStringList spatialPath{QStringLiteral("AnimeJaNai"),
                                       QStringLiteral("Spatial models")};
         for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
-            if (preset.rife || !preset.id.startsWith(QLatin1String("spatial:"))) {
+            if (preset.rife || !preset.id.startsWith(QLatin1String("spatial:")) ||
+                preset.id.startsWith(QLatin1String("spatial:custom:"))) {
                 continue;
             }
             expected.append({preset.id, preset.label, spatialPath, true, {}});
