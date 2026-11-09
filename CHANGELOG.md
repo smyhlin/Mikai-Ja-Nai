@@ -8,6 +8,7 @@ Published changes are recorded with their downloads on the [GitHub releases page
 - Add a Cut moment editor for selecting, previewing and exporting a short MP4.
 - Group processing controls into Restore, Upscale and Interpolation; improve Anime4K shader selection.
 - Refine Compare rendering, antialias settings controls, make episode buttons more compact and remove the redundant Episodes button from the title hero.
+- Cut moment: a filmstrip sheet with a draggable range inside a two-minute window around the current position, an estimated download size, quality chips, and a single accent action; thumbnails decode on a separate preview core.
 - Compare: replay AnimeJaNai candidates from the real source with the player's decoder and filter string, frame-step to the held timestamp instead of reloading, render only when mpv delivers a frame, and judge the result against a same-pipeline baseline so a pass-through can never be shown as a model output.
 
 ## 0.2.1 — 2026-11-07

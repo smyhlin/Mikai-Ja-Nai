@@ -244,6 +244,7 @@ set(PLAYER_SOURCES
   src/player/shell/PlayerDialog.cpp
   src/player/shell/ClipExport.cpp
   src/player/shell/ClipDialog.cpp
+  src/player/shell/ClipSheet.cpp
   src/player/shell/PlayerDialogProcessing.cpp
   src/player/shell/MediaInformationDialog.cpp
   src/player/shell/MediaInformationPresentation.cpp
@@ -288,6 +289,7 @@ set(PLAYER_HEADERS
   src/player/shell/PipFloat.hpp
   src/player/shell/ClipExport.hpp
   src/player/shell/ClipDialog.hpp
+  src/player/shell/ClipSheet.hpp
   src/player/shell/PlayerDialog.hpp
   src/player/shell/MediaInformationDialog.hpp
   src/player/shell/MediaInformationPresentation.hpp

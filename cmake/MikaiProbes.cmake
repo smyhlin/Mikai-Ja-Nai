@@ -127,6 +127,9 @@ mikai_add_probe(compare_probe src/probes/player/CompareProbe.cpp
 mikai_add_probe(compare_export_probe src/probes/player/CompareExportProbe.cpp
   LINKS mikai_player Qt6::Widgets Qt6::Test
   DEPLOY_SHADERS)
+mikai_add_probe(clip_sheet_probe src/probes/player/ClipSheetProbe.cpp
+  LINKS mikai_player Qt6::Widgets
+  DEPLOY_SHADERS)
 mikai_add_probe(anime4k_menu_probe src/probes/player/Anime4KMenuProbe.cpp
   LINKS mikai_player Qt6::Widgets Qt6::Test
   DEPLOY_SHADERS)
