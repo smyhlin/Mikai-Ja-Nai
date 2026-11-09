@@ -1183,16 +1183,36 @@ int runCompareRenderOnly(const QString& video) {
         const double shift = shell::meanDifference(baseline, image);
         const double edges = shell::edgeEnergy(image);
         const double gain = originalEdges > 0.0 ? edges / originalEdges : 0.0;
+        // An independent read of the frame mpv presented: it proves the pane's
+        // framebuffer is that frame, not a stale or blank target.
+        const QImage oracle = renderer.lastVideoFrame();
+        const QImage oracleComparable =
+            oracle.isNull() ? QImage()
+                            : oracle.scaled(image.size(), Qt::IgnoreAspectRatio,
+                                            Qt::SmoothTransformation);
+        const double oracleDelta =
+            oracleComparable.isNull() ? -1.0 : shell::meanDifference(image, oracleComparable);
         std::fprintf(stderr,
                      "%s %s: shift %.4f/255, edge gain x%.3f, %dx%d, verdict=%d floor=%.3f "
-                     "edgesRef=%.3f, %lld ms, %s\n",
+                     "edgesRef=%.3f, fboVsVo=%.4f, %lld ms, %s\n",
                      verdict.kind == shell::EffectVerdict::Kind::Ok ? "ok  " : "FAIL",
                      qPrintable(id), shift, gain, image.width(), image.height(),
                      static_cast<int>(verdict.kind), verdict.floor, verdict.referenceEdges,
-                     static_cast<long long>(clock.elapsed()),
+                     oracleDelta, static_cast<long long>(clock.elapsed()),
                      qPrintable(renderer.replaySummary()));
-        image.save(QStringLiteral(".probe-out/compare-render-%1.png")
-                       .arg(QString(id).replace(QLatin1Char(':'), QLatin1Char('_'))));
+        const QString stem = QString(id).replace(QLatin1Char(':'), QLatin1Char('_'));
+        image.save(QStringLiteral(".probe-out/compare-render-%1.png").arg(stem));
+        if (!oracle.isNull())
+            oracle.save(QStringLiteral(".probe-out/compare-vo-frame-%1.png").arg(stem));
+        // The framebuffer must BE the delivered frame: a large delta means the
+        // read-back is not what mpv drew.
+        if (oracleComparable.isNull() || oracleDelta < 0.0 || oracleDelta > 1.0) {
+            std::fprintf(stderr,
+                         "FAIL %s: the framebuffer does not match the frame the video output "
+                         "presented (delta %.4f, oracle %dx%d)\n",
+                         qPrintable(id), oracleDelta, oracle.width(), oracle.height());
+            return 1;
+        }
         // Two models that return byte-identical pictures did not run: a
         // recoloured pass-through is the same image for every model, and the
         // mean shift alone cannot tell that from a real result.

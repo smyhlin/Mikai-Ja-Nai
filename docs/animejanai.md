@@ -176,7 +176,10 @@ through the plan's own pipeline, not by pushing the captured still through a fil
 
 `MIKAI_COMPARE_TRACE=1` prints one `[compare] replay ...` line per pass with the decoder, the output
 geometry, the presented-frame count and the step count. `compare_probe --render-only <video>` prints
-the same evidence plus the verdict for every pinned spatial model.
+the same evidence plus the verdict for every pinned spatial model, and reads the frame mpv actually
+presented through `screenshot-raw` (bgr0) so the framebuffer can be compared with it: on the 1080p
+fixture that difference measures 0.27-0.34 of one level (RGBA8 dither against a software conversion),
+while the same run's model effects measure 1.17-1.51 levels.
 
 ## 7. Version Upgrade Checklist & Multi-Backend Store Caveats
 

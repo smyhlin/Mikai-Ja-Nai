@@ -21,6 +21,7 @@
 #include <QTemporaryDir>
 #include <QStringList>
 #include <QThread>
+#include <QThreadPool>
 
 #include <algorithm>
 #include <atomic>
@@ -185,6 +186,9 @@ struct CompareRenderer::State {
     /// Evidence of the last staged replay, kept after the baseline pass has
     /// overwritten the live counters.
     QString modelSummary;
+    /// The frame mpv presented for the last staged pass, read through
+    /// `screenshot-raw` (bgr0) before the baseline pass replaced it.
+    QImage modelVoFrame;
     /// Bumped by stop(): a nested wait loop that outlives its renderer stops
     /// instead of touching a torn-down core. The loops pump processEvents, so a
     /// close or a second render can otherwise re-enter this state.
@@ -204,6 +208,11 @@ struct CompareRenderer::State {
     /// Writes the captured frame as raw RGB and points the core at it. The pinned
     /// runtime has no PNG decoder, so an image file is not something this core
     /// can open; rawvideo is.
+    ///
+    /// The bytes go out on a pool thread: one 4K frame is 24.9 MB, and writing
+    /// it on the GUI thread freezes the window and every nested event loop the
+    /// renderer is pumping. The caller joins the write, so nothing reads the
+    /// file before it is complete.
     bool prepareStillSource(const std::function<bool()>& cancelled) {
         const QImage rgb = sourceFrame.convertToFormat(QImage::Format_RGB888);
         if (rgb.isNull() || rgb.width() <= 0 || rgb.height() <= 0) {
@@ -212,33 +221,70 @@ struct CompareRenderer::State {
             return false;
         }
         framePath = files.filePath(QStringLiteral("source.rgb"));
-        QFile file(framePath);
-        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            error = QCoreApplication::translate("CompareRenderer",
-                                                "The comparison source frame could not be written.");
-            return false;
-        }
-        const int rowBytes = rgb.width() * 3;
         // One frame is the whole picture: the core repeats it with a loop
-        // filter, so extra copies are bytes nobody reads. A 4K frame is 24.9 MB
-        // and this write is on the GUI thread.
-        for (int y = 0; y < rgb.height(); ++y) {
-            if (cancelled && cancelled()) return false;
-            if (file.write(reinterpret_cast<const char*>(rgb.constScanLine(y)), rowBytes) !=
-                rowBytes) {
-                error = QCoreApplication::translate(
-                    "CompareRenderer", "The comparison source frame could not be written.");
+        // filter, so extra copies are bytes nobody reads.
+        struct StillWrite {
+            QImage image;
+            QString path;
+            std::atomic<bool> cancelled{false};
+            std::atomic<bool> done{false};
+            std::atomic<bool> failed{false};
+        };
+        auto write = std::make_shared<StillWrite>();
+        write->image = rgb;
+        write->path = framePath;
+        const std::function<bool()> callerCancelled = cancelled;
+        QThreadPool::globalInstance()->start(QRunnable::create([write, callerCancelled] {
+            QFile file(write->path);
+            if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                write->failed.store(true, std::memory_order_release);
+                write->done.store(true, std::memory_order_release);
+                return;
+            }
+            const int rowBytes = write->image.width() * 3;
+            for (int y = 0; y < write->image.height(); ++y) {
+                if (callerCancelled && callerCancelled()) {
+                    write->cancelled.store(true, std::memory_order_release);
+                    break;
+                }
+                if (file.write(reinterpret_cast<const char*>(
+                                   write->image.constScanLine(y)),
+                               rowBytes) != rowBytes) {
+                    write->failed.store(true, std::memory_order_release);
+                    break;
+                }
+            }
+            file.close();
+            write->done.store(true, std::memory_order_release);
+        }));
+        // Events are still pumped: a close or a second render arriving while the
+        // write runs must unwind this one.
+        const quint64 startedIn = generation;
+        while (!write->done.load(std::memory_order_acquire)) {
+            QCoreApplication::processEvents();
+            if (generation != startedIn || (cancelled && cancelled())) {
+                write->cancelled.store(true, std::memory_order_release);
+                QThreadPool::globalInstance()->waitForDone();
                 return false;
             }
+            QThread::msleep(1);
         }
-        file.close();
+        if (write->failed.load(std::memory_order_acquire) ||
+            write->cancelled.load(std::memory_order_acquire)) {
+            if (generation == startedIn) {
+                error = QCoreApplication::translate(
+                    "CompareRenderer", "The comparison source frame could not be written.");
+            }
+            return false;
+        }
         // mpv splits this option on commas, not colons; colon-joined pairs are
         // read as one unknown value and the demuxer falls back to yuv420p, which
         // turns the still into coloured noise.
         const QString pixelFormat =
-            QStringLiteral("video_size=%1x%2,pixel_format=rgb24,framerate=25")
+            QStringLiteral("video_size=%1x%2,pixel_format=rgb24,framerate=%3")
                 .arg(rgb.width())
-                .arg(rgb.height());
+                .arg(rgb.height())
+                .arg(sourceFrameDuration > 0.0 ? 1.0 / sourceFrameDuration : 25.0, 0, 'f', 6);
         // Per-file options, not global ones: a failed native render re-creates
         // the core, and global demuxer settings die with it - the next still
         // then opens the raw file as a real container.
@@ -248,10 +294,11 @@ struct CompareRenderer::State {
         return true;
     }
 
+    /// Loads the still with its demuxer selection as per-file options, so a
+    /// re-created core cannot leave the next still opening as a container.
     bool loadStill(const QString& startText, const Cancelled& cancelled) {
         QList<QPair<QString, QString>> options = stillOptions;
-        if (!startText.isEmpty())
-            options.append({QStringLiteral("start"), startText});
+        if (!startText.isEmpty()) options.append({QStringLiteral("start"), startText});
         return loadWithOptions(framePath, options, cancelled);
     }
 
@@ -566,6 +613,10 @@ struct CompareRenderer::State {
         }
         return error.isEmpty();
     }
+
+    /// Reads the last frame handed to the video output through mpv's own
+    /// software screenshot path, independent of the framebuffer.
+    QImage queryVoFrame();
 
     bool setOption(const char* name, const QString& value, const Cancelled& cancelled) {
         return waitForCommand(command({"set", name, value.toStdString()}), cancelled);
@@ -897,8 +948,12 @@ struct CompareRenderer::State {
         // One canvas for both passes: whatever geometry the stage declared, so
         // the baseline is drawn by the same scaler into the same size and the
         // gate compares like with like.
+        modelVoFrame = {};
         QImage model = replay(plan, true, heldPts, QSize(), cancelled, progress);
         if (model.isNull() || cancelled()) return model;
+        // The frame mpv handed to the output for this pass, read before the
+        // baseline replaces it: proof that the read-back is the delivered frame.
+        modelVoFrame = queryVoFrame();
         const QSize canvas = canvasSize;
         // The baseline is rendered after the model, with the stage removed and
         // everything else identical.
@@ -1271,6 +1326,60 @@ void CompareRenderer::stop() {
 QImage CompareRenderer::baseline() const { return state_->baselineFrame; }
 
 QString CompareRenderer::replaySummary() const { return state_->modelSummary; }
+
+QImage CompareRenderer::lastVideoFrame() const { return state_->modelVoFrame; }
+
+QImage CompareRenderer::State::queryVoFrame() {
+    State& state = *this;
+    if (!state.core || !state.rendering) return {};
+    struct Reply {
+        bool finished = false;
+        QImage image;
+    };
+    auto reply = std::make_shared<Reply>();
+    NodeValue args;
+    args.format = MPV_FORMAT_NODE_ARRAY;
+    NodeValue name;
+    name.format = MPV_FORMAT_STRING;
+    name.text = "screenshot-raw";
+    NodeValue what;
+    what.format = MPV_FORMAT_STRING;
+    what.text = "video";
+    args.list = {name, what};
+    if (!state.core->commandNodeAsync(args, [reply](const AsyncReply& answer) {
+            reply->finished = true;
+            if (!answer.ok() || answer.node.format != MPV_FORMAT_NODE_MAP) return;
+            int width = 0;
+            int height = 0;
+            int stride = 0;
+            QString format;
+            std::string bytes;
+            for (const auto& entry : answer.node.map) {
+                const NodeValue& value = entry.second;
+                if (entry.first == "w") width = int(value.integer);
+                else if (entry.first == "h") height = int(value.integer);
+                else if (entry.first == "stride") stride = int(value.integer);
+                else if (entry.first == "format") format = QString::fromStdString(value.text);
+                else if (entry.first == "data") bytes = value.bytes;
+            }
+            if (width <= 0 || height <= 0 || stride < width * 4 || bytes.empty()) return;
+            if (format != QLatin1String("bgr0")) return;
+            // copy(): the reply's storage dies with the next drain.
+            reply->image = QImage(reinterpret_cast<const uchar*>(bytes.data()), width, height,
+                                  stride, QImage::Format_RGB32)
+                               .copy();
+        }).valid()) {
+        return {};
+    }
+    QElapsedTimer timer;
+    timer.start();
+    while (!reply->finished && timer.elapsed() < 5000 && state.error.isEmpty()) {
+        state.pumpFrame();
+        QCoreApplication::processEvents();
+        QThread::msleep(kFrameWaitMs);
+    }
+    return reply->image;
+}
 
 QString CompareRenderer::error() const { return state_->error; }
 

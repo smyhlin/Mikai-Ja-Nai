@@ -42,6 +42,11 @@ public:
     /// ran, the geometry that reached the output, the frames presented and the
     /// steps taken. Empty for a still render.
     QString replaySummary() const;
+    /// The last frame handed to the video output, read through mpv's own
+    /// `screenshot-raw` path (`bgr0`). It is taken from the frame mpv presented,
+    /// not from the framebuffer, so it can prove that what was read back is what
+    /// was delivered. Empty when the core cannot answer.
+    QImage lastVideoFrame() const;
     void stop();
     QString error() const;
 

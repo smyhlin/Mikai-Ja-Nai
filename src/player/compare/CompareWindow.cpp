@@ -88,34 +88,6 @@ constexpr int kMaxPauseReassertions = kSettleTimeoutMs / kPollIntervalMs;
 /// A native build can wait on an engine; the probe and the UI show progress
 /// for as long as the renderer needs, so this only sizes UI messaging.
 
-/// Mean absolute per-channel difference inside the picture band. A native
-/// stage that never delivered a frame leaves the recoloured pass-through behind:
-/// the same picture for every model, shifted only by the NV12 round-trip. Real
-/// model output moves the picture by whole intensity steps, so a threshold well
-/// above that round-trip separates "processed" from "recoloured".
-double pictureDifference(const QImage& a, const QImage& b) {
-    if (a.isNull() || b.isNull() || a.size() != b.size()) return -1.0;
-    const QRect band(a.width() / 8, a.height() / 8, a.width() * 3 / 4, a.height() * 3 / 4);
-    const QImage left = a.copy(band).convertToFormat(QImage::Format_RGB888);
-    const QImage right = b.copy(band).convertToFormat(QImage::Format_RGB888);
-    double total = 0.0;
-    qint64 counted = 0;
-    for (int y = 0; y < left.height(); ++y) {
-        const uchar* l = left.constScanLine(y);
-        const uchar* r = right.constScanLine(y);
-        for (int x = 0; x < left.width() * 3; ++x) {
-            total += std::abs(int(l[x]) - int(r[x]));
-            ++counted;
-        }
-    }
-    return counted > 0 ? total / static_cast<double>(counted) : -1.0;
-}
-
-/// Below this, a "model" render is the unprocessed frame: the NV12 round-trip
-/// and one resample move the picture by ~0.02/255, while any spatial model moves
-/// it by whole steps.
-constexpr double kMinimumModelEffect = 0.25;
-
 /// The overlay names the engine product actually being built: an RTX run is
 /// TensorRT for RTX, not classic TensorRT, and this wording is the one place the
 /// comparison says which build is in progress.
