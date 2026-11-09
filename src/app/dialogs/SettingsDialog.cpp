@@ -122,6 +122,16 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     theme::applyActionRole(saveButton_, theme::ActionRole::Primary);
     connect(cancelButton_, &QPushButton::clicked, this, &QDialog::reject);
     connect(saveButton_, &QPushButton::clicked, this, &SettingsDialog::save);
+    // Timeline for the "Saved" acknowledgment: long enough to read, short enough
+    // not to look stuck, and it never closes anything.
+    saveFeedbackTimer_ = new QTimer(this);
+    saveFeedbackTimer_->setSingleShot(true);
+    saveFeedbackTimer_->setInterval(1600);
+    connect(saveFeedbackTimer_, &QTimer::timeout, this, [this] {
+        saveButton_->setText(tr("Save"));
+        saveButton_->setEnabled(true);
+        theme::equalizeWidths({cancelButton_, saveButton_});
+    });
     theme::equalizeWidths({cancelButton_, saveButton_});
     footerLayout->addWidget(buttonBox_);
     root->addWidget(footer);
@@ -390,7 +400,10 @@ void SettingsDialog::retranslateUi() {
     setWindowTitle(tr("Settings"));
     retranslateNavigation();
     cancelButton_->setText(tr("Cancel"));
-    saveButton_->setText(tr("Save"));
+    // The feedback timer owns the label while it runs; retranslate restores it
+    // only when no "Saved" acknowledgment is on screen.
+    if (saveFeedbackTimer_ == nullptr || !saveFeedbackTimer_->isActive())
+        saveButton_->setText(tr("Save"));
     theme::equalizeWidths({cancelButton_, saveButton_});
 
     retranslateGeneralTab();
@@ -627,7 +640,15 @@ void SettingsDialog::save() {
 
     // From here the choice is the committed one: closing must not undo it.
     languageCommitted_ = true;
-    accept();
+    // Save commits, it does not leave: the window stays where the viewer put it,
+    // so one pass through several pages ends with the same button. The footer
+    // says so for a moment, because an action with no visible result reads as
+    // one that did nothing.
+    saveButton_->setText(tr("Saved"));
+    saveButton_->setEnabled(false);
+    if (saveFeedbackTimer_ != nullptr) {
+        saveFeedbackTimer_->start();
+    }
 }
 
 }  // namespace mikai::app

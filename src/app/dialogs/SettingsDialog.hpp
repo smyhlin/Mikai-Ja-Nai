@@ -468,6 +468,8 @@ private:
     QDialogButtonBox* buttonBox_ = nullptr;
     QPushButton* cancelButton_ = nullptr;
     QPushButton* saveButton_ = nullptr;
+    /// Holds the short "Saved" acknowledgment; Save commits without closing.
+    QTimer* saveFeedbackTimer_ = nullptr;
     QWidget* generalTab_ = nullptr;
     QWidget* presetsTab_ = nullptr;
     QWidget* processingTab_ = nullptr;

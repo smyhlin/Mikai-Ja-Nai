@@ -458,8 +458,11 @@ void TestI18n::unsetRadiusAndResetUseXsWithoutOverwritingSavedChoices() {
   auto* save = footer->findChild<QPushButton*>(QStringLiteral("settingsSaveButton"));
   QVERIFY(save != nullptr);
   save->click();
-  QCOMPARE(dialog.result(), int(QDialog::Accepted));
+  // Save commits without closing; the window stays where the viewer put it.
+  QVERIFY(dialog.isVisible());
+  QCOMPARE(dialog.result(), 0);
   QCOMPARE(mikai::app::theme::radiusSmall(mikai::app::loadAppearance()), 4);
+  dialog.reject();
 }
 
 void TestI18n::appearanceSaveAndCancelKeepTheLatestBatchedStyle() {
@@ -496,9 +499,14 @@ void TestI18n::appearanceSaveAndCancelKeepTheLatestBatchedStyle() {
   auto* save = footer->findChild<QPushButton*>(QStringLiteral("settingsSaveButton"));
   QVERIFY(save != nullptr);
   save->click();
-  QCOMPARE(dialog.result(), int(QDialog::Accepted));
+  QVERIFY(dialog.isVisible());
+  QCOMPARE(dialog.result(), 0);
   QCOMPARE(mikai::app::theme::accentColor(mikai::app::loadAppearance()), selected);
   QCOMPARE(qApp->palette().color(QPalette::Highlight), selected);
+  // Save no longer closes, so the rest of this test closes the window itself to
+  // keep the same lifecycle it was written against.
+  dialog.reject();
+  QTest::qWait(50);
 
   dialog.show();
   QVERIFY(dialog.showPage(QStringLiteral("customization/appearance")));
@@ -1448,7 +1456,8 @@ void TestI18n::hdrPlaybackSaveAndCancelRespectDeferredChanges() {
     save->click();
     QCoreApplication::processEvents();
 
-    QVERIFY(!dialog.isVisible());
+    // The commit is observable through the stored keys; the window stays open.
+    QVERIFY(dialog.isVisible());
     settings.sync();
     QCOMPARE(settings.value(policyKey).toInt(), static_cast<int>(HdrPolicy::Vivid));
     QVERIFY(settings.value(overrideKey).toBool());
@@ -1519,7 +1528,7 @@ void TestI18n::dialogPreviewAndSavePersistWithoutRestart() {
 
   save->click();
   QCoreApplication::processEvents();
-  QVERIFY2(!dialog.isVisible(), "a successful Save did not close the dialog");
+  QVERIFY2(dialog.isVisible(), "Save closed the Settings window");
   QCOMPARE(mikai::app::activeInterfaceLanguage(), QStringLiteral("uk"));
   settings.sync();
   QCOMPARE(settings.value(key).toString(), QStringLiteral("uk"));
