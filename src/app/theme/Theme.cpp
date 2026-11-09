@@ -56,6 +56,11 @@ QLabel#failureCode { color: %4; background: transparent; border: 1px solid %10; 
     padding: 1px %3px; }
 QLabel#descriptionPanel { background: transparent; color: %2; border: none;
     padding: 2px 0; }
+QFrame#componentActionBar {
+    background: %5;
+    border: 1px solid %10;
+    border-radius: %17px;
+}
 QFrame#settingsCard, QWidget#settingsCard {
     background: %5;
     border: 1px solid %10;

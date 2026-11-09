@@ -2242,9 +2242,7 @@ void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
   tab.resize(mikai::app::theme::kSettingsDialogMinWidth, 900);
   tab.show();
   const QStringList actionNames{QStringLiteral("componentDownloadButton"),
-                                QStringLiteral("refreshComponentsButton"),
                                 QStringLiteral("nativeComponentVerifyButton"),
-                                QStringLiteral("nativeComponentImportAnimeJanaiButton"),
                                 QStringLiteral("nativeComponentTabCancelButton")};
   QList<QPushButton*> settingsActions;
   for (const QString& name : actionNames) {
@@ -2254,15 +2252,12 @@ void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
   }
   QCoreApplication::processEvents();
   for (QPushButton* control : settingsActions) {
-    QCOMPARE(control->height(), 40);
+    // One control height for the row, taken from the theme token so the row and
+    // the token cannot drift apart.
+    QCOMPARE(control->height(), mikai::app::theme::kControlHeight);
   }
-  const int settingsWidth = settingsActions.first()->width();
   for (QPushButton* control : settingsActions) {
-    QVERIFY2(control->width() == settingsWidth,
-             qPrintable(QStringLiteral("%1 is %2 px wide beside %3 px")
-                            .arg(control->objectName())
-                            .arg(control->width())
-                            .arg(settingsWidth)));
+    // Caption-sized, never narrower than the text it paints.
     QVERIFY2(control->width() >= control->fontMetrics().horizontalAdvance(control->text()),
              qPrintable(QStringLiteral("%1 clips its caption").arg(control->objectName())));
   }
@@ -2272,7 +2267,6 @@ void TestPublicApiUi::actionRowsShareOneControlHeightAndEqualWidths() {
   // can ask for a pixel more than the row measured from the font alone, and
   // then paints wider than its equals.
   QList<QAbstractButton*> equalRow{back, home, watch, heroWatch, watched};
-  for (QPushButton* control : settingsActions) equalRow.append(control);
   for (QAbstractButton* control : equalRow) {
     QVERIFY2(control->sizeHint().width() <= control->width(),
              qPrintable(QStringLiteral("%1 paints %2 px wide inside its %3 px row")
@@ -2427,7 +2421,7 @@ void TestPublicApiUi::componentCardsKeepASingleLineBadgeAndASeparateCountLine() 
       QVERIFY2(box != nullptr, "the upscaler card has no selection box");
       QVERIFY2(box->isEnabled(), "the upscaler card cannot be selected");
       QVERIFY2(!box->isHidden(), "the upscaler card selection is hidden");
-      QVERIFY2(description->text().contains(QStringLiteral("Apply changes")),
+      QVERIFY2(description->text().contains(QStringLiteral("Install selected")),
                qPrintable(description->text()));
     }
     QVERIFY2(badge != nullptr && title != nullptr && description != nullptr,
@@ -2604,9 +2598,7 @@ void TestPublicApiUi::settingsPagesFitTheDialogMinimum() {
   QVERIFY2(componentsScroll != nullptr, "the components page exposes no scroll");
   if (QWidget* page = componentsScroll->widget()) settleLayout(page);
   for (const QString& name : {QStringLiteral("componentDownloadButton"),
-                              QStringLiteral("refreshComponentsButton"),
                               QStringLiteral("nativeComponentVerifyButton"),
-                              QStringLiteral("nativeComponentImportAnimeJanaiButton"),
                               QStringLiteral("nativeComponentTabCancelButton")}) {
     auto* control = dialog.findChild<QPushButton*>(name);
     QVERIFY2(control != nullptr, qPrintable(QStringLiteral("%1 is missing").arg(name)));

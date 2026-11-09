@@ -530,7 +530,7 @@ void ComponentStoreTab::buildUi() {
     QSizePolicy backendPolicy = animeJanaiBackendCombo_->sizePolicy();
     backendPolicy.setHorizontalPolicy(QSizePolicy::Ignored);
     animeJanaiBackendCombo_->setSizePolicy(backendPolicy);
-    animeJanaiBackendCombo_->setAccessibleName(tr("AnimeJaNai backend used by Apply changes and Verify"));
+    animeJanaiBackendCombo_->setAccessibleName(tr("AnimeJaNai backend used by Install selected and Verify"));
     animeJanaiBackendCombo_->addItem(backendChoiceLabel(Backend::TensorRT),
                                      static_cast<int>(Backend::TensorRT));
 #ifdef Q_OS_WIN
@@ -578,6 +578,68 @@ void ComponentStoreTab::buildUi() {
     headerLayout->addLayout(backendRow);
 
     root->addWidget(headerCard);
+
+    // The page's actions belong with the page's content, not stacked on top of
+    // the window's Save/Cancel: one compact row directly under the backend
+    // selector, with the selection context on its left where the card's check
+    // column already sits.
+    auto* actionBar = new QFrame(content);
+    actionBar->setObjectName(QStringLiteral("componentActionBar"));
+    auto* barLayout = new QHBoxLayout(actionBar);
+    barLayout->setContentsMargins(theme::kSpacingMedium, 12, theme::kSpacingMedium, 12);
+    barLayout->setSpacing(theme::kSpacingSmall);
+    selectAllCheck_ = new QCheckBox(tr("Select all"), actionBar);
+    selectAllCheck_->setObjectName(QStringLiteral("componentSelectAll"));
+    selectAllCheck_->setTristate(true);
+    barLayout->addWidget(selectAllCheck_, 0, Qt::AlignVCenter);
+    selectionSummary_ = new QLabel(actionBar);
+    selectionSummary_->setObjectName(QStringLiteral("componentSelectionSummary"));
+    selectionSummary_->setProperty("textRole", QStringLiteral("muted"));
+    barLayout->addWidget(selectionSummary_, 0, Qt::AlignVCenter);
+    barLayout->addStretch(1);
+
+    verifyButton_ = new QPushButton(actionBar);
+    verifyButton_->setObjectName(QStringLiteral("nativeComponentVerifyButton"));
+    // Verify reads the installed set; it is the tertiary action of the page.
+    theme::applyActionRole(verifyButton_, theme::ActionRole::Ghost);
+    verifyButton_->setFixedHeight(theme::kControlHeight);
+    barLayout->addWidget(verifyButton_, 0, Qt::AlignVCenter);
+
+    downloadButton_ = new QPushButton(actionBar);
+    downloadButton_->setObjectName(QStringLiteral("componentDownloadButton"));
+    // The page's one emphasised action. It dims to disabled while nothing is
+    // selected, so "Install selected" can never be clicked with nothing chosen -
+    // the footer's Save stays the only accent that is always actionable.
+    theme::applyActionRole(downloadButton_, theme::ActionRole::Primary);
+    downloadButton_->setFixedHeight(theme::kControlHeight);
+    barLayout->addWidget(downloadButton_, 0, Qt::AlignVCenter);
+
+    cancelButton_ = new QPushButton(actionBar);
+    cancelButton_->setObjectName(QStringLiteral("nativeComponentTabCancelButton"));
+    theme::applyActionRole(cancelButton_, theme::ActionRole::Ghost);
+    cancelButton_->setFixedHeight(theme::kControlHeight);
+    cancelButton_->setEnabled(false);
+    cancelButton_->setVisible(false);
+    barLayout->addWidget(cancelButton_, 0, Qt::AlignVCenter);
+    root->addWidget(actionBar);
+
+    // Created here, with the bar: updateControls() runs while the cards below are
+    // still being built and publishes its state into this label.
+    status_ = new QLabel(content);
+    status_->setObjectName(QStringLiteral("nativeComponentStatus"));
+    status_->setAccessibleName(tr("Components status"));
+    status_->setWordWrap(true);
+    root->addWidget(status_);
+
+    connect(selectAllCheck_, &QCheckBox::clicked, this, [this](bool checked) {
+        for (QGroupBox* card : findChildren<QGroupBox*>(QStringLiteral("nativeComponentPackCard"))) {
+            const QString cardId = card->property("componentCardId").toString();
+            auto* check = card->findChild<QCheckBox*>(cardId + QStringLiteral("Check"));
+            if (check != nullptr && check->isEnabled()) check->setChecked(checked);
+        }
+        refreshSelectionSummary();
+        updateControls();
+    });
 
     recommendationBanner_ = new QLabel(content);
     recommendationBanner_->setObjectName(QStringLiteral("componentRecommendationBanner"));
@@ -729,7 +791,7 @@ void ComponentStoreTab::buildUi() {
     setCardText(anime4kCard, tr("Anime4K shaders"),
                 tr("GLSL presets bundled with this build. No download is needed."));
     setCardText(upscalerCard, tr("Upscale models"),
-                tr("Optional ONNX upscalers. Selected models download with Apply changes; "
+                tr("Optional ONNX upscalers. Selected models download with Install selected; "
                    "the Upscalers page manages them one by one."));
     // The runtime card names the selected backend's product, not a fixed one.
     updateRuntimeCardText();
@@ -771,47 +833,6 @@ void ComponentStoreTab::buildUi() {
                 syncCardSelectionStyle(upscalerCard, checked);
                 updateControls();
             });
-
-    auto* actionsCard = new QFrame(content);
-    actionsCard->setObjectName(QStringLiteral("settingsCard"));
-    auto* actions = new QVBoxLayout(actionsCard);
-    actions->setContentsMargins(theme::kSpacingMedium, theme::kSpacingMedium,
-                                theme::kSpacingMedium, theme::kSpacingMedium);
-    actions->setSpacing(theme::kSpacingSmall);
-    // One grid for every action of the tab: equal widths measured from the
-    // captions, wrapped into extra rows at the dialog's minimum width instead
-    // of clipping a translated label.
-    actionGrid_ = new ActionGrid(theme::kSpacingSmall);
-    downloadButton_ = new QPushButton(actionsCard);
-    downloadButton_->setObjectName(QStringLiteral("componentDownloadButton"));
-    theme::applyActionRole(downloadButton_, theme::ActionRole::Primary);
-    actionGrid_->addButton(downloadButton_);
-    auto* refreshButton = new QPushButton(actionsCard);
-    refreshButton->setObjectName(QStringLiteral("refreshComponentsButton"));
-    theme::applyActionRole(refreshButton, theme::ActionRole::Secondary);
-    actionGrid_->addButton(refreshButton);
-    verifyButton_ = new QPushButton(actionsCard);
-    verifyButton_->setObjectName(QStringLiteral("nativeComponentVerifyButton"));
-    theme::applyActionRole(verifyButton_, theme::ActionRole::Secondary);
-    actionGrid_->addButton(verifyButton_);
-    importAnimeJanaiButton_ = new QPushButton(actionsCard);
-    importAnimeJanaiButton_->setObjectName(QStringLiteral("nativeComponentImportAnimeJanaiButton"));
-    theme::applyActionRole(importAnimeJanaiButton_, theme::ActionRole::Secondary);
-    actionGrid_->addButton(importAnimeJanaiButton_);
-    cancelButton_ = new QPushButton(actionsCard);
-    cancelButton_->setObjectName(QStringLiteral("nativeComponentTabCancelButton"));
-    theme::applyActionRole(cancelButton_, theme::ActionRole::Secondary);
-    cancelButton_->setEnabled(false);
-    actionGrid_->addButton(cancelButton_);
-    actionGrid_->recalculate();
-    actions->addLayout(actionGrid_);
-
-    status_ = new QLabel(actionsCard);
-    status_->setObjectName(QStringLiteral("nativeComponentStatus"));
-    status_->setAccessibleName(tr("Components status"));
-    status_->setWordWrap(true);
-    actions->addWidget(status_);
-    root->addWidget(actionsCard);
 
     root->addStretch();
     scroll->setWidget(content);
@@ -877,10 +898,6 @@ void ComponentStoreTab::buildUi() {
     connect(verifyButton_, &QPushButton::clicked, this, &ComponentStoreTab::verifyAll);
     connect(downloadButton_, &QPushButton::clicked, this,
             [this] { downloadMissing(false); });
-    connect(findChild<QPushButton*>(QStringLiteral("refreshComponentsButton")),
-            &QPushButton::clicked, this, &ComponentStoreTab::refresh);
-    connect(importAnimeJanaiButton_, &QPushButton::clicked, this,
-            &ComponentStoreTab::chooseAnimeJanaiRuntimeDirectory);
     connect(cancelButton_, &QPushButton::clicked, this, &ComponentStoreTab::cancelAcquisition);
 
     retranslateUi();
@@ -906,23 +923,14 @@ void ComponentStoreTab::retranslateUi() {
                 tr("Engine-builder kernels matched to this GPU generation."));
     verifyButton_->setText(tr("Verify"));
     verifyButton_->setAccessibleName(tr("Re-check every installed element against its digest"));
-    downloadButton_->setText(tr("Apply changes"));
-    downloadButton_->setAccessibleName(tr("Apply selected component changes"));
-    if (auto* refreshBtn = findChild<QPushButton*>(QStringLiteral("refreshComponentsButton"))) {
-        refreshBtn->setText(tr("Refresh"));
-        refreshBtn->setAccessibleName(tr("Refresh"));
-    }
+    downloadButton_->setText(tr("Install selected"));
+    downloadButton_->setAccessibleName(tr("Install the selected components"));
     renderAllCardProgress();
-    importAnimeJanaiButton_->setText(tr("Install local runtime..."));
-    importAnimeJanaiButton_->setAccessibleName(
-        tr("Choose a local AnimeJaNai runtime directory and install its selected backend closure"));
     cancelButton_->setText(tr("Cancel"));
     cancelButton_->setAccessibleName(tr("Cancel the running download"));
-    // The captions moved: one width for the tab's actions, measured again.
-    if (actionGrid_ != nullptr) actionGrid_->recalculate();
     status_->setAccessibleName(tr("Components status"));
     animeJanaiBackendCombo_->setAccessibleName(
-        tr("AnimeJaNai backend used by Apply changes and Verify"));
+        tr("AnimeJaNai backend used by Install selected and Verify"));
     // Each row is addressed by its enum value, so adding the RTX row cannot
     // shift another row's text onto the wrong product.
     for (int row = 0; row < animeJanaiBackendCombo_->count(); ++row) {
@@ -935,7 +943,7 @@ void ComponentStoreTab::retranslateUi() {
     }
     recommendationBanner_->setText(
         QStringLiteral("!  ") +
-        tr("Components recommended for this PC are not installed. Check the highlighted items below, then click Apply changes to install them."));
+        tr("Components recommended for this PC are not installed. Check the highlighted items below, then click Install selected to install them."));
     reflowComponentHeaders();
 }
 
@@ -977,7 +985,6 @@ bool ComponentStoreTab::event(QEvent* event) {
     const bool handled = QWidget::event(event);
     if (event->type() == QEvent::DevicePixelRatioChange ||
         event->type() == QEvent::ScreenChangeInternal) {
-        if (actionGrid_ != nullptr) actionGrid_->recalculate();
         reflowComponentHeaders();
     }
     return handled;
@@ -995,7 +1002,6 @@ void ComponentStoreTab::changeEvent(QEvent* event) {
     } else if (event->type() == QEvent::FontChange ||
                event->type() == QEvent::ApplicationFontChange ||
                event->type() == QEvent::StyleChange) {
-        if (actionGrid_ != nullptr) actionGrid_->recalculate();
         reflowComponentHeaders();
     }
 }

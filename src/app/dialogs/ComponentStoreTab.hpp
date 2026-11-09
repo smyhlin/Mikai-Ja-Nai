@@ -148,6 +148,8 @@ private:
     /// take their own row so the heading owns the text column.
     void reflowComponentHeaders();
     void updateControls();
+    /// Restates the select-all state and the count the install action works on.
+    void refreshSelectionSummary();
     mplayer::native::Backend selectedBackend() const;
     /// True when this build offers the in-process TensorRT for RTX backend.
     /// Windows only: no published RTX binary exists for Linux.
@@ -309,8 +311,6 @@ private:
                            const QSet<QString>& verifiedRifeGraphs,
                            const std::optional<int>& verifiedBackend);
     void downloadAnimeJanaiRuntime();
-    void chooseAnimeJanaiRuntimeDirectory();
-    void importAnimeJanaiRuntime(const QString& sourceDirectory);
     void downloadRemainingComponents();
     void downloadMissing(bool showReview);
     /// One independent acquisition unit finished: a backend closure, the RIFE
@@ -389,11 +389,12 @@ private:
     QCheckBox* upscalerCheck_ = nullptr;
     QLabel* upscalerState_ = nullptr;
     QPushButton* verifyButton_ = nullptr;
+    /// Select-all + the selection context line in the page action bar.
+    QCheckBox* selectAllCheck_ = nullptr;
+    QLabel* selectionSummary_ = nullptr;
     QPushButton* downloadButton_ = nullptr;
-    QPushButton* importAnimeJanaiButton_ = nullptr;
     QPushButton* cancelButton_ = nullptr;
     /// The tab's one action row: equal widths, re-flowed by available width.
-    ActionGrid* actionGrid_ = nullptr;
     /// The scrolled body: the cards follow the viewport's width, so the header
     /// reflow reads the allocation here instead of the clamped card width.
     QWidget* scrollViewport_ = nullptr;

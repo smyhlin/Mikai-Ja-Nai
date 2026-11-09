@@ -457,106 +457,6 @@ void ComponentStoreTab::downloadAnimeJanaiRuntime() {
         });
 }
 
-void ComponentStoreTab::chooseAnimeJanaiRuntimeDirectory() {
-    const QString sourceDirectory = QFileDialog::getExistingDirectory(
-        this, tr("Select AnimeJaNai runtime directory"), QString(),
-        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
-    if (sourceDirectory.isEmpty()) return;
-    importAnimeJanaiRuntime(sourceDirectory);
-}
-
-void ComponentStoreTab::importAnimeJanaiRuntime(const QString& sourceDirectory) {
-    if (runner_ == nullptr) {
-        applyStatus(QStringLiteral("native.components.noRunner"),
-                    StatusReason{.kind = StatusReason::Kind::RuntimeNeedsRunner});
-        return;
-    }
-
-    bumpRunGeneration(QStringLiteral("local runtime import started"));
-    animeJanaiRuntimeDownloading_ = true;
-    animeJanaiCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
-    const auto cancelFlag = animeJanaiCancelFlag_;
-    const Backend backend = selectedBackend();
-    const quint64 generation = runGeneration_;
-    currentProgressItems_.clear();
-    clearProgressCard(QStringLiteral("tensorRtRuntimeCard"));
-    clearProgressCard(QStringLiteral("tensorRtKernelsCard"));
-    setProgressItem(QStringLiteral("pending:animejanai-local-runtime"),
-                    QStringLiteral("tensorRtRuntimeCard"),
-                    tr("Local AnimeJaNai runtime and backend dependencies"),
-                    ComponentProvisionStage::Downloading, 0, 0, true);
-    applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::Busy,
-                                        .busy = StatusReason::Busy::LocalRuntime});
-    updateControls();
-
-    // The binder is taken on the GUI thread, before the work starts; the
-    // worker only ever calls it.
-    ProgressPublisher publish{runner_->post(), this, alive_, generation};
-    runner_->runTransfer(
-        [sourceDirectory, backend, cancelFlag, publish]() -> QVariant {
-            const ComponentProvisionResult result = mplayer::native::importAnimeJanaiRuntime(
-                sourceDirectory, backend,
-                [publish](const ComponentProvisionProgress& progress) {
-                    const ComponentProvisionProgress at = progress;
-                    publish([at](ComponentStoreTab& tab) { tab.applyProvisionProgress(at); });
-                },
-                [cancelFlag] { return cancelFlag->load(); });
-            return QVariantMap{{QStringLiteral("ok"), result.ok},
-                               {QStringLiteral("cancelled"), result.cancelled},
-                               {QStringLiteral("reason"), result.reason},
-                               {QStringLiteral("reasonKey"), result.reasonKey}};
-        },
-        [this, alive = alive_, generation, cancelFlag, backend](const QVariant& value) {
-            if (!alive->load() || runGeneration_ != generation) return;
-            animeJanaiRuntimeDownloading_ = false;
-            animeJanaiCancelFlag_.reset();
-            if (cancelFlag->load() || value.toMap().value(QStringLiteral("cancelled")).toBool()) {
-                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), false, true);
-                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), false, true);
-                applyStatus(QStringLiteral("native.components.cancelled"), QString());
-            } else if (!value.toMap().value(QStringLiteral("ok")).toBool()) {
-                const QString reason = value.toMap().value(QStringLiteral("reason")).toString();
-                const QString reasonKey =
-                    value.toMap().value(QStringLiteral("reasonKey")).toString();
-                const QString detail = reason.isEmpty()
-                                           ? tr("AnimeJaNai runtime installation failed.")
-                                           : reason;
-                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), false, false, detail);
-                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), false, false, detail);
-                applyStatus(
-                    reasonKey.isEmpty() ? QStringLiteral("native.components.fetch") : reasonKey,
-                    StatusReason{.kind = StatusReason::Kind::ImportFailed,
-                                 .detail = reason,
-                                 .backend = backend});
-            } else {
-                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), true, false);
-                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), true, false);
-                verifiedAnimeJanaiBackends_.remove(static_cast<int>(backend));
-                animeJanaiVerificationErrors_.remove(static_cast<int>(backend));
-                applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::RuntimeInstalled});
-            }
-            refresh();
-        },
-        [this, alive = alive_, generation, cancelFlag, backend](const backend::Failure& failure) {
-            if (!alive->load() || runGeneration_ != generation) return;
-            animeJanaiRuntimeDownloading_ = false;
-            animeJanaiCancelFlag_.reset();
-            if (cancelFlag->load()) {
-                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), false, true);
-                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), false, true);
-                applyStatus(QStringLiteral("native.components.cancelled"), QString());
-            } else {
-                const QString cause = backend::failureLine(failure);
-                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), false, false, cause);
-                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), false, false, cause);
-                applyStatus(QStringLiteral("native.components.fetch"),
-                            StatusReason{.kind = StatusReason::Kind::InstallFailed,
-                                         .detail = cause,
-                                         .backend = backend});
-            }
-            refresh();
-        });
-}
 
 void ComponentStoreTab::downloadRemainingComponents() {
     if (!inventoryReady_) {
@@ -1053,18 +953,50 @@ void ComponentStoreTab::updateControls() {
     const bool busy = provisioning || animeJanaiRuntimeDownloading_ || rifeDownloading_ ||
                       modelsDownloading_ || verifyActive() || acquisitionChecking_ ||
                       inventoryScanning_ || acquisitionSequenceActive_;
-    downloadButton_->setEnabled(!busy);
+    refreshSelectionSummary();
+    // Nothing selected is nothing to install: the emphasised action dims instead
+    // of starting a run that would find no work.
+    const bool hasSelection = downloadButton_->property("hasSelection").toBool();
+    downloadButton_->setEnabled(!busy && hasSelection);
     verifyButton_->setEnabled(!busy);
     cancelButton_->setEnabled(busy);
+    // Visible only while there is something to stop: the dialog's own footer
+    // already offers Cancel, and a permanently visible second one reads as a
+    // duplicate rather than as "stop this download".
+    cancelButton_->setVisible(busy);
     if (runtimeCheck_ != nullptr) runtimeCheck_->setEnabled(!busy);
     if (rifeCheck_ != nullptr) rifeCheck_->setEnabled(!busy);
     if (spatialCheck_ != nullptr) spatialCheck_->setEnabled(!busy);
     if (kernelsCheck_ != nullptr) kernelsCheck_->setEnabled(!busy);
-    if (auto* refreshButton = findChild<QPushButton*>(QStringLiteral("refreshComponentsButton")))
-        refreshButton->setEnabled(!busy);
     if (animeJanaiBackendCombo_ != nullptr) animeJanaiBackendCombo_->setEnabled(!busy);
-    if (importAnimeJanaiButton_ != nullptr) importAnimeJanaiButton_->setEnabled(!busy);
     publishAcquisition();
+}
+
+void ComponentStoreTab::refreshSelectionSummary() {
+    int checked = 0;
+    int selectable = 0;
+    for (QGroupBox* card : findChildren<QGroupBox*>(QStringLiteral("nativeComponentPackCard"))) {
+        const QString cardId = card->property("componentCardId").toString();
+        auto* check = card->findChild<QCheckBox*>(cardId + QStringLiteral("Check"));
+        if (check == nullptr || !check->isEnabled()) continue;
+        ++selectable;
+        if (check->isChecked()) ++checked;
+    }
+    if (selectAllCheck_ != nullptr) {
+        selectAllCheck_->setEnabled(selectable > 0);
+        const QSignalBlocker block(selectAllCheck_);
+        selectAllCheck_->setCheckState(checked == 0                       ? Qt::Unchecked
+                                       : checked == selectable            ? Qt::Checked
+                                                                          : Qt::PartiallyChecked);
+    }
+    if (selectionSummary_ != nullptr) {
+        // A count, not a plural form: the catalogue stores one numerus form per
+        // language here, and a language with three forms is not worth a crash
+        // for a five-word label.
+        selectionSummary_->setText(checked == 0 ? tr("Nothing selected")
+                                                : tr("Selected: %1").arg(checked));
+    }
+    if (downloadButton_ != nullptr) downloadButton_->setProperty("hasSelection", checked > 0);
 }
 
 void ComponentStoreTab::cancelAcquisition() {
