@@ -84,6 +84,10 @@ constexpr int kMinObserveRounds = 5;
 constexpr int kSettleTimeoutMs = 3000;
 constexpr int kPollIntervalMs = 40;
 constexpr int kMaxPauseReassertions = kSettleTimeoutMs / kPollIntervalMs;
+/// A native render borrows the playback surface; the stage only delivers while
+/// frames flow, so the held frame is replayed for this long before it is read.
+constexpr int kNativePlayWindowMs = 700;
+constexpr int kNativeRenderTimeoutMs = 20 * 60 * 1000;
 
 /// Mean absolute per-channel difference inside the picture band. A native
 /// stage that never delivered a frame leaves the recoloured pass-through behind:
@@ -1982,6 +1986,76 @@ void CompareWindow::captureFrame() {
     frozenPlaybackTimestamp_ = playbackTimestamp;
 }
 
+/// Renders a native candidate on the playback surface Compare already holds.
+/// The fork's stage is buffered and, like the player that proves it works, only
+/// answers while frames are flowing: a paused surface keeps the picture it
+/// already had, which is why every model used to read as a colour shift. The
+/// plan is applied, playback is allowed for a moment so the stage delivers, the
+/// held timestamp is reseeked and the settled picture read back; the previous
+/// plan, position and pause state are then restored.
+QImage CompareWindow::renderNativeOnPlayer(const native::AnimeJanaiPlan& plan,
+                                           const std::function<bool()>& cancelled,
+                                           QString* failure) {
+    if (surface_ == nullptr || !frozenPlaybackTimestamp_.has_value()) {
+        if (failure != nullptr) *failure = tr("The playing surface is unavailable.");
+        return {};
+    }
+    VideoSurface* live = surface_;
+    const native::AnimeJanaiPlan restorePlan = live->animeJanaiPlan();
+    const bool wasPlaying = live->isPlaying();
+    const double held = *frozenPlaybackTimestamp_;
+    const auto restore = [live, &restorePlan, held, wasPlaying] {
+        live->setAnimeJanaiPlan(restorePlan);
+        live->seek(held);
+        live->setPaused(!wasPlaying);
+    };
+
+    live->setPaused(true);
+    live->setAnimeJanaiPlan(plan);
+
+    QElapsedTimer clock;
+    clock.start();
+    while (!live->animeJanaiProcessingObserved()) {
+        if (cancelled() || clock.elapsed() > kNativeRenderTimeoutMs) {
+            const QString reason = live->animeJanaiStatus();
+            restore();
+            if (failure != nullptr) {
+                *failure = reason.isEmpty()
+                               ? tr("The selected model did not report processing.")
+                               : reason;
+            }
+            return {};
+        }
+        QCoreApplication::processEvents();
+        QThread::msleep(kPollIntervalMs);
+    }
+
+    // Frames have to flow for the stage to hand one over: play across the held
+    // timestamp, then stop and read the picture the pipeline settled on.
+    live->seek(held);
+    live->setPaused(false);
+    QElapsedTimer playClock;
+    playClock.start();
+    while (playClock.elapsed() < kNativePlayWindowMs && !cancelled()) {
+        QCoreApplication::processEvents();
+        QThread::msleep(kPollIntervalMs);
+    }
+    live->setPaused(true);
+    // Read the *held* frame, not the one playback stopped on: the gate compares
+    // this picture with the unprocessed held picture, so both sides must be the
+    // same instant or a mere frame difference would read as model output.
+    live->seek(held);
+    QImage image = grabSettledFrame();
+    restore();
+    if (cancelled()) {
+        if (failure != nullptr) *failure = tr("The comparison was cancelled.");
+        return {};
+    }
+    if (image.isNull() && failure != nullptr)
+        *failure = tr("The comparison surface produced no settled picture.");
+    return image;
+}
+
 QImage CompareWindow::renderIsolated(const QString& id) {
     QPointer<CompareWindow> self(this);
     const quint64 generation = activeRenderGeneration_;
@@ -2085,7 +2159,9 @@ QImage CompareWindow::renderIsolated(const QString& id) {
         plan = std::move(*task->plan);
         if (!plan.available) {
             pendingAjiId_.clear();
-            ajiErrors_.insert(id, plan.reason);
+            ajiErrors_.insert(id, plan.reasonKey.isEmpty()
+                                      ? plan.reason
+                                      : tr("%1 (%2)").arg(plan.reason, plan.reasonKey));
             return {};
         }
     }
@@ -2096,7 +2172,10 @@ QImage CompareWindow::renderIsolated(const QString& id) {
     }
     pendingAjiId_ = id;
     updateInfo();
-    const QImage image = renderer->render(id, plan, cancelled, progress);
+    QString nativeFailure;
+    const QImage image =
+        plan.requiresAji ? renderNativeOnPlayer(plan, cancelled, &nativeFailure)
+                         : renderer->render(id, plan, cancelled, progress);
     const bool stopped = cancelled();
     if (stopped || image.isNull()) renderer->stop();
     if (self == nullptr) return {};
@@ -2131,8 +2210,9 @@ QImage CompareWindow::renderIsolated(const QString& id) {
         }
     }
     if (!stopped && image.isNull()) {
-        ajiErrors_.insert(id, renderer->error());
-        finishIsolatedBuild(BuildSummaryKind::Failed, renderer->error());
+        const QString reason = nativeFailure.isEmpty() ? renderer->error() : nativeFailure;
+        ajiErrors_.insert(id, reason);
+        finishIsolatedBuild(BuildSummaryKind::Failed, reason);
     } else if (image.isNull()) {
         finishIsolatedBuild(BuildSummaryKind::Cancelled);
     } else {

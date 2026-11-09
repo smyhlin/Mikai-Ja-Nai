@@ -989,6 +989,128 @@ QString describePlan(const native::AnimeJanaiPlan& plan) {
 
 }  // namespace
 
+/// Exercises the sequence the Compare window uses for a native pane: borrow the
+/// player's surface, apply the plan, wait for the fork to report processing,
+/// play across the held timestamp so the buffered stage delivers, stop, read the
+/// settled picture, then restore. A paused surface keeps its old picture, which
+/// is why the pane used to show a recoloured pass-through.
+int runCompareNativeBorrow(const QString& video) {
+    static StubHost borrowHost;
+    auto* dialog = new PlayerDialog(QStringLiteral("compare native probe"), video,
+                                    QList<QualityEntry>{{720, video}}, 720, &borrowHost);
+    dialog->startPlayer();
+    dialog->resize(960, 540);
+    dialog->show();
+    QElapsedTimer clock;
+    clock.start();
+    auto* surface = dialog->findChild<VideoSurface*>();
+    while ((surface == nullptr || !surface->hasVideo()) && clock.elapsed() < 120000) {
+        QCoreApplication::processEvents();
+        QThread::msleep(50);
+        surface = dialog->findChild<VideoSurface*>();
+    }
+    if (surface == nullptr || !surface->hasVideo()) {
+        std::fprintf(stderr, "FAIL the player surface never reported video\n");
+        return 1;
+    }
+    const double held = 5.0;
+    surface->setPaused(true);
+    surface->seek(held);
+    QImage original;
+    for (int attempt = 0; attempt < 60 && original.isNull(); ++attempt) {
+        QCoreApplication::processEvents();
+        QThread::msleep(50);
+        const QImage first = surface->grabVideoFramebuffer();
+        QThread::msleep(90);
+        QCoreApplication::processEvents();
+        const QImage second = surface->grabVideoFramebuffer();
+        if (!first.isNull() && first == second) original = first;
+    }
+    if (original.isNull()) {
+        std::fprintf(stderr, "FAIL the player surface produced no settled picture\n");
+        return 1;
+    }
+    std::fprintf(stderr, "ok   the player surface holds an unprocessed frame (%dx%d)\n",
+                 original.width(), original.height());
+
+    QStringList ids;
+    for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
+        if (preset.rife || !preset.id.startsWith(QLatin1String("spatial:")) ||
+            preset.id.startsWith(QLatin1String("spatial:custom:"))) {
+            continue;
+        }
+        ids.append(preset.id);
+    }
+    const native::AnimeJanaiPlan restorePlan = surface->animeJanaiPlan();
+    QSet<QString> seen;
+    int rendered = 0;
+    for (const QString& id : ids) {
+        const native::AnimeJanaiPlan plan =
+            native::prepareAnimeJanaiPlan(id, native::Backend::TensorRT);
+        if (!plan.available) {
+            std::fprintf(stderr, "FAIL %s plan: %s\n", qPrintable(id), qPrintable(plan.reason));
+            return 1;
+        }
+        clock.restart();
+        surface->setPaused(true);
+        surface->setAnimeJanaiPlan(plan);
+        while (!surface->animeJanaiProcessingObserved() && clock.elapsed() < 20 * 60 * 1000) {
+            QCoreApplication::processEvents();
+            QThread::msleep(50);
+        }
+        if (!surface->animeJanaiProcessingObserved()) {
+            std::fprintf(stderr, "FAIL %s never reported processing\n", qPrintable(id));
+            surface->setAnimeJanaiPlan(restorePlan);
+            return 1;
+        }
+        surface->seek(held);
+        surface->setPaused(false);
+        QElapsedTimer playClock;
+        playClock.start();
+        while (playClock.elapsed() < 700) {
+            QCoreApplication::processEvents();
+            QThread::msleep(40);
+        }
+        surface->setPaused(true);
+        // Read the held frame, so the measurement is the same instant on both
+        // sides rather than two different video frames.
+        surface->seek(held);
+        QImage image;
+        for (int attempt = 0; attempt < 40 && image.isNull(); ++attempt) {
+            QCoreApplication::processEvents();
+            QThread::msleep(50);
+            const QImage first = surface->grabVideoFramebuffer();
+            QThread::msleep(90);
+            QCoreApplication::processEvents();
+            const QImage second = surface->grabVideoFramebuffer();
+            if (!first.isNull() && first == second) image = first;
+        }
+        surface->setAnimeJanaiPlan(restorePlan);
+        surface->seek(held);
+        if (image.isNull()) {
+            std::fprintf(stderr, "FAIL %s produced no settled picture\n", qPrintable(id));
+            return 1;
+        }
+        ++rendered;
+        const double shift = meanDifference(original, image);
+        const QString signature =
+            QString::number(image.width()) + QLatin1Char('x') + QString::number(image.height()) +
+            QLatin1Char(':') + QString::number(qHash(image.constBits(), image.sizeInBytes()));
+        const bool duplicate = seen.contains(signature);
+        seen.insert(signature);
+        std::fprintf(stderr, "%s %s: shift %.4f/255, %dx%d, %lld ms%s\n",
+                     shift >= 0.25 && !duplicate ? "ok  " : "FAIL", qPrintable(id), shift,
+                     image.width(), image.height(), static_cast<long long>(clock.elapsed()),
+                     duplicate ? " (same picture as an earlier model)" : "");
+        if (shift < 0.25 || duplicate) return 1;
+        image.save(QStringLiteral(".probe-out/compare-borrow-%1.png")
+                       .arg(QString(id).replace(QLatin1Char(':'), QLatin1Char('_'))));
+    }
+    std::fprintf(stderr, "DONE %d model(s) processed through the borrowed player surface\n",
+                 rendered);
+    return rendered > 0 ? 0 : 1;
+}
+
 /// Prints the plan outcome for every product Compare can offer, including the
 /// imported models and the builtin chains. "Unavailable" with no cause is what
 /// the pane showed, so this names the key behind it.
@@ -1173,6 +1295,13 @@ int main(int argc, char** argv) {
             return 2;
         }
         return runComparePlans(QString::fromLocal8Bit(argv[2]));
+    }
+    if (argc > 1 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--native-borrow")) {
+        if (argc != 3) {
+            std::fprintf(stderr, "usage: compare_probe.exe --native-borrow <video>\n");
+            return 2;
+        }
+        return runCompareNativeBorrow(QString::fromLocal8Bit(argv[2]));
     }
     const bool renderOnly =
         argc > 1 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--render-only");

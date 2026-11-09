@@ -158,6 +158,8 @@ private:
     void render();
     void renderOnce();
     QImage renderIsolated(const QString& id);
+    QImage renderNativeOnPlayer(const native::AnimeJanaiPlan& plan,
+                                const std::function<bool()>& cancelled, QString* failure);
     void abandonIsolatedRenderer();
     void finishIsolatedRetry();
     void dismissCandidateMenus();
