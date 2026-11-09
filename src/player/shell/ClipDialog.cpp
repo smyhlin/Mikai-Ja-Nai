@@ -1304,10 +1304,22 @@ public:
         if (invalidated || !windowInitialized || windowEnd <= windowStart || !strip) return;
         const int count = strip->tileCount();
         if (count <= 0) return;
+        // The preview's still must survive a rebuild: the strip re-lays out
+        // within milliseconds of opening, and clearing the queue there is what
+        // left the dialog black until the viewer scrubbed.
+        QVector<TileRequest> carried;
+        for (const TileRequest& request : tileQueue) {
+            if (request.still) carried.append(request);
+        }
         tileQueue.clear();
-        tileInFlight = false;
-        tileWatchdog.stop();
-        thumbnails.cancel();
+        // A still is not tied to a slot, so a rebuild neither invalidates it nor
+        // may cancel it: cancelling here dropped the one frame the preview was
+        // waiting for and left the dialog black.
+        if (!(tileInFlight && tileInFlightStill)) {
+            tileInFlight = false;
+            tileWatchdog.stop();
+            thumbnails.cancel();
+        }
         strip->setTiles(QVector<QPixmap>(count));
         const double span = windowEnd - windowStart;
         const double anchor = selStart_;
@@ -1325,6 +1337,8 @@ public:
                   [anchor](const TileRequest& left, const TileRequest& right) {
                       return std::abs(left.seconds - anchor) < std::abs(right.seconds - anchor);
                   });
+        // The still goes to the front: it is the frame the preview is waiting for.
+        for (auto it = carried.crbegin(); it != carried.crend(); ++it) waiting.prepend(*it);
         tileQueue = waiting;
         pumpTile();
     }
@@ -1357,6 +1371,7 @@ public:
         tileTimes.insert(token, next.seconds);
         tileStill.insert(token, next.still);
         tileInFlight = true;
+        tileInFlightStill = next.still;
         tileWatchdog.start(kTileWatchdogMs);
         thumbnails.requestFrame(token, next.seconds);
     }
@@ -1599,6 +1614,8 @@ public:
     QTimer stillDebounce;
     quint64 tileToken = 0;
     bool tileInFlight = false;
+    /// Whether the request in flight is the preview still (slot -1).
+    bool tileInFlightStill = false;
     double stillPendingTime = 0.0;
     double streamBytesPerSecond = 0.0;
     QString sourceUrl;
