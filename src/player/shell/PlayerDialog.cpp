@@ -2425,28 +2425,141 @@ void PlayerDialog::startPlayer() {
     }
 }
 
+namespace {
+
+/// The resume question, drawn from the same tokens as the clip sheet rather
+/// than a stock QMessageBox: one accent action, one ghost action, concentric
+/// radii, and no platform icon competing with the text. Returns 1 for continue,
+/// 0 for start over, -1 when the box is closed without an answer.
+int askResumeChoice(QWidget* parent, const QString& clock) {
+    QDialog dialog(parent);
+    dialog.setObjectName(QStringLiteral("resumePrompt"));
+    dialog.setWindowTitle(PlayerDialog::tr("Continue playing"));
+    dialog.setModal(true);
+    dialog.setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+
+    const double base = cornerRadius() > 0.0 ? cornerRadius() : 8.0;
+    const QColor acc = accent();
+    const QString accHex = acc.name(QColor::HexRgb);
+    const QString accHover = acc.lighter(115).name(QColor::HexRgb);
+    const QString inkHex = inkOn(acc).name(QColor::HexRgb);
+    const QString radiusPx = QString::number(base, 'f', 1);
+    const QString cardPx = QString::number(base + 4.0, 'f', 1);
+    const QString chipPx = QString::number(qMax(4.0, base + 2.0), 'f', 1);
+
+    dialog.setStyleSheet(
+        QStringLiteral(
+            "QDialog#resumePrompt { background-color: #0a0a0e; }"
+            "QLabel#resumeTitle { color: #f4f4f5; font-size: 15px; font-weight: 600; }"
+            "QLabel#resumeBody { color: #a1a1aa; font-size: 12px; }"
+            "QLabel#resumeChip { background: rgba(255, 255, 255, 0.06); border: none;"
+            "  border-radius: %1px; }"
+            "QPushButton#resumePrimary { background: %2; color: %3; border: none;"
+            "  border-radius: %4px; min-height: 36px; min-width: 132px;"
+            "  font-size: 13px; font-weight: 600; padding: 0px 18px; }"
+            "QPushButton#resumePrimary:hover { background: %5; }"
+            "QPushButton#resumePrimary:focus { border: 1px solid #ffffff; }"
+            "QPushButton#resumeGhost { background: transparent; color: #d4d4d8;"
+            "  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: %4px;"
+            "  min-height: 36px; min-width: 120px; font-size: 13px; font-weight: 500;"
+            "  padding: 0px 18px; }"
+            "QPushButton#resumeGhost:hover { background: rgba(255, 255, 255, 0.07);"
+            "  color: #ffffff; border-color: rgba(255, 255, 255, 0.22); }")
+            .arg(chipPx, accHex, inkHex, radiusPx, accHover));
+
+    auto* root = new QVBoxLayout(&dialog);
+    root->setContentsMargins(20, 20, 20, 18);
+    root->setSpacing(16);
+
+    auto* body = new QHBoxLayout;
+    body->setContentsMargins(0, 0, 0, 0);
+    body->setSpacing(14);
+
+    // The glyph is the action the primary button performs, not a question mark:
+    // "continue" is a transport action, and the platform's blue question icon is
+    // the loudest thing in the old box.
+    auto* chip = new QLabel(&dialog);
+    chip->setObjectName(QStringLiteral("resumeChip"));
+    chip->setFixedSize(44, 44);
+    chip->setAlignment(Qt::AlignCenter);
+    {
+        const int side = 44;
+        QPixmap pixmap(side, side);
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        enableChromeAntialiasing(painter);
+        QPainterPath round;
+        round.addRoundedRect(QRectF(0.5, 0.5, side - 1.0, side - 1.0), base + 2.0, base + 2.0);
+        painter.fillPath(round, QColor(acc.red(), acc.green(), acc.blue(), 46));
+        IconPainter::play(painter, side / 2.0 - 7.0, side / 2.0 - 8.0, 15.0, acc);
+        pixmap.setDevicePixelRatio(dialog.devicePixelRatioF());
+        chip->setPixmap(pixmap);
+    }
+    body->addWidget(chip, 0, Qt::AlignTop);
+
+    auto* column = new QVBoxLayout;
+    column->setContentsMargins(0, 0, 0, 0);
+    column->setSpacing(4);
+    auto* title = new QLabel(PlayerDialog::tr("Continue from %1?").arg(clock), &dialog);
+    title->setObjectName(QStringLiteral("resumeTitle"));
+    auto* subtitle = new QLabel(PlayerDialog::tr("You stopped this episode at %1.").arg(clock),
+                                &dialog);
+    subtitle->setObjectName(QStringLiteral("resumeBody"));
+    subtitle->setWordWrap(true);
+    // Invariant: the smaller line sits to the right of the heading, never before it.
+    subtitle->setContentsMargins(8, 0, 0, 0);
+    column->addWidget(title);
+    column->addWidget(subtitle);
+    body->addLayout(column, 1);
+    root->addLayout(body);
+
+    auto* actions = new QHBoxLayout;
+    actions->setContentsMargins(0, 0, 0, 0);
+    actions->setSpacing(10);
+    actions->addStretch(1);
+    auto* restart = new QPushButton(PlayerDialog::tr("Start over"), &dialog);
+    restart->setObjectName(QStringLiteral("resumeGhost"));
+    restart->setCursor(Qt::PointingHandCursor);
+    auto* resume = new QPushButton(PlayerDialog::tr("Continue"), &dialog);
+    resume->setObjectName(QStringLiteral("resumePrimary"));
+    resume->setCursor(Qt::PointingHandCursor);
+    resume->setDefault(true);
+    actions->addWidget(restart);
+    actions->addWidget(resume);
+    root->addLayout(actions);
+
+    int answer = -1;
+    QObject::connect(resume, &QPushButton::clicked, &dialog, [&] {
+        answer = 1;
+        dialog.accept();
+    });
+    QObject::connect(restart, &QPushButton::clicked, &dialog, [&] {
+        answer = 0;
+        dialog.accept();
+    });
+    dialog.adjustSize();
+    resume->setFocus(Qt::OtherFocusReason);
+    dialog.exec();
+    return answer;
+}
+
+}  // namespace
+
 void PlayerDialog::offerResume(double seconds) {
     // Playback has already started at the beginning; the prompt only asks
     // whether to jump. Pausing first keeps the audio from running under the box,
     // and both answers resume playback because the load always starts playing.
     if (closed_) return;
     const QString label = formatTime(seconds);
-    QMessageBox box(QMessageBox::Question, tr("Continue playing"),
-                    tr("Continue from %1?").arg(label), QMessageBox::NoButton, this);
-    box.setInformativeText(tr("You stopped this episode at %1.").arg(label));
-    box.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
-    box.setDefaultButton(QMessageBox::Yes);
-    box.button(QMessageBox::Yes)->setText(tr("Continue"));
-    box.button(QMessageBox::No)->setText(tr("Start over"));
     const bool wasPlaying = !surface_->playbackPauseIntent();
     if (wasPlaying) surface_->setPaused(true);
-    const int answer = box.exec();
+    const int answer = askResumeChoice(this, label);
     if (closed_) return;
-    if (answer == QMessageBox::Yes) {
+    if (answer == 1) {
         surface_->seek(seconds);
         shell_->setPosition(seconds);
         flashStatus(tr("Continued from %1").arg(label));
-    } else if (answer == QMessageBox::No) {
+    } else if (answer == 0) {
         emit episodeResumeDeclined(episodeIndex_);
         flashStatus(tr("Starting from the beginning"));
     }
