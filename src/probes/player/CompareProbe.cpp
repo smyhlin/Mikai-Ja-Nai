@@ -989,6 +989,54 @@ QString describePlan(const native::AnimeJanaiPlan& plan) {
 
 }  // namespace
 
+/// Prints the plan outcome for every product Compare can offer, including the
+/// imported models and the builtin chains. "Unavailable" with no cause is what
+/// the pane showed, so this names the key behind it.
+int runComparePlans(const QString& video) {
+    static StubHost plansHost;
+    auto* dialog = new PlayerDialog(QStringLiteral("compare plan probe"), video,
+                                    QList<QualityEntry>{{720, video}}, 720, &plansHost);
+    dialog->startPlayer();
+    dialog->resize(960, 540);
+    dialog->show();
+    QElapsedTimer clock;
+    clock.start();
+    auto* surface = dialog->findChild<VideoSurface*>();
+    while ((surface == nullptr || !surface->hasVideo()) && clock.elapsed() < 120000) {
+        QCoreApplication::processEvents();
+        QThread::msleep(50);
+        surface = dialog->findChild<VideoSurface*>();
+    }
+    if (surface == nullptr || !surface->hasVideo()) {
+        std::fprintf(stderr, "FAIL the player surface never reported video\n");
+        return 1;
+    }
+    surface->setPaused(true);
+    QThread::msleep(300);
+    QCoreApplication::processEvents();
+    const native::AnimeJanaiSourceContext source = surface->animeJanaiSourceContext();
+    std::fprintf(stderr, "source context: %dx%d @ %.3f fps\n", source.width, source.height,
+                 source.fps);
+
+    const auto report = [&source](const QString& id) {
+        const native::AnimeJanaiPlan plan =
+            native::prepareAnimeJanaiPlan(id, native::Backend::TensorRT, {}, source);
+        std::fprintf(stderr, "%-64s available=%d key=%s reason=%s\n", qPrintable(id),
+                     plan.available ? 1 : 0,
+                     plan.reasonKey.isEmpty() ? "-" : qPrintable(plan.reasonKey),
+                     plan.reason.isEmpty() ? "-" : qPrintable(plan.reason));
+        return plan.available;
+    };
+    int available = 0;
+    int total = 0;
+    for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
+        ++total;
+        if (report(preset.id)) ++available;
+    }
+    std::fprintf(stderr, "DONE %d of %d products prepare a plan\n", available, total);
+    return available > 0 ? 0 : 1;
+}
+
 /// Renders one held still through CompareRenderer exactly as the Compare window
 /// does, for the unprocessed Original and for each pinned public model, and
 /// reports the pixel shift and the edge gain of every model against it.
@@ -1118,6 +1166,13 @@ int main(int argc, char** argv) {
     timestampTrace = !qEnvironmentVariableIsEmpty("COMPARE_PROBE_TRACE_TIMESTAMPS");
     if (timestampTrace) {
         std::fprintf(stderr, "TRACE timestamp diagnostics enabled\n");
+    }
+    if (argc > 1 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--plans")) {
+        if (argc != 3) {
+            std::fprintf(stderr, "usage: compare_probe.exe --plans <video>\n");
+            return 2;
+        }
+        return runComparePlans(QString::fromLocal8Bit(argv[2]));
     }
     const bool renderOnly =
         argc > 1 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--render-only");

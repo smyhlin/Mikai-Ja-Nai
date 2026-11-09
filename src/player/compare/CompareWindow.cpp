@@ -188,6 +188,28 @@ QString unavailableChoiceCaption(const QString& label) {
     return QCoreApplication::translate("SettingsDialog", "%1 (not available)").arg(label);
 }
 
+/// The backend Compare prepares every native candidate with. It must be the
+/// one this machine can actually run: preparing against a closure that is not
+/// installed marks every native product unavailable, which reads as "the model
+/// does not work" rather than "that backend is not installed here".
+native::Backend preferredInstalledBackend(native::Backend requested) {
+    if (native::describeAnimeJanaiInstallation(requested, false).installed) return requested;
+    for (const native::Backend candidate : {native::Backend::TensorRTRTX,
+                                            native::Backend::TensorRT,
+                                            native::Backend::DirectML}) {
+        if (candidate == requested) continue;
+        if (native::describeAnimeJanaiInstallation(candidate, false).installed) return candidate;
+    }
+    return requested;
+}
+
+QString catalogueRefusalReason() {
+    return QCoreApplication::translate(
+        "CompareWindow",
+        "This product is not available for the selected AnimeJaNai backend; install it in "
+        "Settings › Components.");
+}
+
 QString missingCatalogueReason() {
     return QCoreApplication::translate("AnimeJanaiRuntime",
                                        "The selected AnimeJaNai preset is not recognised.");
@@ -327,7 +349,7 @@ struct PlaybackTimestampResult {
 CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandidateId,
                              QWidget* parent, native::Backend ajiBackend)
     : QDialog(parent), surface_(surface), currentCandidateId_(currentCandidateId),
-      ajiBackend_(ajiBackend) {
+      ajiBackend_(preferredInstalledBackend(ajiBackend)) {
     setWindowTitle(tr("Quality Comparison"));
     setModal(false);
     setWindowFlags(Qt::Dialog | Qt::WindowTitleHint | Qt::CustomizeWindowHint);
@@ -2082,7 +2104,19 @@ QImage CompareWindow::renderIsolated(const QString& id) {
     // picture: every model then looks identical and only the NV12 round-trip
     // shows, which reads as "the model only changed the colours". That is a
     // failed render, not a result.
-    if (!stopped && !image.isNull() && plan.requiresAji && !isolatedOriginal_.isNull()) {
+    const bool temporalStage = [&plan] {
+        for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
+            if (preset.id != plan.presetId) continue;
+            return preset.rife || preset.id.startsWith(QLatin1String("rife:"));
+        }
+        return plan.presetId.startsWith(QLatin1String("rife:"));
+    }();
+    // A temporal stage interpolates between frames: on the one held frame the
+    // comparison shows, its output is the same picture, so a missing pixel
+    // change is not evidence that it did not run. Only spatial stages are
+    // measured here.
+    if (!stopped && !image.isNull() && plan.requiresAji && !temporalStage &&
+        !isolatedOriginal_.isNull()) {
         const double effect = pictureDifference(isolatedOriginal_, image);
         if (effect >= 0.0 && effect < kMinimumModelEffect) {
             const QString reason =
@@ -2558,10 +2592,12 @@ QString CompareWindow::unavailableReason(const QString& id) const {
         if (entry.id != id) {
             continue;
         }
-        if (entry.disabled && !entry.tooltip.isEmpty()) {
+        if (entry.disabled) {
             // The catalogue's own refusal, verbatim: a missing graph or shader
-            // is opaque to this window and is never re-worded.
-            return entry.tooltip;
+            // is opaque to this window and is never re-worded. An empty refusal
+            // is not a reason, so it is replaced by the one sentence this window
+            // can honestly add.
+            return entry.tooltip.isEmpty() ? catalogueRefusalReason() : entry.tooltip;
         }
         break;
     }
@@ -2587,7 +2623,10 @@ void CompareWindow::updateInfo() {
         if (!candidates_.contains(id)) {
             parts.append(tr("%1 unavailable: %2").arg(labelFor(id), unavailableReason(id)));
         } else if (ajiErrors_.contains(id)) {
-            parts.append(tr("%1 unavailable: %2").arg(labelFor(id), ajiErrors_.value(id)));
+            const QString reason = ajiErrors_.value(id);
+            parts.append(tr("%1 unavailable: %2")
+                             .arg(labelFor(id),
+                                  reason.isEmpty() ? catalogueRefusalReason() : reason));
         }
     }
     if (queuedNativeChanges() > 0)

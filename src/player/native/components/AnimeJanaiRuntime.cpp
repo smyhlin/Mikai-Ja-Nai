@@ -103,7 +103,12 @@ class RuntimeText {
 void fail(AnimeJanaiPlan& plan, const QString& key, const QString& message) {
     plan.available = false;
     plan.reasonKey = key;
-    plan.reason = message;
+    // A caller that could not name a cause must still leave one: an empty
+    // reason reaches the UI as "unavailable:" and tells the user nothing.
+    plan.reason = message.isEmpty()
+                      ? RuntimeText::tr("The selected AnimeJaNai product is unavailable (%1).")
+                            .arg(key)
+                      : message;
     plan.filterSpec.clear();
     plan.stages.clear();
     plan.cacheKeys.clear();
