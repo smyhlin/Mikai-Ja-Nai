@@ -126,6 +126,9 @@ verified digests in `components/aji/<version>/` must stay as installed.
   `animeJanaiFail` logging).
 - Session log location: `src/app/support/CrashLog.cpp` — an AppImage mounts its payload read-only, so
   `mikai.log` falls back to `AppLocalDataLocation` (`~/.local/share/Mikai/Mikai Wrapper/mikai.log` here).
+- Comparison replay: `src/player/compare/CompareRenderer.cpp` (`replay`, `renderNative`) and
+  `src/player/native/components/NativePipelineSpec.hpp`; metrics and the effect gate live in
+  `src/player/compare/PictureMetrics.{hpp,cpp}`, covered by `TestComparePipeline`.
 - Regression tests: `TestAnimeJanaiRuntime::tensorRtPlanCarriesTheBackendLoaderDir`,
   `TestAnimeJanaiRuntime::shellSafeLibDirAvoidsASplitLibraryPath`,
   `TestDiagnostics::aBlockedPreferredLogFolderFallsBackToThePerUserFolder` (blocks the preferred
@@ -138,6 +141,42 @@ verified digests in `components/aji/<version>/` must stay as installed.
 The Upscalers page offers four downloaded ONNX graphs (4× Real-ESRGAN AnimeVideo v3 in fp32/fp16, 2× HFA2kCompact and its multijpg variant) as one-step chains. They enter the same custom-model store as an imported graph, so they plan, verify, cache engines and appear in Compare exactly like a spatial model; the chain carries the graph's own factor, and the first render at a new size builds an engine before it can show a frame.
 
 Two pane-specific notes, both fixed but worth knowing when reading an older log: a comparison pane's core has to preload the backend closure with `RTLD_GLOBAL` (the player's surface does that itself), and preloading a second copy of an already resident `libnvinfer`/`libcudart` soname must be skipped — two runtime images in one process corrupt the heap. Teardown of a pane's filter is synchronous for the same reason: removing the filter is what joins the fork's builder thread.
+
+## 6a. The Compare pane's native replay
+
+The Comparison workstation renders a native candidate by **replaying the real source**
+through the plan's own pipeline, not by pushing the captured still through a filter:
+
+- Decoder: `nvdec` for the TensorRT family, `d3d11` for DirectML - `nativePipelineFor()` in
+  [`NativePipelineSpec.hpp`](../src/player/native/components/NativePipelineSpec.hpp), the same
+  description the player attaches. After the first presented frame the renderer reads
+  `hwdec-current`; a software decoder or any `-copy` variant refuses with a named reason, because a
+  downloaded frame carries no device the stage can adopt.
+- Filter: `plan.filterSpec` verbatim, with no `format=fmt=nv12` normaliser and no loop filter. Those
+  two were the old still path's substitutes for a decoder, and they made the pane run a different
+  program from the player.
+- Frames: the core stays paused. The file is loaded a few frames before the held timestamp, the
+  renderer waits until every AnimeJaNai stage reports `Configured slot N: ... (depth D)`, seeks
+  exactly to `held - (D+1)` frames and then issues `frame-step` until `time-pos` reaches the held
+  timestamp. Reloading the file to obtain another frame is what destroyed the just-configured stage
+  and showed the first frame of an empty ring - a scaled pass-through that reads as "the model only
+  changed the colours".
+- Delivery evidence: a render counts as delivered only when `video-out-params` names the geometry the
+  stage configured, a frame was presented after that reconfiguration, and the pixels differ from a
+  baseline drawn by the *same* decoder, seek, step count, canvas and scaler with the stage removed.
+  `video-out-params` is set from a real frame in `write_video()`, so it is delivery evidence;
+  `vf-metadata`'s `outputSize` is a configure-time declaration and is not.
+- Gate: [`PictureMetrics`](../src/player/compare/PictureMetrics.hpp) in levels (0-255). A size
+  mismatch is a failure, a baseline below `kMinimumReferenceEdges` refuses with *"this frame has too
+  little detail"*, and the threshold is `max(0.25, 4 x noise floor)`. An NV12 round trip plus one
+  resample measures about 0.02, so a recolour cannot pass.
+- The offscreen render loop renders only on `MPV_RENDER_UPDATE_FRAME` and runs without advanced
+  control: mpv owns the swap, and a timer-driven render re-read a frame the core had already handed
+  over.
+
+`MIKAI_COMPARE_TRACE=1` prints one `[compare] replay ...` line per pass with the decoder, the output
+geometry, the presented-frame count and the step count. `compare_probe --render-only <video>` prints
+the same evidence plus the verdict for every pinned spatial model.
 
 ## 7. Version Upgrade Checklist & Multi-Backend Store Caveats
 

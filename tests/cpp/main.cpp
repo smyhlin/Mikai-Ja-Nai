@@ -35,6 +35,7 @@
 #include "TestCompareClip.hpp"
 #include "TestClipExport.hpp"
 #include "TestCompareLoading.hpp"
+#include "TestComparePipeline.hpp"
 #include "TestNativeAssets.hpp"
 #include "TestNativeUserRecipes.hpp"
 #include "TestNativeBundle.hpp"
@@ -109,7 +110,7 @@ constexpr const char* kSuites[] = {
     "TestHdrRenderContracts", "TestPacingContract", "TestVideoScaling", "TestHoverPreview",
     "TestNativePrefs",
     "TestNativeMenu", "TestNativeUserRecipes", "TestNativeAssets", "TestMpvAsync", "TestCompareGif",
-    "TestCompareClip", "TestClipExport", "TestCompareLoading",
+    "TestCompareClip", "TestClipExport", "TestCompareLoading", "TestComparePipeline",
 #ifdef MIKAI_WITH_MODEL_INSPECTION
     "TestNativeCatalog",
 #endif
@@ -278,6 +279,7 @@ int main(int argc, char** argv) {
   TestCompareClip compareClip;
   TestClipExport clipExport;
   TestCompareLoading compareLoading;
+  TestComparePipeline comparePipeline;
 #ifdef MIKAI_WITH_MODEL_INSPECTION
   TestNativeCatalog nativeCatalog;
 #endif
@@ -397,6 +399,7 @@ int main(int argc, char** argv) {
   run("TestCompareClip", &compareClip, true);
   run("TestClipExport", &clipExport, true);
   run("TestCompareLoading", &compareLoading, true);
+  run("TestComparePipeline", &comparePipeline, true);
   runWrapper("TestDownloads", runTestDownloads);
   runWrapper("TestDiagnostics", runTestDiagnostics);
   runWrapper("TestApiClient", runTestApiClient);

@@ -40,6 +40,7 @@
 #include "CompareCanvas.hpp"
 #include "ComparePane.hpp"
 #include "CompareRenderer.hpp"
+#include "PictureMetrics.hpp"
 #include "CompareWindow.hpp"
 #include "PlayerDialog.hpp"
 #include "PlayerShell.hpp"
@@ -257,27 +258,6 @@ bool waitForPlaybackProgress(VideoSurface* surface, uint64_t sourceEpoch,
 /// Mean absolute per-channel difference, inside the picture band only. The
 /// framebuffer includes the letterbox bars, whose edges read as a huge
 /// difference, so the whole image would be measured against the wrong thing.
-double meanDifference(const QImage& a, const QImage& b) {
-    if (a.isNull() || b.isNull() || a.size() != b.size()) {
-        return -1.0;
-    }
-    const QRect band(a.width() / 8, a.height() / 8, a.width() * 3 / 4, a.height() * 3 / 4);
-    const QImage left = a.convertToFormat(QImage::Format_RGB888);
-    const QImage right = b.convertToFormat(QImage::Format_RGB888);
-    double total = 0.0;
-    qint64 counted = 0;
-    for (int y = band.top(); y < band.bottom(); ++y) {
-        for (int x = band.left(); x < band.right(); ++x) {
-            const QRgb pa = left.pixel(x, y);
-            const QRgb pb = right.pixel(x, y);
-            total += std::abs(qRed(pa) - qRed(pb)) + std::abs(qGreen(pa) - qGreen(pb)) +
-                     std::abs(qBlue(pa) - qBlue(pb));
-            counted += 3;
-        }
-    }
-    return counted > 0 ? total / static_cast<double>(counted) : -1.0;
-}
-
 double centerRegionDifference(const QImage& a, const QImage& b) {
     if (a.isNull() || b.isNull() || a.size() != b.size()) {
         return -1.0;
@@ -956,27 +936,6 @@ namespace {
 /// A colour-matrix or range shift moves luminance uniformly and leaves this
 /// almost untouched, while a spatial model adds edges and texture, so the pair
 /// (mean shift, edge gain) separates "processed" from "recoloured".
-double edgeEnergy(const QImage& image) {
-    if (image.isNull()) return -1.0;
-    const QImage gray = image.convertToFormat(QImage::Format_Grayscale8);
-    const QRect band(gray.width() / 8, gray.height() / 8, gray.width() * 3 / 4,
-                     gray.height() * 3 / 4);
-    double total = 0.0;
-    qint64 counted = 0;
-    for (int y = band.top() + 1; y < band.bottom() - 1; ++y) {
-        const uchar* above = gray.constScanLine(y - 1);
-        const uchar* row = gray.constScanLine(y);
-        const uchar* below = gray.constScanLine(y + 1);
-        for (int x = band.left() + 1; x < band.right() - 1; ++x) {
-            const int laplacian = 4 * int(row[x]) - int(above[x]) - int(below[x]) -
-                                  int(row[x - 1]) - int(row[x + 1]);
-            total += std::abs(laplacian) / 4.0;
-            ++counted;
-        }
-    }
-    return counted > 0 ? total / static_cast<double>(counted) : -1.0;
-}
-
 /// True once the pinned store reports this backend's verified record.
 QString describePlan(const native::AnimeJanaiPlan& plan) {
     return QStringLiteral("preset=%1 backend=%2 stages=%3 aji=%4 available=%5 reason=%6")
@@ -1170,7 +1129,13 @@ int runCompareRenderOnly(const QString& video) {
     };
     QElapsedTimer clock;
     clock.start();
-    if (!renderer.capture(video, 5.0, QSize(1280, 720), never, progress,
+    // A benchmark clip can be shorter than five seconds; a hold past EOF is a
+    // different frame than the one under test, so the timestamp is selectable.
+    bool timeOk = false;
+    const double holdTime = qEnvironmentVariable("COMPARE_PROBE_TIME").toDouble(&timeOk);
+    const double timestamp = timeOk && holdTime >= 0.0 ? holdTime : 5.0;
+    std::fprintf(stderr, "     hold timestamp %.3f s\n", timestamp);
+    if (!renderer.capture(video, timestamp, QSize(1280, 720), never, progress,
                           std::function<QImage()>{}, nullptr)) {
         std::fprintf(stderr, "FAIL capture: %s\n", qPrintable(renderer.error()));
         return 1;
@@ -1210,22 +1175,34 @@ int runCompareRenderOnly(const QString& video) {
             return 1;
         }
         ++rendered;
-        const double shift = meanDifference(original, image);
-        const double edges = edgeEnergy(image);
+        // A native candidate is judged against the baseline drawn through its
+        // own decoder, seek and step count with the stage removed: that is the
+        // only picture a model's effect may be measured against.
+        const QImage baseline = renderer.baseline().isNull() ? original : renderer.baseline();
+        const shell::EffectVerdict verdict = shell::judgeEffect(baseline, image);
+        const double shift = shell::meanDifference(baseline, image);
+        const double edges = shell::edgeEnergy(image);
         const double gain = originalEdges > 0.0 ? edges / originalEdges : 0.0;
         std::fprintf(stderr,
-                     "%s %s: shift %.4f/255, edge gain x%.3f, %dx%d, %lld ms\n",
-                     shift > 0.01 ? "ok  " : "FAIL", qPrintable(id), shift, gain,
-                     image.width(), image.height(),
-                     static_cast<long long>(clock.elapsed()));
+                     "%s %s: shift %.4f/255, edge gain x%.3f, %dx%d, verdict=%d floor=%.3f "
+                     "edgesRef=%.3f, %lld ms, %s\n",
+                     verdict.kind == shell::EffectVerdict::Kind::Ok ? "ok  " : "FAIL",
+                     qPrintable(id), shift, gain, image.width(), image.height(),
+                     static_cast<int>(verdict.kind), verdict.floor, verdict.referenceEdges,
+                     static_cast<long long>(clock.elapsed()),
+                     qPrintable(renderer.replaySummary()));
         image.save(QStringLiteral(".probe-out/compare-render-%1.png")
                        .arg(QString(id).replace(QLatin1Char(':'), QLatin1Char('_'))));
         // Two models that return byte-identical pictures did not run: a
         // recoloured pass-through is the same image for every model, and the
         // mean shift alone cannot tell that from a real result.
-        const QString signature = QString::number(image.width()) + QLatin1Char('x') +
-                                  QString::number(image.height()) + QLatin1Char(':') +
-                                  QString::number(qHash(image.constBits(), image.sizeInBytes()));
+        // Hash the decoded RGB, not the raw buffer: two all-black frames can
+        // still differ in their alpha bytes and would slip past this check.
+        const QImage comparable = image.convertToFormat(QImage::Format_RGB32);
+        const QString signature = QString::number(comparable.width()) + QLatin1Char('x') +
+                                  QString::number(comparable.height()) + QLatin1Char(':') +
+                                  QString::number(qHash(comparable.constBits(),
+                                                        comparable.sizeInBytes()));
         if (const auto duplicate = seenOutputs.constFind(signature);
             duplicate != seenOutputs.cend()) {
             std::fprintf(stderr,
@@ -1237,11 +1214,28 @@ int runCompareRenderOnly(const QString& video) {
         // The NV12 round-trip and one resample move the picture by ~0.02/255, so
         // that is what an unprocessed pass-through looks like. A model that ran
         // moves it by whole intensity steps.
-        if (shift < 0.25) {
+        if (verdict.kind != shell::EffectVerdict::Kind::Ok) {
+            const char* why = "not distinguishable from its own baseline";
+            switch (verdict.kind) {
+                case shell::EffectVerdict::Kind::GeometryMismatch:
+                    why = "the model picture and the baseline have different sizes";
+                    break;
+                case shell::EffectVerdict::Kind::FlatFrame:
+                    why = "this frame has too little detail to compare models";
+                    break;
+                case shell::EffectVerdict::Kind::BlankModel:
+                    why = "the model produced no picture for this frame";
+                    break;
+                case shell::EffectVerdict::Kind::NoBaseline:
+                    why = "the unprocessed baseline could not be drawn";
+                    break;
+                default:
+                    break;
+            }
             std::fprintf(stderr,
-                         "FAIL %s changed the picture by %.4f/255 only: the stage was "
-                         "configured but its frame never reached the surface\n",
-                         qPrintable(id), shift);
+                         "FAIL %s: %s (shift %.4f/255, floor %.4f, edges %.3f, verdict %d)\n",
+                         qPrintable(id), why, shift, verdict.floor, verdict.referenceEdges,
+                         static_cast<int>(verdict.kind));
             return 1;
         }
     }

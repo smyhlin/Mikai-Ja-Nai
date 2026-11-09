@@ -8,9 +8,13 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
+#include <QSize>
 #include <QString>
 #include <QStringList>
 #include <QStringView>
+
+#include <optional>
 
 namespace mplayer::native {
 
@@ -46,6 +50,39 @@ inline constexpr bool animeJanaiBuildFailureEvent(AnimeJanaiBuildLogEvent event)
 }
 
 inline constexpr qsizetype kAnimeJanaiBuildLogTailBytes = 16 * 1024;
+
+/// What the fork reports once a chain's engine is configured: the geometry it
+/// converts from and to, and how many frames the stage holds before answering.
+/// The depth is what tells a replay how far before the wanted frame it has to
+/// start, so a missing depth is reported as missing rather than guessed at the
+/// log-parsing layer.
+struct AnimeJanaiConfiguredSlot {
+    int slot = 0;
+    QSize input;
+    QSize output;
+    std::optional<int> depth;
+};
+
+/// `Configured slot 2001: 480x360 -> 960x720 (depth 3)`. The depth suffix is
+/// optional because older fork builds omit it.
+inline std::optional<AnimeJanaiConfiguredSlot> parseAnimeJanaiConfiguredSlot(
+    QStringView line) {
+    static const QRegularExpression pattern(QStringLiteral(
+        R"(configured slot (\d+):\s*(\d+)x(\d+)\s*->\s*(\d+)x(\d+)(?:\s*\(depth\s*(\d+)\))?)"),
+                                              QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch match = pattern.match(line.toString());
+    if (!match.hasMatch()) return std::nullopt;
+    AnimeJanaiConfiguredSlot parsed;
+    parsed.slot = match.captured(1).toInt();
+    parsed.input = QSize(match.captured(2).toInt(), match.captured(3).toInt());
+    parsed.output = QSize(match.captured(4).toInt(), match.captured(5).toInt());
+    if (!match.captured(6).isEmpty()) parsed.depth = match.captured(6).toInt();
+    return parsed;
+}
+
+/// The ring depth a stage holds before its first real output. Used only when a
+/// build's log did not carry one.
+inline constexpr int kAnimeJanaiDefaultRingDepth = 3;
 
 /// The classic backend writes `<engine>.build.log`; TensorRT-RTX writes
 /// `<engine>.rtxengine.build.log` for builds and `<engine>.rtxengine.warm.log`

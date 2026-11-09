@@ -264,6 +264,7 @@ set(PLAYER_SOURCES
   src/player/compare/CompareExportComplete.cpp
   src/player/compare/CompareLayout.cpp
   src/player/compare/ComparePane.cpp
+  src/player/compare/PictureMetrics.cpp
   src/player/compare/CompareRenderer.cpp
   src/player/compare/CompareWindow.cpp
 )
@@ -307,6 +308,7 @@ set(PLAYER_HEADERS
   src/player/compare/CompareExportComplete.hpp
   src/player/compare/CompareLayout.hpp
   src/player/compare/ComparePane.hpp
+  src/player/compare/PictureMetrics.hpp
   src/player/compare/CompareRenderer.hpp
   src/player/compare/CompareWindow.hpp
 )

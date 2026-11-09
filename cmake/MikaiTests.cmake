@@ -178,6 +178,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/player/TestClipExport.cpp
     tests/cpp/player/TestCompareLoading.hpp
     tests/cpp/player/TestCompareLoading.cpp
+    tests/cpp/player/TestComparePipeline.hpp
+    tests/cpp/player/TestComparePipeline.cpp
     tests/cpp/player/TestPlaybackDiagnostics.hpp
     tests/cpp/player/TestPlaybackDiagnostics.cpp
     tests/cpp/player/TestPlaybackControls.hpp
@@ -378,6 +380,7 @@ if(MIKAI_BUILD_PROBES)
     TestCompareClip
     TestClipExport
     TestCompareLoading
+    TestComparePipeline
     TestModels
     TestReleases
     TestAnime4K

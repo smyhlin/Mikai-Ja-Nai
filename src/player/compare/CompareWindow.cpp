@@ -8,6 +8,7 @@
 #include "CompareExportComplete.hpp"
 #include "CompareExportDialog.hpp"
 #include "CompareRenderer.hpp"
+#include "PictureMetrics.hpp"
 #include "ShellTheme.hpp"
 #include "VideoSurface.hpp"
 #include "native/components/AnimeJanaiCatalogWatcher.hpp"
@@ -84,10 +85,8 @@ constexpr int kMinObserveRounds = 5;
 constexpr int kSettleTimeoutMs = 3000;
 constexpr int kPollIntervalMs = 40;
 constexpr int kMaxPauseReassertions = kSettleTimeoutMs / kPollIntervalMs;
-/// A native render borrows the playback surface; the stage only delivers while
-/// frames flow, so the held frame is replayed for this long before it is read.
-constexpr int kNativePlayWindowMs = 700;
-constexpr int kNativeRenderTimeoutMs = 20 * 60 * 1000;
+/// A native build can wait on an engine; the probe and the UI show progress
+/// for as long as the renderer needs, so this only sizes UI messaging.
 
 /// Mean absolute per-channel difference inside the picture band. A native
 /// stage that never delivered a frame leaves the recoloured pass-through behind:
@@ -1251,6 +1250,7 @@ void CompareWindow::rebuildCandidates() {
     const QString upscalersGroup = tr("Upscalers");
     const QString customGroup = tr("Custom models");
 
+    QHash<QString, bool> temporalPresets;
     QSet<QString> upscalerStems;
     for (const native::UpscalerModel& u : upscalers) {
         upscalerStems.insert(u.fileName.toLower());
@@ -1261,8 +1261,10 @@ void CompareWindow::rebuildCandidates() {
         const auto& profiles = preset.id.startsWith(QLatin1String("builtin_slot:"))
                                    ? managerConfig.customSlots
                                    : defaultProfiles;
-        if (preset.id.startsWith(QLatin1String("rife:")) ||
-            presetUsesRife(preset, profiles, source)) continue;
+        const bool temporal = preset.rife || preset.id.startsWith(QLatin1String("rife:")) ||
+                              presetUsesRife(preset, profiles, source);
+        temporalPresets.insert(preset.id, temporal);
+        if (temporal) continue;
 
         // Do not duplicate upscaler models under custom spatial models
         if (preset.id.startsWith(QLatin1String("spatial:custom:"))) {
@@ -1380,6 +1382,7 @@ void CompareWindow::rebuildCandidates() {
     choices_ = std::move(choices);
     choiceBaseLabels_ = std::move(baseLabels);
     ajiBackends_ = std::move(backends);
+    presetTemporal_ = std::move(temporalPresets);
 }
 
 void CompareWindow::chooseDefaultSelection() {
@@ -1987,75 +1990,6 @@ void CompareWindow::captureFrame() {
 }
 
 /// Renders a native candidate on the playback surface Compare already holds.
-/// The fork's stage is buffered and, like the player that proves it works, only
-/// answers while frames are flowing: a paused surface keeps the picture it
-/// already had, which is why every model used to read as a colour shift. The
-/// plan is applied, playback is allowed for a moment so the stage delivers, the
-/// held timestamp is reseeked and the settled picture read back; the previous
-/// plan, position and pause state are then restored.
-QImage CompareWindow::renderNativeOnPlayer(const native::AnimeJanaiPlan& plan,
-                                           const std::function<bool()>& cancelled,
-                                           QString* failure) {
-    if (surface_ == nullptr || !frozenPlaybackTimestamp_.has_value()) {
-        if (failure != nullptr) *failure = tr("The playing surface is unavailable.");
-        return {};
-    }
-    VideoSurface* live = surface_;
-    const native::AnimeJanaiPlan restorePlan = live->animeJanaiPlan();
-    const bool wasPlaying = live->isPlaying();
-    const double held = *frozenPlaybackTimestamp_;
-    const auto restore = [live, &restorePlan, held, wasPlaying] {
-        live->setAnimeJanaiPlan(restorePlan);
-        live->seek(held);
-        live->setPaused(!wasPlaying);
-    };
-
-    live->setPaused(true);
-    live->setAnimeJanaiPlan(plan);
-
-    QElapsedTimer clock;
-    clock.start();
-    while (!live->animeJanaiProcessingObserved()) {
-        if (cancelled() || clock.elapsed() > kNativeRenderTimeoutMs) {
-            const QString reason = live->animeJanaiStatus();
-            restore();
-            if (failure != nullptr) {
-                *failure = reason.isEmpty()
-                               ? tr("The selected model did not report processing.")
-                               : reason;
-            }
-            return {};
-        }
-        QCoreApplication::processEvents();
-        QThread::msleep(kPollIntervalMs);
-    }
-
-    // Frames have to flow for the stage to hand one over: play across the held
-    // timestamp, then stop and read the picture the pipeline settled on.
-    live->seek(held);
-    live->setPaused(false);
-    QElapsedTimer playClock;
-    playClock.start();
-    while (playClock.elapsed() < kNativePlayWindowMs && !cancelled()) {
-        QCoreApplication::processEvents();
-        QThread::msleep(kPollIntervalMs);
-    }
-    live->setPaused(true);
-    // Read the *held* frame, not the one playback stopped on: the gate compares
-    // this picture with the unprocessed held picture, so both sides must be the
-    // same instant or a mere frame difference would read as model output.
-    live->seek(held);
-    QImage image = grabSettledFrame();
-    restore();
-    if (cancelled()) {
-        if (failure != nullptr) *failure = tr("The comparison was cancelled.");
-        return {};
-    }
-    if (image.isNull() && failure != nullptr)
-        *failure = tr("The comparison surface produced no settled picture.");
-    return image;
-}
-
 QImage CompareWindow::renderIsolated(const QString& id) {
     QPointer<CompareWindow> self(this);
     const quint64 generation = activeRenderGeneration_;
@@ -2172,36 +2106,56 @@ QImage CompareWindow::renderIsolated(const QString& id) {
     }
     pendingAjiId_ = id;
     updateInfo();
-    QString nativeFailure;
-    const QImage image =
-        plan.requiresAji ? renderNativeOnPlayer(plan, cancelled, &nativeFailure)
-                         : renderer->render(id, plan, cancelled, progress);
+    // Every candidate renders through the isolated core. A native plan replays
+    // the real source there, so its output and its baseline share one decoder,
+    // one canvas and one scaler; the playing surface is never modified.
+    const QImage image = renderer->render(id, plan, cancelled, progress);
     const bool stopped = cancelled();
     if (stopped || image.isNull()) renderer->stop();
     if (self == nullptr) return {};
-    // A native stage that never handed its frame over draws the unprocessed
-    // picture: every model then looks identical and only the NV12 round-trip
-    // shows, which reads as "the model only changed the colours". That is a
-    // failed render, not a result.
-    const bool temporalStage = [&plan] {
-        for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
-            if (preset.id != plan.presetId) continue;
-            return preset.rife || preset.id.startsWith(QLatin1String("rife:"));
-        }
-        return plan.presetId.startsWith(QLatin1String("rife:"));
-    }();
+    const bool temporalStage = plan.requiresAji && presetTemporal_.value(plan.presetId, false);
     // A temporal stage interpolates between frames: on the one held frame the
     // comparison shows, its output is the same picture, so a missing pixel
     // change is not evidence that it did not run. Only spatial stages are
     // measured here.
-    if (!stopped && !image.isNull() && plan.requiresAji && !temporalStage &&
-        !isolatedOriginal_.isNull()) {
-        const double effect = pictureDifference(isolatedOriginal_, image);
-        if (effect >= 0.0 && effect < kMinimumModelEffect) {
-            const QString reason =
-                QCoreApplication::translate("CompareWindow",
-                                            "The selected model produced no change in the "
-                                            "comparison frame, so its processing did not run.");
+    if (!stopped && !image.isNull() && plan.requiresAji && !temporalStage) {
+        const mplayer::shell::EffectVerdict verdict =
+            mplayer::shell::judgeEffect(renderer->baseline(), image);
+        QString reason;
+        switch (verdict.kind) {
+            case mplayer::shell::EffectVerdict::Kind::Ok:
+                break;
+            case mplayer::shell::EffectVerdict::Kind::NoBaseline:
+                reason = QCoreApplication::translate(
+                    "CompareWindow",
+                    "The comparison could not draw the unprocessed baseline for the selected "
+                    "model, so its output cannot be verified.");
+                break;
+            case mplayer::shell::EffectVerdict::Kind::GeometryMismatch:
+                reason = QCoreApplication::translate(
+                    "CompareWindow",
+                    "The model's picture and the unprocessed baseline have different sizes, "
+                    "so they cannot be compared.");
+                break;
+            case mplayer::shell::EffectVerdict::Kind::FlatFrame:
+                reason = QCoreApplication::translate(
+                    "CompareWindow",
+                    "This frame has too little detail to compare models. Pick another frame.");
+                break;
+            case mplayer::shell::EffectVerdict::Kind::BlankModel:
+                reason = QCoreApplication::translate(
+                    "CompareWindow",
+                    "The selected model produced no picture for this frame, so its output is "
+                    "not a result.");
+                break;
+            case mplayer::shell::EffectVerdict::Kind::NoEffect:
+                reason = QCoreApplication::translate(
+                    "CompareWindow",
+                    "The selected model produced no change in the comparison frame, so its "
+                    "processing did not run.");
+                break;
+        }
+        if (!reason.isEmpty()) {
             renderer->stop();
             ajiErrors_.insert(id, reason);
             finishIsolatedBuild(BuildSummaryKind::Failed, reason);
@@ -2210,7 +2164,7 @@ QImage CompareWindow::renderIsolated(const QString& id) {
         }
     }
     if (!stopped && image.isNull()) {
-        const QString reason = nativeFailure.isEmpty() ? renderer->error() : nativeFailure;
+        const QString reason = renderer->error();
         ajiErrors_.insert(id, reason);
         finishIsolatedBuild(BuildSummaryKind::Failed, reason);
     } else if (image.isNull()) {

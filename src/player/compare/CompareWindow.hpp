@@ -158,8 +158,6 @@ private:
     void render();
     void renderOnce();
     QImage renderIsolated(const QString& id);
-    QImage renderNativeOnPlayer(const native::AnimeJanaiPlan& plan,
-                                const std::function<bool()>& cancelled, QString* failure);
     void abandonIsolatedRenderer();
     void finishIsolatedRetry();
     void dismissCandidateMenus();
@@ -248,6 +246,9 @@ private:
     /// refreshes instead of accumulating suffixes.
     QHash<QString, QString> choiceBaseLabels_;
     QHash<QString, native::Backend> ajiBackends_;
+    /// Presets whose chain interpolates frames, decided from the preset and its
+    /// activation ranges rather than from an id prefix.
+    QHash<QString, bool> presetTemporal_;
     QHash<QString, QString> ajiErrors_;
     QStringList selection_;
     QString currentCandidateId_;

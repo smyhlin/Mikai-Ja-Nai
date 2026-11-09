@@ -1382,7 +1382,7 @@
         <translation>Вибрану програму шейдерів Anime4K не підготовлено.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="218"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="217"/>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="1361"/>
         <source>The selected AnimeJaNai preset is not recognised.</source>
         <translation>Вибраний пресет AnimeJaNai не розпізнано.</translation>
@@ -1737,141 +1737,184 @@
 <context>
     <name>CompareRenderer</name>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="819"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="1217"/>
         <source>This source exceeds the internal comparison target, so x2 upscaling candidates may render unchanged.</source>
         <translation>Це джерело перевищує внутрішню ціль порівняння, тому кандидати x2 апскейлінгу можуть відображатися без змін.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="347"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="414"/>
         <source>Building the comparison TensorRT engine</source>
         <translation>Збирання рушія TensorRT для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="178"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="235"/>
         <source>The comparison source frame is unreadable.</source>
         <translation>Кадр джерела для порівняння не читається.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="185"/>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="199"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="242"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="254"/>
         <source>The comparison source frame could not be written.</source>
         <translation>Не вдалося записати кадр джерела для порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="232"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="292"/>
         <source>The comparison OpenGL context could not be created.</source>
         <translation>Не вдалося створити контекст OpenGL для порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="240"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="300"/>
         <source>The comparison OpenGL context is unavailable.</source>
         <translation>Контекст OpenGL для порівняння недоступний.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="321"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="388"/>
         <source>TensorRT for RTX did not start and the core fell back to TensorRT; the comparison did not run the requested backend: %1</source>
         <translation>TensorRT for RTX не запустився, і ядро перейшло на TensorRT; порівняння не виконало запитаний бекенд: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="342"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="409"/>
         <source>Preparing the comparison TensorRT for RTX engine</source>
         <translation>Підготовка рушія TensorRT for RTX для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="343"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="410"/>
         <source>Building the comparison TensorRT for RTX engine</source>
         <translation>Збирання рушія TensorRT for RTX для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="346"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="413"/>
         <source>Preparing the comparison TensorRT engine</source>
         <translation>Підготовка рушія TensorRT для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="403"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="495"/>
         <source>The comparison OpenGL context was lost.</source>
         <translation>Контекст OpenGL для порівняння було втрачено.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="459"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="501"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="1081"/>
+        <source>The comparison framebuffer is unavailable.</source>
+        <translation>Буфер кадру порівняння недоступний.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="584"/>
         <source>The comparison command did not complete.</source>
         <translation>Команда порівняння не завершилася вчасно.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="463"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="588"/>
         <source>The comparison command failed: %1</source>
         <translation>Помилка виконання команди порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="580"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="640"/>
+        <source>The comparison geometry is unavailable.</source>
+        <translation>Геометрія порівняння недоступна.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="696"/>
         <source>The comparison model was configured but produced no frame; the pipeline stalled before its output reached the surface.</source>
         <translation>Модель порівняння налаштована, але не видала кадру: конвеєр зупинився до того, як її результат потрапив на поверхню.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="629"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="717"/>
+        <source>The comparison source does not report a frame cadence, so the model cannot replay it frame by frame.</source>
+        <translation>Джерело порівняння не повідомляє частоту кадрів, тому модель не може відтворити його покадрово.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="786"/>
+        <source>The comparison source produced no frame to replay.</source>
+        <translation>Джерело порівняння не видало жодного кадру для відтворення.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="811"/>
+        <source>The held frame is too close to the start of the file for the model&apos;s input buffer, so the replay starts at the first frame.</source>
+        <translation>Утримуваний кадр надто близько до початку файлу для вхідного буфера моделі, тому відтворення починається з першого кадру.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="832"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="848"/>
+        <source>A processed frame reached the output but was never presented.</source>
+        <translation>Оброблений кадр дійшов до виходу, але так і не був показаний.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="856"/>
+        <source>The comparison model was configured for %1x%2, but the delivered picture is %3x%4.</source>
+        <translation>Модель порівняння налаштована на %1x%2, але показане зображення має розмір %3x%4.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="910"/>
+        <source>Hardware decoding is unavailable, so the comparison cannot run the same pipeline as the player: the core reports the decoder &apos;%1&apos;.</source>
+        <translation>Апаратне декодування недоступне, тому порівняння не може відтворити той самий конвеєр, що й плеєр: ядро повідомляє декодер «%1».</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="1019"/>
         <source>The native comparison source geometry is unavailable.</source>
         <translation>Геометрія нативного джерела порівняння недоступна.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="641"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="1031"/>
         <source>The native comparison framebuffer could not be created.</source>
         <translation>Не вдалося створити фреймбуфер нативного порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="711"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="1106"/>
         <source>The comparison output framebuffer could not be created.</source>
         <translation>Не вдалося створити вихідний фреймбуфер порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="760"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="1147"/>
         <source>The previous AnimeJaNai comparison pipeline has not been detached.</source>
         <translation>Попередній конвеєр порівняння AnimeJaNai ще не від’єднано.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="767"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="1154"/>
         <source>The comparison plan has no owned AnimeJaNai cache keys.</source>
         <translation>План порівняння не містить власних ключів кешу AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="780"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="1167"/>
         <source>The AnimeJaNai stage cache %1 is already in use by %2.</source>
         <translation>Кеш етапу AnimeJaNai %1 уже використовує %2.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="225"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="285"/>
         <source>The comparison frame storage or geometry is unavailable.</source>
         <translation>Буфер кадру або геометрія для порівняння недоступні.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="249"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="309"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="655"/>
         <source>The comparison framebuffer could not be created.</source>
         <translation>Не вдалося створити буфер кадру (framebuffer) для порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="293"/>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="353"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="357"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="420"/>
         <source>The comparison model failed: %1</source>
         <translation>Помилка моделі під час порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="584"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="963"/>
         <source>The comparison output did not settle.</source>
         <translation>Вихідне зображення порівняння не стабілізувалося.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="429"/>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="677"/>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="864"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="522"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="1067"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="1256"/>
         <source>The comparison renderer failed: %1</source>
         <translation>Помилка рендерера порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="275"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="335"/>
         <source>The comparison source could not be loaded: %1</source>
         <translation>Не вдалося завантажити джерело для порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareRenderer.cpp" line="696"/>
+        <location filename="../src/player/compare/CompareRenderer.cpp" line="1091"/>
         <source>The shader chain for %1 could not be resolved.</source>
         <translation>Не вдалося розв’язати ланцюжок шейдерів для %1.</translation>
     </message>
@@ -1879,22 +1922,42 @@
 <context>
     <name>CompareWindow</name>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="125"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="124"/>
         <source>Build comparison TensorRT for RTX engine</source>
         <translation>Зібрати рушій TensorRT for RTX для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="128"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="127"/>
         <source>Build comparison TensorRT engine</source>
         <translation>Зібрати рушій TensorRT для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="211"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="210"/>
         <source>This product is not available for the selected AnimeJaNai backend; install it in Settings › Components.</source>
         <translation>Цей продукт недоступний для вибраного бекенду AnimeJaNai; установіть його в розділі «Налаштування › Компоненти».</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2202"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2129"/>
+        <source>The comparison could not draw the unprocessed baseline for the selected model, so its output cannot be verified.</source>
+        <translation>Порівняння не змогло відтворити необроблений базовий кадр для вибраної моделі, тому її результат неможливо перевірити.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2135"/>
+        <source>The model&apos;s picture and the unprocessed baseline have different sizes, so they cannot be compared.</source>
+        <translation>Зображення моделі та необроблений базовий кадр мають різні розміри, тому їх не можна порівняти.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2141"/>
+        <source>This frame has too little detail to compare models. Pick another frame.</source>
+        <translation>У цьому кадрі замало деталей для порівняння моделей. Виберіть інший кадр.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2146"/>
+        <source>The selected model produced no picture for this frame, so its output is not a result.</source>
+        <translation>Вибрана модель не видала зображення для цього кадру, тому її результат не є моделлю.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2152"/>
         <source>The selected model produced no change in the comparison frame, so its processing did not run.</source>
         <translation>Вибрана модель не змінила кадр порівняння, тому її обробка не виконалася.</translation>
     </message>
@@ -3087,7 +3150,7 @@
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="788"/>
         <location filename="../src/player/shell/PlayerShell.cpp" line="559"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1225"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1224"/>
         <source>Restore (Anime4K)</source>
         <translation>Відновлення (Anime4K)</translation>
     </message>
@@ -3099,7 +3162,7 @@
     <message>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="805"/>
         <location filename="../src/player/shell/PlayerShell.cpp" line="561"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1248"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1247"/>
         <source>Upscale</source>
         <translation>Масштабування</translation>
     </message>
@@ -3642,7 +3705,7 @@
     <name>SettingsDialog</name>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="99"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="192"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="191"/>
         <source>%1 (not available)</source>
         <translation>%1 (недоступно)</translation>
     </message>
@@ -10463,21 +10526,21 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::shell::CompareWindow</name>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2704"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2707"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2658"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2661"/>
         <source>%1 unavailable: %2</source>
         <translation>%1 недоступно: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="731"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="967"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1143"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1163"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="730"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="966"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1142"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1162"/>
         <source>%1%</source>
         <translation>%1%</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2713"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2667"/>
         <source>%n native change(s) queued until Compare closes</source>
         <translation>
             <numerusform>%n нативна зміна в черзі до закриття вікна порівняння</numerusform>
@@ -10486,440 +10549,420 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         </translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="766"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1103"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="765"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1102"/>
         <source>Amplify the difference</source>
         <translation>Підсилення різниці</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="719"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="948"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="718"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="947"/>
         <source>Bilinear</source>
         <translation>Білінійний</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1361"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1363"/>
         <source>Temporal interpolation cannot be compared as a still image.</source>
         <translation>Часову інтерполяцію неможливо порівнювати як статичне зображення.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2456"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2410"/>
         <source>Export failed</source>
         <translation>Не вдалося експортувати</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2694"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2648"/>
         <source>Capture error: %1</source>
         <translation>Помилка захоплення: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1189"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2259"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1188"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2213"/>
         <source>Comparison engine build cancelled.</source>
         <translation>Збирання рушія порівняння скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2257"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2211"/>
         <source>Comparison engine build failed: %1</source>
         <translation>Помилка збирання рушія порівняння: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2255"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2209"/>
         <source>Comparison engine ready.</source>
         <translation>Рушій порівняння готовий.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1956"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1959"/>
         <source>Could not capture a new frame</source>
         <translation>Не вдалося захопити новий кадр</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1945"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1978"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1948"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1981"/>
         <source>Could not capture the playback timestamp</source>
         <translation>Не вдалося отримати часову мітку відтворення</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="764"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1067"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="763"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1066"/>
         <source>Divider position</source>
         <translation>Позиція роздільника</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="723"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="951"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="722"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="950"/>
         <source>Filter</source>
         <translation>Фільтр</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="715"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="942"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="714"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="941"/>
         <source>Filter:</source>
         <translation>Фільтр:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="726"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="958"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="725"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="957"/>
         <source>Fit</source>
         <translation>Вписати</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="728"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="960"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="727"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="959"/>
         <source>Fit the picture</source>
         <translation>Вписати зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="756"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2428"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="755"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2382"/>
         <source>Exporting…</source>
         <translation>Експорт…</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="756"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1018"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2428"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="755"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1017"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2382"/>
         <source>Export…</source>
         <translation>Експортувати…</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="757"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1022"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="756"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1021"/>
         <source>Export the two comparison images</source>
         <translation>Експортувати два зображення порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="758"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1023"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="757"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1022"/>
         <source>Export comparison</source>
         <translation>Експорт порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="762"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1074"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="761"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1073"/>
         <source>Flicker, Hz:</source>
         <translation>Частота, Гц:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="763"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1091"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="762"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1090"/>
         <source>Gain:</source>
         <translation>Підсилення:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="765"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1086"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="764"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1085"/>
         <source>How fast the two pictures alternate</source>
         <translation>Швидкість чергування двох зображень</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="722"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="950"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="721"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="949"/>
         <source>How the picture is scaled</source>
         <translation>Спосіб масштабування зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="703"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="921"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="702"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="920"/>
         <source>Mode:</source>
         <translation>Режим:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2693"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2647"/>
         <source>Native plan not frozen: %1</source>
         <translation>Нативний план не зафіксовано: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="721"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="949"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="720"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="948"/>
         <source>Nearest Neighbor</source>
         <translation>Найближчий сусід</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2312"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2266"/>
         <source>No frame to compare</source>
         <translation>Немає кадру для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1898"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1901"/>
         <source>No playback surface</source>
         <translation>Немає поверхні відтворення</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1902"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1905"/>
         <source>No video to compare</source>
         <translation>Немає відео для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1622"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1625"/>
         <source>Playback advanced after the frozen comparison frame; capture again.</source>
         <translation>Відтворення змістилося після замороженого кадру; захопіть кадр повторно.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2359"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2367"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2313"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2321"/>
         <source>Playback changed during comparison.</source>
         <translation>Відтворення змінилося під час порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1918"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1969"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1921"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1972"/>
         <source>Playback changed during frame capture</source>
         <translation>Відтворення змінилося під час захоплення кадру</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1658"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1661"/>
         <source>Playback could not be held paused for comparison.</source>
         <translation>Не вдалося утримати паузу відтворення для порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1932"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1935"/>
         <source>Playback did not settle while pausing for comparison</source>
         <translation>Відтворення не стабілізувалося під час постановки на паузу для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1605"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1647"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1608"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1650"/>
         <source>Playback resumed during comparison.</source>
         <translation>Відтворення відновилося під час порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1623"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1626"/>
         <source>Playback resumed while the comparison was holding it; waiting for pause.</source>
         <translation>Відтворення відновилося під час порівняння; очікування паузи.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2696"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2650"/>
         <source>Preparing AnimeJaNai %1…</source>
         <translation>Підготовка AnimeJaNai %1…</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="357"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="701"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="356"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="700"/>
         <source>Quality Comparison</source>
         <translation>Порівняння якості</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2697"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2651"/>
         <source>Rendering %1…</source>
         <translation>Рендеринг %1…</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="761"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1054"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="760"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1053"/>
         <source>Split:</source>
         <translation>Поділ:</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="856"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="855"/>
         <source>The native plan cannot be frozen right now.</source>
         <translation>Нативний план наразі неможливо зафіксувати.</translation>
     </message>
     <message>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2254"/>
         <location filename="../src/player/compare/CompareWindow.cpp" line="2300"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2346"/>
         <source>The playback surface was destroyed</source>
         <translation>Поверхню відтворення було знищено</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1979"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1982"/>
         <source>The playback timestamp changed while capturing the frame</source>
         <translation>Часова мітка відтворення змінилася під час захоплення кадру</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2303"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2257"/>
         <source>The source changed after the frame was captured</source>
         <translation>Джерело відео змінилося після захоплення кадру</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2347"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2301"/>
         <source>The source changed during comparison rendering</source>
         <translation>Джерело змінилося під час рендерингу порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="415"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1591"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1638"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="414"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1594"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1641"/>
         <source>The source changed during comparison.</source>
         <translation>Джерело змінилося під час порівняння.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1955"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1976"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1958"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1979"/>
         <source>The source changed during frame capture</source>
         <translation>Джерело змінилося під час захоплення кадру</translation>
     </message>
     <message>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="731"/>
         <location filename="../src/player/compare/CompareWindow.cpp" line="732"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="733"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="970"/>
         <location filename="../src/player/compare/CompareWindow.cpp" line="971"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="972"/>
         <source>View scale</source>
         <translation>Масштаб перегляду</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2716"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2670"/>
         <source>mean difference %1/255</source>
         <translation>середня різниця %1/255</translation>
     </message>
     <message>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="482"/>
         <location filename="../src/player/compare/CompareWindow.cpp" line="483"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="484"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="746"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="748"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="745"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="747"/>
         <source>Pinned</source>
         <translation>Закріплено</translation>
     </message>
     <message>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="482"/>
         <location filename="../src/player/compare/CompareWindow.cpp" line="483"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="484"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="746"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="748"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="999"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1005"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="745"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="747"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="998"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1004"/>
         <source>Pin</source>
         <translation>Закріпити</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="579"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="578"/>
         <source>Exit fullscreen mode (F11)</source>
         <translation>Вийти з повноекранного режиму (F11)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="580"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="579"/>
         <source>Enter fullscreen mode (F11)</source>
         <translation>Перейти в повноекранний режим (F11)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="727"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="959"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="726"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="958"/>
         <source>Fit the picture (F)</source>
         <translation>Вписати зображення (F)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="736"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="738"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="981"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="986"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="735"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="737"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="980"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="985"/>
         <source>Swap A ⇄ B</source>
         <translation>Поміняти A ⇄ B</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="737"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="985"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="736"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="984"/>
         <source>Swap Side A and Side B (S)</source>
         <translation>Поміняти місцями сторони A та B (S)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="741"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="743"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="990"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="995"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="740"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="742"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="989"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="994"/>
         <source>Recapture</source>
         <translation>Перезахопити</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="742"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="994"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="741"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="993"/>
         <source>Capture the current player frame (R)</source>
         <translation>Захопити поточний кадр плеєра (R)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="747"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1004"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="746"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1003"/>
         <source>Keep Compare window always on top (P)</source>
         <translation>Закріпити вікно порівняння поверх інших (P)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="751"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1030"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="750"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1029"/>
         <source>Close</source>
         <translation>Закрити</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="752"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1031"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="751"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1030"/>
         <source>Close (Esc)</source>
         <translation>Закрити (Esc)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="753"/>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1032"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="752"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1031"/>
         <source>Close Compare window</source>
         <translation>Закрити вікно порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1224"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1223"/>
         <source>Presets</source>
         <translation>Пресети</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1241"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1240"/>
         <source>Missing shader file(s): %1</source>
         <translation>Відсутні файли шейдерів: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1249"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1248"/>
         <source>Profiles</source>
         <translation>Профілі</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1250"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1249"/>
         <source>Spatial models</source>
         <translation>Просторові моделі</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1251"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1250"/>
         <source>Upscalers</source>
         <translation>Засоби масштабування</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1252"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1251"/>
         <source>Custom models</source>
         <translation>Власні моделі</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1297"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1299"/>
         <source>Not downloaded. Install this graph from Components.</source>
         <translation>Не завантажено. Установіть цей граф у розділі «Компоненти».</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1301"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1303"/>
         <source>The installed graph could not be verified.</source>
         <translation>Не вдалося перевірити встановлений граф.</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="1321"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="1323"/>
         <source>Not downloaded. Install this graph from Settings › Upscalers.</source>
         <translation>Не завантажено. Установіть цей граф у розділі «Налаштування › Засоби масштабування».</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2000"/>
-        <source>The playing surface is unavailable.</source>
-        <translation>Поверхня відтворення недоступна.</translation>
-    </message>
-    <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2024"/>
-        <source>The selected model did not report processing.</source>
-        <translation>Вибрана модель не повідомила про обробку.</translation>
-    </message>
-    <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2051"/>
-        <source>The comparison was cancelled.</source>
-        <translation>Порівняння скасовано.</translation>
-    </message>
-    <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2055"/>
-        <source>The comparison surface produced no settled picture.</source>
-        <translation>Поверхня порівняння не видала усталеного кадру.</translation>
-    </message>
-    <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2164"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2098"/>
         <source>%1 (%2)</source>
         <translation>%1 (%2)</translation>
     </message>
     <message>
-        <location filename="../src/player/compare/CompareWindow.cpp" line="2652"/>
+        <location filename="../src/player/compare/CompareWindow.cpp" line="2606"/>
         <source>%1, %2 · %3 (%4, %5, %6)</source>
         <translation>%1, %2 · %3 (%4, %5, %6)</translation>
     </message>

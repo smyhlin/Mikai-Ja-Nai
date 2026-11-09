@@ -127,6 +127,10 @@ public:
 
     void loadFile(const std::string& url);
     void seek(double seconds);
+    /// `exact` decodes from the keyframe and lands on the requested timestamp
+    /// instead of the nearest keyframe. A frame-accurate replay needs it; the
+    /// plain form keeps the user's hr-seek setting.
+    void seekExact(double seconds);
     void setPaused(bool paused);
     void setSpeed(double speed);
     void setVolume(double volume);

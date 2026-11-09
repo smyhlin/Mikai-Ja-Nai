@@ -402,6 +402,12 @@ void MpvHandle::seek(double seconds) {
     require(api_->command(handle_, cmd), "seek");
 }
 
+void MpvHandle::seekExact(double seconds) {
+    const std::string at = QString::number(seconds, 'f', 6).toStdString();
+    const char* cmd[] = {"seek", at.c_str(), "absolute+exact", nullptr};
+    require(api_->command(handle_, cmd), "seek");
+}
+
 void MpvHandle::setPaused(bool paused) { setFlag("pause", paused); }
 void MpvHandle::setSpeed(double speed) { setNumber("speed", speed); }
 void MpvHandle::setVolume(double volume) { setNumber("volume", volume); }

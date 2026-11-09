@@ -8,6 +8,7 @@
 #include "MpvHandle.hpp"
 #include "MpvRenderContext.hpp"
 #include "native/components/AnimeJanaiBuildLog.hpp"
+#include "native/components/NativePipelineSpec.hpp"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -22,6 +23,7 @@
 #include <QThread>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 
 namespace mplayer::shell {
@@ -64,36 +66,33 @@ void preloadCompareBackendLibs(const QStringList& dirs) {
 
 namespace {
 constexpr int kPollMs = 40;
+/// A frame-step or a restart is answered in milliseconds; polling at the
+/// still-render cadence would multiply that by the step count.
+constexpr int kFrameWaitMs = 5;
 constexpr int kSourceTimeoutMs = 20000;
+constexpr int kStepTimeoutMs = 10000;
 constexpr int kBuildTimeoutMs = 20 * 60 * 1000;
-/// Frames written for the still. A buffered native stage warms up over a
-/// sequence, so one frame is not enough input to answer with.
-constexpr int kStillFrameRepeats = 40;
+/// Steps allowed past the computed point before a replay is declared stalled.
+constexpr int kMaxExtraSteps = 8;
 
 struct CommandResult {
     bool finished = false;
     int error = 0;
 };
 
-/// A frame that carries no picture. Every pass clears the target to black
-/// before mpv draws, so a refused or stalled frame is distinguishable from a
-/// dark scene only by measuring it: a film's darkest shot still carries some
-/// mid-tones over a whole picture.
-bool carriesNoPicture(const QImage& image) {
-    if (image.isNull()) return true;
-    const QImage gray = image.convertToFormat(QImage::Format_Grayscale8);
-    const QRect band(gray.width() / 8, gray.height() / 8, gray.width() * 3 / 4,
-                     gray.height() * 3 / 4);
-    quint64 total = 0;
-    qint64 counted = 0;
-    for (int y = band.top(); y < band.bottom(); y += 3) {
-        const uchar* row = gray.constScanLine(y);
-        for (int x = band.left(); x < band.right(); x += 3) {
-            total += row[x];
-            ++counted;
-        }
+/// Failures that mean the stage is gone or its output cannot be displayed.
+/// Everything else is diagnostic text: the fork logs ordinary progress at error
+/// level during a build, and aborting on any line that says "error" killed
+/// renders that were working.
+bool isFatalComparisonLog(const QString& prefix, const QString& text) {
+    if (prefix == QLatin1String("vf") || prefix.contains(QLatin1String("aji"))) {
+        return text.contains(QLatin1String("because it has failed")) ||
+               text.contains(QLatin1String("Cannot convert decoder/filter output")) ||
+               text.contains(QLatin1String("Failed to create inference context")) ||
+               text.contains(QLatin1String("engine set up failed"), Qt::CaseInsensitive) ||
+               text.contains(QLatin1String("failed to load engine"), Qt::CaseInsensitive);
     }
-    return counted == 0 || total / static_cast<quint64>(counted) < 4;
+    return text.contains(QLatin1String("Cannot convert decoder/filter output"));
 }
 
 // GL objects are allocated and released through the driver while mpv's render
@@ -144,6 +143,7 @@ struct CompareRenderer::State {
     double sourceTimestamp = 0.0;
     QString error;
     QString framePath;
+    QList<QPair<QString, QString>> stillOptions;
     QString buildDetail;
     bool restarted = false;
     bool processingObserved = false;
@@ -158,6 +158,38 @@ struct CompareRenderer::State {
     int ajiPollIndex = 0;
     QStringList ajiLabels;
     std::shared_ptr<native::AnimeJanaiStageBuildLease> stageBuildLease;
+
+    // ── native replay ────────────────────────────────────────────────────
+    /// Real source facts the replay needs: its coded geometry, its cadence and
+    /// whether the decoder it opened actually feeds the backend.
+    QSize sourceCodedSize;
+    double sourceFrameDuration = 0.0;
+    /// The last picture mpv handed us. Only a pump that consumed a frame
+    /// replaces it, so a paused core is never re-read as fresh delivery.
+    QImage lastFrame;
+    /// The same-canvas picture of the last native render with its stage
+    /// removed: the only honest baseline for a model's effect.
+    QImage baselineFrame;
+    /// Set by mpv's update callback on its own thread; only read as a hint by
+    /// the poll, which never depends on it for correctness.
+    std::atomic<bool> framePending{false};
+    quint64 presentedFrames = 0;
+    quint64 updateCalls = 0;
+    quint64 updateFrameFlags = 0;
+    QString lastHwdec;
+    QString lastStageInput;
+    QSize lastVoOutputSize;
+    native::AnimeJanaiConfiguredSlot configuredSlot;
+    /// The FBO geometry the last replay drew into.
+    QSize canvasSize;
+    /// Evidence of the last staged replay, kept after the baseline pass has
+    /// overwritten the live counters.
+    QString modelSummary;
+    /// Bumped by stop(): a nested wait loop that outlives its renderer stops
+    /// instead of touching a torn-down core. The loops pump processEvents, so a
+    /// close or a second render can otherwise re-enter this state.
+    quint64 generation = 1;
+    int replaySteps = 0;
 
     ~State() {
         // State dies on CompareWindow's GUI thread, so the guard makes the
@@ -187,37 +219,40 @@ struct CompareRenderer::State {
             return false;
         }
         const int rowBytes = rgb.width() * 3;
-        // A native stage buffers several input frames before it answers, and the
-        // loop filter alone leaves it warming up forever. The same picture is
-        // written as a short sequence instead, so the stage receives the frames
-        // it waits for; every output frame is the same frozen input.
-        for (int repeat = 0; repeat < kStillFrameRepeats; ++repeat) {
-            for (int y = 0; y < rgb.height(); ++y) {
-                if (cancelled && cancelled()) return false;
-                if (file.write(reinterpret_cast<const char*>(rgb.constScanLine(y)), rowBytes) !=
-                    rowBytes) {
-                    error = QCoreApplication::translate(
-                        "CompareRenderer", "The comparison source frame could not be written.");
-                    return false;
-                }
+        // One frame is the whole picture: the core repeats it with a loop
+        // filter, so extra copies are bytes nobody reads. A 4K frame is 24.9 MB
+        // and this write is on the GUI thread.
+        for (int y = 0; y < rgb.height(); ++y) {
+            if (cancelled && cancelled()) return false;
+            if (file.write(reinterpret_cast<const char*>(rgb.constScanLine(y)), rowBytes) !=
+                rowBytes) {
+                error = QCoreApplication::translate(
+                    "CompareRenderer", "The comparison source frame could not be written.");
+                return false;
             }
         }
         file.close();
         // mpv splits this option on commas, not colons; colon-joined pairs are
         // read as one unknown value and the demuxer falls back to yuv420p, which
         // turns the still into coloured noise.
-        const std::string pixelFormat = "video_size=" + std::to_string(rgb.width()) + "x" +
-                                        std::to_string(rgb.height()) +
-                                        ",pixel_format=rgb24,framerate=25";
-        // The lavf selector plus the rawvideo format is what makes the three
-        // options reach libavformat: with `demuxer=rawvideo` alone they were
-        // dropped and the core sized the still at its own default, which is the
-        // diagonal colour noise a wrong stride produces.
-        const Cancelled never = [] { return false; };
-        if (!waitForCommand(command({"set", "demuxer", "lavf"}), never)) return false;
-        if (!waitForCommand(command({"set", "demuxer-lavf-format", "rawvideo"}), never)) return false;
-        if (!waitForCommand(command({"set", "demuxer-lavf-o", pixelFormat}), never)) return false;
+        const QString pixelFormat =
+            QStringLiteral("video_size=%1x%2,pixel_format=rgb24,framerate=25")
+                .arg(rgb.width())
+                .arg(rgb.height());
+        // Per-file options, not global ones: a failed native render re-creates
+        // the core, and global demuxer settings die with it - the next still
+        // then opens the raw file as a real container.
+        stillOptions = {{QStringLiteral("demuxer"), QStringLiteral("lavf")},
+                        {QStringLiteral("demuxer-lavf-format"), QStringLiteral("rawvideo")},
+                        {QStringLiteral("demuxer-lavf-o"), pixelFormat}};
         return true;
+    }
+
+    bool loadStill(const QString& startText, const Cancelled& cancelled) {
+        QList<QPair<QString, QString>> options = stillOptions;
+        if (!startText.isEmpty())
+            options.append({QStringLiteral("start"), startText});
+        return loadWithOptions(framePath, options, cancelled);
     }
 
     bool initialize(const QSize& size, double timestamp) {
@@ -287,12 +322,16 @@ struct CompareRenderer::State {
                         diagnosticTail.append(text);
                         while (diagnosticTail.size() > 3) diagnosticTail.removeFirst();
                     }
-                    if (acceptBuildEvidence && (prefix == QLatin1String("vf") || prefix.contains(QLatin1String("aji")))) {
-                        if (error.isEmpty() && (text.contains(QLatin1String("error"), Qt::CaseInsensitive) ||
-                                                text.contains(QLatin1String("failed"), Qt::CaseInsensitive))) {
-                            error = QCoreApplication::translate("CompareRenderer", "The comparison model failed: %1")
-                                        .arg(text);
-                        }
+                    // Only a failure that means the stage is gone or the frame
+                    // cannot be displayed aborts the render. Matching the word
+                    // "error" anywhere killed good renders on messages that
+                    // merely mentioned one, and let real failures logged at
+                    // another level through.
+                    if (acceptBuildEvidence && error.isEmpty() &&
+                        isFatalComparisonLog(prefix, text)) {
+                        error = QCoreApplication::translate("CompareRenderer",
+                                                           "The comparison model failed: %1")
+                                    .arg(text);
                     }
                 }
                 const QString combined = prefix + QLatin1Char(' ') + text;
@@ -311,7 +350,10 @@ struct CompareRenderer::State {
                                                          requestedSlot);
                 if (buildEvent == native::AnimeJanaiBuildLogEvent::SlotConfigured) {
                     ++configuredStages;
-                    processingObserved = configuredStages >= ajiLabels.size();
+                    if (const auto configured = native::parseAnimeJanaiConfiguredSlot(combined))
+                        configuredSlot = *configured;
+                    processingObserved =
+                        !ajiLabels.isEmpty() && configuredStages >= ajiLabels.size();
                 }
                 if (buildEvent == native::AnimeJanaiBuildLogEvent::BackendSubstituted) {
                     // The dispatcher kept running on the classic backend after
@@ -354,16 +396,14 @@ struct CompareRenderer::State {
                                 .arg((tail.isEmpty() ? diagnosticTail : tail).join(QLatin1Char('\n')));
                 }
             });
-            // Advanced control is required, not optional: a native stage buffers
-            // frames on its own thread, and only the caller-driven render loop
-            // hands those asynchronous frames to the video output. Without it
-            // mpv draws the frame it already had, the stage's declared output
-            // size never becomes a delivered picture, and every model reads as a
-            // recoloured pass-through. The callback is empty because this path
-            // pumps on its own schedule; the loop it must answer is update ->
-            // render -> report_swap, which pump() already performs.
-            rendering = std::make_unique<MpvRenderContext>(*core, loadGlApi(),
-                                                           std::function<void()>{}, true);
+            // Advanced control stays off, which is the mode this offscreen
+            // renderer is meant to run in: mpv owns the swap, and nothing here
+            // has to answer every callback with report_swap(). The callback only
+            // marks that mpv has output; pumpFrame() draws it when update()
+            // reports a new frame.
+            rendering = std::make_unique<MpvRenderContext>(
+                *core, loadGlApi(),
+                [this] { framePending.store(true, std::memory_order_release); }, false);
             rendering->setFlipY(true);
         }
         return true;
@@ -392,49 +432,109 @@ struct CompareRenderer::State {
         return result;
     }
 
-    QImage pump() {
-        core->drainEvents();
-        QImage image;
-        {
-            // Scoped so the nested event loop below runs with no comparison
-            // context current: whatever it reaches has to bind its own surface.
-            const ScopedCurrent current(context, &target);
-            if (!current) {
-                error = QCoreApplication::translate("CompareRenderer", "The comparison OpenGL context was lost.");
-                return {};
-            }
-            QOpenGLFramebufferObject* activeFbo =
-                (useUpscaleTarget && upscaleFramebuffer && upscaleFramebuffer->isValid())
-                    ? upscaleFramebuffer.get()
-                    : framebuffer.get();
-            rendering->update();
-            activeFbo->bind();
-            // The same defined black the live surface paints before mpv draws
-            // into it, and the same viewport: an FBO that was never cleared
-            // keeps the previous frame's pixels around whatever the new picture
-            // covers, which reads as a stale or half-lit frame after a model
-            // switch whose output size did not change with the filter.
-            if (QOpenGLFunctions* gl = context.functions()) {
-                gl->glViewport(0, 0, activeFbo->width(), activeFbo->height());
-                gl->glDisable(GL_SCISSOR_TEST);
-                gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-                gl->glClear(GL_COLOR_BUFFER_BIT);
-            }
-            const int targetFormat =
-                static_cast<int>(activeFbo->format().internalTextureFormat());
-            const int result = rendering->render(activeFbo->handle(), activeFbo->width(),
-                                                 activeFbo->height(), targetFormat, 8);
-            rendering->reportSwap();
-            if (result < 0) {
-                error = QCoreApplication::translate("CompareRenderer", "The comparison renderer failed: %1")
-                            .arg(QString::fromStdString(core->describeError(result)));
-            } else {
-                image = activeFbo->toImage();
-            }
+    QOpenGLFramebufferObject* activeTarget() {
+        return (useUpscaleTarget && upscaleFramebuffer && upscaleFramebuffer->isValid())
+                   ? upscaleFramebuffer.get()
+                   : framebuffer.get();
+    }
+
+    /// Records what the output and the decoder report for the frame just drawn.
+    /// These are the delivery signals a verdict may rest on: `video-out-params`
+    /// is set from the frame `write_video()` handed the output, so it names the
+    /// geometry of a picture that really left the filter chain.
+    void observeDelivery() {
+        try {
+            lastVoOutputSize = QSize(qRound(core->getNumber("video-out-params/w")),
+                                     qRound(core->getNumber("video-out-params/h")));
+        } catch (const MpvError&) {
+            lastVoOutputSize = {};
         }
+        try {
+            lastHwdec = QString::fromStdString(core->getString("hwdec-current"));
+        } catch (const MpvError&) {
+            lastHwdec.clear();
+        }
+    }
+
+    /// Draws exactly the frame mpv handed over, and nothing otherwise. The
+    /// update flag is the delivery signal: a paused core that has no new frame
+    /// leaves the previous picture in place, and re-drawing on a timer is what
+    /// made every model look identical while the first frame of a freshly
+    /// rebuilt stage was still on screen.
+    bool pumpFrame() {
+        core->drainEvents();
+        if (!rendering) return false;
+        // Scoped so anything the drain below reaches binds its own surface.
+        const ScopedCurrent current(context, &target);
+        if (!current) {
+            error = QCoreApplication::translate("CompareRenderer",
+                                                "The comparison OpenGL context was lost.");
+            return false;
+        }
+        QOpenGLFramebufferObject* activeFbo = activeTarget();
+        if (activeFbo == nullptr || !activeFbo->isValid()) {
+            error = QCoreApplication::translate(
+                "CompareRenderer", "The comparison framebuffer is unavailable.");
+            return false;
+        }
+        ++updateCalls;
+        if ((rendering->update() & MPV_RENDER_UPDATE_FRAME) == 0) return false;
+        ++updateFrameFlags;
+        activeFbo->bind();
+        // The same defined black the live surface paints before mpv draws into
+        // it, and the same viewport: an FBO that was never cleared keeps the
+        // previous frame's pixels around whatever the new picture covers.
+        if (QOpenGLFunctions* gl = context.functions()) {
+            gl->glViewport(0, 0, activeFbo->width(), activeFbo->height());
+            gl->glDisable(GL_SCISSOR_TEST);
+            gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            gl->glClear(GL_COLOR_BUFFER_BIT);
+        }
+        const int targetFormat = static_cast<int>(activeFbo->format().internalTextureFormat());
+        const int result = rendering->render(activeFbo->handle(), activeFbo->width(),
+                                             activeFbo->height(), targetFormat, 8);
+        if (result < 0) {
+            error = QCoreApplication::translate("CompareRenderer",
+                                                "The comparison renderer failed: %1")
+                        .arg(QString::fromStdString(core->describeError(result)));
+            return false;
+        }
+        lastFrame = activeFbo->toImage();
+        ++presentedFrames;
+        observeDelivery();
+        return true;
+    }
+
+    /// Polls the delivery path once. The returned image is the last picture mpv
+    /// handed over, so a caller that compares consecutive answers still sees a
+    /// picture stop changing when no new frame arrives.
+    QImage pump() {
+        pumpFrame();
         QCoreApplication::processEvents();
         QThread::msleep(kPollMs);
-        return image;
+        return lastFrame;
+    }
+
+    /// Waits for `after` to be passed by a frame mpv really delivered.
+    bool waitPresented(quint64 after, int timeoutMs, const Cancelled& cancelled) {
+        const quint64 startedIn = generation;
+        QElapsedTimer timer;
+        timer.start();
+        while (timer.elapsed() < timeoutMs && !cancelled() && error.isEmpty()) {
+            if (pumpFrame() && presentedFrames > after) return true;
+            QCoreApplication::processEvents();
+            if (generation != startedIn) return false;
+            QThread::msleep(kFrameWaitMs);
+        }
+        return false;
+    }
+
+    double timePos() const {
+        try {
+            return core->getNumber("time-pos");
+        } catch (const MpvError&) {
+            return -1.0;
+        }
     }
 
     bool waitForCommand(const std::shared_ptr<CommandResult>& result,
@@ -467,122 +567,376 @@ struct CompareRenderer::State {
         return error.isEmpty();
     }
 
-    QImage settle(bool requireRestart, bool requireProcessing, const Cancelled& cancelled,
-                  const Progress& progress) {
+    bool setOption(const char* name, const QString& value, const Cancelled& cancelled) {
+        return waitForCommand(command({"set", name, value.toStdString()}), cancelled);
+    }
+
+    /// Loads with options that apply to this file only. Global set/reset pairs
+    /// lose the still's demuxer selection the moment the core is re-created,
+    /// and the next still then opens as a real container.
+    bool loadWithOptions(const QString& path, const QList<QPair<QString, QString>>& options,
+                         const Cancelled& cancelled) {
+        NodeValue args;
+        args.format = MPV_FORMAT_NODE_ARRAY;
+        NodeValue name;
+        name.format = MPV_FORMAT_STRING;
+        name.text = "loadfile";
+        NodeValue url;
+        url.format = MPV_FORMAT_STRING;
+        url.text = path.toStdString();
+        NodeValue flags;
+        flags.format = MPV_FORMAT_STRING;
+        flags.text = "replace";
+        NodeValue index;
+        index.format = MPV_FORMAT_INT64;
+        index.integer = -1;
+        NodeValue optionMap;
+        optionMap.format = MPV_FORMAT_NODE_MAP;
+        for (const auto& option : options) {
+            NodeValue value;
+            value.format = MPV_FORMAT_STRING;
+            value.text = option.second.toStdString();
+            optionMap.map.emplace_back(option.first.toStdString(), value);
+        }
+        args.list = {name, url, flags, index, optionMap};
+        auto result = std::make_shared<CommandResult>();
+        if (!core->commandNodeAsync(args, [result](const AsyncReply& reply) {
+                 result->error = reply.error;
+                 result->finished = true;
+            }).valid()) {
+            result->error = MPV_ERROR_COMMAND;
+            result->finished = true;
+        }
+        return waitForCommand(result, cancelled);
+    }
+
+    bool ensureCanvas(const QSize& canvas) {
+        if (canvas.isEmpty()) {
+            error = QCoreApplication::translate("CompareRenderer",
+                                                "The comparison geometry is unavailable.");
+            return false;
+        }
+        useUpscaleTarget = false;
+        if (framebuffer && framebuffer->size() == canvas) {
+            canvasSize = canvas;
+            return framebuffer->isValid();
+        }
+        const ScopedCurrent current(context, &target);
+        if (!current) return false;
+        QOpenGLFramebufferObjectFormat format;
+        format.setInternalTextureFormat(kGlInternalFormatRgba8);
+        framebuffer = std::make_unique<QOpenGLFramebufferObject>(canvas, format);
+        if (!framebuffer->isValid()) {
+            error = QCoreApplication::translate(
+                "CompareRenderer", "The comparison framebuffer could not be created.");
+            return false;
+        }
+        // Nothing drawn before the resize belongs to this canvas.
+        lastFrame = {};
+        lastVoOutputSize = {};
+        canvasSize = canvas;
+        return true;
+    }
+
+    /// Waits until the fork has configured every stage the plan declares, and
+    /// returns the ring depth it reported (or the default when the build log has
+    /// no depth suffix).
+    bool waitForConfigured(const Cancelled& cancelled, const Progress& progress,
+                           int* depth) {
+        const quint64 startedIn = generation;
+        *depth = native::kAnimeJanaiDefaultRingDepth;
         QElapsedTimer timer;
         timer.start();
-        QImage previous;
+        std::shared_ptr<CommandResult> poll;
         QString reported;
-        bool processingFrameRequested = false;
-        std::shared_ptr<CommandResult> buildPoll;
-        // The frame the pipeline showed before the configured filter could emit
-        // anything: a stall in the vf chain leaves the last rendered picture on
-        // screen, so stability alone would accept an unprocessed frame as the
-        // model's output. The filtered frame has to arrive - either its geometry
-        // changed (the stage upscales) or its pixels differ from that pre-filter
-        // picture - before stability means anything.
-        QImage unfiltered;
-        bool filteredFrameArrived = !requireProcessing;
-        // Read once a frame exists: the property is unavailable before the first
-        // picture reaches the output, and reading it there throws.
-        int tracePumps = 0;
-        int traceWidth = -1;
-        while (timer.elapsed() < (requireProcessing && !buildDetail.isEmpty()
-                                      ? kBuildTimeoutMs : kSourceTimeoutMs) &&
-               error.isEmpty() && !cancelled()) {
-            const QImage image = pump();
-            if (cancelled() || !error.isEmpty()) return {};
-
-            if (requireProcessing && !processingObserved &&
-                (!buildPoll || buildPoll->finished) && !ajiLabels.isEmpty()) {
+        while (timer.elapsed() < kBuildTimeoutMs && !cancelled() && error.isEmpty()) {
+            pumpFrame();
+            if (processingObserved) {
+                *depth = configuredSlot.depth.value_or(native::kAnimeJanaiDefaultRingDepth);
+                return true;
+            }
+            if (error.isEmpty() && !ajiLabels.isEmpty() && (!poll || poll->finished)) {
                 const QString label = ajiLabels.at(ajiPollIndex++ % ajiLabels.size());
-                buildPoll = command({"vf-command", label.toStdString(), "poll", ""});
-            }
-            if (requireProcessing && processingObserved && !processingFrameRequested) {
-                processingFrameRequested = true;
-                restarted = false;
-                // The picture on screen now is the pipeline's unfiltered output:
-                // keep it as the baseline the model's frame has to differ from.
-                if (!carriesNoPicture(image)) unfiltered = image;
-                previous = {};
-                core->loadFile(framePath.toStdString());
-                continue;
-            }
-            // The baseline is the first picture of the reloaded still, not the
-            // frame that was on screen when the slot finished configuring: that
-            // one belongs to the previous pipeline, and comparing against it
-            // accepted the redrawn still as the model's output.
-            ++tracePumps;
-            try {
-                traceWidth = qRound(core->getNumber("video-out-params/w"));
-            } catch (const MpvError&) {
-                traceWidth = -1;
-            }
-            if (tracePumps == 3 && qEnvironmentVariableIsSet("MIKAI_COMPARE_TRACE")) {
-                try {
-                    std::fprintf(stderr, "[compare] trace vf=%s\n",
-                                 core->getString("vf").c_str());
-                } catch (const MpvError& error) {
-                    std::fprintf(stderr, "[compare] trace vf unavailable: %s\n", error.what());
-                }
-            }
-            if (tracePumps == 60 && qEnvironmentVariableIsSet("MIKAI_COMPARE_TRACE")) {
-                try {
-                    std::fprintf(stderr,
-                                 "[compare] trace: hwdec=%s hwdec-current=%s fmt=%s "
-                                 "paramsW=%g outW=%g\n",
-                                 core->getString("hwdec").c_str(),
-                                 core->getString("hwdec-current").c_str(),
-                                 core->getString("video-out-params/pixelformat").c_str(),
-                                 core->getNumber("video-params/w"),
-                                 core->getNumber("video-out-params/w"));
-                } catch (const MpvError& error) {
-                    std::fprintf(stderr, "[compare] trace unavailable: %s\n", error.what());
-                }
-            }
-            if (requireProcessing && processingFrameRequested && !filteredFrameArrived &&
-                !image.isNull()) {
-                int width = 0;
-                try {
-                    width = qRound(core->getNumber("video-out-params/w"));
-                } catch (const MpvError&) {
-                    width = 0;
-                }
-                // Geometry is the decisive signal: the stage reports the size it
-                // produced, and that size is only reported once its own frame has
-                // reached the video output. A stage that keeps the source size
-                // has no geometry to show, so the picture itself decides.
-                // Only the picture proves delivery: a stage declares its output
-                // size at configure time, before it has handed a frame over.
-                Q_UNUSED(width);
-                filteredFrameArrived = !unfiltered.isNull() && image != unfiltered &&
-                                       !carriesNoPicture(image);
+                poll = command({"vf-command", label.toStdString(), "poll", ""});
             }
             if (!buildDetail.isEmpty() && buildDetail != reported) {
                 reported = buildDetail;
                 progress(buildDetail);
             }
-            if (timer.elapsed() >= 200 && (!requireRestart || restarted) &&
-                (!requireProcessing || (processingObserved && filteredFrameArrived)) &&
-                !image.isNull() && image == previous) return image;
+            QCoreApplication::processEvents();
+            if (generation != startedIn) return false;
+            QThread::msleep(kFrameWaitMs);
+        }
+        if (error.isEmpty() && !cancelled() && generation == startedIn) {
+            error = QCoreApplication::translate(
+                "CompareRenderer",
+                "The comparison model was configured but produced no frame; the pipeline "
+                "stalled before its output reached the surface.");
+        }
+        return false;
+    }
+
+    /// Replays the held frame through the plan's real pipeline.
+    ///
+    /// `attachStage` false renders the identical decode, seek and step count
+    /// with the stage removed: the only baseline a model's effect may be
+    /// measured against. The picture is produced by presenting frames one at a
+    /// time, never by reloading the file: a reload destroys the stage instance
+    /// that has just configured, and its replacement shows the first frame of an
+    /// empty ring - a pass-through that looks exactly like "the model only
+    /// changed the colours".
+    QImage replay(const native::AnimeJanaiPlan& plan, bool attachStage, double heldPts,
+                  const QSize& canvas, const Cancelled& cancelled,
+                  const Progress& progress) {
+        if (sourceUrl.isEmpty() || !(sourceFrameDuration > 0.0)) {
+            error = QCoreApplication::translate(
+                "CompareRenderer",
+                "The comparison source does not report a frame cadence, so the model "
+                "cannot replay it frame by frame.");
+            return {};
+        }
+        const native::NativePipelineSpec spec = native::nativePipelineFor(
+            plan, sourceCodedSize.isValid() ? sourceCodedSize : sourceFrame.size());
+        // A baseline carries no stage: it keeps the plan's decoder so the two
+        // pictures differ only by the model, never by how they were decoded.
+        // An unset canvas means "the stage decides": its Configured line names
+        // the geometry it converts to, and the plan's own scale factor is only
+        // a hint from model metadata.
+        QSize target = canvas;
+        if (!target.isValid()) {
+            // The plan's declared geometry, not the pane's: the canvas must not
+            // change once frames are being drawn into it. A hint that disagrees
+            // with the stage's Configured line is corrected below, before the
+            // first frame of the replay is presented.
+            target = spec.expectedOutput.isValid() ? spec.expectedOutput : targetOutputSize;
+        }
+        if (!ensureCanvas(target)) return {};
+
+        ajiLabels = attachStage ? spec.ajiLabels : QStringList();
+        restarted = false;
+        processingObserved = false;
+        configuredStages = 0;
+        configuredSlot = {};
+        replaySteps = 0;
+        if (attachStage) modelSummary.clear();
+        buildGate = {};
+        buildDetail.clear();
+        diagnosticTail.clear();
+        lastHwdec.clear();
+        lastVoOutputSize = {};
+        acceptBuildEvidence = attachStage && !spec.vf.isEmpty();
+        requestedBackend = plan.backend;
+        requestedSlot = plan.slot;
+        ajiPollIndex = 0;
+        if (attachStage) preloadCompareBackendLibs(plan.backendLibDirs);
+        const QString hwdec = spec.hwdec.isEmpty() ? QStringLiteral("auto-safe") : spec.hwdec;
+        const QString vf = attachStage ? spec.vf : QString();
+
+        // Loading a few frames early lets the engine warm up on real input while
+        // the core is still paused, so no pass-through frame is ever presented.
+        const double warmup =
+            std::max(0.0, heldPts - double(native::kAnimeJanaiDefaultRingDepth + 1) *
+                                   sourceFrameDuration);
+        if (!setOption("vf", vf, cancelled) ||
+            !setOption("glsl-shaders", QString(), cancelled) ||
+            !setOption("hwdec", hwdec, cancelled) ||
+            !setOption("pause", QStringLiteral("yes"), cancelled) ||
+            !setOption("aid", QStringLiteral("no"), cancelled) ||
+            !setOption("sid", QStringLiteral("no"), cancelled) ||
+            !setOption("osd-level", QStringLiteral("0"), cancelled) ||
+            !setOption("hr-seek", QStringLiteral("yes"), cancelled) ||
+            !setOption("keep-open", QStringLiteral("yes"), cancelled) ||
+            !setOption("demuxer-lavf-format", QString(), cancelled)) {
+            return {};
+        }
+        const quint64 loadedAt = presentedFrames;
+        if (!loadWithOptions(sourceUrl,
+                             {{QStringLiteral("start"),
+                               QString::number(warmup, 'f', 6)}},
+                             cancelled)) {
+            return {};
+        }
+        if (!waitPresented(loadedAt, kSourceTimeoutMs, cancelled)) {
+            if (error.isEmpty()) {
+                error = QCoreApplication::translate(
+                    "CompareRenderer", "The comparison source produced no frame to replay.");
+            }
+            return {};
+        }
+        // The decoder verdict decides whether the stage can receive what it was
+        // built for at all; a software frame is not a model result.
+        if (!waitForNativeDecoder(plan.backend, cancelled)) return {};
+
+        int depth = 0;
+        if (attachStage && !waitForConfigured(cancelled, progress, &depth)) return {};
+        if (attachStage && configuredSlot.output.isValid() &&
+            configuredSlot.output != canvasSize) {
+            // The stage converts to its own geometry: draw into exactly that, so
+            // the read-back is the model's picture and not a rescale of it.
+            const QSize declared(
+                qMin(7680, configuredSlot.output.width()),
+                qMin(4320, configuredSlot.output.height()));
+            if (!ensureCanvas(declared)) return {};
+        }
+        const double preroll =
+            std::max(0.0, heldPts - double(depth + 1) * sourceFrameDuration);
+        if (attachStage && preroll <= 0.0 && heldPts <= (depth + 1) * sourceFrameDuration) {
+            // The ring cannot be filled before the first frame of the file; say
+            // so instead of presenting a warm-up frame.
+            diagnosticTail.append(QCoreApplication::translate(
+                "CompareRenderer",
+                "The held frame is too close to the start of the file for the model's "
+                "input buffer, so the replay starts at the first frame."));
+        }
+        const quint64 seekedAt = presentedFrames;
+        core->seekExact(preroll);
+        // A seek to the position already held may be answered without a restart;
+        // the following steps are what prove the replay is advancing.
+        (void)waitPresented(seekedAt, kSourceTimeoutMs, cancelled);
+        if (!error.isEmpty()) return {};
+
+        const int required =
+            std::max(1, int(std::lround((heldPts - preroll) / sourceFrameDuration)));
+        bool reached = false;
+        for (int step = 1; step <= required + kMaxExtraSteps && !cancelled() && error.isEmpty();
+             ++step) {
+            const quint64 before = presentedFrames;
+            if (!waitForCommand(command({"frame-step"}), cancelled)) return {};
+            if (!waitPresented(before, kStepTimeoutMs, cancelled)) {
+                if (error.isEmpty()) {
+                    error = QCoreApplication::translate(
+                        "CompareRenderer",
+                        "A processed frame reached the output but was never presented.");
+                }
+                return {};
+            }
+            ++replaySteps;
+            if (step >= required &&
+                timePos() >= heldPts - 0.5 * sourceFrameDuration) {
+                reached = true;
+                break;
+            }
+        }
+        if (cancelled()) return {};
+        if (!reached) {
+            if (error.isEmpty()) {
+                error = QCoreApplication::translate(
+                    "CompareRenderer",
+                    "A processed frame reached the output but was never presented.");
+            }
+            return {};
+        }
+        if (attachStage && configuredSlot.output.isValid() && lastVoOutputSize.isValid() &&
+            lastVoOutputSize != configuredSlot.output) {
+            error = QCoreApplication::translate(
+                        "CompareRenderer",
+                        "The comparison model was configured for %1x%2, but the delivered "
+                        "picture is %3x%4.")
+                        .arg(configuredSlot.output.width())
+                        .arg(configuredSlot.output.height())
+                        .arg(lastVoOutputSize.width())
+                        .arg(lastVoOutputSize.height());
+            return {};
+        }
+        if (attachStage) {
+            modelSummary = QStringLiteral("hwdec=%1 vo=%2x%3 canvas=%4x%5 steps=%6 depth=%7")
+                               .arg(lastHwdec.isEmpty() ? QStringLiteral("none") : lastHwdec)
+                               .arg(lastVoOutputSize.width())
+                               .arg(lastVoOutputSize.height())
+                               .arg(canvasSize.width())
+                               .arg(canvasSize.height())
+                               .arg(replaySteps)
+                               .arg(depth);
+        }
+        if (qEnvironmentVariableIsSet("MIKAI_COMPARE_TRACE")) {
+            std::fprintf(stderr,
+                         "[compare] replay stage=%d hwdec=%s vo=%dx%d canvas=%dx%d "
+                         "presented=%llu steps=%d depth=%d pos=%.3f vf=%s\n",
+                         attachStage ? 1 : 0, qPrintable(lastHwdec),
+                         lastVoOutputSize.width(), lastVoOutputSize.height(),
+                         canvasSize.width(), canvasSize.height(),
+                         static_cast<unsigned long long>(presentedFrames), replaySteps, depth,
+                         timePos(), qPrintable(vf));
+        }
+        return lastFrame;
+    }
+
+    /// Reads the decoder the core actually opened. `hwdec` only echoes the
+    /// request; `hwdec-current` is the method that ran, which is what decides
+    /// whether the stage receives device frames.
+    bool waitForNativeDecoder(native::Backend backend, const Cancelled& cancelled) {
+        QElapsedTimer timer;
+        timer.start();
+        while (timer.elapsed() < 4000 && !cancelled() && error.isEmpty()) {
+            if (core) {
+                try {
+                    lastHwdec = QString::fromStdString(core->getString("hwdec-current"));
+                } catch (const MpvError&) {
+                    lastHwdec.clear();
+                }
+            }
+            if (!lastHwdec.isEmpty()) break;
+            pumpFrame();
+            QCoreApplication::processEvents();
+            QThread::msleep(kFrameWaitMs);
+        }
+        if (cancelled()) return false;
+        if (native::decoderFeedsNativeBackend(lastHwdec, backend)) return true;
+        error = QCoreApplication::translate(
+                    "CompareRenderer",
+                    "Hardware decoding is unavailable, so the comparison cannot run the "
+                    "same pipeline as the player: the core reports the decoder '%1'.")
+                    .arg(lastHwdec.isEmpty() ? QStringLiteral("none") : lastHwdec);
+        return false;
+    }
+
+    QImage renderNative(const native::AnimeJanaiPlan& plan, const Cancelled& cancelled,
+                        const Progress& progress) {
+        const double heldPts = sourceTimestamp;
+        baselineFrame = {};
+        // One canvas for both passes: whatever geometry the stage declared, so
+        // the baseline is drawn by the same scaler into the same size and the
+        // gate compares like with like.
+        QImage model = replay(plan, true, heldPts, QSize(), cancelled, progress);
+        if (model.isNull() || cancelled()) return model;
+        const QSize canvas = canvasSize;
+        // The baseline is rendered after the model, with the stage removed and
+        // everything else identical.
+        baselineFrame = replay(plan, false, heldPts, canvas, cancelled, progress);
+        if (baselineFrame.isNull()) {
+            // The model picture is still a result; there is simply nothing
+            // honest to measure it against, and the gate says so.
+            const QString baselineError = error;
+            error.clear();
+            diagnosticTail.append(baselineError);
+        }
+        return model;
+    }
+
+    /// Waits until the core has restart frame and stops changing. Only the
+    /// still path uses this: a native plan is replayed frame by frame, where a
+    /// picture that stops changing is a stalled stage, not a settled one.
+    QImage settle(bool requireRestart, const Cancelled& cancelled, const Progress& progress) {
+        QElapsedTimer timer;
+        timer.start();
+        QImage previous;
+        QString reported;
+        while (timer.elapsed() < kSourceTimeoutMs && error.isEmpty() && !cancelled()) {
+            const QImage image = pump();
+            if (cancelled() || !error.isEmpty()) return {};
+            if (!buildDetail.isEmpty() && buildDetail != reported) {
+                reported = buildDetail;
+                progress(buildDetail);
+            }
+            if (timer.elapsed() >= 200 && (!requireRestart || restarted) && !image.isNull() &&
+                image == previous) {
+                return image;
+            }
             previous = image;
         }
-        if (!cancelled() && error.isEmpty() && qEnvironmentVariableIsSet("MIKAI_COMPARE_TRACE")) {
-            std::fprintf(stderr,
-                         "[compare] settle trace: pumps=%d restarted=%d configured=%d "
-                         "processingObserved=%d arrived=%d baseline=%d width=%d\n",
-                         tracePumps, restarted ? 1 : 0, configuredStages,
-                         processingObserved ? 1 : 0, filteredFrameArrived ? 1 : 0,
-                         unfiltered.isNull() ? 0 : 1, traceWidth);
-        }
         if (!cancelled() && error.isEmpty()) {
-            error = requireProcessing && processingObserved && !filteredFrameArrived
-                        ? QCoreApplication::translate(
-                              "CompareRenderer",
-                              "The comparison model was configured but produced no frame; "
-                              "the pipeline stalled before its output reached the surface.")
-                        : QCoreApplication::translate("CompareRenderer",
-                                                      "The comparison output did not settle.");
+            error = QCoreApplication::translate("CompareRenderer",
+                                                "The comparison output did not settle.");
             if (!diagnosticTail.isEmpty())
                 error += QLatin1Char('\n') + diagnosticTail.join(QLatin1Char('\n'));
         }
@@ -606,25 +960,36 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
     state.useUpscaleTarget = false;
     try {
         if (!state.initialize(outputSize, timestamp) || cancelled()) return false;
-        // A previous capture left the core pointed at the raw still; opening the
-        // network source with that selector reads the stream as raw pixels - a
-        // wrong-geometry read that can allocate absurd buffers. Reset the source
-        // selection before every real load.
-        const Cancelled never = [] { return false; };
-        if (!state.waitForCommand(state.command({"set", "demuxer", ""}), never) ||
-            !state.waitForCommand(state.command({"set", "demuxer-lavf-format", ""}), never) ||
-            !state.waitForCommand(state.command({"set", "demuxer-lavf-o", ""}), never))
-            return false;
+        // The still's demuxer selection is a per-file option now, so it cannot
+        // follow the core into a real source. Only the start position is global.
         const std::string startTimestamp = QString::number(timestamp, 'f', 6).toStdString();
         if (!state.waitForCommand(state.command({"set", "vf", ""}), cancelled) ||
             !state.waitForCommand(state.command({"set", "glsl-shaders", ""}), cancelled) ||
             !state.waitForCommand(state.command({"set", "start", startTimestamp}), cancelled)) return false;
         state.restarted = false;
         state.core->loadFile(source.toStdString());
-        QImage settledSource = state.settle(true, false, cancelled, progress);
+        QImage settledSource = state.settle(true, cancelled, progress);
         if (!settledSource.isNull()) {
             const int nativeWidth = qRound(state.core->getNumber("video-params/w"));
             const int nativeHeight = qRound(state.core->getNumber("video-params/h"));
+            state.sourceCodedSize = QSize(nativeWidth, nativeHeight);
+            // The container's cadence is what the replay steps by. `container-fps`
+            // is a container fact and stays available on a paused core;
+            // `estimated-vf-fps` only exists once the chain produced output.
+            double fps = 0.0;
+            try {
+                fps = state.core->getNumber("container-fps");
+            } catch (const MpvError&) {
+                fps = 0.0;
+            }
+            if (!(fps > 0.0)) {
+                try {
+                    fps = state.core->getNumber("estimated-vf-fps");
+                } catch (const MpvError&) {
+                    fps = 0.0;
+                }
+            }
+            state.sourceFrameDuration = fps > 0.0 ? 1.0 / fps : 0.0;
             if (nativeWidth <= 0 || nativeHeight <= 0) {
                 state.error = QCoreApplication::translate(
                     "CompareRenderer", "The native comparison source geometry is unavailable.");
@@ -646,7 +1011,7 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
                 // display-sized render is used only to settle source loading.
                 state.restarted = false;
                 state.core->seek(timestamp);
-                settledSource = state.settle(false, false, cancelled, progress);
+                settledSource = state.settle(false, cancelled, progress);
             }
             if (settledSource.isNull()) return false;
             state.sourceFrame = settledSource;
@@ -666,8 +1031,8 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
         // images". Raw RGB is a format this runtime does decode.
         if (!state.prepareStillSource(cancelled)) return false;
         state.restarted = false;
-        state.core->loadFile(state.framePath.toStdString());
-        const bool settled = !state.settle(true, false, cancelled, progress).isNull();
+        if (!state.loadStill(QString(), cancelled)) return false;
+        const bool settled = !state.settle(true, cancelled, progress).isNull();
         if (settled) {
             state.error.clear();
             if (capturedSource != nullptr) *capturedSource = state.sourceFrame;
@@ -687,6 +1052,11 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
     state.useUpscaleTarget = false;
     if (state.sourceFrame.isNull() || cancelled()) return {};
     try {
+        if (!state.framebuffer) {
+            state.error = QCoreApplication::translate(
+                "CompareRenderer", "The comparison framebuffer is unavailable.");
+            return {};
+        }
         if (!state.core && !state.initialize(state.framebuffer->size(), 0.0)) return {};
         const QString filter = plan.enabled ? QString::fromUtf8(plan.filterSpec) : QString();
         const QString shadersDir = anime4k::findShadersDir();
@@ -744,18 +1114,10 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
         // between two AnimeJaNai models cannot leave the first one running and
         // answering for the second. The full ordered plan is then attached as
         // one vf pipeline, with unique app-owned labels for its native stages.
-        // T-413: `d3d11` (the canonical mpv spelling), matching backendHwdec and
-        // the AJE alignment path, so every DirectML core writes one token. The
-        // whole TensorRT family - classic and RTX - decodes through nvdec.
-        const std::string targetHwdec =
-            (plan.enabled && !native::isTensorRtFamily(plan.backend)) ? "d3d11" : "nvdec";
+        // Only the still path reaches this point, and a rawvideo source has no
+        // decoder to align: `auto-safe` leaves the user's choice untouched.
+        const std::string targetHwdec = "auto-safe";
         state.ajiLabels.clear();
-        for (const native::AnimeJanaiPlanStage& stage : plan.stages) {
-            if (stage.kind == native::AnimeJanaiPlanStage::Kind::Aji)
-                state.ajiLabels.append(stage.filterLabel);
-        }
-        if (state.ajiLabels.isEmpty() && plan.requiresAji)
-            state.ajiLabels.append(QString::fromLatin1(native::kAnimeJanaiFilterLabel));
         if (state.stageBuildLease) {
             state.error = QCoreApplication::translate(
                 "CompareRenderer",
@@ -800,9 +1162,20 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
             }
         } leaseGuard;
         leaseGuard.slot = &state.stageBuildLease;
-        state.requestedSlot = plan.requiresAji
-                                  ? (plan.stages.size() > 1 ? 1 : plan.slot)
-                                  : 0;
+        if (plan.enabled && plan.requiresAji) {
+            // A native stage is replayed from the real source: the still path
+            // feeds a software RGB frame through a format normaliser, which is a
+            // different program from the one the player runs, and it destroys the
+            // configured stage by reloading the file to get another frame.
+            QImage native = state.renderNative(plan, cancelled, progress);
+            if (!native.isNull()) {
+                leaseGuard.slot = nullptr;
+                if (state.stageBuildLease) state.stageBuildLease->release();
+                state.stageBuildLease.reset();
+            }
+            return native;
+        }
+        state.requestedSlot = 0;
         state.ajiPollIndex = 0;
         state.processingObserved = false;
         state.requestedBackend = plan.backend;
@@ -838,20 +1211,14 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
             // Buffered filters need repeated input even though Compare freezes one frame.
             QString frozenPipeline = QStringLiteral(
                 "@mikai_compare_repeat:lavfi=[loop=loop=-1:size=1:start=0],");
-            const bool firstStageNormalizesNv12 =
-                !plan.stages.isEmpty() &&
-                plan.stages.first().kind == native::AnimeJanaiPlanStage::Kind::Anime4K &&
-                plan.stages.first().filterSpec.contains(QByteArrayLiteral("format=fmt=nv12"));
-            if (plan.requiresAji && !firstStageNormalizesNv12)
-                frozenPipeline += QStringLiteral("@mikai_compare_nv12:format=fmt=nv12,");
             frozenPipeline += filter;
             const bool added = state.waitForCommand(
                 state.command({"vf", "add", frozenPipeline.toStdString()}), cancelled);
             if (!added) return {};
         }
         state.restarted = false;
-        state.core->loadFile(state.framePath.toStdString());
-        QImage output = state.settle(true, plan.requiresAji, cancelled, progress);
+        if (!state.loadStill(QString(), cancelled)) return {};
+        QImage output = state.settle(true, cancelled, progress);
         if (!output.isNull()) {
             // T-314: disown first - the guard must not double-release a lease
             // the success path has already given back.
@@ -873,6 +1240,7 @@ void CompareRenderer::stop() {
     // down while its own core still answers. The scoped context keeps that call
     // off the driver's deallocation path.
     State& state = *state_;
+    ++state.generation;
     if (!state.core) {
         if (state.stageBuildLease) state.stageBuildLease->release();
         state.stageBuildLease.reset();
@@ -899,6 +1267,10 @@ void CompareRenderer::stop() {
     if (state.stageBuildLease) state.stageBuildLease->release();
     state.stageBuildLease.reset();
 }
+
+QImage CompareRenderer::baseline() const { return state_->baselineFrame; }
+
+QString CompareRenderer::replaySummary() const { return state_->modelSummary; }
 
 QString CompareRenderer::error() const { return state_->error; }
 

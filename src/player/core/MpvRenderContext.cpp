@@ -11,6 +11,7 @@
 #include <dlfcn.h>
 #endif
 
+#include <cstdio>
 #include <stdexcept>
 #include <string>
 
@@ -120,6 +121,17 @@ MpvRenderContext::MpvRenderContext(MpvHandle& mpv, const GlApi& gl, std::functio
     }
     api_ = &api.functions();
 
+    // Advanced control hands mpv's loop to the caller: every callback must be
+    // answered with update(), which is exactly what onUpdate_ is for. A caller
+    // that asks for the mode without a callback leaves mpv waiting on frames
+    // nobody draws, so the request is refused here instead of failing later as
+    // a stalled video output.
+    if (advancedControl && !onUpdate_) {
+        std::fprintf(stderr,
+                     "MpvRenderContext: advanced control needs an update callback; "
+                     "creating the context without advanced control\n");
+        advancedControl = false;
+    }
     mpv_opengl_init_params init{&MpvRenderContext::sGetProc, this};
     // An int, and passed per creation: mpv reads it once, here.
     int advanced = advancedControl ? 1 : 0;

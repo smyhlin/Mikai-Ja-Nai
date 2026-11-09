@@ -34,6 +34,14 @@ public:
                  QImage* capturedSource = nullptr);
     QImage render(const QString& shaderId, const native::AnimeJanaiPlan& plan,
                   const Cancelled& cancelled, const Progress& progress);
+    /// The unprocessed picture of the most recent native render: the same
+    /// decoder, seek, step count, canvas and scaler with the stage removed.
+    /// Empty when that render was a still, or its baseline could not be drawn.
+    QImage baseline() const;
+    /// One line of replay evidence for the last native render: the decoder that
+    /// ran, the geometry that reached the output, the frames presented and the
+    /// steps taken. Empty for a still render.
+    QString replaySummary() const;
     void stop();
     QString error() const;
 
