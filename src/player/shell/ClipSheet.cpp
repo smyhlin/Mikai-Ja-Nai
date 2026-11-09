@@ -4,6 +4,7 @@
 #include "ShellWidgets.hpp"
 
 #include <QButtonGroup>
+#include <QElapsedTimer>
 #include <QIcon>
 #include <QEvent>
 #include <QKeyEvent>
@@ -227,6 +228,17 @@ public:
     }
 
 protected:
+    /// Where the playhead is drawn: clamped into the window, so a preview parked
+    /// outside the slice still shows which side of it playback sits on.
+    qreal playheadX() const {
+        const double clamped = std::clamp(playhead_, windowStart_, windowEnd_);
+        return xOf(clamped);
+    }
+
+    bool playheadGrabbable() const {
+        return playhead_ >= windowStart_ - 0.001 && playhead_ <= windowEnd_ + 0.001;
+    }
+
     void paintEvent(QPaintEvent*) override {
         QPainter p(this);
         enableChromeAntialiasing(p);
@@ -282,12 +294,26 @@ protected:
         p.fillRect(QRectF(a, bed.top(), std::max<qreal>(0.0, b - a), bed.height()), tint);
 
         // Playhead first, so the handles stay legible above it.
-        if (playhead_ >= windowStart_ && playhead_ <= windowEnd_) {
-            const qreal px = xOf(playhead_);
-            p.setPen(QPen(QColor(255, 255, 255, 235), 2.0));
+        if (playhead_ >= 0.0) {
+            const qreal px = playheadX();
+            p.setPen(QPen(QColor(255, 255, 255, 225), 2.0));
             p.drawLine(QPointF(px, bed.top() + 1.0), QPointF(px, bed.bottom() - 1.0));
         }
         p.restore();
+
+        // The pip is the preview's own position, and it is a control: dragging it
+        // moves the preview without touching the clip the user framed.
+        if (playhead_ >= 0.0) {
+            const qreal px = playheadX();
+            const qreal py = bed.center().y();
+            p.setPen(QPen(QColor(0, 0, 0, 90), 3.0));
+            p.setBrush(QColor(255, 255, 255));
+            p.drawEllipse(QPointF(px, py), 8.0, 8.0);
+            p.setPen(QPen(playheadHot_ || drag_ == Drag::Playhead ? accent() : QColor(255, 255, 255, 160),
+                          drag_ == Drag::Playhead || playheadHot_ ? 2.0 : 1.0));
+            p.setBrush(Qt::NoBrush);
+            p.drawEllipse(QPointF(px, py), 8.0, 8.0);
+        }
 
         // Selection frame.
         p.setPen(QPen(acc, 2.0));
@@ -339,7 +365,13 @@ protected:
         const qreal mx = event->position().x();
         const double span = end_ - start_;
 
-        if (std::abs(mx - a) <= kHandleGrab) {
+        const qreal pipX = playheadX();
+        const bool onPip = playheadGrabbable() && std::abs(mx - pipX) <= 13.0;
+        if (onPip) {
+            drag_ = Drag::Playhead;
+            playhead_ = seconds;
+            if (seek) seek(playhead_);
+        } else if (std::abs(mx - a) <= kHandleGrab) {
             drag_ = Drag::Start;
         } else if (std::abs(mx - b) <= kHandleGrab) {
             drag_ = Drag::End;
@@ -366,8 +398,11 @@ protected:
             const qreal a = xOf(start_);
             const qreal b = xOf(end_);
             const qreal mx = event->position().x();
+            const bool overPip = playheadGrabbable() && std::abs(mx - playheadX()) <= 13.0;
+            playheadHot_ = overPip;
             Drag hot = Drag::None;
-            if (std::abs(mx - a) <= kHandleGrab) hot = Drag::Start;
+            if (overPip) hot = Drag::Playhead;
+            else if (std::abs(mx - a) <= kHandleGrab) hot = Drag::Start;
             else if (std::abs(mx - b) <= kHandleGrab) hot = Drag::End;
             else if (mx > a && mx < b) hot = Drag::Span;
             if (hot != hot_) {
@@ -381,6 +416,19 @@ protected:
             return;
         }
         const double seconds = valueAt(event->position().x());
+        if (drag_ == Drag::Playhead) {
+            const QElapsedTimer& clock = seekClock_;
+            if (!clock.isValid() || clock.elapsed() >= 40) {
+                playhead_ = seconds;
+                if (seek) seek(playhead_);
+                seekClock_.restart();
+            } else {
+                playhead_ = seconds;
+            }
+            update();
+            event->accept();
+            return;
+        }
         if (drag_ == Drag::Start) {
             const double lower = std::max(windowStart_, end_ - maximumSpan_);
             start_ = std::clamp(seconds, lower, end_ - kMinimumSpan);
@@ -396,6 +444,7 @@ protected:
     }
 
     void mouseReleaseEvent(QMouseEvent* event) override {
+        if (drag_ == Drag::Playhead && seek) seek(playhead_);
         drag_ = Drag::None;
         setCursor(Qt::PointingHandCursor);
         update();
@@ -404,6 +453,7 @@ protected:
 
     void leaveEvent(QEvent* event) override {
         hot_ = Drag::None;
+        playheadHot_ = false;
         update();
         QWidget::leaveEvent(event);
     }
@@ -433,7 +483,7 @@ protected:
     }
 
 private:
-    enum class Drag { None, Start, End, Span };
+    enum class Drag { None, Start, End, Span, Playhead };
 
     qreal xOf(double value) const {
         const double span = std::max(0.001, windowEnd_ - windowStart_);
@@ -466,6 +516,8 @@ private:
     Drag drag_ = Drag::None;
     Drag hot_ = Drag::None;
     Drag active_ = Drag::None;
+    bool playheadHot_ = false;
+    QElapsedTimer seekClock_;
 };
 
 class ClipSheet::Private final : public QObject {

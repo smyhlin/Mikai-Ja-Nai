@@ -493,21 +493,42 @@ public:
         // leaving an old frame at a new index would label the wrong instant.
         sheet->setTiles(QVector<QPixmap>(count));
         const double span = windowEnd - windowStart;
+        const double anchor = sheet->selection().start;
+        QVector<QPair<int, double>> waiting;
         for (int i = 0; i < count; ++i) {
-            tileQueue.append({i, windowStart + span * (i + 0.5) / count});
+            const double seconds = windowStart + span * (i + 0.5) / count;
+            const auto cached = tileCache.constFind(tileKey(seconds));
+            if (cached != tileCache.constEnd()) {
+                sheet->setTile(i, *cached);
+            } else {
+                waiting.append({i, seconds});
+            }
         }
+        // The frames around the moment being judged are the ones the choice is
+        // made from, so they are decoded first; the rest follow while the user
+        // is still deciding.
+        std::sort(waiting.begin(), waiting.end(),
+                  [anchor](const QPair<int, double>& left, const QPair<int, double>& right) {
+                      return std::abs(left.second - anchor) < std::abs(right.second - anchor);
+                  });
+        tileQueue = waiting;
         pumpTile();
     }
+
+    /// Half-second buckets, the same granularity the service's own store uses,
+    /// so a resize or a reopen reuses what is already decoded.
+    static qint64 tileKey(double seconds) { return qint64(std::llround(seconds * 2.0)); }
 
     void pumpTile() {
         if (tileInFlight || tileQueue.isEmpty() || invalidated) return;
         const auto next = tileQueue.takeFirst();
         const quint64 token = ++tileToken;
         tileSlots.insert(token, next.first);
+        tileTimes.insert(token, next.second);
         tileInFlight = true;
         // A frame the service never answers must not stall the strip forever; the
         // slot stays a plate and the next one is asked for.
-        tileWatchdog.start(8000);
+        tileWatchdog.start(3000);
         thumbnails.requestFrame(token, next.second);
     }
 
@@ -527,11 +548,23 @@ public:
         const auto slot = tileSlots.constFind(token);
         if (slot == tileSlots.constEnd()) return;
         const int index = *slot;
+        const double seconds = tileTimes.take(token);
         finishTile(token);
         const QSize target(kThumbnailHeight * 16 / 9, kThumbnailHeight);
-        sheet->setTile(index, QPixmap::fromImage(
-                                  image.scaled(target, Qt::KeepAspectRatioByExpanding,
-                                               Qt::SmoothTransformation)));
+        const QPixmap tile = QPixmap::fromImage(image.scaled(target, Qt::KeepAspectRatioByExpanding,
+                                                             Qt::SmoothTransformation));
+        sheet->setTile(index, tile);
+        storeTile(tileKey(seconds), tile);
+    }
+
+    void storeTile(qint64 key, const QPixmap& tile) {
+        if (key < 0 || tile.isNull()) return;
+        if (tileCache.contains(key)) return;
+        // Bounded: a strip sweep is ten frames, and a session that changes the
+        // window a few times still fits in a few dozen.
+        while (tileCacheOrder.size() >= 48) tileCache.remove(tileCacheOrder.takeFirst());
+        tileCache.insert(key, tile);
+        tileCacheOrder.append(key);
     }
 
     void captureTracks() {
@@ -587,11 +620,8 @@ public:
         sheet->setSelection(a, b);
         syncing = false;
         refreshDownload();
-        if (preview && !invalidated) {
-            preview->setPaused(true);
-            preview->seek(a);
-            setPlaying(false);
-        }
+        // The preview keeps its own position: dragging a boundary must not move
+        // the playhead, or the moment being judged changes while it is judged.
     }
 
     bool validRange() const {
@@ -689,6 +719,9 @@ public:
     QPushButton* copyPath = nullptr;
     QHash<quint64, int> tileSlots;
     QVector<QPair<int, double>> tileQueue;
+    QHash<qint64, QPixmap> tileCache;
+    QVector<qint64> tileCacheOrder;
+    QHash<quint64, double> tileTimes;
     QTimer tileWatchdog;
     quint64 tileToken = 0;
     bool tileInFlight = false;
