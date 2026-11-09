@@ -20,18 +20,22 @@
 #include <player/shaders/Anime4K.hpp>
 
 #include <QAbstractItemView>
+#include <QAction>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QColor>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QFont>
+#include <QGuiApplication>
 #include <QHash>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QOffscreenSurface>
 #include <QPointer>
 #include <QProgressBar>
@@ -40,6 +44,7 @@
 #include <QScrollBar>
 #include <QSettings>
 #include <QSet>
+#include <QShortcut>
 #include <QStackedWidget>
 #include <QStyle>
 #include <QSysInfo>
@@ -75,6 +80,9 @@ constexpr auto kModelRole = Qt::UserRole + 1;
 constexpr auto kUnavailableRole = Qt::UserRole + 2;
 /// The label captured with a checked id, so a missing model can still be named.
 constexpr auto kModelLabelRole = Qt::UserRole + 3;
+/// Expansion captured before a filter forces groups open, so clearing the
+/// filter (or a catalogue refresh mid-filter) restores what the user had open.
+constexpr auto kFilterExpansionRole = Qt::UserRole + 4;
 
 /// An explicit deselection releases a disappeared model instead of leaving an
 /// unavailable row checked forever. Without this, Clear selection could not
@@ -126,6 +134,43 @@ QString benchmarkElapsedText(qint64 milliseconds) {
         .arg(seconds % 60, 2, 10, QLatin1Char('0'));
 }
 
+// Throughput is the numeric column; keep its header aligned with the figures.
+void alignBenchmarkThroughputColumn(QTableWidget* table) {
+    if (table == nullptr) return;
+    if (QTableWidgetItem* header = table->horizontalHeaderItem(2)) {
+        header->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    }
+}
+
+// Secondary lines sit one step in from the heading they explain. Headings stay
+// flush so larger text is always further left than the caption under it.
+void indentUnderHeading(QLabel* label) {
+    if (label == nullptr) return;
+    label->setContentsMargins(theme::kSpacingSmall, 0, 0, 0);
+}
+
+QString benchmarkResultsTsv(const QTableWidget* table, bool selectedOnly) {
+    if (table == nullptr || table->rowCount() == 0) return {};
+    if (selectedOnly && table->currentRow() < 0) return {};
+    QStringList lines;
+    lines.append(QStringList{SettingsDialog::tr("Model"), SettingsDialog::tr("Clip"),
+                             SettingsDialog::tr("Throughput")}
+                     .join(QLatin1Char('\t')));
+    for (int row = 0; row < table->rowCount(); ++row) {
+        if (selectedOnly && table->currentRow() != row) continue;
+        const auto cell = [table, row](int column) {
+            const QTableWidgetItem* item = table->item(row, column);
+            return item != nullptr ? item->text() : QString();
+        };
+        QString line = QStringList{cell(0), cell(1), cell(2)}.join(QLatin1Char('\t'));
+        const QTableWidgetItem* result = table->item(row, 2);
+        const QString detail = result != nullptr ? result->data(Qt::UserRole).toString() : QString();
+        if (!detail.isEmpty()) line += QLatin1Char('\t') + detail;
+        lines.append(line);
+    }
+    return lines.join(QLatin1Char('\n'));
+}
+
 }  // namespace
 
 QWidget* SettingsDialog::buildBenchmarkTab() {
@@ -160,11 +205,17 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
 
     benchmarkHeading_ = new QLabel(tr("Benchmark"), headerWidget);
     stylePageHeading(benchmarkHeading_);
+    benchmarkHeading_->setContentsMargins(0, 0, 0, 0);
+    benchmarkHeading_->setWordWrap(true);
+    benchmarkHeading_->setMinimumWidth(0);
     headerLayout->addWidget(benchmarkHeading_);
 
     benchmarkDescription_ =
         new QLabel(tr("Compare rendering speed at 2× input resolution."), headerWidget);
     styleMutedCaption(benchmarkDescription_);
+    benchmarkDescription_->setWordWrap(true);
+    indentUnderHeading(benchmarkDescription_);
+    yieldCaptionWidth(benchmarkDescription_);
     headerLayout->addWidget(benchmarkDescription_);
     bodyLayout->addWidget(headerWidget);
 
@@ -179,15 +230,23 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
 
     benchmarkVideoTitle_ = new QLabel(tr("Video clips"), clipsCard);
     styleSectionHeading(benchmarkVideoTitle_);
+    benchmarkVideoTitle_->setContentsMargins(0, 0, 0, 0);
+    benchmarkVideoTitle_->setWordWrap(true);
+    benchmarkVideoTitle_->setMinimumWidth(0);
+    benchmarkVideoTitle_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     benchmarkClipCount_ = new QLabel(clipsCard);
     benchmarkClipCount_->setObjectName(QStringLiteral("benchmarkClipCount"));
     stylePillBadge(benchmarkClipCount_);
+    applyTabularNumerals(benchmarkClipCount_);
 
     benchmarkSelectAllClips_ = new QPushButton(tr("Select all"), clipsCard);
     benchmarkSelectAllClips_->setObjectName(QStringLiteral("benchmarkSelectAllClips"));
     benchmarkSelectAllClips_->setProperty("benchmarkSelectionControl", QStringLiteral("clips"));
     theme::applyActionRole(benchmarkSelectAllClips_, theme::ActionRole::Ghost);
+    benchmarkSelectAllClips_->setAutoDefault(false);
+    benchmarkSelectAllClips_->setDefault(false);
+    benchmarkSelectAllClips_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
     polishInteractiveControl(benchmarkSelectAllClips_, theme::kSettingsControlSize);
 
     clipsHeader->addWidget(benchmarkVideoTitle_, 1, Qt::AlignVCenter);
@@ -235,6 +294,8 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     benchmarkRawBox_->setObjectName(QStringLiteral("benchmarkRawBox"));
     polishInteractiveControl(benchmarkRawBox_, theme::kSettingsControlSize);
     benchmarkRawBox_->setChecked(true);
+    benchmarkRawBox_->setToolTip(
+        tr("Measures playback with no shader or model, so filtered runs have a reference."));
     clipsCardLayout->addWidget(benchmarkRawBox_);
 
     bodyLayout->addWidget(clipsCard);
@@ -250,15 +311,23 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
 
     benchmarkModelTitle_ = new QLabel(tr("Enhancement models"), modelsCard);
     styleSectionHeading(benchmarkModelTitle_);
+    benchmarkModelTitle_->setContentsMargins(0, 0, 0, 0);
+    benchmarkModelTitle_->setWordWrap(true);
+    benchmarkModelTitle_->setMinimumWidth(0);
+    benchmarkModelTitle_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     benchmarkModelCount_ = new QLabel(modelsCard);
     benchmarkModelCount_->setObjectName(QStringLiteral("benchmarkModelCount"));
     stylePillBadge(benchmarkModelCount_);
+    applyTabularNumerals(benchmarkModelCount_);
 
     benchmarkSelectAllModels_ = new QPushButton(tr("Select all"), modelsCard);
     benchmarkSelectAllModels_->setObjectName(QStringLiteral("benchmarkSelectAllModels"));
     benchmarkSelectAllModels_->setProperty("benchmarkSelectionControl", QStringLiteral("models"));
     theme::applyActionRole(benchmarkSelectAllModels_, theme::ActionRole::Ghost);
+    benchmarkSelectAllModels_->setAutoDefault(false);
+    benchmarkSelectAllModels_->setDefault(false);
+    benchmarkSelectAllModels_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
     polishInteractiveControl(benchmarkSelectAllModels_, theme::kSettingsControlSize);
 
     modelsHeader->addWidget(benchmarkModelTitle_, 1, Qt::AlignVCenter);
@@ -268,23 +337,37 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
 
     benchmarkModelSearch_ = new QLineEdit(modelsCard);
     benchmarkModelSearch_->setObjectName(QStringLiteral("benchmarkModelSearch"));
-    benchmarkModelSearch_->setPlaceholderText(tr("Filter by model or group"));
+    benchmarkModelSearch_->setPlaceholderText(tr("Filter by model, group, or file"));
     benchmarkModelSearch_->setClearButtonEnabled(true);
     benchmarkModelSearch_->setMinimumHeight(theme::kSettingsControlSize);
+    benchmarkModelSearch_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     benchmarkModelSearch_->setAccessibleName(tr("Filter benchmark models"));
+    benchmarkModelSearch_->setToolTip(
+        tr("Show models whose name, group, file, or id matches. Clearing restores open groups."));
     modelsCardLayout->addWidget(benchmarkModelSearch_);
 
     benchmarkModelTree_ = new QTreeWidget(modelsCard);
     benchmarkModelTree_->setObjectName(QStringLiteral("benchmarkModelTree"));
     benchmarkModelTree_->setHeaderHidden(true);
     benchmarkModelTree_->setColumnCount(1);
-    benchmarkModelTree_->setIndentation(theme::kSpacingSmall);
+    // Disclosure arrows need more than the 8px text step or they collide with
+    // the checkbox hit target.
+    benchmarkModelTree_->setIndentation(theme::kSpacingMedium + theme::kSpacingXs);
     benchmarkModelTree_->setFixedHeight(theme::kBenchmarkSelectorHeight);
+    benchmarkModelTree_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     benchmarkModelTree_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    benchmarkModelTree_->setTextElideMode(Qt::ElideMiddle);
+    benchmarkModelTree_->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+    benchmarkModelTree_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    benchmarkModelTree_->setTextElideMode(Qt::ElideRight);
     benchmarkModelTree_->setUniformRowHeights(true);
     benchmarkModelTree_->setSelectionMode(QAbstractItemView::NoSelection);
+    benchmarkModelTree_->setTabKeyNavigation(false);
+    benchmarkModelTree_->setFocusPolicy(Qt::StrongFocus);
     benchmarkModelTree_->setAccessibleName(tr("Available benchmark models"));
+    benchmarkModelTree_->setAccessibleDescription(
+        tr("Check the models to measure. A group checkbox selects every model in that group. Space toggles the focused row."));
+    benchmarkModelTree_->setToolTip(
+        tr("Space toggles the focused model. A group checkbox selects the whole group."));
     modelsCardLayout->addWidget(benchmarkModelTree_);
 
     bodyLayout->addWidget(modelsCard);
@@ -378,11 +461,16 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
 
     benchmarkResultsTitle_ = new QLabel(tr("Results"), resultsCard);
     styleSectionHeading(benchmarkResultsTitle_);
+    benchmarkResultsTitle_->setContentsMargins(0, 0, 0, 0);
+    benchmarkResultsTitle_->setWordWrap(true);
+    benchmarkResultsTitle_->setMinimumWidth(0);
+    benchmarkResultsTitle_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     benchmarkRunStatus_ = new QLabel(tr("Ready"), resultsCard);
     benchmarkRunStatus_->setObjectName(QStringLiteral("benchmarkRunStatus"));
     stylePillBadge(benchmarkRunStatus_);
     styleStatusBanner(benchmarkRunStatus_, QStringLiteral("neutral"));
+    applyTabularNumerals(benchmarkRunStatus_);
 
     resultsHeader->addWidget(benchmarkResultsTitle_, 1, Qt::AlignVCenter);
     resultsHeader->addWidget(benchmarkRunStatus_, 0, Qt::AlignVCenter);
@@ -390,12 +478,16 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
 
     benchmarkNote_ = new QLabel(tr("Preparation excluded from FPS."), resultsCard);
     styleMutedCaption(benchmarkNote_);
+    benchmarkNote_->setWordWrap(true);
+    indentUnderHeading(benchmarkNote_);
+    yieldCaptionWidth(benchmarkNote_);
     resultsCardLayout->addWidget(benchmarkNote_);
 
     benchmarkProgress_ = new QProgressBar(resultsCard);
     benchmarkProgress_->setObjectName(QStringLiteral("benchmarkProgress"));
     benchmarkProgress_->setTextVisible(false);
     benchmarkProgress_->setAccessibleName(tr("Benchmark run progress"));
+    benchmarkProgress_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     benchmarkProgress_->setProperty("runState", QStringLiteral("idle"));
     benchmarkProgress_->hide();
     resultsCardLayout->addWidget(benchmarkProgress_);
@@ -404,6 +496,7 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     benchmarkActivity_->setObjectName(QStringLiteral("benchmarkActivity"));
     benchmarkActivity_->setProperty("textRole", QStringLiteral("muted"));
     benchmarkActivity_->setWordWrap(true);
+    indentUnderHeading(benchmarkActivity_);
     yieldCaptionWidth(benchmarkActivity_);
     applyTabularNumerals(benchmarkActivity_);
     benchmarkActivity_->hide();
@@ -413,6 +506,7 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     benchmarkEngineProgress_->setObjectName(QStringLiteral("benchmarkEngineProgress"));
     benchmarkEngineProgress_->setTextVisible(false);
     benchmarkEngineProgress_->setRange(0, 0);
+    benchmarkEngineProgress_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     benchmarkEngineProgress_->setAccessibleName(tr("Engine build progress; indeterminate"));
     benchmarkEngineProgress_->hide();
     resultsCardLayout->addWidget(benchmarkEngineProgress_);
@@ -420,6 +514,7 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     benchmarkEngineElapsedLabel_ = new QLabel(resultsCard);
     benchmarkEngineElapsedLabel_->setObjectName(QStringLiteral("benchmarkEngineElapsed"));
     benchmarkEngineElapsedLabel_->setProperty("textRole", QStringLiteral("muted"));
+    indentUnderHeading(benchmarkEngineElapsedLabel_);
     applyTabularNumerals(benchmarkEngineElapsedLabel_);
     benchmarkEngineElapsedLabel_->hide();
     resultsCardLayout->addWidget(benchmarkEngineElapsedLabel_);
@@ -438,9 +533,9 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     benchmarkResultDetail_->setWordWrap(true);
     benchmarkResultDetail_->setTextFormat(Qt::PlainText);
     benchmarkResultDetail_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    indentUnderHeading(benchmarkResultDetail_);
     yieldCaptionWidth(benchmarkResultDetail_);
     benchmarkResultDetail_->hide();
-    resultsCardLayout->addWidget(benchmarkResultDetail_);
 
     benchmarkResultStack_ = new QStackedWidget(resultsCard);
     benchmarkEmptyState_ = new QLabel(
@@ -449,15 +544,19 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     benchmarkEmptyState_->setObjectName(QStringLiteral("benchmarkEmptyState"));
     benchmarkEmptyState_->setWordWrap(true);
     benchmarkEmptyState_->setAlignment(Qt::AlignCenter);
+    yieldCaptionWidth(benchmarkEmptyState_);
     benchmarkResultStack_->addWidget(benchmarkEmptyState_);
 
     benchmarkResults_ = new QTableWidget(benchmarkResultStack_);
     benchmarkResults_->setObjectName(QStringLiteral("benchmarkResults"));
     benchmarkResults_->setColumnCount(3);
     benchmarkResults_->setHorizontalHeaderLabels({tr("Model"), tr("Clip"), tr("Throughput")});
+    alignBenchmarkThroughputColumn(benchmarkResults_);
     benchmarkResults_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     benchmarkResults_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     benchmarkResults_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    benchmarkResults_->horizontalHeader()->setHighlightSections(false);
+    benchmarkResults_->horizontalHeader()->setStretchLastSection(false);
     benchmarkResults_->verticalHeader()->hide();
     benchmarkResults_->verticalHeader()->setDefaultSectionSize(theme::kSettingsControlSize);
     benchmarkResults_->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -466,10 +565,24 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     benchmarkResults_->setAlternatingRowColors(true);
     benchmarkResults_->setShowGrid(false);
     benchmarkResults_->setWordWrap(false);
+    benchmarkResults_->setTextElideMode(Qt::ElideRight);
+    benchmarkResults_->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+    benchmarkResults_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    benchmarkResults_->setTabKeyNavigation(false);
+    benchmarkResults_->setCornerButtonEnabled(false);
+    benchmarkResults_->setSortingEnabled(false);
+    benchmarkResults_->setFocusPolicy(Qt::StrongFocus);
+    benchmarkResults_->setAccessibleName(tr("Benchmark throughput results"));
+    benchmarkResults_->setAccessibleDescription(
+        tr("Each row is one clip measured with one model. Select a failed row for the reason. Ctrl+C copies the row."));
     applyTabularNumerals(benchmarkResults_);
     benchmarkResultStack_->addWidget(benchmarkResults_);
     benchmarkResultStack_->setFixedHeight(theme::kBenchmarkEmptyHeight);
+    benchmarkResultStack_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     resultsCardLayout->addWidget(benchmarkResultStack_);
+    // Failure text sits under the row that produced it, not above the table,
+    // so reading a result does not scroll the row out of view.
+    resultsCardLayout->addWidget(benchmarkResultDetail_);
 
     bodyLayout->addWidget(resultsCard);
     bodyLayout->addStretch();
@@ -495,13 +608,49 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
         }
     });
 
+    const auto copyResults = [this](bool selectedOnly) {
+        const QString text = benchmarkResultsTsv(benchmarkResults_, selectedOnly);
+        if (text.isEmpty()) return;
+        if (QClipboard* clipboard = QGuiApplication::clipboard()) clipboard->setText(text);
+    };
+    auto* copyShortcut = new QShortcut(QKeySequence::Copy, benchmarkResults_);
+    copyShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(copyShortcut, &QShortcut::activated, this, [copyResults] { copyResults(true); });
+    benchmarkResults_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(benchmarkResults_, &QTableWidget::customContextMenuRequested, this,
+            [this, copyResults](const QPoint& pos) {
+                if (benchmarkResults_->rowCount() == 0) return;
+                QMenu menu(benchmarkResults_);
+                QAction* copyRow = menu.addAction(tr("Copy row"));
+                copyRow->setEnabled(benchmarkResults_->currentRow() >= 0);
+                QAction* copyAll = menu.addAction(tr("Copy all results"));
+                const QAction* chosen = menu.exec(benchmarkResults_->viewport()->mapToGlobal(pos));
+                if (chosen == copyRow) copyResults(true);
+                else if (chosen == copyAll) copyResults(false);
+            });
+
+    auto* findModels = new QShortcut(QKeySequence::Find, page);
+    findModels->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(findModels, &QShortcut::activated, this, [this] {
+        if (benchmarkModelSearch_ == nullptr || !benchmarkModelSearch_->isEnabled()) return;
+        benchmarkModelSearch_->setFocus(Qt::ShortcutFocusReason);
+        benchmarkModelSearch_->selectAll();
+    });
+
     scroll->setWidget(body);
     benchmarkScroll_ = scroll;
     rootLayout->addWidget(scroll, 1);
 
     // ── Sticky Action Footer Bar ─────────────────────────────────────────────
+    // Clamp the bar. A wrapping summary beside stretch 0 content otherwise
+    // grows into a tall empty band under the scroll area.
     auto* bottomBar = new QWidget(page);
     bottomBar->setObjectName(QStringLiteral("benchmarkBottomBar"));
+    bottomBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
+    const int benchmarkFooterHeight = theme::kControlHeight + theme::kSpacingSmall * 2;
+    bottomBar->setMinimumHeight(benchmarkFooterHeight);
+    // Two lines of a translated summary, never a stretched empty band.
+    bottomBar->setMaximumHeight(benchmarkFooterHeight * 2);
     auto* barLayout = new QHBoxLayout(bottomBar);
     barLayout->setContentsMargins(theme::kSpacingMedium, theme::kSpacingSmall,
                                   theme::kSpacingMedium, theme::kSpacingSmall);
@@ -510,16 +659,33 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     benchmarkRunSummary_ = new QLabel(bottomBar);
     benchmarkRunSummary_->setObjectName(QStringLiteral("benchmarkRunSummary"));
     benchmarkRunSummary_->setProperty("textRole", QStringLiteral("muted"));
+    benchmarkRunSummary_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     yieldCaptionWidth(benchmarkRunSummary_);
+    benchmarkRunSummary_->setMinimumWidth(0);
     applyTabularNumerals(benchmarkRunSummary_);
     barLayout->addWidget(benchmarkRunSummary_, 1, Qt::AlignVCenter);
 
     benchmarkRunButton_ = new QPushButton(tr("Run benchmark"), bottomBar);
     benchmarkRunButton_->setObjectName(QStringLiteral("benchmarkRunButton"));
     benchmarkRunButton_->setProperty("benchmarkRunAction", true);
+    benchmarkRunButton_->setAutoDefault(false);
+    benchmarkRunButton_->setDefault(false);
+    benchmarkRunButton_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+    benchmarkRunButton_->setFocusPolicy(Qt::StrongFocus);
     theme::applyActionRole(benchmarkRunButton_, theme::ActionRole::Primary);
     polishInteractiveControl(benchmarkRunButton_, theme::kControlHeight);
-    connect(benchmarkRunButton_, &QPushButton::clicked, this, &SettingsDialog::runBenchmark);
+    connect(benchmarkRunButton_, &QPushButton::clicked, this, [this] {
+        if (benchmarkRunning_) {
+            if (benchmarkCancellation_) {
+                benchmarkCancellation_->store(true);
+                benchmarkRunButton_->setEnabled(false);
+                benchmarkRunStatus_->setText(tr("Cancelling…"));
+                styleStatusBanner(benchmarkRunStatus_, QStringLiteral("neutral"));
+            }
+            return;
+        }
+        runBenchmark();
+    });
     barLayout->addWidget(benchmarkRunButton_, 0, Qt::AlignVCenter);
 
     rootLayout->addWidget(bottomBar);
@@ -557,8 +723,9 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
              ++groupIndex) {
             const QTreeWidgetItem* group = benchmarkModelTree_->topLevelItem(groupIndex);
             const QString groupKey = group->data(0, Qt::UserRole).toString();
+            const QVariant heldOpen = group->data(0, kFilterExpansionRole);
             groupExpansion.insert(groupKey.isEmpty() ? group->text(0) : groupKey,
-                                  group->isExpanded());
+                                  heldOpen.isValid() ? heldOpen.toBool() : group->isExpanded());
             for (int index = 0; index < group->childCount(); ++index) {
                 const QTreeWidgetItem* item = group->child(index);
                 if (item->checkState(0) == Qt::Checked) {
@@ -575,6 +742,13 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
     }
 
     benchmarkSelectionUpdating_ = true;
+    struct BenchmarkTreeUpdates {
+        QTreeWidget* tree;
+        explicit BenchmarkTreeUpdates(QTreeWidget* value) : tree(value) {
+            tree->setUpdatesEnabled(false);
+        }
+        ~BenchmarkTreeUpdates() { tree->setUpdatesEnabled(true); }
+    } holdTreeUpdates(benchmarkModelTree_);
     benchmarkModelTree_->clear();
 
     const auto addGroup = [this, &groupExpansion](const QString& key, const QString& title) {
@@ -585,6 +759,7 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
         heading.setWeight(QFont::DemiBold);
         group->setFont(0, heading);
         group->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
+        group->setToolTip(0, tr("Check to select every available model in this group."));
         group->setExpanded(
             groupExpansion.value(key, key == QLatin1String("processing:upscale")));
         return group;
@@ -738,7 +913,6 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
         updateGroupState(benchmarkModelTree_->topLevelItem(groupIndex));
     }
     benchmarkSelectionUpdating_ = false;
-    filterBenchmarkModels(benchmarkModelSearch_->text());
     for (int groupIndex = 0; groupIndex < benchmarkModelTree_->topLevelItemCount(); ++groupIndex) {
         QTreeWidgetItem* group = benchmarkModelTree_->topLevelItem(groupIndex);
         const QString groupKey = group->data(0, Qt::UserRole).toString();
@@ -746,6 +920,9 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
             groupKey.isEmpty() ? group->text(0) : groupKey);
         if (expanded != groupExpansion.cend()) group->setExpanded(*expanded);
     }
+    // Apply the filter after expansion is restored so a live query can reopen
+    // matching groups without forgetting the user's collapsed state.
+    filterBenchmarkModels(benchmarkModelSearch_->text());
     if (!currentId.isEmpty()) {
         for (int groupIndex = 0; groupIndex < benchmarkModelTree_->topLevelItemCount();
              ++groupIndex) {
@@ -775,16 +952,30 @@ void SettingsDialog::filterBenchmarkModels(const QString& query) {
         QTreeWidgetItem* group = benchmarkModelTree_->topLevelItem(groupIndex);
         const bool groupMatches =
             filter.isEmpty() || group->text(0).contains(filter, Qt::CaseInsensitive);
+        const bool snapshot = group->data(0, kFilterExpansionRole).isValid();
+        if (!filter.isEmpty() && !snapshot) {
+            group->setData(0, kFilterExpansionRole, group->isExpanded());
+        }
         int visibleChildren = 0;
         for (int index = 0; index < group->childCount(); ++index) {
             QTreeWidgetItem* model = group->child(index);
+            const QString haystack = model->text(0) + QLatin1Char('\n') + model->toolTip(0) +
+                                     QLatin1Char('\n') + model->data(0, kModelRole).toString();
             const bool visible =
-                groupMatches || model->text(0).contains(filter, Qt::CaseInsensitive);
+                groupMatches || haystack.contains(filter, Qt::CaseInsensitive);
             model->setHidden(!visible);
             visibleChildren += visible ? 1 : 0;
         }
-        group->setHidden(!filter.isEmpty() && visibleChildren == 0);
-        if (!filter.isEmpty() && visibleChildren > 0) group->setExpanded(true);
+        if (filter.isEmpty()) {
+            if (snapshot) {
+                group->setExpanded(group->data(0, kFilterExpansionRole).toBool());
+                group->setData(0, kFilterExpansionRole, {});
+            }
+            group->setHidden(group->childCount() == 0);
+        } else {
+            group->setHidden(visibleChildren == 0);
+            if (visibleChildren > 0) group->setExpanded(true);
+        }
     }
 }
 
@@ -831,25 +1022,53 @@ void SettingsDialog::updateBenchmarkSelectionSummary() {
         tr("%1 / %2 selected").arg(selectedClips).arg(totalClips));
     benchmarkSelectAllClips_->setText(selectedClips == totalClips ? tr("Clear selection")
                                                                   : tr("Select all"));
+    benchmarkSelectAllClips_->setToolTip(selectedClips == totalClips ? tr("Clear every clip")
+                                                                     : tr("Select every clip"));
     benchmarkModelCount_->setText(
         tr("%1 / %2 selected").arg(selectedModels).arg(totalModels));
     // A checked unavailable row is still a selection: Clear must stay reachable
     // even when the catalogue currently offers nothing to select.
-    benchmarkSelectAllModels_->setText(
-        selectedModels > 0 && selectedAvailable == totalAvailable ? tr("Clear selection")
-                                                                  : tr("Select all"));
+    const bool everyAvailableChecked =
+        selectedModels > 0 && selectedAvailable == totalAvailable;
+    benchmarkSelectAllModels_->setText(everyAvailableChecked ? tr("Clear selection")
+                                                             : tr("Select all"));
+    benchmarkSelectAllModels_->setToolTip(
+        everyAvailableChecked
+            ? tr("Clear every model, including ones the catalogue no longer offers")
+            : tr("Select every available model"));
     // Unavailable rows keep their selection visible but are not run inputs;
     // nothing is substituted for a model that left the catalogue.
-    const int runs = selectedClips * (selectedAvailable + (benchmarkRawBox_->isChecked() ? 1 : 0));
+    const bool includeBaseline = benchmarkRawBox_->isChecked();
+    const int runs = selectedClips * (selectedAvailable + (includeBaseline ? 1 : 0));
+    const bool canRun = selectedClips > 0 && (selectedAvailable > 0 || includeBaseline);
+    if (benchmarkRunning_) {
+        benchmarkRunButton_->setText(tr("Cancel"));
+        benchmarkRunButton_->setToolTip(tr("Stop after the current sample. Finished rows are kept."));
+        benchmarkRunButton_->setAccessibleDescription(
+            tr("Stop the benchmark that is currently running."));
+        benchmarkRunButton_->setEnabled(benchmarkCancellation_ != nullptr &&
+                                        !benchmarkCancellation_->load());
+        if (benchmarkProgress_ != nullptr && benchmarkProgress_->maximum() > 0) {
+            benchmarkRunSummary_->setText(tr("Running · %1 / %2")
+                                              .arg(benchmarkProgress_->value())
+                                              .arg(benchmarkProgress_->maximum()));
+        }
+        return;
+    }
     QStringList summary{tr("Clips: %1").arg(selectedClips),
-                        tr("Models: %1").arg(selectedModels),
+                        tr("Models: %1").arg(selectedAvailable),
                         tr("Runs: %1").arg(runs)};
     if (selectedUnavailable > 0) {
         summary.append(tr("%1 unavailable").arg(selectedUnavailable));
     }
     benchmarkRunSummary_->setText(summary.join(QStringLiteral(" · ")));
-    benchmarkRunButton_->setEnabled(!benchmarkRunning_ && selectedClips > 0 &&
-                                    (selectedAvailable > 0 || benchmarkRawBox_->isChecked()));
+    benchmarkRunButton_->setText(tr("Run benchmark"));
+    benchmarkRunButton_->setEnabled(canRun);
+    benchmarkRunButton_->setToolTip(
+        canRun ? tr("Measure throughput for each selected clip and model. Preparation is excluded.")
+               : tr("Select at least one clip and one available model, or include the baseline."));
+    benchmarkRunButton_->setAccessibleDescription(
+        tr("Starts throughput measurement for the selected clips and models."));
 }
 
 void SettingsDialog::retranslateBenchmarkTab() {
@@ -858,18 +1077,29 @@ void SettingsDialog::retranslateBenchmarkTab() {
     benchmarkDescription_->setText(tr("Compare rendering speed at 2× input resolution."));
     benchmarkVideoTitle_->setText(tr("Video clips"));
     benchmarkModelTitle_->setText(tr("Enhancement models"));
-    benchmarkModelSearch_->setPlaceholderText(tr("Filter by model or group"));
+    benchmarkModelSearch_->setPlaceholderText(tr("Filter by model, group, or file"));
     benchmarkModelSearch_->setAccessibleName(tr("Filter benchmark models"));
+    benchmarkModelSearch_->setToolTip(
+        tr("Show models whose name, group, file, or id matches. Clearing restores open groups."));
     benchmarkRawBox_->setText(tr("Include the unfiltered baseline"));
-    benchmarkRunButton_->setText(tr("Run benchmark"));
+    benchmarkRawBox_->setToolTip(
+        tr("Measures playback with no shader or model, so filtered runs have a reference."));
     benchmarkResultsTitle_->setText(tr("Results"));
     benchmarkNote_->setText(tr("Preparation excluded from FPS."));
     benchmarkEmptyState_->setText(
         tr("Run a benchmark to see throughput for each selected clip and model."));
     benchmarkResults_->setHorizontalHeaderLabels({tr("Model"), tr("Clip"), tr("Throughput")});
+    alignBenchmarkThroughputColumn(benchmarkResults_);
+    benchmarkResults_->setAccessibleName(tr("Benchmark throughput results"));
+    benchmarkResults_->setAccessibleDescription(
+        tr("Each row is one clip measured with one model. Select a failed row for the reason. Ctrl+C copies the row."));
     benchmarkProgress_->setAccessibleName(tr("Benchmark run progress"));
     benchmarkEngineProgress_->setAccessibleName(tr("Engine build progress; indeterminate"));
     benchmarkModelTree_->setAccessibleName(tr("Available benchmark models"));
+    benchmarkModelTree_->setAccessibleDescription(
+        tr("Check the models to measure. A group checkbox selects every model in that group. Space toggles the focused row."));
+    benchmarkModelTree_->setToolTip(
+        tr("Space toggles the focused model. A group checkbox selects the whole group."));
     if (!benchmarkRunning_ && benchmarkResults_->rowCount() == 0) {
         benchmarkRunStatus_->setText(tr("Ready"));
         styleStatusBanner(benchmarkRunStatus_, QStringLiteral("neutral"));
@@ -926,9 +1156,13 @@ void SettingsDialog::runBenchmark() {
     if (!surface->isValid()) {
         benchmarkActivity_->setText(tr("Could not create the offscreen OpenGL surface."));
         benchmarkActivity_->show();
+        benchmarkRunStatus_->setText(tr("Failed"));
+        styleStatusBanner(benchmarkRunStatus_, QStringLiteral("warning"));
         return;
     }
 
+    const auto cancellation = std::make_shared<std::atomic<bool>>(false);
+    benchmarkCancellation_ = cancellation;
     benchmarkRunning_ = true;
     benchmarkResults_->setRowCount(0);
     benchmarkResultDetail_->clear();
@@ -944,7 +1178,6 @@ void SettingsDialog::runBenchmark() {
     benchmarkProgress_->show();
     benchmarkActivity_->setText(tr("Starting benchmark…"));
     benchmarkActivity_->show();
-    benchmarkRunButton_->setText(tr("Running…"));
     QTimer::singleShot(0, this, [this] {
         benchmarkScroll_->ensureWidgetVisible(benchmarkRunStatus_, 0, 0);
     });
@@ -960,8 +1193,6 @@ void SettingsDialog::runBenchmark() {
     updateBenchmarkSelectionSummary();
 
     const auto dialog = std::make_shared<QPointer<SettingsDialog>>(this);
-    const auto cancellation = std::make_shared<std::atomic<bool>>(false);
-    benchmarkCancellation_ = cancellation;
     const Runner::GuiDispatch post = runner_.post();
     const QString reportDirectory = mikai::app::benchmarkReportBaseDirectory();
     const QString applicationVersion = QCoreApplication::applicationVersion();
@@ -1092,8 +1323,11 @@ void SettingsDialog::runBenchmark() {
                 if (!successful) ++failedRuns;
                 const int completed = ++completedRuns;
                 post([dialog, cancellation, resultRow, completed, totalRuns] {
-                        if (cancellation->load() || dialog->isNull()) return;
+                        if (dialog->isNull()) return;
                         SettingsDialog* self = dialog->data();
+                        // A sample that already finished still belongs in the table
+                        // after Cancel. Only a newer run invalidates this token.
+                        if (self->benchmarkCancellation_ != cancellation) return;
                         const int row = self->benchmarkResults_->rowCount();
                         self->benchmarkResults_->insertRow(row);
 
@@ -1108,6 +1342,10 @@ void SettingsDialog::runBenchmark() {
                                       QLatin1Char('x'), QStringLiteral(" × "));
                         auto* clipItem = new QTableWidgetItem(clipName);
                         clipItem->setToolTip(resultRow.clip);
+                        clipItem->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+                        QFont clipFont = self->benchmarkResults_->font();
+                        clipFont.setFeature(QFont::Tag("tnum"), 1);
+                        clipItem->setFont(clipFont);
                         self->benchmarkResults_->setItem(row, 1, clipItem);
 
                         auto* resultItem = new QTableWidgetItem(
@@ -1136,12 +1374,13 @@ void SettingsDialog::runBenchmark() {
                         self->benchmarkResultStack_->setFixedHeight(
                             std::min(theme::kBenchmarkResultsMaxHeight, resultHeight));
                         self->benchmarkResultStack_->setCurrentWidget(self->benchmarkResults_);
-                        if (!resultRow.successful) self->benchmarkResults_->selectRow(row);
                         self->benchmarkProgress_->setValue(completed);
                         self->benchmarkRunStatus_->setText(
                             SettingsDialog::tr("Benchmark running · %1 / %2")
                                 .arg(completed)
                                 .arg(totalRuns));
+                        self->benchmarkRunSummary_->setText(
+                            SettingsDialog::tr("Running · %1 / %2").arg(completed).arg(totalRuns));
                     });
             };
 
