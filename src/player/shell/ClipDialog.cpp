@@ -22,6 +22,7 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPointer>
+#include <QTimer>
 #include <QPushButton>
 #include <QStringList>
 #include <QUrl>
@@ -45,7 +46,7 @@ constexpr int kThumbnailHeight = 96;
 
 /// Bits per second an H.264 encode of this height needs in practice. Used only
 /// for the printed estimate; the exporter decides the real size.
-double estimatedBitsPerSecond(int height) {
+double encodeBitsPerSecond(int height) {
     if (height >= 1080) return 6.2e6;
     if (height >= 720) return 3.1e6;
     return 1.5e6;
@@ -135,6 +136,22 @@ public:
             }
         });
         connect(source, &VideoSurface::mediaTracksChanged, this, [this] { captureTracks(); });
+        connect(source, &VideoSurface::streamStatsChanged, this,
+                [this](double bytesPerSecond, double, StreamFpsSource) {
+                    if (!std::isfinite(bytesPerSecond) || bytesPerSecond <= 0.0) return;
+                    streamBytesPerSecond = bytesPerSecond;
+                    refreshDownload();
+                });
+        tileWatchdog.setSingleShot(true);
+        connect(&tileWatchdog, &QTimer::timeout, this, [this] {
+            // The request is dropped, not retried: a source that cannot answer it
+            // will not answer the retry either, and the strip keeps moving.
+            thumbnails.cancel();
+            tileInFlight = false;
+            pumpTile();
+        });
+        connect(&thumbnails, &FramePreviewService::frameUnavailable, this,
+                [this](quint64 token, double, const QString&) { finishTile(token); });
         connect(preview, &VideoSurface::mediaTracksChanged, this, [this] { syncPreviewAudio(); });
         connect(&exportWorker, &ClipExport::encodingStarted, this, [this](const QString& codec) {
             codecName = codec;
@@ -184,6 +201,7 @@ public:
     }
 
     ~Private() override {
+        tileWatchdog.stop();
         exportWorker.cancel();
         thumbnails.shutdown();
     }
@@ -374,6 +392,21 @@ public:
         retranslateUi();
     }
 
+    /// What this clip will weigh, in bits per second.
+    ///
+    /// The exporter re-encodes at a constant quality, so no exact size exists in
+    /// advance. The best available predictor is the rate the source itself
+    /// delivers at: it carries the content's complexity, and a lower height
+    /// scales it down in proportion to the height table. The table is also the
+    /// ceiling, because a clip never promises more than its encode target.
+    double estimatedBitsPerSecond(int height) const {
+        const double ceiling = encodeBitsPerSecond(height);
+        if (!(streamBytesPerSecond > 0.0)) return ceiling;
+        const double source = streamBytesPerSecond * 8.0;
+        const double scale = std::min(1.0, ceiling / encodeBitsPerSecond(1080));
+        return std::min(ceiling, source * scale);
+    }
+
     void setPlaying(bool playing) {
         playingState = playing;
         if (sheet != nullptr) sheet->setPlaying(playing);
@@ -443,25 +476,60 @@ public:
     /// One frame per strip slot, from the decoder service rather than the
     /// preview surface: seeking the visible surface for ten thumbnails would
     /// make the preview stutter and would move the playhead under the user.
+    ///
+    /// Requested one at a time. The service answers the newest request and drops
+    /// the rest, so ten requests in a row would leave exactly one frame on the
+    /// strip - the last one - which is what a strip full of empty plates was.
     void requestTiles() {
         if (invalidated || !windowInitialized || windowEnd <= windowStart) return;
         const int count = sheet->tileCount();
         if (count <= 0) return;
+        tileQueue.clear();
+        tileSlots.clear();
+        tileInFlight = false;
+        tileWatchdog.stop();
+        thumbnails.cancel();
+        // Every slot is cleared with the new geometry: slots are a mapping, and
+        // leaving an old frame at a new index would label the wrong instant.
+        sheet->setTiles(QVector<QPixmap>(count));
         const double span = windowEnd - windowStart;
         for (int i = 0; i < count; ++i) {
-            const double seconds = windowStart + span * (i + 0.5) / count;
-            const quint64 token = ++tileToken;
-            tileSlots.insert(token, i);
-            thumbnails.requestFrame(token, seconds);
+            tileQueue.append({i, windowStart + span * (i + 0.5) / count});
         }
+        pumpTile();
+    }
+
+    void pumpTile() {
+        if (tileInFlight || tileQueue.isEmpty() || invalidated) return;
+        const auto next = tileQueue.takeFirst();
+        const quint64 token = ++tileToken;
+        tileSlots.insert(token, next.first);
+        tileInFlight = true;
+        // A frame the service never answers must not stall the strip forever; the
+        // slot stays a plate and the next one is asked for.
+        tileWatchdog.start(8000);
+        thumbnails.requestFrame(token, next.second);
+    }
+
+    void finishTile(quint64 token) {
+        if (!tileInFlight) return;
+        tileSlots.remove(token);
+        tileInFlight = false;
+        tileWatchdog.stop();
+        pumpTile();
     }
 
     void onTileReady(quint64 token, const QImage& image) {
-        if (invalidated || image.isNull() || sheet == nullptr) return;
+        if (invalidated || image.isNull()) {
+            finishTile(token);
+            return;
+        }
         const auto slot = tileSlots.constFind(token);
         if (slot == tileSlots.constEnd()) return;
+        const int index = *slot;
+        finishTile(token);
         const QSize target(kThumbnailHeight * 16 / 9, kThumbnailHeight);
-        sheet->setTile(*slot, QPixmap::fromImage(
+        sheet->setTile(index, QPixmap::fromImage(
                                   image.scaled(target, Qt::KeepAspectRatioByExpanding,
                                                Qt::SmoothTransformation)));
     }
@@ -620,7 +688,11 @@ public:
     QPushButton* reveal = nullptr;
     QPushButton* copyPath = nullptr;
     QHash<quint64, int> tileSlots;
+    QVector<QPair<int, double>> tileQueue;
+    QTimer tileWatchdog;
     quint64 tileToken = 0;
+    bool tileInFlight = false;
+    double streamBytesPerSecond = 0.0;
     QString sourceUrl;
     QString externalAudio;
     QString completedPath;
