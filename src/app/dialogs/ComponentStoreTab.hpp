@@ -289,6 +289,11 @@ private:
     /// session. Used for the "Downloaded: n/5" line until a fresh inventory
     /// proves the files on disk.
     int downloadedModelItemCount() const;
+    /// The one answer to "is this runtime usable under the selected backend":
+    /// a stored pack alone is not readiness when the backend's own closure or
+    /// installation record is missing. The badge, the inventory counts and the
+    /// progress line all read this, so a card can never report two states.
+    bool runtimeClosureInstalled() const;
     /// Whether the runtime card has an installed element on disk under the
     /// currently selected backend (its pack, or that backend's closure).
     int runtimeCardInstalledOnDisk() const;
@@ -500,6 +505,9 @@ private:
     /// purpose: a proof run is not a transfer and must never render through the
     /// download path.
     bool verificationActive_ = false;
+    /// Cached by the inventory snapshot: the classic runtime pack is stored.
+    /// The card truth below reads this instead of re-reading install.json on
+    /// the GUI thread for every progress event.
     bool runtimePackInstalled_ = false;
     bool kernelsPackInstalled_ = false;
     int installedSpatialCount_ = 0;

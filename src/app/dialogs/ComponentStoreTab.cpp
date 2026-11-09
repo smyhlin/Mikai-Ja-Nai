@@ -1248,18 +1248,30 @@ int ComponentStoreTab::downloadedModelItemCount() const {
     return downloaded;
 }
 
-int ComponentStoreTab::runtimeCardInstalledOnDisk() const {
+bool ComponentStoreTab::runtimeClosureInstalled() const {
     // Each backend answers from its own record; RTX never borrows a classic
-    // pack's presence and is never satisfied by a DirectML closure.
+    // pack's presence and is never satisfied by a DirectML closure. A stored
+    // runtime pack is a download, not readiness: on an NVIDIA GPU the classic
+    // card needs both the pack and the backend's own verified closure, which is
+    // what makes a half-provisioned store read as "not installed" everywhere
+    // instead of "installed" in the progress line and "not installed" in the
+    // badge at the same time.
+    const GpuComputeCapability& gpu = observeComputeCapability();
     switch (selectedBackend()) {
         case Backend::TensorRT:
-            return (animeJanaiTensorRtInstalled_ || runtimePackInstalled_) ? 1 : 0;
+            return gpu.nvidia ? animeJanaiTensorRtInstalled_ &&
+                                    (runtimePackInstalled_ || componentDirsAvailable_)
+                              : animeJanaiTensorRtInstalled_;
         case Backend::DirectML:
-            return animeJanaiDirectMlInstalled_ ? 1 : 0;
+            return animeJanaiDirectMlInstalled_;
         case Backend::TensorRTRTX:
-            return animeJanaiTensorRtRtxInstalled_ ? 1 : 0;
+            return animeJanaiTensorRtRtxInstalled_;
     }
-    return 0;
+    return false;
+}
+
+int ComponentStoreTab::runtimeCardInstalledOnDisk() const {
+    return runtimeClosureInstalled() ? 1 : 0;
 }
 
 void ComponentStoreTab::reconcileProgressWithInventory() {
@@ -1283,17 +1295,13 @@ void ComponentStoreTab::reconcileProgressWithInventory() {
         return row == nullptr || !QFileInfo(row->graphPath).isFile();
     });
 
-    const auto bareIdentity = [](const QString& key) {
-        return key.startsWith(QLatin1String("pending:")) ? key.mid(8) : key;
-    };
+    // Every closure row - the classic runtime pack, the dispatcher archive and
+    // the RTX overlay alike - survives only while the selected backend's own
+    // closure is installed. A stored pack whose backend record is missing is
+    // not readiness: keeping its row would print "Installed: …" under a badge
+    // that already says the card is not installed.
     eraseInstalledWhere(QStringLiteral("tensorRtRuntimeCard"),
-                        [this, &bareIdentity](const QString& key) {
-        const QString name = bareIdentity(key);
-        if (name == QLatin1String("trt-runtime")) return !runtimePackInstalled_;
-        // Every closure row, the dispatcher archive and the RTX overlay alike,
-        // survives only while the selected backend's own record is present.
-        return runtimeCardInstalledOnDisk() == 0;
-    });
+                        [this](const QString&) { return !runtimeClosureInstalled(); });
     eraseInstalledWhere(QStringLiteral("tensorRtKernelsCard"),
                         [this](const QString&) { return !kernelsPackInstalled_; });
     eraseInstalledWhere(QStringLiteral("rifeModelsCard"),
@@ -1448,31 +1456,13 @@ ComponentStoreTab::ShaderInventory ComponentStoreTab::shaderInventory() const {
 void ComponentStoreTab::updateCardStates() {
     const GpuComputeCapability& gpu = observeComputeCapability();
     const ComponentPack* runtimePack = tensorRtRuntimePack();
-    const StoredPack runtimeStored = runtimePack != nullptr
-                                         ? storedPack(componentStore(), *runtimePack)
-                                         : StoredPack{};
     // The badge answers for the backend the user selected: on an NVIDIA GPU
-    // with DirectML chosen it reports the DirectML runtime, not TensorRT. A
-    // stored runtime pack alone is not readiness when its closure is unusable.
+    // with DirectML chosen it reports the DirectML runtime, not TensorRT.
     const Backend backend = selectedBackend();
-    // Readiness is asked of the selected backend's own record. RTX is satisfied
-    // only by its own installation, never by a classic pack or a DirectML
-    // closure, and it needs no separate GPU-kernel pack.
-    bool runtimeInstalled = false;
-    switch (backend) {
-        case Backend::TensorRT:
-            runtimeInstalled =
-                gpu.nvidia ? animeJanaiTensorRtInstalled_ &&
-                                 (runtimeStored.installed || componentDirsAvailable_)
-                           : animeJanaiTensorRtInstalled_;
-            break;
-        case Backend::DirectML:
-            runtimeInstalled = animeJanaiDirectMlInstalled_;
-            break;
-        case Backend::TensorRTRTX:
-            runtimeInstalled = animeJanaiTensorRtRtxInstalled_;
-            break;
-    }
+    // Readiness is asked of the selected backend's own record, through the same
+    // predicate the inventory counts and the progress line use: one card can
+    // never read installed in one place and not installed in another.
+    const bool runtimeInstalled = runtimeClosureInstalled();
     // The recommendation is an offer for the selected product. RTX is only
     // recommended where it can actually be installed.
     const bool runtimeRecommended =
@@ -1515,17 +1505,21 @@ void ComponentStoreTab::updateCardStates() {
     // Reuse the one runtime card with the selected product's own wording.
     updateRuntimeCardText();
 
-    auto setState = [](QLabel* label, const QString& state) {
+    auto setState = [](QLabel* label, const QString& state, const QString& detail = QString()) {
         if (label == nullptr) return;
-        // The badge is one line inside its fixed width: the full wording stays
-        // in the tooltip and the accessible name, the ink elides.
+        // The badge is one line inside its fixed width: the ink elides, and the
+        // whole sentence - including anything the badge does not have room for -
+        // stays in the tooltip and the accessible name.
         const int available = theme::kComponentBadgeWidth - 2 * theme::kSpacingSmall;
         label->setText(label->fontMetrics().elidedText(state, Qt::ElideRight, available));
-        label->setToolTip(state);
-        label->setAccessibleName(state);
+        const QString spoken = detail.isEmpty() ? state : detail;
+        label->setToolTip(spoken);
+        label->setAccessibleName(spoken);
     };
-    // The size beside the card is the download this product would still need.
-    // For RTX that is exactly the dispatcher plus NVIDIA overlay archives.
+    // The size beside a card is the download that product would still need, so
+    // it belongs to an offer and not to something already present: an installed
+    // runtime must not keep advertising its archive weight beside a badge that
+    // says "installed". For RTX that weight is the dispatcher plus the overlay.
     qint64 runtimeBytes = 0;
     switch (backend) {
         case Backend::TensorRT:
@@ -1534,15 +1528,18 @@ void ComponentStoreTab::updateCardStates() {
         case Backend::DirectML: runtimeBytes = directMlClosureBytes_; break;
         case Backend::TensorRTRTX: runtimeBytes = tensorRtRtxClosureBytes_; break;
     }
+    const auto downloadSize = [](qint64 bytes, bool installed) {
+        return bytes > 0 && !installed
+                   ? tr("%1 MB").arg(QLocale().toString(bytes / 1048576))
+                   : QString();
+    };
     findChild<QLabel*>(QStringLiteral("tensorRtRuntimeCardSize"))
-        ->setText(runtimeBytes > 0
-                      ? tr("%1 MB").arg(QLocale().toString(runtimeBytes / 1048576))
-                      : QString());
+        ->setText(downloadSize(runtimeBytes, runtimeInstalled));
     findChild<QLabel*>(QStringLiteral("rifeModelsCardSize"))
-        ->setText(tr("%1 MB").arg(QLocale().toString(rifeArchivePack().assetBytes / 1048576)));
+        ->setText(downloadSize(rifeArchivePack().assetBytes, rifeInstalled));
     const qint64 kernelsBytes = kernelsPack != nullptr ? kernelsPack->assetBytes : 0;
     findChild<QLabel*>(QStringLiteral("tensorRtKernelsCardSize"))
-        ->setText(tr("%1 MB").arg(QLocale().toString(kernelsBytes / 1048576)));
+        ->setText(downloadSize(kernelsBytes, kernelsUsable));
 
     findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardSize"))
         ->setText(QLocale().formattedDataSize(spatialBytes));
@@ -1559,30 +1556,43 @@ void ComponentStoreTab::updateCardStates() {
         counts->setVisible(!spatialCatalog.isEmpty());
     }
 
-    // "recommended for this PC" is an offer, never a substitute for the truth
-    // about what is installed. Both facts are shown when both are true.
+    // Presence is the badge's one fact. "recommended for this PC" is an offer,
+    // never a substitute for the truth about what is installed, and it is not
+    // squeezed into the same 104 px badge: at that width the sentence elided to
+    // a broken half-word ("not installed …") that read as two opposing states.
+    // The offer therefore travels in the tooltip and the accessible name, where
+    // a screen reader and a hover both get it in full.
+    struct Offer {
+        QString badge;
+        QString detail;
+    };
     const auto offerState = [this](bool installed, bool recommended) {
-        if (installed && recommended) return tr("installed · recommended for this PC");
-        if (!installed && recommended) return tr("not installed · recommended for this PC");
-        return installed ? tr("installed") : tr("optional");
+        if (installed && recommended)
+            return Offer{tr("installed"), tr("Installed · recommended for this PC")};
+        if (!installed && recommended)
+            return Offer{tr("not installed"), tr("Not installed · recommended for this PC")};
+        if (installed) return Offer{tr("installed"), QString()};
+        return Offer{tr("optional"), QString()};
     };
     if (backend == Backend::TensorRTRTX && !tensorRtRtxOffered()) {
         // A restored RTX choice on a platform without the binary is reported as
         // unavailable with the named reason, never repainted as TensorRT.
-        setState(runtimeState_, tr("unavailable"));
         const QString reason = animeJanaiTensorRtRtxReason_.isEmpty()
                                    ? tr("TensorRT for RTX is available only on Windows.")
                                    : animeJanaiTensorRtRtxReason_;
-        runtimeState_->setToolTip(reason);
-        runtimeState_->setAccessibleName(reason);
+        setState(runtimeState_, tr("unavailable"), reason);
     } else {
-        setState(runtimeState_, offerState(runtimeInstalled, runtimeRecommended));
+        const Offer runtimeOffer = offerState(runtimeInstalled, runtimeRecommended);
+        setState(runtimeState_, runtimeOffer.badge, runtimeOffer.detail);
     }
     setState(rifeState_, rifeInstalled ? tr("OK") : tr("optional"));
-    setState(kernelsState_,
-             kernelsInstalled && !kernelsUsable
-                 ? tr("downloaded · runtime missing")
-                 : offerState(kernelsInstalled, kernelsRecommended));
+    if (kernelsInstalled && !kernelsUsable) {
+        setState(kernelsState_, tr("downloaded"),
+                 tr("Downloaded, but the runtime closure it needs is missing."));
+    } else {
+        const Offer kernelsOffer = offerState(kernelsInstalled, kernelsRecommended);
+        setState(kernelsState_, kernelsOffer.badge, kernelsOffer.detail);
+    }
     auto setBadgeRole = [](QLabel* badge, bool recommended, bool installed) {
         badge->setAutoFillBackground(false);
         badge->setStyleSheet(QString());
@@ -2131,6 +2141,22 @@ void ComponentStoreTab::renderCardProgress(const QString& cardId) {
     }
 
     const components::CardState state = cardStateFor(cardId);
+    // A card's own inventory answers for its "Installed:" line. Terminal rows
+    // are a session log, and a log entry outlives the state it described: after
+    // a backend switch, or when a pack was stored without the closure it needs,
+    // the badge already reads "not installed" while the log line still claims
+    // "Installed: …" - two opposing states printed on one card. While nothing
+    // is live on this card and the inventory finds nothing installed, the line
+    // and the bar are withdrawn; the badge is the surviving statement of truth.
+    const bool inventoryContradictsInstalled =
+        state.inventory.known && state.inventory.installed == 0 &&
+        activeLines.isEmpty() && failedLines.isEmpty() && cancelledLines.isEmpty();
+    if (inventoryContradictsInstalled) {
+        bar->hide();
+        label->clear();
+        label->hide();
+        return;
+    }
     const bool hasItems = state.transfer.active > 0 || state.transfer.queued > 0 ||
                           state.transfer.failed > 0 || state.transfer.cancelled > 0 ||
                           state.transfer.installed > 0;

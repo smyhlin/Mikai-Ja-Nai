@@ -41,6 +41,7 @@
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QMessageBox>
+#include <QtTest/QSignalSpy>
 #include <QtWidgets/QProgressBar>
 #include <QtWidgets/QPushButton>
 
@@ -306,6 +307,69 @@ void TestNativeComponents::componentProgressSeparatesCardsAndAggregatesSpatialGr
     QVERIFY(spatialStatus->text().contains(QStringLiteral("Cancelled")));
     QVERIFY(spatialStatus->text().contains(
         QStringLiteral("Installed: ") + completedAsset.name));
+}
+
+void TestNativeComponents::runtimeCardNeverClaimsAnInstallItsInventoryDoesNotConfirm() {
+    // The reported defect: the runtime card printed "Installed: <closure>" at
+    // 100 % while its own badge said the runtime was not installed - a stored
+    // pack is a download, not readiness. One card must state one truth, so the
+    // terminal line and the bar are withdrawn whenever the card's inventory
+    // finds nothing installed.
+    mikai::app::Runner runner;
+    mikai::app::NativeComponentProvisioner provisioner(runner);
+    mikai::app::ComponentStoreTab tab;
+    tab.setComponentProvisioner(&provisioner);
+    tab.setRunner(&runner);
+
+    QElapsedTimer inventoryDeadline;
+    inventoryDeadline.start();
+    while (!tab.inventoryReady() && inventoryDeadline.elapsed() < 10000) {
+        QApplication::processEvents();
+        QTest::qWait(10);
+    }
+    QVERIFY(tab.inventoryReady());
+
+    auto* badge = tab.findChild<QLabel*>(QStringLiteral("tensorRtRuntimeCardState"));
+    auto* bar = tab.findChild<QProgressBar*>(QStringLiteral("tensorRtRuntimeCardProgress"));
+    auto* status =
+        tab.findChild<QLabel*>(QStringLiteral("tensorRtRuntimeCardProgressStatus"));
+    QVERIFY(badge != nullptr);
+    QVERIFY(bar != nullptr);
+    QVERIFY(status != nullptr);
+
+    // This isolated store holds no AnimeJaNai runtime record, so the badge is
+    // the authority for "not installed"; whichever wording it chose, it must
+    // not read as installed.
+    QVERIFY2(badge->text().compare(QStringLiteral("installed"), Qt::CaseInsensitive) != 0,
+             qPrintable(QStringLiteral("badge read '%1' on an empty store").arg(badge->text())));
+
+    QSignalSpy updated(&tab, &mikai::app::ComponentStoreTab::inventoryUpdated);
+    const auto progress = [&provisioner](qint64 received, qint64 total,
+                                         ComponentProvisionStage stage) {
+        Q_EMIT provisioner.progress(
+            ComponentProvisionProgress{QStringLiteral("trt-runtime"), received, total, stage});
+    };
+    progress(100, 100, ComponentProvisionStage::Installed);
+    QApplication::processEvents();
+    QVERIFY2(!status->text().contains(QStringLiteral("Installed")),
+             qPrintable(QStringLiteral("line read '%1' under a not-installed badge")
+                            .arg(status->text())));
+    QVERIFY(!bar->isVisibleTo(&tab));
+
+    // The same claim must not survive a refresh either: the reconcile pass uses
+    // the same predicate, so a terminal row cannot outlive the inventory.
+    updated.clear();
+    tab.refresh();
+    inventoryDeadline.restart();
+    while (updated.isEmpty() && inventoryDeadline.elapsed() < 10000) {
+        QApplication::processEvents();
+        QTest::qWait(10);
+    }
+    QVERIFY(!updated.isEmpty());
+    QVERIFY2(!status->text().contains(QStringLiteral("Installed")),
+             qPrintable(QStringLiteral("line read '%1' after a refresh").arg(status->text())));
+    QVERIFY(!bar->isVisibleTo(&tab));
+    QVERIFY(badge->text().compare(QStringLiteral("installed"), Qt::CaseInsensitive) != 0);
 }
 
 void TestNativeComponents::upscalingPackReviewsAndQueuesMissingGraphs_data() {

@@ -54,6 +54,7 @@ class TestNativeComponents : public QObject {
   void upscalingSelectionSurvivesRefreshAndMissingGraphsFailVerification();
   void concurrentUnitsSettleOnceEachAndCancelArmsEveryUnit();
   void componentProgressSeparatesCardsAndAggregatesSpatialGraphs();
+  void runtimeCardNeverClaimsAnInstallItsInventoryDoesNotConfirm();
 
   // RIFE status trusts only the app-owned record for the exact compiled release
   // and graph inventory; manual verification still hashes the selected graph.
