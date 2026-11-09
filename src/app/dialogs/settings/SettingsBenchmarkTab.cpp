@@ -108,6 +108,18 @@ QString benchmarkBackendId(mplayer::native::Backend backend) {
     return mplayer::native::stableName(backend);
 }
 
+/// The engine's name as a person reads it. The benchmark has no picker of its
+/// own: the engine comes from the Components selection, so this only reports.
+QString benchmarkEngineName(mplayer::native::Backend backend) {
+    switch (backend) {
+        case mplayer::native::Backend::TensorRT: return SettingsDialog::tr("TensorRT");
+        case mplayer::native::Backend::DirectML: return SettingsDialog::tr("DirectML");
+        case mplayer::native::Backend::TensorRTRTX:
+            return SettingsDialog::tr("TensorRT for RTX");
+    }
+    return QString();
+}
+
 // Read the player's Standard-AJI choice, not the private Native preference.
 std::optional<mplayer::native::Backend> storedStandardAnimeJanaiBackendChoice() {
     const QString stored =
@@ -665,6 +677,12 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     applyTabularNumerals(benchmarkRunSummary_);
     barLayout->addWidget(benchmarkRunSummary_, 1, Qt::AlignVCenter);
 
+    benchmarkEngineChoice_ = new QLabel(bottomBar);
+    benchmarkEngineChoice_->setObjectName(QStringLiteral("benchmarkEngineChoice"));
+    benchmarkEngineChoice_->setProperty("textRole", QStringLiteral("muted"));
+    benchmarkEngineChoice_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+    barLayout->addWidget(benchmarkEngineChoice_, 0, Qt::AlignVCenter);
+
     benchmarkRunButton_ = new QPushButton(tr("Run benchmark"), bottomBar);
     benchmarkRunButton_->setObjectName(QStringLiteral("benchmarkRunButton"));
     benchmarkRunButton_->setProperty("benchmarkRunAction", true);
@@ -1115,6 +1133,26 @@ QString SettingsDialog::locateBenchmarkClip(const QString& name) {
     return mikai::app::locateBenchmarkClip(name, QCoreApplication::applicationDirPath());
 }
 
+void SettingsDialog::refreshBenchmarkEngineChoice() {
+    if (benchmarkEngineChoice_ == nullptr) return;
+    // Re-read on every show and every run: the Components tab writes this key
+    // while the dialog is open, and a benchmark that named a stale engine would
+    // be reporting a measurement of something else.
+#ifdef Q_OS_LINUX
+    const std::optional<mplayer::native::Backend> stored =
+        storedStandardAnimeJanaiBackendChoice();
+    const mplayer::native::Backend engine =
+        stored == mplayer::native::Backend::TensorRTRTX ? *stored
+                                                        : mplayer::native::Backend::TensorRT;
+#else
+    const mplayer::native::Backend engine = storedStandardAnimeJanaiBackend();
+#endif
+    benchmarkEngineChoice_->setText(
+        tr("Engine: %1").arg(benchmarkEngineName(engine)));
+    benchmarkEngineChoice_->setToolTip(
+        tr("The benchmark runs the engine selected in Settings › Components."));
+}
+
 void SettingsDialog::runBenchmark() {
     if (benchmarkRunning_ || benchmarkResults_ == nullptr || benchmarkModelTree_ == nullptr) return;
 
@@ -1177,6 +1215,7 @@ void SettingsDialog::runBenchmark() {
     benchmarkProgress_->setValue(0);
     benchmarkProgress_->show();
     benchmarkActivity_->setText(tr("Starting benchmark…"));
+    refreshBenchmarkEngineChoice();
     benchmarkActivity_->show();
     QTimer::singleShot(0, this, [this] {
         benchmarkScroll_->ensureWidgetVisible(benchmarkRunStatus_, 0, 0);
@@ -1268,10 +1307,10 @@ void SettingsDialog::runBenchmark() {
                     });
             };
 
-            const auto publishEngineBuild = [dialog, post, cancellation](
+            const auto publishEngineBuild = [dialog, post, cancellation, backend](
                                                 BenchmarkEngineBuildUpdate update,
                                                 const QString& detail) {
-                post([dialog, cancellation, update, detail] {
+                post([dialog, cancellation, update, detail, backend] {
                         if (cancellation->load() || dialog->isNull()) return;
                         SettingsDialog* self = dialog->data();
                         if (self->benchmarkActivity_ == nullptr ||
@@ -1286,8 +1325,9 @@ void SettingsDialog::runBenchmark() {
                             self->benchmarkEngineProgress_->setRange(0, 0);
                             self->benchmarkEngineProgress_->show();
                             self->benchmarkEngineElapsedLabel_->setText(
-                                SettingsDialog::tr("TensorRT engine build elapsed · %1")
-                                    .arg(benchmarkElapsedText(0)));
+                                SettingsDialog::tr("%1 engine build elapsed · %2")
+                                    .arg(benchmarkEngineName(backend),
+                                         benchmarkElapsedText(0)));
                             self->benchmarkEngineElapsedLabel_->show();
                             self->benchmarkEngineTimer_->start();
                             self->benchmarkActivity_->setText(

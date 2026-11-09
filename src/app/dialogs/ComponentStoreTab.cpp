@@ -835,6 +835,17 @@ void ComponentStoreTab::buildUi() {
                 // progress updates while the download ran on.
                 if (backend == trackedBackend_) return;
                 trackedBackend_ = backend;
+                // The Components selection *is* the global engine: the player's
+                // backend menu and the benchmark both read this key, so a choice
+                // made here must not stay local to this tab. A product this
+                // platform cannot install is left unpersisted - storing it would
+                // switch playback into a backend with no closure.
+                if (static_cast<Backend>(backend) != Backend::TensorRTRTX ||
+                    tensorRtRtxOffered()) {
+                    QSettings settings;
+                    settings.setValue(QStringLiteral("player/animejanai/backend"),
+                                      mplayer::native::stableName(static_cast<Backend>(backend)));
+                }
                 // A different backend answers a different question: any run still
                 // in flight was hashing the previous one, so its results are
                 // discarded instead of being rendered as fresh evidence. The

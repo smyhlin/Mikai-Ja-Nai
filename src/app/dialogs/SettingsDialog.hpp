@@ -244,6 +244,7 @@ private:
     void refreshAppearanceCaptions();
     void retranslateCustomizationTabs();
     void runBenchmark();
+    void refreshBenchmarkEngineChoice();
     void resetBenchmarkControls();
     void filterPresetRows(const QString& query);
     /// Resolves one benchmark clip name against the layout of the running
@@ -498,6 +499,9 @@ private:
     QLabel* benchmarkClipCount_ = nullptr;
     QLabel* benchmarkModelCount_ = nullptr;
     QLabel* benchmarkRunSummary_ = nullptr;
+    /// The engine the next run will use: the Components selection, named in the
+    /// footer so a run never silently measures something else.
+    QLabel* benchmarkEngineChoice_ = nullptr;
     QLabel* benchmarkRunStatus_ = nullptr;
     QLabel* benchmarkResultsTitle_ = nullptr;
     QLabel* benchmarkResultDetail_ = nullptr;
