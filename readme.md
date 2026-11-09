@@ -26,13 +26,14 @@
 
 - Browse and search the Mikai catalogue, filter titles, view teams and schedules, and keep a local recently-opened list.
 - Play provider streams or open local video files in an integrated **libmpv** player, through the picker, a drag-and-drop or an Open With hand-off. Local playback is independent of catalogue sign-in/API availability, and the app can offer itself as a per-user default-player candidate without changing an existing default on its own.
-- Compare a paused frame across Original, Anime4K, AnimeJaNai and prepared Native candidates; export flicker comparisons as GIF, animated WebP or silent MP4.
-- Optionally acquire GPU-specific components and models for AI processing: the official AnimeJaNai v0.22.2 pair, and on Windows an opt-in TensorRT for RTX runtime. Ordinary Original playback does not require AI components; enhancement is opt-in.
+- Compare a paused frame across Original, Anime4K, AnimeJaNai and prepared Native candidates using true source replay, frame-stepping and difference metrics; export flicker comparisons as GIF, animated WebP or silent MP4.
+- Cut a short video moment (MP4) from seekable media using an integrated filmstrip sheet bounded to ±2 minutes around the current frame, with an independent preview playhead, live audio preview, and stream-bitrate size estimates.
+- Optionally acquire GPU-specific components and models for AI processing: the official AnimeJaNai v0.24.0 pair, and on Windows an opt-in TensorRT for RTX runtime. Ordinary Original playback does not require AI components; enhancement is opt-in.
 - Skip the openings, endings and recaps the provider publishes for an episode, with accent-tinted timeline ranges and per-segment skip buttons.
 - Preview the timeline on hover with decoded frame thumbnails, and move playback into a floating picture-in-picture window.
 - Change how the picture fills the window: Fit, Fill, Stretch, 16:9, 4:3, original size, zoom, upscaler and downscaler.
 - Load local subtitle files into local videos and network streams, search OpenSubtitles, inspect local media metadata, manage tracks, and customize the interface in English or Ukrainian.
-- Resume where you stopped: playback starts at 00:00 and offers a stored position instead, the episode is marked watched at 90 % of its length, and the title page shows the same progress.
+- Resume where you stopped: playback starts at 00:00 and offers a stored position via an in-app themed prompt, the episode is marked watched at 90 % of its length, and the title page shows the same progress.
 - Read the source at a glance in the player footer: HDR, Dolby Vision, Dolby Atmos and the video codec, based on what the container reports.
 - Identify the exact binary you are running with `--version`, which prints the commit and build time without needing a desktop session.
 

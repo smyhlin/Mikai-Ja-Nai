@@ -12,7 +12,7 @@ Open **Settings** from the main window. The settings window has these pages:
 | **Playback** | **Components** | Downloadable backend components, models and their install state |
 | **Playback** | **Benchmark** | Video-clip processing comparison |
 
-The sidebar groups the pages as listed, and the window normally opens on **Customization → General**; an invalid stored preset binding opens **Application → Keyboard shortcuts** instead so the conflict is visible. Page contents scroll independently; the **Save** and **Cancel** buttons stay in the Settings footer. For detailed processing, component installation and benchmark instructions, see the [processing guide](processing-guide.md).
+The sidebar groups the pages as listed, and the window normally opens on **Customization → General**; an invalid stored preset binding opens **Application → Keyboard shortcuts** instead so the conflict is visible. Page contents scroll independently; the **Save** and **Cancel** buttons stay in the Settings footer. **Save** commits preferences immediately and remains open (displaying an inline **Saved** confirmation for a moment), allowing continuous adjustments across multiple pages without closing the window; **Cancel**, Escape, or closing the window closes it. For detailed processing, component installation and benchmark instructions, see the [processing guide](processing-guide.md).
 
 ## Change appearance and display preferences
 
@@ -43,8 +43,8 @@ Appearance and site/content display changes preview while Settings is open. **Sa
 
 Every action in the interface is one of four roles, and the accent you pick fills the first of them:
 
-- **Primary** - the accent itself, with a black or white label chosen by contrast so a very dark or very light custom accent still reads. Used for the one obvious action on a surface: Search, Watch, Save, Apply changes, and progress chunks.
-- **Secondary** - a raised neutral fill with a visible boundary; it is what an unlabelled button is. Filters, Teams, Cancel, Refresh and the player's chrome chips use it. Hovering moves it toward the accent.
+- **Primary** - the accent itself, with a black or white label chosen by contrast so a very dark or very light custom accent still reads. Used for the one obvious action on a surface: Search, Watch, Save, Install selected (when packages are chosen), and progress chunks.
+- **Secondary** - a raised neutral fill with a visible boundary; it is what an unlabelled button is. Filters, Teams, Cancel, and the player's chrome chips use it. Hovering moves it toward the accent.
 - **Ghost** - no fill, accent text, for inline and keyboard-hint actions.
 - **Danger** - a danger-coloured outline, for destructive removal only.
 
@@ -122,10 +122,10 @@ A key combination can belong to only one preset, and built-in player shortcuts a
 Platform boundaries are stated in the pages themselves:
 
 - On Linux the runtime selector offers only **Standard**, and the page header says that DirectML, TensorRT for RTX and the private Native runtime are Windows-only.
-- **Playback → Components** is headed **Backend components**. On Windows the backend selector offers TensorRT, DirectML and **TensorRT for RTX**; on Linux it offers TensorRT only. That selector decides which backend **Apply changes** and **Verify** act on. A stored RTX choice opened on Linux appears as **TensorRT for RTX (unavailable on this platform)**, and the page explains that the runtime is available only on Windows.
-- Opening these pages does not prepare a model or start inference. **Apply changes** downloads the selected missing components, **Verify** re-checks installed elements against their digests, and **Cancel** stops the active acquisition. The downloaded files are the app's own components, not GPU drivers.
+- **Playback → Components** is headed **Backend components**. On Windows the backend selector offers TensorRT, DirectML and **TensorRT for RTX**; on Linux it offers TensorRT only. Choosing an engine in this selector immediately persists the choice as the global backend (`player/animejanai/backend`), which the player and the Benchmark tab directly follow. A stored RTX choice opened on Linux appears as **TensorRT for RTX (unavailable on this platform)**, and the page explains that the runtime is available only on Windows.
+- Under the backend selector, a compact action bar provides a tri-state **Select all** checkbox, a live selection counter (*Selected: N*), **Verify** (ghost action), and **Install selected** (accent primary action, dimmed to disabled when 0 items are checked). **Cancel** appears in the action bar only while a download or verification run is in flight. Opening these pages does not prepare a model or start inference. **Install selected** downloads the selected missing components, and **Verify** re-checks installed elements against their digests. The downloaded files are the app's own components, not GPU drivers.
 
-**Backend components** also carries two inventory-only rows that never download by themselves. **Anime4K shaders** states how many preset chains the shipped shader tree can serve (`installed` only when every catalogue preset has all of its files). **Upscale models** states how many of the optional ONNX graphs are stored — `optional`, `partial` or `installed` — and selecting it queues the missing graphs with **Apply changes**; the Upscalers page manages them one at a time.
+**Backend components** also carries two inventory-only rows that never download by themselves. **Anime4K shaders** states how many preset chains the shipped shader tree can serve (`installed` only when every catalogue preset has all of its files). **Upscale models** states how many of the optional ONNX graphs are stored — `optional`, `partial` or `installed` — and selecting it queues the missing graphs with **Install selected**; the Upscalers page manages them one at a time.
 
 While an acquisition runs, the window-level bar names the bytes received (`Downloading 2 items: 480 MB of 1.2 GB`) and carries a progress line; when a transfer cannot state a total, the line is indeterminate rather than a stalled percentage. The same line is mirrored into the player's status panel, because that window covers the bar while a video is open. Closing Settings does not stop the run.
 
@@ -139,7 +139,7 @@ The graphs land in the app-owned custom-model directory (`…/animejanai/models/
 
 *The Components page during the Windows capture: TensorRT for RTX selected, its runtime reported as not installed, and no download started. The capture does not show a working RTX runtime or any inference result.*
 
-**Playback → Benchmark** is headed **Benchmark**. Choose **Video clips** and **Enhancement models**, optionally keep **Include the unfiltered baseline**, then press **Run benchmark**. Its video runs support RIFE interpolation, including RIFE configured in mixed spatial-plus-interpolation profiles; Compare is a separate still-frame workflow and does not run temporal chains. A run uses the current selection and is not a saved preference. For clip locations, reports and limitations, see the [processing guide](processing-guide.md).
+**Playback → Benchmark** is headed **Benchmark**. The bottom toolbar displays the active engine (**Engine: <backend>**, e.g. *TensorRT for RTX*), following the global choice selected in Components and settings. Choose **Video clips** and **Enhancement models**, optionally keep **Include the unfiltered baseline**, then press **Run benchmark**. Its video runs support RIFE interpolation, including RIFE configured in mixed spatial-plus-interpolation profiles; Compare is a separate still-frame workflow and does not run temporal chains. A run uses the current selection and is not a saved preference. For clip locations, reports and limitations, see the [processing guide](processing-guide.md).
 
 ## Windows and Linux system integrations
 

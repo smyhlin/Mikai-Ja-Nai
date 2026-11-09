@@ -5,11 +5,29 @@ Published changes are recorded with their downloads on the [GitHub releases page
 ## 0.2.2 — Unreleased
 
 - Upgrade Standard AnimeJaNai to v0.24.0 (ABI 9) across Windows and Linux, updating official runtime assets and SHA-256 cryptographic pins.
-- Add a Cut moment editor for selecting, previewing and exporting a short MP4.
-- Group processing controls into Restore, Upscale and Interpolation; improve Anime4K shader selection.
-- Refine Compare rendering, antialias settings controls, make episode buttons more compact and remove the redundant Episodes button from the title hero.
-- Cut moment: a filmstrip sheet with a draggable range inside a two-minute window around the current position, a preview playhead that moves independently of the selection, an estimated download size from the stream rate, quality chips, and a single accent action; thumbnails decode on a separate preview core, nearest-first and cached.
-- Compare: replay AnimeJaNai candidates from the real source with the player's decoder and filter string, frame-step to the held timestamp instead of reloading, render only when mpv delivers a frame, and judge the result against a same-pipeline baseline so a pass-through can never be shown as a model output.
+- Add a Cut moment editor for selecting, previewing and exporting a short MP4:
+  - Rebuilt as a token-driven filmstrip sheet bounded to ±2 minutes around the current playback anchor.
+  - Preview playhead moves independently of selection boundaries and can be scrubbed before, on top of, and after the clip; preview playback loops within the selection.
+  - Preview audio is enabled by default with a dedicated mute button (`M`).
+  - Size estimate dynamically derives from the observed stream bitrate, scaled by target quality height and capped at the encode target.
+  - Transport discs follow the global corner radius, preset chips share a uniform 52 px width with tabular numerals (`tnum`), and preset chips hide responsively below 700 px width.
+- Overhaul Compare quality workstation for native AnimeJaNai models:
+  - Replay models from the real source through an isolated core using the player's decoder (`nvdec`/`d3d11`) and filter string verbatim without format normalisers or loop filters.
+  - Frame-step to the held timestamp rather than reloading the source, preserving configured stage instances and ring depth.
+  - Render offscreen strictly on `MPV_RENDER_UPDATE_FRAME` without advanced control to eliminate timer-driven stale frame presentation.
+  - Enforce delivery evidence: `video-out-params` must match the stage's configured output geometry and a frame must be presented post-reconfiguration.
+  - Add `PictureMetrics` with scale-normalized reference detail (measured on copies normalized to ≤1024 px) to prevent 4× models from false flat-frame refusal, plus low-contrast and blank model refusals.
+  - Write comparison stills off the GUI thread on worker pools, and verify read-backs against presented frames via `screenshot-raw` (`bgr0`) oracle.
+- Modernize Settings and Components management:
+  - Settings Save button commits preferences immediately without closing the dialog, providing an inline "Saved" acknowledgement.
+  - Components tab features a compact top toolbar under the backend dropdown with a tri-state "Select all" checkbox, live selection counter, ghost "Verify", and "Install selected" (demoted from primary save-like styling, disabled when 0 items selected).
+  - Obsolete "Refresh" and "Install local runtime..." buttons and manual import paths removed; acquisition "Cancel" appears only while active.
+  - Components backend dropdown immediately stores the global engine (`player/animejanai/backend`), which the Benchmark tab toolbar reflects and follows; release inventory scanning latch on executor rebinding.
+- Player and discovery enhancements:
+  - Replace stock `QMessageBox` resume playback prompt with a custom themed dialog matching app design tokens.
+  - Remove vertical scrollbar from discovery feed for clean full-width display; vertical scrolling supported via mouse wheel and explicit Alt + mouse wheel.
+  - Group processing controls into Restore, Upscale and Interpolation; improve Anime4K shader selection.
+  - Refine antialias settings controls, make episode buttons more compact and remove the redundant Episodes button from the title hero.
 
 ## 0.2.1 — 2026-11-07
 
