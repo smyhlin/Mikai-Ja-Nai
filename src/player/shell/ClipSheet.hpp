@@ -82,7 +82,6 @@ signals:
     void playToggled();
     void qualityChanged(int height);
     void downloadRequested();
-    void closeRequested();
     /// A click on the strip away from the selection: move the preview there.
     void seekRequested(double seconds);
     /// The strip was resized and now wants this many frames. Only emitted when

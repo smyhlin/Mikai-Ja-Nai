@@ -44,7 +44,6 @@ constexpr int kHeaderHeight = 22;
 constexpr int kStatusHeight = 18;
 
 QColor surfaceBed() { return QColor(0x10, 0x11, 0x17); }
-QColor textMuted() { return QColor(0xa1, 0xa1, 0xaa); }
 
 /// Locale decimal separator, because the reference sheet prints "30,0 s" in
 /// Ukrainian and a hard-coded dot reads as a different number there.
@@ -135,9 +134,6 @@ QString sheetStyleSheet() {
                "QPushButton#clipDownload:hover { background: %5; border-color: %5; }"
                "QPushButton#clipDownload:disabled { background: rgba(255, 255, 255, 0.07);"
                "  border-color: transparent; color: rgba(255, 255, 255, 0.32); }"
-               "QPushButton#clipSheetClose { background: transparent; border: none; }"
-               "QPushButton#clipSheetClose:hover { background: rgba(255, 255, 255, 0.08);"
-               "  border-radius: %4px; }"
                "QPushButton#clipPlay { background: rgba(255, 255, 255, 0.08);"
                "  border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 22px; }"
                "QPushButton#clipPlay:hover { background: rgba(%6, 0.20); border-color: %2; }")
@@ -610,14 +606,8 @@ public:
         connect(download, &QPushButton::clicked, sheet, [this] { emit sheet->downloadRequested(); });
         row->addWidget(download);
 
-        close = new QPushButton(sheet);
-        close->setObjectName(QStringLiteral("clipSheetClose"));
-        close->setCursor(Qt::PointingHandCursor);
-        close->setFixedSize(32, 32);
-        close->setIcon(glyphIcon(&IconPainter::close, 14, textMuted()));
-        close->setIconSize(QSize(14, 14));
-        connect(close, &QPushButton::clicked, sheet, [this] { emit sheet->closeRequested(); });
-        row->addWidget(close);
+        // No close button: the window already has the system one, and a second
+        // cross beside the action competes with it for the same meaning.
         root->addLayout(row);
 
         status = new QLabel(sheet);
@@ -643,7 +633,6 @@ public:
         if (download != nullptr) {
             download->setIcon(glyphIcon(&IconPainter::download, 16, inkOn(accent())));
         }
-        if (close != nullptr) close->setIcon(glyphIcon(&IconPainter::close, 14, textMuted()));
         strip->update();
         sheet->updateGeometry();
     }
@@ -658,7 +647,6 @@ public:
             preset->setToolTip(ClipSheetTranslation::tr("Make the clip %1 seconds long")
                                    .arg(preset->text().chopped(1)));
         }
-        close->setToolTip(ClipSheetTranslation::tr("Close"));
         play->setToolTip(playing ? ClipSheetTranslation::tr("Pause preview")
                                  : ClipSheetTranslation::tr("Play preview"));
         for (QPushButton* chip : chips) {
@@ -717,7 +705,6 @@ public:
     QLabel* status = nullptr;
     IconButton* play = nullptr;
     QPushButton* download = nullptr;
-    QPushButton* close = nullptr;
     QPushButton* boundaryIn = nullptr;
     QPushButton* boundaryOut = nullptr;
     QButtonGroup* qualityGroup = nullptr;

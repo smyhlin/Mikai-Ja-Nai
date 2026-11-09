@@ -345,7 +345,6 @@ public:
             refreshDownload();
         });
         connect(sheet, &ClipSheet::downloadRequested, this, [this] { chooseOutput(); });
-        connect(sheet, &ClipSheet::closeRequested, this, [this] { dialog->close(); });
         connect(sheet, &ClipSheet::seekRequested, this, [this](double seconds) {
             if (preview && !invalidated) {
                 preview->setPaused(true);
