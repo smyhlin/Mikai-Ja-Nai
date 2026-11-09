@@ -8,6 +8,7 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QMouseEvent>
 
 #include <functional>
 #include <QFont>
@@ -108,6 +109,46 @@ int main(int argc, char** argv) {
     failures += grabSheet(sheet, fill, QStringLiteral("clip-sheet-wide"), 1100);
 
     failures += grabSheet(sheet, fill, QStringLiteral("clip-sheet-narrow"), 620);
+
+    // The playhead must be reachable after the selection: press outside it and
+    // drag further right, and the sheet must ask for that instant, not clamp the
+    // drag to the selection it framed.
+    {
+        QWidget* strip = sheet->findChild<QWidget*>(QStringLiteral("clipFilmstrip"));
+        double lastSeek = -1.0;
+        QObject::connect(sheet, &ClipSheet::seekRequested, sheet,
+                         [&lastSeek](double seconds) { lastSeek = seconds; });
+        const double windowSpan = windowEnd - windowStart;
+        const auto press = [strip](double fraction, bool down) {
+            const QPointF at(strip->width() * fraction, strip->height() / 2.0);
+            QMouseEvent event(down ? QEvent::MouseButtonPress : QEvent::MouseMove, at, at,
+                              down ? Qt::LeftButton : Qt::NoButton,
+                              down ? Qt::LeftButton : Qt::NoButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(strip, &event);
+        };
+        press(0.75, true);
+        press(0.95, false);
+        press(0.05, false);
+        press(0.95, false);
+        const QPointF releaseAt(strip->width() * 0.95, 20);
+        QMouseEvent release(QEvent::MouseButtonRelease, releaseAt, releaseAt, Qt::LeftButton,
+                            Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(strip, &release);
+        const double requested = lastSeek;
+        const double expected = windowStart + windowSpan * 0.95;
+        const double selectionEnd = sheet->selection().end;
+        std::fprintf(stderr, "ok   playhead drag asked for %.3f (expected %.3f), selection ends %.3f\n",
+                     requested, expected, selectionEnd);
+        if (requested <= selectionEnd || std::abs(requested - expected) > windowSpan * 0.08) {
+            std::fprintf(stderr, "FAIL the playhead cannot be dragged past the selection end\n");
+            ++failures;
+        }
+    }
+
+    // The state the probe just proved reachable, rendered: a playhead parked past
+    // the selection.
+    sheet->setPlayhead(windowStart + (windowEnd - windowStart) * 0.9);
+    failures += grabSheet(sheet, fill, QStringLiteral("clip-sheet-playhead-after"), 1100);
 
     // A selection at the window's edge must stay inside it, and the exporter's
     // span limit must be enforced by the sheet, not only by the dialog.

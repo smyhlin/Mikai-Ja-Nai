@@ -365,7 +365,12 @@ public:
             previewPosition = position;
             previewPositionKnown = true;
             if (sheet != nullptr) sheet->setPlayhead(position);
-            if (duration > 0.0 && position >= sheet->selection().end - 0.02) {
+            // The selection is a playback loop, not a cage: it only pulls the
+            // preview back while the preview is *playing*. A playhead the user
+            // placed after the selection stays there, or the moment they want to
+            // inspect could never be reached.
+            const bool playing = playingState || (preview != nullptr && preview->isPlaying());
+            if (playing && duration > 0.0 && position >= sheet->selection().end - 0.02) {
                 preview->setPaused(true);
                 preview->seek(sheet->selection().start);
                 setPlaying(false);

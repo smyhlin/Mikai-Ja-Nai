@@ -380,10 +380,12 @@ protected:
             grabOffset_ = seconds - start_;
             setCursor(Qt::ClosedHandCursor);
         } else {
-            // Outside the selection a click moves the preview; the sheet does
-            // not silently retarget the clip the user already framed.
-            drag_ = Drag::None;
-            if (seek) seek(seconds);
+            // Outside the selection the press takes the playhead and the drag
+            // continues from there: before, on top of and after the selection are
+            // all reachable, and the clip the user framed is never retargeted.
+            drag_ = Drag::Playhead;
+            playhead_ = seconds;
+            if (seek) seek(playhead_);
             update();
             event->accept();
             return;
