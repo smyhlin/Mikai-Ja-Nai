@@ -1062,8 +1062,21 @@ void ComponentStoreTab::reflowComponentHeaders() {
 void ComponentStoreTab::setRunner(Runner* runner) {
     // A different executor answers to a different lifetime: anything still in
     // flight from the previous one is discarded rather than rendered.
-    if (runner_ != runner) bumpRunGeneration(QStringLiteral("runner changed"));
+    const bool rebinding = runner_ != runner;
+    const bool wasBound = runner_ != nullptr;
+    if (rebinding) bumpRunGeneration(QStringLiteral("runner changed"));
     runner_ = runner;
+    // The tab outlives the dialog that borrows the executor, so a scan posted
+    // just before the previous dialog closed can end with its delivery dropped:
+    // the latch it set would then keep the engine selector disabled for every
+    // later open ("stuck, the list does not even open"). Binding an executor is
+    // exactly the moment that latch can no longer belong to anything, so it is
+    // released here whether or not the pointer changed.
+    if (inventoryScanning_ && wasBound) {
+        if (inventoryCancelFlag_) inventoryCancelFlag_->store(true);
+        ++inventoryGeneration_;
+        inventoryScanning_ = false;
+    }
     updateControls();
     scheduleInventoryRefresh();
 }
