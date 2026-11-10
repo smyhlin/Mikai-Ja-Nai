@@ -16,6 +16,13 @@ if(POLICY CMP0207)
   cmake_policy(SET CMP0207 NEW)
 endif()
 
+# IN_LIST is unrecognized in `cmake -P` script mode, where all policies start
+# OLD, so the forbidden-payload strip below dies before removing anything.
+# (CMP0057 also gates the latent IN_LIST uses further down this script.)
+if(POLICY CMP0057)
+  cmake_policy(SET CMP0057 NEW)
+endif()
+
 if(NOT DEFINED DIST_DIR OR DIST_DIR STREQUAL "")
   message(FATAL_ERROR "dist: DIST_DIR is not set")
 endif()
