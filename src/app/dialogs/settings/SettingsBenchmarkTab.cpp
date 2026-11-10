@@ -965,6 +965,14 @@ QString SettingsDialog::benchmarkModelId(const QTreeWidgetItem* item) const {
 
 void SettingsDialog::filterBenchmarkModels(const QString& query) {
     if (benchmarkModelTree_ == nullptr) return;
+    // The snapshot writes below (setData on kFilterExpansionRole) emit
+    // dataChanged, which the itemChanged handler would otherwise read as a
+    // user group-toggle and use to force every available child
+    // Checked/Unchecked, wiping ticks under a filter. Suppress it for the
+    // whole pass, restoring the previous value: refreshBenchmarkCatalogue
+    // calls this while the flag is already set.
+    const bool wasUpdating = benchmarkSelectionUpdating_;
+    benchmarkSelectionUpdating_ = true;
     const QString filter = query.trimmed();
     for (int groupIndex = 0; groupIndex < benchmarkModelTree_->topLevelItemCount(); ++groupIndex) {
         QTreeWidgetItem* group = benchmarkModelTree_->topLevelItem(groupIndex);
@@ -995,6 +1003,7 @@ void SettingsDialog::filterBenchmarkModels(const QString& query) {
             if (visibleChildren > 0) group->setExpanded(true);
         }
     }
+    benchmarkSelectionUpdating_ = wasUpdating;
 }
 
 QString SettingsDialog::benchmarkClipName(const QCheckBox* checkbox) const {
