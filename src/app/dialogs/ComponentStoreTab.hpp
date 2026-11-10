@@ -102,11 +102,9 @@ public:
     void syncAcquisitionState();
     /// True while a pack or model download is running. Verification does not
     /// count: it stays inside Settings.
-    bool downloadActive() const {
-        return (provisioner_ != nullptr && provisioner_->running()) ||
-               animeJanaiRuntimeDownloading_ || rifeDownloading_ || modelsDownloading_ ||
-               upscalersDownloading_;
-    }
+    /// Defined in ComponentStoreTab.cpp: the body reads
+    /// NativeComponentProvisioner, which is only forward-declared here.
+    bool downloadActive() const;
     /// Hashing or a digest proof is running. A verification is not a download:
     /// it never disables the transfer actions' meaning or reports a transfer.
     bool verifyActive() const { return verificationActive_ || verifying_; }

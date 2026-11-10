@@ -1147,6 +1147,15 @@ void ComponentStoreTab::setComponentProvisioner(NativeComponentProvisioner* prov
     updateControls();
 }
 
+/// True while a pack or model download is running. Defined here, not in the
+/// header: the body reads NativeComponentProvisioner::running(), and the
+/// header only forward-declares that type.
+bool ComponentStoreTab::downloadActive() const {
+    return (provisioner_ != nullptr && provisioner_->running()) ||
+           animeJanaiRuntimeDownloading_ || rifeDownloading_ || modelsDownloading_ ||
+           upscalersDownloading_;
+}
+
 void ComponentStoreTab::refresh() {
     if (gpuLabel_ != nullptr) {
         gpuLabel_->setText(tr("GPU: %1").arg(native::computeCapabilityText(native::observeComputeCapability())));
