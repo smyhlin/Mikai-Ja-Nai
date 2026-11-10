@@ -1241,7 +1241,9 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
         });
     }
 
-    if (dialog.exec() == QDialog::Accepted) search_->refreshFeedSettings();
+    // Since 25bc266 Save commits without closing, exec() never returns
+    // Accepted, so there is no post-accept refresh left to do here.
+    dialog.exec();
     settingsDialog_.clear();
     resumePlaybackAfterComponentAsk();
     if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
