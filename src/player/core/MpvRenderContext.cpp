@@ -11,7 +11,6 @@
 #include <dlfcn.h>
 #endif
 
-#include <cstdio>
 #include <stdexcept>
 #include <string>
 
@@ -59,51 +58,18 @@ void* resolve(const char* name) {
 #endif
 }
 
-// The macro sidesteps both the parenthesisation a function type needs and the
-// commas inside a signature, which would otherwise split the argument list.
-#define LOAD_GL(field, sig, name) (field) = reinterpret_cast<sig>(resolve(name))
-
 }  // namespace
 
 GlApi loadGlApi() {
     GlApi api;
-#ifdef _WIN32
-    using GetProcFn = void* (*)(const char*);
-    LOAD_GL(api.GetProcAddress, GetProcFn, "wglGetProcAddress");
-    if (api.GetProcAddress == nullptr)
-        throw MpvError("OpenGL: wglGetProcAddress unavailable - no current GL context");
-#endif
+    // resolve() already implements the full fallback chain
+    // (QOpenGLContext::getProcAddress, then wglGetProcAddress with 1/2/3/-1
+    // rejection, then GetProcAddress(opengl32.dll); dlopen libGL/libOpenGL
+    // on non-Windows), so no separate wgl load is needed here. The
+    // readiness probe goes through that resolver only - never a raw
+    // wglGetProcAddress("glGetString").
     api.GetProcAddress = &resolve;
-
-    LOAD_GL(api.genTextures, void (*)(GLsizei, GLuint*), "glGenTextures");
-    LOAD_GL(api.deleteTextures, void (*)(GLsizei, const GLuint*), "glDeleteTextures");
-    LOAD_GL(api.bindTexture, void (*)(GLenum, GLuint), "glBindTexture");
-    LOAD_GL(api.texImage2D,
-            void (*)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*),
-            "glTexImage2D");
-    LOAD_GL(api.texParameteri, void (*)(GLenum, GLenum, GLint), "glTexParameteri");
-    LOAD_GL(api.texImage3D,
-            void (*)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLint, GLenum, GLenum, const void*),
-            "glTexImage3D");
-    LOAD_GL(api.getIntegerv, void (*)(GLenum, GLint*), "glGetIntegerv");
-    LOAD_GL(api.getTexLevelParameteriv, void (*)(GLenum, GLint, GLenum, GLint*),
-            "glGetTexLevelParameteriv");
-    LOAD_GL(api.bindFramebuffer, void (*)(GLenum, GLuint), "glBindFramebuffer");
-    LOAD_GL(api.genFramebuffers, void (*)(GLsizei, GLuint*), "glGenFramebuffers");
-    LOAD_GL(api.framebufferTexture2D, void (*)(GLenum, GLenum, GLenum, GLuint, GLint),
-            "glFramebufferTexture2D");
-    LOAD_GL(api.blitFramebuffer,
-            void (*)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum),
-            "glBlitFramebuffer");
-    LOAD_GL(api.viewport, void (*)(GLint, GLint, GLsizei, GLsizei), "glViewport");
-    LOAD_GL(api.clearColor, void (*)(GLfloat, GLfloat, GLfloat, GLfloat), "glClearColor");
-    LOAD_GL(api.clear, void (*)(GLbitfield), "glClear");
-    LOAD_GL(api.flush, void (*)(), "glFlush");
-    LOAD_GL(api.readPixels, void (*)(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*),
-            "glReadPixels");
-
-    if (api.genTextures == nullptr || api.bindTexture == nullptr ||
-        api.getTexLevelParameteriv == nullptr || api.getIntegerv == nullptr)
+    if (resolve("glGetString") == nullptr || resolve("glGetIntegerv") == nullptr)
         throw MpvError("OpenGL: required entry points missing (no usable GL context)");
 
     return api;
@@ -127,10 +93,7 @@ MpvRenderContext::MpvRenderContext(MpvHandle& mpv, const GlApi& gl, std::functio
     // nobody draws, so the request is refused here instead of failing later as
     // a stalled video output.
     if (advancedControl && !onUpdate_) {
-        std::fprintf(stderr,
-                     "MpvRenderContext: advanced control needs an update callback; "
-                     "creating the context without advanced control\n");
-        advancedControl = false;
+        throw MpvError("advanced control requested but no update callback was provided");
     }
     mpv_opengl_init_params init{&MpvRenderContext::sGetProc, this};
     // An int, and passed per creation: mpv reads it once, here.
@@ -166,6 +129,8 @@ MpvRenderContext::~MpvRenderContext() {
 
 void* MpvRenderContext::sGetProc(void* ctx, const char* name) {
     auto* self = static_cast<MpvRenderContext*>(ctx);
+    if (self == nullptr || name == nullptr || self->gl_.GetProcAddress == nullptr)
+        return nullptr;
     return self->gl_.GetProcAddress(name);
 }
 

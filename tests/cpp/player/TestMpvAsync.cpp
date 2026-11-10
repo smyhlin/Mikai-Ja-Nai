@@ -33,10 +33,12 @@
 
 using mplayer::AsyncReply;
 using mplayer::AsyncRequestId;
+using mplayer::GlApi;
 using mplayer::MpvApi;
 using mplayer::MpvBundle;
 using mplayer::MpvError;
 using mplayer::MpvHandle;
+using mplayer::MpvRenderContext;
 using mplayer::NodeValue;
 using mplayer::Property;
 
@@ -968,6 +970,27 @@ void TestMpvAsync::preparationAndWarmupAreExcludedWhenMeasurementRestarts() {
     sample.recordFrame(81'500'000'000);
     QCOMPARE(sample.frames, 1);
     QCOMPARE(sample.seconds(82'000'000'000), 1.0);
+}
+
+// ── render context ─────────────────────────────────────────────────────────
+
+void TestMpvAsync::advancedControlWithoutUpdateCallbackThrows() {
+    if (!requireRuntime()) return;
+    MpvHandle handle = makeHandle();
+    // Advanced control is earned, never silently downgraded: asking for it
+    // without the update callback it depends on must fail at construction.
+    // The throw precedes any use of the resolver, so a default GlApi (whose
+    // GetProcAddress is null) is enough to reach the check.
+    const GlApi gl;
+    bool threw = false;
+    try {
+        const MpvRenderContext context(handle, gl, nullptr, /*advancedControl=*/true);
+        Q_UNUSED(context);
+    } catch (const MpvError& error) {
+        threw = true;
+        QVERIFY(QString::fromStdString(error.what()).contains(QStringLiteral("advanced control")));
+    }
+    QVERIFY(threw);
 }
 
 // ── runtime selection for the transport tests ──────────────────────────────

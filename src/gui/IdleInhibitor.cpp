@@ -14,6 +14,10 @@
 #  include <utility>
 #endif
 
+#ifdef Q_OS_WIN
+#  include <QtCore/qt_windows.h>
+#endif
+
 namespace mikai::gui {
 
 struct IdleInhibitor::Platform {
@@ -123,6 +127,20 @@ void IdleInhibitor::setActiveFor(const void* owner, bool active) {
 void IdleInhibitor::release(const void* owner) { setActiveFor(owner, false); }
 
 void IdleInhibitor::apply(bool active) {
+#ifdef Q_OS_WIN
+    // One platform call, from the same setActiveFor() path the Linux
+    // logind/D-Bus path uses. The execution state is per-thread and the
+    // inhibitor is driven from the GUI thread, so the request lasts until
+    // this same thread clears it; the system clears it anyway when the
+    // thread ends. SetThreadExecutionState has existed since Windows 2000,
+    // so there is no Windows version to state a limitation for.
+    if (active) {
+        SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED);
+    } else {
+        SetThreadExecutionState(ES_CONTINUOUS);
+    }
+    return;
+#endif
     if (active) {
         if (inhibitThroughLogind()) return;
         inhibitThroughScreenSaver();

@@ -76,6 +76,9 @@ private slots:
     void onlyNewVideoFramesContributeToThroughput();
     void preparationAndWarmupAreExcludedWhenMeasurementRestarts();
 
+    // ── render context; advanced control is earned, never downgraded ───────
+    void advancedControlWithoutUpdateCallbackThrows();
+
 private:
     // True when a runtime is selected, so the calling test should continue.
     // Without a module to select it skips, and a selection that failed in

@@ -3655,11 +3655,19 @@ void VideoSurface::releaseRenderContext() {
         // mpv_render_context_free() releases GL objects and drains core requests
         // queued for the renderer, so it needs THIS widget's context current;
         // with none - or with somebody else's - it faults inside the driver.
-        // The invariant is that the context dies before the widget, so there is
-        // no recoverable state here to fake: stop rather than free, leak or
-        // corrupt.
-        qFatal("VideoSurface: the mpv render context cannot be released without its OpenGL "
-               "context current (the widget outlived its context)");
+        // The widget outlived its context, so there is no recoverable state
+        // here: leak the context and mark the surface not-ready rather than
+        // aborting the process. The wrapper is released, not reset, on
+        // purpose: resetting it here would free the context without its GL
+        // context current, and leaving it owned would free it later from
+        // ~VideoSurface, after mpv_.reset() destroyed the core - both are
+        // the faults this branch exists to avoid.
+        qWarning("VideoSurface: mpv render context cannot be released "
+                 "without its OpenGL context current; leaking the context "
+                 "rather than aborting (widget outlived its context)");
+        contextReady_ = false;
+        render_.release();
+        return;
     }
 }
 
