@@ -1,5 +1,6 @@
 #include <utility>
 #include "Models.hpp"
+#include "Json.hpp"
 
 #include <QDebug>
 #include <QJsonArray>
@@ -7,25 +8,11 @@
 #include <QUrl>
 
 #include <cmath>
-#include <limits>
 
 namespace mikai::backend {
+// P2-01: the JSON accessors live in backend/Json.hpp now.
+using namespace json;
 namespace {
-
-// Python's `data.get("x") or ""` collapses missing keys, nulls and wrong
-// types into one empty fallback, which is what an empty QString carries here.
-QString text(const QJsonValue& value) {
-    if (value.isString()) {
-        return value.toString();
-    }
-    if (value.isDouble()) {
-        return QString::number(value.toDouble(), 'g', 17);
-    }
-    if (value.isBool()) {
-        return value.toBool() ? QStringLiteral("true") : QStringLiteral("false");
-    }
-    return {};
-}
 
 // Every poster field ships a webp and a jpg sibling, and webp is the smaller
 // one, so it wins. That only works because the imageformats plugin carries
@@ -37,75 +24,11 @@ QString imageUrl(const ImageVariant& variant) {
     return variant.webp.isEmpty() ? variant.jpg : variant.webp;
 }
 
-std::optional<int> optInt(const QJsonValue& value) {
-    if (value.isDouble()) {
-        // P1-07: a double outside int range (or NaN/inf) makes the cast
-        // below undefined behaviour, so check first and fall back.
-        const double d = value.toDouble();
-        if (!std::isfinite(d) || d < static_cast<double>(std::numeric_limits<int>::min()) ||
-            d >= static_cast<double>(std::numeric_limits<int>::max()) + 1.0) {
-            qWarning("Models: optInt: JSON number out of int range; using default");
-            return std::nullopt;
-        }
-        return static_cast<int>(d);
-    }
-    if (value.isString()) {
-        bool ok = false;
-        const int parsed = value.toString().toInt(&ok);
-        if (ok) {
-            return parsed;
-        }
-    }
-    return std::nullopt;
-}
-
-std::optional<qint64> optInt64(const QJsonValue& value) {
-    if (value.isDouble()) {
-        // P1-07: same range check as optInt (see above); a double >= 2^63
-        // or < -2^63 cannot be a qint64.
-        const double d = value.toDouble();
-        if (!std::isfinite(d) || d < static_cast<double>(std::numeric_limits<qint64>::min()) ||
-            d >= static_cast<double>(std::numeric_limits<qint64>::max())) {
-            qWarning("Models: optInt64: JSON number out of qint64 range; using default");
-            return std::nullopt;
-        }
-        return static_cast<qint64>(d);
-    }
-    if (value.isString()) {
-        bool ok = false;
-        const qint64 parsed = value.toString().toLongLong(&ok);
-        if (ok) return parsed;
-    }
-    return std::nullopt;
-}
-
-std::optional<double> optDouble(const QJsonValue& value) {
-    if (value.isDouble()) {
-        return value.toDouble();
-    }
-    if (value.isString()) {
-        bool ok = false;
-        const double parsed = value.toString().toDouble(&ok);
-        if (ok) {
-            return parsed;
-        }
-    }
-    return std::nullopt;
-}
-
 QVariant optionalVariant(const QJsonValue& value) {
     if (value.isUndefined() || value.isNull()) {
         return {};
     }
     return value.toVariant();
-}
-
-QJsonObject objectOrEmpty(const QJsonValue& value) {
-    return value.isObject() ? value.toObject() : QJsonObject{};
-}
-
-QJsonArray arrayOrEmpty(const QJsonValue& value) {
-    return value.isArray() ? value.toArray() : QJsonArray{};
 }
 
 // P1-07: an external-link id is a single path segment. Anything containing

@@ -1,6 +1,8 @@
 #include "state/NativePlaybackAssembly.hpp"
 
 #include <atomic>
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <optional>
 
@@ -358,7 +360,18 @@ bool identityFromDescribe(const QJsonObject& document, Backend provider,
       *missing = key;
       return false;
     }
-    *value = static_cast<qint64>(found.toDouble());
+    // P1-07: the cast below is UB for a double outside qint64 range (or
+    // NaN/inf); refuse the document by name instead of converting. The
+    // strict refuse-by-name lambdas stay: unlike the collapsing helpers in
+    // backend/Json.hpp, these must name the missing key, so they are not
+    // duplicates of them (P2-01).
+    const double d = found.toDouble();
+    if (!std::isfinite(d) || d < static_cast<double>(std::numeric_limits<qint64>::min()) ||
+        d >= static_cast<double>(std::numeric_limits<qint64>::max())) {
+      *missing = key;
+      return false;
+    }
+    *value = static_cast<qint64>(d);
     return true;
   };
   const auto boolMember = [](const QJsonObject& object, const QString& key, bool* value,
