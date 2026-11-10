@@ -59,16 +59,19 @@ private:
     /// The one provisioner the current run delivers for, or null once its owner
     /// has gone away. GUI-thread only: it is read from the bodies the Runner's
     /// dispatcher delivered, which is the one place the owner is known to be
-    /// readable.
+    /// readable. The slot itself is a QPointer guarded by a QMutex (defined in
+    /// the .cpp): a weak, auto-nulling observer — it never keeps the
+    /// provisioner alive — and the lock serialises claim, read and clear, so
+    /// two provisioners (Settings dialog + startup prompt) cannot interleave
+    /// on a raw pointer. Runner::runnerRegistry() was checked first and does
+    /// NOT fit: it is a registry of Runner pool states, not a named
+    /// provisioner slot, so it is not forced (tasks/05 P1-06).
     static NativeComponentProvisioner* currentRun();
-    /// Frees the shared run slot when a run settles. GUI thread only, for the
-    /// same reason as `currentRun()`.
-    static void runFinished();
-    /// The one provisioner the current run delivers for, or null once its owner
-    /// has gone away. One run per process, so this is a class-wide slot rather
-    /// than per-instance state: the delivered bodies resolve their owner through
-    /// it on the GUI thread.
-    static NativeComponentProvisioner* currentRun_;
+    /// Frees the shared run slot when a run settles — only if the slot still
+    /// points at the provisioner that settled, so a second run that re-claimed
+    /// the slot is not yanked and left with running_ stuck true. GUI thread
+    /// only, for the same reason as `currentRun()`.
+    static void runFinished(NativeComponentProvisioner* finished);
     /// Applies one settled run. GUI-thread only, for the same reason.
     void finish(bool ok, bool cancelled, const QString& summary);
 

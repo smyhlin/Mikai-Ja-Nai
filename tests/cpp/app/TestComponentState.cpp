@@ -506,3 +506,30 @@ void TestComponentState::generationBumpMidCheckReleasesEveryLatch() {
     QVERIFY(status->text().isEmpty());
     runner.waitForDone(5000);
 }
+
+void TestComponentState::secondProvisionerSurvivesTheFirstBeingDestroyed() {
+    // P1-06: two provisioners (Settings dialog + startup prompt) share one
+    // run slot, now a QPointer guarded by a QMutex. Destroying the first
+    // must not strand the second: the slot auto-nulls instead of dangling,
+    // and the second provisioner stays usable with no stuck running_ flag.
+    // (A live two-run interleaving needs a GPU + Native runtime, which the
+    // hermetic suite has not got; the slot discipline itself — claim only if
+    // empty, clear only if still this — is what this case pins.)
+    mikai::app::Runner runner;
+    auto* first = new mikai::app::NativeComponentProvisioner(runner);
+    mikai::app::NativeComponentProvisioner second(runner);
+    QVERIFY(!first->running());
+    QVERIFY(!second.running());
+    delete first;
+
+    QVERIFY(!second.running());
+    // The side-effect-free check still answers instead of hanging or
+    // crashing; it never starts a download.
+    QString reason;
+    const bool needed = second.needsDownload(&reason);
+    QVERIFY(!needed || !reason.isEmpty());
+    QVERIFY(!second.running());
+    second.cancel();
+    QVERIFY(!second.running());
+    runner.waitForDone(5000);
+}

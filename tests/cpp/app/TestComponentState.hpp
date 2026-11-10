@@ -24,4 +24,7 @@ class TestComponentState : public QObject {
   void verificationTurnsAConfirmedBarIndeterminate();
   void verificationIsNotADownload();
   void generationBumpMidCheckReleasesEveryLatch();
+  // P1-06: destroying one provisioner must not strand a second one sharing
+  // the run slot.
+  void secondProvisionerSurvivesTheFirstBeingDestroyed();
 };

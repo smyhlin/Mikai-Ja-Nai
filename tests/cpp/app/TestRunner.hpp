@@ -63,6 +63,9 @@ class TestRunner : public QObject {
   // ── shutdownAll (KB-11) ────────────────────────────────────────────────
   void shutdownAllKeepsTheGuiThreadAnsweringWhileWorkDrains();
   void shutdownAllRunsItsFinishCallbackOnceTheWorkIsReallyGone();
+  // P0-05: a task that never unwinds must not park shutdown behind it — the
+  // drain waits a bounded 5 s, then abandons the pool and still reports.
+  void shutdownAllTimesOutInsteadOfBlockingForever();
   void workCancelledBeforeShutdownNeverDelivers();
 };
 
