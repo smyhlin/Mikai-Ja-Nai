@@ -12,7 +12,7 @@
 # without a GPU/desktop. (The pack's "50 probes / 3 in CTest" counts the 50
 # .cpp files under src/probes/ — which include the probe runner's own
 # sources and two shared sources — and the three add_test entries in
-# MikaiTests.cmake:441-495, of which BundleCliContracts is a bundle-CLI
+# MikaiTests.cmake:456-498, of which BundleCliContracts is a bundle-CLI
 # contract, not a probe.)
 
 if(NOT MIKAI_BUILD_PROBES)
