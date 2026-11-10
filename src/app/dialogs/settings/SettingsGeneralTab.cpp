@@ -347,6 +347,15 @@ QWidget* SettingsDialog::buildGeneralTab() {
     styleMutedCaption(nativeHdrOverrideHint_);
     hdrLayout->addWidget(nativeHdrOverrideHint_);
 
+    // P0-08: the one auto-advance setting, default ON, in the existing
+    // playback card - no new settings page.
+    autoAdvance_ = new QCheckBox(tr("Automatically play the next episode"), hdrCard);
+    autoAdvance_->setObjectName(QStringLiteral("autoAdvanceCheck"));
+    polishInteractiveControl(autoAdvance_, theme::kSettingsControlSize);
+    autoAdvance_->setChecked(policySettings.value(
+        QString::fromLatin1(mplayer::VideoSurface::kAutoAdvanceSettingKey), true).toBool());
+    hdrLayout->addWidget(autoAdvance_);
+
     root->addWidget(hdrCard);
 
     // ── Card 5: Video scaling (GOAL-H2) ─────────────────────────────────
@@ -778,6 +787,7 @@ void SettingsDialog::retranslateGeneralTab() {
         tr("Native enhancement stages require 8-bit NV12 and are normally skipped for HDR "
            "sources. Enabling this allows that processing on HDR video; it does not convert "
            "the source to SDR, and may reduce HDR image quality."));
+    autoAdvance_->setText(tr("Automatically play the next episode"));
 
     scalingTitle_->setText(tr("Video scaling"));
     scalingHint_->setText(

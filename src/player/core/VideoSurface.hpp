@@ -342,6 +342,9 @@ public:
     /// writer spells them identically.
     inline static constexpr char kHdrToneMappingSettingKey[] = "playback/hdrToneMapping";
     inline static constexpr char kAnimeJanaiHdrOverrideSettingKey[] = "playback/nativeOnHdr";
+    /// P0-08: whether the host advances to the next episode when the current
+    /// one ends. Default ON; read by the episodePlaybackFinished subscriber.
+    inline static constexpr char kAutoAdvanceSettingKey[] = "playback/autoAdvance";
 
     /// Display scaling, adopted by every surface on its state pump exactly like
     /// the HDR policy: one process-wide viewing preference, no per-window copy.
