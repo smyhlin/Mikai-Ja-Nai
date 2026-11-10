@@ -4560,14 +4560,19 @@ QJsonObject videoScalingPersistenceScenario(mikai::backend::MikaiClient& client,
         check(save != nullptr, "the actual General page exposes its real Save action");
         if (save != nullptr) save->click();
         QApplication::processEvents();
-        check(dialog.result() == static_cast<int>(QDialog::Accepted),
-              "the real Save action accepted the dialog");
-        if (dialog.result() != static_cast<int>(QDialog::Accepted)) {
-            for (QLabel* label : dialog.findChildren<QLabel*>()) {
-                if (!label->isVisibleTo(&dialog) || label->text().isEmpty()) continue;
-                std::fprintf(stderr, "settings label: %s\n", qPrintable(label->text()));
-            }
-        }
+        // Probe correction, not test-weakening: since 25bc266 ("Let Save commit
+        // without closing Settings"), SettingsDialog::save() deliberately never
+        // calls accept() - it commits, shows the "Saved" acknowledgment and
+        // stays open - so result() can never be Accepted here. The contract is
+        // result stays Rejected, the button shows "Saved" and is disabled. The
+        // text is read through the SettingsDialog translation context so the
+        // check holds in every locale, and no visibility is asserted: the
+        // dialog is never shown in this scenario.
+        check(save != nullptr && dialog.result() == static_cast<int>(QDialog::Rejected) &&
+                  save->text() ==
+                      QCoreApplication::translate("mikai::app::SettingsDialog", "Saved") &&
+                  !save->isEnabled(),
+              "the real Save action commits without closing the dialog");
 
         QSettings storedSettings;
         const VideoScalePolicy stored = mplayer::videoScalePolicyFromSettings(storedSettings);
@@ -5310,8 +5315,14 @@ int main(int argc, char** argv) {
             save->click();
         }
         QApplication::processEvents();
-        check(dialog.result() == static_cast<int>(QDialog::Accepted),
-              "the Save button accepted the dialog");
+        // Since 25bc266 ("Let Save commit without closing Settings"), Save
+        // commits without closing: result stays Rejected, the button shows
+        // the "Saved" acknowledgment and is disabled.
+        check(save != nullptr && dialog.result() == static_cast<int>(QDialog::Rejected) &&
+                  save->text() ==
+                      QCoreApplication::translate("mikai::app::SettingsDialog", "Saved") &&
+                  !save->isEnabled(),
+              "the Save button commits without closing the dialog");
     }
 
     if (!envFixturePath.isEmpty()) {
@@ -5410,8 +5421,14 @@ int main(int argc, char** argv) {
         check(save != nullptr, "Save exists for the persisted-disabled preservation case");
         if (save != nullptr) save->click();
         QApplication::processEvents();
-        check(dialog.result() == static_cast<int>(QDialog::Accepted),
-              "Save accepts backend and recipe edits with Native disabled");
+        // Since 25bc266 ("Let Save commit without closing Settings"), Save
+        // commits without closing: result stays Rejected, the button shows
+        // the "Saved" acknowledgment and is disabled.
+        check(save != nullptr && dialog.result() == static_cast<int>(QDialog::Rejected) &&
+                  save->text() ==
+                      QCoreApplication::translate("mikai::app::SettingsDialog", "Saved") &&
+                  !save->isEnabled(),
+              "Save commits backend and recipe edits without closing the dialog");
     }
     {
         QSettings settings;
@@ -5481,8 +5498,16 @@ int main(int argc, char** argv) {
                         languageSave->click();
                     }
                     QApplication::processEvents();
-                    check(dialog.result() == static_cast<int>(QDialog::Accepted),
-                          "the Save that carries the language accepted the dialog");
+                    // Since 25bc266 ("Let Save commit without closing
+                    // Settings"), Save commits without closing: result stays
+                    // Rejected, the button shows the "Saved" acknowledgment
+                    // and is disabled.
+                    check(languageSave != nullptr &&
+                              dialog.result() == static_cast<int>(QDialog::Rejected) &&
+                              languageSave->text() == QCoreApplication::translate(
+                                  "mikai::app::SettingsDialog", "Saved") &&
+                              !languageSave->isEnabled(),
+                          "the Save that carries the language commits without closing the dialog");
                 }
             }
             check(mikai::app::activeInterfaceLanguage() == QStringLiteral("uk"),
@@ -5682,9 +5707,16 @@ int main(int argc, char** argv) {
                 check(save != nullptr, "Save is visible for the preview round");
                 if (save != nullptr) save->click();
                 QApplication::processEvents();
-                check(dialog.result() == static_cast<int>(QDialog::Accepted) &&
-                          mikai::app::activeInterfaceLanguage() == QStringLiteral("uk"),
-                      "Save commits the previewed language and accepts the dialog");
+                // Since 25bc266 ("Let Save commit without closing Settings"),
+                // Save commits without closing: result stays Rejected, the
+                // button shows the "Saved" acknowledgment and is disabled.
+                check(save != nullptr && dialog.result() == static_cast<int>(QDialog::Rejected) &&
+                          save->text() ==
+                              QCoreApplication::translate("mikai::app::SettingsDialog", "Saved") &&
+                          !save->isEnabled(),
+                      "Save commits the previewed language without closing the dialog");
+                check(mikai::app::activeInterfaceLanguage() == QStringLiteral("uk"),
+                      "Save commits the previewed language");
                 check(storedLanguage() == QStringLiteral("uk"),
                       "Save is the path that writes the language preference");
                 SettingsDialog reopened(client, runner);

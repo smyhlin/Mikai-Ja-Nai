@@ -411,14 +411,24 @@ bool settingsDecision(LiveContext& context, mikai::backend::MikaiClient& client,
                                              : QStringLiteral(": the real Cancel button exists")));
     if (button != nullptr) button->click();
     QApplication::processEvents();
-    const bool accepted = dialog.result() == static_cast<int>(QDialog::Accepted);
-    check(accepted == accept, label + (accept ? QStringLiteral(": Save accepted the dialog")
-                                              : QStringLiteral(": Cancel rejected the dialog")));
+    // Since 25bc266 ("Let Save commit without closing Settings"), Save commits
+    // without closing: the dialog stays Rejected and the button shows the
+    // "Saved" acknowledgment while disabled. The text is read through the
+    // SettingsDialog translation context so the check holds in every locale.
+    // The Cancel path is unchanged: it rejects the dialog.
+    const bool committed =
+        accept ? dialog.result() == static_cast<int>(QDialog::Rejected) && button != nullptr &&
+                     button->text() ==
+                         QCoreApplication::translate("mikai::app::SettingsDialog", "Saved") &&
+                     !button->isEnabled()
+               : dialog.result() == static_cast<int>(QDialog::Rejected);
+    check(committed, label + (accept ? QStringLiteral(": Save commits without closing the dialog")
+                                      : QStringLiteral(": Cancel rejected the dialog")));
     captureArtifacts(context,
                      label + (accept ? QStringLiteral("-save") : QStringLiteral("-cancel")));
     dialog.reject();
     QApplication::processEvents();
-    return accepted == accept;
+    return committed;
 }
 
 bool clickFlyoutMode(LiveContext& context, VideoScaleMode mode, const QString& label) {
