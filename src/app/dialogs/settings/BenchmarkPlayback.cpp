@@ -7,11 +7,13 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QOpenGLContext>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLFunctions>
 #include <QStringList>
-#include <QThread>
+#include <QWaitCondition>
 
 #include <atomic>
 #include <chrono>
@@ -82,10 +84,17 @@ mplayer::native::AnimeJanaiSourceContext readBenchmarkSourceContext(
         handle.loadFile(clipPath.toStdString());
         QElapsedTimer deadline;
         deadline.start();
+        // P1-05 (rung 3): an interruptible QWaitCondition wait, not a blocking
+        // sleep, in the drain poll loop. No waker is wired to this wait yet,
+        // so it times out per 5 ms slice — the cadence and the cancellation
+        // check above are unchanged.
+        QMutex drainMutex;
+        QWaitCondition drainWait;
+        QMutexLocker drainLocker(&drainMutex);
         while (!loaded && failure.isEmpty() && deadline.elapsed() < kStartupTimeoutMs &&
                !backend::WorkCancellationScope::cancellationRequested()) {
             handle.drainEvents();
-            QThread::msleep(5);
+            drainWait.wait(&drainMutex, 5);
         }
         if (backend::WorkCancellationScope::cancellationRequested()) {
             if (error) *error = PlaybackText::tr("Benchmark cancelled.");

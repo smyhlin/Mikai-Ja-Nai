@@ -504,3 +504,50 @@ void TestStreams::safeStreamUrlAllowsOnlyHttpAndHttps() {
   QFETCH(bool, safe);
   QCOMPARE(isSafeStreamUrl(rawUrl), safe);
 }
+
+void TestStreams::aSignedUrlNeverReachesAnExceptionMessage() {
+  // detectSite refuses the URL, and the refusal must not echo the token that
+  // rode in its query.
+  bool raised = false;
+  QString message;
+  try {
+    detectSite(QStringLiteral("https://cdn.example.com/v.mp4?token=SECRET"));
+  } catch (const std::invalid_argument& caught) {
+    raised = true;
+    message = QString::fromUtf8(caught.what());
+  }
+  QVERIFY(raised);
+  QVERIFY2(!message.contains(QStringLiteral("SECRET")), qPrintable(message));
+  QVERIFY2(!message.contains(QStringLiteral("token=")), qPrintable(message));
+  QVERIFY2(message.contains(QStringLiteral("cdn.example.com")), qPrintable(message));
+}
+
+void TestStreams::aFailedFetchDoesNotLeakItsSignedUrl() {
+  QTcpServer server;
+  QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+  connect(&server, &QTcpServer::newConnection, &server, [&] {
+    while (QTcpSocket* socket = server.nextPendingConnection()) {
+      connect(socket, &QTcpSocket::readyRead, &server, [&, socket] {
+        socket->readAll();
+        socket->write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n"
+                      "Connection: close\r\n\r\n");
+        socket->flush();
+      });
+    }
+  });
+  QNetworkAccessManager manager;
+  bool failed = false;
+  QString failure;
+  try {
+    mikai::backend::fetchText(
+        &manager,
+        QStringLiteral("http://127.0.0.1:%1/v.mp4?token=SECRET").arg(server.serverPort()), {});
+  } catch (const StreamError& caught) {
+    failed = true;
+    failure = QString::fromUtf8(caught.what());
+  }
+  QVERIFY(failed);
+  QVERIFY2(!failure.contains(QStringLiteral("SECRET")), qPrintable(failure));
+  QVERIFY2(!failure.contains(QStringLiteral("token=")), qPrintable(failure));
+  QVERIFY2(failure.contains(QStringLiteral("HTTP 404")), qPrintable(failure));
+}

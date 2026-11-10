@@ -52,4 +52,9 @@ class TestStreams : public QObject {
   // P0-02: the shared URL allowlist — http/https only, nothing else.
   void safeStreamUrlAllowsOnlyHttpAndHttps_data();
   void safeStreamUrlAllowsOnlyHttpAndHttps();
+
+  // P1-05: a signed URL (token in path and query) must never reach an
+  // exception message, a log line, or the UI.
+  void aSignedUrlNeverReachesAnExceptionMessage();
+  void aFailedFetchDoesNotLeakItsSignedUrl();
 };
