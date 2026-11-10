@@ -19,6 +19,7 @@
 #endif
 #include "TestLiveOracle.hpp"
 #include "TestSystemIntegration.hpp"
+#include "TestCrashLog.hpp"
 #include "TestModels.hpp"
 #include "TestUpdateFeed.hpp"
 #include "TestPublicApiUi.hpp"
@@ -125,7 +126,7 @@ constexpr const char* kSuites[] = {
     "TestQualityCache", "TestRateLimiter", "TestWatchHistory", "TestDownloads", "TestDiagnostics",
     "TestApiClient", "TestFeedRender", "TestChromeCache", "TestUpdateFeed", "TestPublicApiUi",
     "TestRunner",
-    "TestLayering", "TestWindowRaise", "TestSystemIntegration", "TestClipboard", "TestLiveOracle",
+    "TestLayering", "TestWindowRaise", "TestSystemIntegration", "TestCrashLog", "TestClipboard", "TestLiveOracle",
 #ifdef Q_OS_WIN
     "TestWin32Support",
 #endif
@@ -311,6 +312,7 @@ int main(int argc, char** argv) {
 #endif
   TestClipboard clipboard;
   TestSystemIntegration systemIntegration;
+  TestCrashLog crashLog;
   TestLiveOracle liveOracle;
 
   // A suite name on the command line runs only that suite; otherwise every
@@ -410,6 +412,11 @@ int main(int argc, char** argv) {
   run("TestClipExport", &clipExport, true);
   run("TestCompareLoading", &compareLoading, true);
   run("TestComparePipeline", &comparePipeline, true);
+  // TestCrashLog runs before the wrapper suites: its pre-install slots need
+  // a process in which no suite has installed the crash log yet
+  // (TestDiagnostics installs it), and the skip guards are the fallback if
+  // that ordering ever changes.
+  run("TestCrashLog", &crashLog, true);
   runWrapper("TestDownloads", runTestDownloads);
   runWrapper("TestDiagnostics", runTestDiagnostics);
   runWrapper("TestApiClient", runTestApiClient);

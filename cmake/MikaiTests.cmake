@@ -270,6 +270,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/app/TestWatchHistory.cpp
     tests/cpp/app/TestSystemIntegration.hpp
     tests/cpp/app/TestSystemIntegration.cpp
+    tests/cpp/app/TestCrashLog.hpp
+    tests/cpp/app/TestCrashLog.cpp
     tests/cpp/app/TestWindowRaise.hpp
     tests/cpp/app/TestWindowRaise.cpp
   )
@@ -413,6 +415,7 @@ if(MIKAI_BUILD_PROBES)
     TestLayering
     TestWindowRaise
     TestSystemIntegration
+    TestCrashLog
     TestClipboard
     TestLiveOracle
   )
