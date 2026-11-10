@@ -14,6 +14,9 @@
 #include "TestLayering.hpp"
 #include "TestWatchHistory.hpp"
 #include "TestWindowRaise.hpp"
+#ifdef Q_OS_WIN
+#include "TestWin32Support.hpp"
+#endif
 #include "TestLiveOracle.hpp"
 #include "TestSystemIntegration.hpp"
 #include "TestModels.hpp"
@@ -122,7 +125,11 @@ constexpr const char* kSuites[] = {
     "TestQualityCache", "TestRateLimiter", "TestWatchHistory", "TestDownloads", "TestDiagnostics",
     "TestApiClient", "TestFeedRender", "TestChromeCache", "TestUpdateFeed", "TestPublicApiUi",
     "TestRunner",
-    "TestLayering", "TestWindowRaise", "TestSystemIntegration", "TestClipboard", "TestLiveOracle"};
+    "TestLayering", "TestWindowRaise", "TestSystemIntegration", "TestClipboard", "TestLiveOracle",
+#ifdef Q_OS_WIN
+    "TestWin32Support",
+#endif
+};
 
 bool nativeFixtureRootIsSafe() {
   const QString path = QDir(QCoreApplication::applicationDirPath())
@@ -299,6 +306,9 @@ int main(int argc, char** argv) {
   TestRateLimiter rateLimiter;
   TestLayering layering;
   TestWindowRaise windowRaise;
+#ifdef Q_OS_WIN
+  TestWin32Support win32Support;
+#endif
   TestClipboard clipboard;
   TestSystemIntegration systemIntegration;
   TestLiveOracle liveOracle;
@@ -427,6 +437,9 @@ int main(int argc, char** argv) {
   run("TestLayering", &layering, true);
   run("TestSystemIntegration", &systemIntegration, true);
   run("TestWindowRaise", &windowRaise, true);
+#ifdef Q_OS_WIN
+  run("TestWin32Support", &win32Support, true);
+#endif
   run("TestClipboard", &clipboard, true);
   // Last, and off unless MIKAI_LIVE=1 with a key: it needs the network and the
   // quota, and a hermetic run must not be recorded as having exercised either.
