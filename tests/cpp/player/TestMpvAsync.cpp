@@ -870,9 +870,13 @@ void TestMpvAsync::aPendingReplyIsDroppedWhenPlaybackStops() {
                 .valid());
     QCOMPARE(handle.pendingAsyncCount(), size_t{1});
 
-    handle.stop();
+    // Task 07 deleted MpvHandle::stop(): its first half is the epoch
+    // retirement, which is what drops the pending reply; the unload itself
+    // now goes through the async transport, as in VideoSurface.
+    handle.invalidateAsyncEpoch();
     QCOMPARE(handle.pendingAsyncCount(), size_t{0});
     QVERIFY(handle.sourceEpoch() != before);
+    handle.commandAsync({"stop"}, [](const AsyncReply&) {});
 
     pumpUntil(handle, [] { return false; }, 250);
     QCOMPARE(calls, 0);
@@ -893,8 +897,9 @@ void TestMpvAsync::observerIdsAreUniqueAndUnobserveStopsDelivery() {
     QVERIFY(firstId != 0);
     QVERIFY(secondId != firstId);
 
-    handle.setPaused(false);
-    handle.setPaused(true);
+    // Task 07 deleted MpvHandle::setPaused(): the setter was setFlag("pause").
+    handle.setFlag("pause", false);
+    handle.setFlag("pause", true);
     QVERIFY(pumpUntil(handle, [&first, &second] { return first >= 1 && second >= 1; }));
 
     handle.unobserve(firstId);
@@ -906,8 +911,9 @@ void TestMpvAsync::observerIdsAreUniqueAndUnobserveStopsDelivery() {
     QVERIFY(thirdId != secondId);
 
     const int delivered = first;
-    handle.setPaused(false);
-    handle.setPaused(true);
+    // Task 07 deleted MpvHandle::setPaused(): the setter was setFlag("pause").
+    handle.setFlag("pause", false);
+    handle.setFlag("pause", true);
     pumpUntil(handle, [] { return false; }, 250);
     QCOMPARE(first, delivered);
 }

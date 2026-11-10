@@ -203,8 +203,9 @@ public:
     // value is recognised as stale rather than delivered.
     uint64_t sourceEpoch() const noexcept { return epoch_; }
     // Advances the source epoch and drops every outstanding callback: those
-    // requests belonged to the source being replaced. loadFile and stop call
-    // this before touching the source; others call it when they replace the core.
+    // requests belonged to the source being replaced. loadFile calls this
+    // before touching the source; a caller that unloads one calls it too,
+    // before issuing the stop command through commandAsync.
     void invalidateAsyncEpoch();
 
     // Processes a bounded batch so log/reply floods cannot starve GUI rendering.

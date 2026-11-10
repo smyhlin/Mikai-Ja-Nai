@@ -378,11 +378,12 @@ void FramePreviewWorker::setSource(const QString& url, quint64 generation) {
         // A capture or read for the replaced source must not land in the new
         // one's state machine.
         core_->cancelAllAsync();
-        try {
-            core_->stop();
-        } catch (const MpvError&) {
-            // Nothing was loaded to stop.
-        }
+        // Task 07 deleted MpvHandle::stop(): its two halves are the epoch
+        // retirement and a "stop" command on the async transport, the same
+        // shape VideoSurface uses. Neither replacement throws, so there is
+        // no "nothing was loaded" case to catch any more.
+        core_->invalidateAsyncEpoch();
+        core_->commandAsync({"stop"}, [](const AsyncReply&) {});
     }
     if (url_.isEmpty()) releaseCore();
     updateTimer();
@@ -607,11 +608,12 @@ void FramePreviewWorker::tickIdle() {
     core_->cancelAllAsync();
     positionRequest_ = AsyncRequestId{};
     captureRequest_ = AsyncRequestId{};
-    try {
-        core_->stop();
-    } catch (const MpvError&) {
-        // Nothing was loaded any more.
-    }
+    // Task 07 deleted MpvHandle::stop(): its two halves are the epoch
+    // retirement and a "stop" command on the async transport, the same shape
+    // VideoSurface uses. Neither replacement throws, so there is no
+    // "nothing was loaded" case to catch any more.
+    core_->invalidateAsyncEpoch();
+    core_->commandAsync({"stop"}, [](const AsyncReply&) {});
     loadedUrl_.clear();
 }
 
@@ -817,11 +819,12 @@ void FramePreviewWorker::fail(const QString& reason) {
     // when the source is tried again.
     if (core_ != nullptr) {
         core_->cancelAllAsync();
-        try {
-            core_->stop();
-        } catch (const MpvError&) {
-            // Nothing was loaded.
-        }
+        // Task 07 deleted MpvHandle::stop(): its two halves are the epoch
+        // retirement and a "stop" command on the async transport, the same
+        // shape VideoSurface uses. Neither replacement throws, so there is
+        // no "nothing was loaded" case to catch any more.
+        core_->invalidateAsyncEpoch();
+        core_->commandAsync({"stop"}, [](const AsyncReply&) {});
     }
     loadedUrl_.clear();
     if (token != 0) {
