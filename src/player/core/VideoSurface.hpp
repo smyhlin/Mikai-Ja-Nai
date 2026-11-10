@@ -446,6 +446,11 @@ public:
     /// untouched source and cannot open a second decode of it (a signed stream
     /// URL, for instance). GUI thread only; requires a paused frame.
     ///
+    /// Restored verbatim from 7642f50 (option 1): the synchronous path
+    /// stays until P1-01(c) converts the CompareWindow call site; new
+    /// code must use grabUnfilteredFrameAsync instead.
+    QImage grabUnfilteredFrame(QString* reason = nullptr);
+    ///
     /// P1-01(a): asynchronous - the call returns at once (well under 100 ms)
     /// and the frame arrives through `completion` on the GUI thread, with an
     /// empty reason on success. The two seeks are preserved in order: a paused

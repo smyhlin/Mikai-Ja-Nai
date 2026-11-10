@@ -1755,6 +1755,79 @@ void VideoSurface::requestPausedWrite(bool paused) {
 }
 
 
+QImage VideoSurface::grabUnfilteredFrame(QString* reason) {
+    if (reason != nullptr) reason->clear();
+    if (QThread::currentThread() != thread()) {
+        if (reason != nullptr) *reason = QStringLiteral("not the GUI thread");
+        return {};
+    }
+    if (!mpv_ || !hasVisibleOutputFrame()) {
+        if (reason != nullptr) *reason = QStringLiteral("no decoded frame to capture");
+        return {};
+    }
+    QString filter;
+    QString shaders;
+    try {
+        filter = QString::fromStdString(mpv_->getString("vf"));
+        shaders = QString::fromStdString(mpv_->getString("glsl-shaders"));
+    } catch (const MpvError& error) {
+        if (reason != nullptr) *reason = QString::fromUtf8(error.what());
+        return {};
+    }
+    const double target = position();
+    // Restore is unconditional: a capture that fails must not leave playback
+    // without its processing chain.
+    struct Restore {
+        VideoSurface* surface;
+        const QString filter;
+        const QString shaders;
+        ~Restore() {
+            // The core can be gone (a source change destroyed it) between the
+            // capture and this restore; restoring into a null handle would be
+            // undefined, and the new core has no filter to restore anyway.
+            if (surface->mpv_) {
+                try {
+                    surface->mpv_->setString("vf", filter.toStdString());
+                    surface->mpv_->setString("glsl-shaders", shaders.toStdString());
+                } catch (const MpvError&) {
+                }
+            }
+            surface->update();
+        }
+    } restore{this, filter, shaders};
+
+    try {
+        // Toggling a filter that is not there is pure risk: a core with nothing
+        // bound needs no teardown.
+        if (!filter.isEmpty() || !filter.trimmed().isEmpty()) mpv_->setString("vf", "");
+        if (!shaders.isEmpty()) mpv_->setString("glsl-shaders", "");
+    } catch (const MpvError& error) {
+        if (reason != nullptr) *reason = QString::fromUtf8(error.what());
+        return {};
+    }
+    // A paused core does not decode on its own: a small seek back and forward
+    // is what makes mpv produce a frame through the now-empty filter chain.
+    const auto waitForFrame = [this](double seconds) {
+        seek(seconds);
+        QElapsedTimer clock;
+        clock.start();
+        while (clock.elapsed() < 2500) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            if (hasVisibleOutputFrame()) return true;
+            QThread::msleep(10);
+        }
+        return hasVisibleOutputFrame();
+    };
+    if (!waitForFrame(target > 0.1 ? target - 0.1 : 0.0) || !waitForFrame(target)) {
+        if (reason != nullptr) *reason = QStringLiteral("the decoder produced no frame");
+        return {};
+    }
+    const QImage image = grabVideoFramebuffer();
+    if (image.isNull() && reason != nullptr) *reason = QStringLiteral("the framebuffer was empty");
+    return image;
+}
+
+
 // P1-01(a): one waited frame is 2,500 ms, the same bound the old polling wait
 // had - now as a QTimer, not a loop.
 constexpr int kUnfilteredFrameWaitMs = 2500;
