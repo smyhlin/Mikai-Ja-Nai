@@ -143,6 +143,11 @@ WatchHistory::WatchHistory(const QString& settingsKey)
 }
 
 void WatchHistory::load() {
+    const std::lock_guard<std::mutex> lock(titlesMutex_);
+    loadLocked();
+}
+
+void WatchHistory::loadLocked() {
     titles_.clear();
     const QByteArray raw = HistoryWriter::instance().snapshot(key_).toUtf8();
     if (raw.isEmpty()) {
@@ -194,6 +199,11 @@ void WatchHistory::load() {
 }
 
 void WatchHistory::save() {
+    const std::lock_guard<std::mutex> lock(titlesMutex_);
+    saveLocked();
+}
+
+void WatchHistory::saveLocked() {
     QJsonObject root;
     for (auto it = titles_.constBegin(); it != titles_.constEnd(); ++it) {
         QJsonObject record;
@@ -231,10 +241,14 @@ void WatchHistory::save() {
 }
 
 TitleWatchProgress WatchHistory::progress(const QString& ref) const {
-    return titles_.value(ref);
+    const std::lock_guard<std::mutex> lock(titlesMutex_);
+    // Built under the lock, returned after it is released.
+    const TitleWatchProgress copy = titles_.value(ref);
+    return copy;
 }
 
 QString WatchHistory::current(const QString& ref) const {
+    const std::lock_guard<std::mutex> lock(titlesMutex_);
     const auto it = titles_.constFind(ref);
     return it != titles_.constEnd() ? it->current : QString();
 }
@@ -243,6 +257,7 @@ bool WatchHistory::isWatched(const QString& ref, const QString& episode) const {
     if (episode.isEmpty()) {
         return false;
     }
+    const std::lock_guard<std::mutex> lock(titlesMutex_);
     const auto it = titles_.constFind(ref);
     return it != titles_.constEnd() && it->watched.contains(episode);
 }
@@ -251,8 +266,11 @@ void WatchHistory::setCurrent(const QString& ref, const QString& episode) {
     if (ref.isEmpty() || episode.isEmpty()) {
         return;
     }
+    // One critical section: load, mutate and save under the same lock, so a
+    // second writer cannot slip in between and lose this write.
+    const std::lock_guard<std::mutex> lock(titlesMutex_);
     // Several title pages may outlive each other; merge the latest records before writing.
-    load();
+    loadLocked();
     auto it = titles_.find(ref);
     if (it != titles_.end() && it->current == episode) {
         return;
@@ -261,18 +279,25 @@ void WatchHistory::setCurrent(const QString& ref, const QString& episode) {
         it = titles_.insert(ref, TitleWatchProgress{});
     }
     it->current = episode;
-    save();
+    saveLocked();
 }
 
 void WatchHistory::setWatched(const QString& ref, const QString& episode, bool watched) {
     if (ref.isEmpty() || episode.isEmpty()) {
         return;
     }
-    load();
+    const std::lock_guard<std::mutex> lock(titlesMutex_);
+    loadLocked();
+    if (setWatchedLocked(ref, episode, watched)) {
+        saveLocked();
+    }
+}
+
+bool WatchHistory::setWatchedLocked(const QString& ref, const QString& episode, bool watched) {
     auto it = titles_.find(ref);
     const bool known = it != titles_.end() && it->watched.contains(episode);
     if (watched == known) {
-        return;
+        return false;
     }
     if (it == titles_.end()) {
         it = titles_.insert(ref, TitleWatchProgress{});
@@ -289,7 +314,7 @@ void WatchHistory::setWatched(const QString& ref, const QString& episode, bool w
         it->durations.isEmpty()) {
         titles_.erase(it);
     }
-    save();
+    return true;
 }
 
 void WatchHistory::setEpisodesWatched(const QString& ref, const QStringList& episodes,
@@ -308,7 +333,8 @@ void WatchHistory::setEpisodesWatched(const QString& ref, const QStringList& epi
         return;
     }
 
-    load();
+    const std::lock_guard<std::mutex> lock(titlesMutex_);
+    loadLocked();
     auto it = titles_.find(ref);
     if (watched) {
         if (it != titles_.end()) {
@@ -341,12 +367,13 @@ void WatchHistory::setEpisodesWatched(const QString& ref, const QStringList& epi
             titles_.erase(it);
         }
     }
-    save();
+    saveLocked();
 }
 
 void WatchHistory::clear() {
+    const std::lock_guard<std::mutex> lock(titlesMutex_);
     titles_.clear();
-    save();
+    saveLocked();
 }
 
 
@@ -354,6 +381,7 @@ double WatchHistory::offset(const QString& ref, const QString& episode) const {
     if (ref.isEmpty() || episode.isEmpty()) {
         return 0.0;
     }
+    const std::lock_guard<std::mutex> lock(titlesMutex_);
     const auto it = titles_.constFind(ref);
     if (it == titles_.constEnd()) {
         return 0.0;
@@ -370,6 +398,7 @@ double WatchHistory::duration(const QString& ref, const QString& episode) const 
     if (ref.isEmpty() || episode.isEmpty()) {
         return 0.0;
     }
+    const std::lock_guard<std::mutex> lock(titlesMutex_);
     const auto it = titles_.constFind(ref);
     if (it == titles_.constEnd() || it->watched.contains(episode)) {
         return 0.0;
@@ -381,7 +410,8 @@ void WatchHistory::clearOffset(const QString& ref, const QString& episode) {
     if (ref.isEmpty() || episode.isEmpty()) {
         return;
     }
-    load();
+    const std::lock_guard<std::mutex> lock(titlesMutex_);
+    loadLocked();
     auto it = titles_.find(ref);
     if (it == titles_.end()) {
         return;
@@ -389,7 +419,7 @@ void WatchHistory::clearOffset(const QString& ref, const QString& episode) {
     const bool hadOffset = it->offsets.remove(episode) > 0;
     it->durations.remove(episode);
     if (hadOffset) {
-        save();
+        saveLocked();
     }
 }
 
@@ -410,11 +440,15 @@ void WatchHistory::setOffset(const QString& ref, const QString& episode, double 
     // Finishing a stream without an end-of-file event (a live HLS edge, a
     // dropped connection at the credits) has to count as watched too, which is
     // why the threshold lives here and not only in the ended handler.
+    const std::lock_guard<std::mutex> lock(titlesMutex_);
     if (duration > 0.0 && position >= duration * 0.9) {
-        setWatched(ref, episode, true);
+        loadLocked();
+        if (setWatchedLocked(ref, episode, true)) {
+            saveLocked();
+        }
         return;
     }
-    load();
+    loadLocked();
     auto it = titles_.find(ref);
     if (it != titles_.end() && it->watched.contains(episode)) {
         return;
@@ -429,7 +463,7 @@ void WatchHistory::setOffset(const QString& ref, const QString& episode, double 
     if (duration > 0.0) {
         it->durations.insert(episode, duration);
     }
-    save();
+    saveLocked();
 }
 
 }  // namespace mikai::app

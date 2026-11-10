@@ -23,4 +23,6 @@ class TestWatchHistory : public QObject {
   void storesAOffsetAndResumesFromIt();
   void finishingAnEpisodeWatchedClearsItsOffset();
   void aBarelyStartedEpisodeIsNotResumed();
+  // P0-04 §5: two threads hammering one shared store must not lose a write.
+  void twoThreadsMarkingDistinctEpisodesLoseNothing();
 };

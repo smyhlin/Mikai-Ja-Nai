@@ -4,6 +4,9 @@
 
 #include <QSettings>
 
+#include <thread>
+#include <vector>
+
 using mikai::app::TitleWatchProgress;
 using mikai::app::WatchHistory;
 
@@ -248,4 +251,41 @@ void TestWatchHistory::aBarelyStartedEpisodeIsNotResumed() {
   // A live stream has no known duration; the offset still counts.
   store.setOffset(QStringLiteral("700"), QStringLiteral("2"), 600.0, 0.0);
   QCOMPARE(store.offset(QStringLiteral("700"), QStringLiteral("2")), 600.0);
+}
+
+void TestWatchHistory::twoThreadsMarkingDistinctEpisodesLoseNothing() {
+  // P0-04 §5 check: two threads, 1,000 iterations each of
+  // setCurrent/setWatched on the same title with distinct episodes, sharing
+  // one store. The single titlesMutex_ critical section (load+mutate+save)
+  // must keep every write; without it the second save() overwrites the first.
+  const QString ref = QStringLiteral("7428");
+  WatchHistory store(QString::fromLatin1(kTestSettingsKey));
+  const auto mark = [&store, &ref](const QString& prefix) {
+    for (int index = 0; index < 1000; ++index) {
+      const QString episode = prefix + QString::number(index);
+      store.setCurrent(ref, episode);
+      store.setWatched(ref, episode, true);
+    }
+  };
+  std::thread first(mark, QStringLiteral("a-"));
+  std::thread second(mark, QStringLiteral("b-"));
+  first.join();
+  second.join();
+
+  for (int index = 0; index < 1000; ++index) {
+    const QString firstEpisode = QStringLiteral("a-%1").arg(index);
+    const QString secondEpisode = QStringLiteral("b-%1").arg(index);
+    QVERIFY2(store.isWatched(ref, firstEpisode), qPrintable(firstEpisode));
+    QVERIFY2(store.isWatched(ref, secondEpisode), qPrintable(secondEpisode));
+  }
+
+  // Persisted form must round-trip with nothing lost either.
+  WatchHistory::flushHistoryWrites();
+  WatchHistory reloaded(QString::fromLatin1(kTestSettingsKey));
+  for (int index = 0; index < 1000; ++index) {
+    const QString firstEpisode = QStringLiteral("a-%1").arg(index);
+    const QString secondEpisode = QStringLiteral("b-%1").arg(index);
+    QVERIFY2(reloaded.isWatched(ref, firstEpisode), qPrintable(firstEpisode));
+    QVERIFY2(reloaded.isWatched(ref, secondEpisode), qPrintable(secondEpisode));
+  }
 }
