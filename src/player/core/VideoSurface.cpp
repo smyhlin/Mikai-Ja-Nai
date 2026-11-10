@@ -1755,76 +1755,307 @@ void VideoSurface::requestPausedWrite(bool paused) {
 }
 
 
-QImage VideoSurface::grabUnfilteredFrame(QString* reason) {
-    if (reason != nullptr) reason->clear();
+// P1-01(a): one waited frame is 2,500 ms, the same bound the old polling wait
+// had - now as a QTimer, not a loop.
+constexpr int kUnfilteredFrameWaitMs = 2500;
+// A presented frame counts as the seek's frame only when the observed
+// playhead is near the seek target: a repaint of an older frame is not proof
+// the paused core decoded anything new.
+constexpr double kUnfilteredFramePositionToleranceSec = 0.5;
+
+void VideoSurface::grabUnfilteredFrameAsync(std::function<void(QImage, QString)> completion) {
+    if (!completion) return;
     if (QThread::currentThread() != thread()) {
-        if (reason != nullptr) *reason = QStringLiteral("not the GUI thread");
-        return {};
+        completion({}, QStringLiteral("not the GUI thread"));
+        return;
     }
     if (!mpv_ || !hasVisibleOutputFrame()) {
-        if (reason != nullptr) *reason = QStringLiteral("no decoded frame to capture");
-        return {};
+        completion({}, QStringLiteral("no decoded frame to capture"));
+        return;
     }
-    QString filter;
-    QString shaders;
-    try {
-        filter = QString::fromStdString(mpv_->getString("vf"));
-        shaders = QString::fromStdString(mpv_->getString("glsl-shaders"));
-    } catch (const MpvError& error) {
-        if (reason != nullptr) *reason = QString::fromUtf8(error.what());
-        return {};
+    // One capture at a time: a second call completes at once instead of
+    // queuing behind the first, whose filter restore it would otherwise race.
+    if (unfilteredCapture_ != nullptr) {
+        completion({}, QStringLiteral("an unfiltered capture is already running"));
+        return;
     }
-    const double target = position();
-    // Restore is unconditional: a capture that fails must not leave playback
-    // without its processing chain.
-    struct Restore {
-        VideoSurface* surface;
-        const QString filter;
-        const QString shaders;
-        ~Restore() {
-            // The core can be gone (a source change destroyed it) between the
-            // capture and this restore; restoring into a null handle would be
-            // undefined, and the new core has no filter to restore anyway.
-            if (surface->mpv_) {
-                try {
-                    surface->mpv_->setString("vf", filter.toStdString());
-                    surface->mpv_->setString("glsl-shaders", shaders.toStdString());
-                } catch (const MpvError&) {
-                }
-            }
-            surface->update();
-        }
-    } restore{this, filter, shaders};
+    auto state = std::make_shared<UnfilteredCapture>();
+    state->surface = QPointer<VideoSurface>(this);
+    state->completion = std::move(completion);
+    state->epoch = mpv_->sourceEpoch();
+    state->target = position();
+    unfilteredCapture_ = state;
 
-    try {
-        // Toggling a filter that is not there is pure risk: a core with nothing
-        // bound needs no teardown.
-        if (!filter.isEmpty() || !filter.trimmed().isEmpty()) mpv_->setString("vf", "");
-        if (!shaders.isEmpty()) mpv_->setString("glsl-shaders", "");
-    } catch (const MpvError& error) {
-        if (reason != nullptr) *reason = QString::fromUtf8(error.what());
-        return {};
+    // Filter properties travel the async transport: a synchronous read takes
+    // the core lock, which native work may be holding. Both reads must land
+    // before anything is cleared, so the restore knows what to put back.
+    // A request the transport refuses answers never: count it as failed now
+    // instead of waiting for a reply that cannot arrive.
+    state->readsPending = 2;
+    const auto noteReadIssued = [this, state](AsyncRequestId request) {
+        if (request.valid()) return;
+        state->readFailed = true;
+        if (--state->readsPending == 0) onUnfilteredFiltersRead(state);
+    };
+    noteReadIssued(mpv_->getPropertyAsync(
+        "vf", MPV_FORMAT_STRING, [this, state](const AsyncReply& reply) {
+            if (!unfilteredCaptureActive(state)) return;
+            if (!reply.ok() || reply.format != MPV_FORMAT_STRING) {
+                state->readFailed = true;
+            } else {
+                state->filter = QString::fromStdString(reply.text);
+            }
+            if (--state->readsPending == 0) onUnfilteredFiltersRead(state);
+        }));
+    noteReadIssued(mpv_->getPropertyAsync(
+        "glsl-shaders", MPV_FORMAT_STRING, [this, state](const AsyncReply& reply) {
+            if (!unfilteredCaptureActive(state)) return;
+            if (!reply.ok() || reply.format != MPV_FORMAT_STRING) {
+                state->readFailed = true;
+            } else {
+                state->shaders = QString::fromStdString(reply.text);
+            }
+            if (--state->readsPending == 0) onUnfilteredFiltersRead(state);
+        }));
+}
+
+bool VideoSurface::unfilteredCaptureActive(
+    const std::shared_ptr<UnfilteredCapture>& state) const {
+    return state != nullptr && !state->finished && state->surface != nullptr &&
+           unfilteredCapture_.get() == state.get() && mpv_ != nullptr &&
+           state->epoch == mpv_->sourceEpoch();
+}
+
+void VideoSurface::onUnfilteredFiltersRead(const std::shared_ptr<UnfilteredCapture>& state) {
+    if (!unfilteredCaptureActive(state)) return;
+    if (state->readFailed) {
+        finishUnfilteredCapture(state, {}, tr("the video filter chain could not be read"));
+        return;
+    }
+    // Toggling a filter that is not there is pure risk: a core with nothing
+    // bound needs no teardown. (Same rule as the old synchronous path.)
+    const bool clearFilter = !state->filter.isEmpty() || !state->filter.trimmed().isEmpty();
+    const bool clearShaders = !state->shaders.isEmpty();
+    state->setsPending = (clearFilter ? 1 : 0) + (clearShaders ? 1 : 0);
+    if (state->setsPending == 0) {
+        onUnfilteredFiltersCleared(state);
+        return;
+    }
+    const auto onFilterCleared = [this, state](const AsyncReply& reply) {
+        if (!unfilteredCaptureActive(state)) return;
+        if (!reply.ok()) state->setFailed = true;
+        if (--state->setsPending == 0) onUnfilteredFiltersCleared(state);
+    };
+    const auto noteSetIssued = [this, state](AsyncRequestId request) {
+        if (request.valid()) return;
+        state->setFailed = true;
+        if (--state->setsPending == 0) onUnfilteredFiltersCleared(state);
+    };
+    if (clearFilter) {
+        state->clearedFilter = true;
+        noteSetIssued(mpv_->commandAsync({"set", "vf", ""}, onFilterCleared));
+    }
+    if (clearShaders) {
+        state->clearedShaders = true;
+        noteSetIssued(mpv_->commandAsync({"set", "glsl-shaders", ""}, onFilterCleared));
+    }
+}
+
+void VideoSurface::onUnfilteredFiltersCleared(
+    const std::shared_ptr<UnfilteredCapture>& state) {
+    if (!unfilteredCaptureActive(state)) return;
+    if (state->setFailed) {
+        finishUnfilteredCapture(state, {}, tr("the video filter chain could not be removed"));
+        return;
     }
     // A paused core does not decode on its own: a small seek back and forward
     // is what makes mpv produce a frame through the now-empty filter chain.
-    const auto waitForFrame = [this](double seconds) {
-        seek(seconds);
-        QElapsedTimer clock;
-        clock.start();
-        while (clock.elapsed() < 2500) {
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-            if (hasVisibleOutputFrame()) return true;
-            QThread::msleep(10);
+    // Both seeks are preserved, in order, exactly as the synchronous path had
+    // them.
+    waitUnfilteredFrame(state, state->target > 0.1 ? state->target - 0.1 : 0.0);
+}
+
+void VideoSurface::waitUnfilteredFrame(const std::shared_ptr<UnfilteredCapture>& state,
+                                       double seekPosition) {
+    if (!unfilteredCaptureActive(state)) return;
+    state->expectedPosition = seekPosition;
+    state->framesBeforeSeek = diagnostics_.renderedOutputFrames;
+    state->waitPhase += 1;
+    const std::weak_ptr<UnfilteredCapture> weakState = state;
+    // Connected BEFORE the seek: a frame presented between the seek and the
+    // connection would otherwise be missed. Both triggers are needed: the
+    // presented frame and the playhead observation can arrive in either order.
+    state->frameSwappedConnection =
+        connect(this, &VideoSurface::frameSwapped, this, [weakState] {
+            if (auto held = weakState.lock()) {
+                if (held->surface != nullptr) held->surface->checkUnfilteredFramePresented(held);
+            }
+        });
+    state->positionConnection =
+        connect(this, &VideoSurface::positionChanged, this, [weakState](double) {
+            if (auto held = weakState.lock()) {
+                if (held->surface != nullptr) held->surface->checkUnfilteredFramePresented(held);
+            }
+        });
+    state->timer = new QTimer(this);
+    state->timer->setSingleShot(true);
+    connect(state->timer.data(), &QTimer::timeout, this, [weakState] {
+        if (auto held = weakState.lock()) {
+            if (held->surface != nullptr) {
+                held->surface->finishUnfilteredCapture(
+                    held, {}, VideoSurface::tr("the decoder produced no frame"));
+            }
         }
-        return hasVisibleOutputFrame();
-    };
-    if (!waitForFrame(target > 0.1 ? target - 0.1 : 0.0) || !waitForFrame(target)) {
-        if (reason != nullptr) *reason = QStringLiteral("the decoder produced no frame");
-        return {};
+    });
+    state->timer->start(kUnfilteredFrameWaitMs);
+    seek(seekPosition);
+}
+
+void VideoSurface::checkUnfilteredFramePresented(
+    const std::shared_ptr<UnfilteredCapture>& state) {
+    if (state->finished) return;
+    if (mpv_ == nullptr || state->epoch != mpv_->sourceEpoch()) {
+        finishUnfilteredCapture(state, {}, tr("the source changed during capture"));
+        return;
     }
-    const QImage image = grabVideoFramebuffer();
-    if (image.isNull() && reason != nullptr) *reason = QStringLiteral("the framebuffer was empty");
-    return image;
+    if (!unfilteredCaptureActive(state)) return;
+    // A new frame must have been presented since the seek, and the observed
+    // playhead must be near the seek target: an arbitrary repaint of an older
+    // frame is not proof the paused core decoded anything new.
+    if (diagnostics_.renderedOutputFrames <= state->framesBeforeSeek) return;
+    if (std::abs(position() - state->expectedPosition) > kUnfilteredFramePositionToleranceSec) {
+        return;
+    }
+    disconnect(state->frameSwappedConnection);
+    disconnect(state->positionConnection);
+    if (state->timer != nullptr) state->timer->stop();
+    if (state->waitPhase == 1) {
+        waitUnfilteredFrame(state, state->target);
+        return;
+    }
+    captureUnfilteredFrame(state);
+}
+
+void VideoSurface::captureUnfilteredFrame(const std::shared_ptr<UnfilteredCapture>& state) {
+    if (!unfilteredCaptureActive(state)) return;
+    // The pixels arrive through the async screenshot reply: the same
+    // `screenshot-raw` mechanism FramePreviewService and CompareRenderer use
+    // on their vo=libmpv cores - no second screenshot path. The reply is
+    // parsed here rather than through previewFrameFromRaw, which refuses
+    // frames wider than 1024 px: a player frame is full-size.
+    const AsyncRequestId request = mpv_->commandAsync(
+        {"screenshot-raw", "video", "rgba"},
+        [this, state](const AsyncReply& reply) {
+            if (!unfilteredCaptureActive(state)) return;
+            if (!reply.ok() || reply.node.format != MPV_FORMAT_NODE_MAP) {
+                finishUnfilteredCapture(state, {}, tr("the frame could not be captured"));
+                return;
+            }
+            const NodeValue* width = nullptr;
+            const NodeValue* height = nullptr;
+            const NodeValue* stride = nullptr;
+            const NodeValue* format = nullptr;
+            const NodeValue* data = nullptr;
+            for (const auto& entry : reply.node.map) {
+                if (entry.first == "w") width = &entry.second;
+                else if (entry.first == "h") height = &entry.second;
+                else if (entry.first == "stride") stride = &entry.second;
+                else if (entry.first == "format") format = &entry.second;
+                else if (entry.first == "data") data = &entry.second;
+            }
+            if (width == nullptr || height == nullptr || stride == nullptr ||
+                format == nullptr || data == nullptr) {
+                finishUnfilteredCapture(state, {},
+                                        tr("the frame capture did not report its pixels"));
+                return;
+            }
+            // qint64, not qsizetype: `stride * height` overflows a 32-bit
+            // qsizetype before the comparison could reject it.
+            const qint64 declaredWidth = width->integer;
+            const qint64 declaredHeight = height->integer;
+            const qint64 declaredStride = stride->integer;
+            if (declaredWidth <= 0 || declaredHeight <= 0 ||
+                declaredStride < declaredWidth * 4 || format->text != "rgba" ||
+                static_cast<qint64>(data->bytes.size()) < declaredStride * declaredHeight) {
+                finishUnfilteredCapture(state, {},
+                                        tr("the captured frame could not be read"));
+                return;
+            }
+            // copy(): the reply's storage dies with the next drain.
+            const QImage frame =
+                QImage(reinterpret_cast<const uchar*>(data->bytes.data()),
+                       static_cast<int>(declaredWidth), static_cast<int>(declaredHeight),
+                       static_cast<qsizetype>(declaredStride), QImage::Format_RGBA8888)
+                    .copy();
+            if (frame.isNull()) {
+                finishUnfilteredCapture(state, {}, tr("the captured frame could not be read"));
+                return;
+            }
+            finishUnfilteredCapture(state, frame, {});
+        });
+    if (!request.valid()) {
+        finishUnfilteredCapture(state, {}, tr("the player would not take the capture request"));
+    }
+}
+
+void VideoSurface::finishUnfilteredCapture(const std::shared_ptr<UnfilteredCapture>& state,
+                                           const QImage& image, const QString& reason) {
+    if (state == nullptr || state->finished) return;
+    state->finished = true;
+    disconnect(state->frameSwappedConnection);
+    disconnect(state->positionConnection);
+    if (state->timer != nullptr) {
+        state->timer->stop();
+        state->timer->deleteLater();
+        state->timer = nullptr;
+    }
+    if (unfilteredCapture_.get() == state.get()) unfilteredCapture_.reset();
+    restoreUnfilteredFilters(state);
+    // The captured content is not what is on screen now, so the widget is
+    // asked for a normal paint rather than being left showing the capture.
+    if (state->surface != nullptr) update();
+    if (state->completion) state->completion(image, reason);
+}
+
+void VideoSurface::restoreUnfilteredFilters(
+    const std::shared_ptr<UnfilteredCapture>& state) {
+    auto* surface = state->surface.data();
+    if (surface == nullptr || surface->mpv_ == nullptr ||
+        state->epoch != surface->mpv_->sourceEpoch()) {
+        return;
+    }
+    // Only restore what this capture cleared, and only while the chain is
+    // still the cleared one: a filter change made mid-capture belongs to its
+    // owner, not to this restore. The core can be gone by the time the read
+    // answers; the weak surface pointer is what guards that.
+    const auto restoreIfCleared = [state](const char* property, const QString& saved) {
+        auto* target = state->surface.data();
+        if (target == nullptr || target->mpv_ == nullptr) return;
+        target->mpv_->getPropertyAsync(
+            property, MPV_FORMAT_STRING,
+            [state, property, saved](const AsyncReply& reply) {
+                auto* live = state->surface.data();
+                if (live == nullptr || live->mpv_ == nullptr ||
+                    state->epoch != live->mpv_->sourceEpoch() || !reply.ok() ||
+                    reply.format != MPV_FORMAT_STRING || !reply.text.empty()) {
+                    return;
+                }
+                live->mpv_->commandAsync(
+                    {"set", property, saved.toStdString()},
+                    [state, property](const AsyncReply& answer) {
+                        if (answer.ok()) return;
+                        auto* restoreTarget = state->surface.data();
+                        if (restoreTarget == nullptr || restoreTarget->mpv_ == nullptr) return;
+                        qWarning("VideoSurface: the unfiltered capture could not restore "
+                                 "%s (%s)",
+                                 property,
+                                 qUtf8Printable(QString::fromStdString(
+                                     restoreTarget->mpv_->describeError(answer.error))));
+                    });
+            });
+    };
+    if (state->clearedFilter) restoreIfCleared("vf", state->filter);
+    if (state->clearedShaders) restoreIfCleared("glsl-shaders", state->shaders);
 }
 
 QImage VideoSurface::grabVideoFramebuffer() {

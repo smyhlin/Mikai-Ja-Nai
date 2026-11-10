@@ -41,6 +41,10 @@ private slots:
     // (dedupe) and the dialog itself never steps - advancing is the host's job.
     void anEofEmitsFinishedOnceAndDoesNotStepItself();
 
+    // P1-01(a): the async unfiltered capture returns without blocking the GUI
+    // thread and the frame arrives through the completion callback.
+    void anUnfilteredCaptureReturnsAtOnceAndArrivesByCallback();
+
     void aPlayerDialogArrowStepIgnoresALateStaleProgressReport_data();
     void aPlayerDialogArrowStepIgnoresALateStaleProgressReport();
 

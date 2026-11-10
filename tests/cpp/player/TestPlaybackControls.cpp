@@ -914,3 +914,71 @@ void TestPlaybackControls::anEofEmitsFinishedOnceAndDoesNotStepItself() {
     QVERIFY2(host.requestedEpisodes.isEmpty(),
              "the last episode's EOF must not step anywhere");
 }
+
+void TestPlaybackControls::anUnfilteredCaptureReturnsAtOnceAndArrivesByCallback() {
+    if (!nativePlatformAvailable()) {
+        QSKIP("the player needs a native window and a real GL context");
+    }
+    if (!requireRuntime()) return;
+
+    const QString fixture = fixtureClip();
+    QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
+
+    const std::unique_ptr<mplayer::shell::PlayerDialog> dialog(
+        new mplayer::shell::PlayerDialog(QStringLiteral("controls"), fixture));
+    dialog->show();
+    if (!QTest::qWaitForWindowExposed(dialog.get(), 15000)) {
+        QSKIP("the player window was never exposed on this platform");
+    }
+    auto* shell = dialog->findChild<mplayer::shell::PlayerShell*>();
+    QVERIFY2(shell != nullptr, "the dialog hosts a shell");
+    auto* surface = shell->findChild<mplayer::VideoSurface*>();
+    QVERIFY2(surface != nullptr, "the shell hosts a surface");
+    if (!surface->waitForContext(20000)) {
+        QSKIP("no OpenGL context for the player surface");
+    }
+
+    dialog->startPlayer();
+    QVERIFY2(settleUntil([surface] { return surface->duration() > 10.0; }, 30000),
+             qPrintable(QStringLiteral("the player never loaded %1 (duration %2)")
+                            .arg(fixture)
+                            .arg(surface->duration())));
+    surface->setPaused(true);
+    surface->seek(1.0);
+    QVERIFY2(settleUntil([surface] { return std::abs(surface->position() - 1.0) < 0.25; }, 15000),
+             qPrintable(QStringLiteral("the player never reached 1.0 s (position %1)")
+                            .arg(surface->position())));
+
+    const std::optional<QString> filtersBefore = coreText(surface, "vf");
+    const std::optional<QString> shadersBefore = coreText(surface, "glsl-shaders");
+
+    // The call itself must not block the GUI thread: the frame arrives later,
+    // through the completion callback.
+    QElapsedTimer callClock;
+    callClock.start();
+    bool completed = false;
+    QImage captured;
+    QString captureReason;
+    surface->grabUnfilteredFrameAsync([&](QImage image, QString reason) {
+        captured = std::move(image);
+        captureReason = std::move(reason);
+        completed = true;
+    });
+    QVERIFY2(callClock.elapsed() < 100,
+             qPrintable(QStringLiteral("the async capture call blocked the GUI thread for %1 ms")
+                            .arg(callClock.elapsed())));
+    QTRY_VERIFY_WITH_TIMEOUT(completed, 15000);
+    QVERIFY2(captureReason.isEmpty(),
+             qPrintable(QStringLiteral("the capture failed: %1").arg(captureReason)));
+    QVERIFY2(!captured.isNull(), "the capture must deliver a frame");
+    QCOMPARE(captured.size(), QSize(320, 180));
+
+    // The playhead returns to where it was: the second seek lands back on 1 s.
+    QVERIFY2(settleUntil([surface] { return std::abs(surface->position() - 1.0) < 0.25; }, 10000),
+             qPrintable(QStringLiteral("the capture left the playhead at %1 s")
+                            .arg(surface->position())));
+    // The filter chain the capture cleared is restored afterwards.
+    QCOMPARE(coreText(surface, "vf"), filtersBefore);
+    QCOMPARE(coreText(surface, "glsl-shaders"), shadersBefore);
+    QVERIFY2(coreIsPaused(surface), "the capture must not unpause the player");
+}
