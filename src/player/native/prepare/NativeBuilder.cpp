@@ -966,7 +966,7 @@ BuilderResult publishAll(MainFlow* flow) {
     manifest.device.driver = item.request.build.driverVersion;
     manifest.device.cuda = item.request.build.cudaVersion;
     manifest.device.luid = item.request.build.adapterLuid;
-    manifest.engine.file = QString::fromLatin1(kEngineFileName);
+    manifest.engine.file = QString::fromLatin1(builder_detail::kEngineFileName);
     manifest.engine.bytes = item.engineBytes;
     manifest.engine.sha256 = item.engineSha;
     manifest.createdAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);

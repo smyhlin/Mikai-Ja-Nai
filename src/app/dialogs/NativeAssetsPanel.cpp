@@ -276,7 +276,7 @@ NativePreparationToolchain observeNativePreparationToolchain() {
     // backends it carries; a backend the block does not declare is not offered
     // even if a DLL happens to be present.
     for (const QString& type : preparation.types) {
-        const std::optional<Backend> declared = native::backendFromName(type);
+        const std::optional<native::Backend> declared = native::backendFromName(type);
         if (declared.has_value() && !toolchain.backends.available.contains(*declared)) {
             toolchain.backends.available.append(*declared);
         }
