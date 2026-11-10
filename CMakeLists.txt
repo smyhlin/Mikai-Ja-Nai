@@ -401,8 +401,6 @@ set(APP_SOURCES
   src/app/dialogs/settings/BenchmarkPlayback.cpp
   src/app/dialogs/settings/BenchmarkReport.cpp
   src/app/dialogs/settings/SettingsBenchmarkTab.cpp
-  src/app/dialogs/settings/SettingsUpscalersTab.cpp
-  src/app/dialogs/settings/SettingsComponentsTab.cpp
   src/app/dialogs/settings/SettingsCustomizationTab.cpp
   src/app/dialogs/settings/SettingsGeneralTab.cpp
   src/app/dialogs/settings/SettingsHelpers.cpp

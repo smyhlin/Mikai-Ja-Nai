@@ -156,10 +156,41 @@ private:
         bool rendered = false;
     };
 
-    /// One open player window and the episode it is currently on.
-    struct PlayerSession;
     /// The `PlayerHost` bridge answering the dialog's intent signals.
+    /// Declared before PlayerSession: the session owns its host bridge.
     class Host;
+
+    /// One open player window and the episode it is currently on.
+    ///
+    /// Defined here (not in TitlePagePlayerSession.cpp) because sessions_ owns
+    /// them through std::unique_ptr: ~TitlePage destroys the vector in
+    /// TitlePage.cpp, so the type must be complete there. The destructor is
+    /// declared here and defined out of line where Host is complete, so the
+    /// host bridge is destroyed with its session and no manual delete remains.
+    struct PlayerSession {
+        ~PlayerSession();
+        std::unique_ptr<Host> host;
+        mplayer::shell::PlayerDialog* dialog = nullptr;
+        /// The episode the player is on right now, for stream recovery. A dub/sub
+        /// switch replaces it, so recovery must not rewind to the opening episode.
+        EpisodeEntry* entry = nullptr;
+        /// True from the moment this player asks for a runtime until the wait has
+        /// been answered, so a second request from the same dialog joins the one
+        /// wait instead of starting another resolution.
+        bool runtimePending = false;
+        /// The resolution this session started, valid only while it is still
+        /// waiting. Released on the terminal answer, on disposal and on a superseded
+        /// completion, so a closed player cannot keep the one process resolution -
+        /// and cannot clear the resolution its replacement is running either.
+        mplayer::native::ResolutionLease runtimeResolution;
+        bool runtimeResolutionHeld = false;
+        int sourceSequence = 0;
+        QVector<QVariantMap> playlist;
+        /// Stable identity, handed out once at creation and never reused, so a
+        /// queued signal or worker reply looks the session up by id instead of
+        /// holding a pointer that may already be freed (and its address reused).
+        quint64 id = 0;
+    };
 
     /// What a two-task title load has collected so far. Shared by both halves
     /// and read only on the GUI thread, so it needs no lock.
@@ -325,10 +356,19 @@ private:
     /// False when the session's player refused its close because native work is
     /// still stopping: the session stays registered so the removal can be
     /// retried, and nothing of it is deleted or forgotten.
-    bool closeSession(PlayerSession* session);
-    /// Disposes a session that is still registered. Idempotent: a session the
-    /// player's own `playerClosed()` already disposed is left alone.
-    void disposeSession(PlayerSession* session, bool forced);
+    bool closeSession(quint64 sessionId);
+    /// Disposes the session named by `sessionId`, or nothing when it is
+    /// already gone. Takes the stable id, never a pointer: the session may
+    /// have been disposed while a close was spinning the event loop.
+    void disposeSession(quint64 sessionId, bool forced);
+    /// The registered session with this id, or nullptr when it was disposed.
+    /// Every queued signal and worker reply resolves through here at fire time.
+    PlayerSession* sessionById(quint64 id);
+    /// True only while `session` is still registered. The pointer must be
+    /// readable at entry (a host owned by the session, or a lookup that just
+    /// succeeded); a pointer freed since it was captured fails the check
+    /// instead of being trusted.
+    bool isLiveSession(PlayerSession* session);
     void requestRuntime(PlayerSession* session);
     /// Runs the resolution this session answered by starting, and reports its
     /// terminal state to the same session: play, or name the reason.
@@ -573,7 +613,14 @@ protected:
     /// until a real tab change; cleared when a different title loads.
     QString chosenProvider_;
 
-    QVector<PlayerSession*> sessions_;
+    /// Owned sessions: erasing the unique_ptr destroys the session and its
+    /// host bridge. Nothing outside this vector owns a session; the dialog is
+    /// Qt-owned (WA_DeleteOnClose) and only ever borrowed through QPointer or
+    /// the session's raw dialog pointer while the session is registered.
+    QVector<std::unique_ptr<PlayerSession>> sessions_;
+    /// Next stable session id; never reused, so a disposed id can never name
+    /// a replacement session.
+    quint64 nextSessionId_ = 1;
     QMap<QString, QVector<EpisodeEntry*>> fetchWaiters_;
     QMap<QString, QVector<PlayerSession*>> trackWaiters_;
     /// The caller waiting on an in-flight extraction, kept per episode because

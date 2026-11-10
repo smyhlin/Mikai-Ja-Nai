@@ -89,14 +89,6 @@ QString focusAnchorName(QWidget* focus, const QWidget* panel) {
     return {};
 }
 
-QString formatByteSize(qint64 bytes) {
-    if (bytes <= 0) return QStringLiteral("0 B");
-    const double kb = static_cast<double>(bytes) / 1024.0;
-    if (kb < 1024.0) return QStringLiteral("%1 KB").arg(kb, 0, 'f', 1);
-    const double mb = kb / 1024.0;
-    return QStringLiteral("%1 MB").arg(mb, 0, 'f', 2);
-}
-
 QLabel* makeFieldLabel(const QString& text, QWidget* parent, QWidget* buddy = nullptr) {
     auto* label = new QLabel(text, parent);
     label->setObjectName(QStringLiteral("SettingsFormLabel"));
@@ -1066,7 +1058,13 @@ void AnimeJanaiManagerPanel::refreshCustomModels() {
         customModelsTable_->setItem(row, 1, new QTableWidgetItem(model.architectureHint));
         customModelsTable_->setItem(
             row, 2, new QTableWidgetItem(QStringLiteral("%1x").arg(model.scaleFactor)));
-        customModelsTable_->setItem(row, 3, new QTableWidgetItem(formatByteSize(model.bytes)));
+        customModelsTable_->setItem(row, 3, new QTableWidgetItem([bytes = model.bytes] {
+            if (bytes <= 0) return QStringLiteral("0 B");
+            const double kb = static_cast<double>(bytes) / 1024.0;
+            if (kb < 1024.0) return QStringLiteral("%1 KB").arg(kb, 0, 'f', 1);
+            const double mb = kb / 1024.0;
+            return QStringLiteral("%1 MB").arg(mb, 0, 'f', 2);
+        }()));
         QString status;
         if (entry.candidate) {
             status = tr("Not registered: %1")

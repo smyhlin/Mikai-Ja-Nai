@@ -332,12 +332,12 @@ bool MpvApi::loaded() const {
     return state_.loaded;
 }
 
-const MpvBundle& MpvApi::bundle() const {
+MpvBundle MpvApi::bundle() const {
     QMutexLocker lock(&mutex_);
     return state_.bundle;
 }
 
-const MpvApiInstance& MpvApi::functions() const {
+MpvApiInstance MpvApi::functions() const {
     QMutexLocker lock(&mutex_);
     return state_.funcs;
 }

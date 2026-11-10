@@ -2,6 +2,7 @@
 
 #include "MpvApi.hpp"
 #include "MpvHandle.hpp"
+#include "MediaTracks.hpp"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -19,7 +20,9 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <stdexcept>
+#include <utility>
 
 
 namespace mplayer::shell {
@@ -170,46 +173,25 @@ bool hasSelectedAudioTrack(mpv_handle* handle, mplayer::MpvApi& api,
                           qint64 requestedTrack, const QString& expectedExternalPath) {
     mpv_node node{};
     if (api.functions().getProperty(handle, "track-list", MPV_FORMAT_NODE, &node) < 0) return false;
-    bool selected = false;
-    if (node.format == MPV_FORMAT_NODE_ARRAY && node.u.list != nullptr) {
-        for (int i = 0; i < node.u.list->num && !selected; ++i) {
-            const mpv_node& item = node.u.list->values[i];
-            if (item.format != MPV_FORMAT_NODE_MAP || item.u.list == nullptr) continue;
-            const char* type = nullptr;
-            bool active = false;
-            bool external = false;
-            const char* externalFilename = nullptr;
-            qint64 id = -1;
-            for (int field = 0; field < item.u.list->num; ++field) {
-                const char* key = item.u.list->keys[field];
-                const mpv_node& value = item.u.list->values[field];
-                if (key == nullptr) continue;
-                if (std::strcmp(key, "type") == 0 && value.format == MPV_FORMAT_STRING)
-                    type = value.u.string;
-                else if (std::strcmp(key, "selected") == 0 && value.format == MPV_FORMAT_FLAG)
-                    active = value.u.flag != 0;
-                else if (std::strcmp(key, "external") == 0 && value.format == MPV_FORMAT_FLAG)
-                    external = value.u.flag != 0;
-                else if (std::strcmp(key, "external-filename") == 0 &&
-                         value.format == MPV_FORMAT_STRING)
-                    externalFilename = value.u.string;
-                else if (std::strcmp(key, "id") == 0 && value.format == MPV_FORMAT_INT64)
-                    id = value.u.int64;
-            }
-            bool matchingExternal = false;
-            if (external && externalFilename != nullptr && !expectedExternalPath.isEmpty()) {
-                const QString selectedPath =
-                    QFileInfo(QString::fromUtf8(externalFilename)).canonicalFilePath();
-                const QString requestedPath = QFileInfo(expectedExternalPath).canonicalFilePath();
-                matchingExternal = !selectedPath.isEmpty() && selectedPath == requestedPath;
-            }
-            selected = type != nullptr && std::strcmp(type, "audio") == 0 && active &&
-                       (requestedTrack == 0 || id == requestedTrack) &&
-                       (expectedExternalPath.isEmpty() || matchingExternal);
-        }
-    }
+    // Copy into owned storage first, then read the validated parse: the raw
+    // tree is mpv-owned and reclaimed on the next wait_event.
+    mplayer::NodeValue value;
+    mplayer::copyNode(&node, value);
     api.functions().freeNodeContents(&node);
-    return selected;
+    const std::optional<QVector<mplayer::MediaTrack>> tracks =
+        mplayer::parseMediaTracks(value, nullptr);
+    if (!tracks.has_value()) return false;
+    for (const mplayer::MediaTrack& track : *tracks) {
+        if (track.type != mplayer::MediaTrackType::Audio) continue;
+        if (!track.selectionKnown || !track.selected) continue;
+        if (requestedTrack != 0 && track.id != requestedTrack) continue;
+        if (expectedExternalPath.isEmpty()) return true;
+        if (!track.externalKnown || !track.external) continue;
+        const QString selectedPath = QFileInfo(track.externalFilename).canonicalFilePath();
+        const QString requestedPath = QFileInfo(expectedExternalPath).canonicalFilePath();
+        if (!selectedPath.isEmpty() && selectedPath == requestedPath) return true;
+    }
+    return false;
 }
 
 bool encoderAvailable(mplayer::MpvHandle& handle, const char* name) {
@@ -217,25 +199,21 @@ bool encoderAvailable(mplayer::MpvHandle& handle, const char* name) {
     mpv_node node{};
     const int rc = api.functions().getProperty(handle.raw(), "encoder-list", MPV_FORMAT_NODE, &node);
     if (rc < 0) return false;
-    bool found = false;
-    if (node.format == MPV_FORMAT_NODE_ARRAY && node.u.list != nullptr) {
-        for (int i = 0; i < node.u.list->num && !found; ++i) {
-            const mpv_node& item = node.u.list->values[i];
-            if (item.format != MPV_FORMAT_NODE_MAP || item.u.list == nullptr) continue;
-            for (int field = 0; field < item.u.list->num; ++field) {
-                const char* key = item.u.list->keys[field];
-                const mpv_node& value = item.u.list->values[field];
-                if (key != nullptr && std::strcmp(key, "driver") == 0 &&
-                    value.format == MPV_FORMAT_STRING && value.u.string != nullptr &&
-                    std::strcmp(value.u.string, name) == 0) {
-                    found = true;
-                    break;
-                }
+    // Copy into owned storage first, then walk the copy: the raw tree is
+    // mpv-owned and reclaimed on the next wait_event.
+    mplayer::NodeValue value;
+    mplayer::copyNode(&node, value);
+    api.functions().freeNodeContents(&node);
+    if (value.format != MPV_FORMAT_NODE_ARRAY) return false;
+    for (const mplayer::NodeValue& item : value.list) {
+        if (item.format != MPV_FORMAT_NODE_MAP) continue;
+        for (const auto& [key, field] : item.map) {
+            if (key == "driver" && field.format == MPV_FORMAT_STRING && field.text == name) {
+                return true;
             }
         }
     }
-    api.functions().freeNodeContents(&node);
-    return found;
+    return false;
 }
 
 }  // namespace
@@ -353,18 +331,19 @@ void ClipExport::start(const ClipExportRequest& request) {
             if (logResult < 0)
                 throw std::runtime_error(errorText("mpv_request_log_messages", logResult, api).toStdString());
             if (!request.externalAudioPath.isEmpty()) {
-                const QByteArray externalAudioPath = request.externalAudioPath.toUtf8();
-                mpv_node pathNode{};
-                pathNode.format = MPV_FORMAT_STRING;
-                pathNode.u.string = const_cast<char*>(externalAudioPath.constData());
-                mpv_node_list pathList{};
-                pathList.num = 1;
-                pathList.values = &pathNode;
-                mpv_node audioFilesNode{};
-                audioFilesNode.format = MPV_FORMAT_NODE_ARRAY;
-                audioFilesNode.u.list = &pathList;
+                // The path list goes through the OutgoingNode arena: mpv
+                // copies what it needs during setProperty, and the arena owns
+                // the string for the duration of the call. No hand-built
+                // mpv_node, no const_cast.
+                mplayer::NodeValue audioFiles;
+                audioFiles.format = MPV_FORMAT_NODE_ARRAY;
+                mplayer::NodeValue path;
+                path.format = MPV_FORMAT_STRING;
+                path.text = request.externalAudioPath.toStdString();
+                audioFiles.list.push_back(std::move(path));
+                mplayer::MpvHandle::OutgoingNode arena;
                 const int audioFilesResult = api.functions().setProperty(
-                    handle->raw(), "audio-files", MPV_FORMAT_NODE, &audioFilesNode);
+                    handle->raw(), "audio-files", MPV_FORMAT_NODE, arena.buildRoot(audioFiles));
                 if (audioFilesResult < 0)
                     throw std::runtime_error(errorText(
                         "mpv_set_property audio-files", audioFilesResult, api).toStdString());

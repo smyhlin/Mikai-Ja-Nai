@@ -124,8 +124,9 @@ private:
     // Held by value: mpv calls get_proc_address for the whole life of the
     // context, so this cannot be a caller's local.
     GlApi gl_;
-    // Cached from the process-wide selection so render never looks the module up.
-    const MpvApiInstance* api_ = nullptr;
+    // Copied once from the process-wide selection so render never looks the
+    // module up; the table is immutable, so the copy stays good.
+    MpvApiInstance api_;
     // In place before mpv's callback is registered; never reassigned afterwards,
     // so the callback mpv raises during registration always reaches a target.
     std::function<void()> onUpdate_;

@@ -511,6 +511,78 @@ void TestMpvAsync::probeSnapshotsKeepTheStatusReaderPolling() {
              keepsPolling);
 }
 
+// ── node marshalling; no mpv runtime ──────────────────────────────────────
+
+void TestMpvAsync::aDeeplyNestedNodeIsRefusedByCopyNode() {
+    // A 40-level chain of single-element arrays with an int64 leaf. Storage
+    // is sized up front, so the &nodes[i + 1] links never move.
+    std::vector<mpv_node> nodes(41);
+    std::vector<mpv_node_list> lists(40);
+    for (int i = 0; i < 40; ++i) {
+        lists[i].num = 1;
+        lists[i].values = &nodes[i + 1];
+        lists[i].keys = nullptr;
+        nodes[i].format = MPV_FORMAT_NODE_ARRAY;
+        nodes[i].u.list = &lists[i];
+    }
+    nodes[40].format = MPV_FORMAT_INT64;
+    nodes[40].u.int64 = 7;
+
+    mplayer::NodeValue out;
+    mplayer::copyNode(&nodes[0], out);
+    // The copy stops at the depth cap instead of recursing into the stack:
+    // levels 0..32 are arrays, and the child at depth 33 is an empty node.
+    const mplayer::NodeValue* level = &out;
+    for (int depth = 0; depth <= 32; ++depth) {
+        QCOMPARE(level->format, MPV_FORMAT_NODE_ARRAY);
+        QCOMPARE(level->list.size(), size_t{1});
+        level = &level->list.front();
+    }
+    QCOMPARE(level->format, MPV_FORMAT_NONE);
+
+    // A shallow tree copies whole, leaf included.
+    std::vector<mpv_node> shallow(3);
+    std::vector<mpv_node_list> shallowLists(2);
+    for (int i = 0; i < 2; ++i) {
+        shallowLists[i].num = 1;
+        shallowLists[i].values = &shallow[i + 1];
+        shallowLists[i].keys = nullptr;
+        shallow[i].format = MPV_FORMAT_NODE_ARRAY;
+        shallow[i].u.list = &shallowLists[i];
+    }
+    shallow[2].format = MPV_FORMAT_INT64;
+    shallow[2].u.int64 = 7;
+    mplayer::NodeValue shallowOut;
+    mplayer::copyNode(&shallow[0], shallowOut);
+    QCOMPARE(shallowOut.list.front().list.front().integer, int64_t{7});
+}
+
+void TestMpvAsync::aDeeplyNestedNodeIsRefusedByTheOutgoingArena() {
+    // A 40-level NodeValue chain of single-element arrays with an int64 leaf.
+    mplayer::NodeValue root;
+    mplayer::NodeValue* level = &root;
+    for (int i = 0; i < 40; ++i) {
+        level->format = MPV_FORMAT_NODE_ARRAY;
+        level->list.emplace_back();
+        level = &level->list.back();
+    }
+    level->format = MPV_FORMAT_INT64;
+    level->integer = 7;
+
+    mplayer::MpvHandle::OutgoingNode arena;
+    mpv_node* built = arena.buildRoot(root);
+    QVERIFY(built != nullptr);
+    // Levels 0..32 are arrays; the child at depth 33 is an empty node.
+    const mpv_node* at = built;
+    for (int depth = 0; depth <= 32; ++depth) {
+        QCOMPARE(at->format, MPV_FORMAT_NODE_ARRAY);
+        QVERIFY(at->u.list != nullptr);
+        QCOMPARE(at->u.list->num, 1);
+        at = &at->u.list->values[0];
+    }
+    QCOMPARE(at->format, MPV_FORMAT_NONE);
+}
+
 // ── transport against a real core ──────────────────────────────────────────
 
 void TestMpvAsync::anAsyncPropertyReplyCarriesItsOwnValue() {
@@ -861,6 +933,30 @@ void TestMpvAsync::aMovedHandleStillDrivesTheSameCore() {
 
     QVERIFY(pumpUntil(moved, [&replies] { return !replies.empty(); }));
     QCOMPARE(replies.size(), size_t{1});
+    QCOMPARE(replies.front().error, 0);
+}
+
+void TestMpvAsync::aMoveAssignedHandleDrivesTheAdoptedCore() {
+    if (!requireRuntime()) return;
+    MpvHandle first = makeHandle();
+    MpvHandle second = makeHandle();
+    mpv_handle* adopted = second.raw();
+    const uint64_t identity = second.coreIdentity();
+
+    first = std::move(second);
+    QCOMPARE(first.raw(), adopted);
+    QCOMPARE(first.coreIdentity(), identity);
+    QVERIFY(!second);
+    QCOMPARE(second.coreIdentity(), uint64_t{0});
+    QVERIFY(first);
+
+    // The adopted core still answers.
+    std::vector<AsyncReply> replies;
+    QVERIFY(first
+                .getPropertyAsync("mpv-version", MPV_FORMAT_STRING,
+                                  [&replies](const AsyncReply& reply) { replies.push_back(reply); })
+                .valid());
+    QVERIFY(pumpUntil(first, [&replies] { return !replies.empty(); }));
     QCOMPARE(replies.front().error, 0);
 }
 

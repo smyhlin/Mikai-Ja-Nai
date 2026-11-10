@@ -3267,7 +3267,16 @@ void TitlePage::fillEpisodes(int index) {
         if (numbered) {
             QMap<int, EpisodeEntry*> byNumber;
             for (EpisodeEntry* entry : state.entries) {
-                byNumber.insert(entry->number.toInt(), entry);
+                // A non-numeric number ("1x") used to collapse to 0 and
+                // overwrite episode 0's slot; skip it with a warning instead.
+                bool ok = false;
+                const int n = entry->number.toInt(&ok);
+                if (!ok) {
+                    qWarning("TitlePage: skipping entry with non-numeric number '%s'",
+                             qUtf8Printable(entry->number));
+                    continue;
+                }
+                byNumber.insert(n, entry);
             }
             const int total = qMax(knownTotal, highestNumber);
             QVector<EpisodeEntry*> ordered;
