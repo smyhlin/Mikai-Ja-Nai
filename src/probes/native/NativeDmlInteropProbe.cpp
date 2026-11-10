@@ -318,6 +318,18 @@ private:
             ComPtr<IDXGIAdapter1> adapter;
             hr = factory->EnumAdapters1(index, adapter.GetAddressOf());
             if (hr == DXGI_ERROR_NOT_FOUND) break;
+            // Y-8: a removed/reset device is a distinct outcome, not a generic
+            // enumeration failure — classify it before the blanket FAILED(hr)
+            // check swallows it. No adapter name/LUID exists yet at this point
+            // (they come from GetDesc1 below), so the index is the identifier.
+            // The site still returns, as it does for every other enumeration
+            // failure. (hrText, not win32Text: win32Text names GetLastError
+            // values only; HRESULTs are rendered by hrText throughout this file.)
+            if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+                unavailable(QStringLiteral("D3D11 device removed/reset while enumerating adapter %1: %2")
+                                .arg(QString::number(index), hrText(hr)));
+                return;
+            }
             if (FAILED(hr)) {
                 unavailable(QStringLiteral("IDXGIFactory1::EnumAdapters1 failed: %1").arg(hrText(hr)));
                 return;
@@ -346,6 +358,22 @@ private:
                                        D3D11_CREATE_DEVICE_BGRA_SUPPORT, fallback,
                                        static_cast<UINT>(std::size(fallback)), D3D11_SDK_VERSION,
                                        device.GetAddressOf(), &obtained, deviceContext.GetAddressOf());
+            }
+            // Y-8: same distinct classification as the enumeration site above.
+            // D3D11CreateDevice can return DXGI_ERROR_DEVICE_REMOVED /
+            // DXGI_ERROR_DEVICE_RESET; the name/LUID are in scope here, and the
+            // adapter is skipped so the next one can still be tried. The
+            // message is also appended to openDeviceFailures_: unavailable()
+            // alone would not survive — the loop-end aggregate reason
+            // overwrites outcome_ when no adapter succeeds — while that list
+            // is printed in the final report, so the classification is
+            // actually reported, not just classified in passing.
+            if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+                const QString removed = QStringLiteral("D3D11 device removed/reset while probing adapter %1 [%2]: %3")
+                                            .arg(name, luid, hrText(hr));
+                unavailable(removed);
+                openDeviceFailures_.append(removed);
+                continue;
             }
             if (FAILED(hr)) continue;
 
