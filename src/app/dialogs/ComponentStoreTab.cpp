@@ -1337,12 +1337,14 @@ void ComponentStoreTab::reconcileProgressWithInventory() {
     });
 
     // Every closure row - the classic runtime pack, the dispatcher archive and
-    // the RTX overlay alike - survives only while the selected backend's own
-    // closure is installed. A stored pack whose backend record is missing is
-    // not readiness: keeping its row would print "Installed: …" under a badge
-    // that already says the card is not installed.
+    // the RTX overlay alike - survives while the selected backend's own
+    // closure is installed or the runtime pack is present: the pack counts as
+    // installed inventory (cardStateFor reports it as Installed), so erasing
+    // its row would empty a bar the card says is full.
     eraseInstalledWhere(QStringLiteral("tensorRtRuntimeCard"),
-                        [this](const QString&) { return !runtimeClosureInstalled(); });
+                        [this](const QString&) {
+                            return !runtimePackInstalled_ && !runtimeClosureInstalled();
+                        });
     eraseInstalledWhere(QStringLiteral("tensorRtKernelsCard"),
                         [this](const QString&) { return !kernelsPackInstalled_; });
     eraseInstalledWhere(QStringLiteral("rifeModelsCard"),
@@ -2055,7 +2057,11 @@ components::CardState ComponentStoreTab::cardStateFor(const QString& cardId) con
             state.missing.append(pack->name);
     } else if (cardId == QLatin1String("tensorRtRuntimeCard")) {
         state.inventory.total = inventoryReady_ ? 1 : 0;
-        state.inventory.installed = runtimeCardInstalledOnDisk();
+        // Installed inventory is the pack OR the closure: a stored runtime
+        // pack counts even while the backend's own closure record is missing.
+        // (The badge still reads "not installed" for a pack-only store; that
+        // bar-vs-badge distinction is an open question, not settled here.)
+        state.inventory.installed = (runtimePackInstalled_ || runtimeClosureInstalled()) ? 1 : 0;
         const QString runtimeName =
             tensorRtRuntimePack() != nullptr ? tensorRtRuntimePack()->name : QString();
         // The classic runtime pack proves the classic closure only; RTX and
