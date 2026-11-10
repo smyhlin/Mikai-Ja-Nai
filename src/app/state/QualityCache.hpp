@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMap>
+#include <QMutex>
 #include <QObject>
 #include <QSet>
 #include <QString>
@@ -15,6 +16,12 @@ extern const qint64 kQualityCacheTtlMs;
 extern const int kQualityCacheMaxEntries;
 
 /// Cross-session store for extracted HLS quality URLs, keyed by embed URL.
+///
+/// Thread safety: every public method serialises on mutex_. The shipped
+/// callers are GUI-thread Runner completions, but GUI-only affinity could not
+/// be proven — Runner::postToGui runs a completion off the GUI thread once
+/// the application object is gone, and the probes use QualityCache from
+/// non-GUI threads — so the mutex is the choice, not an affinity assert.
 ///
 /// A provider with no video for an episode is a page-lifetime negative result,
 /// not a cache entry: it is remembered in memory only, so a provider that gains
@@ -35,6 +42,8 @@ public:
     void clear();
 
     /// The cached heights for `embed`, empty when absent or expired.
+    /// Follow-up (deliberately not this item): return by const reference or
+    /// move instead of copying the signed-URL map on every probe.
     QMap<int, QString> qualities(const QString& embed) const;
 
     /// Remember `map` for `embed`. A `nowMsecsSinceEpoch` of 0 means "now";
@@ -54,9 +63,13 @@ public:
     int size() const;
 
     void setSettingsKey(const QString& key);
-    QString settingsKey() const { return key_; }
+    QString settingsKey() const {
+        const QMutexLocker lock(&mutex_);
+        return key_;
+    }
 
 private:
+    // prune() and trimToLimit() assume mutex_ is held by the caller.
     void prune();
     bool trimToLimit();
 
@@ -70,6 +83,9 @@ private:
     QSet<QString> noSource_;
     // Remains set if QSettings reports a failed write, allowing a later retry.
     bool dirty_ = false;
+    // Guards entries_, noSource_, key_ and dirty_; see the class comment for
+    // why a mutex was chosen over a GUI-affinity assert.
+    mutable QMutex mutex_;
 };
 
 }  // namespace mikai::app
