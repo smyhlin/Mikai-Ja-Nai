@@ -71,12 +71,6 @@ qint64 nowMs() {
     return clock.elapsed();
 }
 
-/// mpv parses numeric arguments itself and needs the C form; every number
-/// handed to the core goes through here.
-std::string mpvNumber(double value) {
-    return QString::number(value, 'f', 6).toStdString();
-}
-
 const NodeValue* nodeMember(const NodeValue& map, const char* key) {
     for (const std::pair<std::string, NodeValue>& member : map.map) {
         if (member.first == key) return &member.second;

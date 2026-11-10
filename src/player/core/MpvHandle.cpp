@@ -320,6 +320,9 @@ MpvHandle::MpvHandle(MpvHandle&& other) noexcept
       // The identity travels with the core, so a request issued before the move
       // is still recognised as belonging to the handle that now owns it.
       identity_(other.identity_),
+      // The lifetime token travels with the core too: a borrower bound before
+      // the move stays bound to the same core, not to the moved-from shell.
+      lifetime_(std::move(other.lifetime_)),
       developerVerboseLogs_(other.developerVerboseLogs_),
       requestedLogLevel_(other.requestedLogLevel_),
       epoch_(other.epoch_) {
@@ -355,6 +358,7 @@ MpvHandle& MpvHandle::operator=(MpvHandle&& other) noexcept {
     // Adopt the incoming core's identity and epoch: the moved requests were
     // issued against them, so they stay live rather than being dropped.
     identity_ = other.identity_;
+    lifetime_ = std::move(other.lifetime_);
     developerVerboseLogs_ = other.developerVerboseLogs_;
     requestedLogLevel_ = other.requestedLogLevel_;
     epoch_ = other.epoch_;
@@ -395,7 +399,7 @@ void MpvHandle::loadFile(const std::string& url) {
 void MpvHandle::seek(double seconds) {
     // Locale-independent: mpv parses the argument itself, and "1,5" is a parse
     // error rather than a time.
-    const std::string at = QString::number(seconds, 'f', 6).toStdString();
+    const std::string at = mpvNumber(seconds);
     // mpv_command takes a NULL-terminated array; without the terminator the
     // process dies on the first seek.
     const char* cmd[] = {"seek", at.c_str(), "absolute", nullptr};
@@ -403,7 +407,7 @@ void MpvHandle::seek(double seconds) {
 }
 
 void MpvHandle::seekExact(double seconds) {
-    const std::string at = QString::number(seconds, 'f', 6).toStdString();
+    const std::string at = mpvNumber(seconds);
     const char* cmd[] = {"seek", at.c_str(), "absolute+exact", nullptr};
     require(api_->command(handle_, cmd), "seek");
 }

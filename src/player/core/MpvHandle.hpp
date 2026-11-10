@@ -5,8 +5,11 @@
 
 #include <mpv/client.h>
 
+#include <QString>
+
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -105,6 +108,16 @@ struct AsyncRequestId {
     friend bool operator==(AsyncRequestId, AsyncRequestId) = default;
 };
 
+/// Numeric argument for an mpv command. mpv parses these itself, so a
+/// locale-formatted value ("1,5") would be a parse error: the number is
+/// rendered with Qt's locale-independent formatting instead of
+/// std::to_string. The 'f',6 shape is the mpv wire format, not a style
+/// choice. (P2-01: the single definition; the copies in VideoSurface.cpp,
+/// VideoSurfaceNative.cpp and FramePreviewService.cpp are deleted.)
+inline std::string mpvNumber(double value) {
+    return QString::number(value, 'f', 6).toStdString();
+}
+
 class MpvHandle {
 public:
     // extraOptions are applied BEFORE mpv_initialize: that is where mpv must
@@ -181,6 +194,11 @@ public:
     // Monotonic, never reused and preserved through moves, so two handles can
     // never be confused even when their request numbers coincide.
     uint64_t coreIdentity() const noexcept { return identity_; }
+    // Lifetime token for borrowers: a NativeStatusConsumer bound to this core
+    // holds the weak half. When the core dies the token expires, so the
+    // consumer can tell without dereferencing the borrowed pointer — the
+    // manual "detach before the core dies" contract is no longer load-bearing.
+    std::weak_ptr<const void> lifetimeToken() const noexcept { return lifetime_; }
     // Bumped whenever the source or core changes, so a reply carrying the old
     // value is recognised as stale rather than delivered.
     uint64_t sourceEpoch() const noexcept { return epoch_; }
@@ -242,6 +260,10 @@ private:
     uint64_t nextRequestId_ = 1;
     // Zero only for a moved-from handle; a live handle's token is never reused.
     uint64_t identity_ = 0;
+    // Never null for a constructed handle; dies with it, so a borrower's weak
+    // half expires exactly when the core does. Travels with the core on move.
+    // The pointee is a sentinel: only the shared ownership is observed.
+    std::shared_ptr<const void> lifetime_ = std::make_shared<char>();
     bool drainingEvents_ = false;
     bool developerVerboseLogs_ = false;
     // '\0' means no threshold has been requested from this core yet.

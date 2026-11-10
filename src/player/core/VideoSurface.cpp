@@ -163,13 +163,6 @@ auto hdrPolicyOptionList(VideoSurface::HdrToneMappingPolicy policy) {
     return options;
 }
 
-/// Numeric argument for an mpv command. mpv parses these itself, so a
-/// locale-formatted value ("1,5") would be a parse error: the number is rendered
-/// with Qt's locale-independent formatting instead of std::to_string.
-std::string mpvNumber(double value) {
-    return QString::number(value, 'f', 6).toStdString();
-}
-
 /// The mpv format a probe property is read as. A manifest names the shape it
 /// asserts on, and the wrong shape is the manifest's mistake to see.
 mpv_format probePropertyFormat(ProbePropertyKind want) {

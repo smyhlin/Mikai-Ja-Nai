@@ -111,6 +111,10 @@ constexpr double kShellRateMax = 2.0;
 
 constexpr auto kAnime4KSettingKey = "player/anime4k";
 constexpr auto kAnimeJanaiBackendSettingKey = "player/animejanai/backend";
+// Same value as app::kOpenSubtitlesApiKey (SettingsKeys.hpp); the player
+// layer cannot include that header, so the spelling is kept local and must
+// stay identical.
+constexpr auto kOpenSubtitlesApiKeySettingKey = "access/openSubtitlesApiKey";
 
 constexpr int kSeriesWidth = 190;
 constexpr int kStripHeight = 30;
@@ -1725,7 +1729,7 @@ void PlayerDialog::applySubtitleSearchReply(const QVariantMap& reply, const QStr
         return;
     }
     QSettings settings;
-    settings.setValue(QStringLiteral("access/openSubtitlesApiKey"), apiKey);
+    settings.setValue(kOpenSubtitlesApiKeySettingKey, apiKey);
     const QVariantList hits = reply.value(QStringLiteral("hits")).toList();
     for (const QVariant& entry : hits) {
         const QVariantMap row = entry.toMap();
@@ -1802,7 +1806,7 @@ void PlayerDialog::openSubtitlesSearchDialog() {
     key->setEchoMode(QLineEdit::Password);
     key->setPlaceholderText(tr("OpenSubtitles API key"));
     QSettings settings;
-    key->setText(settings.value(QStringLiteral("access/openSubtitlesApiKey")).toString());
+    key->setText(settings.value(kOpenSubtitlesApiKeySettingKey).toString());
     auto* keyHint = new QLabel(tr("A free API key from opensubtitles.com is required."), &dialog);
     layout->addWidget(keyHint);
     layout->addWidget(key);

@@ -19,8 +19,6 @@ namespace mplayer {
 namespace native {
 
 
-using namespace status_detail;
-
 namespace {
 
 /// A whole number that a JSON number denotes. Qt 6 keeps a parsed integer literal
@@ -225,11 +223,11 @@ bool readRate(const QJsonObject& object, const QString& member, Rational* out, Q
     return reject(QStringLiteral("native.status.effective.rate.malformed"),
                   QStringLiteral("the effective %1 needs integer num and den").arg(member));
   }
-  if (!rateOk(parsed)) {
+  if (!status_detail::rateOk(parsed)) {
     return reject(QStringLiteral("native.status.effective.cadence"),
                   QStringLiteral("the effective %1 is %2; both sides must be positive and at most "
                                  "%3")
-                      .arg(member, showRate(parsed))
+                      .arg(member, status_detail::showRate(parsed))
                       .arg(kNativeStatusMaxRateComponent));
   }
   *out = parsed;
@@ -334,11 +332,11 @@ bool readEffective(const QJsonValue& value, NativeEffectivePlan* plan, QString* 
       return reject(QStringLiteral("native.status.effective.interpolation.malformed"),
                     QStringLiteral("the effective interpolation needs integer num and den"));
     }
-    if (!rateOk(stageParsed.factor)) {
+    if (!status_detail::rateOk(stageParsed.factor)) {
       return reject(QStringLiteral("native.status.effective.cadence"),
                     QStringLiteral("the effective interpolation factor is %1; both sides must be "
                                    "positive and at most %2")
-                        .arg(showRate(stageParsed.factor))
+                        .arg(status_detail::showRate(stageParsed.factor))
                         .arg(kNativeStatusMaxRateComponent));
     }
     stageParsed.model = jsonString(stage, QStringLiteral("model"));
@@ -456,7 +454,7 @@ bool readProbeRate(const QJsonObject& object, Rational* out, QString* errorKey, 
     return reject(QStringLiteral("native.status.probe.malformed"),
                   QStringLiteral("the probe fps needs integer num and den"));
   }
-  if (!rateOk(parsed)) {
+  if (!status_detail::rateOk(parsed)) {
     return reject(QStringLiteral("native.status.probe.cadence"),
                   QStringLiteral("the probe fps is not a usable rate"));
   }
@@ -541,7 +539,7 @@ bool readProbeSource(const QJsonValue& value, SourceGeometry* out, QString* erro
   }
   const QJsonValue csp = object.value(QStringLiteral("csp"));
   if (!csp.isUndefined() && !csp.isNull()) {
-    if (!csp.isString() || csp.toString().isEmpty() || !probeIdOk(csp.toString())) {
+    if (!csp.isString() || csp.toString().isEmpty() || !status_detail::probeIdOk(csp.toString())) {
       return reject(QStringLiteral("native.status.probe.malformed"),
                     QStringLiteral("the probe csp is not an observed tag"));
     }
@@ -549,7 +547,7 @@ bool readProbeSource(const QJsonValue& value, SourceGeometry* out, QString* erro
   }
   const QJsonValue matrix = object.value(QStringLiteral("matrix"));
   if (!matrix.isUndefined() && !matrix.isNull()) {
-    if (!matrix.isString() || matrix.toString().isEmpty() || !probeIdOk(matrix.toString())) {
+    if (!matrix.isString() || matrix.toString().isEmpty() || !status_detail::probeIdOk(matrix.toString())) {
       return reject(QStringLiteral("native.status.probe.malformed"),
                     QStringLiteral("the probe matrix is not an observed tag"));
     }
@@ -557,7 +555,7 @@ bool readProbeSource(const QJsonValue& value, SourceGeometry* out, QString* erro
   }
   const QJsonValue range = object.value(QStringLiteral("range"));
   if (!range.isUndefined() && !range.isNull()) {
-    if (!range.isString() || range.toString().isEmpty() || !probeIdOk(range.toString())) {
+    if (!range.isString() || range.toString().isEmpty() || !status_detail::probeIdOk(range.toString())) {
       return reject(QStringLiteral("native.status.probe.malformed"),
                     QStringLiteral("the probe range is not an observed tag"));
     }
@@ -565,7 +563,7 @@ bool readProbeSource(const QJsonValue& value, SourceGeometry* out, QString* erro
   }
   const QJsonValue siting = object.value(QStringLiteral("siting"));
   if (!siting.isUndefined() && !siting.isNull()) {
-    if (!siting.isString() || siting.toString().isEmpty() || !probeIdOk(siting.toString())) {
+    if (!siting.isString() || siting.toString().isEmpty() || !status_detail::probeIdOk(siting.toString())) {
       return reject(QStringLiteral("native.status.probe.malformed"),
                     QStringLiteral("the probe siting is not an observed tag"));
     }
@@ -608,7 +606,7 @@ bool readProbeDevice(const QJsonValue& value, DeviceIdentity* out, QString* erro
   bool haveFact = false;
   const QJsonValue decoder = object.value(QStringLiteral("decoderDeviceUuid"));
   if (!decoder.isUndefined() && !decoder.isNull()) {
-    if (!decoder.isString() || !probeIdOk(decoder.toString())) {
+    if (!decoder.isString() || !status_detail::probeIdOk(decoder.toString())) {
       return reject(QStringLiteral("native.status.probe.identity"),
                     QStringLiteral("the probe decoderDeviceUuid is not an observed device"));
     }
@@ -617,7 +615,7 @@ bool readProbeDevice(const QJsonValue& value, DeviceIdentity* out, QString* erro
   }
   const QJsonValue compute = object.value(QStringLiteral("computeDeviceUuid"));
   if (!compute.isUndefined() && !compute.isNull()) {
-    if (!compute.isString() || !probeIdOk(compute.toString())) {
+    if (!compute.isString() || !status_detail::probeIdOk(compute.toString())) {
       return reject(QStringLiteral("native.status.probe.identity"),
                     QStringLiteral("the probe computeDeviceUuid is not an observed device"));
     }
@@ -626,7 +624,7 @@ bool readProbeDevice(const QJsonValue& value, DeviceIdentity* out, QString* erro
   }
   const QJsonValue luid = object.value(QStringLiteral("adapterLuid"));
   if (!luid.isUndefined() && !luid.isNull()) {
-    if (!luid.isString() || !probeIdOk(luid.toString())) {
+    if (!luid.isString() || !status_detail::probeIdOk(luid.toString())) {
       return reject(QStringLiteral("native.status.probe.identity"),
                     QStringLiteral("the probe adapterLuid is not an observed device"));
     }
@@ -796,7 +794,7 @@ bool readFactory(const QJsonValue& value, NativeFactoryObservation* out, QString
                   QStringLiteral("the factory backend is not a string"));
   }
   parsed.backend = backend.toString();
-  if (!parsed.backend.isEmpty() && !factoryBackendNameOk(parsed.backend)) {
+  if (!parsed.backend.isEmpty() && !status_detail::factoryBackendNameOk(parsed.backend)) {
     return reject(QStringLiteral("native.status.factory.backend"),
                   QStringLiteral("the factory backend '%1' is not one this private Native ABI "
                                  "carries")
@@ -809,7 +807,7 @@ bool readFactory(const QJsonValue& value, NativeFactoryObservation* out, QString
                   QStringLiteral("the factory reasonKey is not a string"));
   }
   parsed.reasonKey = reasonKey.toString();
-  if (!parsed.reasonKey.isEmpty() && !factoryReasonKeyOk(parsed.reasonKey)) {
+  if (!parsed.reasonKey.isEmpty() && !status_detail::factoryReasonKeyOk(parsed.reasonKey)) {
     return reject(QStringLiteral("native.status.factory.reason"),
                   QStringLiteral("the factory reasonKey is not a stable key"));
   }
@@ -829,7 +827,7 @@ bool readFactory(const QJsonValue& value, NativeFactoryObservation* out, QString
                   QStringLiteral("an unobserved factory claims a supported role"));
   }
   if (parsed.isUsable()) {
-    if (!factoryBackendOk(parsed.backend)) {
+    if (!status_detail::factoryBackendOk(parsed.backend)) {
       return reject(QStringLiteral("native.status.factory.backend"),
                     QStringLiteral("a usable factory names no checked backend"));
     }
@@ -850,7 +848,7 @@ bool readFactory(const QJsonValue& value, NativeFactoryObservation* out, QString
 
   const QJsonValue runtime = object.value(QStringLiteral("runtimeVersion"));
   if (!runtime.isUndefined() && !runtime.isNull()) {
-    if (!runtime.isString() || !factoryRuntimeOk(runtime.toString())) {
+    if (!runtime.isString() || !status_detail::factoryRuntimeOk(runtime.toString())) {
       return reject(QStringLiteral("native.status.factory.malformed"),
                     QStringLiteral("the factory runtimeVersion is not an observed token"));
     }
@@ -858,7 +856,7 @@ bool readFactory(const QJsonValue& value, NativeFactoryObservation* out, QString
   }
   const QJsonValue device = object.value(QStringLiteral("deviceIdentity"));
   if (!device.isUndefined() && !device.isNull()) {
-    if (!device.isString() || !isActualDeviceUuid(device.toString())) {
+    if (!device.isString() || !status_detail::isActualDeviceUuid(device.toString())) {
       return reject(QStringLiteral("native.status.factory.identity"),
                     QStringLiteral("the factory deviceIdentity is not an observed device"));
     }
@@ -927,7 +925,7 @@ bool parseStatusSnapshot(const QJsonObject& object, StatusSnapshot* snapshot, QS
 
   // Refused first, by name and without an echo, before any later check repeats it.
   if (jsonCarriesSensitiveText(object)) {
-    return reject(QStringLiteral("native.status.sensitiveData"), sensitiveStatusReason());
+    return reject(QStringLiteral("native.status.sensitiveData"), status_detail::sensitiveStatusReason());
   }
 
   if (!noUnknownKeys(object, documentKeys())) {

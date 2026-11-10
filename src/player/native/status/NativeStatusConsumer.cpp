@@ -233,7 +233,6 @@ bool factoryReasonKeyOk(const QString& key) {
 
 }  // namespace status_detail
 
-using namespace status_detail;
 
 bool sourceGeometryEqual(const SourceGeometry& a, const SourceGeometry& b) {
   return a.codedSize == b.codedSize && a.crop == b.crop &&
@@ -314,8 +313,8 @@ bool statusSnapshotIsConsistent(const StatusSnapshot& snapshot, QString* reasonK
   };
 
   // Refused first, by a fixed name, before any later rule can quote the value back.
-  if (statusCarriesSensitiveText(snapshot)) {
-    return disagree(QStringLiteral("native.status.sensitiveData"), sensitiveStatusReason());
+  if (status_detail::statusCarriesSensitiveText(snapshot)) {
+    return disagree(QStringLiteral("native.status.sensitiveData"), status_detail::sensitiveStatusReason());
   }
 
   if (snapshot.version != kNativeStatusProtocol) {
@@ -381,13 +380,13 @@ bool statusSnapshotIsConsistent(const StatusSnapshot& snapshot, QString* reasonK
     // Both rates are required; an absent one is refused like an unusable one,
     // never defaulted.
     if (!plan.sourceFps.has_value() || !plan.outputFps.has_value() ||
-        !rateOk(*plan.sourceFps) || !rateOk(*plan.outputFps)) {
+        !status_detail::rateOk(*plan.sourceFps) || !status_detail::rateOk(*plan.outputFps)) {
       return disagree(QStringLiteral("native.status.effective.cadence"),
                       QStringLiteral("the effective cadence %1 -> %2 is not two usable rates")
-                          .arg(showRate(plan.sourceFps), showRate(plan.outputFps)));
+                          .arg(status_detail::showRate(plan.sourceFps), status_detail::showRate(plan.outputFps)));
     }
     if (plan.interpolation.has_value()) {
-      if (plan.interpolation->model.isEmpty() || !rateOk(plan.interpolation->factor)) {
+      if (plan.interpolation->model.isEmpty() || !status_detail::rateOk(plan.interpolation->factor)) {
         return disagree(QStringLiteral("native.status.effective.interpolation.malformed"),
                         QStringLiteral("the effective interpolation has no model or no usable "
                                        "factor"));
@@ -402,11 +401,11 @@ bool statusSnapshotIsConsistent(const StatusSnapshot& snapshot, QString* reasonK
                             .arg(plan.sourceSize.w)
                             .arg(plan.sourceSize.h));
       }
-      if (!scaledRate(*plan.outputFps, *plan.sourceFps, plan.interpolation->factor)) {
+      if (!status_detail::scaledRate(*plan.outputFps, *plan.sourceFps, plan.interpolation->factor)) {
         return disagree(QStringLiteral("native.status.effective.cadence"),
                         QStringLiteral("output cadence %1 is not source %2 scaled by %3")
-                            .arg(showRate(*plan.outputFps), showRate(*plan.sourceFps),
-                                 showRate(plan.interpolation->factor)));
+                            .arg(status_detail::showRate(*plan.outputFps), status_detail::showRate(*plan.sourceFps),
+                                 status_detail::showRate(plan.interpolation->factor)));
       }
     } else {
       if (plan.spatialStages == 0) {
@@ -414,10 +413,10 @@ bool statusSnapshotIsConsistent(const StatusSnapshot& snapshot, QString* reasonK
                         QStringLiteral("the effective plan has no spatial stage and no "
                                        "interpolation, so there is nothing to run"));
       }
-      if (!sameRate(*plan.outputFps, *plan.sourceFps)) {
+      if (!status_detail::sameRate(*plan.outputFps, *plan.sourceFps)) {
         return disagree(QStringLiteral("native.status.effective.cadence"),
                         QStringLiteral("a spatial-only chain reports the cadence change %1 -> %2")
-                            .arg(showRate(*plan.sourceFps), showRate(*plan.outputFps)));
+                            .arg(status_detail::showRate(*plan.sourceFps), status_detail::showRate(*plan.outputFps)));
       }
     }
   }
@@ -457,7 +456,7 @@ bool statusSnapshotIsConsistent(const StatusSnapshot& snapshot, QString* reasonK
       const qint64 den = interpolation.factor.den / divisor;
       const bool tooMany = counters.interpolated > counters.framesOut ||
                            (num > den &&
-                            !countWithinRatio(counters.framesIn, counters.interpolated,
+                            !status_detail::countWithinRatio(counters.framesIn, counters.interpolated,
                                               num - 1, den));
       if (num <= den ? counters.interpolated != 0 : tooMany) {
         return disagree(QStringLiteral("native.status.counters.inconsistent"),
@@ -466,17 +465,17 @@ bool statusSnapshotIsConsistent(const StatusSnapshot& snapshot, QString* reasonK
                             .arg(counters.interpolated)
                             .arg(counters.framesIn)
                             .arg(counters.framesOut)
-                            .arg(showRate(interpolation.factor)));
+                            .arg(status_detail::showRate(interpolation.factor)));
       }
       // The grid cannot emit more frames than the factor lays down for the source
       // frames it consumed, whatever the scene/drop split.
-      if (!countWithinCeilRatio(counters.framesIn, counters.framesOut, num, den)) {
+      if (!status_detail::countWithinCeilRatio(counters.framesIn, counters.framesOut, num, den)) {
         return disagree(QStringLiteral("native.status.counters.inconsistent"),
                         QStringLiteral("the chain reports %1 frames out of %2 source frames at a "
                                        "factor of %3")
                             .arg(counters.framesOut)
                             .arg(counters.framesIn)
-                            .arg(showRate(interpolation.factor)));
+                            .arg(status_detail::showRate(interpolation.factor)));
       }
     }
   }
@@ -503,7 +502,7 @@ bool statusSnapshotIsConsistent(const StatusSnapshot& snapshot, QString* reasonK
                           QStringLiteral("the probe crop is empty or reaches outside the frame"));
         }
       }
-      if (source.fps.has_value() && !rateOk(*source.fps)) {
+      if (source.fps.has_value() && !status_detail::rateOk(*source.fps)) {
         return disagree(QStringLiteral("native.status.probe.cadence"),
                         QStringLiteral("the probe fps is not a usable rate"));
       }
@@ -515,15 +514,15 @@ bool statusSnapshotIsConsistent(const StatusSnapshot& snapshot, QString* reasonK
     }
     if (probe.device.has_value()) {
       const DeviceIdentity& device = *probe.device;
-      if (!device.decoderDeviceUuid.isEmpty() && !probeIdOk(device.decoderDeviceUuid)) {
+      if (!device.decoderDeviceUuid.isEmpty() && !status_detail::probeIdOk(device.decoderDeviceUuid)) {
         return disagree(QStringLiteral("native.status.probe.identity"),
                         QStringLiteral("the probe decoder device is not an observed identity"));
       }
-      if (!device.computeDeviceUuid.isEmpty() && !probeIdOk(device.computeDeviceUuid)) {
+      if (!device.computeDeviceUuid.isEmpty() && !status_detail::probeIdOk(device.computeDeviceUuid)) {
         return disagree(QStringLiteral("native.status.probe.identity"),
                         QStringLiteral("the probe compute device is not an observed identity"));
       }
-      if (!device.adapterLuid.isEmpty() && !probeIdOk(device.adapterLuid)) {
+      if (!device.adapterLuid.isEmpty() && !status_detail::probeIdOk(device.adapterLuid)) {
         return disagree(QStringLiteral("native.status.probe.identity"),
                         QStringLiteral("the probe adapter is not an observed identity"));
       }
@@ -540,17 +539,17 @@ bool statusSnapshotIsConsistent(const StatusSnapshot& snapshot, QString* reasonK
       return disagree(QStringLiteral("native.status.factory.inconsistent"),
                       QStringLiteral("an unobserved factory claims a supported role"));
     }
-    if (!factory.backend.isEmpty() && !factoryBackendNameOk(factory.backend)) {
+    if (!factory.backend.isEmpty() && !status_detail::factoryBackendNameOk(factory.backend)) {
       return disagree(QStringLiteral("native.status.factory.backend"),
                       QStringLiteral("the factory backend '%1' is not one this private Native "
                                      "ABI carries")
                           .arg(factory.backend));
     }
-    if (!factory.reasonKey.isEmpty() && !factoryReasonKeyOk(factory.reasonKey)) {
+    if (!factory.reasonKey.isEmpty() && !status_detail::factoryReasonKeyOk(factory.reasonKey)) {
       return disagree(QStringLiteral("native.status.factory.reason"),
                       QStringLiteral("the factory reasonKey is not a stable key"));
     }
-    if (!factory.deviceIdentity.isEmpty() && !isActualDeviceUuid(factory.deviceIdentity)) {
+    if (!factory.deviceIdentity.isEmpty() && !status_detail::isActualDeviceUuid(factory.deviceIdentity)) {
       return disagree(QStringLiteral("native.status.factory.identity"),
                       QStringLiteral("the factory deviceIdentity is not an observed device"));
     }
@@ -562,11 +561,11 @@ bool statusSnapshotIsConsistent(const StatusSnapshot& snapshot, QString* reasonK
     if (!factory.deviceIdentity.isEmpty() && snapshot.probe.has_value() &&
         snapshot.probe->device.has_value()) {
       const DeviceIdentity& device = *snapshot.probe->device;
-      const QString factoryHex = deviceUuidHex(factory.deviceIdentity);
+      const QString factoryHex = status_detail::deviceUuidHex(factory.deviceIdentity);
       bool anyProbeDevice = false;
       bool matched = false;
-      const QString probeIds[] = {deviceUuidHex(device.decoderDeviceUuid),
-                                  deviceUuidHex(device.computeDeviceUuid)};
+      const QString probeIds[] = {status_detail::deviceUuidHex(device.decoderDeviceUuid),
+                                  status_detail::deviceUuidHex(device.computeDeviceUuid)};
       for (const QString& id : probeIds) {
         if (id.isEmpty()) continue;
         anyProbeDevice = true;
@@ -684,6 +683,9 @@ void NativeStatusConsumer::attach(MpvHandle* handle) {
   if (handle == handle_) return;
   detach();
   handle_ = handle;
+  // The token is the binding: every use checks it before touching the handle,
+  // so a core that dies without a detach() reads as detached instead of dangling.
+  coreLifetime_ = handle->lifetimeToken();
   ++token_;
   requested_ = false;
   lastRequestMs_ = 0;
@@ -692,11 +694,15 @@ void NativeStatusConsumer::attach(MpvHandle* handle) {
 }
 
 void NativeStatusConsumer::detach() {
-  if (handle_ != nullptr && outstanding_) handle_->cancelAsync(pending_);
+  // The core may already be dead: its lifetime token expires with it, so the
+  // cancel below only runs while the borrowed pointer is still usable. A dead
+  // core already cancelled every outstanding request in its own destructor.
+  if (handle_ != nullptr && outstanding_ && !coreLifetime_.expired()) handle_->cancelAsync(pending_);
   pending_ = AsyncRequestId{};
   outstanding_ = false;
   requested_ = false;
   handle_ = nullptr;
+  coreLifetime_.reset();
   currentEpoch_ = 0;
   ++token_;
   // The view is cleared with the binding: a snapshot read through a core this
@@ -715,6 +721,12 @@ void NativeStatusConsumer::setChangeCallback(
 void NativeStatusConsumer::tick(qint64 nowMs, quint64 currentEpoch,
                                 bool pollActivePreparingSwitching) {
   if (handle_ == nullptr) return;
+  if (coreLifetime_.expired()) {
+    // The borrowed core died without a detach(): release the borrow and clear
+    // the view instead of touching the dead handle.
+    detach();
+    return;
+  }
   // The newest pump step's epoch is what a late reply is compared against.
   currentEpoch_ = currentEpoch;
   if (outstanding_ && nowMs >= lastRequestMs_ &&

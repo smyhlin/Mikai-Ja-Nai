@@ -1,4 +1,5 @@
 #include "dialogs/SettingsDialog.hpp"
+#include "state/SettingsKeys.hpp"
 
 #include "I18n.hpp"
 #include "dialogs/AnimeJanaiManagerPanel.hpp"
@@ -14,11 +15,13 @@
 #include <backend/MikaiClient.hpp>
 #include <dialogs/ComponentStoreTab.hpp>
 #include <dialogs/NativeAssetsPanel.hpp>
+#include <dialogs/NativeRifeControls.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
 #include <native/status/NativeStatus.hpp>
 #include <player/shell/ShellTheme.hpp>
 #include <player/shaders/Anime4K.hpp>
 #include <player/shaders/PresetShortcuts.hpp>
+#include <state/NativeComponentProvisioner.hpp>
 
 #include <QAccessible>
 #include <QApplication>
@@ -587,8 +590,8 @@ void SettingsDialog::save() {
     mplayer::shell::setCornerRadius(theme::radiusSmall(appearanceDraft_));
     appearanceCommitted_ = true;
     QSettings settings;
-    settings.setValue(QString::fromLatin1(kUiLanguageSettingKey), chosenLanguage);
-    settings.setValue(QStringLiteral("access/openSubtitlesApiKey"), openSubtitlesKey_->text().trimmed());
+    settings.setValue(QString::fromUtf8(kUiLanguageSettingKey), chosenLanguage);
+    settings.setValue(QString::fromUtf8(kOpenSubtitlesApiKey), openSubtitlesKey_->text().trimmed());
     settings.setValue(feeds::settingsKey(), feeds::serialize(chosen));
     // T-101/T-104: the HDR tone-mapping policy and the native-on-HDR override
     // commit with the rest: the statics are the live truth every engine reads

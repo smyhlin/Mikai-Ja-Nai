@@ -1,4 +1,5 @@
 #include "dialogs/ComponentStoreTabInternal.hpp"
+#include "state/SettingsKeys.hpp"
 #include "ComponentStoreTab.hpp"
 
 #include "state/NativeComponentProvisioner.hpp"
@@ -55,10 +56,8 @@
 
 namespace mikai::app {
 
-using namespace mplayer::native;
+namespace native = mplayer::native;
 
-
-using namespace component_store_detail;
 
 namespace {
 /// A model graph is ~2 MB but the link may be slow; 20 s was an artwork budget.
@@ -67,26 +66,26 @@ constexpr int kModelDownloadTimeoutMs = 120000;
 /// The selected backend's own installation answer, read from the off-GUI
 /// inventory snapshot. Every enum value answers for itself; no value can borrow
 /// another backend's record.
-bool installationInstalledIn(const QVariantMap& inventory, Backend backend) {
+bool installationInstalledIn(const QVariantMap& inventory, native::Backend backend) {
     switch (backend) {
-        case Backend::TensorRT:
+        case native::Backend::TensorRT:
             return inventory.value(QStringLiteral("trtInstalled")).toBool();
-        case Backend::DirectML:
+        case native::Backend::DirectML:
             return inventory.value(QStringLiteral("directMlInstalled")).toBool();
-        case Backend::TensorRTRTX:
+        case native::Backend::TensorRTRTX:
             return inventory.value(QStringLiteral("rtxInstalled")).toBool();
     }
     return false;
 }
 
 /// The bytes the selected backend's missing closure still needs.
-qint64 closureBytesIn(const QVariantMap& inventory, Backend backend) {
+qint64 closureBytesIn(const QVariantMap& inventory, native::Backend backend) {
     switch (backend) {
-        case Backend::TensorRT:
+        case native::Backend::TensorRT:
             return inventory.value(QStringLiteral("tensorRtClosureBytes")).toLongLong();
-        case Backend::DirectML:
+        case native::Backend::DirectML:
             return inventory.value(QStringLiteral("directMlClosureBytes")).toLongLong();
-        case Backend::TensorRTRTX:
+        case native::Backend::TensorRTRTX:
             return inventory.value(QStringLiteral("rtxClosureBytes")).toLongLong();
     }
     return 0;
@@ -135,18 +134,18 @@ void ComponentStoreTab::downloadMissing() {
 
 void ComponentStoreTab::installRecommended() {
     if (acquisitionChecking_ || downloadActive() || verifyActive()) return;
-    const GpuComputeCapability& gpu = observeComputeCapability();
+    const native::GpuComputeCapability& gpu = native::observeComputeCapability();
     // The player persists its backend before it can fail and ask for setup, so
     // the stored value is the exact product this flow has to install. Prefer
     // it, including an explicit RTX choice: the classic default must never
     // overwrite the reason the setup was opened. The key is read only; this
     // tab writes nothing.
-    const auto restoredBackend = [&]() -> std::optional<Backend> {
+    const auto restoredBackend = [&]() -> std::optional<native::Backend> {
         QSettings settings;
-        auto b = backendFromName(
-            settings.value(QStringLiteral("player/animejanai/backend")).toString());
-        if (isNvidiaRtx(gpu) && (!b.has_value() || (*b == Backend::TensorRT && !animeJanaiTensorRtInstalled_))) {
-            b = Backend::TensorRTRTX;
+        auto b = native::backendFromName(
+            settings.value(QString::fromUtf8(kAnimeJanaiBackend)).toString());
+        if (native::isNvidiaRtx(gpu) && (!b.has_value() || (*b == native::Backend::TensorRT && !animeJanaiTensorRtInstalled_))) {
+            b = native::Backend::TensorRTRTX;
         }
         return b;
     }();
@@ -154,8 +153,8 @@ void ComponentStoreTab::installRecommended() {
     // An RTX row already selected in this tab is just as explicit as the stored
     // value; never downgrade it to a non-RTX stored choice. On an RTX GPU with no
     // classic TensorRT installed, never install classic TensorRT.
-    if (selectedBackend() == Backend::TensorRTRTX ||
-        (isNvidiaRtx(gpu) && !animeJanaiTensorRtInstalled_)) {
+    if (selectedBackend() == native::Backend::TensorRTRTX ||
+        (native::isNvidiaRtx(gpu) && !animeJanaiTensorRtInstalled_)) {
         preferRestored = false;
     }
 #ifdef Q_OS_WIN
@@ -165,14 +164,14 @@ void ComponentStoreTab::installRecommended() {
 #else
     // DirectML is not a Linux Standard backend, and the restored RTX row is
     // added when the platform does not offer it so the refusal stays visible.
-    if (preferRestored && *restoredBackend == Backend::DirectML) preferRestored = false;
-    if (preferRestored && *restoredBackend == Backend::TensorRTRTX &&
-        animeJanaiBackendCombo_->findData(static_cast<int>(Backend::TensorRTRTX)) < 0) {
-        animeJanaiBackendCombo_->addItem(backendChoiceLabel(Backend::TensorRTRTX),
-                                         static_cast<int>(Backend::TensorRTRTX));
+    if (preferRestored && *restoredBackend == native::Backend::DirectML) preferRestored = false;
+    if (preferRestored && *restoredBackend == native::Backend::TensorRTRTX &&
+        animeJanaiBackendCombo_->findData(static_cast<int>(native::Backend::TensorRTRTX)) < 0) {
+        animeJanaiBackendCombo_->addItem(backendChoiceLabel(native::Backend::TensorRTRTX),
+                                         static_cast<int>(native::Backend::TensorRTRTX));
     }
 #endif
-    Backend preferredBackend = selectedBackend();
+    native::Backend preferredBackend = selectedBackend();
     if (preferRestored && restoredBackend.has_value()) {
         preferredBackend = *restoredBackend;
     }
@@ -193,9 +192,9 @@ void ComponentStoreTab::finishRecommendedInstall() {
     refresh();
     bool runtimeSelected = false;
     switch (selectedBackend()) {
-        case Backend::TensorRT: runtimeSelected = runtimeRecommended_; break;
-        case Backend::DirectML: runtimeSelected = !animeJanaiDirectMlInstalled_; break;
-        case Backend::TensorRTRTX:
+        case native::Backend::TensorRT: runtimeSelected = runtimeRecommended_; break;
+        case native::Backend::DirectML: runtimeSelected = !animeJanaiDirectMlInstalled_; break;
+        case native::Backend::TensorRTRTX:
             // The RTX closure is a mandatory part of its own product, and this
             // path is only reached with RTX explicitly selected.
             runtimeSelected = !animeJanaiTensorRtRtxInstalled_;
@@ -205,7 +204,7 @@ void ComponentStoreTab::finishRecommendedInstall() {
     // RTX has no GPU-matched builder pack; the classic recommendation must not
     // be ticked for it even though the card is hidden.
     kernelsCheck_->setChecked(kernelsRecommended_ &&
-                              selectedBackend() != Backend::TensorRTRTX);
+                              selectedBackend() != native::Backend::TensorRTRTX);
     spatialCheck_->setChecked(spatialRecommended_);
     // This explicit setup approval advertises upscaling only. Reset a prior
     // manual RIFE choice here, never during refresh, retranslation or Apply.
@@ -234,8 +233,8 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
     acquisitionCheckCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
     const auto cancelled = acquisitionCheckCancelFlag_;
     const quint64 generation = runGeneration_;
-    const Backend backend = selectedBackend();
-    const GpuComputeCapability gpu = observeComputeCapability();
+    const native::Backend backend = selectedBackend();
+    const native::GpuComputeCapability gpu = native::observeComputeCapability();
     const QSet<QString> selected = selectedPacks_;
     pendingUpscalers_.clear();
     applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::Busy,
@@ -246,7 +245,7 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
     const std::shared_ptr<std::atomic<bool>> live = alive_;
     runner_->runTransfer(
         [backend, gpu, cancelled] {
-            return inventorySnapshot(gpu, true, false, cancelled.get());
+            return component_store_detail::inventorySnapshot(gpu, true, false, cancelled.get());
         },
         [this, live, generation, cancelled, backend, selected, showReview,
          gpu](const QVariant& value) {
@@ -263,12 +262,12 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
             }
             applyInventorySnapshot(value);
             const QVariantMap inventory = value.toMap();
-            const QVector<SpatialAsset> catalog = spatialAssetCatalog();
+            const QVector<native::SpatialAsset> catalog = native::spatialAssetCatalog();
             pendingModels_.clear();
             pendingUpscalers_.clear();
             if (selected.contains(QStringLiteral("component:spatial"))) {
                 for (int index = 0; index < catalog.size(); ++index) {
-                    const StoredSpatialAsset* row = spatialInventoryRow(storedSpatial_, catalog.at(index).id);
+                    const native::StoredSpatialAsset* row = component_store_detail::spatialInventoryRow(storedSpatial_, catalog.at(index).id);
                     if (row == nullptr || !row->verified) pendingModels_.append(index);
                 }
             }
@@ -283,7 +282,7 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
             const bool runtimeSelected = selected.contains(QStringLiteral("component:runtime"));
             const bool kernelsSelected = selected.contains(QStringLiteral("component:kernels"));
             // The GPU-matched builder packs belong to classic TensorRT only.
-            const bool componentMissing = backend == Backend::TensorRT &&
+            const bool componentMissing = backend == native::Backend::TensorRT &&
                 (runtimeSelected || kernelsSelected) && gpu.smMajor > 0 &&
                 !inventory.value(QStringLiteral("componentDirsAvailable")).toBool();
             const bool backendInstalled = installationInstalledIn(inventory, backend);
@@ -311,7 +310,7 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
             for (int index : pendingModels_) bytes += catalog.at(index).bytes;
             for (const mplayer::native::UpscalerModel& model : pendingUpscalers_)
                 bytes += model.bytes;
-            if (selectedRifeMissing) bytes += rifeArchivePack().assetBytes;
+            if (selectedRifeMissing) bytes += native::rifeArchivePack().assetBytes;
             // The closure's own queue is reviewable too, so the prompt is not
             // hiding an unknown beside the model sizes.
             if (backendWork) bytes += closureBytesIn(inventory, backend);
@@ -346,7 +345,7 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
             // RTX has no separate store packs: the runtime installer owns its
             // whole closure, so it never takes the provisioner pack path.
             pendingRuntimeClosure_ =
-                backend == Backend::TensorRTRTX
+                backend == native::Backend::TensorRTRTX
                     ? backendWork
                     : (runtimeSelected && !backendInstalled);
             pendingRifeArchive_ = selectedRifeMissing;
@@ -368,7 +367,7 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
 
 void ComponentStoreTab::downloadAnimeJanaiRuntime() {
     if (runner_ == nullptr) {
-        const Backend backend = selectedBackend();
+        const native::Backend backend = selectedBackend();
         applyStatus(QStringLiteral("native.components.noRunner"),
                     StatusReason{.kind = StatusReason::Kind::ClosureNeedsRunner,
                                  .backend = backend});
@@ -380,7 +379,7 @@ void ComponentStoreTab::downloadAnimeJanaiRuntime() {
     animeJanaiRuntimeDownloading_ = true;
     animeJanaiCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
     const auto cancelFlag = animeJanaiCancelFlag_;
-    const Backend backend = selectedBackend();
+    const native::Backend backend = selectedBackend();
     const quint64 generation = acquisitionGeneration_ == 0 ? runGeneration_
                                                            : acquisitionGeneration_;
     applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::Busy,
@@ -396,10 +395,10 @@ void ComponentStoreTab::downloadAnimeJanaiRuntime() {
     ProgressPublisher publish{runner_->post(), this, alive_, generation};
     runner_->runTransfer(
         [backend, cancelFlag, publish]() -> QVariant {
-            const ComponentProvisionResult result = provisionAnimeJanaiRuntime(
+            const native::ComponentProvisionResult result = native::provisionAnimeJanaiRuntime(
                 backend,
-                [publish](const ComponentProvisionProgress& progress) {
-                    const ComponentProvisionProgress at = progress;
+                [publish](const native::ComponentProvisionProgress& progress) {
+                    const native::ComponentProvisionProgress at = progress;
                     publish([at](ComponentStoreTab& tab) {
                         tab.applyProvisionProgress(at);
                     });
@@ -467,10 +466,10 @@ void ComponentStoreTab::downloadRemainingComponents() {
     acquisitionUnitsPending_ = 0;
     acquisitionFailures_.clear();
     const bool componentMissing =
-        selectedBackend() == Backend::TensorRT &&
+        selectedBackend() == native::Backend::TensorRT &&
         (selectedPacks_.contains(QStringLiteral("component:runtime")) ||
          selectedPacks_.contains(QStringLiteral("component:kernels"))) &&
-        observeComputeCapability().smMajor > 0 && !componentDirsAvailable_;
+        native::observeComputeCapability().smMajor > 0 && !componentDirsAvailable_;
     if (componentMissing && provisioner_ == nullptr) {
         pendingModels_.clear();
         acquisitionSequenceActive_ = false;
@@ -489,25 +488,25 @@ void ComponentStoreTab::downloadRemainingComponents() {
     }
     if (pendingRifeArchive_) {
         clearProgressCard(QStringLiteral("rifeModelsCard"));
-        const RifeArchivePack& pack = rifeArchivePack();
+        const native::RifeArchivePack& pack = native::rifeArchivePack();
         setProgressItem(pack.name, QStringLiteral("rifeModelsCard"),
                         QStringLiteral("%1 (%2)").arg(pack.name, pack.asset),
-                        ComponentProvisionStage::Downloading, 0, pack.assetBytes, true);
+                        native::ComponentProvisionStage::Downloading, 0, pack.assetBytes, true);
     }
     if (!pendingModels_.isEmpty()) {
         clearProgressCard(QStringLiteral("animeJanaiModelsCard"));
-        const QVector<SpatialAsset> catalog = spatialAssetCatalog();
+        const QVector<native::SpatialAsset> catalog = native::spatialAssetCatalog();
         for (const int index : pendingModels_) {
-            const SpatialAsset& asset = catalog.at(index);
+            const native::SpatialAsset& asset = catalog.at(index);
             setProgressItem(asset.id, QStringLiteral("animeJanaiModelsCard"), asset.name,
-                            ComponentProvisionStage::Downloading, 0, asset.bytes, true);
+                            native::ComponentProvisionStage::Downloading, 0, asset.bytes, true);
         }
     }
     if (!pendingUpscalers_.isEmpty()) {
         clearProgressCard(QStringLiteral("upscalerModelsCard"));
         for (const mplayer::native::UpscalerModel& model : pendingUpscalers_) {
             setProgressItem(model.sha256, QStringLiteral("upscalerModelsCard"),
-                            model.displayName, ComponentProvisionStage::Downloading, 0,
+                            model.displayName, native::ComponentProvisionStage::Downloading, 0,
                             model.bytes, true);
         }
     }
@@ -563,8 +562,8 @@ void ComponentStoreTab::downloadRifeArchive() {
         downloadNextModel();
         return;
     }
-    const RifeArchiveStore store = rifeArchiveStore();
-    const QVector<RifeModelPin> pins = rifeModelPins();
+    const native::RifeArchiveStore store = native::rifeArchiveStore();
+    const QVector<native::RifeModelPin> pins = rifeModelPins();
     if (runner_ == nullptr) {
         finishAcquisitionUnit(tr("The RIFE archive download needs a runner."), false,
                               QStringLiteral("native.components.noClient"));
@@ -585,10 +584,10 @@ void ComponentStoreTab::downloadRifeArchive() {
     ProgressPublisher publish{runner_->post(), this, alive_, generation};
     runner_->runTransfer(
         [store, pins, cancelFlag, publish]() -> QVariant {
-            const ComponentProvisionResult result = provisionRifeArchive(
+            const native::ComponentProvisionResult result = native::provisionRifeArchive(
                 store, pins,
-                [publish](const ComponentProvisionProgress& progress) {
-                    const ComponentProvisionProgress at = progress;
+                [publish](const native::ComponentProvisionProgress& progress) {
+                    const native::ComponentProvisionProgress at = progress;
                     publish([at](ComponentStoreTab& tab) {
                         tab.applyDownloadProgress(at);
                     });
@@ -604,7 +603,7 @@ void ComponentStoreTab::downloadRifeArchive() {
             rifeDownloading_ = false;
             rifeCancelFlag_.reset();
             settleProgressCard(QStringLiteral("rifeModelsCard"), true, false);
-            for (const RifeModelPin& pin : pins) {
+            for (const native::RifeModelPin& pin : pins) {
                 verifiedRifeGraphs_.insert(pin.fileName);
                 rifeVerificationErrors_.remove(pin.fileName);
             }
@@ -640,7 +639,7 @@ void ComponentStoreTab::downloadNextModel() {
                               false, QStringLiteral("native.components.noClient"));
         return;
     }
-    const QVector<SpatialAsset> catalog = spatialAssetCatalog();
+    const QVector<native::SpatialAsset> catalog = native::spatialAssetCatalog();
     if (!modelsDownloading_) {
         modelsDownloading_ = true;
         modelCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
@@ -662,7 +661,7 @@ void ComponentStoreTab::downloadNextModel() {
     modelDownloadsInFlight_ += batch.size();
     const ProgressPublisher publish{runner_->post(), this, alive_, generation};
     for (int index : batch) {
-        const SpatialAsset asset = catalog.at(index);
+        const native::SpatialAsset asset = catalog.at(index);
         runner_->runTransfer(
             [client, asset, cancelFlag, publish]() -> QVariant {
                 if (cancelFlag->load()) return QVariant{};
@@ -674,29 +673,29 @@ void ComponentStoreTab::downloadNextModel() {
                 const QByteArray bytes = client->fetchBytes(
                     asset.url, kModelDownloadTimeoutMs,
                     [publish, asset](qint64 received, qint64 total) {
-                        const ComponentProvisionProgress progress{
-                            asset.id, received, total, ComponentProvisionStage::Downloading};
+                        const native::ComponentProvisionProgress progress{
+                            asset.id, received, total, native::ComponentProvisionStage::Downloading};
                         publish([progress](ComponentStoreTab& tab) {
                             tab.applyDownloadProgress(progress);
                         });
                     },
                     backend::MikaiClient::Redirects::FollowSafe);
                 if (cancelFlag->load()) return QVariant{};
-                const ComponentProvisionProgress installing{
+                const native::ComponentProvisionProgress installing{
                     asset.id, static_cast<qint64>(bytes.size()), asset.bytes,
-                    ComponentProvisionStage::Installing};
+                    native::ComponentProvisionStage::Installing};
                 publish([installing](ComponentStoreTab& tab) {
                     tab.applyDownloadProgress(installing);
                 });
-                const SpatialAssetPublication published =
-                    publishSpatialAssetBytes(asset, bytes, QString());
+                const native::SpatialAssetPublication published =
+                    native::publishSpatialAssetBytes(asset, bytes, QString());
                 if (!published.ok) {
                     throw std::runtime_error(
                         QStringLiteral("%1: %2").arg(published.reasonKey, published.reason)
                             .toStdString());
                 }
-                const ComponentProvisionProgress installed{
-                    asset.id, asset.bytes, asset.bytes, ComponentProvisionStage::Installed};
+                const native::ComponentProvisionProgress installed{
+                    asset.id, asset.bytes, asset.bytes, native::ComponentProvisionStage::Installed};
                 publish([installed](ComponentStoreTab& tab) {
                     tab.applyDownloadProgress(installed);
                 });
@@ -768,7 +767,7 @@ void ComponentStoreTab::startAcquisitionVerification() {
     modelCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
     const quint64 generation = runGeneration_;
     const auto cancelled = modelCancelFlag_;
-    const GpuComputeCapability gpu = observeComputeCapability();
+    const native::GpuComputeCapability gpu = native::observeComputeCapability();
     const bool spatialSelected =
         selectedPacks_.contains(QStringLiteral("component:spatial"));
     if (spatialSelected) {
@@ -777,7 +776,7 @@ void ComponentStoreTab::startAcquisitionVerification() {
                                  .downloaded = qMax(modelInstalledCount(),
                                                     downloadedModelItemCount()),
                                  .verified = 0,
-                                 .total = static_cast<int>(spatialAssetCatalog().size())});
+                                 .total = static_cast<int>(native::spatialAssetCatalog().size())});
     } else {
         applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::Busy,
                                             .busy = StatusReason::Busy::Verification});
@@ -789,7 +788,7 @@ void ComponentStoreTab::startAcquisitionVerification() {
     const std::shared_ptr<std::atomic<bool>> live = alive_;
     runner_->runTransfer(
         [gpu, cancelled] {
-            return inventorySnapshot(gpu, true, true, cancelled.get());
+            return component_store_detail::inventorySnapshot(gpu, true, true, cancelled.get());
         },
         [this, live, generation, cancelled, gpu](const QVariant& value) {
             if (!live->load() || generation != runGeneration_) return;
@@ -812,22 +811,22 @@ void ComponentStoreTab::startAcquisitionVerification() {
             const bool spatialSelected =
                 selectedPacks_.contains(QStringLiteral("component:spatial"));
             QStringList failures = acquisitionFailures_;
-            const Backend backend = selectedBackend();
+            const native::Backend backend = selectedBackend();
             // The selected backend answers from its own fields; RTX is never
             // proved by a classic record and vice versa.
             if (runtimeSelected && !installationInstalledIn(result, backend)) {
                 const QString reasonKey =
-                    backend == Backend::TensorRT
+                    backend == native::Backend::TensorRT
                         ? QStringLiteral("trtReason")
-                        : (backend == Backend::DirectML ? QStringLiteral("directMlReason")
+                        : (backend == native::Backend::DirectML ? QStringLiteral("directMlReason")
                                                         : QStringLiteral("rtxReason"));
                 const QString reason = result.value(reasonKey).toString();
                 failures.append(reason.isEmpty()
                                     ? tr("The requested backend installation could not be verified.")
                                     : reason);
             }
-            if (backend == Backend::TensorRT && gpu.smMajor > 0) {
-                TensorRtClosureStatus closure;
+            if (backend == native::Backend::TensorRT && gpu.smMajor > 0) {
+                native::TensorRtClosureStatus closure;
                 closure.runtimeStored =
                     result.value(QStringLiteral("closureRuntimeStored")).toBool();
                 closure.kernelsStored =
@@ -839,7 +838,7 @@ void ComponentStoreTab::startAcquisitionVerification() {
                 QString kernelsName = result.value(QStringLiteral("kernelsName")).toString();
                 if (kernelsName.isEmpty())
                     kernelsName = QStringLiteral("trt-sm%1%2").arg(gpu.smMajor).arg(gpu.smMinor);
-                for (const QString& line : tensorRtClosureFailureLines(
+                for (const QString& line : component_store_detail::tensorRtClosureFailureLines(
                          closure, runtimeSelected, kernelsSelected, kernelsName)) {
                     if (!failures.contains(line)) failures.append(line);
                 }
@@ -854,8 +853,8 @@ void ComponentStoreTab::startAcquisitionVerification() {
                 if (failures.isEmpty()) failures.append(tr("The RIFE archive could not be verified."));
             }
             if (spatialSelected) {
-                for (const SpatialAsset& asset : spatialAssetCatalog()) {
-                    const StoredSpatialAsset* row = spatialInventoryRow(storedSpatial_, asset.id);
+                for (const native::SpatialAsset& asset : native::spatialAssetCatalog()) {
+                    const native::StoredSpatialAsset* row = component_store_detail::spatialInventoryRow(storedSpatial_, asset.id);
                     if (row == nullptr || !row->verified)
                         failures.append(row == nullptr
                                             ? tr("The requested upscaling model is not installed: %1")
@@ -871,7 +870,7 @@ void ComponentStoreTab::startAcquisitionVerification() {
                                 StatusReason{.kind = StatusReason::Kind::InventoryCounts,
                                              .verified = modelVerifiedCount(),
                                              .installed = modelInstalledCount(),
-                                             .total = static_cast<int>(spatialAssetCatalog().size())});
+                                             .total = static_cast<int>(native::spatialAssetCatalog().size())});
                 } else {
                     applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::AllVerified});
                 }
@@ -880,7 +879,7 @@ void ComponentStoreTab::startAcquisitionVerification() {
                             StatusReason{.kind = StatusReason::Kind::FailureCounts,
                                          .causes = failures,
                                          .installed = modelInstalledCount(),
-                                         .total = static_cast<int>(spatialAssetCatalog().size())});
+                                         .total = static_cast<int>(native::spatialAssetCatalog().size())});
             } else {
                 applyStatus(QStringLiteral("native.components.digest"),
                             failures.join(QStringLiteral("; ")));
@@ -1150,17 +1149,17 @@ void ComponentStoreTab::downloadNextUpscaler() {
             const QByteArray bytes = client->fetchBytes(
                 model.url, kModelDownloadTimeoutMs,
                 [publish, model](qint64 received, qint64 total) {
-                    const ComponentProvisionProgress progress{
-                        model.sha256, received, total, ComponentProvisionStage::Downloading};
+                    const native::ComponentProvisionProgress progress{
+                        model.sha256, received, total, native::ComponentProvisionStage::Downloading};
                     publish([progress](ComponentStoreTab& tab) {
                         tab.applyDownloadProgress(progress);
                     });
                 },
                 backend::MikaiClient::Redirects::FollowSafe);
             if (cancelFlag != nullptr && cancelFlag->load()) return QVariant{};
-            const ComponentProvisionProgress installing{
+            const native::ComponentProvisionProgress installing{
                 model.sha256, static_cast<qint64>(bytes.size()), model.bytes,
-                ComponentProvisionStage::Installing};
+                native::ComponentProvisionStage::Installing};
             publish([installing](ComponentStoreTab& tab) {
                 tab.applyDownloadProgress(installing);
             });
@@ -1194,7 +1193,7 @@ void ComponentStoreTab::downloadNextUpscaler() {
 }
 
 QString ComponentStoreTab::renderStatusReason() const {
-    const auto backendName = [this](Backend backend) {
+    const auto backendName = [this](native::Backend backend) {
         return backendProductName(backend);
     };
     switch (statusReason_.kind) {

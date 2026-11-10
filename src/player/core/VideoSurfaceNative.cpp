@@ -29,11 +29,6 @@ namespace {
 constexpr qint64 kRestoreSettleTimeoutMs = 5000;
 constexpr int kRestoreSettleMaxAttempts = 5;
 
-std::string mpvNumber(double value) {
-    return QString::number(value, 'f', 6).toStdString();
-}
-
-
 /// The runtime module the live core was loaded from, or empty when none was
 /// selected. bundle() hands back a reference into the loader's state, so the
 /// value is copied here rather than read after the lock is gone.

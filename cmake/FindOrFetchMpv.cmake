@@ -10,6 +10,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   if(PkgConfig_FOUND)
     pkg_check_modules(MIKAI_SYSTEM_MPV_PC QUIET mpv>=0.35)
   endif()
+  # Host libmpv header/pkg-config evidence stays independent of bundled runtime
+  # identity; empty means manually selected headers without pkg-config evidence.
+  if(NOT DEFINED MIKAI_SYSTEM_MPV_PC_VERSION)
+    set(MIKAI_SYSTEM_MPV_PC_VERSION "")
+  endif()
   find_path(MIKAI_SYSTEM_MPV_HEADERS NAMES mpv/client.h
     HINTS ${MIKAI_SYSTEM_MPV_PC_INCLUDE_DIRS}
     DOC "Directory containing the Linux mpv/client.h and mpv/render_gl.h headers")

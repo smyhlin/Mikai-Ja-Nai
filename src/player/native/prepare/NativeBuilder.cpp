@@ -10,17 +10,16 @@
 namespace mplayer {
 namespace native {
 
-using namespace builder_detail;
 
 namespace {
 
 struct PrepProduct {
-  MeasuredPrep measured;
+  builder_detail::MeasuredPrep measured;
   QString engineSha;
   qint64 engineBytes = 0;
 };
 
-bool parsePrepStream(const QByteArray& output, MeasuredPrep* measured, bool* sawDevice,
+bool parsePrepStream(const QByteArray& output, builder_detail::MeasuredPrep* measured, bool* sawDevice,
                      bool* sawParsed, bool* sawStarted, bool* sawSerialized,
                      bool* sawRaw, QString* key, QString* reason) {
   *sawDevice = false;
@@ -35,7 +34,7 @@ bool parsePrepStream(const QByteArray& output, MeasuredPrep* measured, bool* saw
       continue;
     }
     QJsonObject event;
-    if (!parseObject(line, &event)) {
+    if (!builder_detail::parseObject(line, &event)) {
       if (key != nullptr) {
         *key = QStringLiteral("build.event.json");
       }
@@ -56,7 +55,7 @@ bool parsePrepStream(const QByteArray& output, MeasuredPrep* measured, bool* saw
         return false;
       }
       *sawDevice = true;
-      if (!parseDeviceEvent(event, measured, key, reason)) {
+      if (!builder_detail::parseDeviceEvent(event, measured, key, reason)) {
         return false;
       }
     } else if (name == QLatin1String("graph-parsed")) {
@@ -70,7 +69,7 @@ bool parsePrepStream(const QByteArray& output, MeasuredPrep* measured, bool* saw
         return false;
       }
       *sawParsed = true;
-      if (!parseGraphEvent(event, measured, key, reason)) {
+      if (!builder_detail::parseGraphEvent(event, measured, key, reason)) {
         return false;
       }
     } else if (name == QLatin1String("build-started")) {
@@ -84,7 +83,7 @@ bool parsePrepStream(const QByteArray& output, MeasuredPrep* measured, bool* saw
         return false;
       }
       *sawStarted = true;
-      if (!parseStartedEvent(event, measured, key, reason)) {
+      if (!builder_detail::parseStartedEvent(event, measured, key, reason)) {
         return false;
       }
     } else if (name == QLatin1String("serialized")) {
@@ -100,7 +99,7 @@ bool parsePrepStream(const QByteArray& output, MeasuredPrep* measured, bool* saw
         return false;
       }
       *sawRaw = true;
-      if (!parseRawEvent(event, measured, key, reason)) {
+      if (!builder_detail::parseRawEvent(event, measured, key, reason)) {
         return false;
       }
     } else {
@@ -120,7 +119,7 @@ bool prepTypeIsFp16(const QString& type) {
   return type == QLatin1String("float16") || type == QLatin1String("fp16");
 }
 
-bool checkParsedBindings(const MeasuredPrep& measured, const StageBuildRequest& stage,
+bool checkParsedBindings(const builder_detail::MeasuredPrep& measured, const StageBuildRequest& stage,
                          const QString& exportInName, const QString& exportInShape,
                          const QString& exportOutShape, QString* key, QString* reason) {
   auto fail = [&](const char* k, const QString& t) {
@@ -142,7 +141,7 @@ bool checkParsedBindings(const MeasuredPrep& measured, const StageBuildRequest& 
   }
   qint64 wantIn[4] = {0, 0, 0, 0};
   qint64 wantOut[4] = {0, 0, 0, 0};
-  if (!shapeDims(stage.inputShape, wantIn) || !shapeDims(stage.outputShape, wantOut)) {
+  if (!builder_detail::shapeDims(stage.inputShape, wantIn) || !builder_detail::shapeDims(stage.outputShape, wantOut)) {
     return fail("stage.geometry.invalid",
                 QStringLiteral("the stage shape is not NxCxHxW"));
   }
@@ -167,7 +166,7 @@ bool checkParsedBindings(const MeasuredPrep& measured, const StageBuildRequest& 
   }
   qint64 exportIn[4] = {0, 0, 0, 0};
   qint64 exportOut[4] = {0, 0, 0, 0};
-  if (!shapeDims(exportInShape, exportIn) || !shapeDims(exportOutShape, exportOut)) {
+  if (!builder_detail::shapeDims(exportInShape, exportIn) || !builder_detail::shapeDims(exportOutShape, exportOut)) {
     return fail("reference.inputs.shape",
                 QStringLiteral("a reference shape is not NxCxHxW"));
   }
@@ -180,7 +179,7 @@ bool checkParsedBindings(const MeasuredPrep& measured, const StageBuildRequest& 
   return true;
 }
 
-bool runPrep(const ResolvedTools& tools, const QString& storedCanonical,
+bool runPrep(const builder_detail::ResolvedTools& tools, const QString& storedCanonical,
              const StageBuildRequest& stage, const EngineBuildIdentity& build,
              const QString& inName, const QString& exportInShape,
              const QString& exportOutShape, const QString& engineOut, quint64 workspaceRequest,
@@ -200,8 +199,8 @@ bool runPrep(const ResolvedTools& tools, const QString& storedCanonical,
   int optimizationLevel = 0;
   QString levelKey;
   QString levelReason;
-  if (!declaredOptimizationLevel(build, &optimizationLevel, &levelKey, &levelReason)) {
-    *bad = refuse(levelKey, levelReason, index, QStringLiteral("build"));
+  if (!builder_detail::declaredOptimizationLevel(build, &optimizationLevel, &levelKey, &levelReason)) {
+    *bad = builder_detail::refuse(levelKey, levelReason, index, QStringLiteral("build"));
     return false;
   }
   args.append(QStringLiteral("--builder-optimization-level"));
@@ -210,47 +209,47 @@ bool runPrep(const ResolvedTools& tools, const QString& storedCanonical,
     args.append(QStringLiteral("--workspace-bytes"));
     args.append(QString::number(workspaceRequest));
   }
-  ToolResult run;
+  builder_detail::ToolResult run;
   const bool exited =
-      runBlocking(tools.paths.prep, args, tools.prepVerifyEnv, cancellation, progress,
+      builder_detail::runBlocking(tools.paths.prep, args, tools.prepVerifyEnv, cancellation, progress,
                   index, modelId, QStringLiteral("build"), &run);
   if (!exited) {
-    if (isCancelled(cancellation) && run.launchError.isEmpty()) {
-      *bad = cancelledResult(QStringLiteral("build"), index);
+    if (builder_detail::isCancelled(cancellation) && run.launchError.isEmpty()) {
+      *bad = builder_detail::cancelledResult(QStringLiteral("build"), index);
       return false;
     }
-    if (!run.stopped && isCancelled(cancellation)) {
-      *bad = refuse(QStringLiteral("build.cancel.stop"),
+    if (!run.stopped && builder_detail::isCancelled(cancellation)) {
+      *bad = builder_detail::refuse(QStringLiteral("build.cancel.stop"),
                     QStringLiteral("the helper did not stop after kill: ") +
                         run.launchError,
-                    index, QStringLiteral("build"), tailText(run.error));
+                    index, QStringLiteral("build"), builder_detail::tailText(run.error));
       return false;
     }
     const QString detail =
-        run.launchError.isEmpty() ? tailText(run.error) : run.launchError;
-    *bad = refuse(QStringLiteral("tool.launch"), detail, index,
-                  QStringLiteral("build"), tailText(run.error));
+        run.launchError.isEmpty() ? builder_detail::tailText(run.error) : run.launchError;
+    *bad = builder_detail::refuse(QStringLiteral("tool.launch"), detail, index,
+                  QStringLiteral("build"), builder_detail::tailText(run.error));
     return false;
   }
   if (run.sawOutputLimit) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("build.output.truncated"),
+    *bad = builder_detail::refuse(QStringLiteral("build.output.truncated"),
                   QStringLiteral("the prep output exceeded its bound"), index,
-                  QStringLiteral("build"), tailText(run.error));
+                  QStringLiteral("build"), builder_detail::tailText(run.error));
     return false;
   }
   if (run.exitStatus != QProcess::NormalExit || run.exitCode != 0 ||
       !QFileInfo(engineOut).isFile()) {
     QFile::remove(engineOut);
     const QString detail =
-        tailText(run.error).isEmpty()
-            ? QStringLiteral("the prep helper failed: ") + toolExitCause(run)
-            : tailText(run.error);
-    *bad = refuse(QStringLiteral("build.failed"), detail, index, QStringLiteral("build"),
+        builder_detail::tailText(run.error).isEmpty()
+            ? QStringLiteral("the prep helper failed: ") + builder_detail::toolExitCause(run)
+            : builder_detail::tailText(run.error);
+    *bad = builder_detail::refuse(QStringLiteral("build.failed"), detail, index, QStringLiteral("build"),
                   detail);
     return false;
   }
-  MeasuredPrep measured;
+  builder_detail::MeasuredPrep measured;
   bool sawDevice = false;
   bool sawParsed = false;
   bool sawStarted = false;
@@ -261,19 +260,19 @@ bool runPrep(const ResolvedTools& tools, const QString& storedCanonical,
   if (!parsePrepStream(run.output, &measured, &sawDevice, &sawParsed, &sawStarted,
                        &sawSerialized, &sawRaw, &key, &reason)) {
     QFile::remove(engineOut);
-    *bad = refuse(key, reason, index, QStringLiteral("build"), tailText(run.error));
+    *bad = builder_detail::refuse(key, reason, index, QStringLiteral("build"), builder_detail::tailText(run.error));
     return false;
   }
   if (!sawDevice || !sawParsed || !sawStarted || !sawSerialized || !sawRaw) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("build.event.missing"),
+    *bad = builder_detail::refuse(QStringLiteral("build.event.missing"),
                   QStringLiteral("the helper omitted an identity event"), index,
-                  QStringLiteral("build"), tailText(run.error));
+                  QStringLiteral("build"), builder_detail::tailText(run.error));
     return false;
   }
-  if (!checkMeasuredComplete(measured, &key, &reason)) {
+  if (!builder_detail::checkMeasuredComplete(measured, &key, &reason)) {
     QFile::remove(engineOut);
-    *bad = refuse(key, reason, index, QStringLiteral("build"), tailText(run.error));
+    *bad = builder_detail::refuse(key, reason, index, QStringLiteral("build"), builder_detail::tailText(run.error));
     return false;
   }
   QString onnxReason;
@@ -281,7 +280,7 @@ bool runPrep(const ResolvedTools& tools, const QString& storedCanonical,
       measureFile(storedCanonical, &onnxReason);
   if (!onnxMeasured.has_value()) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("model.owned.changed"), onnxReason, index,
+    *bad = builder_detail::refuse(QStringLiteral("model.owned.changed"), onnxReason, index,
                   QStringLiteral("build"));
     return false;
   }
@@ -290,28 +289,28 @@ bool runPrep(const ResolvedTools& tools, const QString& storedCanonical,
       measured.rawOnnxSha.toLower() != onnxMeasured->sha256.toLower() ||
       measured.rawOnnxBytes != onnxMeasured->bytes) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("build.graph.mismatch"),
+    *bad = builder_detail::refuse(QStringLiteral("build.graph.mismatch"),
                   QStringLiteral("the helper parsed other bytes"), index,
-                  QStringLiteral("build"), tailText(run.error));
+                  QStringLiteral("build"), builder_detail::tailText(run.error));
     return false;
   }
   if (measured.rawShapeBinding != QLatin1String("fixed-per-input") ||
       measured.rawIoFormat != QLatin1String("linear-only")) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("build.binding.mismatch"),
+    *bad = builder_detail::refuse(QStringLiteral("build.binding.mismatch"),
                   QStringLiteral("the helper did not bind fixed linear I/O"), index,
-                  QStringLiteral("build"), tailText(run.error));
+                  QStringLiteral("build"), builder_detail::tailText(run.error));
     return false;
   }
   if (!checkParsedBindings(measured, stage, inName, exportInShape, exportOutShape, &key,
                            &reason)) {
     QFile::remove(engineOut);
-    *bad = refuse(key, reason, index, QStringLiteral("build"), tailText(run.error));
+    *bad = builder_detail::refuse(key, reason, index, QStringLiteral("build"), builder_detail::tailText(run.error));
     return false;
   }
-  if (!checkMeasuredAgainstBuild(measured, build, workspaceRequest, &key, &reason)) {
+  if (!builder_detail::checkMeasuredAgainstBuild(measured, build, workspaceRequest, &key, &reason)) {
     QFile::remove(engineOut);
-    *bad = refuse(key, reason, index, QStringLiteral("build"), tailText(run.error));
+    *bad = builder_detail::refuse(key, reason, index, QStringLiteral("build"), builder_detail::tailText(run.error));
     return false;
   }
   QString engineReason;
@@ -319,19 +318,19 @@ bool runPrep(const ResolvedTools& tools, const QString& storedCanonical,
       measureFile(engineOut, &engineReason);
   if (!engineMeasured.has_value() || engineMeasured->bytes <= 0) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("build.engine.missing"),
+    *bad = builder_detail::refuse(QStringLiteral("build.engine.missing"),
                   engineReason.isEmpty()
                       ? QStringLiteral("the helper wrote no engine bytes")
                       : engineReason,
-                  index, QStringLiteral("build"), tailText(run.error));
+                  index, QStringLiteral("build"), builder_detail::tailText(run.error));
     return false;
   }
   if (engineMeasured->sha256.toLower() != measured.rawEngineSha.toLower() ||
       engineMeasured->bytes != measured.rawEngineBytes) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("build.digest.mismatch"),
+    *bad = builder_detail::refuse(QStringLiteral("build.digest.mismatch"),
                   QStringLiteral("the engine file is not the reported product"), index,
-                  QStringLiteral("build"), tailText(run.error));
+                  QStringLiteral("build"), builder_detail::tailText(run.error));
     return false;
   }
   out->measured = measured;
@@ -340,7 +339,7 @@ bool runPrep(const ResolvedTools& tools, const QString& storedCanonical,
   return true;
 }
 
-bool checkBindingEntry(const QJsonObject& binding, const RefTensor& declared, bool isInput,
+bool checkBindingEntry(const QJsonObject& binding, const builder_detail::RefTensor& declared, bool isInput,
                          QString* key, QString* reason) {
   auto fail = [&](const char* k, const QString& t) {
     if (key != nullptr) {
@@ -374,20 +373,20 @@ bool checkBindingEntry(const QJsonObject& binding, const RefTensor& declared, bo
                 QStringLiteral("a reported binding is vectorized"));
   }
   qint64 want[4] = {0, 0, 0, 0};
-  if (!shapeDims(declared.shape, want)) {
+  if (!builder_detail::shapeDims(declared.shape, want)) {
     return fail("verify.binding.shape",
                 QStringLiteral("a declared shape is not NxCxHxW"));
   }
-  const int wantElem = elementBytes(declared.dtype);
+  const int wantElem = builder_detail::elementBytes(declared.dtype);
   if (binding.value(QStringLiteral("bytesPerElement")).toInt(-1) != wantElem) {
     return fail("verify.binding.element",
                 QStringLiteral("a reported element size is not its dtype size"));
   }
   qint64 reported[4] = {0, 0, 0, 0};
   qint64 declaredShape[4] = {0, 0, 0, 0};
-  if (!declaredDimsFromArray(binding.value(QStringLiteral("shape")).toArray(), reported,
+  if (!builder_detail::declaredDimsFromArray(binding.value(QStringLiteral("shape")).toArray(), reported,
                              false) ||
-      !declaredDimsFromArray(binding.value(QStringLiteral("declaredShape")).toArray(),
+      !builder_detail::declaredDimsFromArray(binding.value(QStringLiteral("declaredShape")).toArray(),
                              declaredShape, true)) {
     return fail("verify.binding.shape",
                 QStringLiteral("a reported binding shape is not rank-4"));
@@ -409,7 +408,7 @@ bool checkBindingEntry(const QJsonObject& binding, const RefTensor& declared, bo
     }
   }
   qint64 elements = 0;
-  if (!tensorBytes(declared.dtype, want, &elements) ||
+  if (!builder_detail::tensorBytes(declared.dtype, want, &elements) ||
       binding.value(QStringLiteral("elements")).toDouble(-1) !=
           static_cast<double>(elements / wantElem) ||
       binding.value(QStringLiteral("bytes")).toDouble(-1) != static_cast<double>(elements)) {
@@ -426,8 +425,8 @@ bool checkBindingEntry(const QJsonObject& binding, const RefTensor& declared, bo
   return true;
 }
 
-bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
-               const ExportedRef& ref, const StageBuildRequest& stage,
+bool runVerify(const builder_detail::ResolvedTools& tools, const EngineBuildIdentity& build,
+               const builder_detail::ExportedRef& ref, const StageBuildRequest& stage,
                const QString& engineOut, const QString& engineSha, int index,
                const QString& modelId, NativeBuildCancellation* cancellation,
                const BuilderProgressCallback& progress, BuilderResult* bad) {
@@ -438,58 +437,58 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
   args.append(engineSha);
   args.append(QStringLiteral("--device-uuid"));
   args.append(build.deviceUuid);
-  for (const RefTensor& tensor : ref.inputs) {
+  for (const builder_detail::RefTensor& tensor : ref.inputs) {
     args.append(QStringLiteral("--input"));
     args.append(tensor.name);
     args.append(tensor.dtype);
     args.append(tensor.shape);
     args.append(tensor.file);
   }
-  for (const RefTensor& tensor : ref.outputs) {
+  for (const builder_detail::RefTensor& tensor : ref.outputs) {
     args.append(QStringLiteral("--output"));
     args.append(tensor.name);
     args.append(tensor.dtype);
     args.append(tensor.shape);
     args.append(tensor.file);
   }
-  ToolResult run;
+  builder_detail::ToolResult run;
   const bool exited =
-      runBlocking(tools.paths.verify, args, tools.prepVerifyEnv, cancellation, progress,
+      builder_detail::runBlocking(tools.paths.verify, args, tools.prepVerifyEnv, cancellation, progress,
                   index, modelId, QStringLiteral("verify"), &run);
   if (!exited) {
-    if (isCancelled(cancellation) && run.launchError.isEmpty()) {
-      *bad = cancelledResult(QStringLiteral("verify"), index);
+    if (builder_detail::isCancelled(cancellation) && run.launchError.isEmpty()) {
+      *bad = builder_detail::cancelledResult(QStringLiteral("verify"), index);
       return false;
     }
-    if (!run.stopped && isCancelled(cancellation)) {
+    if (!run.stopped && builder_detail::isCancelled(cancellation)) {
       QFile::remove(engineOut);
-      *bad = refuse(QStringLiteral("verify.cancel.stop"),
+      *bad = builder_detail::refuse(QStringLiteral("verify.cancel.stop"),
                     QStringLiteral("the verifier did not stop after kill: ") +
                         run.launchError,
-                    index, QStringLiteral("verify"), tailText(run.error));
+                    index, QStringLiteral("verify"), builder_detail::tailText(run.error));
       return false;
     }
     const QString detail =
-        run.launchError.isEmpty() ? tailText(run.error) : run.launchError;
-    *bad = refuse(QStringLiteral("tool.launch"), detail, index,
-                  QStringLiteral("verify"), tailText(run.error));
+        run.launchError.isEmpty() ? builder_detail::tailText(run.error) : run.launchError;
+    *bad = builder_detail::refuse(QStringLiteral("tool.launch"), detail, index,
+                  QStringLiteral("verify"), builder_detail::tailText(run.error));
     return false;
   }
   if (run.sawOutputLimit) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("verify.output.truncated"),
+    *bad = builder_detail::refuse(QStringLiteral("verify.output.truncated"),
                   QStringLiteral("the verifier output exceeded its bound"), index,
-                  QStringLiteral("verify"), tailText(run.error));
+                  QStringLiteral("verify"), builder_detail::tailText(run.error));
     return false;
   }
   QJsonObject report;
-  if (!parseObject(run.output.trimmed(), &report)) {
+  if (!builder_detail::parseObject(run.output.trimmed(), &report)) {
     QFile::remove(engineOut);
-    QString detail = tailText(run.error) + tailText(run.output);
+    QString detail = builder_detail::tailText(run.error) + builder_detail::tailText(run.output);
     if (detail.isEmpty()) {
-      detail = QStringLiteral("the verifier emitted no JSON report: ") + toolExitCause(run);
+      detail = QStringLiteral("the verifier emitted no JSON report: ") + builder_detail::toolExitCause(run);
     }
-    *bad = refuse(QStringLiteral("verify.json"),
+    *bad = builder_detail::refuse(QStringLiteral("verify.json"),
                   QStringLiteral("the verifier emitted no JSON report"), index,
                   QStringLiteral("verify"), detail);
     return false;
@@ -499,9 +498,9 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
     const QString message = report.value(QStringLiteral("error"))
                                 .toObject()
                                 .value(QStringLiteral("message"))
-                                .toString(tailText(run.error));
+                                .toString(builder_detail::tailText(run.error));
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("verify.") +
+    *bad = builder_detail::refuse(QStringLiteral("verify.") +
                        report.value(QStringLiteral("phase"))
                            .toString(QStringLiteral("failed")),
                    message.isEmpty()
@@ -519,7 +518,7 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
           QLatin1String("verified") ||
       report.value(QStringLiteral("phase")).toString() != QLatin1String("complete")) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("verify.unknown.success"),
+    *bad = builder_detail::refuse(QStringLiteral("verify.unknown.success"),
                   QStringLiteral("the verifier report is not a measured success"), index,
                   QStringLiteral("verify"));
     return false;
@@ -527,7 +526,7 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
   if (report.value(QStringLiteral("manifestVerified")).toBool(true) ||
       report.value(QStringLiteral("prepared")).toBool(true)) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("verify.unknown.success"),
+    *bad = builder_detail::refuse(QStringLiteral("verify.unknown.success"),
                   QStringLiteral("the verifier claimed more than a measured run"), index,
                   QStringLiteral("verify"));
     return false;
@@ -539,7 +538,7 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
       engine.value(QStringLiteral("expectedSha256")).toString().toLower() !=
           engineSha.toLower()) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("verify.identity.mismatch"),
+    *bad = builder_detail::refuse(QStringLiteral("verify.identity.mismatch"),
                   QStringLiteral("the report names another engine"), index,
                   QStringLiteral("verify"));
     return false;
@@ -547,7 +546,7 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
   const QJsonObject device = report.value(QStringLiteral("device")).toObject();
   if (!isSameDeviceUuid(device.value(QStringLiteral("uuid")).toString(), build.deviceUuid)) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("verify.identity.mismatch"),
+    *bad = builder_detail::refuse(QStringLiteral("verify.identity.mismatch"),
                   QStringLiteral("the report names another device"), index,
                   QStringLiteral("verify"));
     return false;
@@ -555,17 +554,17 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
   if (device.value(QStringLiteral("smMajor")).toInt(-1) != build.smMajor ||
       device.value(QStringLiteral("smMinor")).toInt(-2) != build.smMinor) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("verify.device.mismatch"),
+    *bad = builder_detail::refuse(QStringLiteral("verify.device.mismatch"),
                   QStringLiteral("the report SM is not the observed SM"), index,
                   QStringLiteral("verify"));
     return false;
   }
   const QJsonObject tensorRt = report.value(QStringLiteral("tensorrt")).toObject();
   int wantTrt = 0;
-  if (!trtLibFromRuntime(build.runtimeVersion, &wantTrt) ||
+  if (!builder_detail::trtLibFromRuntime(build.runtimeVersion, &wantTrt) ||
       tensorRt.value(QStringLiteral("libraryVersion")).toInt(-1) != wantTrt) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("verify.runtime.mismatch"),
+    *bad = builder_detail::refuse(QStringLiteral("verify.runtime.mismatch"),
                   QStringLiteral("the verifier runtime is not the observed runtime"),
                   index, QStringLiteral("verify"));
     return false;
@@ -579,7 +578,7 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
           .value(QStringLiteral("maxRmseOverride"))
           .toBool(true)) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("verify.tolerance.override"),
+    *bad = builder_detail::refuse(QStringLiteral("verify.tolerance.override"),
                   QStringLiteral("the run overrode its tolerances"), index,
                   QStringLiteral("verify"));
     return false;
@@ -588,7 +587,7 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
   const QJsonArray outputs = report.value(QStringLiteral("outputs")).toArray();
   if (bindings.size() != 2 || outputs.size() != 1) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("verify.bindings.count"),
+    *bad = builder_detail::refuse(QStringLiteral("verify.bindings.count"),
                   QStringLiteral("the report is not one input and one output"), index,
                   QStringLiteral("verify"));
     return false;
@@ -597,7 +596,7 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
   for (const QJsonValue& entry : bindings) {
     if (!entry.isObject()) {
       QFile::remove(engineOut);
-      *bad = refuse(QStringLiteral("verify.bindings.json"),
+      *bad = builder_detail::refuse(QStringLiteral("verify.bindings.json"),
                     QStringLiteral("a binding entry is not an object"), index,
                     QStringLiteral("verify"));
       return false;
@@ -606,7 +605,7 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
     const QString name = binding.value(QStringLiteral("name")).toString();
     if (name.isEmpty() || byName.contains(name)) {
       QFile::remove(engineOut);
-      *bad = refuse(QStringLiteral("verify.bindings.name"),
+      *bad = builder_detail::refuse(QStringLiteral("verify.bindings.name"),
                     QStringLiteral("a binding name is empty or repeated"), index,
                     QStringLiteral("verify"));
       return false;
@@ -616,7 +615,7 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
   if (!byName.contains(ref.inputs.first().name) ||
       !byName.contains(ref.outputs.first().name)) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("verify.binding.mismatch"),
+    *bad = builder_detail::refuse(QStringLiteral("verify.binding.mismatch"),
                   QStringLiteral("the report omits a declared tensor"), index,
                   QStringLiteral("verify"));
     return false;
@@ -626,12 +625,12 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
       !checkBindingEntry(byName.value(ref.outputs.first().name), ref.outputs.first(),
                          false, &failKey, &failReason)) {
     QFile::remove(engineOut);
-    *bad = refuse(failKey, failReason, index, QStringLiteral("verify"));
+    *bad = builder_detail::refuse(failKey, failReason, index, QStringLiteral("verify"));
     return false;
   }
   if (ref.outputs.first().shape != stage.outputShape) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("verify.output.shape"),
+    *bad = builder_detail::refuse(QStringLiteral("verify.output.shape"),
                   QStringLiteral("the reference output is not the stage output"), index,
                   QStringLiteral("verify"));
     return false;
@@ -640,18 +639,18 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
   if (measured.value(QStringLiteral("name")).toString() != ref.outputs.first().name ||
       measured.value(QStringLiteral("dtype")).toString() != ref.outputs.first().dtype) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("verify.output.identity"),
+    *bad = builder_detail::refuse(QStringLiteral("verify.output.identity"),
                   QStringLiteral("the measured output is not the declared output"), index,
                   QStringLiteral("verify"));
     return false;
   }
   qint64 wantOut[4] = {0, 0, 0, 0};
   qint64 gotOut[4] = {0, 0, 0, 0};
-  if (!shapeDims(ref.outputs.first().shape, wantOut) ||
-      !declaredDimsFromArray(measured.value(QStringLiteral("shape")).toArray(), gotOut,
+  if (!builder_detail::shapeDims(ref.outputs.first().shape, wantOut) ||
+      !builder_detail::declaredDimsFromArray(measured.value(QStringLiteral("shape")).toArray(), gotOut,
                              false)) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("verify.output.shape"),
+    *bad = builder_detail::refuse(QStringLiteral("verify.output.shape"),
                   QStringLiteral("the measured output shape is not rank-4"), index,
                   QStringLiteral("verify"));
     return false;
@@ -659,7 +658,7 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
   for (int a = 0; a < 4; ++a) {
     if (wantOut[a] != gotOut[a]) {
       QFile::remove(engineOut);
-      *bad = refuse(QStringLiteral("verify.output.shape"),
+      *bad = builder_detail::refuse(QStringLiteral("verify.output.shape"),
                     QStringLiteral("the measured output is not the declared shape"),
                     index, QStringLiteral("verify"));
       return false;
@@ -669,7 +668,7 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
       !measured.value(QStringLiteral("finite")).toBool(false) ||
       !measured.value(QStringLiteral("withinTolerance")).toBool(false)) {
     QFile::remove(engineOut);
-    *bad = refuse(QStringLiteral("verify.numerics"),
+    *bad = builder_detail::refuse(QStringLiteral("verify.numerics"),
                   QStringLiteral("an output was not measured within tolerance"), index,
                   QStringLiteral("verify"));
     return false;
@@ -679,12 +678,12 @@ bool runVerify(const ResolvedTools& tools, const EngineBuildIdentity& build,
 
 struct MainFlow {
   const BuilderRequest* request = nullptr;
-  const Preflight* checked = nullptr;
+  const builder_detail::Preflight* checked = nullptr;
   NativeBuildCancellation* cancellation = nullptr;
   BuilderProgressCallback progress;
   QTemporaryDir* scratch = nullptr;
   QVector<BuilderStageOutcome> full;
-  QVector<Pending> pending;
+  QVector<builder_detail::Pending> pending;
   QStringList engineFiles;
   QStringList warnings;
 };
@@ -724,7 +723,7 @@ BuilderResult stageRequestFor(const QString& modelRootCanonical, const BuilderRe
   const ResolvedStage& stage = request.plan.stages.at(index);
   const StoredModel& model = request.models.at(index);
   if (model.record.id != stage.modelId) {
-    return refuse(QStringLiteral("model.mismatch"),
+    return builder_detail::refuse(QStringLiteral("model.mismatch"),
                   QStringLiteral("the stage model is not the supplied owned copy"),
                   index, QStringLiteral("cache"));
   }
@@ -732,17 +731,17 @@ BuilderResult stageRequestFor(const QString& modelRootCanonical, const BuilderRe
   QString canonical;
   QString proveKey;
   QString proveReason;
-  if (!proveOwnedModel(modelRootCanonical, model, &canonical, &digest, &proveKey, &proveReason)) {
-    return refuse(proveKey, proveReason, index, QStringLiteral("cache"));
+  if (!builder_detail::proveOwnedModel(modelRootCanonical, model, &canonical, &digest, &proveKey, &proveReason)) {
+    return builder_detail::refuse(proveKey, proveReason, index, QStringLiteral("cache"));
   }
   if (canonical != storedCanonical) {
-    return refuse(QStringLiteral("model.owned.changed"),
+    return builder_detail::refuse(QStringLiteral("model.owned.changed"),
                   QStringLiteral("the owned copy moved during the build"), index,
                   QStringLiteral("cache"));
   }
   if (model.record.contentId() != stage.modelContentId ||
       graphIdentityOf(model.record).contentId() != stage.modelContentId) {
-    return refuse(QStringLiteral("model.owned.identity"),
+    return builder_detail::refuse(QStringLiteral("model.owned.identity"),
                   QStringLiteral("the owned row is not the planned graph"), index,
                   QStringLiteral("cache"));
   }
@@ -755,7 +754,7 @@ BuilderResult stageRequestFor(const QString& modelRootCanonical, const BuilderRe
   stageRequest.padTop = stage.padT;
   if (stageRequest.inputShape.isEmpty() || stageRequest.outputShape.isEmpty() ||
       !stageRequest.isComplete()) {
-    return refuse(QStringLiteral("stage.geometry.invalid"),
+    return builder_detail::refuse(QStringLiteral("stage.geometry.invalid"),
                   QStringLiteral("the stage shape cannot be bound"), index,
                   QStringLiteral("cache"));
   }
@@ -765,7 +764,7 @@ BuilderResult stageRequestFor(const QString& modelRootCanonical, const BuilderRe
   built.build = request.build;
   const QString missing = built.firstMissingRequiredField();
   if (!missing.isEmpty()) {
-    return refuse(QStringLiteral("request.incomplete"),
+    return builder_detail::refuse(QStringLiteral("request.incomplete"),
                   QStringLiteral("the build request records no ") + missing, index,
                   QStringLiteral("cache"));
   }
@@ -776,18 +775,18 @@ BuilderResult stageRequestFor(const QString& modelRootCanonical, const BuilderRe
 
 BuilderResult buildOneStage(MainFlow* flow, int index) {
   const BuilderRequest& request = *flow->request;
-  const Preflight& checked = *flow->checked;
+  const builder_detail::Preflight& checked = *flow->checked;
   const ResolvedStage& stage = request.plan.stages.at(index);
   const StoredModel& model = request.models.at(index);
-  emitProgress(flow->progress, index, stage.modelId, QStringLiteral("cache"),
+  builder_detail::emitProgress(flow->progress, index, stage.modelId, QStringLiteral("cache"),
                stage.modelContentId);
   QString storedCanonical;
   FileDigest digest;
   QString proveKey;
   QString proveReason;
-  if (!proveOwnedModel(checked.modelRootCanonical, model, &storedCanonical, &digest,
+  if (!builder_detail::proveOwnedModel(checked.modelRootCanonical, model, &storedCanonical, &digest,
                        &proveKey, &proveReason)) {
-    BuilderResult bad = refuse(proveKey, proveReason, index, QStringLiteral("cache"));
+    BuilderResult bad = builder_detail::refuse(proveKey, proveReason, index, QStringLiteral("cache"));
     bad.warnings = flow->warnings;
     return bad;
   }
@@ -818,29 +817,29 @@ BuilderResult buildOneStage(MainFlow* flow, int index) {
       outcome.record = *hit;
       outcome.cacheHit = true;
       flow->full[index] = outcome;
-      emitProgress(flow->progress, index, stage.modelId, QStringLiteral("cache"),
+      builder_detail::emitProgress(flow->progress, index, stage.modelId, QStringLiteral("cache"),
                    built.buildKey());
       BuilderResult empty;
       empty.warnings = flow->warnings;
       return empty;
     }
     if (!runtimeOk) {
-      emitProgress(flow->progress, index, stage.modelId, QStringLiteral("cache"),
+      builder_detail::emitProgress(flow->progress, index, stage.modelId, QStringLiteral("cache"),
                    runtimeKey + QStringLiteral(":") + runtimeReason);
     } else {
-      emitProgress(flow->progress, index, stage.modelId, QStringLiteral("cache"),
+      builder_detail::emitProgress(flow->progress, index, stage.modelId, QStringLiteral("cache"),
                    sourceKey + QStringLiteral(":") + sourceReason);
     }
   } else if (hitKey != QLatin1String("artifact.missing")) {
-    emitProgress(flow->progress, index, stage.modelId, QStringLiteral("cache"),
+    builder_detail::emitProgress(flow->progress, index, stage.modelId, QStringLiteral("cache"),
                  hitKey + QStringLiteral(":") + hitReason);
   }
   const QString refDir = QDir(flow->scratch->path())
                              .filePath(QStringLiteral("ref-") + QString::number(index));
-  emitProgress(flow->progress, index, stage.modelId, QStringLiteral("reference"), refDir);
-  ExportedRef exported;
+  builder_detail::emitProgress(flow->progress, index, stage.modelId, QStringLiteral("reference"), refDir);
+  builder_detail::ExportedRef exported;
   BuilderResult refBad;
-  if (!exportReference(checked.tools, storedCanonical, stage, request.references.at(index),
+  if (!builder_detail::exportReference(checked.tools, storedCanonical, stage, request.references.at(index),
                        refDir, index, stage.modelId, flow->cancellation, flow->progress,
                        &exported, &refBad)) {
     refBad.warnings = flow->warnings;
@@ -848,7 +847,7 @@ BuilderResult buildOneStage(MainFlow* flow, int index) {
   }
   if (exported.inputs.first().shape != built.stage.inputShape ||
       exported.outputs.first().shape != built.stage.outputShape) {
-    BuilderResult bad = refuse(QStringLiteral("reference.geometry.mismatch"),
+    BuilderResult bad = builder_detail::refuse(QStringLiteral("reference.geometry.mismatch"),
                               QStringLiteral("a reference tensor is not the stage shape"),
                               index, QStringLiteral("reference"));
     bad.warnings = flow->warnings;
@@ -858,7 +857,7 @@ BuilderResult buildOneStage(MainFlow* flow, int index) {
       QDir(flow->scratch->path())
           .filePath(QStringLiteral("stage-") + QString::number(index) +
                     QStringLiteral(".engine"));
-  emitProgress(flow->progress, index, stage.modelId, QStringLiteral("build"),
+  builder_detail::emitProgress(flow->progress, index, stage.modelId, QStringLiteral("build"),
                exported.inputs.first().name + QStringLiteral(":") + built.stage.inputShape);
   PrepProduct product;
   BuilderResult prepBad;
@@ -869,12 +868,12 @@ BuilderResult buildOneStage(MainFlow* flow, int index) {
     prepBad.warnings = flow->warnings;
     return prepBad;
   }
-  emitProgress(flow->progress, index, stage.modelId, QStringLiteral("build"),
+  builder_detail::emitProgress(flow->progress, index, stage.modelId, QStringLiteral("build"),
                QStringLiteral("builderFlags=%1 tacticSources=%2 networkFlags=%3")
                    .arg(product.measured.flags.builderFlags)
                    .arg(product.measured.flags.tacticSources)
                    .arg(product.measured.flags.networkFlags));
-  emitProgress(flow->progress, index, stage.modelId, QStringLiteral("verify"),
+  builder_detail::emitProgress(flow->progress, index, stage.modelId, QStringLiteral("verify"),
                product.engineSha.left(16));
   BuilderResult verifyBad;
   if (!runVerify(checked.tools, request.build, exported, built.stage, engineOut,
@@ -883,10 +882,10 @@ BuilderResult buildOneStage(MainFlow* flow, int index) {
     verifyBad.warnings = flow->warnings;
     return verifyBad;
   }
-  emitProgress(flow->progress, index, stage.modelId, QStringLiteral("verify"),
+  builder_detail::emitProgress(flow->progress, index, stage.modelId, QStringLiteral("verify"),
                QStringLiteral("verified"));
   flow->engineFiles.append(engineOut);
-  Pending stored;
+  builder_detail::Pending stored;
   stored.request = built;
   stored.enginePath = engineOut;
   stored.engineSha = product.engineSha;
@@ -936,7 +935,7 @@ bool rollbackNew(MainFlow* flow, const QStringList& fresh) {
 BuilderResult publishAll(MainFlow* flow) {
   const BuilderRequest& request = *flow->request;
   QStringList fresh;
-  for (const Pending& item : flow->pending) {
+  for (const builder_detail::Pending& item : flow->pending) {
     ArtifactManifest manifest;
     manifest.schema = artifactManifestSchema();
     manifest.mikaiFormat = 1;
@@ -975,13 +974,13 @@ BuilderResult publishAll(MainFlow* flow) {
     QString manifestReason;
     if (!manifest.isSelfConsistent(&manifestKey, &manifestReason)) {
       rollbackNew(flow, fresh);
-      BuilderResult bad = refuse(manifestKey.isEmpty() ? QStringLiteral("manifest.inconsistent")
+      BuilderResult bad = builder_detail::refuse(manifestKey.isEmpty() ? QStringLiteral("manifest.inconsistent")
                                                        : manifestKey,
                                manifestReason, item.index, QStringLiteral("publish"));
       bad.warnings = flow->warnings;
       return bad;
     }
-    emitProgress(flow->progress, item.index,
+    builder_detail::emitProgress(flow->progress, item.index,
                  request.plan.stages.at(item.index).modelId,
                  QStringLiteral("publish"), manifest.buildKey);
     const bool preExists =
@@ -993,7 +992,7 @@ BuilderResult publishAll(MainFlow* flow) {
                         &publishReason);
     if (!record.has_value()) {
       rollbackNew(flow, fresh);
-      BuilderResult bad = refuse(publishKey.isEmpty() ? QStringLiteral("publish.failed")
+      BuilderResult bad = builder_detail::refuse(publishKey.isEmpty() ? QStringLiteral("publish.failed")
                                                       : publishKey,
                                publishReason, item.index, QStringLiteral("publish"),
                                publishReason);
@@ -1014,7 +1013,7 @@ BuilderResult publishAll(MainFlow* flow) {
     if (!runtimeOk || !sourceOk) {
       rollbackNew(flow, fresh);
       BuilderResult bad =
-          refuse(!runtimeOk ? proofKey : sourceKey,
+          builder_detail::refuse(!runtimeOk ? proofKey : sourceKey,
                  !runtimeOk ? proofReason : sourceReason, item.index,
                  QStringLiteral("publish"));
       bad.warnings = flow->warnings;
@@ -1043,18 +1042,18 @@ BuilderResult runNativeBuild(const BuilderRequest& request,
                              const BuilderProgressCallback& progress) {
   QString key;
   QString reason;
-  Preflight checked;
-  if (!preflight(request, &checked, &key, &reason)) {
-    return refuse(key, reason, -1, QStringLiteral("plan"));
+  builder_detail::Preflight checked;
+  if (!builder_detail::preflight(request, &checked, &key, &reason)) {
+    return builder_detail::refuse(key, reason, -1, QStringLiteral("plan"));
   }
-  if (isCancelled(cancellation)) {
-    return cancelledResult(QStringLiteral("plan"));
+  if (builder_detail::isCancelled(cancellation)) {
+    return builder_detail::cancelledResult(QStringLiteral("plan"));
   }
-  emitProgress(progress, -1, {}, QStringLiteral("lease"), request.plan.id);
+  builder_detail::emitProgress(progress, -1, {}, QStringLiteral("lease"), request.plan.id);
   std::optional<NativeWorkLease> lease =
       NativeWorkLease::acquire(NativeWorkKind::Preparation);
   if (!lease.has_value()) {
-    return refuse(QStringLiteral("build.busy"),
+    return builder_detail::refuse(QStringLiteral("build.busy"),
                   QStringLiteral("another preparation or inference holds the device"), -1,
                   QStringLiteral("lease"));
   }
@@ -1068,7 +1067,7 @@ BuilderResult runNativeBuild(const BuilderRequest& request,
     owned.emplace(QDir(scratchBase).filePath(QStringLiteral("builder-XXXXXX")));
     owned->setAutoRemove(false);
     if (!owned->isValid()) {
-      return refuse(QStringLiteral("scratch.create"),
+      return builder_detail::refuse(QStringLiteral("scratch.create"),
                     QStringLiteral("the owned scratch template cannot be created"), -1,
                     QStringLiteral("lease"));
     }
@@ -1079,13 +1078,13 @@ BuilderResult runNativeBuild(const BuilderRequest& request,
       probed.emplace(QDir(request.store.root()).filePath(QStringLiteral(".tmp-XXXXXX")));
       probed->setAutoRemove(true);
       if (!probed->isValid()) {
-        return refuse(QStringLiteral("scratch.create"),
+        return builder_detail::refuse(QStringLiteral("scratch.create"),
                       QStringLiteral("the probe scratch template cannot be created"), -1,
                       QStringLiteral("lease"));
       }
       scratch = &(*probed);
     } else {
-      return refuse(QStringLiteral("scratch.unowned"),
+      return builder_detail::refuse(QStringLiteral("scratch.unowned"),
                     scratchReason.isEmpty()
                         ? QStringLiteral("no owned scratch hierarchy")
                         : scratchReason,
@@ -1094,7 +1093,7 @@ BuilderResult runNativeBuild(const BuilderRequest& request,
   }
   const QString scratchDir = scratch->path();
   if (scratchDir.isEmpty() || !QFileInfo(scratchDir).isDir()) {
-    return refuse(QStringLiteral("scratch.create"),
+    return builder_detail::refuse(QStringLiteral("scratch.create"),
                   QStringLiteral("the exclusive scratch directory is missing"), -1,
                   QStringLiteral("lease"));
   }
@@ -1104,7 +1103,7 @@ BuilderResult runNativeBuild(const BuilderRequest& request,
       QDir dir(scratchDir);
       dir.removeRecursively();
     }
-    return refuse(QStringLiteral("store.unowned"),
+    return builder_detail::refuse(QStringLiteral("store.unowned"),
                   storeReason.isEmpty()
                       ? QStringLiteral("the artifact store cannot be created")
                       : storeReason,
@@ -1119,8 +1118,8 @@ BuilderResult runNativeBuild(const BuilderRequest& request,
   flow.full = QVector<BuilderStageOutcome>(request.plan.stages.size());
   const int count = request.plan.stages.size();
   for (int i = 0; i < count; ++i) {
-    if (isCancelled(cancellation)) {
-      BuilderResult bad = cancelledResult(QStringLiteral("cache"), i);
+    if (builder_detail::isCancelled(cancellation)) {
+      BuilderResult bad = builder_detail::cancelledResult(QStringLiteral("cache"), i);
       bad.warnings = flow.warnings;
       if (scratch == &(*owned)) {
         QDir dir(scratchDir);
@@ -1145,8 +1144,8 @@ BuilderResult runNativeBuild(const BuilderRequest& request,
       return bad;
     }
   }
-  if (isCancelled(cancellation)) {
-    BuilderResult bad = cancelledResult(QStringLiteral("verify"));
+  if (builder_detail::isCancelled(cancellation)) {
+    BuilderResult bad = builder_detail::cancelledResult(QStringLiteral("verify"));
     bad.warnings = flow.warnings;
     if (scratch == &(*owned)) {
       QDir dir(scratchDir);
@@ -1159,7 +1158,7 @@ BuilderResult runNativeBuild(const BuilderRequest& request,
   }
   const bool hasNew = !flow.pending.isEmpty();
   if (hasNew && cancellation != nullptr && !cancellation->beginPublication()) {
-    BuilderResult bad = cancelledResult(QStringLiteral("publish"));
+    BuilderResult bad = builder_detail::cancelledResult(QStringLiteral("publish"));
     bad.warnings = flow.warnings;
     if (scratch == &(*owned)) {
       QDir dir(scratchDir);
@@ -1179,19 +1178,19 @@ BuilderResult runNativeBuild(const BuilderRequest& request,
     }
   }
   if (published.ok) {
-    emitProgress(progress, -1, {}, QStringLiteral("done"), request.plan.id);
+    builder_detail::emitProgress(progress, -1, {}, QStringLiteral("done"), request.plan.id);
   }
   return published;
 }
 
 bool tensorStridesAreContiguous(const QJsonArray& strides, const QJsonArray& shape) {
   qint64 dims[4] = {0, 0, 0, 0};
-  if (!declaredDimsFromArray(shape, dims, false)) {
+  if (!builder_detail::declaredDimsFromArray(shape, dims, false)) {
     return false;
   }
   const qint64 wanted[4] = {dims[1] * dims[2] * dims[3], dims[2] * dims[3], dims[3], 1};
   qint64 got[4] = {0, 0, 0, 0};
-  if (!stridesFromArray(strides, got, wanted[0])) {
+  if (!builder_detail::stridesFromArray(strides, got, wanted[0])) {
     return false;
   }
   for (int i = 0; i < 4; ++i) {
@@ -1334,8 +1333,8 @@ bool parseBuilderProbeRequest(const QJsonObject& object, BuilderProbeRequest* ou
     }
     qint64 width = 0;
     qint64 height = 0;
-    if (!memberInt(source, "width", &width) || width <= 0 || width > kMaxExtent ||
-        !memberInt(source, "height", &height) || height <= 0 || height > kMaxExtent) {
+    if (!memberInt(source, "width", &width) || width <= 0 || width > builder_detail::kMaxExtent ||
+        !memberInt(source, "height", &height) || height <= 0 || height > builder_detail::kMaxExtent) {
       return fail("probe.member",
                   QStringLiteral("source width and height must be positive integers"));
     }
@@ -1378,7 +1377,7 @@ bool parseBuilderProbeRequest(const QJsonObject& object, BuilderProbeRequest* ou
     }
     if (source.contains(QStringLiteral("bitDepth"))) {
       qint64 bits = 0;
-      if (!memberInt(source, "bitDepth", &bits) || bits < 0 || bits > kMaxExtent) {
+      if (!memberInt(source, "bitDepth", &bits) || bits < 0 || bits > builder_detail::kMaxExtent) {
         return fail("probe.member", QStringLiteral("source.bitDepth is not a bit count"));
       }
       parsed.source.bitDepth = static_cast<int>(bits);
@@ -1438,8 +1437,8 @@ bool parseBuilderProbeRequest(const QJsonObject& object, BuilderProbeRequest* ou
     }
     qint64 smMajor = 0;
     qint64 smMinor = 0;
-    if (!memberInt(device, "smMajor", &smMajor) || smMajor <= 0 || smMajor > kMaxExtent ||
-        !memberInt(device, "smMinor", &smMinor) || smMinor < 0 || smMinor > kMaxExtent) {
+    if (!memberInt(device, "smMajor", &smMajor) || smMajor <= 0 || smMajor > builder_detail::kMaxExtent ||
+        !memberInt(device, "smMinor", &smMinor) || smMinor < 0 || smMinor > builder_detail::kMaxExtent) {
       return fail("probe.member",
                   QStringLiteral("device smMajor and smMinor must be observed"));
     }
@@ -1536,7 +1535,7 @@ bool parseBuilderProbeRequest(const QJsonObject& object, BuilderProbeRequest* ou
     }
     qint64 sourceAbi = 0;
     if (!memberInt(buildObject, "sourceAbi", &sourceAbi) || sourceAbi <= 0 ||
-        sourceAbi > kMaxExtent) {
+        sourceAbi > builder_detail::kMaxExtent) {
       return fail("probe.member", QStringLiteral("build.sourceAbi must be observed"));
     }
     build.sourceAbi = static_cast<int>(sourceAbi);
@@ -1560,8 +1559,8 @@ bool parseBuilderProbeRequest(const QJsonObject& object, BuilderProbeRequest* ou
     qint64 buildSmMajor = 0;
     qint64 buildSmMinor = 0;
     if (!memberInt(buildObject, "smMajor", &buildSmMajor) || buildSmMajor <= 0 ||
-        buildSmMajor > kMaxExtent || !memberInt(buildObject, "smMinor", &buildSmMinor) ||
-        buildSmMinor < 0 || buildSmMinor > kMaxExtent) {
+        buildSmMajor > builder_detail::kMaxExtent || !memberInt(buildObject, "smMinor", &buildSmMinor) ||
+        buildSmMinor < 0 || buildSmMinor > builder_detail::kMaxExtent) {
       return fail("probe.member", QStringLiteral("build smMajor and smMinor must be observed"));
     }
     build.smMajor = static_cast<int>(buildSmMajor);
@@ -1596,7 +1595,7 @@ bool parseBuilderProbeRequest(const QJsonObject& object, BuilderProbeRequest* ou
     int declaredLevel = 0;
     QString levelKey;
     QString levelReason;
-    if (!declaredOptimizationLevel(build, &declaredLevel, &levelKey, &levelReason)) {
+    if (!builder_detail::declaredOptimizationLevel(build, &declaredLevel, &levelKey, &levelReason)) {
       return fail("build.options.optimizationLevel", levelReason);
     }
     const QString missing = build.firstMissingRequiredField();

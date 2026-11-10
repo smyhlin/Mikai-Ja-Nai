@@ -332,7 +332,7 @@ struct CompareRenderer::State {
             return false;
         }
         if (!core) {
-            const std::string startTimestamp = QString::number(timestamp, 'f', 6).toStdString();
+            const std::string startTimestamp = mpvNumber(timestamp);
             core = std::make_shared<MpvHandle>(
                 std::vector<std::pair<std::string, std::string>>{
                     {"vo", "libmpv"}, {"hwdec", "auto-safe"}, {"pause", "yes"},
@@ -803,7 +803,7 @@ struct CompareRenderer::State {
         const quint64 loadedAt = presentedFrames;
         if (!loadWithOptions(sourceUrl,
                              {{QStringLiteral("start"),
-                               QString::number(warmup, 'f', 6)}},
+                               QString::fromStdString(mpvNumber(warmup))}},
                              cancelled)) {
             return {};
         }
@@ -1017,7 +1017,7 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
         if (!state.initialize(outputSize, timestamp) || cancelled()) return false;
         // The still's demuxer selection is a per-file option now, so it cannot
         // follow the core into a real source. Only the start position is global.
-        const std::string startTimestamp = QString::number(timestamp, 'f', 6).toStdString();
+        const std::string startTimestamp = mpvNumber(timestamp);
         if (!state.waitForCommand(state.command({"set", "vf", ""}), cancelled) ||
             !state.waitForCommand(state.command({"set", "glsl-shaders", ""}), cancelled) ||
             !state.waitForCommand(state.command({"set", "start", startTimestamp}), cancelled)) return false;

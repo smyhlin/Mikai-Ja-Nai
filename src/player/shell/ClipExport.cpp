@@ -369,8 +369,8 @@ void ClipExport::start(const ClipExportRequest& request) {
                     throw std::runtime_error(errorText(
                         "mpv_set_property audio-files", audioFilesResult, api).toStdString());
             }
-            const QString startValue = QString::number(request.startSeconds, 'f', 6);
-            const QString lengthValue = QString::number(length, 'f', 6);
+            const QString startValue = QString::fromStdString(mpvNumber(request.startSeconds));
+            const QString lengthValue = QString::fromStdString(mpvNumber(length));
             const std::string source = request.source.toStdString();
             std::string clipOptions = ("start=" + startValue + ",length=" + lengthValue).toStdString();
             if (request.externalAudioPath.isEmpty() && request.audioTrackId &&

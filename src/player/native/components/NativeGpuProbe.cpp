@@ -5,10 +5,7 @@
 #include <QDir>
 
 #ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
+#include <QtCore/qt_windows.h>
 #include <dxgi.h>
 #else
 #include <dlfcn.h>

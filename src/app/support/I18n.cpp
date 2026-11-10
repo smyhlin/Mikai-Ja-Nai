@@ -198,7 +198,7 @@ QString activeInterfaceLanguage() {
 
 QString languagePreference() {
     QSettings settings;
-    const QString preference = settings.value(QString::fromLatin1(kUiLanguageSettingKey),
+    const QString preference = settings.value(QString::fromUtf8(kUiLanguageSettingKey),
                                               QStringLiteral("system"))
                                    .toString();
     if (preference == QStringLiteral("en") || preference == QStringLiteral("uk")) {

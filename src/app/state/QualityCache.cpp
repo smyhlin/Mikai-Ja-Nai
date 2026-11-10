@@ -1,6 +1,8 @@
 #include "state/QualityCache.hpp"
+#include "state/SettingsKeys.hpp"
 
 #include <QDateTime>
+#include <QDebug>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -15,7 +17,7 @@ const int kQualityCacheMaxEntries = 240;
 
 namespace {
 
-QString defaultKey() { return QStringLiteral("quality/urls"); }
+QString defaultKey() { return QString::fromUtf8(kQualityUrls); }
 
 }  // namespace
 
@@ -53,6 +55,9 @@ void QualityCache::load() {
     QJsonParseError error{};
     const QJsonDocument document = QJsonDocument::fromJson(raw.toUtf8(), &error);
     if (error.error != QJsonParseError::NoError || !document.isObject()) {
+        qWarning() << "mikai: QualityCache::load: corrupt stored quality JSON, discarding;"
+                   << "key:" << key_ << "bytes:" << raw.size()
+                   << "parse error:" << error.errorString();
         return;
     }
     const QJsonObject entries = document.object().value(QStringLiteral("entries")).toObject();

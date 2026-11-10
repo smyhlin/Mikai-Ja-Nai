@@ -18,6 +18,7 @@
 #include <condition_variable>
 #include <exception>
 #include <mutex>
+#include <string_view>
 
 #include <backend/Cancellation.hpp>
 #include <native/components/AnimeJanaiBuildLog.hpp>
@@ -41,15 +42,21 @@ struct CurrentContextGuard {
 
 }  // namespace
 
-#ifndef MIKAI_BENCHMARK_INSTALL_RELATIVE
-#define MIKAI_BENCHMARK_INSTALL_RELATIVE "../share/mikai/benchmarks"
+// P2-06: the build-injected install-relative benchmarks dir as a typed
+// constant, not a raw macro at the use site; the literal below is the
+// fallback for a build that does not define it. The view always names a
+// string literal, so .data() at the use site is NUL-terminated.
+#ifdef MIKAI_BENCHMARK_INSTALL_RELATIVE
+inline constexpr std::string_view kBenchmarkInstallRelative = MIKAI_BENCHMARK_INSTALL_RELATIVE;
+#else
+inline constexpr std::string_view kBenchmarkInstallRelative = "../share/mikai/benchmarks";
 #endif
 
 QString locateBenchmarkClip(const QString& name, const QString& applicationDir) {
     // An empty executable directory would resolve against the file system root.
     if (name.isEmpty() || applicationDir.isEmpty()) return {};
     const QDir application(applicationDir);
-    for (const char* root : {"benchmarks", MIKAI_BENCHMARK_INSTALL_RELATIVE,
+    for (const char* root : {"benchmarks", kBenchmarkInstallRelative.data(),
                              "../resources/benchmarks", "../../resources/benchmarks"}) {
         const QString candidate =
             application.absoluteFilePath(QLatin1String(root) + QLatin1Char('/') + name);

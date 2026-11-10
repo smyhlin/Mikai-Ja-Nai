@@ -28,10 +28,7 @@
 #include <cstdio>
 #include <functional>
 #ifdef Q_OS_WIN
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
+#include <QtCore/qt_windows.h>
 #endif
 
 #include <backend/MikaiClient.hpp>

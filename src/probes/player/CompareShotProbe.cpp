@@ -28,10 +28,7 @@
 #include "VideoSurface.hpp"
 
 #ifdef Q_OS_WIN
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
+#include <QtCore/qt_windows.h>
 #endif
 
 using namespace mplayer;

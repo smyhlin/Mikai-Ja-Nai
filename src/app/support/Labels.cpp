@@ -1,4 +1,5 @@
 #include "Labels.hpp"
+#include "state/SettingsKeys.hpp"
 
 #include "backend/Streams.hpp"
 #include "state/AppearanceStore.hpp"
@@ -11,6 +12,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <memory>
 
 // These are free functions rather than a QObject subclass, so every string is
 // extracted under the explicit "Labels" context instead of a class name, and
@@ -24,19 +26,21 @@ namespace {
 /// Where the viewer's default source is stored. The Settings combo that writes
 /// it is optional; until it exists the value is only ever read, so an absent
 /// key means Moon.
-constexpr char kPreferredProviderSettingKey[] = "playback/preferredProvider";
 
 /// The embedded Ukrainian catalogue, used only to *look up* a content name in
 /// a language other than the interface's. It is never installed, so switching
-/// the names language cannot change any interface text.
-QTranslator* ukCatalog() {
-    static QTranslator* translator = []() -> QTranslator* {
-        auto* candidate = new QTranslator();
+/// the names language cannot change any interface text. (P2-01/D17, Y-14:
+/// kept — InterfaceLanguageManager only loads mikai_uk.qm when the UI
+/// language is Ukrainian, while this catalog translates content names when
+/// the UI is in English — but the leaked raw `new QTranslator` is now a
+/// function-local RAII owner.)
+const QTranslator* ukCatalog() {
+    static const std::unique_ptr<QTranslator> translator = [] {
+        auto candidate = std::make_unique<QTranslator>();
         if (candidate->load(QStringLiteral(":/i18n/mikai_uk.qm"))) return candidate;
-        delete candidate;
-        return nullptr;
+        return std::unique_ptr<QTranslator>();
     }();
-    return translator;
+    return translator.get();
 }
 
 /// The language a content name should be shown in. "Interface" keeps the
@@ -47,7 +51,7 @@ QString content(const char* source, const QString& interfaceText) {
         case theme::NameLanguage::Original:
             return QString::fromUtf8(source);
         case theme::NameLanguage::Ukrainian:
-            if (QTranslator* catalog = ukCatalog()) {
+            if (const QTranslator* catalog = ukCatalog()) {
                 const QString text = catalog->translate("Labels", source);
                 if (!text.isEmpty()) return text;
             }
@@ -215,7 +219,7 @@ int preferredReleaseIndex(const QVector<backend::Release>& releases, const QStri
 }
 
 QString preferredProvider() {
-    const QString stored = QSettings().value(QString::fromLatin1(kPreferredProviderSettingKey))
+    const QString stored = QSettings().value(QString::fromUtf8(kPlaybackPreferredProvider))
                                .toString();
     const QString key = providerKey(stored);
     return key.isEmpty() ? QStringLiteral("moon") : key;

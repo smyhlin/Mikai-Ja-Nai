@@ -8,15 +8,9 @@
 #include <QString>
 #include <QStringList>
 
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#else
-using HMODULE = void*;
-#endif
-
+// P2-05 / X-D35: no <windows.h> here any more. The header never needed it
+// except for the deleted module() accessor; MpvApi.cpp includes
+// <QtCore/qt_windows.h> itself for the loader's HMODULE/FARPROC use.
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
 
@@ -95,7 +89,6 @@ public:
     const MpvBundle& bundle() const;
     // Valid only while loaded(); hold the reference, never copy it per frame.
     const MpvApiInstance& functions() const;
-    HMODULE module() const noexcept;
     quint64 apiVersion() const;
     static quint64 headerApiVersion();
     QString error() const;
@@ -104,7 +97,6 @@ private:
     MpvApi() = default;
 
     struct State {
-        HMODULE module = nullptr;
         MpvApiInstance funcs = {};
         MpvBundle bundle = {};
         quint64 apiVersion = 0;

@@ -10,6 +10,13 @@
 #include <QImage>
 #include <QRect>
 #include <QSize>
+#include <QString>
+#include <QVector>
+
+#include "PlayerPopups.hpp"
+
+class QAction;
+class QToolButton;
 
 namespace mplayer::shell {
 
@@ -81,6 +88,28 @@ QImage differenceGrayscale(const QImage& a, const QImage& b, int gain);
 /// Mean absolute difference over the whole picture, 0-255: the one number an
 /// "are these different at all" question needs.
 double meanAbsoluteDifference(const QImage& a, const QImage& b);
+
+// ── P2-03 / X-D21: the one shared selector/choice helper set ────────────────
+// CompareCanvas (2-side split/flicker/diff view) and ComparePane (1-side grid
+// cell) stay separate classes with genuinely different behaviour; only these
+// free helpers are shared, one definition each. `imageBarRect` is NOT shared:
+// it is a member of both classes with an identical body, and sharing it would
+// need a common base class — a new abstraction the pack forbids here.
+
+/// Elide `full` into `button` with a "  ▾" suffix, leaving the text alone
+/// when it already matches so a retranslation does not disturb the button.
+void fitSelectorLabel(QToolButton* button, const QString& full);
+
+/// True when two choice lists describe the same menu tree: same entries in
+/// the same order under the same paths, with the same availability. Only the
+/// words (label, tooltip) differ, which is exactly what a retranslation
+/// changes.
+bool sameChoiceShape(const QVector<ChoiceEntry>& a, const QVector<ChoiceEntry>& b);
+
+/// Rewrites the leaves of an existing fill in place. No action is created or
+/// destroyed, so an open menu keeps its rows and a handler that triggered
+/// the refresh keeps running on a live action.
+void restateChoiceLeaves(const QVector<QAction*>& leaves, const QVector<ChoiceEntry>& entries);
 
 /// The reference's bounds. Deliberately wider than the player's own zoom
 /// (ShellTheme's kZoomMin/kZoomMax): this is a pixel-inspection tool, and

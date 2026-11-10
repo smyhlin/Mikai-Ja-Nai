@@ -390,6 +390,14 @@ void TestMpvAsync::aCoreUsesTheCLocaleForNumericFormatting() {
     QVERIFY(std::setlocale(LC_NUMERIC, savedLocale.constData()) != nullptr);
 }
 
+// ── P2-01: one mpvNumber definition (MpvHandle.hpp) ─────────────────────────
+
+void TestMpvAsync::mpvNumberFormatsWithSixFractionDigits() {
+    QCOMPARE(mplayer::mpvNumber(1.5), std::string("1.500000"));
+    QCOMPARE(mplayer::mpvNumber(0.0), std::string("0.000000"));
+    QCOMPARE(mplayer::mpvNumber(-2.25), std::string("-2.250000"));
+}
+
 // ── public FPS provenance policy; no mpv runtime required ──────────────────
 
 void TestMpvAsync::fpsSelectorPrefersValidMpvOutput() {

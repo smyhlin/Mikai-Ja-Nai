@@ -1,4 +1,5 @@
 #include "dialogs/SettingsDialog.hpp"
+#include "state/SettingsKeys.hpp"
 
 #include <VideoSurface.hpp>
 
@@ -218,7 +219,7 @@ QWidget* SettingsDialog::buildGeneralTab() {
     openSubtitlesKey_->setClearButtonEnabled(true);
     openSubtitlesKey_->setMinimumHeight(theme::kSettingsControlSize);
     openSubtitlesKey_->setText(
-        QSettings().value(QStringLiteral("access/openSubtitlesApiKey")).toString());
+        QSettings().value(QString::fromUtf8(kOpenSubtitlesApiKey)).toString());
     subtitlesLayout->addWidget(openSubtitlesKey_);
     root->addWidget(subtitlesCard);
 

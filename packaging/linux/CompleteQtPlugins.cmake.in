@@ -10,7 +10,7 @@
 
 set(_plugins_source "@MIKAI_LINUX_QT_PLUGIN_DIR@")
 set(_plugins_destination "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@QT6_INSTALL_PLUGINS@")
-set(_patchelf "@MIKAI_DEPLOY_PATCHELF_EXECUTABLE@")
+set(_patchelf "@MIKAI_PATCHELF_EXECUTABLE@")
 
 if(_plugins_source STREQUAL "" OR NOT IS_DIRECTORY "${_plugins_source}")
   message(FATAL_ERROR

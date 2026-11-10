@@ -1,7 +1,7 @@
 # CMake contract tests, test launcher, and hermetic Qt Test suite (mikai_tests).
 
 # Launcher process-lifetime contracts are meaningful on both Windows and Linux.
-set(MIKAI_TEST_QT_PLUGIN_DIR "${MIKAI_TEST_QT_PREFIX}/plugins")
+set(MIKAI_TEST_QT_PLUGIN_DIR "${MIKAI_QT_PREFIX}/plugins")
 if(NOT IS_DIRECTORY "${MIKAI_TEST_QT_PLUGIN_DIR}/platforms" AND NOT WIN32)
   get_filename_component(_mikai_distro_qt_plugins
     "${Qt6_DIR}/../../qt6/plugins" ABSOLUTE)

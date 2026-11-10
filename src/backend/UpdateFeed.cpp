@@ -158,15 +158,21 @@ UpdateFeedState refreshUpdateFeed(const MikaiClient& client, const UpdateFeedSta
             }
         }
     };
-    const auto addRetained = [keep](QVector<AnimeUpdate>& items, const AnimeUpdate& update) {
+    const auto addRetained = [keep](QVector<AnimeUpdate>& items, QVector<QString>& keys,
+                                    const AnimeUpdate& update, const QString& key) {
         if (keep == 0) return;
         const auto position = std::upper_bound(
             items.cbegin(), items.cend(), update,
             [](const AnimeUpdate& value, const AnimeUpdate& existing) {
                 return newerFirst(value, existing);
             });
+        const qsizetype index = position - items.cbegin();
         items.insert(position, update);
-        if (items.size() > keep) items.removeLast();
+        keys.insert(index, key);
+        if (items.size() > keep) {
+            items.removeLast();
+            keys.removeLast();
+        }
     };
 
     checkCancelled();
@@ -199,6 +205,12 @@ UpdateFeedState refreshUpdateFeed(const MikaiClient& client, const UpdateFeedSta
     for (const AnimeUpdate& item : previous.items) {
         if (parsedTime(item.published_at) >= overlapStart) result.boundary_keys.insert(eventKey(item));
     }
+    // P2-04: each retained item's key is computed once and kept alongside it,
+    // so the duplicate scan below compares strings instead of rebuilding a
+    // JSON-serialised key per retained item per duplicate.
+    QVector<QString> retainedKeys;
+    retainedKeys.reserve(result.items.size());
+    for (const AnimeUpdate& item : result.items) retainedKeys.append(eventKey(item));
 
     const auto consume = [&](const UpdatesResult& updates) {
         validateUpdates(updates);
@@ -207,16 +219,12 @@ UpdateFeedState refreshUpdateFeed(const MikaiClient& client, const UpdateFeedSta
             const bool overlaps = parsedTime(item.published_at) >= overlapStart;
             if (overlaps) result.boundary_keys.insert(key);
             if (seen.contains(key)) {
-                for (AnimeUpdate& retained : result.items) {
-                    if (eventKey(retained) == key) {
-                        retained = item;
-                        break;
-                    }
-                }
+                const qsizetype index = retainedKeys.indexOf(key);
+                if (index >= 0) result.items[index] = item;
                 continue;
             }
             seen.insert(key);
-            addRetained(result.items, item);
+            addRetained(result.items, retainedKeys, item, key);
         }
     };
     consume(first);

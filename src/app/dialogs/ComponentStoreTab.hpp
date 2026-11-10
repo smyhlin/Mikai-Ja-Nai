@@ -2,11 +2,9 @@
 
 #include "dialogs/ComponentCardState.hpp"
 
-#include <native/components/AnimeJanaiRuntime.hpp>
 #include <native/components/NativeComponentProvisioning.hpp>
 #include <native/models/NativeSpatialAssets.hpp>
 #include <native/models/NativeUpscalers.hpp>
-#include <state/NativeComponentProvisioner.hpp>
 
 #include <QMap>
 #include <QPointer>
@@ -32,6 +30,9 @@ class QCheckBox;
 namespace mikai::app {
 
 class ActionGrid;
+// Forward-declared: only passed by pointer and held as a QPointer; the
+// include lives in ComponentStoreTab.cpp.
+class NativeComponentProvisioner;
 class Runner;
 
 }  // namespace mikai::app

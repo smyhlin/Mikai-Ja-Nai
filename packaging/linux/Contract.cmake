@@ -78,7 +78,7 @@ if(NOT legal_status)
   message(FATAL_ERROR "Linux package contract: third-party manifest has no Linux x86_64 release status.")
 endif()
 
-if(MIKAI_LINUX_MPV_MODE STREQUAL "bundled")
+if(MIKAI_LINUX_MPV_BUNDLE_MODE STREQUAL "bundled")
   set(package_mpv_module "${STAGE_DIR}/${MIKAI_LINUX_MPV_MODULE_RELATIVE}")
   if(NOT EXISTS "${package_mpv_module}" OR IS_SYMLINK "${package_mpv_module}" OR IS_DIRECTORY "${package_mpv_module}")
     message(FATAL_ERROR "Linux package contract: bundled mpv module missing or not a regular file: ${package_mpv_module}")

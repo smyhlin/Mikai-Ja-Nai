@@ -1,10 +1,10 @@
-#include <utility>
 #pragma once
+
+#include <utility>
 
 #include <backend/Errors.hpp>
 #include <backend/Models.hpp>
 
-#include <native/bundle/NativeRuntimeSelection.hpp>
 #include <state/WatchHistory.hpp>
 
 #include <QMap>
@@ -49,6 +49,14 @@ namespace shell {
 class PlayerDialog;
 class PlayerHost;
 }  // namespace shell
+}  // namespace mplayer
+
+namespace mplayer {
+namespace native {
+// Forward-declared: TitlePage only passes a RuntimeSelection by const
+// reference; the include lives in TitlePage.cpp.
+struct RuntimeSelection;
+}  // namespace native
 }  // namespace mplayer
 
 namespace mikai::app {

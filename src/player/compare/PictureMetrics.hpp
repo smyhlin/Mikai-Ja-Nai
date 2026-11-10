@@ -8,6 +8,12 @@
 /// what "the picture changed" means.
 namespace mplayer::shell {
 
+/// Letterbox `image` onto a black `size` canvas in `Format_RGB32`,
+/// preserving aspect ratio; returns `image` unchanged when it already
+/// matches. (P2-01: the single definition; the copies in CompareGif.cpp
+/// and CompareClip.cpp are deleted.)
+QImage fitFrame(const QImage& image, QSize size);
+
 /// Mean absolute per-channel difference inside the picture band.
 /// Returns -1 when either image is null or the geometry differs: two pictures
 /// of different sizes are not comparable, and silently returning 0 turned that

@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <atomic>
 #include <optional>
+#include <string_view>
 
 namespace mplayer {
 namespace native {
@@ -147,12 +148,16 @@ RuntimeSelection describePackagedStandard(const QString& hint) {
 #ifdef Q_OS_LINUX
 #if defined(MIKAI_LINUX_BUNDLE_MPV) && MIKAI_LINUX_BUNDLE_MPV
     Q_UNUSED(hint);
-#ifndef MIKAI_LINUX_MPV_MODULE_RELATIVE
-#define MIKAI_LINUX_MPV_MODULE_RELATIVE "mpv/libmpv.so.2"
+    // P2-06: the build-injected path as a typed constant, not a raw macro at
+    // the use site; the CMake default below is the fallback for a build that
+    // does not define it.
+#ifdef MIKAI_LINUX_MPV_MODULE_RELATIVE
+    constexpr std::string_view moduleRelative = MIKAI_LINUX_MPV_MODULE_RELATIVE;
+#else
+    constexpr std::string_view moduleRelative = "mpv/libmpv.so.2";
 #endif
     const QString module =
-        QDir(QCoreApplication::applicationDirPath())
-            .filePath(QString::fromUtf8(MIKAI_LINUX_MPV_MODULE_RELATIVE));
+        QDir(QCoreApplication::applicationDirPath()).filePath(QString::fromUtf8(moduleRelative));
     QString reason;
     const std::optional<Bundle> bundle = describeStandardRuntimeCached(module, &reason);
     if (bundle.has_value() && validateBundleCached(*bundle, &reason)) {

@@ -39,9 +39,13 @@
 
 #include <optional>
 
+#include <QtCore/QProcessEnvironment>
 #include <QtCore/QString>
+#include <QtCore/QVector>
 #include <QtGlobal>
 
+#include "native/bundle/NativeManifest.hpp"
+#include "native/prepare/NativeBuilder.hpp"
 #include "native/prepare/NativePreparedPlan.hpp"
 #include "native/prepare/NativePreparationContext.hpp"
 #include "native/status/NativeTypes.hpp"
@@ -104,5 +108,40 @@ NativeAssemblyOutcome assembleNativeAdmission(const NativeAssemblyRequest& reque
 /// `PlayerDialog::reportNativeProcessingFailure`: it is never routed to a media
 /// retry, and it never re-extracts a URL or re-probes a quality.
 void bindNativePlaybackAssembly(Runner& runner, mplayer::shell::PlayerDialog& dialog);
+
+// ── P2-01 / D14: the one measured-identity helper set ────────────────────────
+// The preparation worker (NativeAssetsPanelWorkflow) and the playback
+// assembly measured the same machine through the same helper with
+// verbatim-duplicated functions; these are the single definitions, owned
+// here. `identityFromDescribe` is deliberately NOT shared: the assembly
+// verifies the document against the observed device + core provenance while
+// the panel verifies it against the core SHA, so the two parsers are
+// genuinely different functions with the same name.
+
+/// The child environment the helper needs: its own directory first, then the
+/// provider runtime directories, then the system directories. The ambient PATH
+/// is deliberately not inherited, so the helper loads the runtime it was
+/// measured against rather than whatever happens to be reachable.
+QProcessEnvironment describeChildEnvironment(const mplayer::native::BuilderToolPaths& tools);
+
+/// Runs `mikai_native_prep --describe-device --json` (naming `deviceUuid`
+/// only when one is known) and returns its stdout document. The waits are
+/// the one shared bounded, cancellation-aware QProcess wait
+/// (backend::waitForProcessStarted/Finished, 10 s start / 60 s finish);
+/// a refusal names its reason key. `deviceUuid` empty omits the flag.
+bool runDescribeDevice(const mplayer::native::BuilderToolPaths& tools, const QString& deviceUuid,
+                       QString* document, QString* reasonKey, QString* reason);
+
+/// The canonical option set the builder derives from the flags the helper
+/// measured. A different set would produce a build key for a configuration
+/// the helper never used, so this matches the builder's own derivation
+/// exactly. The flags are qint64: the describe document carries them as
+/// JSON numbers and the callers hold them as qint64 (the quint64/int
+/// spellings were drift, not a wider range).
+QVector<mplayer::native::BuildOption> measuredBuildOptions(qint64 builderFlags,
+                                                           qint64 tacticSources,
+                                                           qint64 networkFlags,
+                                                           qint64 builderOptimizationLevel,
+                                                           const QString& engineCapability);
 
 }  // namespace mikai::app

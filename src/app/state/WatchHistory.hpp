@@ -4,9 +4,9 @@
 #include <QString>
 #include <QStringList>
 
-namespace mikai::app {
+#include "state/SettingsKeys.hpp"
 
-inline constexpr char kWatchHistoryKey[] = "title/watchHistory";
+namespace mikai::app {
 
 struct TitleWatchProgress {
     QString current;

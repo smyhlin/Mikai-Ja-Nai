@@ -29,9 +29,9 @@
 namespace mikai::app {
 
 // The control owns the app-side surface; the recipe and type vocabulary it
-// reads stays in mplayer::native and is named through this file-local
-// using-directive rather than re-homed.
-using namespace mplayer::native;
+// reads stays in mplayer::native and is named through the file-local
+// `native` alias rather than re-homed.
+namespace native = mplayer::native;
 
 namespace {
 
@@ -64,7 +64,7 @@ void fail(QString* reasonKey, QString* reason, const QString& key, const QString
 
 /// Execution order is load-bearing, so equal chains compare stage by stage
 /// rather than by a set comparison that would lose the order.
-bool sameChain(const QVector<SpatialStage>& a, const QVector<SpatialStage>& b) {
+bool sameChain(const QVector<native::SpatialStage>& a, const QVector<native::SpatialStage>& b) {
     if (a.size() != b.size()) return false;
     for (int i = 0; i < a.size(); ++i) {
         if (a.at(i).modelId != b.at(i).modelId) return false;
@@ -106,12 +106,12 @@ NativeRifeControls::NativeRifeControls(QWidget* parent) : QWidget(parent) {
     version_->setObjectName(QStringLiteral("nativeRifeVersionCombo"));
     version_->setAccessibleName(tr("RIFE version"));
     boundCaptionWidth(version_);
-    for (const RifeModelPin& pin : rifeModelPins()) {
+    for (const native::RifeModelPin& pin : rifeModelPins()) {
         if (version_->findData(static_cast<int>(pin.version)) >= 0) continue;
-        version_->addItem(QStringLiteral("v%1").arg(stableName(pin.version)),
+        version_->addItem(QStringLiteral("v%1").arg(native::stableName(pin.version)),
                           static_cast<int>(pin.version));
     }
-    const int defaultVersion = version_->findData(static_cast<int>(RifeVersion::V4_14));
+    const int defaultVersion = version_->findData(static_cast<int>(native::RifeVersion::V4_14));
     if (defaultVersion >= 0) version_->setCurrentIndex(defaultVersion);
     form->addRow(tr("Version"), version_);
 
@@ -183,11 +183,11 @@ NativeRifeControls::NativeRifeControls(QWidget* parent) : QWidget(parent) {
     order_->setAccessibleName(tr("Temporal order"));
     boundCaptionWidth(order_);
     order_->addItem(tr("Before spatial (interpolate, then upscale)"),
-                    static_cast<int>(TemporalOrder::BeforeSpatial));
+                    static_cast<int>(native::TemporalOrder::BeforeSpatial));
     order_->addItem(tr("After spatial (upscale, then interpolate)"),
-                    static_cast<int>(TemporalOrder::AfterSpatial));
+                    static_cast<int>(native::TemporalOrder::AfterSpatial));
     order_->setCurrentIndex(
-        order_->findData(static_cast<int>(TemporalOrder::AfterSpatial)));
+        order_->findData(static_cast<int>(native::TemporalOrder::AfterSpatial)));
     form->addRow(tr("Order"), order_);
 
     mode_ = new QComboBox(this);
@@ -321,16 +321,16 @@ void NativeRifeControls::retranslateUi() {
 
     // The variant entries are the resolver's pin names, restated through their
     // own typed data: a reordering or a new pin can never repoint a request.
-    for (const RifeModelPin& pin : rifeModelPins()) {
+    for (const native::RifeModelPin& pin : rifeModelPins()) {
         const int index = variant_->findData(static_cast<int>(pin.variant));
         if (index < 0) continue;
-        const QString name = stableName(pin.variant);
+        const QString name = native::stableName(pin.variant);
         variant_->setItemText(index, name.left(1).toUpper() + name.mid(1));
     }
     version_->setAccessibleName(tr("RIFE version"));
     for (int i = 0; i < version_->count(); ++i) {
-        const auto version = static_cast<RifeVersion>(version_->itemData(i).toInt());
-        version_->setItemText(i, QStringLiteral("v%1").arg(stableName(version)));
+        const auto version = static_cast<native::RifeVersion>(version_->itemData(i).toInt());
+        version_->setItemText(i, QStringLiteral("v%1").arg(native::stableName(version)));
     }
     variant_->setAccessibleName(tr("RIFE variant"));
 
@@ -353,8 +353,8 @@ void NativeRifeControls::retranslateUi() {
     threshold_->setToolTip(
         tr("Above this normalized scene difference a frame pair is treated as a cut."));
 
-    const int beforeSpatial = order_->findData(static_cast<int>(TemporalOrder::BeforeSpatial));
-    const int afterSpatial = order_->findData(static_cast<int>(TemporalOrder::AfterSpatial));
+    const int beforeSpatial = order_->findData(static_cast<int>(native::TemporalOrder::BeforeSpatial));
+    const int afterSpatial = order_->findData(static_cast<int>(native::TemporalOrder::AfterSpatial));
     if (beforeSpatial >= 0) {
         order_->setItemText(beforeSpatial, tr("Before spatial (interpolate, then upscale)"));
     }
@@ -392,21 +392,21 @@ void NativeRifeControls::retranslateUi() {
 
 void NativeRifeControls::updateVariantChoices() {
     const int oldVariant = variant_->currentData().toInt();
-    const RifeVersion version = static_cast<RifeVersion>(version_->currentData().toInt());
+    const native::RifeVersion version = static_cast<native::RifeVersion>(version_->currentData().toInt());
     QSignalBlocker blocker(variant_);
     variant_->clear();
-    for (const RifeModelPin& pin : rifeModelPins()) {
+    for (const native::RifeModelPin& pin : rifeModelPins()) {
         if (pin.version != version ||
             variant_->findData(static_cast<int>(pin.variant)) >= 0) {
             continue;
         }
-        const QString name = stableName(pin.variant);
+        const QString name = native::stableName(pin.variant);
         variant_->addItem(name.left(1).toUpper() + name.mid(1),
                           static_cast<int>(pin.variant));
     }
     int selected = variant_->findData(oldVariant);
     if (selected < 0) {
-        selected = variant_->findData(static_cast<int>(RifeVariant::Full));
+        selected = variant_->findData(static_cast<int>(native::RifeVariant::Full));
     }
     if (selected < 0 && variant_->count() > 0) selected = 0;
     variant_->setCurrentIndex(selected);
@@ -414,8 +414,8 @@ void NativeRifeControls::updateVariantChoices() {
 }
 
 void NativeRifeControls::updateEnsembleChoice() {
-    const RifeVersion version = static_cast<RifeVersion>(version_->currentData().toInt());
-    const RifeVariant variant = static_cast<RifeVariant>(variant_->currentData().toInt());
+    const native::RifeVersion version = static_cast<native::RifeVersion>(version_->currentData().toInt());
+    const native::RifeVariant variant = static_cast<native::RifeVariant>(variant_->currentData().toInt());
     const bool hasPlain = rifeModelPin(version, variant, false) != nullptr;
     const bool hasEnsemble = rifeModelPin(version, variant, true) != nullptr;
     if (!hasPlain && hasEnsemble) {
@@ -434,16 +434,16 @@ void NativeRifeControls::updateCapabilityNote() {
     // The surface only repeats its verdict, so a pin the store does not hold is
     // named missing rather than assumed present, and a resolved pin is
     // *selectable* - never running. Nothing here claims Prepared or Active.
-    const RifeVersion version = static_cast<RifeVersion>(version_->currentData().toInt());
-    const RifeVariant variant = static_cast<RifeVariant>(variant_->currentData().toInt());
+    const native::RifeVersion version = static_cast<native::RifeVersion>(version_->currentData().toInt());
+    const native::RifeVariant variant = static_cast<native::RifeVariant>(variant_->currentData().toInt());
     const bool ensemble = ensemble_->isChecked();
-    if (stableName(variant) == QStringLiteral("heavy")) {
+    if (native::stableName(variant) == QStringLiteral("heavy")) {
         showStatus(true,
                    tr("The heavy request is stored as selected, but the current pinned runtime "
                       "cannot address this model name."));
         return;
     }
-    const RifeModelResolution resolution = resolveRifeModel(version, variant, ensemble, catalog_);
+    const native::RifeModelResolution resolution = native::resolveRifeModel(version, variant, ensemble, catalog_);
     if (resolution.resolved()) {
         // Muted, not an error: this is availability, and the request is storable
         // either way. The exact identity rides the tooltip/description rather
@@ -452,18 +452,18 @@ void NativeRifeControls::updateCapabilityNote() {
                    tr("The pinned original %1 is present in the owned store and usable, so the "
                       "request can be stored. It runs only once a prepared native pipeline is "
                       "activated.")
-                       .arg(rifeModelName(version, variant, ensemble)));
+                       .arg(native::rifeModelName(version, variant, ensemble)));
         return;
     }
     showStatus(true, resolution.reason);
 }
 
-void NativeRifeControls::setCatalog(const CatalogView& catalog) {
+void NativeRifeControls::setCatalog(const native::CatalogView& catalog) {
     catalog_ = catalog;
     updateCapabilityNote();
 }
 
-void NativeRifeControls::setRequestedBackend(Backend backend) { requestedBackend_ = backend; }
+void NativeRifeControls::setRequestedBackend(native::Backend backend) { requestedBackend_ = backend; }
 
 bool NativeRifeControls::combineSelected() const {
     return mode_->currentData().toInt() == 1;
@@ -482,9 +482,9 @@ void NativeRifeControls::refreshStoredRecipes() {
     {
         QSignalBlocker blocker(base_);
         base_->clear();
-        const QVector<Recipe> stored = UserRecipeStore().recipes();
-        for (const Recipe& recipe : stored) {
-            if (recipe.shape() != RecipeShape::SpatialOnly) continue;
+        const QVector<native::Recipe> stored = native::UserRecipeStore().recipes();
+        for (const native::Recipe& recipe : stored) {
+            if (recipe.shape() != native::RecipeShape::SpatialOnly) continue;
             base_->addItem(recipe.label.isEmpty() ? recipe.id : recipe.label, recipe.id);
         }
         const int index = base_->findData(keep);
@@ -493,7 +493,7 @@ void NativeRifeControls::refreshStoredRecipes() {
     updateCombineControls();
 }
 
-std::optional<TemporalStage> NativeRifeControls::temporalStage(QString* reasonKey,
+std::optional<native::TemporalStage> NativeRifeControls::temporalStage(QString* reasonKey,
                                                                QString* reason) const {
     // The text is parsed and validated here rather than taken on the validator's
     // word: a blank or partial editor holds no value, and a value outside [0, 1]
@@ -514,18 +514,18 @@ std::optional<TemporalStage> NativeRifeControls::temporalStage(QString* reasonKe
         return std::nullopt;
     }
 
-    TemporalStage stage;
-    stage.version = static_cast<RifeVersion>(version_->currentData().toInt());
-    stage.variant = static_cast<RifeVariant>(variant_->currentData().toInt());
+    native::TemporalStage stage;
+    stage.version = static_cast<native::RifeVersion>(version_->currentData().toInt());
+    stage.variant = static_cast<native::RifeVariant>(variant_->currentData().toInt());
     stage.ensemble = ensemble_->isChecked();
     stage.factor.num = factorNum_->value();
     stage.factor.den = factorDen_->value();
     stage.sceneThreshold = sceneThreshold;
-    stage.order = static_cast<TemporalOrder>(order_->currentData().toInt());
+    stage.order = static_cast<native::TemporalOrder>(order_->currentData().toInt());
     return stage;
 }
 
-std::optional<Recipe> NativeRifeControls::selectedBase(QString* reasonKey,
+std::optional<native::Recipe> NativeRifeControls::selectedBase(QString* reasonKey,
                                                        QString* reason) const {
     const QString id = base_->currentData().toString();
     if (id.isEmpty()) {
@@ -533,12 +533,12 @@ std::optional<Recipe> NativeRifeControls::selectedBase(QString* reasonKey,
              tr("No stored spatial recipe is selected to combine with."));
         return std::nullopt;
     }
-    UserRecipeStore store;
-    const std::optional<Recipe> base = store.find(id, reasonKey, reason);
+    native::UserRecipeStore store;
+    const std::optional<native::Recipe> base = store.find(id, reasonKey, reason);
     if (!base.has_value()) {
         return std::nullopt;
     }
-    if (base->shape() != RecipeShape::SpatialOnly || base->spatial.isEmpty()) {
+    if (base->shape() != native::RecipeShape::SpatialOnly || base->spatial.isEmpty()) {
         fail(reasonKey, reason, QStringLiteral("rife.combine.notSpatial"),
              tr("The stored recipe %1 is not a spatial-only recipe, so it cannot be combined "
                 "with.")
@@ -548,15 +548,15 @@ std::optional<Recipe> NativeRifeControls::selectedBase(QString* reasonKey,
     return base;
 }
 
-QString NativeRifeControls::recipeLabel(const TemporalStage& stage, bool combined) const {
-    QString variantName = stableName(stage.variant);
+QString NativeRifeControls::recipeLabel(const native::TemporalStage& stage, bool combined) const {
+    QString variantName = native::stableName(stage.variant);
     variantName = variantName.left(1).toUpper() + variantName.mid(1);
-    QString name = tr("RIFE v%1 · %2").arg(stableName(stage.version), variantName);
+    QString name = tr("RIFE v%1 · %2").arg(native::stableName(stage.version), variantName);
     if (stage.ensemble) {
         name += tr(" · Ensemble");
     }
     name += tr(" · %1/%2").arg(stage.factor.num).arg(stage.factor.den);
-    name += stage.order == TemporalOrder::BeforeSpatial ? tr(" · before spatial")
+    name += stage.order == native::TemporalOrder::BeforeSpatial ? tr(" · before spatial")
                                                         : tr(" · after spatial");
     name += tr(" · threshold %1").arg(thresholdText(stage.sceneThreshold));
     if (combined) {
@@ -576,17 +576,17 @@ void NativeRifeControls::showStatus(bool ok, const QString& text) {
 void NativeRifeControls::storeRequest() {
     QString key;
     QString reason;
-    const std::optional<TemporalStage> stage = temporalStage(&key, &reason);
+    const std::optional<native::TemporalStage> stage = temporalStage(&key, &reason);
     if (!stage.has_value()) {
         showStatus(false, reason);
         return;
     }
 
-    RifeRequest request;
+    native::RifeRequest request;
     request.temporal = *stage;
     request.backend = requestedBackend_;
     if (combineSelected()) {
-        std::optional<Recipe> base = selectedBase(&key, &reason);
+        std::optional<native::Recipe> base = selectedBase(&key, &reason);
         if (!base.has_value()) {
             showStatus(false, reason);
             return;
@@ -595,14 +595,14 @@ void NativeRifeControls::storeRequest() {
     }
     request.label = recipeLabel(request.temporal, request.base.has_value());
 
-    const std::optional<Recipe> recipe = buildRifeRecipe(request, &key, &reason);
+    const std::optional<native::Recipe> recipe = native::buildRifeRecipe(request, &key, &reason);
     if (!recipe.has_value()) {
         showStatus(false, reason);
         return;
     }
 
-    UserRecipeStore store;
-    const std::optional<Recipe> stored = store.saveRecipe(*recipe, &key, &reason);
+    native::UserRecipeStore store;
+    const std::optional<native::Recipe> stored = store.saveRecipe(*recipe, &key, &reason);
     if (!stored.has_value()) {
         showStatus(false, reason);
         return;
@@ -620,11 +620,11 @@ void NativeRifeControls::storeRequest() {
     emit recipeRequested(stored->id);
 }
 
-void NativeRifeControls::applyStoredRecipe(const Recipe& recipe) {
+void NativeRifeControls::applyStoredRecipe(const native::Recipe& recipe) {
     if (!recipe.temporal.has_value()) {
         return;
     }
-    const TemporalStage& stage = *recipe.temporal;
+    const native::TemporalStage& stage = *recipe.temporal;
 
     QSignalBlocker blockVersion(version_);
     QSignalBlocker blockVariant(variant_);
@@ -646,15 +646,15 @@ void NativeRifeControls::applyStoredRecipe(const Recipe& recipe) {
     threshold_->setText(thresholdText(stage.sceneThreshold, &thresholdLocale_));
     order_->setCurrentIndex(order_->findData(static_cast<int>(stage.order)));
 
-    if (recipe.shape() == RecipeShape::Combined && !recipe.spatial.isEmpty()) {
+    if (recipe.shape() == native::RecipeShape::Combined && !recipe.spatial.isEmpty()) {
         mode_->setCurrentIndex(mode_->findData(1));
         // The combined document does not record the base's id, so the base is the
         // stored spatial recipe whose chain is exactly this one - matched by the
         // chain, never by an index that a re-read could repoint.
-        const QVector<Recipe> stored = UserRecipeStore().recipes();
+        const QVector<native::Recipe> stored = native::UserRecipeStore().recipes();
         int match = -1;
-        for (const Recipe& candidate : stored) {
-            if (candidate.shape() != RecipeShape::SpatialOnly) continue;
+        for (const native::Recipe& candidate : stored) {
+            if (candidate.shape() != native::RecipeShape::SpatialOnly) continue;
             if (!sameChain(candidate.spatial, recipe.spatial)) continue;
             const int index = base_->findData(candidate.id);
             if (index >= 0) {
@@ -677,10 +677,10 @@ void NativeRifeControls::loadStoredRecipe(const QString& recipeId) {
     if (recipeId.isEmpty()) {
         return;
     }
-    UserRecipeStore store;
+    native::UserRecipeStore store;
     QString key;
     QString reason;
-    const std::optional<Recipe> recipe = store.find(recipeId, &key, &reason);
+    const std::optional<native::Recipe> recipe = store.find(recipeId, &key, &reason);
     if (!recipe.has_value()) {
         return;
     }

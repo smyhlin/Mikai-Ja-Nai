@@ -7,6 +7,7 @@
 
 #include <QByteArrayView>
 #include <QCryptographicHash>
+#include <QDebug>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -33,6 +34,10 @@ namespace {
 
 /// Silence limit for a streaming response.
 constexpr int kStallTimeoutMs = 60000;
+
+/// Archive-extraction wall clock (P2-06): one named constant, not an inline
+/// literal at the wait call.
+constexpr int kExtractionTimeoutMs = 300000;
 
 /// Cancellation polling interval.
 constexpr int kCancelPollMs = 200;
@@ -65,7 +70,10 @@ QString sha256(const QByteArray& bytes) {
 QString findSevenZip(const QString& toolsDirectory) {
     // An empty application tree yields a CWD-relative "7z.exe" probe; that
     // would let a planted binary in the working directory pass as trusted.
-    if (toolsDirectory.isEmpty()) return {};
+    if (toolsDirectory.isEmpty()) {
+        qWarning() << "mikai: findSevenZip: empty tools directory, refusing CWD-relative probe";
+        return {};
+    }
 #ifdef Q_OS_WIN
     // Prefer the bundled, verified executable over PATH.
     const QString bundled = QDir(toolsDirectory).filePath(QStringLiteral("7z.exe"));
@@ -83,6 +91,7 @@ QString findSevenZip(const QString& toolsDirectory) {
             return candidate;
         }
     }
+    qWarning() << "mikai: findSevenZip: no 7z executable found";
     return {};
 #else
     for (const QString& name : {QStringLiteral("7zz"), QStringLiteral("7zzs"), QStringLiteral("7z")}) {
@@ -107,6 +116,7 @@ QString findSevenZip(const QString& toolsDirectory) {
             return candidate;
         }
     }
+    qWarning() << "mikai: findSevenZip: no 7z executable found";
     return {};
 #endif
 }
@@ -117,55 +127,88 @@ void throwIfBootstrapCancelled() {
     }
 }
 
-void stopBootstrapProcess(QProcess& process) {
-    if (process.state() != QProcess::NotRunning) {
-        process.kill();
-        process.waitForFinished(1000);
+bool waitForBootstrapStart(QProcess& process, int timeoutMs) {
+    // (P2-01: thin wrapper over the one shared wait; the throw-on-cancel
+    // contract is the bootstrap callers' own. Finished only counts when the
+    // process is still Running: a bootstrap tool that already exited is a
+    // failed start for its callers, exactly as before.)
+    switch (waitForProcessStarted(process, timeoutMs)) {
+        case ProcessWaitResult::Cancelled: throw std::runtime_error("the request was cancelled");
+        case ProcessWaitResult::Finished: return process.state() == QProcess::Running;
+        case ProcessWaitResult::StartFailed:
+        case ProcessWaitResult::TimedOut: return false;
     }
+    return false;
 }
 
-bool waitForBootstrapStart(QProcess& process, int timeoutMs) {
+bool waitForBootstrapFinish(QProcess& process, int timeoutMs) {
+    // (P2-01: thin wrapper over the one shared wait; the throw-on-cancel
+    // contract is the bootstrap callers' own.)
+    switch (waitForProcessFinished(process, timeoutMs)) {
+        case ProcessWaitResult::Cancelled: throw std::runtime_error("the request was cancelled");
+        case ProcessWaitResult::Finished: return true;
+        case ProcessWaitResult::TimedOut:
+        case ProcessWaitResult::StartFailed: return false;
+    }
+    return false;
+}
+
+}  // namespace
+
+// ── P2-01: the one bounded, cancellation-aware QProcess wait ────────────────
+// Both waits poll WorkCancellationScope every kCancelPollMs and kill + reap
+// the child on timeout or cancellation, so no caller blocks on a child that
+// never answers.
+
+ProcessWaitResult waitForProcessStarted(QProcess& process, int startTimeoutMs) {
     QElapsedTimer elapsed;
     elapsed.start();
     while (process.state() == QProcess::Starting) {
         if (WorkCancellationScope::cancellationRequested()) {
-            stopBootstrapProcess(process);
-            throw std::runtime_error("the request was cancelled");
+            if (process.state() != QProcess::NotRunning) {
+                process.kill();
+                process.waitForFinished(1000);
+            }
+            return ProcessWaitResult::Cancelled;
         }
-        const int remaining = timeoutMs - static_cast<int>(elapsed.elapsed());
+        const int remaining = startTimeoutMs - static_cast<int>(elapsed.elapsed());
         if (remaining <= 0) {
-            stopBootstrapProcess(process);
-            return false;
+            if (process.state() != QProcess::NotRunning) {
+                process.kill();
+                process.waitForFinished(1000);
+            }
+            return ProcessWaitResult::StartFailed;
         }
         process.waitForStarted(qMin(kCancelPollMs, remaining));
     }
-    if (WorkCancellationScope::cancellationRequested()) {
-        stopBootstrapProcess(process);
-        throw std::runtime_error("the request was cancelled");
-    }
-    return process.state() == QProcess::Running;
+    // Left Starting: Running, or started and already finished (a fast
+    // helper's output is ready, not a launch failure). Only a process
+    // that never started at all reports StartFailed.
+    return process.error() == QProcess::FailedToStart ? ProcessWaitResult::StartFailed
+                                                      : ProcessWaitResult::Finished;
 }
 
-bool waitForBootstrapFinish(QProcess& process, int timeoutMs) {
+ProcessWaitResult waitForProcessFinished(QProcess& process, int finishTimeoutMs,
+                                         int reapTimeoutMs) {
     QElapsedTimer elapsed;
     elapsed.start();
     while (process.state() != QProcess::NotRunning) {
         if (WorkCancellationScope::cancellationRequested()) {
-            stopBootstrapProcess(process);
-            throw std::runtime_error("the request was cancelled");
+            process.kill();
+            process.waitForFinished(reapTimeoutMs);
+            return ProcessWaitResult::Cancelled;
         }
-        const int remaining = timeoutMs - static_cast<int>(elapsed.elapsed());
+        const int remaining = finishTimeoutMs - static_cast<int>(elapsed.elapsed());
         if (remaining <= 0) {
-            stopBootstrapProcess(process);
-            return false;
+            process.kill();
+            process.waitForFinished(reapTimeoutMs);
+            return ProcessWaitResult::TimedOut;
         }
         process.waitForFinished(qMin(kCancelPollMs, remaining));
     }
-    throwIfBootstrapCancelled();
-    return true;
+    return WorkCancellationScope::cancellationRequested() ? ProcessWaitResult::Cancelled
+                                                          : ProcessWaitResult::Finished;
 }
-
-}  // namespace
 
 QByteArray fetchUrlBytes(const QUrl& url, const QMap<QString, QString>& headers, int timeoutMs) {
     // Cancellation takes precedence over transport and status errors.
@@ -450,7 +493,10 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
 
 QString ensureSevenZip(const QString& toolsDirectory) {
     throwIfBootstrapCancelled();
-    if (toolsDirectory.isEmpty()) return {};
+    if (toolsDirectory.isEmpty()) {
+        qWarning() << "mikai: ensureSevenZip: empty tools directory";
+        return {};
+    }
     // Return an existing install before waiting for another bootstrap.
     const QString present = findSevenZip(toolsDirectory);
     if (!present.isEmpty()) {
@@ -629,46 +675,22 @@ bool extractArchive(const QString& sevenZip, const QString& archive, const QStri
     };
     // Both archive tools are owned by this call. Never fall back to another
     // tool after cancellation, and reap the current one before returning.
+    // (P2-01: the waits are the one shared helper; this lambda only maps
+    // its outcome onto ProcessResult and records the reason.)
     auto waitForExtraction = [&](QProcess& process, int startTimeoutMs) {
-        QElapsedTimer elapsed;
-        elapsed.start();
-        bool started = false;
-        while (process.state() == QProcess::Starting) {
-            if (cancelled()) {
-                stopBootstrapProcess(process);
-                return ProcessResult::Cancelled;
-            }
-            const int remaining = startTimeoutMs - static_cast<int>(elapsed.elapsed());
-            if (remaining <= 0) {
-                stopBootstrapProcess(process);
-                return ProcessResult::StartFailed;
-            }
-            if (process.waitForStarted(qMin(kCancelPollMs, remaining))) {
-                started = true;
-                break;
-            }
-        }
-        if (cancelled()) {
-            stopBootstrapProcess(process);
+        const ProcessWaitResult started = waitForProcessStarted(process, startTimeoutMs);
+        if (started == ProcessWaitResult::Cancelled) {
+            cancelled();
             return ProcessResult::Cancelled;
         }
-        if (!started && process.state() != QProcess::Running) return ProcessResult::StartFailed;
-
-        elapsed.restart();
-        while (process.state() != QProcess::NotRunning) {
-            if (cancelled()) {
-                stopBootstrapProcess(process);
-                return ProcessResult::Cancelled;
-            }
-            const int remaining = 300000 - static_cast<int>(elapsed.elapsed());
-            if (remaining <= 0) {
-                process.kill();
-                process.waitForFinished(2000);
-                return ProcessResult::TimedOut;
-            }
-            process.waitForFinished(qMin(kCancelPollMs, remaining));
+        if (started != ProcessWaitResult::Finished) return ProcessResult::StartFailed;
+        const ProcessWaitResult finished = waitForProcessFinished(process, kExtractionTimeoutMs, 2000);
+        if (finished == ProcessWaitResult::Cancelled) {
+            cancelled();
+            return ProcessResult::Cancelled;
         }
-        return cancelled() ? ProcessResult::Cancelled : ProcessResult::Finished;
+        if (finished == ProcessWaitResult::TimedOut) return ProcessResult::TimedOut;
+        return ProcessResult::Finished;
     };
     if (cancelled()) return false;
 #ifndef Q_OS_WIN

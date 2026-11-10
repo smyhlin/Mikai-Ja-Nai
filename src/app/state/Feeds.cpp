@@ -1,4 +1,5 @@
 #include "state/Feeds.hpp"
+#include "state/SettingsKeys.hpp"
 
 #include <QCoreApplication>
 
@@ -56,6 +57,6 @@ QString serialize(const QSet<QString>& feeds) {
     return ordered.join(QLatin1Char(','));
 }
 
-QString settingsKey() { return QStringLiteral("home/feeds"); }
+QString settingsKey() { return QString::fromUtf8(kHomeFeeds); }
 
 }  // namespace mikai::app::feeds
