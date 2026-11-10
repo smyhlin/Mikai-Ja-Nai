@@ -74,10 +74,9 @@ QString sensitiveStatusReason() {
   return QStringLiteral("the snapshot carries a URL or a credential-looking value");
 }
 
-/// A copy of `snapshot` with every free-text member passed through
-/// `redactNativeDiagnosticText`. The raw document writer keeps the bytes a filter
-/// published, so the reader can refuse a hostile one by name; this copy is what an
-/// export or a log carries, so no credential leaves in the clear.
+// X-M18: the comment above documented redactedStatusSnapshot (which lives
+// in NativeStatus.cpp) — it was pasted here above the unrelated
+// rateComponentOk. Deleted, not moved: the real function already carries it.
 bool rateComponentOk(int value) {
   return value > 0 && value <= kNativeStatusMaxRateComponent;
 }

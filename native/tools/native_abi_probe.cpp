@@ -32,6 +32,7 @@
 
 #include "aji.h"
 #include "aji_native.h"
+#include "aji_tool_support.h"
 
 #include <cctype>
 #include <cstddef>
@@ -54,6 +55,8 @@
 #endif
 
 namespace {
+// X-D20: CudaDriver / CU* aliases live in aji_tool (see aji_tool_support.h).
+using namespace aji_tool;
 using SnapshotFn = int (*)(aji_ctx *, uint32_t, aji_native_snapshot_v2 *);
 using ControlFn = int (*)(aji_ctx *, uint32_t, uint32_t, uint64_t, uint32_t,
                           aji_native_snapshot_v2 *);
@@ -340,27 +343,6 @@ constexpr char kProbeConf[] =
     "chain_1_model_1_name=\n"
     "chain_1_model_1_resize_factor_before_upscale=150\n";
 
-std::wstring widen(const char *utf8) {
-    if (!utf8 || !*utf8) return std::wstring();
-    const int length = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, nullptr, 0);
-    if (length <= 1) return std::wstring();
-    std::wstring out(static_cast<size_t>(length - 1), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, utf8, -1, out.data(), length);
-    return out;
-}
-
-std::string narrowUtf8(const std::wstring &wide) {
-    if (wide.empty()) return std::string();
-    const int length = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(),
-                                           static_cast<int>(wide.size()), nullptr, 0,
-                                           nullptr, nullptr);
-    if (length <= 0) return std::string();
-    std::string out(static_cast<size_t>(length), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), static_cast<int>(wide.size()),
-                        out.data(), length, nullptr, nullptr);
-    return out;
-}
-
 size_t boundedLength(const char *text, size_t capacity) {
     size_t length = 0;
     while (length < capacity && text[length] != '\0') ++length;
@@ -370,10 +352,6 @@ size_t boundedLength(const char *text, size_t capacity) {
 template <size_t N>
 std::wstring textOf(const char (&text)[N]) {
     return widen(std::string(text, boundedLength(text, N)).c_str());
-}
-
-bool equalsNoCase(const std::wstring &a, const std::wstring &b) {
-    return a.size() == b.size() && _wcsicmp(a.c_str(), b.c_str()) == 0;
 }
 
 bool containsNoCase(const char *haystack, const char *needle) {
@@ -399,120 +377,6 @@ void probeLog(void *, int level, const char *message) {
     std::fprintf(stderr, "native_abi_probe: [backend %d] %s\n", level,
                  message ? message : "");
 }
-
-// Minimal CUDA driver ABI, declared here so the probe never needs cuda.h or a
-// link dependency on the toolkit. Every entry point is resolved from nvcuda.dll
-// at run time; the versioned spellings are tried first.
-using CUresult = int;
-using CUdevice = int;
-using CUdeviceptr = unsigned long long;
-struct CUuuid { char bytes[16]; };
-struct CUctx_st;
-using CUcontext = CUctx_st *;
-
-constexpr CUresult kCudaSuccess = 0;
-
-void *driverSymbol(HMODULE module, const char *preferred, const char *fallback) {
-    void *resolved = reinterpret_cast<void *>(GetProcAddress(module, preferred));
-    if (!resolved && fallback)
-        resolved = reinterpret_cast<void *>(GetProcAddress(module, fallback));
-    return resolved;
-}
-
-struct CudaDriver {
-    HMODULE module = nullptr;
-    CUresult(__stdcall *init)(unsigned int) = nullptr;
-    CUresult(__stdcall *deviceGetCount)(int *) = nullptr;
-    CUresult(__stdcall *deviceGet)(CUdevice *, int) = nullptr;
-    CUresult(__stdcall *deviceGetUuid)(CUuuid *, CUdevice) = nullptr;
-    CUresult(__stdcall *deviceGetName)(char *, int, CUdevice) = nullptr;
-    CUresult(__stdcall *primaryCtxRetain)(CUcontext *, CUdevice) = nullptr;
-    CUresult(__stdcall *primaryCtxRelease)(CUdevice) = nullptr;
-    CUresult(__stdcall *ctxGetCurrent)(CUcontext *) = nullptr;
-    CUresult(__stdcall *ctxSetCurrent)(CUcontext) = nullptr;
-    CUresult(__stdcall *memAlloc)(CUdeviceptr *, size_t) = nullptr;
-    CUresult(__stdcall *memFree)(CUdeviceptr) = nullptr;
-    CUresult(__stdcall *memcpyHtoD)(CUdeviceptr, const void *, size_t) = nullptr;
-    CUresult(__stdcall *driverGetVersion)(int *) = nullptr;
-    CUresult(__stdcall *getErrorName)(CUresult, const char **) = nullptr;
-    CUresult(__stdcall *getErrorString)(CUresult, const char **) = nullptr;
-
-    CudaDriver() = default;
-    CudaDriver(const CudaDriver &) = delete;
-    CudaDriver &operator=(const CudaDriver &) = delete;
-    ~CudaDriver() {
-        if (module) FreeLibrary(module);
-    }
-
-    bool load(std::wstring *why) {
-        module = LoadLibraryExW(L"nvcuda.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-        if (!module) {
-            *why = L"nvcuda.dll is not loadable from System32 (error " +
-                   std::to_wstring(GetLastError()) + L")";
-            return false;
-        }
-        init = reinterpret_cast<decltype(init)>(driverSymbol(module, "cuInit", nullptr));
-        deviceGetCount = reinterpret_cast<decltype(deviceGetCount)>(
-            driverSymbol(module, "cuDeviceGetCount", nullptr));
-        deviceGet = reinterpret_cast<decltype(deviceGet)>(
-            driverSymbol(module, "cuDeviceGet", nullptr));
-        deviceGetUuid = reinterpret_cast<decltype(deviceGetUuid)>(
-            driverSymbol(module, "cuDeviceGetUuid_v2", "cuDeviceGetUuid"));
-        deviceGetName = reinterpret_cast<decltype(deviceGetName)>(
-            driverSymbol(module, "cuDeviceGetName", nullptr));
-        primaryCtxRetain = reinterpret_cast<decltype(primaryCtxRetain)>(
-            driverSymbol(module, "cuDevicePrimaryCtxRetain", nullptr));
-        primaryCtxRelease = reinterpret_cast<decltype(primaryCtxRelease)>(
-            driverSymbol(module, "cuDevicePrimaryCtxRelease_v2", "cuDevicePrimaryCtxRelease"));
-        ctxGetCurrent = reinterpret_cast<decltype(ctxGetCurrent)>(
-            driverSymbol(module, "cuCtxGetCurrent", nullptr));
-        ctxSetCurrent = reinterpret_cast<decltype(ctxSetCurrent)>(
-            driverSymbol(module, "cuCtxSetCurrent", nullptr));
-        memAlloc = reinterpret_cast<decltype(memAlloc)>(
-            driverSymbol(module, "cuMemAlloc_v2", "cuMemAlloc"));
-        memFree = reinterpret_cast<decltype(memFree)>(
-            driverSymbol(module, "cuMemFree_v2", "cuMemFree"));
-        memcpyHtoD = reinterpret_cast<decltype(memcpyHtoD)>(
-            driverSymbol(module, "cuMemcpyHtoD_v2", "cuMemcpyHtoD"));
-        driverGetVersion = reinterpret_cast<decltype(driverGetVersion)>(
-            driverSymbol(module, "cuDriverGetVersion", nullptr));
-        getErrorName = reinterpret_cast<decltype(getErrorName)>(
-            driverSymbol(module, "cuGetErrorName", nullptr));
-        getErrorString = reinterpret_cast<decltype(getErrorString)>(
-            driverSymbol(module, "cuGetErrorString", nullptr));
-        if (!init || !deviceGetCount || !deviceGet || !deviceGetUuid ||
-            !primaryCtxRetain || !primaryCtxRelease || !ctxGetCurrent ||
-            !ctxSetCurrent || !memAlloc || !memFree || !memcpyHtoD) {
-            *why = L"nvcuda.dll is missing a required driver entry point";
-            return false;
-        }
-        return true;
-    }
-
-    std::wstring text(CUresult result) const {
-        std::wstring out = L"CUDA error " + std::to_wstring(result);
-        const char *name = nullptr;
-        if (getErrorName && getErrorName(result, &name) == kCudaSuccess && name && *name)
-            out = widen(name);
-        const char *detail = nullptr;
-        if (getErrorString && getErrorString(result, &detail) == kCudaSuccess && detail && *detail) {
-            out += L" (";
-            out += widen(detail);
-            out += L")";
-        }
-        return out;
-    }
-
-    bool copyToDevice(CUdeviceptr destination, const void *source, size_t bytes,
-                      std::wstring *why) {
-        const CUresult result = memcpyHtoD(destination, source, bytes);
-        if (result != kCudaSuccess) {
-            *why = L"cuMemcpyHtoD failed: " + text(result);
-            return false;
-        }
-        return true;
-    }
-};
 
 std::wstring uuidHex(const CUuuid &uuid) {
     static constexpr wchar_t digits[] = L"0123456789abcdef";
@@ -568,12 +432,17 @@ bool parseUuid(const std::wstring &input, CUuuid *uuid, std::wstring *why) {
     return true;
 }
 
+// X-D20: CudaDriver::text() is narrow; the probe diagnostics are wide.
+std::wstring driverText(CudaDriver &driver, CUresult result) {
+    return widen(driver.text(result));
+}
+
 bool selectDeviceByUuid(CudaDriver &driver, const CUuuid &requested, int *ordinal,
                         std::wstring *actual, std::wstring *why) {
     int count = 0;
     const CUresult counted = driver.deviceGetCount(&count);
     if (counted != kCudaSuccess) {
-        *why = L"cuDeviceGetCount failed: " + driver.text(counted);
+        *why = L"cuDeviceGetCount failed: " + driverText(driver, counted);
         return false;
     }
     if (count < 1) {
@@ -615,20 +484,20 @@ public:
         CUcontext context = nullptr;
         CUresult result = driver.primaryCtxRetain(&context, ordinal);
         if (result != kCudaSuccess) {
-            *why = L"cuDevicePrimaryCtxRetain failed: " + driver.text(result);
+            *why = L"cuDevicePrimaryCtxRetain failed: " + driverText(driver, result);
             return false;
         }
         CUcontext previous = nullptr;
         result = driver.ctxGetCurrent(&previous);
         if (result != kCudaSuccess) {
             driver.primaryCtxRelease(ordinal);
-            *why = L"cuCtxGetCurrent failed: " + driver.text(result);
+            *why = L"cuCtxGetCurrent failed: " + driverText(driver, result);
             return false;
         }
         result = driver.ctxSetCurrent(context);
         if (result != kCudaSuccess) {
             driver.primaryCtxRelease(ordinal);
-            *why = L"cuCtxSetCurrent failed: " + driver.text(result);
+            *why = L"cuCtxSetCurrent failed: " + driverText(driver, result);
             return false;
         }
         driver_ = &driver;
@@ -663,7 +532,7 @@ public:
         CUdeviceptr pointer = 0;
         const CUresult result = driver.memAlloc(&pointer, bytes);
         if (result != kCudaSuccess) {
-            *why = std::wstring(what) + L" allocation failed: " + driver.text(result);
+            *why = std::wstring(what) + L" allocation failed: " + driverText(driver, result);
             return false;
         }
         driver_ = &driver;
@@ -881,10 +750,11 @@ int runRealContextScenario(void *module, const char *displayPath,
     if (!parseUuid(options.uuid, &requested, &why)) return refuse(why, 2);
 
     CudaDriver driver;
-    if (!driver.load(&why)) return refuse(why, 2);
+    std::string loadWhy;
+    if (!driver.load(&loadWhy)) return refuse(widen(loadWhy), 2);
     CUresult status = driver.init(0);
     if (status != kCudaSuccess)
-        return refuse(L"cuInit failed: " + driver.text(status), 2);
+        return refuse(L"cuInit failed: " + driverText(driver, status), 2);
 
     int ordinal = -1;
     std::wstring deviceText;
@@ -957,11 +827,14 @@ int runRealContextScenario(void *module, const char *displayPath,
     for (size_t i = 0; i < host_uv.size(); ++i)
         host_uv[i] = static_cast<unsigned char>(128u + ((i * 17u) & 0x3Fu));
     std::vector<unsigned char> zero(out_y_bytes + out_uv_bytes, 0);
-    if (!driver.copyToDevice(in_y_buffer.get(), host_y.data(), in_y_bytes, &why) ||
-        !driver.copyToDevice(in_uv_buffer.get(), host_uv.data(), in_uv_bytes, &why) ||
-        !driver.copyToDevice(out_y_buffer.get(), zero.data(), out_y_bytes, &why) ||
-        !driver.copyToDevice(out_uv_buffer.get(), zero.data(), out_uv_bytes, &why))
+    std::string copyWhy;
+    if (!driver.copyToDevice(in_y_buffer.get(), host_y.data(), in_y_bytes, &copyWhy) ||
+        !driver.copyToDevice(in_uv_buffer.get(), host_uv.data(), in_uv_bytes, &copyWhy) ||
+        !driver.copyToDevice(out_y_buffer.get(), zero.data(), out_y_bytes, &copyWhy) ||
+        !driver.copyToDevice(out_uv_buffer.get(), zero.data(), out_uv_bytes, &copyWhy)) {
+        why = widen(copyWhy);
         return refuse(why, 1);
+    }
 
     aji_frame source{};
     source.width = kProbeWidth;

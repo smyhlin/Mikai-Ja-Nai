@@ -3,6 +3,7 @@
 #include "native/bundle/NativeDiagnostics.hpp"
 
 #include <QtCore/QByteArray>
+#include <QtCore/QCryptographicHash>
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QCoreApplication>
@@ -139,6 +140,49 @@ QReadWriteLock& metadataPublicationLock() {
 #endif
 
 }  // namespace
+
+QString hashFile(const QString& path, qint64* bytes, const std::function<bool()>& cancelled,
+                 QString* error) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        if (error != nullptr) {
+            *error = QStringLiteral("cannot be read: %1").arg(file.errorString());
+        }
+        return {};
+    }
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    qint64 total = 0;
+    QByteArray buffer(64 * 1024, Qt::Uninitialized);
+    while (!file.atEnd()) {
+        if (cancelled && cancelled()) return {};
+        const qint64 count = file.read(buffer.data(), buffer.size());
+        if (count <= 0) {
+            if (error != nullptr) {
+                *error = QStringLiteral("failed while reading: %1").arg(file.errorString());
+            }
+            return {};
+        }
+        hash.addData(QByteArrayView(buffer.constData(), count));
+        total += count;
+    }
+    if (file.error() != QFile::NoError) {
+        if (error != nullptr) {
+            *error = QStringLiteral("failed while reading: %1").arg(file.errorString());
+        }
+        return {};
+    }
+    if (bytes != nullptr) *bytes = total;
+    return QString::fromLatin1(hash.result().toHex());
+}
+
+bool isSha256Hex(const QString& value) {
+    if (value.size() != 64) return false;
+    for (const QChar c : value) {
+        const char16_t u = c.unicode();
+        if (!((u >= '0' && u <= '9') || (u >= 'a' && u <= 'f'))) return false;
+    }
+    return true;
+}
 
 NativePathTrust nativePathTrust(const QString& path, bool requireAbsolute) {
     NativePathTrust trust;
@@ -430,10 +474,26 @@ QStringList pruneNativeStore(const QString& rootOverride) {
 
     // Staging trees and interrupted copies live inside the component tree, at a
     // depth the installer writes them at: components/<kind>/<version>/.
+    // X-M11: the pruner only knew the names the AJI installer leaves.
+    // RIFE stages/backups are siblings of the release directory itself
+    // (<version>.staging-<uuid> / <version>.previous-<uuid> under
+    // components/<kind>/), and AJI import leftovers are aji-import-*
+    // under the release directory — a killed install leaked hundreds of
+    // MB forever. Both levels are scanned now.
     const QString components = QDir(root).filePath(QStringLiteral("components"));
     if (QFileInfo(components).isDir()) {
         for (const QFileInfo& kind : QDir(components).entryInfoList(
                  QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden)) {
+            for (const QFileInfo& entry : QDir(kind.absoluteFilePath()).entryInfoList(
+                     QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden)) {
+                if (entry.isSymLink()) continue;
+                const QString name = entry.fileName();
+                if (name.contains(QStringLiteral(".staging-"))) {
+                    if (olderThan(entry, kStageSeconds)) drop(entry.absoluteFilePath());
+                } else if (name.contains(QStringLiteral(".previous-"))) {
+                    if (olderThan(entry, kBackupSeconds)) drop(entry.absoluteFilePath());
+                }
+            }
             for (const QFileInfo& release : QDir(kind.absoluteFilePath()).entryInfoList(
                      QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden)) {
                 for (const QFileInfo& entry : QDir(release.absoluteFilePath()).entryInfoList(
@@ -442,9 +502,15 @@ QStringList pruneNativeStore(const QString& rootOverride) {
                     const QString name = entry.fileName();
                     if (name.startsWith(QStringLiteral("aji-stage-"))) {
                         if (olderThan(entry, kStageSeconds)) drop(entry.absoluteFilePath());
+                    } else if (name.startsWith(QStringLiteral("aji-import-"))) {
+                        if (olderThan(entry, kStageSeconds)) drop(entry.absoluteFilePath());
                     } else if (name.endsWith(QStringLiteral(".partial"))) {
                         if (olderThan(entry, kStageSeconds)) drop(entry.absoluteFilePath());
                     } else if (name.endsWith(QStringLiteral(".previous"))) {
+                        if (olderThan(entry, kBackupSeconds)) drop(entry.absoluteFilePath());
+                    } else if (name.contains(QStringLiteral(".staging-"))) {
+                        if (olderThan(entry, kStageSeconds)) drop(entry.absoluteFilePath());
+                    } else if (name.contains(QStringLiteral(".previous-"))) {
                         if (olderThan(entry, kBackupSeconds)) drop(entry.absoluteFilePath());
                     }
                 }

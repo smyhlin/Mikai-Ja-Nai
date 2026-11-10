@@ -47,7 +47,6 @@ protected:
 private:
     enum class DropKind { None, Video, Subtitle, Audio };
     static QString classify(const QMimeData* mime, bool allowTracks, DropKind* kind);
-    static QString videoPath(const QMimeData* mime);
     void beginIndicator(const QString& path, DropKind kind);
     void refreshAppearance();
     void clearIndicator();

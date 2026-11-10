@@ -235,12 +235,6 @@ void TestNativePrepPlan::paddingIsCentredAndRoundedDownToEven() {
   QCOMPARE(padT, 0);
 }
 
-void TestNativePrepPlan::paddingExtentIsTheTotalAdded() {
-  QCOMPARE(paddingExtent(QSize(1920, 1080)), QSize(0, 8));
-  QCOMPARE(paddingExtent(QSize(1920, 1072)), QSize(0, 16));
-  QCOMPARE(paddingExtent(QSize(1920, 1920)), QSize(0, 0));
-}
-
 void TestNativePrepPlan::aCadenceScalesToLowestTerms() {
   const std::optional<Rational> doubled = scaleCadence(Rational{24000, 1001}, 2, 1);
   QVERIFY(doubled.has_value());
@@ -1120,12 +1114,10 @@ void TestNativePrepPlan::anOddHeightSourcePadsAsymmetrically() {
 
   // A 7-pixel border halves to 3 and rounds down to 2, so the pad is asymmetric.
   QCOMPARE(padToTensorAlignment(QSize(1920, 1081), &padL, &padT), QSize(1920, 1088));
-  QCOMPARE(paddingExtent(QSize(1920, 1081)), QSize(0, 7));
   QCOMPARE(padL, 0);
   QCOMPARE(padT, 2);
 
   QCOMPARE(padToTensorAlignment(QSize(1081, 1920), &padL, &padT), QSize(1088, 1920));
-  QCOMPARE(paddingExtent(QSize(1081, 1920)), QSize(7, 0));
   QCOMPARE(padL, 2);
   QCOMPARE(padT, 0);
 

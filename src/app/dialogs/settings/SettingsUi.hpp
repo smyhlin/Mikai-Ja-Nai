@@ -5,6 +5,9 @@
 #include "theme/Colors.hpp"
 #include "theme/Metrics.hpp"
 #include "theme/Palette.hpp"
+#include "theme/Theme.hpp"
+
+#include <array>
 
 #include <QAbstractButton>
 #include <QCheckBox>
@@ -33,15 +36,6 @@
 #include <QWidget>
 
 namespace mikai::app {
-
-/// Re-polishes a widget after a dynamic property change so QSS selectors update
-/// immediately without rebuilding the widget hierarchy.
-inline void repolishWidget(QWidget* widget) {
-    if (widget == nullptr || widget->style() == nullptr) return;
-    widget->style()->unpolish(widget);
-    widget->style()->polish(widget);
-    widget->update();
-}
 
 /// Enables OpenType tabular figures (`tnum`) on a widget's font so live
 /// counters, rate-limit timers, selection counts, and FPS tables never jitter
@@ -217,7 +211,7 @@ inline void stylePillBadge(QLabel* label, const QString& tone = QStringLiteral("
     label->setProperty("badgeTone", tone);
     label->setAlignment(Qt::AlignCenter);
     applyTabularNumerals(label);
-    repolishWidget(label);
+    theme::repolish(label);
 }
 
 /// Styles a semantic status/error/callout banner (`"neutral"`, `"info"`,
@@ -226,7 +220,7 @@ inline void styleStatusBanner(QLabel* label, const QString& state) {
     if (label == nullptr) return;
     label->setProperty("statusTone", state);
     applyTabularNumerals(label);
-    repolishWidget(label);
+    theme::repolish(label);
 }
 
 /// Creates a 1px hairline horizontal divider within a card or between sections.
@@ -308,7 +302,7 @@ inline QFrame* makeSettingsPageHeader(QWidget* parent, QLabel** headingOut,
 /// interactive focus, checked states, and active telemetry without visual noise.
 inline QString settingsStylesheet(const theme::Appearance& appearance) {
     const theme::Palette p = theme::paletteFor(appearance);
-    const QString sheet = QStringLiteral(R"QSS(
+    QString sheet = QStringLiteral(R"QSS(
         /* ── Page & Scroll Surfaces ────────────────────────────────────────── */
         QScrollArea#nativeGeneralScroll,
         QScrollArea#nativeProcessingScroll,
@@ -325,14 +319,14 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
         QWidget#componentsPage,
         QWidget#customizationGeneralPage,
         QWidget#appearancePage {
-            background-color: %1;
-            color: %2;
+            background-color: %surfacePage%;
+            color: %textPrimary%;
         }
 
         /* ── Navigation ───────────────────────────────────────────────────── */
         QWidget#settingsNav { background: transparent; }
         QLabel#settingsNavGroup {
-            color: %8;
+            color: %textMutedSoft%;
             font-size: 12px;
             font-weight: 600;
             padding: 14px 10px 4px 10px;
@@ -340,49 +334,49 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
         }
         QPushButton#settingsNavItem {
             background: transparent;
-            color: %9;
+            color: %textLabel%;
             border: 1px solid transparent;
-            border-radius: %50px;
-            padding: 0 %52px;
+            border-radius: %radiusSmall%px;
+            padding: 0 %controlInsetH%px;
             text-align: left;
             font-weight: 500;
         }
         QPushButton#settingsNavItem:hover {
-            background-color: %21;
-            color: %6;
+            background-color: %accentDeep%;
+            color: %textStrong%;
         }
         QPushButton#settingsNavItem:checked {
-            background-color: %28;
-            color: %6;
+            background-color: %surfaceRow%;
+            color: %textStrong%;
             font-weight: 600;
-            border-color: rgba(%4, 0.16);
+            border-color: rgba(%hairlineRgb%, 0.16);
         }
-        QPushButton#settingsNavItem:focus { border-color: %24; }
+        QPushButton#settingsNavItem:focus { border-color: %accentFocus%; }
 
         /* ── Appearance controls ──────────────────────────────────────────── */
         QPushButton#radiusChip {
-            background-color: %20;
-            color: %9;
-            border: 1px solid rgba(%4, 0.14);
-            border-radius: %50px;
-            padding: 0 %53px;
+            background-color: %surfaceInput%;
+            color: %textLabel%;
+            border: 1px solid rgba(%hairlineRgb%, 0.14);
+            border-radius: %radiusSmall%px;
+            padding: 0 %controlInsetHPrimary%px;
             font-weight: 500;
         }
-        QPushButton#radiusChip:hover { background-color: %30; color: %6; }
+        QPushButton#radiusChip:hover { background-color: %surfaceControlHover%; color: %textStrong%; }
         QPushButton#radiusChip:checked {
-            background-color: %33;
-            color: %22;
-            border-color: %33;
+            background-color: %accentSolid%;
+            color: %textOnAccent%;
+            border-color: %accentSolid%;
             font-weight: 600;
         }
         QLabel#accentValueLabel, QLabel#gradientValueLabel {
-            color: %9;
+            color: %textLabel%;
             font-size: 12px;
             font-weight: 600;
             background: transparent;
         }
         QLabel#appearanceValue {
-            color: %6;
+            color: %textStrong%;
             font-size: 12px;
             font-weight: 600;
             background: transparent;
@@ -390,72 +384,72 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
         QSlider#appearanceSlider { background: transparent; min-height: 22px; }
         QSlider#appearanceSlider::groove:horizontal {
             height: 4px;
-            background: %5;
+            background: %surfaceInset%;
             border-radius: 2px;
         }
         QSlider#appearanceSlider::sub-page:horizontal {
-            background: %33;
+            background: %accentSolid%;
             border-radius: 2px;
         }
         QSlider#appearanceSlider::handle:horizontal {
-            background: %33;
-            border: 2px solid %3;
+            background: %accentSolid%;
+            border: 2px solid %surfaceRaised%;
             width: 12px;
             height: 12px;
             margin: -5px 0;
             border-radius: 7px;
         }
-        QSlider#appearanceSlider::handle:horizontal:hover { background: %33; }
-        QSlider#appearanceSlider::handle:horizontal:disabled { background: %5; border-color: %1; }
-        QSlider#appearanceSlider::sub-page:horizontal:disabled { background: %26; }
+        QSlider#appearanceSlider::handle:horizontal:hover { background: %accentSolid%; }
+        QSlider#appearanceSlider::handle:horizontal:disabled { background: %surfaceInset%; border-color: %surfacePage%; }
+        QSlider#appearanceSlider::sub-page:horizontal:disabled { background: %textDisabled%; }
 
         /* ── Elevated Cards & Concentric Sub-Panels ────────────────────────── */
         QFrame#settingsCard {
-            background-color: %3;
-            border: 1px solid rgba(%4, 0.12);
-            border-radius: %54px;
+            background-color: %surfaceRaised%;
+            border: 1px solid rgba(%hairlineRgb%, 0.12);
+            border-radius: %radiusMedium%px;
         }
         QFrame#settingsCard:hover {
-            border-color: rgba(%4, 0.20);
+            border-color: rgba(%hairlineRgb%, 0.20);
         }
         QFrame#settingsSubCard {
-            background-color: %5;
-            border: 1px solid rgba(%4, 0.10);
-            border-radius: %54px;
+            background-color: %surfaceInset%;
+            border: 1px solid rgba(%hairlineRgb%, 0.10);
+            border-radius: %radiusMedium%px;
         }
         QFrame#settingsPageHeader,
         QFrame#benchmarkHeader {
-            background-color: %3;
-            border: 1px solid rgba(%4, 0.12);
-            border-radius: %54px;
+            background-color: %surfaceRaised%;
+            border: 1px solid rgba(%hairlineRgb%, 0.12);
+            border-radius: %radiusMedium%px;
         }
         QFrame#settingsDivider {
-            background-color: rgba(%4, 0.10);
+            background-color: rgba(%hairlineRgb%, 0.10);
             border: none;
             max-height: 1px;
         }
 
         /* ── Typography Hierarchy ──────────────────────────────────────────── */
         QLabel#heading {
-            color: %6;
+            color: %textStrong%;
             font-size: 17px;
             font-weight: 600;
             background: transparent;
         }
         QLabel#sectionHeading {
-            color: %7;
+            color: %textBright%;
             font-size: 14px;
             font-weight: 600;
             background: transparent;
         }
         QLabel#muted,
         QLabel[textRole="muted"] {
-            color: %8;
+            color: %textMutedSoft%;
             font-size: 12px;
             background: transparent;
         }
         QLabel#SettingsFormLabel {
-            color: %9;
+            color: %textLabel%;
             font-size: 13px;
             font-weight: 500;
             background: transparent;
@@ -463,40 +457,40 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
 
         /* ── Telemetry, Description & Status Callouts ──────────────────────── */
         QLabel#descriptionPanel {
-            background-color: %5;
-            color: %9;
-            border: 1px solid rgba(%4, 0.12);
-            border-radius: %54px;
+            background-color: %surfaceInset%;
+            color: %textLabel%;
+            border: 1px solid rgba(%hairlineRgb%, 0.12);
+            border-radius: %radiusMedium%px;
             padding: 10px 12px;
             font-size: 12px;
         }
         QLabel#status {
-            background-color: rgba(%10, 0.08);
-            color: %11;
-            border: 1px solid rgba(%10, 0.22);
-            border-radius: %54px;
+            background-color: rgba(%accentRgb%, 0.08);
+            color: %accentSoftBright%;
+            border: 1px solid rgba(%accentRgb%, 0.22);
+            border-radius: %radiusMedium%px;
             padding: 8px 12px;
             font-size: 12px;
         }
         QLabel#status[statusTone="success"] {
-            background-color: rgba(%12, 0.10);
-            color: %13;
-            border: 1px solid rgba(%12, 0.28);
+            background-color: rgba(%successRgb%, 0.10);
+            color: %successText%;
+            border: 1px solid rgba(%successRgb%, 0.28);
         }
         QLabel#status[statusTone="warning"] {
-            background-color: rgba(%14, 0.10);
-            color: %15;
-            border: 1px solid rgba(%14, 0.28);
+            background-color: rgba(%warningRgb%, 0.10);
+            color: %warningText%;
+            border: 1px solid rgba(%warningRgb%, 0.28);
         }
         QLabel#status[statusTone="danger"] {
-            background-color: rgba(%16, 0.12);
-            color: %17;
-            border: 1px solid rgba(%16, 0.32);
+            background-color: rgba(%dangerRgb%, 0.12);
+            color: %dangerText%;
+            border: 1px solid rgba(%dangerRgb%, 0.32);
         }
         QLabel#status[statusTone="info"] {
-            background-color: rgba(%10, 0.12);
-            color: %11;
-            border: 1px solid rgba(%10, 0.30);
+            background-color: rgba(%accentRgb%, 0.12);
+            color: %accentSoftBright%;
+            border: 1px solid rgba(%accentRgb%, 0.30);
         }
 
         /* ── Pill Counters & Status Badges ─────────────────────────────────── */
@@ -504,71 +498,71 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
         QLabel#benchmarkModelCount,
         QLabel#benchmarkRunStatus,
         QLabel[badgeTone="purple"] {
-            background-color: rgba(%10, 0.12);
-            color: %18;
-            border: 1px solid rgba(%10, 0.24);
-            border-radius: %55px;
+            background-color: rgba(%accentRgb%, 0.12);
+            color: %accentSoft%;
+            border: 1px solid rgba(%accentRgb%, 0.24);
+            border-radius: %radiusPill%px;
             padding: 3px 9px;
             font-size: 11px;
             font-weight: 600;
         }
         QLabel#benchmarkRunStatus[statusTone="success"] {
-            background-color: rgba(%12, 0.12);
-            color: %13;
-            border-color: rgba(%12, 0.30);
+            background-color: rgba(%successRgb%, 0.12);
+            color: %successText%;
+            border-color: rgba(%successRgb%, 0.30);
         }
         QLabel#benchmarkRunStatus[statusTone="warning"],
         QLabel#benchmarkRunStatus[statusTone="danger"] {
-            background-color: rgba(%16, 0.12);
-            color: %17;
-            border-color: rgba(%16, 0.32);
+            background-color: rgba(%dangerRgb%, 0.12);
+            color: %dangerText%;
+            border-color: rgba(%dangerRgb%, 0.32);
         }
         QLabel#benchmarkRunStatus[statusTone="running"] {
-            background-color: rgba(%19, 0.20);
-            color: %7;
-            border-color: rgba(%10, 0.45);
+            background-color: rgba(%accentSolidRgb%, 0.20);
+            color: %textBright%;
+            border-color: rgba(%accentRgb%, 0.45);
         }
 
         /* ── Inputs, Search Fields, Combos & KeySequence Editors ───────────── */
         QLineEdit,
         QComboBox,
         QKeySequenceEdit > QLineEdit {
-            background-color: %20;
-            color: %2;
-            border: 1px solid rgba(%4, 0.16);
-            border-radius: %50px;
+            background-color: %surfaceInput%;
+            color: %textPrimary%;
+            border: 1px solid rgba(%hairlineRgb%, 0.16);
+            border-radius: %radiusSmall%px;
             padding: 5px 11px;
-            selection-background-color: %21;
-            selection-color: %22;
+            selection-background-color: %accentDeep%;
+            selection-color: %textOnAccent%;
         }
         QLineEdit:hover,
         QComboBox:hover,
         QKeySequenceEdit > QLineEdit:hover {
-            border-color: rgba(%10, 0.36);
-            background-color: %23;
+            border-color: rgba(%accentRgb%, 0.36);
+            background-color: %surfaceInputHover%;
         }
         QLineEdit:focus,
         QComboBox:focus,
         QComboBox:on,
         QKeySequenceEdit > QLineEdit:focus {
-            border: 1px solid %24;
-            background-color: %25;
+            border: 1px solid %accentFocus%;
+            background-color: %surfaceInputFocus%;
         }
         QLineEdit:disabled,
         QComboBox:disabled,
         QKeySequenceEdit > QLineEdit:disabled {
-            color: %26;
-            background-color: rgba(%27, 0.55);
-            border-color: rgba(%4, 0.07);
+            color: %textDisabled%;
+            background-color: rgba(%surfaceDeepRgb%, 0.55);
+            border-color: rgba(%hairlineRgb%, 0.07);
         }
         QComboBox QAbstractItemView {
-            background-color: %28;
-            color: %2;
-            border: 1px solid rgba(%10, 0.28);
-            border-radius: %50px;
+            background-color: %surfaceRow%;
+            color: %textPrimary%;
+            border: 1px solid rgba(%accentRgb%, 0.28);
+            border-radius: %radiusSmall%px;
             padding: 4px;
-            selection-background-color: rgba(%19, 0.28);
-            selection-color: %22;
+            selection-background-color: rgba(%accentSolidRgb%, 0.28);
+            selection-color: %textOnAccent%;
             outline: 0;
         }
 
@@ -580,120 +574,120 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
            contrast-derived ink, which is what keeps a very dark custom accent
            readable. */
         QPushButton {
-            background-color: %45;
-            color: %7;
-            border: 1px solid %46;
-            border-radius: %50px;
-            min-height: %51px;
-            max-height: %51px;
-            padding: 0 %52px;
+            background-color: %surfaceControlRaised%;
+            color: %textBright%;
+            border: 1px solid %borderControl%;
+            border-radius: %radiusSmall%px;
+            min-height: %controlContentHeight%px;
+            max-height: %controlContentHeight%px;
+            padding: 0 %controlInsetH%px;
             font-weight: 500;
             text-align: center;
         }
         QPushButton:hover {
-            background-color: rgba(%10, 0.12);
-            border-color: rgba(%10, 0.38);
-            color: %22;
+            background-color: rgba(%accentRgb%, 0.12);
+            border-color: rgba(%accentRgb%, 0.38);
+            color: %textOnAccent%;
         }
         QPushButton:pressed {
-            background-color: %31;
-            border-color: %24;
+            background-color: %surfaceControlPressed%;
+            border-color: %accentFocus%;
         }
         QPushButton:checked {
-            background-color: rgba(%10, 0.14);
-            border-color: %33;
-            color: %22;
+            background-color: rgba(%accentRgb%, 0.14);
+            border-color: %accentSolid%;
+            color: %textOnAccent%;
         }
         QPushButton:focus {
-            border-color: %24;
+            border-color: %accentFocus%;
         }
         QPushButton:disabled {
-            background-color: %20;
-            color: rgba(%36, 0.55);
-            border-color: %46;
+            background-color: %surfaceInput%;
+            color: rgba(%textPrimaryRgb%, 0.55);
+            border-color: %borderControl%;
         }
         QPushButton[actionRole="primary"] {
-            background-color: %33;
-            color: %47;
-            border: 1px solid %33;
-            border-radius: %50px;
-            padding: 0 %53px;
+            background-color: %accentSolid%;
+            color: %accentInk%;
+            border: 1px solid %accentSolid%;
+            border-radius: %radiusSmall%px;
+            padding: 0 %controlInsetHPrimary%px;
             font-weight: 600;
         }
         QPushButton[actionRole="primary"]:hover {
-            background-color: %48;
-            border-color: %48;
+            background-color: %accentHover%;
+            border-color: %accentHover%;
         }
         QPushButton[actionRole="primary"]:pressed {
-            background-color: %33;
-            border-color: %34;
+            background-color: %accentSolid%;
+            border-color: %accentDeepest%;
         }
         QPushButton[actionRole="primary"]:checked {
-            background-color: %48;
-            border-color: %47;
+            background-color: %accentHover%;
+            border-color: %accentInk%;
         }
         QPushButton[actionRole="primary"]:focus {
-            border-color: %47;
+            border-color: %accentInk%;
         }
         QPushButton[actionRole="primary"]:disabled {
-            background-color: %20;
-            color: rgba(%36, 0.55);
-            border-color: %46;
+            background-color: %surfaceInput%;
+            color: rgba(%textPrimaryRgb%, 0.55);
+            border-color: %borderControl%;
         }
         QPushButton[actionRole="ghost"] {
             background-color: transparent;
-            color: %33;
-            border: 1px solid rgba(%10, 0.22);
-            border-radius: %50px;
-            min-height: %51px;
-            max-height: %51px;
-            padding: 0 %52px;
+            color: %accentSolid%;
+            border: 1px solid rgba(%accentRgb%, 0.22);
+            border-radius: %radiusSmall%px;
+            min-height: %controlContentHeight%px;
+            max-height: %controlContentHeight%px;
+            padding: 0 %controlInsetH%px;
             font-size: 12px;
             font-weight: 500;
         }
         QPushButton[actionRole="ghost"]:hover {
-            background-color: rgba(%10, 0.16);
-            border-color: rgba(%10, 0.45);
-            color: %48;
+            background-color: rgba(%accentRgb%, 0.16);
+            border-color: rgba(%accentRgb%, 0.45);
+            color: %accentHover%;
         }
         QPushButton[actionRole="ghost"]:pressed {
-            background-color: rgba(%10, 0.20);
+            background-color: rgba(%accentRgb%, 0.20);
         }
         QPushButton[actionRole="ghost"]:checked {
-            background-color: rgba(%10, 0.18);
-            border-color: %33;
-            color: %48;
+            background-color: rgba(%accentRgb%, 0.18);
+            border-color: %accentSolid%;
+            color: %accentHover%;
         }
         QPushButton[actionRole="ghost"]:focus {
-            border-color: %33;
+            border-color: %accentSolid%;
         }
         QPushButton[actionRole="ghost"]:disabled {
-            color: rgba(%36, 0.55);
-            border-color: %46;
+            color: rgba(%textPrimaryRgb%, 0.55);
+            border-color: %borderControl%;
         }
         QPushButton[actionRole="danger"] {
             background-color: transparent;
-            color: %44;
-            border: 1px solid %44;
+            color: %dangerFill%;
+            border: 1px solid %dangerFill%;
             font-weight: 600;
         }
         QPushButton[actionRole="danger"]:hover {
-            background-color: rgba(%16, 0.14);
+            background-color: rgba(%dangerRgb%, 0.14);
         }
         QPushButton[actionRole="danger"]:pressed {
-            background-color: rgba(%16, 0.22);
+            background-color: rgba(%dangerRgb%, 0.22);
         }
         QPushButton[actionRole="danger"]:checked {
-            background-color: rgba(%16, 0.18);
-            border-color: %44;
+            background-color: rgba(%dangerRgb%, 0.18);
+            border-color: %dangerFill%;
         }
         QPushButton[actionRole="danger"]:focus {
-            background-color: rgba(%16, 0.10);
-            border-color: %44;
+            background-color: rgba(%dangerRgb%, 0.10);
+            border-color: %dangerFill%;
         }
         QPushButton[actionRole="danger"]:disabled {
-            color: rgba(%36, 0.55);
-            border-color: %46;
+            color: rgba(%textPrimaryRgb%, 0.55);
+            border-color: %borderControl%;
         }
         /* A chip paints its own disc at one fixed size. The size is stated in
            all four directions because the generic button rule above sets a
@@ -704,82 +698,82 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background: transparent;
             border: none;
             padding: 0;
-            min-width: %49px;
-            max-width: %49px;
-            min-height: %49px;
-            max-height: %49px;
+            min-width: %settingsSwatchSize%px;
+            max-width: %settingsSwatchSize%px;
+            min-height: %settingsSwatchSize%px;
+            max-height: %settingsSwatchSize%px;
             border-radius: 0;
         }
 
         /* ── Checkboxes & Selectable Resolution / Feed Tiles ───────────────── */
         QCheckBox {
-            color: %38;
+            color: %textCheckLabel%;
             spacing: 8px;
             padding: 5px 8px;
             border-radius: 8px;
         }
         QCheckBox:hover {
-            background-color: rgba(%10, 0.06);
+            background-color: rgba(%accentRgb%, 0.06);
         }
         QCheckBox#benchmarkClipCheck,
         QCheckBox[tileCheck="true"] {
-            background-color: %39;
-            border: 1px solid rgba(%4, 0.12);
-            border-radius: %50px;
+            background-color: %surfaceTag%;
+            border: 1px solid rgba(%hairlineRgb%, 0.12);
+            border-radius: %radiusSmall%px;
             padding: 6px 10px;
             font-weight: 500;
         }
         QCheckBox#benchmarkClipCheck:hover,
         QCheckBox[tileCheck="true"]:hover {
-            background-color: %40;
-            border-color: rgba(%10, 0.32);
+            background-color: %surfaceTileHover%;
+            border-color: rgba(%accentRgb%, 0.32);
         }
         QCheckBox#benchmarkClipCheck:checked,
         QCheckBox[tileCheck="true"]:checked {
-            background-color: rgba(%19, 0.14);
-            border-color: rgba(%10, 0.42);
-            color: %6;
+            background-color: rgba(%accentSolidRgb%, 0.14);
+            border-color: rgba(%accentRgb%, 0.42);
+            color: %textStrong%;
         }
         QCheckBox::indicator {
             width: 16px;
             height: 16px;
             border-radius: 4px;
-            border: 1px solid rgba(%4, 0.30);
-            background-color: %20;
+            border: 1px solid rgba(%hairlineRgb%, 0.30);
+            background-color: %surfaceInput%;
         }
         QCheckBox::indicator:hover {
-            border-color: %24;
+            border-color: %accentFocus%;
         }
         QCheckBox::indicator:checked {
-            background-color: %33;
-            border-color: %24;
+            background-color: %accentSolid%;
+            border-color: %accentFocus%;
         }
 
         /* ── Preset Shortcut Rows ──────────────────────────────────────────── */
         QWidget#presetShortcutRow {
-            background-color: %41;
-            border: 1px solid rgba(%4, 0.09);
-            border-radius: %54px;
+            background-color: %surfaceShortcutRow%;
+            border: 1px solid rgba(%hairlineRgb%, 0.09);
+            border-radius: %radiusMedium%px;
         }
         QWidget#presetShortcutRow:hover {
-            background-color: %29;
-            border-color: rgba(%10, 0.26);
+            background-color: %surfaceControl%;
+            border-color: rgba(%accentRgb%, 0.26);
         }
         QWidget#presetShortcutRow[hasBinding="true"] {
-            background-color: rgba(%19, 0.10);
-            border: 1px solid rgba(%10, 0.34);
+            background-color: rgba(%accentSolidRgb%, 0.10);
+            border: 1px solid rgba(%accentRgb%, 0.34);
         }
         QWidget#presetShortcutRow[hasBinding="true"]:hover {
-            background-color: rgba(%19, 0.15);
-            border-color: rgba(%10, 0.48);
+            background-color: rgba(%accentSolidRgb%, 0.15);
+            border-color: rgba(%accentRgb%, 0.48);
         }
 
         /* ── Benchmark Model Tree & Results Table ──────────────────────────── */
         QTreeWidget#benchmarkModelTree {
-            background-color: %20;
-            color: %2;
-            border: 1px solid rgba(%4, 0.14);
-            border-radius: %54px;
+            background-color: %surfaceInput%;
+            color: %textPrimary%;
+            border: 1px solid rgba(%hairlineRgb%, 0.14);
+            border-radius: %radiusMedium%px;
             padding: 6px;
             outline: 0;
         }
@@ -788,67 +782,67 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             border-radius: 6px;
         }
         QTreeWidget#benchmarkModelTree::item:hover {
-            background-color: rgba(%10, 0.10);
+            background-color: rgba(%accentRgb%, 0.10);
         }
         QTableWidget#benchmarkResults {
-            background-color: %20;
-            alternate-background-color: %42;
-            color: %2;
-            border: 1px solid rgba(%4, 0.14);
-            border-radius: %54px;
-            selection-background-color: rgba(%19, 0.24);
-            selection-color: %22;
+            background-color: %surfaceInput%;
+            alternate-background-color: %tableAlternateRow%;
+            color: %textPrimary%;
+            border: 1px solid rgba(%hairlineRgb%, 0.14);
+            border-radius: %radiusMedium%px;
+            selection-background-color: rgba(%accentSolidRgb%, 0.24);
+            selection-color: %textOnAccent%;
             outline: 0;
         }
         QTableWidget#benchmarkResults QHeaderView::section {
-            background-color: %39;
-            color: %18;
+            background-color: %surfaceTag%;
+            color: %accentSoft%;
             font-weight: 600;
             font-size: 12px;
             padding: 6px 10px;
             border: none;
-            border-bottom: 1px solid rgba(%4, 0.14);
+            border-bottom: 1px solid rgba(%hairlineRgb%, 0.14);
         }
         QLabel#benchmarkEmptyState {
-            background-color: %20;
-            color: %8;
-            border: 1px dashed rgba(%4, 0.18);
-            border-radius: %54px;
+            background-color: %surfaceInput%;
+            color: %textMutedSoft%;
+            border: 1px dashed rgba(%hairlineRgb%, 0.18);
+            border-radius: %radiusMedium%px;
             padding: 20px;
         }
         QLabel#benchmarkResultDetail {
-            background-color: rgba(%16, 0.10);
-            color: %17;
-            border: 1px solid rgba(%16, 0.28);
-            border-radius: %50px;
+            background-color: rgba(%dangerRgb%, 0.10);
+            color: %dangerText%;
+            border: 1px solid rgba(%dangerRgb%, 0.28);
+            border-radius: %radiusSmall%px;
             padding: 8px 12px;
         }
 
         /* ── Progress Bars (Slight Purple Telemetry) ───────────────────────── */
         QProgressBar#benchmarkProgress,
         QProgressBar#benchmarkEngineProgress {
-            background-color: %20;
-            border: 1px solid rgba(%4, 0.16);
+            background-color: %surfaceInput%;
+            border: 1px solid rgba(%hairlineRgb%, 0.16);
             border-radius: 5px;
             min-height: 8px;
             max-height: 8px;
         }
         QProgressBar#benchmarkProgress::chunk,
         QProgressBar#benchmarkEngineProgress::chunk {
-            background-color: %33;
+            background-color: %accentSolid%;
             border-radius: 4px;
         }
         QProgressBar#benchmarkProgress[runState="success"]::chunk {
-            background-color: %43;
+            background-color: %successFill%;
         }
         QProgressBar#benchmarkProgress[runState="failure"]::chunk {
-            background-color: %44;
+            background-color: %dangerFill%;
         }
 
         /* ── Benchmark Sticky Footer Bar ───────────────────────────────────── */
         QWidget#benchmarkBottomBar {
-            background-color: %3;
-            border-top: 1px solid rgba(%4, 0.14);
+            background-color: %surfaceRaised%;
+            border-top: 1px solid rgba(%hairlineRgb%, 0.14);
         }
 
         /* ── Minimal Sleek Scrollbars ──────────────────────────────────────── */
@@ -858,12 +852,12 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             margin: 2px 1px 2px 1px;
         }
         QScrollBar::handle:vertical {
-            background: rgba(%10, 0.24);
+            background: rgba(%accentRgb%, 0.24);
             min-height: 28px;
             border-radius: 3px;
         }
         QScrollBar::handle:vertical:hover {
-            background: rgba(%10, 0.45);
+            background: rgba(%accentRgb%, 0.45);
         }
         QScrollBar::add-line:vertical,
         QScrollBar::sub-line:vertical,
@@ -872,63 +866,68 @@ inline QString settingsStylesheet(const theme::Appearance& appearance) {
             background: none;
             height: 0px;
         }
-    )QSS")
-        .arg(p.surfacePage)
-        .arg(p.textPrimary)
-        .arg(p.surfaceRaised)
-        .arg(p.hairlineRgb)
-        .arg(p.surfaceInset)
-        .arg(p.textStrong)
-        .arg(p.textBright)
-        .arg(p.textMutedSoft)
-        .arg(p.textLabel)
-        .arg(p.accentRgb)
-        .arg(p.accentSoftBright)
-        .arg(p.successRgb)
-        .arg(p.successText)
-        .arg(p.warningRgb)
-        .arg(p.warningText)
-        .arg(p.dangerRgb)
-        .arg(p.dangerText)
-        .arg(p.accentSoft)
-        .arg(p.accentSolidRgb)
-        .arg(p.surfaceInput)
-        .arg(p.accentDeep)
-        .arg(p.textOnAccent)
-        .arg(p.surfaceInputHover)
-        .arg(p.accentFocus)
-        .arg(p.surfaceInputFocus)
-        .arg(p.textDisabled)
-        .arg(p.surfaceDeepRgb)
-        .arg(p.surfaceRow)
-        .arg(p.surfaceControl)
-        .arg(p.surfaceControlHover)
-        .arg(p.surfaceControlPressed)
-        /* Three rules were deleted with the old button styles. Their arguments
-           went with them here: leaving the values in place shifted every later
-           marker by three, so the role rules painted a table-row colour as a
-           control border and a success fill as a primary label ink. */
-        .arg(p.accentSolid)
-        .arg(p.accentDeepest)
-        .arg(p.textPrimaryRgb)
-        .arg(p.textCheckLabel)
-        .arg(p.surfaceTag)
-        .arg(p.surfaceTileHover)
-        .arg(p.surfaceShortcutRow)
-        .arg(p.tableAlternateRow)
-        .arg(p.successFill)
-        .arg(p.dangerFill)
-        .arg(p.surfaceControlRaised)
-        .arg(p.borderControl)
-        .arg(p.accentInk)
-        .arg(p.accentHover)
-        .arg(theme::kSettingsSwatchSize)
-        .arg(theme::radiusSmall(appearance))   // %50
-        .arg(theme::kControlContentHeight)     // %51
-        .arg(theme::kControlInsetH)            // %52
-        .arg(theme::kControlInsetHPrimary)     // %53
-        .arg(theme::radiusMedium(appearance))  // %54
-        .arg(theme::radiusPill(appearance));   // %55
+    )QSS";
+
+    // X-D24: markers are named, not numbered. The old 52-positional
+    // .arg() chain filled the lowest remaining %N, so deleting a rule
+    // shifted every later marker by three and once painted a table-row
+    // colour as a control border and a success fill as a primary label
+    // ink. A (marker, value) pair can only ever fill its own marker.
+    const std::array<std::pair<QString, QString>, 52> replacements{{
+        {QStringLiteral("%surfacePage%"), p.surfacePage},
+        {QStringLiteral("%textPrimary%"), p.textPrimary},
+        {QStringLiteral("%surfaceRaised%"), p.surfaceRaised},
+        {QStringLiteral("%hairlineRgb%"), p.hairlineRgb},
+        {QStringLiteral("%surfaceInset%"), p.surfaceInset},
+        {QStringLiteral("%textStrong%"), p.textStrong},
+        {QStringLiteral("%textBright%"), p.textBright},
+        {QStringLiteral("%textMutedSoft%"), p.textMutedSoft},
+        {QStringLiteral("%textLabel%"), p.textLabel},
+        {QStringLiteral("%accentRgb%"), p.accentRgb},
+        {QStringLiteral("%accentSoftBright%"), p.accentSoftBright},
+        {QStringLiteral("%successRgb%"), p.successRgb},
+        {QStringLiteral("%successText%"), p.successText},
+        {QStringLiteral("%warningRgb%"), p.warningRgb},
+        {QStringLiteral("%warningText%"), p.warningText},
+        {QStringLiteral("%dangerRgb%"), p.dangerRgb},
+        {QStringLiteral("%dangerText%"), p.dangerText},
+        {QStringLiteral("%accentSoft%"), p.accentSoft},
+        {QStringLiteral("%accentSolidRgb%"), p.accentSolidRgb},
+        {QStringLiteral("%surfaceInput%"), p.surfaceInput},
+        {QStringLiteral("%accentDeep%"), p.accentDeep},
+        {QStringLiteral("%textOnAccent%"), p.textOnAccent},
+        {QStringLiteral("%surfaceInputHover%"), p.surfaceInputHover},
+        {QStringLiteral("%accentFocus%"), p.accentFocus},
+        {QStringLiteral("%surfaceInputFocus%"), p.surfaceInputFocus},
+        {QStringLiteral("%textDisabled%"), p.textDisabled},
+        {QStringLiteral("%surfaceDeepRgb%"), p.surfaceDeepRgb},
+        {QStringLiteral("%surfaceRow%"), p.surfaceRow},
+        {QStringLiteral("%surfaceControl%"), p.surfaceControl},
+        {QStringLiteral("%surfaceControlHover%"), p.surfaceControlHover},
+        {QStringLiteral("%surfaceControlPressed%"), p.surfaceControlPressed},
+        {QStringLiteral("%accentSolid%"), p.accentSolid},
+        {QStringLiteral("%accentDeepest%"), p.accentDeepest},
+        {QStringLiteral("%textPrimaryRgb%"), p.textPrimaryRgb},
+        {QStringLiteral("%textCheckLabel%"), p.textCheckLabel},
+        {QStringLiteral("%surfaceTag%"), p.surfaceTag},
+        {QStringLiteral("%surfaceTileHover%"), p.surfaceTileHover},
+        {QStringLiteral("%surfaceShortcutRow%"), p.surfaceShortcutRow},
+        {QStringLiteral("%tableAlternateRow%"), p.tableAlternateRow},
+        {QStringLiteral("%successFill%"), p.successFill},
+        {QStringLiteral("%dangerFill%"), p.dangerFill},
+        {QStringLiteral("%surfaceControlRaised%"), p.surfaceControlRaised},
+        {QStringLiteral("%borderControl%"), p.borderControl},
+        {QStringLiteral("%accentInk%"), p.accentInk},
+        {QStringLiteral("%accentHover%"), p.accentHover},
+        {QStringLiteral("%settingsSwatchSize%"), QString::number(theme::kSettingsSwatchSize)},
+        {QStringLiteral("%radiusSmall%"), QString::number(theme::radiusSmall(appearance))},
+        {QStringLiteral("%controlContentHeight%"), QString::number(theme::kControlContentHeight)},
+        {QStringLiteral("%controlInsetH%"), QString::number(theme::kControlInsetH)},
+        {QStringLiteral("%controlInsetHPrimary%"), QString::number(theme::kControlInsetHPrimary)},
+        {QStringLiteral("%radiusMedium%"), QString::number(theme::radiusMedium(appearance))},
+        {QStringLiteral("%radiusPill%"), QString::number(theme::radiusPill(appearance))},
+    }};
+    for (const auto& [marker, value] : replacements) sheet.replace(marker, value);
     // The page's control and card corners are the appearance's own radius
     // steps, not a second scale computed here.
     return sheet;

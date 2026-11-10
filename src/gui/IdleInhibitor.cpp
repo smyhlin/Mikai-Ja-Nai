@@ -53,6 +53,9 @@ bool IdleInhibitor::inhibitThroughLogind() {
                            QStringLiteral("org.freedesktop.login1.Manager"),
                            QDBusConnection::systemBus());
     if (!manager.isValid()) return false;
+    // X-M7: the default DBus timeout is 25 s; a wedged logind must not
+    // freeze the GUI thread on every playback start/stop.
+    manager.setTimeout(250);
     const QDBusMessage reply =
         manager.call(QStringLiteral("Inhibit"), QStringLiteral("idle"), QStringLiteral("Mikai Ja Nai"),
                      QString::fromLatin1(kInhibitReason), QStringLiteral("block"));
@@ -71,6 +74,7 @@ bool IdleInhibitor::inhibitThroughScreenSaver() {
                                    QStringLiteral("org.freedesktop.ScreenSaver"),
                                    QDBusConnection::sessionBus());
         if (!screensaver.isValid()) continue;
+        screensaver.setTimeout(250);
         const QDBusMessage reply = screensaver.call(QStringLiteral("Inhibit"),
                                                     QStringLiteral("mikai"),
                                                     QString::fromLatin1(kInhibitReason));
@@ -90,6 +94,7 @@ void IdleInhibitor::releaseScreenSaver() {
                                QStringLiteral("org.freedesktop.ScreenSaver"),
                                QDBusConnection::sessionBus());
     if (screensaver.isValid()) {
+        screensaver.setTimeout(250);
         screensaver.call(QStringLiteral("UnInhibit"), platform_->screenSaverCookie);
     }
     platform_->screenSaverCookie = 0;

@@ -8,6 +8,7 @@
 #include <QtCore/QRegularExpression>
 
 #include "native/bundle/NativeDiagnostics.hpp"
+#include "native/bundle/NativeJsonHelpers.hpp"
 #include "native/bundle/NativePaths.hpp"
 
 namespace mplayer {
@@ -75,16 +76,6 @@ bool isSha1Hex(const QString& text) {
   return true;
 }
 
-bool jsonInteger(const QJsonValue& value, qint64* out) {
-  if (!value.isDouble()) return false;
-  const double d = value.toDouble();
-  const double intMax = 9007199254740992.0;  // 2^53: past here a double is not exact
-  if (d != static_cast<double>(static_cast<qint64>(d))) return false;
-  if (d < -intMax || d > intMax) return false;
-  *out = static_cast<qint64>(d);
-  return true;
-}
-
 bool jsonIntInRange(const QJsonValue& value, int* out) {
   qint64 wide = 0;
   if (!jsonInteger(value, &wide)) return false;
@@ -93,26 +84,10 @@ bool jsonIntInRange(const QJsonValue& value, int* out) {
   return true;
 }
 
-bool jsonString(const QJsonObject& object, const QString& key, QString* out) {
-  const QJsonValue value = object.value(key);
-  if (!value.isString()) return false;
-  *out = value.toString();
-  return true;
-}
-
 bool jsonBool(const QJsonObject& object, const QString& key, bool* out) {
   const QJsonValue value = object.value(key);
   if (!value.isBool()) return false;
   *out = value.toBool();
-  return true;
-}
-
-bool noUnknownKeys(const QJsonObject& object, const QStringList& known, QString* offender) {
-  for (auto it = object.constBegin(); it != object.constEnd(); ++it) {
-    if (known.contains(it.key())) continue;
-    if (offender) *offender = it.key();
-    return false;
-  }
   return true;
 }
 

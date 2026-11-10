@@ -287,8 +287,13 @@ protected:
         }
         gl_.glBindFramebuffer(GL_READ_FRAMEBUFFER, sourceFramebuffer_);
         gl_.glBindFramebuffer(GL_DRAW_FRAMEBUFFER, defaultFramebufferObject());
+        // X-H7: blit into physical framebuffer pixels, not logical widget
+        // coordinates — on HiDPI the logical size fills only the
+        // bottom-left fraction and patternMatches() samples black pixels.
+        const int physicalWidth = qMax(1, qRound(width() * devicePixelRatioF()));
+        const int physicalHeight = qMax(1, qRound(height() * devicePixelRatioF()));
         gl_.glBlitFramebuffer(0, 0, kTextureSide, kTextureSide,
-                              0, 0, width(), height(), GL_COLOR_BUFFER_BIT, GL_NEAREST);
+                              0, 0, physicalWidth, physicalHeight, GL_COLOR_BUFFER_BIT, GL_NEAREST);
         const GLenum glError = gl_.glGetError();
         gl_.glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
         if (glError != GL_NO_ERROR) {
@@ -339,13 +344,13 @@ private:
             hr = D3D11CreateDevice(adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr,
                                    D3D11_CREATE_DEVICE_BGRA_SUPPORT, featureLevels,
                                    static_cast<UINT>(std::size(featureLevels)), D3D11_SDK_VERSION,
-                                   device.GetAddressOf(), &obtained, deviceContext.GetAddressOf());
+                                   device.ReleaseAndGetAddressOf(), &obtained, deviceContext.ReleaseAndGetAddressOf());
             if (hr == E_INVALIDARG) {
                 static constexpr D3D_FEATURE_LEVEL fallback[] = {D3D_FEATURE_LEVEL_11_0};
                 hr = D3D11CreateDevice(adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr,
                                        D3D11_CREATE_DEVICE_BGRA_SUPPORT, fallback,
                                        static_cast<UINT>(std::size(fallback)), D3D11_SDK_VERSION,
-                                       device.GetAddressOf(), &obtained, deviceContext.GetAddressOf());
+                                       device.ReleaseAndGetAddressOf(), &obtained, deviceContext.ReleaseAndGetAddressOf());
             }
             if (FAILED(hr)) continue;
 
@@ -432,7 +437,7 @@ private:
         desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
         desc.MiscFlags = mode == SharingMode::AjiNtHandle ? kAjiContractMiscFlags : kLegacyMiscFlags;
 
-        HRESULT hr = device->CreateTexture2D(&desc, nullptr, texture_.GetAddressOf());
+        HRESULT hr = device->CreateTexture2D(&desc, nullptr, texture_.ReleaseAndGetAddressOf());
         if (FAILED(hr)) {
             attempt.textureError = QStringLiteral("CreateTexture2D(%1) failed: %2")
                                        .arg(miscFlagsText(mode), hrText(hr));
@@ -441,7 +446,7 @@ private:
         }
         attempt.textureCreated = true;
         textureCreated_ = true;
-        hr = device->CreateRenderTargetView(texture_.Get(), nullptr, renderTarget_.GetAddressOf());
+        hr = device->CreateRenderTargetView(texture_.Get(), nullptr, renderTarget_.ReleaseAndGetAddressOf());
         if (FAILED(hr)) {
             attempt.textureError = QStringLiteral("CreateRenderTargetView failed: %1").arg(hrText(hr));
             texture_.Reset();

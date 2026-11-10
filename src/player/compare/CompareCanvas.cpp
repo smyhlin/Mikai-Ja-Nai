@@ -77,7 +77,17 @@ void fitSelectorLabel(QToolButton* button, const QString& full) {
     if (button == nullptr) return;
     const QString suffix = QStringLiteral("  ▾");
     const int pad = kCompareSelectorInset * 2 + 24;
-    const int avail = button->width() - pad;
+    // X-M23: button->width() is the pre-layout width when this runs before
+    // the row is laid out, so a label fitted against it is clipped once the
+    // layout assigns the real slot. Elide against the slot instead: the
+    // parent row's width split across its (equally stretched, zero-spacing)
+    // children. Falls back to the button's own width while the row has none.
+    int slotWidth = button->width();
+    if (QWidget* parent = button->parentWidget(); parent != nullptr && parent->width() > 0) {
+        const int count = parent->layout() != nullptr ? qMax(1, parent->layout()->count()) : 1;
+        slotWidth = parent->width() / count;
+    }
+    const int avail = slotWidth - pad;
     QString text = full + suffix;
     if (avail > 24) {
         const QFontMetrics fm(button->font());
@@ -227,7 +237,10 @@ CompareCanvas::CompareCanvas(QWidget* parent) : QGraphicsView(parent) {
         badge->setToolButtonStyle(Qt::ToolButtonTextOnly);
         badge->setPopupMode(QToolButton::InstantPopup);
         badge->setMinimumWidth(0);
-        badge->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        // X-M23: Expanding lets a long label's sizeHint force the row wider
+        // than its slot (and the label is then clipped by the layout). Ignored
+        // takes the width the 50/50 layout assigns instead.
+        badge->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
         badge->installEventFilter(this);
         badge->setMenu(badge == badgeA_ ? menuA_ : menuB_);
         badge->hide();
@@ -595,10 +608,21 @@ bool CompareCanvas::pixelAt(const QPoint& widgetPoint, int& x, int& y, uchar& b,
     if (img == nullptr) {
         return false;
     }
+    // X-M21: the hit test above is in target space (the items are displayed
+    // scaled to the common imageSize_), but the pixel index is in image
+    // space. A smaller side is stretched to imageSize_, so its raw scene
+    // coordinate is past the image's edge and the readout reported
+    // "no pixel" — map through the item scale first, the same factors paint
+    // uses for srcRect.
+    QPointF ip = sp;
+    if (imageSize_.width() > 0 && imageSize_.height() > 0) {
+        ip.setX(sp.x() * img->width() / imageSize_.width());
+        ip.setY(sp.y() * img->height() / imageSize_.height());
+    }
     // A fractional scene coordinate must not truncate toward zero: -0.4 would
     // read pixel 0 as valid. Flooring keeps a point left of the image out.
-    x = static_cast<int>(std::floor(sp.x()));
-    y = static_cast<int>(std::floor(sp.y()));
+    x = static_cast<int>(std::floor(ip.x()));
+    y = static_cast<int>(std::floor(ip.y()));
     if (x < 0 || y < 0 || x >= img->width() || y >= img->height()) {
         return false;
     }
@@ -823,7 +847,14 @@ bool CompareCanvas::eventFilter(QObject* watched, QEvent* event) {
     if (event->type() == QEvent::Wheel &&
         (watched == selectorRow_ || watched == badgeA_ || watched == badgeB_)) {
         auto* wheel = static_cast<QWheelEvent*>(event);
-        const QPointF local(viewport()->rect().center());
+        // X-M21: the forwarded event used to synthesise the viewport centre
+        // as its position, so a wheel over a badge zoomed about the centre
+        // instead of the cursor. Translate the badge-local position into
+        // viewport coordinates first.
+        QPointF local = viewport()->rect().center();
+        if (const auto* watchedWidget = qobject_cast<const QWidget*>(watched)) {
+            local = watchedWidget->mapTo(viewport(), wheel->position().toPoint());
+        }
         QWheelEvent mapped(local, wheel->globalPosition(), wheel->pixelDelta(), wheel->angleDelta(),
                            wheel->buttons(), wheel->modifiers(), wheel->phase(), wheel->inverted(),
                            wheel->source());
@@ -838,6 +869,14 @@ void CompareCanvas::changeEvent(QEvent* event) {
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
     }
+}
+
+void CompareCanvas::showEvent(QShowEvent* event) {
+    QGraphicsView::showEvent(event);
+    // X-M23: labels fitted before the first layout used the pre-layout width;
+    // re-fit once the view is shown and the row has its real slot.
+    fitSelectorLabel(badgeA_, labelA_);
+    fitSelectorLabel(badgeB_, labelB_);
 }
 
 void CompareCanvas::retranslateUi() {

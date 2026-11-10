@@ -186,12 +186,8 @@ private:
             NothingToInstall,
             CheckFailed,
             ClosureNeedsRunner,
-            RuntimeNeedsRunner,
-            ImportFailed,
-            RuntimeInstalled,
             VerificationCancelled,
             DownloadsCancelling,
-            InstallFailed,
             MissingProvisioner,
             AllVerified,
             /// A named long-running operation. Rendered muted, restated on a
@@ -211,7 +207,6 @@ private:
             None,
             Checking,
             Runtime,
-            LocalRuntime,
             Rife,
             Models,
             Verification,
@@ -432,7 +427,6 @@ private:
     /// RIFE archive graphs are a separate inventory, not NativeSpatialAssets.
     QSet<QString> verifiedRifeGraphs_;
     QSet<int> verifiedAnimeJanaiBackends_;
-    QMap<int, QString> animeJanaiVerificationErrors_;
     QMap<QString, QString> rifeVerificationErrors_;
     /// Which catalogue rows the current download run still has to fetch, as
     /// indices into spatialAssetCatalog().

@@ -328,6 +328,15 @@ NativePlaybackController::Decision NativePlaybackController::requestAdmission(
     return refuse(QStringLiteral("native.playback.requestId"),
                   QStringLiteral("an admission must carry a request id"));
   }
+  // X-H1: like every other transition, refuse while one is pending.
+  // clearPending() below destroys the pending transition's leases, and
+  // startRemoval deliberately moves held claims into the pending
+  // transition so only the observed removal releases them; an admission
+  // arriving mid-drain/removal voided that guarantee.
+  if (pending_) {
+    return refuse(QStringLiteral("native.playback.transitionInFlight"),
+                  QStringLiteral("another native transition is still in flight"));
+  }
   if (sourceEpoch_ != 0 && request.epoch != sourceEpoch_) {
     return refuse(QStringLiteral("native.playback.staleEpoch"),
                   QStringLiteral("the admission was resolved for another source epoch"));

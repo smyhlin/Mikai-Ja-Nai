@@ -16,7 +16,8 @@
 #include <QListWidgetItem>
 #include <QTemporaryDir>
 #include <QApplication>
-#include <QMessageBox>
+#include <atomic>
+#include <backend/Cancellation.hpp>
 #include <QAccessible>
 #include <QMetaObject>
 #include <QThreadPool>
@@ -38,7 +39,6 @@
 #include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
-#include <QEasingCurve>
 #include <QEnterEvent>
 #include <QFileInfo>
 #include <QFrame>
@@ -50,7 +50,6 @@
 #include <QImage>
 #include <QKeyEvent>
 #include <QLabel>
-#include <QLinearGradient>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QOpenGLWidget>
@@ -58,18 +57,14 @@
 #include <QPixmap>
 #include <QPixmapCache>
 #include <QPushButton>
-#include <QRegion>
 #include <QResizeEvent>
 #include <QScreen>
 #include <QShortcut>
 #include <QShowEvent>
 #include <QWindowStateChangeEvent>
-#include <QSignalBlocker>
-#include <QSlider>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
-#include <QVariantAnimation>
 
 #include <algorithm>
 #include <cmath>
@@ -1825,6 +1820,32 @@ void PlayerDialog::openSubtitlesSearchDialog() {
     actions->addWidget(download);
     layout->addLayout(actions);
 
+    // X-C1: the dialog is stack-allocated and its children die with it when
+    // exec() returns, while pool workers may still be in flight. Workers
+    // carry only this shared slot and resolve its QPointer members on the
+    // GUI thread, never raw child pointers on a pool thread.
+    struct SubtitleDialogSlot {
+        QPointer<PlayerDialog> owner;
+        QPointer<QDialog> dialog;
+        QPointer<QListWidget> results;
+        QPointer<QLabel> status;
+        QPointer<QPushButton> search;
+        QPointer<QPushButton> download;
+    };
+    auto subtitleSlot = std::make_shared<SubtitleDialogSlot>();
+    subtitleSlot->owner = this;
+    subtitleSlot->dialog = &dialog;
+    subtitleSlot->results = results;
+    subtitleSlot->status = status;
+    subtitleSlot->search = search;
+    subtitleSlot->download = download;
+
+    const std::shared_ptr<std::atomic<bool>> cancelled =
+        std::make_shared<std::atomic<bool>>(false);
+    connect(&dialog, &QDialog::finished, &dialog, [cancelled] {
+        cancelled->store(true, std::memory_order_release);
+    });
+
     const QPointer<PlayerDialog> self(this);
     connect(search, &QPushButton::clicked, &dialog, [this, self, query, language, key, results,
                                                      status, search, download] {
@@ -1842,7 +1863,8 @@ void PlayerDialog::openSubtitlesSearchDialog() {
         const QString text = query->text().trimmed();
         const QString code = language->currentData().toString();
         QThreadPool::globalInstance()->start(QRunnable::create(
-            [self, apiKey, text, code, results, status, search, download] {
+            [subtitleSlot, cancelled, apiKey, text, code] {
+                mikai::backend::WorkCancellationScope scope(cancelled.get());
                 const OpenSubtitlesSearch found =
                     searchOpenSubtitles(apiKey, text, code);
                 QVariantMap reply;
@@ -1862,10 +1884,16 @@ void PlayerDialog::openSubtitlesSearchDialog() {
                 }
                 QMetaObject::invokeMethod(
                     qApp,
-                    [self, reply, apiKey, results, status, search, download] {
-                        if (self == nullptr) return;
-                        self->applySubtitleSearchReply(reply, apiKey, results, status, search,
-                                                       download);
+                    [subtitleSlot, reply, apiKey] {
+                        if (subtitleSlot->owner == nullptr || subtitleSlot->dialog == nullptr ||
+                            subtitleSlot->results == nullptr || subtitleSlot->status == nullptr ||
+                            subtitleSlot->search == nullptr ||
+                            subtitleSlot->download == nullptr) {
+                            return;
+                        }
+                        subtitleSlot->owner->applySubtitleSearchReply(
+                            reply, apiKey, subtitleSlot->results, subtitleSlot->status,
+                            subtitleSlot->search, subtitleSlot->download);
                     },
                     Qt::QueuedConnection);
             }));
@@ -1881,14 +1909,20 @@ void PlayerDialog::openSubtitlesSearchDialog() {
         download->setEnabled(false);
         status->setText(tr("Downloading…"));
         QThreadPool::globalInstance()->start(QRunnable::create(
-            [self, apiKey, fileId, status, download] {
+            [subtitleSlot, cancelled, apiKey, fileId] {
+                mikai::backend::WorkCancellationScope scope(cancelled.get());
                 QString error;
                 const QByteArray bytes = downloadOpenSubtitles(apiKey, fileId, &error);
                 QMetaObject::invokeMethod(
                     qApp,
-                    [self, bytes, error, status, download] {
-                        if (self == nullptr) return;
-                        self->applySubtitleDownloadReply(bytes, error, status, download);
+                    [subtitleSlot, bytes, error] {
+                        if (subtitleSlot->owner == nullptr || subtitleSlot->dialog == nullptr ||
+                            subtitleSlot->status == nullptr ||
+                            subtitleSlot->download == nullptr) {
+                            return;
+                        }
+                        subtitleSlot->owner->applySubtitleDownloadReply(
+                            bytes, error, subtitleSlot->status, subtitleSlot->download);
                     },
                     Qt::QueuedConnection);
             }));

@@ -8,6 +8,8 @@
 
 #include "NativeFrameFixture.hpp"
 
+#include "NativeBuilderInternal.hpp"
+
 #include <QtCore/QtEndian>
 
 #include <cstring>
@@ -17,32 +19,6 @@ namespace native {
 
 namespace {
 
-// Binary32 -> binary16, round to nearest even, subnormals flushed to zero. It
-// avoids every compiler intrinsic on purpose: the packed bytes have to be the
-// same in every toolchain, because they are hashed and compared.
-quint16 floatToHalf(float value) {
-  quint32 bits;
-  static_assert(sizeof(bits) == sizeof(value), "a binary32 float is 32 bits");
-  memcpy(&bits, &value, sizeof(bits));
-
-  const quint32 sign = (bits >> 16) & 0x8000u;
-  const qint32 exponent = static_cast<qint32>((bits >> 23) & 0xFFu) - 127 + 15;
-  const quint32 mantissa = bits & 0x007FFFFFu;
-
-  if (exponent <= 0) {
-    return static_cast<quint16>(sign);
-  }
-  if (exponent >= 31) {
-    return static_cast<quint16>(sign | 0x7C00u);
-  }
-  const quint32 halfMantissa = mantissa >> 13;
-  const quint32 remainder = mantissa & 0x1FFFu;
-  quint32 result = sign | (static_cast<quint32>(exponent) << 10) | halfMantissa;
-  if (remainder > 0x1000u || (remainder == 0x1000u && (halfMantissa & 1u) != 0u)) {
-    ++result;
-  }
-  return static_cast<quint16>(result & 0xFFFFu);
-}
 
 }  // namespace
 
@@ -66,7 +42,8 @@ QByteArray frameToFp16Tensor(const FrameFixture& fixture) {
     for (qint64 pixel = 0; pixel < planePixels; ++pixel) {
       const qint64 sourceIndex = pixel * 3 + channel;
       const qint64 tensorIndex = channel * planePixels + pixel;
-      const quint16 half = floatToHalf(static_cast<float>(in[sourceIndex]) / 255.0f);
+      const quint16 half =
+          builder_detail::floatToHalf(static_cast<float>(in[sourceIndex]) / 255.0f);
       qToLittleEndian<quint16>(half, tensor.data() + tensorIndex * 2);
     }
   }

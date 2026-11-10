@@ -1,6 +1,5 @@
 #include "BenchmarkReport.hpp"
 
-#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -31,12 +30,11 @@ QString uniquePath(const QString& directory) {
 
 }  // namespace
 
+// X-M20: was AppLocalDataLocation on Linux but applicationDirPath() (next
+// to the exe, inside the install tree) on Windows. Reports are user data,
+// so both platforms use AppLocalDataLocation now.
 QString benchmarkReportBaseDirectory() {
-#ifdef Q_OS_LINUX
     return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
-#else
-    return QCoreApplication::applicationDirPath();
-#endif
 }
 
 BenchmarkReportWriteResult writeBenchmarkReport(const QString& applicationDir,

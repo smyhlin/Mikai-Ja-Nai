@@ -17,6 +17,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QLocale>
 #include <QtCore/QMap>
+#include <QtCore/QMutex>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QSaveFile>
 #include <QtCore/QSet>
@@ -32,6 +33,15 @@ namespace {
 class ConfigText {
     Q_DECLARE_TR_FUNCTIONS(AnimeJanaiConfig)
 };
+
+/// X-C7: serialises the external-models.json read-modify-write cycles in
+/// registerExternalCustomAnimeJanaiModel / removeCustomAnimeJanaiModel.
+/// The expensive SHA-256 is computed BEFORE taking the lock; only the
+/// read -> mutate -> write sequence runs under it.
+QMutex& customModelsRegistryMutex() {
+    static QMutex mutex;
+    return mutex;
+}
 
 constexpr auto kDefaultTrtSettings =
     "--builderOptimizationLevel=5 --optShapes=input:%video_resolution% --skipInference";
@@ -237,25 +247,6 @@ bool writeExternalModelPins(const QVector<ExternalModelPin>& pins, QString* erro
     }
     if (error) error->clear();
     return true;
-}
-
-QString hashFileSha256(const QString& path, qint64* bytesOut,
-                       const std::function<bool()>& cancelled) {
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) return {};
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    qint64 bytes = 0;
-    QByteArray buffer(64 * 1024, Qt::Uninitialized);
-    while (!file.atEnd()) {
-        if (mikai::backend::WorkCancellationScope::cancellationRequested() ||
-            (cancelled && cancelled())) return {};
-        const qint64 count = file.read(buffer.data(), buffer.size());
-        if (count <= 0) return {};
-        hash.addData(QByteArrayView(buffer.constData(), count));
-        bytes += count;
-    }
-    if (bytesOut) *bytesOut = bytes;
-    return QString::fromLatin1(hash.result().toHex());
 }
 
 struct OwnedOnnxEntry {
@@ -1217,20 +1208,14 @@ bool registerExternalCustomAnimeJanaiModel(const QString& sourceFilePath,
             return fail(ConfigText::tr("Another custom model already uses the identifier %1.").arg(id));
         }
     }
-    QString registryError;
-    QVector<ExternalModelPin> pins = readExternalModelPins(&registryError);
-    if (!registryError.isEmpty()) return fail(registryError);
-    const auto existing = std::find_if(pins.begin(), pins.end(), [&canonicalPath](const ExternalModelPin& pin) {
-        return pin.filePath.compare(canonicalPath, Qt::CaseInsensitive) == 0;
-    });
-    for (const ExternalModelPin& pin : pins) {
-        if (pin.id.compare(id, Qt::CaseInsensitive) == 0 &&
-            pin.filePath.compare(canonicalPath, Qt::CaseInsensitive) != 0) {
-            return fail(ConfigText::tr("Another external model already uses the identifier %1.").arg(id));
-        }
-    }
+    // X-C7: the multi-second hash runs before the lock; the registry
+    // read-modify-write below runs under it, so concurrent registrations
+    // cannot overwrite each other's pins with a stale vector.
     qint64 hashedBytes = 0;
-    const QString digest = hashFileSha256(canonicalPath, &hashedBytes, cancelled);
+    // X-D17: was a local hashFileSha256 loop; the shared native::hashFile
+    // polls the same combination (the caller's callback + the
+    // WorkCancellationScope) via the isCancelled lambda above.
+    const QString digest = hashFile(canonicalPath, &hashedBytes, isCancelled);
     if (isCancelled()) {
         return fail(ConfigText::tr("External model registration was cancelled."));
     }
@@ -1240,14 +1225,31 @@ bool registerExternalCustomAnimeJanaiModel(const QString& sourceFilePath,
                         "changed while the pin was being calculated.")
                         .arg(QDir::toNativeSeparators(canonicalPath)));
     }
-    ExternalModelPin pin{id, canonicalPath, stem, bytes, digest};
     if (isCancelled()) {
         return fail(ConfigText::tr("External model registration was cancelled."));
     }
-    if (existing == pins.end()) pins.push_back(pin);
-    else *existing = pin;
-    QString saveError;
-    if (!writeExternalModelPins(pins, &saveError)) return fail(saveError);
+    {
+        const QMutexLocker lock(&customModelsRegistryMutex());
+        QString registryError;
+        QVector<ExternalModelPin> pins = readExternalModelPins(&registryError);
+        if (!registryError.isEmpty()) return fail(registryError);
+        const auto existing =
+            std::find_if(pins.begin(), pins.end(), [&canonicalPath](const ExternalModelPin& pin) {
+                return pin.filePath.compare(canonicalPath, Qt::CaseInsensitive) == 0;
+            });
+        for (const ExternalModelPin& pin : pins) {
+            if (pin.id.compare(id, Qt::CaseInsensitive) == 0 &&
+                pin.filePath.compare(canonicalPath, Qt::CaseInsensitive) != 0) {
+                return fail(
+                    ConfigText::tr("Another external model already uses the identifier %1.").arg(id));
+            }
+        }
+        ExternalModelPin pin{id, canonicalPath, stem, bytes, digest};
+        if (existing == pins.end()) pins.push_back(pin);
+        else *existing = pin;
+        QString saveError;
+        if (!writeExternalModelPins(pins, &saveError)) return fail(saveError);
+    }
 
     if (registeredOut) {
         registeredOut->id = id;
@@ -1370,7 +1372,7 @@ bool registerOwnedCustomAnimeJanaiModel(const QString& sourceFilePath,
     const QFileInfo beforeHash(canonicalSource);
     const QDateTime modifiedBeforeHash = beforeHash.lastModified();
     qint64 hashedBytes = 0;
-    const QString digest = hashFileSha256(canonicalSource, &hashedBytes, cancelled);
+    const QString digest = hashFile(canonicalSource, &hashedBytes, isCancelled);
     if (isCancelled()) {
         return fail(ConfigText::tr("Custom model registration was cancelled."));
     }
@@ -1683,6 +1685,10 @@ bool removeCustomAnimeJanaiModel(const QString& id, QString* errorOut) {
         QFile::remove(target.path + QStringLiteral(".source.json"));
         digest = sidecar.sha256;
     } else {
+        // X-C7: the external-pin removal is a read-modify-write on the same
+        // registry registerExternalCustomAnimeJanaiModel writes; hold the
+        // same mutex across it (no hash or file copy runs under the lock).
+        const QMutexLocker lock(&customModelsRegistryMutex());
         QString registryError;
         QVector<ExternalModelPin> pins = readExternalModelPins(&registryError);
         if (!registryError.isEmpty()) {

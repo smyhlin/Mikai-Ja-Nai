@@ -271,7 +271,6 @@ private:
     QList<backend::AnimeSummary> readRecentTitles();
     void persistRecentTitles();
     void showCarousel(const QString& key, const QList<backend::AnimeSummary>& items);
-    void resolveRecentPosters(const QList<backend::AnimeSummary>& entries);
     void requestCardDetail(const QString& ref);
     void applyCardDetail(const QString& ref, const backend::AnimeDetail& detail);
     void queueRecentPosterHeal(const QString& ref, const backend::AnimeDetail& detail);

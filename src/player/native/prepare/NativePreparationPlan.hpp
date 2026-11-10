@@ -295,9 +295,6 @@ PreparationPlan resolvePreparationPlan(const PlanRequest& request);
 /// rounded down to even.
 QSize padToTensorAlignment(const QSize& size, int* padL, int* padT);
 
-/// The same padding expressed as the total added on each axis.
-QSize paddingExtent(const QSize& size);
-
 /// `fps * num / den` in lowest terms, refused on overflow rather than wrapped.
 std::optional<Rational> scaleCadence(const Rational& fps, int num, int den);
 

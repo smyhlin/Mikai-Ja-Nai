@@ -6,6 +6,7 @@
 #include "MpvHandle.hpp"
 #include "native/components/AnimeJanaiBuildLog.hpp"
 #include "native/bundle/NativeRuntimeSelection.hpp"
+#include "native/components/AnimeJanaiRuntime.hpp"
 
 #include <QDebug>
 #include <QDir>
@@ -15,47 +16,6 @@
 
 #include <string>
 #include <utility>
-
-#ifndef Q_OS_WIN
-#include <dlfcn.h>
-#endif
-
-namespace {
-
-/// The fork's TensorRT backend resolves libnvinfer by bare soname, so the
-/// closure folder must already be on the process loader path when the filter
-/// initialises; a plain dlopen failure surfaces as the opaque "Failed to
-/// create inference context". Preloading the closure RTLD_GLOBAL makes those
-/// sonames resolvable. Idempotent: already-loaded sonames are skipped.
-void preloadAnimeJanaiBackendLibs(const QStringList& dirs) {
-#ifndef Q_OS_WIN
-    for (const QString& dirPath : dirs) {
-        if (dirPath.isEmpty()) continue;
-        const QDir dir(dirPath);
-        const QFileInfoList entries = dir.entryInfoList(
-            {QStringLiteral("*.so"), QStringLiteral("*.so.*")}, QDir::Files, QDir::Name);
-        for (const QFileInfo& entry : entries) {
-            // Skip a soname another core or a comparison pane already loaded: a
-            // second TensorRT runtime image in one process is what turns a
-            // working filter into heap corruption.
-            const QByteArray name = entry.fileName().toUtf8();
-            if (void* resident = ::dlopen(name.constData(), RTLD_NOW | RTLD_NOLOAD)) {
-                ::dlclose(resident);
-                continue;
-            }
-            const QByteArray path = entry.absoluteFilePath().toUtf8();
-            if (::dlopen(path.constData(), RTLD_NOW | RTLD_GLOBAL) != nullptr)
-                continue;
-            qWarning().noquote() << "[animejanai] backend preload failed for"
-                                 << entry.fileName() << ":" << ::dlerror();
-        }
-    }
-#else
-    Q_UNUSED(dirs);
-#endif
-}
-
-}  // namespace
 
 namespace mplayer {
 
@@ -987,7 +947,7 @@ void VideoSurface::processAnimeJanaiPlan() {
                                     return;
                                 }
                             }
-                            preloadAnimeJanaiBackendLibs(animeJanaiPlan_.backendLibDirs);
+                            native::preloadAnimeJanaiBackendLibs(animeJanaiPlan_.backendLibDirs);
                             const std::string spec(animeJanaiPlan_.filterSpec.constData(),
                                                    static_cast<size_t>(animeJanaiPlan_.filterSpec.size()));
                             animeJanaiReportPending_ = true;

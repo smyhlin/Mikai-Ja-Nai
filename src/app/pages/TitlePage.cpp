@@ -4552,12 +4552,13 @@ void TitlePage::openCoverViewer() {
     }
     coverViewer_ = new CoverViewer(coverPixmap_, heading_->text(), this);
     coverViewer_->setAttribute(Qt::WA_DeleteOnClose);
-    // WA_DeleteOnClose destroys the viewer the moment it closes, so the page's
-    // pointer is dangling from that instant on. Reopening without clearing it
-    // called close() on freed memory, which is why open-close-open-close
-    // crashed. Clearing on destroyed is the only thing that makes a second open
-    // safe; deleteLater() on top of it would be a double free.
-    connect(coverViewer_, &QObject::destroyed, this, [this] { coverViewer_ = nullptr; });
+    // X-M4: WA_DeleteOnClose destruction is deferred (deleteLater), so the
+    // old viewer's destroyed must not clear the pointer that now tracks a
+    // new one — capture the viewer and compare the sender.
+    connect(coverViewer_, &QObject::destroyed, this,
+            [this, viewer = coverViewer_](QObject* gone) {
+                if (gone == viewer) coverViewer_ = nullptr;
+            });
     coverViewer_->show();
 }
 

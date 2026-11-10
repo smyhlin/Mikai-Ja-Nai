@@ -70,9 +70,6 @@ QVector<QualityVariant> parseVariants(const QString& masterText, const QString& 
 
 QString qualityUrl(const QVector<QualityVariant>& variants, int height);
 
-QStringList listSegments(QNetworkAccessManager* manager, const QString& qualityUrl,
-                         const QMap<QString, QString>& headers = {});
-
 QMap<int, QString> qualityStreams(const QString& pageUrl);
 
 }  // namespace mikai::backend

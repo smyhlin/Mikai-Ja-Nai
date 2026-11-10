@@ -182,12 +182,6 @@ QString VideoDropTarget::classify(const QMimeData* mime, bool allowTracks, DropK
     return {};
 }
 
-QString VideoDropTarget::videoPath(const QMimeData* mime) {
-    DropKind kind = DropKind::None;
-    const QString path = classify(mime, false, &kind);
-    return kind == DropKind::Video ? path : QString();
-}
-
 void VideoDropTarget::refreshAppearance() {
     if (host_.isNull()) return;
     switch (indicatorKind_) {

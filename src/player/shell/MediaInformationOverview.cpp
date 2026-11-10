@@ -62,33 +62,10 @@ public:
         normalizedValue.replace(QLatin1Char('\r'), QLatin1Char('\n'));
         normalizedValue.replace(QChar(0x2028), QLatin1Char('\n'));
         normalizedValue.replace(QChar(0x2029), QLatin1Char('\n'));
-        const QString previous = toPlainText();
-        if (normalizedValue == previous) return;
-        const QTextCursor selection = textCursor();
-        const int selectionAnchor = selection.anchor();
-        const int selectionPosition = selection.position();
-        qsizetype prefix = 0;
-        const qsizetype commonSize = std::min(previous.size(), normalizedValue.size());
-        while (prefix < commonSize && previous[prefix] == normalizedValue[prefix]) ++prefix;
-        qsizetype suffix = 0;
-        while (suffix < commonSize - prefix &&
-               previous[previous.size() - suffix - 1] == normalizedValue[normalizedValue.size() - suffix - 1])
-            ++suffix;
-        const int oldEnd = static_cast<int>(previous.size() - suffix);
-        QTextCursor edit(document());
-        edit.setPosition(static_cast<int>(prefix));
-        edit.setPosition(oldEnd, QTextCursor::KeepAnchor);
-        edit.insertText(normalizedValue.mid(prefix, normalizedValue.size() - prefix - suffix));
-        const int newEnd = edit.position();
-        const auto updatedPosition = [prefix, oldEnd, newEnd](int position) {
-            if (position <= prefix) return position;
-            if (position >= oldEnd) return position + newEnd - oldEnd;
-            return std::min(position, newEnd);
-        };
-        QTextCursor restored(document());
-        restored.setPosition(updatedPosition(selectionAnchor));
-        restored.setPosition(updatedPosition(selectionPosition), QTextCursor::KeepAnchor);
-        setTextCursor(restored);
+        // X-H8: one shared helper (MediaInformationPresentation.hpp) —
+        // it diffs, deletes a pure deletion via removeSelectedText(), and
+        // keeps selection/scroll; the measurement + tooltip below stay here.
+        updateTextEditPreservingSelection(this, normalizedValue);
         measurement_.setPlainText(normalizedValue);
         QString escaped = normalizedValue.toHtmlEscaped();
         escaped.replace(QLatin1Char('\n'), QStringLiteral("<br>"));

@@ -2,6 +2,7 @@
 
 #include "native/models/NativeRife.hpp"
 
+#include "backend/Cancellation.hpp"
 #include "backend/Downloads.hpp"
 #include "native/bundle/NativePaths.hpp"
 #include "native/components/NativeComponentCatalog.hpp"
@@ -16,6 +17,7 @@
 #include <QSet>
 #include <QTemporaryDir>
 #include <QUrl>
+#include <QElapsedTimer>
 #include <QProcess>
 
 namespace mplayer::native {
@@ -36,8 +38,38 @@ bool validateRifeArchiveListing(const QString& sevenZip, const QString& archive,
                                 const QVector<RifeModelPin>& pins, QString* reason) {
     QProcess process;
     process.start(sevenZip, {QStringLiteral("l"), QStringLiteral("-slt"), archive});
-    if (!process.waitForStarted() || !process.waitForFinished(-1) ||
-        process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+    if (!process.waitForStarted()) {
+        *reason = QStringLiteral("the RIFE archive listing could not be read");
+        return false;
+    }
+    // X-H6: was waitForFinished(-1) — unbounded. 100 ms slices, 60 s cap,
+    // honouring the surrounding cancellation scope; the child is killed
+    // on cancel or timeout.
+    {
+        QElapsedTimer deadline;
+        deadline.start();
+        bool cancelled = false;
+        bool timedOut = false;
+        while (!process.waitForFinished(100)) {
+            if (mikai::backend::WorkCancellationScope::cancellationRequested()) {
+                cancelled = true;
+                break;
+            }
+            if (deadline.elapsed() >= 60000) {
+                timedOut = true;
+                break;
+            }
+            if (process.state() == QProcess::NotRunning) break;
+        }
+        if (cancelled || timedOut) {
+            process.kill();
+            process.waitForFinished();
+            *reason = cancelled ? QStringLiteral("the RIFE archive listing was cancelled")
+                                : QStringLiteral("the RIFE archive listing timed out after 60 seconds");
+            return false;
+        }
+    }
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
         *reason = QStringLiteral("the RIFE archive listing could not be read");
         return false;
     }
@@ -285,7 +317,7 @@ ComponentProvisionResult provisionRifeArchive(
         g_rifeRunning = false;
     });
 
-    if (store.root.isEmpty() || pins.size() != 47) {
+    if (store.root.isEmpty() || pins.size() != kRifePinCount) {
         return fail(QStringLiteral("native.components.install"),
                     translated(QT_TRANSLATE_NOOP("NativeComponentProvisioning", "The pinned RIFE archive inventory is unavailable.")));
     }

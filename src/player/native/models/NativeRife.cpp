@@ -85,44 +85,6 @@ QString rowLabel(const RifeModelPin& pin) {
                                   : pin.fileName;
 }
 
-QVector<RifeCapability> identityRows() {
-    QVector<RifeCapability> rows;
-    rows.reserve(static_cast<int>(sizeof(kPins) / sizeof(kPins[0])));
-    for (const RifeModelPin& pin : kPins) {
-        RifeCapability row;
-        row.version = pin.version;
-        row.variant = pin.variant;
-        row.ensemble = pin.ensemble;
-        row.modelId = rifeModelName(pin.version, pin.variant, pin.ensemble);
-        row.modelCode = rifeModelCode(pin.version, pin.variant);
-        row.graphSha256 = pin.graphSha256;
-        row.availability =
-            preparingAvailability(
-                QStringLiteral("rife.capability.unresolved"),
-                QCoreApplication::translate(
-                    "NativeRife",
-                    "%1 carries the exact content pin %2, but its availability has not been "
-                    "resolved against an owned model store.")
-                    .arg(row.modelId, pin.graphSha256));
-        rows.append(row);
-    }
-    return rows;
-}
-
-const QVector<RifeCapability>& identityTable() {
-    // T-307: the table is rebuilt on every call, so the translated placeholder
-    // availability text follows a live language switch instead of freezing at
-    // first use. The reference - and pointers into it - stay valid only until
-    // the next call: a language change arrives between event-loop turns, and
-    // every caller holds its row only within one synchronous lookup, so the
-    // rebuild cannot pull a row out from under a live reader. Ten rows, none of
-    // them on a hot path; the identity table is a language-keyed cache now, not
-    // a process-wide constant.
-    static QVector<RifeCapability> rows;
-    rows = identityRows();
-    return rows;
-}
-
 /// The row's own content-addressed id is only an identity when it still derives
 /// from the row's digest, role and declared profile. A row whose id is a curated
 /// name, or any other string, is a wrongly pinned row, not the model.
@@ -264,47 +226,6 @@ RifeModelResolution resolveRifeModel(RifeVersion version, RifeVariant variant, b
 
 RifeModelResolution resolveRifeModel(const TemporalStage& stage, const CatalogView& catalog) {
     return resolveRifeModel(stage.version, stage.variant, stage.ensemble, catalog);
-}
-
-QVector<RifeCapability> rifeCapabilities(const CatalogView& catalog) {
-    QVector<RifeCapability> rows;
-    rows.reserve(rifeModelPins().size());
-    for (const RifeModelPin& pin : rifeModelPins()) {
-        RifeCapability row;
-        row.version = pin.version;
-        row.variant = pin.variant;
-        row.ensemble = pin.ensemble;
-        row.modelId = rifeModelName(pin.version, pin.variant, pin.ensemble);
-        row.modelCode = rifeModelCode(pin.version, pin.variant);
-        row.graphSha256 = pin.graphSha256;
-
-        const RifeModelResolution resolution =
-            resolveRifeModel(pin.version, pin.variant, pin.ensemble, catalog);
-        if (resolution.resolved()) {
-            row.resolvedModelId = resolution.record->id;
-            row.availability = readyAvailability();
-        } else {
-            row.availability = unavailableAvailability(resolution.reasonKey, resolution.reason);
-        }
-        rows.append(row);
-    }
-    return rows;
-}
-
-const RifeCapability* findRifeCapability(const QString& modelId) {
-    for (const RifeCapability& row : identityTable()) {
-        if (row.modelId == modelId) return &row;
-    }
-    return nullptr;
-}
-
-const RifeCapability* findRifeCapability(RifeVersion version, RifeVariant variant, bool ensemble) {
-    for (const RifeCapability& row : identityTable()) {
-        if (row.version == version && row.variant == variant && row.ensemble == ensemble) {
-            return &row;
-        }
-    }
-    return nullptr;
 }
 
 std::optional<Recipe> buildRifeRecipe(const RifeRequest& request, QString* errorKey,

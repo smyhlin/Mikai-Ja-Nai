@@ -109,11 +109,6 @@ CatalogView catalogOf(const QVector<ModelRecord>& records) {
 
 }  // namespace
 
-void TestNativeRife::unknownRifeVariantsAreRejected() {
-    QVERIFY(findRifeCapability(QStringLiteral("rife_v9.9")) == nullptr);
-    QVERIFY(findRifeCapability(QStringLiteral("rife_v4.14_full")) == nullptr);
-}
-
 void TestNativeRife::requestedVariantsResolveTheExactOriginalModelNames() {
     struct VariantCase {
         RifeVariant variant;
@@ -366,19 +361,6 @@ void TestNativeRife::thePinnedOwnedRowResolvesToItsContentIdentity() {
                                              lite.actualProfile)));
     QVERIFY(resolution.modelId() != QStringLiteral("rife_v4.14_lite_ensemble"));
 
-    // The capability table reports the pinned row as offered, joined to its own id.
-    const QVector<RifeCapability> rows = rifeCapabilities(catalog);
-    QCOMPARE(rows.size(), 47);
-    for (const RifeCapability& row : rows) {
-        if (row.version == RifeVersion::V4_14 && row.variant == RifeVariant::Lite &&
-            row.ensemble) {
-            QVERIFY(row.availability.isUsable());
-            QCOMPARE(row.resolvedModelId, lite.id);
-        } else {
-            QVERIFY(!row.availability.isUsable());
-            QVERIFY(!row.availability.reason.isEmpty());
-        }
-    }
 }
 
 void TestNativeRife::thePinnedHeavyGraphResolvesOnlyWithOwnedProof() {
@@ -386,12 +368,6 @@ void TestNativeRife::thePinnedHeavyGraphResolvesOnlyWithOwnedProof() {
     const RifeModelPin* pin = rifeModelPin(version, RifeVariant::Heavy, false);
     QVERIFY(pin != nullptr);
     QCOMPARE(pin->fileName, QStringLiteral("rife_v4.26_heavy.onnx"));
-
-    const RifeCapability* unresolved =
-        findRifeCapability(version, RifeVariant::Heavy, false);
-    QVERIFY(unresolved != nullptr);
-    QVERIFY(!unresolved->availability.isUsable());
-    QCOMPARE(unresolved->availability.reasonKey, QStringLiteral("rife.capability.unresolved"));
 
     const TemporalStage stage = temporalOf(RifeVariant::Heavy, false, Rational{2, 1},
                                             TemporalOrder::AfterSpatial, 0.15, version);

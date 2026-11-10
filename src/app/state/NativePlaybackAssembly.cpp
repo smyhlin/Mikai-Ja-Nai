@@ -5,6 +5,8 @@
 #include <optional>
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QElapsedTimer>
+#include <backend/Cancellation.hpp>
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
@@ -278,12 +280,40 @@ bool runDescribeDevice(const mplayer::native::BuilderToolPaths& tools, const QSt
                 assemblyText("The preparation helper could not be started: %1")
                     .arg(process.errorString()));
   }
-  if (!process.waitForFinished(60000)) {
-    process.kill();
-    process.waitForFinished(5000);
-    return fail(QStringLiteral("native.prepare.identityTimeout"),
-                assemblyText("The preparation helper did not report this machine's build identity "
-                             "within its deadline."));
+  // X-H6: was a single 60 s waitForFinished() that never polled the
+  // cancellation scope. 100 ms slices now, killing the child when the
+  // scope is cancelled or the 60 s deadline hits, with distinct
+  // cancelled vs timed-out errors.
+  {
+    QElapsedTimer deadline;
+    deadline.start();
+    bool cancelled = false;
+    bool timedOut = false;
+    while (!process.waitForFinished(100)) {
+      if (mikai::backend::WorkCancellationScope::cancellationRequested()) {
+        cancelled = true;
+        break;
+      }
+      if (deadline.elapsed() >= 60000) {
+        timedOut = true;
+        break;
+      }
+      if (process.state() == QProcess::NotRunning) break;
+    }
+    if (cancelled) {
+      process.kill();
+      process.waitForFinished(5000);
+      return fail(QStringLiteral("native.prepare.identityCancelled"),
+                  assemblyText("The preparation helper was cancelled while reporting this "
+                               "machine's build identity."));
+    }
+    if (timedOut) {
+      process.kill();
+      process.waitForFinished(5000);
+      return fail(QStringLiteral("native.prepare.identityTimeout"),
+                  assemblyText("The preparation helper did not report this machine's build identity "
+                               "within its deadline."));
+    }
   }
   const QByteArray output = process.readAllStandardOutput();
   const QByteArray errors = process.readAllStandardError();

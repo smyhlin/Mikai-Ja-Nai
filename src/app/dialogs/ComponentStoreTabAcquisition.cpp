@@ -434,7 +434,6 @@ void ComponentStoreTab::downloadAnimeJanaiRuntime() {
                 settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), true, false);
                 settleProgressCard(QStringLiteral("tensorRtKernelsCard"), true, false);
                 verifiedAnimeJanaiBackends_.remove(static_cast<int>(backend));
-                animeJanaiVerificationErrors_.remove(static_cast<int>(backend));
                 finishAcquisitionUnit(QString(), false);
             }
         },
@@ -1122,7 +1121,12 @@ void ComponentStoreTab::publishAcquisition() {
 void ComponentStoreTab::downloadNextUpscaler() {
     if (pendingUpscalers_.isEmpty()) {
         upscalersDownloading_ = false;
-        finishAcquisitionUnit(tr("Upscale models installed."), true);
+        // X-C4/X-M6: success — no failure, not cancelled — so
+        // finalizeAcquisition() proceeds to startAcquisitionVerification().
+        // The old call passed a message as a failure plus cancelled=true,
+        // which reported a successful install as cancelled and skipped
+        // verification (and swallowed the other units' verification).
+        finishAcquisitionUnit({}, false);
         return;
     }
     if (runner_ == nullptr || client_ == nullptr) {
@@ -1171,21 +1175,21 @@ void ComponentStoreTab::downloadNextUpscaler() {
             }
             return QVariant(registered);
         },
-        [this, model, generation, cancelFlag](const QVariant&) {
-            if (runGeneration_ != generation) return;
+        [this, alive = alive_, model, generation, cancelFlag](const QVariant&) {
+            if (!alive->load() || runGeneration_ != generation) return;
             if (cancelFlag != nullptr && cancelFlag->load()) {
                 settleProgressItem(model.sha256, false, true);
                 pendingUpscalers_.clear();
                 upscalersDownloading_ = false;
-                finishAcquisitionUnit(tr("Upscale model download cancelled."), false);
+                finishAcquisitionUnit(tr("Upscale model download cancelled."), true);
                 return;
             }
             settleProgressItem(model.sha256, true, false);
             updateCardStates();
             downloadNextUpscaler();
         },
-        [this, model, generation](const backend::Failure& failure) {
-            if (runGeneration_ != generation) return;
+        [this, alive = alive_, model, generation](const backend::Failure& failure) {
+            if (!alive->load() || runGeneration_ != generation) return;
             settleProgressItem(model.sha256, false, false);
             pendingUpscalers_.clear();
             upscalersDownloading_ = false;
@@ -1262,23 +1266,10 @@ QString ComponentStoreTab::renderStatusReason() const {
         case StatusReason::Kind::ClosureNeedsRunner:
             return tr("Installing the selected AnimeJaNai %1 closure needs a runner.")
                 .arg(backendName(statusReason_.backend));
-        case StatusReason::Kind::RuntimeNeedsRunner:
-            return tr("Installing a local AnimeJaNai runtime needs a runner.");
-        case StatusReason::Kind::ImportFailed:
-            return tr("%1 installation failed: %2")
-                .arg(backendName(statusReason_.backend),
-                     statusReason_.detail.isEmpty()
-                         ? tr("Local AnimeJaNai runtime installation failed.")
-                         : statusReason_.detail);
-        case StatusReason::Kind::RuntimeInstalled:
-            return tr("Local AnimeJaNai runtime installed.");
         case StatusReason::Kind::VerificationCancelled:
             return tr("Verification was cancelled.");
         case StatusReason::Kind::DownloadsCancelling:
             return tr("Cancelling the running downloads...");
-        case StatusReason::Kind::InstallFailed:
-            return tr("%1 installation failed: %2")
-                .arg(backendName(statusReason_.backend), statusReason_.detail);
         case StatusReason::Kind::MissingProvisioner:
             return tr("The compatible TensorRT component pack is missing, but no component "
                       "provisioner is available.");
@@ -1292,9 +1283,6 @@ QString ComponentStoreTab::renderStatusReason() const {
                     return tr("Checking selected components...");
                 case StatusReason::Busy::Runtime:
                     return tr("Installing AnimeJaNai runtime and selected backend dependencies...");
-                case StatusReason::Busy::LocalRuntime:
-                    return tr("Installing local AnimeJaNai runtime and selected backend "
-                              "dependencies...");
                 case StatusReason::Busy::Rife:
                     return tr("Downloading the RIFE 3.7.0 graph archive...");
                 case StatusReason::Busy::Models:

@@ -14,6 +14,8 @@
 
 #include <QtCore/QChar>
 #include <QtCore/QString>
+
+#include "native/bundle/NativePaths.hpp"  // X-D17: isSha256Hex lives here now
 #include <QtCore/QVector>
 #include <QtCore/QtGlobal>
 
@@ -162,9 +164,6 @@ bool isSameDeviceUuid(const QString& left, const QString& right);
 
 /// A basename is a legal id; a basename alone is never identity.
 bool isValidModelId(const QString& id);
-
-/// 64 lowercase hex characters. A record without one has no verifiable identity.
-bool isSha256Hex(const QString& digest);
 
 /// So a content-addressed user id can never be read as a built-in name.
 inline constexpr const char* kUserModelIdPrefix = "user:";

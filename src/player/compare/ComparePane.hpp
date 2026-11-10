@@ -76,6 +76,7 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void leaveEvent(QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    void showEvent(QShowEvent* event) override;
     void scrollContentsBy(int dx, int dy) override;
     void drawForeground(QPainter* painter, const QRectF& rect) override;
     bool eventFilter(QObject* watched, QEvent* event) override;

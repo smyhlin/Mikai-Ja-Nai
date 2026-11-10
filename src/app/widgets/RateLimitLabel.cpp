@@ -1,6 +1,7 @@
 #include "widgets/RateLimitLabel.hpp"
 
 #include "theme/Metrics.hpp"
+#include "theme/Theme.hpp"
 
 #include <QEvent>
 #include <QKeyEvent>
@@ -12,18 +13,6 @@
 #include <QTimer>
 
 namespace mikai::app {
-namespace {
-
-/// Re-applies a property selector after a dynamic property changed; Qt does not
-/// re-evaluate a widget's rules on its own.
-void repolish(QWidget* widget) {
-    if (widget == nullptr || widget->style() == nullptr) return;
-    widget->style()->unpolish(widget);
-    widget->style()->polish(widget);
-    widget->update();
-}
-
-}  // namespace
 
 RateLimitLabel::RateLimitLabel(backend::MikaiClient& client, QWidget* parent)
     : QWidget(parent), client_(client) {
@@ -74,7 +63,7 @@ void RateLimitLabel::setPresentation(Presentation presentation) {
     // QWidget has to ask the style to paint its background. Inline draws no
     // surface, so it must not ask.
     setAttribute(Qt::WA_StyledBackground, presentation_ == Presentation::Pill);
-    repolish(this);
+    theme::repolish(this);
     if (dot_ != nullptr) {
         dot_->setVisible(presentation_ == Presentation::Pill);
     }
@@ -160,7 +149,7 @@ void RateLimitLabel::applyDotTone(const QString& tone) {
     if (dot_ == nullptr || presentation_ != Presentation::Pill) return;
     if (dot_->property("tone").toString() == tone) return;
     dot_->setProperty("tone", tone);
-    repolish(dot_);
+    theme::repolish(dot_);
 }
 
 void RateLimitLabel::applyTabularNumerals() {

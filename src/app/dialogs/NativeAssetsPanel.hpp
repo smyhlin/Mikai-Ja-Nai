@@ -429,6 +429,11 @@ private:
   void retranslateUi();
   void refreshModels();
   void refreshCache();
+  /// X-H3: enumerates the proven cache off the GUI thread (readArtifact
+  /// re-hashes whole engines) and delivers the snapshot through a queued
+  /// completion guarded by alive_ + cacheRefreshGeneration_.
+  void refreshCacheAsync();
+  void applyCacheSnapshot(const QVector<NativeCacheEntry>& entries, quint64 generation);
   /// Re-reads the pinned catalogue and the published copies without touching a
   /// widget; imports and probes resolve those records by digest.
   void refreshSourceData();
@@ -571,6 +576,7 @@ private:
   QVector<NativeModelView> models_;
   QVector<mplayer::native::StoredModel> storedModels_;
   QVector<NativeCacheEntry> cache_;
+  quint64 cacheRefreshGeneration_ = 0;
   QStringList staging_;
   mplayer::native::Backend requestedBackend_ = mplayer::native::Backend::TensorRT;
   /// The desired backend, pulled at request time. Never cached: the user can

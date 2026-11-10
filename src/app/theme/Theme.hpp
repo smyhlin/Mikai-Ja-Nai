@@ -8,6 +8,7 @@
 #include <span>
 
 class QAbstractButton;
+class QWidget;
 
 namespace mikai::app::theme {
 
@@ -30,6 +31,13 @@ QString actionRoleName(ActionRole role);
 /// fixed. The sheet paints the role; a caller must not also set a private
 /// stylesheet.
 void applyActionRole(QAbstractButton* button, ActionRole role);
+
+/// X-D22: Re-applies a property selector after a dynamic property
+/// changed; Qt does not re-evaluate a widget's rules on its own.
+/// A null widget (or one with no style yet) is a no-op. One helper for
+/// the whole application: the same idiom used to live in
+/// SettingsUi.hpp (repolishWidget) and RateLimitLabel.cpp (repolish).
+void repolish(QWidget* widget);
 
 /// The width every button of one action group needs: the widest label at its
 /// own font, plus that button's icon box and the symmetric inset pair, rounded

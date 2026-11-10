@@ -22,6 +22,8 @@
 // by where the error is, not by how large its maximum is. TensorRT and CUDA
 // messages go to stderr.
 
+#include "aji_tool_support.h"
+
 #include <windows.h>
 
 #include <bcrypt.h>
@@ -65,45 +67,10 @@ constexpr double kFp16MaxRmse = 0.005;
 constexpr double kFp32MaxAbsoluteError = 0.0002;
 constexpr double kFp32MaxRmse = 0.00005;
 
-bool equalsNoCase(const std::wstring_view a, const std::wstring_view b) {
-    if (a.size() != b.size())
-        return false;
-    for (size_t i = 0; i < a.size(); ++i) {
-        if (std::towlower(a[i]) != std::towlower(b[i]))
-            return false;
-    }
-    return true;
-}
-
-std::string utf8FromWide(const std::wstring_view text) {
-    if (text.empty())
-        return {};
-    const int needed = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0,
-                                           nullptr, nullptr);
-    if (needed <= 0)
-        return {};
-    std::string out(static_cast<size_t>(needed), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), out.data(), needed, nullptr,
-                        nullptr);
-    return out;
-}
-
-std::wstring wideFromUtf8(const std::string_view text) {
-    if (text.empty())
-        return {};
-    const int needed =
-        MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
-    if (needed <= 0)
-        return {};
-    std::wstring out(static_cast<size_t>(needed), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), out.data(), needed);
-    return out;
-}
-
 // TensorRT returns tensor names as narrow UTF-8; diagnostics are wide. Every
 // message converts here, so no name is ever concatenated across the two.
 std::wstring quoted(const std::string& name) {
-    return L"\"" + wideFromUtf8(name) + L"\"";
+    return L"\"" + widen(name) + L"\"";
 }
 
 // -- element types
@@ -133,34 +100,6 @@ bool parseElementType(const std::wstring_view text, ElementType& type, std::wstr
 
 // Subnormals and the infinities survive: folding them away would hide a real
 // failure rather than report it.
-float halfToFloat(const uint16_t bits) {
-    const uint32_t sign = static_cast<uint32_t>(bits >> 15) << 31;
-    const uint32_t exponent = (bits >> 10) & 0x1Fu;
-    const uint32_t mantissa = bits & 0x3FFu;
-    uint32_t result;
-    if (exponent == 0) {
-        if (mantissa == 0) {
-            result = sign;
-        } else {
-            uint32_t normalised = mantissa;
-            int32_t shift = -1;
-            while ((normalised & 0x400u) == 0) {
-                normalised <<= 1;
-                ++shift;
-            }
-            normalised &= 0x3FFu;
-            result = sign | (static_cast<uint32_t>(127 - 15 - shift) << 23) | (normalised << 13);
-        }
-    } else if (exponent == 31) {
-        result = sign | 0x7F800000u | (mantissa << 13);
-    } else {
-        result = sign | ((exponent + (127u - 15u)) << 23) | (mantissa << 13);
-    }
-    float value;
-    std::memcpy(&value, &result, sizeof(value));
-    return value;
-}
-
 template <typename T>
 T loadAs(const void* source, const size_t index) {
     T value;
@@ -428,7 +367,7 @@ bool parseTensorRequest(const int argc, wchar_t** argv, int& index, const std::w
         }
     }
     request.nameText = argv[index + 1];
-    request.name = utf8FromWide(request.nameText);
+    request.name = narrowUtf8(request.nameText);
     if (request.name.empty() || !validTensorName(request.nameText, reason))
         return false;
     if (!parseElementType(argv[index + 2], request.type, reason))
@@ -610,10 +549,10 @@ std::wstring cudaErrorText(const CUresult result) {
     const char* text = nullptr;
     cuGetErrorName(result, &name);
     cuGetErrorString(result, &text);
-    std::wstring out = name != nullptr ? wideFromUtf8(name) : L"CUDA error " + std::to_wstring(result);
+    std::wstring out = name != nullptr ? widen(name) : L"CUDA error " + std::to_wstring(result);
     if (text != nullptr && *text != '\0') {
         out += L" (";
-        out += wideFromUtf8(text);
+        out += widen(text);
         out += L")";
     }
     return out;
@@ -801,7 +740,7 @@ public:
 
     std::wstring lastError() const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return wideFromUtf8(lastError_);
+        return widen(lastError_);
     }
 
     void clearLastError() {
@@ -986,7 +925,7 @@ void appendJsonString(std::string& out, const std::string_view text) {
 }
 
 void appendJsonWide(std::string& out, const std::wstring_view text) {
-    appendJsonString(out, utf8FromWide(text));
+    appendJsonString(out, narrowUtf8(text));
 }
 
 void appendJsonNumber(std::string& out, const double value) {
@@ -1241,7 +1180,7 @@ bool selectDevice(const CUuuid& requested, DeviceFacts& facts, const char*& code
         char name[256] = {};
         cuDeviceGetName(name, static_cast<int>(sizeof(name)), device);
         facts.uuid = uuidText(uuid);
-        facts.name = wideFromUtf8(name);
+        facts.name = widen(name);
         facts.ordinal = index;
         if (!checkCuda(cuDeviceGetAttribute(&facts.smMajor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
                                             device),
@@ -1539,7 +1478,7 @@ bool resolveShapes(nvinfer1::IExecutionContext& execution, std::vector<Binding>&
                      : L"TensorRT still considers " + std::to_wstring(pending) +
                            L" input(s) insufficiently specified:";
         for (int32_t i = 0; i < (pending < 0 ? 0 : (pending < 16 ? pending : 16)); ++i)
-            reason += L" \"" + wideFromUtf8(insufficient[i]) + L"\"";
+            reason += L" \"" + widen(insufficient[i]) + L"\"";
         return false;
     }
 
@@ -1705,7 +1644,7 @@ int verify(int argc, wchar_t** argv) {
     if (runtimeVersionResult != cudaSuccess)
         return report(kDevice, "device", "cuda-driver",
                       L"cudaRuntimeGetVersion failed: " +
-                          wideFromUtf8(cudaGetErrorString(runtimeVersionResult)));
+                          widen(cudaGetErrorString(runtimeVersionResult)));
     // The device and both API versions are established here; every later
     // envelope names the hardware the measurement belongs to.
     g_identity.deviceKnown = true;
@@ -1931,6 +1870,6 @@ int wmain(int argc, wchar_t** argv) {
         // A raw tensor file is whatever size the caller points at.
         return report(kInternal, "internal", "allocation-failed",
                       std::wstring(L"the verifier could not allocate what the inputs describe: ") +
-                          wideFromUtf8(error.what()));
+                          widen(error.what()));
     }
 }

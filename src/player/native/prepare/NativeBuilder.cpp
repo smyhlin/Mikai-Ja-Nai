@@ -1202,6 +1202,9 @@ bool tensorStridesAreContiguous(const QJsonArray& strides, const QJsonArray& sha
   return true;
 }
 
+// X-D12: see NativeBuilder.hpp — the probe-document parser and its helpers
+// are probe-only and compile out of a build without MIKAI_BUILD_PROBES.
+#ifdef MIKAI_BUILD_PROBES
 namespace {
 
 // Strict probe-document members. A member the document omits and a member it
@@ -1717,6 +1720,7 @@ bool parseBuilderProbeRequest(const QJsonObject& object, BuilderProbeRequest* ou
   }
   return true;
 }
+#endif  // MIKAI_BUILD_PROBES
 
 }  // namespace native
 }  // namespace mplayer

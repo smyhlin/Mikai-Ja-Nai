@@ -204,6 +204,10 @@ BenchmarkSampleResult runBenchmarkSample(
         // once itself: assigning it afterwards would leave a window in which a
         // callback from another thread finds an empty target.
         mplayer::MpvRenderContext renderer(handle, glApi, [&] {
+            // X-H5: hold wakeMutex across the store + notify so the wait
+            // cannot miss the wakeup (bounded at 5 ms by the wait_for
+            // timeout, so this was a stall, not a hang — N-5).
+            const std::lock_guard lock(wakeMutex);
             updatePending.store(true, std::memory_order_release);
             frameAvailable.notify_one();
         });
@@ -354,7 +358,6 @@ BenchmarkSampleResult runBenchmarkSample(
                             .arg(QString::fromStdString(handle.describeError(renderError))));
                     break;
                 }
-                gl->glFinish();
                 renderer.reportSwap();
                 const GLenum glError = gl->glGetError();
                 if (glError != GL_NO_ERROR) {
@@ -391,6 +394,12 @@ BenchmarkSampleResult runBenchmarkSample(
                 });
             }
         }
+        // X-H5: one pipeline drain at the end of the measured window, so
+        // the benchmark measures pipelined throughput like real playback
+        // while GPU work still completes before teardown. The per-frame
+        // glFinish() that used to sit before reportSwap() is gone (Y-4;
+        // there was never a second glFinish at :376).
+        gl->glFinish();
     } catch (const mplayer::MpvError& error) {
         result.error = withDetail(PlaybackText::tr("mpv: %1").arg(QString::fromUtf8(error.what())));
     } catch (const std::exception& error) {

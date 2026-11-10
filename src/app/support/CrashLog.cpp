@@ -201,7 +201,14 @@ struct ReportWriter {
     bool overflow = false;
 };
 
-char* g_reportBlock = nullptr;
+char g_reportBlock[kReportCapacityBytes] = {};
+/// X-M10: the crash filter / POSIX handler run on an exhausted stack after
+/// EXCEPTION_STACK_OVERFLOW (Win32) or inside a signal handler (POSIX), so
+/// the multi-KB report-path buffers live here in process-lifetime static
+/// storage instead of on the fault-time stack. Single-use at fault time;
+/// never freed, like g_reportBlock.
+wchar_t g_reportPathW[kPathWideChars] = {};
+char g_reportPathNarrow[kPathWideChars] = {};
 
 void writeBytes(ReportWriter* out, const char* source, size_t count) {
     if (count == 0 || out->capacity == 0) {
@@ -326,6 +333,12 @@ void writeLocalTime(ReportWriter* out, const SYSTEMTIME& time) {
             scratch[count++] = static_cast<char>('0' + (value % 10));
             value /= 10;
         } while (value != 0 && count < sizeof(scratch));
+        // X-C6: zero-pad to the field width (year 4, all others 2) so a
+        // single-digit month/day/hour/minute/second renders "03", not "3".
+        // The wide stamp loop and formatStampNarrow already pad; do not
+        // touch them.
+        const unsigned int width = index == 0 ? 4u : 2u;
+        while (count < width && count < sizeof(scratch)) scratch[count++] = '0';
         for (unsigned int position = 0; position < count / 2; ++position) {
             const char swap = scratch[position];
             scratch[position] = scratch[count - 1 - position];
@@ -514,7 +527,8 @@ LONG WINAPI crashFilter(EXCEPTION_POINTERS* info) {
         out->length = kReportCapacityBytes - 1;
     }
 
-    wchar_t reportPath[kPathWideChars] = {};
+    wchar_t* reportPath = g_reportPathW;
+    std::memset(reportPath, 0, sizeof(g_reportPathW));
     size_t used = 0;
     appendWide(reportPath, kPathWideChars, &used, g_fault.crashPrefix, g_fault.crashPrefixLength);
     {
@@ -522,7 +536,6 @@ LONG WINAPI crashFilter(EXCEPTION_POINTERS* info) {
         const unsigned int fields[6] = {now.wYear,  now.wMonth,  now.wDay,
                                         now.wHour, now.wMinute, now.wSecond};
         size_t stampUsed = 0;
-        appendWide(stamp, kStampWideChars, &stampUsed, L"20", 2);
         for (unsigned int index = 0; index < 6; ++index) {
             unsigned int value = fields[index];
             wchar_t digits[4] = {};
@@ -597,6 +610,10 @@ void writeUtcTime(ReportWriter* out, const struct tm& utc) {
             scratch[count++] = static_cast<char>('0' + (value % 10));
             value /= 10;
         } while (value != 0 && count < sizeof(scratch));
+        // X-C6: zero-pad to the field width (year 4, all others 2); see
+        // writeLocalTime above. formatStampNarrow already pads.
+        const unsigned int width = index == 0 ? 4u : 2u;
+        while (count < width && count < sizeof(scratch)) scratch[count++] = '0';
         for (unsigned int position = 0; position < count / 2; ++position) {
             const char swap = scratch[position];
             scratch[position] = scratch[count - 1 - position];
@@ -692,12 +709,14 @@ void posixCrashHandler(int sig, siginfo_t* info, void*) {
         writeHex(out, reinterpret_cast<uint64_t>(address), 12);
         writeLiteral(out, "\n");
         writeLiteral(out, "module    : ");
-        Dl_info dlInfo{};
-        if (address != nullptr && ::dladdr(address, &dlInfo) != 0 && dlInfo.dli_fname != nullptr) {
-            writeLiteral(out, dlInfo.dli_fname);
-        } else {
-            writeLiteral(out, "<unknown module>");
-        }
+        // X-M10: no dladdr here — it is the single non-async-signal-safe
+        // call in the POSIX handler (glibc consults loader internals and can
+        // deadlock under heap corruption before the write runs). Module
+        // resolution stays in the Win32 SEH path, where it is fine. The
+        // address above is still recorded, so the module can be resolved
+        // offline from the report.
+        (void)address;
+        writeLiteral(out, "<unknown module>");
         writeLiteral(out, "\n");
         writeLiteral(out, "thread    : 0x");
         writeHex(out, static_cast<uint64_t>(::pthread_self()), 8);
@@ -731,7 +750,8 @@ void posixCrashHandler(int sig, siginfo_t* info, void*) {
             out->length = kReportCapacityBytes - 1;
         }
 
-        char reportPath[kPathWideChars] = {};
+        char* reportPath = g_reportPathNarrow;
+        std::memset(reportPath, 0, sizeof(g_reportPathNarrow));
         size_t used = g_fault.crashPrefixNarrowLength;
         if (used + 24 < sizeof(reportPath)) {
             std::memcpy(reportPath, g_fault.crashPrefixNarrow, used);
@@ -764,7 +784,7 @@ void rotateIfLarge(const QString& path) {
     if (!info.exists() || info.size() < kMaxLogBytes) {
         return;
     }
-    const QString rotated = QDir(path).filePath(QString::fromLatin1(kRotatedName));
+    const QString rotated = info.dir().filePath(QString::fromLatin1(kRotatedName));
     QFile::remove(rotated);
     if (QFile::rename(path, rotated)) {
         QMutexLocker lock(&g_logMutex);
@@ -937,10 +957,6 @@ void installCrashLog() {
             QCoreApplication::applicationName() + QLatin1Char(' ') +
                 QCoreApplication::applicationVersion(),
             g_fault.appIdentity, kIdentityBytes);
-    }
-
-    if (g_reportBlock == nullptr) {
-        g_reportBlock = new char[kReportCapacityBytes]();
     }
 
     rotateIfLarge(g_logPath);

@@ -14,7 +14,7 @@ Strict architectural layering is enforced by `TestLayering` (`tests/cpp/app/Test
 3. **`src/player/` (`mplayer`) — Video Surface, Shader/AI Pipelines & Compare Workstation:**
    - `src/player/core/` — Dynamic `libmpv` loader (`MpvApi`), async transport (`MpvHandle`), diagnostics (`PlaybackDiagnostics`), and OpenGL render bridge (`MpvRenderContext`, `VideoSurface`, `VideoSurfaceAnimeJanai`, `VideoSurfaceNative`). `MpvApi`, `MpvHandle`, and `PlaybackDiagnostics` are GUI-free and compiled in `mikai_native_support` so the static library graph is strictly acyclic (`mikai_backend` → `mikai_native_support` → `mikai_player` → `mikai_app`).
    - `src/player/shaders/` — `Anime4K` shader chain builder (`Anime4K.{hpp,cpp}`) and `PresetShortcuts.{hpp,cpp}`.
-   - `src/player/shell/` — Player UI chrome (`PlayerDialog`, `PlayerDialogProcessing`, `PipFloat`, `PlayerShell`, `PlayerPopups`, `ShellWidgets`, `ShellSliders`, `ShellTheme`, `EpisodeNavButton`, `ClipDialog`, `ClipSheet`) and media-information views (`MediaInformationDialog`, `MediaInformationPresentation`, `MediaInformationTree`, `MediaInformationOverview`).
+   - `src/player/shell/` — Player UI chrome (`PlayerDialog`, `PlayerDialogProcessing`, `PipFloat`, `PlayerShell`, `PlayerPopups`, `ShellWidgets`, `ShellSliders`, `ShellTheme`, `EpisodeNavButton`, `ClipDialog`) and media-information views (`MediaInformationDialog`, `MediaInformationPresentation`, `MediaInformationTree`, `MediaInformationOverview`).
      - The player library must not include `src/app/` state. Accent and corner radius arrive as pushed tokens (`shell::setAccent`, `shell::setCornerRadius` from `ShellTheme.hpp`), seeded at startup and refreshed on appearance changes or save. `ShellTheme.cpp` holds the last pushed value.
      - Custom-painted chrome enables antialiasing, `SmoothPixmapTransform` and device-pixel-ratio scaling; icons are positioned on integer pixels.
    - `src/player/compare/` — Visual Compare Workstation (`CompareWindow`, `CompareCanvas`, `CompareGrid`, `ComparePane`, `CompareLayout`, `CompareRenderer`, `PictureMetrics`).
@@ -30,7 +30,7 @@ Strict architectural layering is enforced by `TestLayering` (`tests/cpp/app/Test
    - `src/app/pages/` — `MainWindow`, `SearchPage`, `TitlePage`, `TitlePagePlayerSession`, `EpisodeGrid`.
    - `src/app/state/` — `AppearanceStore` (load/save, `currentAppearance()`, change notifier), `WatchHistory` (per-title `current`, `watched`, and `offsets`/`durations` keyed by episode; resume offsets below 30 s are not stored, 90 % of a known length marks the episode watched and drops its offset), `QualityCache`.
    - `src/app/dialogs/` — `SettingsDialog` (`settings/` tabs: General, Presets, Processing, Components, Benchmark), `AnimeJanaiManagerPanel`, `ComponentStoreTab` (`ComponentStoreTabAcquisition`), `NativeAssetsPanel` (`NativeAssetsPanelWorkflow`), `NativeRifeControls`, `CoverViewer`.
-   - `src/app/workers/` — `Runner` (`src/app/workers/Runner.hpp`) manages 5 dedicated `QThreadPool` queues (`shared`, `stream`, `transfer`, `cover`, `probe`) and `Runner::GuiDispatch` (`runner.post()`).
+   - `src/app/workers/` — `Runner` (`src/app/workers/Runner.hpp`) manages 5 dedicated `QThreadPool` queues (`shared`, `bulk`, `stream`, `image`, `transfer`) and `Runner::GuiDispatch` (`runner.post()`).
 
 ---
 
@@ -61,7 +61,7 @@ All application, player, native-support, and test targets must compile cleanly o
   - `MpvApi` (`src/player/core/MpvApi.cpp`): Uses `AddDllDirectory` + `LoadLibraryExW` + `GetProcAddress` on Windows and `dlopen(RTLD_NOW | RTLD_LOCAL)` + `dlsym` on Linux.
   - `MpvRenderContext` (`src/player/core/MpvRenderContext.cpp`): Uses `wglGetProcAddress` + `opengl32.dll` on Windows and `QOpenGLContext::currentContext()->getProcAddress` + `libGL.so.1` (`dlopen`/`dlsym`) on Linux.
   - `NativeGpuProbe` (`src/player/native/components/NativeGpuProbe.cpp`): Loads `nvml.dll` from `System32` on Windows and `libnvidia-ml.so.1` / `libnvidia-ml.so` on Linux.
-  - `AnimeJanaiInstallation` & `NativeBundle`: Validates x64 PE headers (`MZ` / `PE\0\0` / `0x8664`) for `.dll`/`.exe` binaries and 64-bit x86_64 ELF headers (`\x7fELF\x02\x01` / `EM_X86_64`) for `.so` / `trtexec` binaries.
+  - `AnimeJanaiInstallation` & `NativeBundle`: Validates x64 PE headers (`MZ` / `PE\0\0` / `0x8664`) for `.dll`/`.exe` binaries and 64-bit x86_64 ELF headers (`\x7fELF\x02\x01` / `EM_X86_64`) for `.so` / `trtexec` binaries — except that `NativeBundle::verifyInventory` PE-validates only `.dll` inventory files; `.exe`/`.so` inventory files are hash-pinned only (X-M14: the bundle module itself is PE/ELF-validated in `describeRuntime`).
 - **Locale-Invariant Formatting for `libmpv`:**
   - `libmpv` requires `LC_NUMERIC` to be `"C"`. Never pass `std::to_string(double)` (which formats `,` under `uk_UA` locale) to `mpv` options or commands; always use `QString::number(value, 'f', 6).toStdString()`.
 
@@ -93,6 +93,8 @@ ctest --test-dir build/release --output-on-failure
 The four-job examples bound peak compiler memory. Unbounded parallel test builds can exhaust compiler memory; increase the job count only when the machine has headroom.
 
 CTest uses `mikai_test_launcher` to copy the test executable into an owned disposable directory with the required shaders, mpv library and Qt runtime/plugin paths. Merely changing CWD, application name or QSettings does **not** isolate `<applicationDir>/native`. Never run mutable probes/tests next to a populated native store or deploy test executables into the user's distribution to obtain DLLs.
+
+Manifest-driven behaviour probes live in `probes/` and run through `probe_runner` (`probe_runner probes/` for a full run, `probe_runner --isolate --list probes/` to parse-and-list only; ctest entry `ProbeManifestsList`).
 
 ### Linux (GCC / Clang)
 

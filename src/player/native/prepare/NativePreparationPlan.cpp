@@ -63,12 +63,6 @@ QSize padToTensorAlignment(const QSize& size, int* padL, int* padT) {
   return QSize(paddedWidth, paddedHeight);
 }
 
-QSize paddingExtent(const QSize& size) {
-  // The total added on each axis. How it is split is what padL/padT answer.
-  const QSize padded = padToTensorAlignment(size, nullptr, nullptr);
-  return QSize(padded.width() - size.width(), padded.height() - size.height());
-}
-
 std::optional<Rational> scaleCadence(const Rational& fps, int num, int den) {
   if (!fps.isValid() || num <= 0 || den <= 0) return std::nullopt;
   return reducedChecked(static_cast<qint64>(fps.num) * num,

@@ -245,7 +245,6 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     benchmarkVideoTitle_->setContentsMargins(0, 0, 0, 0);
     benchmarkVideoTitle_->setWordWrap(true);
     benchmarkVideoTitle_->setMinimumWidth(0);
-    benchmarkVideoTitle_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     benchmarkClipCount_ = new QLabel(clipsCard);
     benchmarkClipCount_->setObjectName(QStringLiteral("benchmarkClipCount"));
@@ -326,7 +325,6 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     benchmarkModelTitle_->setContentsMargins(0, 0, 0, 0);
     benchmarkModelTitle_->setWordWrap(true);
     benchmarkModelTitle_->setMinimumWidth(0);
-    benchmarkModelTitle_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     benchmarkModelCount_ = new QLabel(modelsCard);
     benchmarkModelCount_->setObjectName(QStringLiteral("benchmarkModelCount"));
@@ -476,7 +474,6 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     benchmarkResultsTitle_->setContentsMargins(0, 0, 0, 0);
     benchmarkResultsTitle_->setWordWrap(true);
     benchmarkResultsTitle_->setMinimumWidth(0);
-    benchmarkResultsTitle_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     benchmarkRunStatus_ = new QLabel(tr("Ready"), resultsCard);
     benchmarkRunStatus_->setObjectName(QStringLiteral("benchmarkRunStatus"));
@@ -1206,7 +1203,7 @@ void SettingsDialog::runBenchmark() {
     benchmarkResultDetail_->clear();
     benchmarkResultDetail_->hide();
     benchmarkProgress_->setProperty("runState", QStringLiteral("running"));
-    repolishWidget(benchmarkProgress_);
+    theme::repolish(benchmarkProgress_);
     benchmarkResultStack_->setCurrentWidget(benchmarkEmptyState_);
     benchmarkResultStack_->setFixedHeight(theme::kBenchmarkEmptyHeight);
     styleStatusBanner(benchmarkRunStatus_, QStringLiteral("running"));
@@ -1252,7 +1249,9 @@ void SettingsDialog::runBenchmark() {
 #endif
     QHash<QString, QString> clipPaths;
     for (const QString& clip : clips) clipPaths.insert(clip, locateBenchmarkClip(clip));
-    runner_.run(
+    // X-M15: hour-scale work (engine builds alone can run 10 min each)
+    // belongs on the transfer pool, not the shared API pool.
+    runner_.runTransfer(
         [dialog, cancellation, post, reportDirectory, applicationVersion, backend, clipPaths,
          clips, models, measureRaw, totalRuns, surface]() -> QVariant {
             const backend::WorkCancellationScope cancellationScope(cancellation.get());
@@ -1561,6 +1560,14 @@ void SettingsDialog::runBenchmark() {
                                      -1.0, reason, benchmarkBackendId(backend), -1, now, now);
                         continue;
                     }
+                    // X-H5: the benchmark builds its own core, so the
+                    // backend closure must be preloaded here too — before
+                    // the BenchmarkPlayback request is built — or a Linux
+                    // AnimeJaNai benchmark run before opening any video
+                    // fails with "Failed to create inference context".
+                    if (plan.requiresAji) {
+                        mplayer::native::preloadAnimeJanaiBackendLibs(plan.backendLibDirs);
+                    }
                     std::vector<std::pair<std::string, std::string>> options{
                         {"vf", plan.filterSpec.toStdString()}};
                     if (plan.requiresAji) {
@@ -1621,7 +1628,7 @@ void SettingsDialog::runBenchmark() {
                         "runState", stopped ? QStringLiteral("idle") :
                                     failedCount > 0 ? QStringLiteral("failure")
                                                    : QStringLiteral("success"));
-                    repolishWidget(self->benchmarkProgress_);
+                    theme::repolish(self->benchmarkProgress_);
                     self->resetBenchmarkControls();
                     styleStatusBanner(self->benchmarkRunStatus_,
                                       stopped ? QStringLiteral("neutral") :

@@ -383,12 +383,19 @@ void TitlePage::runSessionRuntimeResolution(PlayerSession* session) {
     const EpisodeEntry* entry = session->entry;
     const QPointer<TitlePage> self(this);
     const QPointer<mplayer::shell::PlayerDialog> target(session->dialog);
+    // X-C2: the lease travels by value: the session can be disposed (and
+    // freed) while the worker runs, and releasing a stale lease is a no-op
+    // by contract. `held` keeps the value the session had when it asked.
+    // (Task 07 converts sessions_ to unique_ptr + findSession(sessionId);
+    // on rebase replace the contains() check below with that lookup, Y-18.)
+    const mplayer::native::ResolutionLease lease = session->runtimeResolution;
+    const bool held = session->runtimeResolutionHeld;
     // Validate the bundle off-thread; load the process-pinned module on the GUI thread.
     runner_.run(
         [] {
             return QVariant::fromValue(mplayer::native::resolveStoredRuntime());
         },
-        [self, target, session, sourceSeq, entry, seq](const QVariant& result) {
+        [self, target, session, sourceSeq, entry, seq, lease, held](const QVariant& result) {
             if (self.isNull()) {
                 return;
             }
@@ -403,19 +410,31 @@ void TitlePage::runSessionRuntimeResolution(PlayerSession* session) {
                 // A superseded player: its episode, its dialog or the whole page
                 // is gone. The resolution it started is already recorded, so the
                 // lease goes back without touching the player that replaced it.
-                self->releaseSessionResolution(session);
+                if (!self->sessions_.contains(session)) {
+                    // Disposed while the worker ran: the lease copy is the
+                    // only survivor, and a stale endResolution is a no-op.
+                    if (held) mplayer::native::endResolution(lease);
+                } else {
+                    self->releaseSessionResolution(session);
+                }
                 return;
             }
             self->answerSessionResolved(session, selection);
         },
-        [self, target, session, sourceSeq, entry, seq](const backend::Failure& failure) {
+        [self, target, session, sourceSeq, entry, seq, lease, held](const backend::Failure& failure) {
             if (self.isNull()) {
                 return;
             }
             if (self->closed_ || seq != self->runtimeSeq_ || target.isNull() ||
                 !self->sessions_.contains(session) || session->dialog != target.data() ||
                 sourceSeq != session->sourceSequence || session->entry != entry) {
-                self->releaseSessionResolution(session);
+                if (!self->sessions_.contains(session)) {
+                    // Disposed while the worker ran: the lease copy is the
+                    // only survivor, and a stale endResolution is a no-op.
+                    if (held) mplayer::native::endResolution(lease);
+                } else {
+                    self->releaseSessionResolution(session);
+                }
                 return;
             }
             self->answerSessionResolved(session, mplayer::native::RuntimeSelection(),

@@ -152,6 +152,14 @@ struct AnimeJanaiPlan {
     std::shared_ptr<AnimeJanaiStageBuildLease> cacheLease;
 };
 
+/// X-H5: the one shared backend-closure preload (moved here from the
+/// duplicated file-local copies in VideoSurfaceAnimeJanai.cpp and
+/// CompareRenderer.cpp). Globs the closure for *.so / *.so.* and preloads
+/// each RTLD_GLOBAL, skipping sonames another core already loaded
+/// (RTLD_NOLOAD residency guard: a second TensorRT runtime image in one
+/// process corrupts the heap). No fixed soname list exists.
+void preloadAnimeJanaiBackendLibs(const QStringList& dirs);
+
 AnimeJanaiPlan prepareAnimeJanaiPlan(
     const QString& presetId, Backend backend,
     const std::function<bool()>& cancelled = {},

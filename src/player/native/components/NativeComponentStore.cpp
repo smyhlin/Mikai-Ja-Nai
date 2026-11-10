@@ -32,14 +32,6 @@ QString translated(const char* message) {
     return QCoreApplication::translate("NativeComponentStore", message);
 }
 
-bool isSha256Hex(const QString& value) {
-    if (value.size() != 64) return false;
-    for (const QChar& c : value) {
-        if (!c.isDigit() && (c < QLatin1Char('a') || c > QLatin1Char('f'))) return false;
-    }
-    return true;
-}
-
 struct FileRecord {
     QString path;
     qint64 bytes = 0;
@@ -191,22 +183,15 @@ bool writeRecord(const QString& directory, const Record& record, QString* error)
     return true;
 }
 
+// X-D17: was a fifth SHA-256-a-file loop (1 MiB reads). The hashing is the
+// shared native::hashFile now; only the store's own rule stays — a file that
+// grew mid-read does not match its size probe.
 std::optional<std::pair<qint64, QString>> measureFile(const QString& path) {
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) return std::nullopt;
-    QCryptographicHash hash(QCryptographicHash::Sha256);
     qint64 hashed = 0;
-    for (;;) {
-        const QByteArray chunk = file.read(1024 * 1024);
-        if (chunk.isEmpty()) {
-            if (file.error() != QFile::NoError) return std::nullopt;
-            break;
-        }
-        hash.addData(chunk);
-        hashed += chunk.size();
-    }
-    if (hashed != file.size()) return std::nullopt;
-    return std::make_pair(hashed, QString::fromLatin1(hash.result().toHex()));
+    const QString digest = hashFile(path, &hashed);
+    if (digest.isEmpty()) return std::nullopt;
+    if (hashed != QFileInfo(path).size()) return std::nullopt;
+    return std::make_pair(hashed, digest);
 }
 
 std::optional<std::pair<qint64, QString>> copyHashed(const QString& source, const QString& target,
@@ -227,11 +212,15 @@ std::optional<std::pair<qint64, QString>> copyHashed(const QString& source, cons
             continue;
         }
         QCryptographicHash hash(QCryptographicHash::Sha256);
-        char buffer[1024 * 1024];
+        // X-M9: was a 1 MiB stack buffer on runTransfer pool threads
+        // (Windows secondary threads get ~2 MiB under MinGW-w64). A 64 KiB
+        // heap buffer, like the sibling copiers (copyPinnedGraph here,
+        // copyFile, copyVerified).
+        QByteArray buffer(64 * 1024, Qt::Uninitialized);
         qint64 copied = 0;
         bool streamed = true;
         for (;;) {
-            const qint64 n = in.read(buffer, sizeof buffer);
+            const qint64 n = in.read(buffer.data(), buffer.size());
             if (n < 0) {
                 streamed = false;
                 lastError = in.errorString();
@@ -240,7 +229,7 @@ std::optional<std::pair<qint64, QString>> copyHashed(const QString& source, cons
             if (n == 0) break;
             qint64 written = 0;
             while (written < n) {
-                const qint64 w = out.write(buffer + written, n - written);
+                const qint64 w = out.write(buffer.constData() + written, n - written);
                 if (w <= 0) {
                     streamed = false;
                     lastError = out.errorString();
@@ -249,7 +238,7 @@ std::optional<std::pair<qint64, QString>> copyHashed(const QString& source, cons
                 written += w;
             }
             if (!streamed) break;
-            hash.addData(QByteArrayView(buffer, static_cast<qsizetype>(n)));
+            hash.addData(QByteArrayView(buffer.constData(), static_cast<qsizetype>(n)));
             copied += n;
         }
         const bool committed = streamed && out.flush() && out.error() == QFile::NoError;
@@ -593,10 +582,10 @@ bool installRifeGraphs(const RifeArchiveStore& store, const QVector<RifeModelPin
         return false;
     };
     QString pinReason;
-    if (store.root.isEmpty() || pins.size() != 47 || !safeRifePins(pins, &pinReason)) {
+    if (store.root.isEmpty() || pins.size() != kRifePinCount || !safeRifePins(pins, &pinReason)) {
         return fail(store.root.isEmpty()
                         ? translated(QT_TRANSLATE_NOOP("NativeComponentStore", "The RIFE archive store root is not available"))
-                        : (pins.size() != 47
+                        : (pins.size() != kRifePinCount
                                ? translated(QT_TRANSLATE_NOOP("NativeComponentStore", "The pinned RIFE graph inventory must contain 47 files."))
                                : pinReason));
     }

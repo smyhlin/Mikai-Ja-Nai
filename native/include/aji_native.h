@@ -97,6 +97,13 @@ typedef struct aji_native_snapshot_v2 {
     char prepared_build_keys[AJI_NATIVE_MAX_STAGES][AJI_NATIVE_BUILD_KEY_CAPACITY]; /* empty unless independently verified */
 } aji_native_snapshot_v2;
 
+#ifdef __cplusplus
+/* X-M25: the v2 snapshot is a cross-binary ABI — a field added without a
+   version bump silently shifts every offset. Measured 3072 (Y-1, never 400). */
+static_assert(sizeof(aji_native_snapshot_v2) == 3072,
+              "aji_native_snapshot_v2 must stay 3072 bytes (ABI v2)");
+#endif
+
 AJI_NATIVE_EXPORT int aji_native_get_snapshot(
     aji_ctx *ctx, uint32_t requested_protocol, aji_native_snapshot_v2 *snapshot);
 
@@ -178,6 +185,12 @@ typedef struct aji_native_prepared_stage_v1 {
     char input_tensor[AJI_NATIVE_BINDING_NAME_CAPACITY];  /* empty = discover */
     char output_tensor[AJI_NATIVE_BINDING_NAME_CAPACITY];
 } aji_native_prepared_stage_v1;
+
+#ifdef __cplusplus
+/* X-M25: same ABI pin as the snapshot above. Measured 1256 (Y-1). */
+static_assert(sizeof(aji_native_prepared_stage_v1) == 1256,
+              "aji_native_prepared_stage_v1 must stay 1256 bytes");
+#endif
 
 /* The whole admitted plan. stages[] is inline and fixed-capacity; stage_count
    is the number of populated entries, in ordinal order. */

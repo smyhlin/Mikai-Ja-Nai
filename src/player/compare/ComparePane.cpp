@@ -59,7 +59,17 @@ void fitSelectorLabel(QToolButton* button, const QString& full) {
     if (button == nullptr) return;
     const QString suffix = QStringLiteral("  ▾");
     const int pad = kCompareSelectorInset * 2 + 24;
-    const int avail = button->width() - pad;
+    // X-M23: button->width() is the pre-layout width when this runs before
+    // the row is laid out, so a label fitted against it is clipped once the
+    // layout assigns the real slot. Elide against the slot instead: the
+    // parent row's width split across its (equally stretched, zero-spacing)
+    // children. Falls back to the button's own width while the row has none.
+    int slotWidth = button->width();
+    if (QWidget* parent = button->parentWidget(); parent != nullptr && parent->width() > 0) {
+        const int count = parent->layout() != nullptr ? qMax(1, parent->layout()->count()) : 1;
+        slotWidth = parent->width() / count;
+    }
+    const int avail = slotWidth - pad;
     if (avail <= 24) {
         button->setText(full + suffix);
         return;
@@ -153,7 +163,9 @@ ComparePane::ComparePane(QWidget* parent) : QGraphicsView(parent) {
     badge_->setToolButtonStyle(Qt::ToolButtonTextOnly);
     badge_->setPopupMode(QToolButton::InstantPopup);
     badge_->setMinimumWidth(0);
-    badge_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    // X-M23: see CompareCanvas — Expanding lets a long label's sizeHint force
+    // the bar wider than its slot; Ignored takes the width the layout assigns.
+    badge_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     badge_->installEventFilter(this);
     row->addWidget(badge_, 1);
 
@@ -528,6 +540,13 @@ void ComparePane::changeEvent(QEvent* event) {
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
     }
+}
+
+void ComparePane::showEvent(QShowEvent* event) {
+    QGraphicsView::showEvent(event);
+    // X-M23: the label fitted before the first layout used the pre-layout
+    // width; re-fit once the pane is shown and the bar has its real slot.
+    fitSelectorLabel(badge_, label_);
 }
 
 void ComparePane::retranslateUi() {

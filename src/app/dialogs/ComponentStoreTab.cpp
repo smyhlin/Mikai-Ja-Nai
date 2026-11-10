@@ -548,10 +548,14 @@ void ComponentStoreTab::buildUi() {
         QSettings settings;
         auto b = backendFromName(
             settings.value(QStringLiteral("player/animejanai/backend")).toString());
-        if (isNvidiaRtx(gpu) && (!b.has_value() || (*b == Backend::TensorRT && !animeJanaiTensorRtInstalled_))) {
+        // X-M5: promotion is display-only and only when there is NO stored
+        // value. The old form promoted a stored explicit TensorRT choice
+        // and persisted it while animeJanaiTensorRtInstalled_ was still its
+        // pre-inventory default false — overwriting the user's explicit
+        // backend choice. The combo's own change handler persists what the
+        // user actually picks.
+        if (isNvidiaRtx(gpu) && !b.has_value()) {
             b = Backend::TensorRTRTX;
-            settings.setValue(QStringLiteral("player/animejanai/backend"),
-                              mplayer::native::stableName(Backend::TensorRTRTX));
         }
         return b;
     }();
@@ -583,27 +587,41 @@ void ComponentStoreTab::buildUi() {
     // the window's Save/Cancel: one compact row directly under the backend
     // selector, with the selection context on its left where the card's check
     // column already sits.
+    // X-M24: was one row — checkbox + summary + three buttons — whose
+    // combined minimum width overflowed the dialog in Ukrainian. Two rows
+    // now: selection context on the first, the actions right-aligned on the
+    // second, and the summary yields its width so it wraps instead of
+    // voting its whole advance into the page.
     auto* actionBar = new QFrame(content);
     actionBar->setObjectName(QStringLiteral("componentActionBar"));
-    auto* barLayout = new QHBoxLayout(actionBar);
+    auto* barLayout = new QVBoxLayout(actionBar);
     barLayout->setContentsMargins(theme::kSpacingMedium, 12, theme::kSpacingMedium, 12);
     barLayout->setSpacing(theme::kSpacingSmall);
+    auto* selectionRow = new QHBoxLayout();
+    selectionRow->setContentsMargins(0, 0, 0, 0);
+    selectionRow->setSpacing(theme::kSpacingSmall);
     selectAllCheck_ = new QCheckBox(tr("Select all"), actionBar);
     selectAllCheck_->setObjectName(QStringLiteral("componentSelectAll"));
     selectAllCheck_->setTristate(true);
-    barLayout->addWidget(selectAllCheck_, 0, Qt::AlignVCenter);
+    selectionRow->addWidget(selectAllCheck_, 0, Qt::AlignVCenter);
     selectionSummary_ = new QLabel(actionBar);
     selectionSummary_->setObjectName(QStringLiteral("componentSelectionSummary"));
     selectionSummary_->setProperty("textRole", QStringLiteral("muted"));
-    barLayout->addWidget(selectionSummary_, 0, Qt::AlignVCenter);
-    barLayout->addStretch(1);
+    yieldCaptionWidth(selectionSummary_);
+    selectionRow->addWidget(selectionSummary_, 0, Qt::AlignVCenter);
+    selectionRow->addStretch(1);
+    barLayout->addLayout(selectionRow);
 
+    auto* actionsRow = new QHBoxLayout();
+    actionsRow->setContentsMargins(0, 0, 0, 0);
+    actionsRow->setSpacing(theme::kSpacingSmall);
+    actionsRow->addStretch(1);
     verifyButton_ = new QPushButton(actionBar);
     verifyButton_->setObjectName(QStringLiteral("nativeComponentVerifyButton"));
     // Verify reads the installed set; it is the tertiary action of the page.
     theme::applyActionRole(verifyButton_, theme::ActionRole::Ghost);
     verifyButton_->setFixedHeight(theme::kControlHeight);
-    barLayout->addWidget(verifyButton_, 0, Qt::AlignVCenter);
+    actionsRow->addWidget(verifyButton_, 0, Qt::AlignVCenter);
 
     downloadButton_ = new QPushButton(actionBar);
     downloadButton_->setObjectName(QStringLiteral("componentDownloadButton"));
@@ -612,7 +630,7 @@ void ComponentStoreTab::buildUi() {
     // the footer's Save stays the only accent that is always actionable.
     theme::applyActionRole(downloadButton_, theme::ActionRole::Primary);
     downloadButton_->setFixedHeight(theme::kControlHeight);
-    barLayout->addWidget(downloadButton_, 0, Qt::AlignVCenter);
+    actionsRow->addWidget(downloadButton_, 0, Qt::AlignVCenter);
 
     cancelButton_ = new QPushButton(actionBar);
     cancelButton_->setObjectName(QStringLiteral("nativeComponentTabCancelButton"));
@@ -620,7 +638,8 @@ void ComponentStoreTab::buildUi() {
     cancelButton_->setFixedHeight(theme::kControlHeight);
     cancelButton_->setEnabled(false);
     cancelButton_->setVisible(false);
-    barLayout->addWidget(cancelButton_, 0, Qt::AlignVCenter);
+    actionsRow->addWidget(cancelButton_, 0, Qt::AlignVCenter);
+    barLayout->addLayout(actionsRow);
     root->addWidget(actionBar);
 
     // Created here, with the bar: updateControls() runs while the cards below are
