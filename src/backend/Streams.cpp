@@ -393,7 +393,9 @@ QString tortugaMaster(QNetworkAccessManager* manager, const QString& pageUrl) {
     }
 }
 
-namespace {
+// P0-02: http/https only, shared so callers outside this file (TitlePage)
+// gate OS URL dispatch on the same rule. Exact semantics preserved from the
+// anonymous-namespace version.
 bool isSafeStreamUrl(const QString& rawUrl) {
     const QUrl parsed(rawUrl, QUrl::StrictMode);
     if (!parsed.isValid() || parsed.host().isEmpty()) {
@@ -402,7 +404,6 @@ bool isSafeStreamUrl(const QString& rawUrl) {
     const QString scheme = parsed.scheme().toLower();
     return scheme == QLatin1String("https") || scheme == QLatin1String("http");
 }
-}  // namespace
 
 QVector<QualityVariant> parseVariants(const QString& masterText, const QString& baseUrl) {
     QVector<QualityVariant> variants;

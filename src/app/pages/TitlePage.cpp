@@ -4195,6 +4195,14 @@ void TitlePage::copyEpisode(EpisodeEntry* entry) {
 }
 
 void TitlePage::openEmbedInBrowser(EpisodeEntry* entry) {
+    // P0-02: embedUrl comes from the API, so it is gated on the shared
+    // http/https allowlist before any OS dispatch — a file://, ms-msdt: or
+    // other handler URL from a provider payload is never opened.
+    if (!mikai::backend::isSafeStreamUrl(entry->embedUrl)) {
+        qWarning("mikai: blocked non-http(s) embed link");
+        flashStatus(tr("Link blocked"), true);
+        return;
+    }
     if (QDesktopServices::openUrl(QUrl(entry->embedUrl))) {
         flashStatus(tr("Opened in browser"));
     } else {

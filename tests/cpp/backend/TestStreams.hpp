@@ -48,4 +48,8 @@ class TestStreams : public QObject {
   void theFetchRetriesTwice();
   void cancellingAQuietProviderFetchReturnsPromptly();
   void cancellingDuringRetryBackoffDoesNotRetry();
+
+  // P0-02: the shared URL allowlist — http/https only, nothing else.
+  void safeStreamUrlAllowsOnlyHttpAndHttps_data();
+  void safeStreamUrlAllowsOnlyHttpAndHttps();
 };
