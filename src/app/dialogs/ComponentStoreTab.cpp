@@ -133,7 +133,7 @@ QVariantMap inventorySnapshot(const native::GpuComputeCapability& gpu, bool veri
     const native::ComponentStore store = native::componentStore();
     const native::RifeArchiveStore rifeStore = native::rifeArchiveStore();
     const native::ComponentPack* runtimePack = native::tensorRtRuntimePack();
-    const native::ComponentPack* kernelsPack = tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
+    const native::ComponentPack* kernelsPack = mplayer::native::tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
     const native::StoredPack runtimeStored = runtimePack != nullptr ? native::storedPack(store, *runtimePack)
                                                              : native::StoredPack{};
     const native::StoredPack kernelsStored = kernelsPack != nullptr ? native::storedPack(store, *kernelsPack)
@@ -1526,7 +1526,7 @@ void ComponentStoreTab::updateCardStates() {
     const bool spatialRecommended = spatialRecommended_;
 
     const native::ComponentPack* kernelsPack =
-        tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
+        mplayer::native::tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
     const native::StoredPack kernelsStored = kernelsPack != nullptr
                                          ? native::storedPack(native::componentStore(), *kernelsPack)
                                          : native::StoredPack{};
@@ -2045,7 +2045,7 @@ components::CardState ComponentStoreTab::cardStateFor(const QString& cardId) con
         state.inventory.installed = installedSpatialCount_;
         state.inventory.verified = verifiedSpatialCount_;
     } else if (cardId == QLatin1String("tensorRtKernelsCard")) {
-        const native::ComponentPack* pack = tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
+        const native::ComponentPack* pack = mplayer::native::tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
         state.inventory.total = pack != nullptr ? 1 : 0;
         state.inventory.installed = kernelsPackInstalled_ ? 1 : 0;
         state.inventory.verified =

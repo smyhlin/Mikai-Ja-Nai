@@ -563,7 +563,7 @@ void ComponentStoreTab::downloadRifeArchive() {
         return;
     }
     const native::RifeArchiveStore store = native::rifeArchiveStore();
-    const QVector<native::RifeModelPin> pins = rifeModelPins();
+    const QVector<native::RifeModelPin> pins = mplayer::native::rifeModelPins();
     if (runner_ == nullptr) {
         finishAcquisitionUnit(tr("The RIFE archive download needs a runner."), false,
                               QStringLiteral("native.components.noClient"));

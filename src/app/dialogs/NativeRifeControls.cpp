@@ -106,7 +106,7 @@ NativeRifeControls::NativeRifeControls(QWidget* parent) : QWidget(parent) {
     version_->setObjectName(QStringLiteral("nativeRifeVersionCombo"));
     version_->setAccessibleName(tr("RIFE version"));
     boundCaptionWidth(version_);
-    for (const native::RifeModelPin& pin : rifeModelPins()) {
+    for (const native::RifeModelPin& pin : mplayer::native::rifeModelPins()) {
         if (version_->findData(static_cast<int>(pin.version)) >= 0) continue;
         version_->addItem(QStringLiteral("v%1").arg(native::stableName(pin.version)),
                           static_cast<int>(pin.version));
@@ -321,7 +321,7 @@ void NativeRifeControls::retranslateUi() {
 
     // The variant entries are the resolver's pin names, restated through their
     // own typed data: a reordering or a new pin can never repoint a request.
-    for (const native::RifeModelPin& pin : rifeModelPins()) {
+    for (const native::RifeModelPin& pin : mplayer::native::rifeModelPins()) {
         const int index = variant_->findData(static_cast<int>(pin.variant));
         if (index < 0) continue;
         const QString name = native::stableName(pin.variant);
@@ -395,7 +395,7 @@ void NativeRifeControls::updateVariantChoices() {
     const native::RifeVersion version = static_cast<native::RifeVersion>(version_->currentData().toInt());
     QSignalBlocker blocker(variant_);
     variant_->clear();
-    for (const native::RifeModelPin& pin : rifeModelPins()) {
+    for (const native::RifeModelPin& pin : mplayer::native::rifeModelPins()) {
         if (pin.version != version ||
             variant_->findData(static_cast<int>(pin.variant)) >= 0) {
             continue;
@@ -416,8 +416,8 @@ void NativeRifeControls::updateVariantChoices() {
 void NativeRifeControls::updateEnsembleChoice() {
     const native::RifeVersion version = static_cast<native::RifeVersion>(version_->currentData().toInt());
     const native::RifeVariant variant = static_cast<native::RifeVariant>(variant_->currentData().toInt());
-    const bool hasPlain = rifeModelPin(version, variant, false) != nullptr;
-    const bool hasEnsemble = rifeModelPin(version, variant, true) != nullptr;
+    const bool hasPlain = mplayer::native::rifeModelPin(version, variant, false) != nullptr;
+    const bool hasEnsemble = mplayer::native::rifeModelPin(version, variant, true) != nullptr;
     if (!hasPlain && hasEnsemble) {
         QSignalBlocker blocker(ensemble_);
         ensemble_->setChecked(true);
