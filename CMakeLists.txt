@@ -63,6 +63,7 @@ add_library(mikai_backend STATIC
   src/backend/Errors.hpp
   src/backend/HttpTransport.cpp
   src/backend/HttpTransport.hpp
+  src/backend/Json.hpp
   src/backend/MikaiClient.cpp
   src/backend/MikaiClient.hpp
   src/backend/Models.cpp
