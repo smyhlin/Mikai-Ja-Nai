@@ -233,8 +233,12 @@ struct CompareRenderer::State {
         auto write = std::make_shared<StillWrite>();
         write->image = rgb;
         write->path = framePath;
-        const std::function<bool()> callerCancelled = cancelled;
-        QThreadPool::globalInstance()->start(QRunnable::create([write, callerCancelled] {
+        // P1-10: the worker captures only the write state. The GUI-owned
+        // cancellation callback must never run on a pool thread: the GUI side
+        // evaluates it while pumping below and stores the result in
+        // write->cancelled (release), which the worker reads (acquire) at row
+        // boundaries.
+        QThreadPool::globalInstance()->start(QRunnable::create([write] {
             QFile file(write->path);
             if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
                 write->failed.store(true, std::memory_order_release);
@@ -243,8 +247,7 @@ struct CompareRenderer::State {
             }
             const int rowBytes = write->image.width() * 3;
             for (int y = 0; y < write->image.height(); ++y) {
-                if (callerCancelled && callerCancelled()) {
-                    write->cancelled.store(true, std::memory_order_release);
+                if (write->cancelled.load(std::memory_order_acquire)) {
                     break;
                 }
                 if (file.write(reinterpret_cast<const char*>(
