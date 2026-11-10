@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -240,7 +241,26 @@ def main():
             run('package', ['pwsh', '-NoProfile', '-File', ROOT / 'packaging/windows/package.ps1',
                             '-BuildDir', build, '-OutputDir', output], timeout=1800)
             if os.getenv('GITHUB_ACTIONS', '').lower() == 'true':
-                setup = output / 'mikai-0.1.0-windows-x64-setup.exe'
+                # package.ps1 names the installer from the configured project
+                # version (mikai-package-Release.json, written at configure by
+                # cmake/MikaiPackaging.cmake). A hardcoded version here goes
+                # stale on every bump: 0.1.0 stopped matching at 0.2.2, so the
+                # smoke input was reported missing after packaging had already
+                # produced mikai-0.2.2-windows-x64-setup.exe.
+                try:
+                    package_metadata = json.loads(
+                        (build / 'mikai-package-Release.json').read_text(encoding='utf-8'))
+                    package_version = package_metadata.get('version')
+                except (OSError, ValueError) as error:
+                    raise RuntimeError(
+                        'Windows package metadata is missing or invalid: '
+                        f"{build / 'mikai-package-Release.json'}") from error
+                if (not isinstance(package_version, str)
+                        or not re.fullmatch(r'\d+\.\d+\.\d+', package_version)):
+                    raise RuntimeError(
+                        'Windows package metadata has no valid version: '
+                        f"{build / 'mikai-package-Release.json'}")
+                setup = output / f'mikai-{package_version}-windows-x64-setup.exe'
                 if not setup.is_file():
                     raise RuntimeError(f'Installer smoke input missing: {setup}')
                 smoke_output = evidence / 'installer-smoke'
