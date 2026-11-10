@@ -740,6 +740,9 @@ endforeach()
 # A residual forbidden directory anywhere in the assembled output means the
 # boundary was not enforced. The script's own verification is fatal, so this is
 # a second, independent check on observable state.
+# file(GLOB) expands the '*' patterns; EXISTS does not glob-expand, so the old
+# check only ever matched a directory literally named '*', and the check was
+# vacuous.
 set(_residual)
 foreach(_forbidden IN ITEMS "components" "assets" "models" "records")
   foreach(_glob
@@ -748,9 +751,8 @@ foreach(_forbidden IN ITEMS "components" "assets" "models" "records")
       "${_dist_out}/native/*/*/${_forbidden}"
       "${_dist_out}/native/*/*/*/${_forbidden}"
       "${_dist_out}/native/*/*/*/*/${_forbidden}")
-    if(EXISTS "${_glob}")
-      list(APPEND _residual "${_glob}")
-    endif()
+    file(GLOB _hits LIST_DIRECTORIES true "${_glob}")
+    list(APPEND _residual ${_hits})
   endforeach()
 endforeach()
 # Empty-list comparison: STREQUAL against "" never evaluates as a valid
