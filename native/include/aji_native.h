@@ -179,6 +179,21 @@ typedef struct aji_native_prepared_stage_v1 {
     char output_tensor[AJI_NATIVE_BINDING_NAME_CAPACITY];
 } aji_native_prepared_stage_v1;
 
+/* ABI layout guard (tasks/11 Y-1, tasks/12 Z-10): sizes measured from the
+   field layouts above with natural alignment — snapshot 9xu32 (36, pad 40) +
+   4xu64 (72) + 8xu32 (104) + 5xchar[128] (744) + 9xchar[65] (1329) +
+   9xchar[65] (1914) + 9xchar[128] (3066), align 8 = 3072; prepared stage
+   20xu32 (80) + double (88) + 128+128 (344) + 65+65 (474) + 128 (602) +
+   260+260 (1122) + 64+64 (1250), align 8 = 1256. Never 400. If an assert
+   fires, the struct changed: recompute the value from the new layout.
+   C++ only; the plain-C ABI and the #ifndef guard are untouched. */
+#ifdef __cplusplus
+static_assert(sizeof(aji_native_snapshot_v2) == 3072,
+              "aji_native_snapshot_v2 ABI layout drift");
+static_assert(sizeof(aji_native_prepared_stage_v1) == 1256,
+              "aji_native_prepared_stage_v1 ABI layout drift");
+#endif
+
 /* The whole admitted plan. stages[] is inline and fixed-capacity; stage_count
    is the number of populated entries, in ordinal order. */
 typedef struct aji_native_prepared_plan_v1 {
