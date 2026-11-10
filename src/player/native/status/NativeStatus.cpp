@@ -1130,7 +1130,7 @@ bool parseStatusTags(const NodeValue& tags, StatusSnapshot* snapshot, QString* e
     const QString text = QString::fromStdString(tag.second.text);
     // X-M18: a duplicate key used to silently overwrite (last wins); it is
     // now a named refusal like an unknown tag is.
-    const auto duplicate = [&key]() {
+    const auto duplicate = [&key, &reject]() {
       return reject(QStringLiteral("native.status.tags.duplicate"),
                     QStringLiteral("tag %1 is repeated").arg(key));
     };
