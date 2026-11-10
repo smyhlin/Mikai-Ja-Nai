@@ -22,6 +22,7 @@
 #include <theme/Theme.hpp>
 #include <workers/Runner.hpp>
 #include <gui/ImageDecode.hpp>
+#include <gui/Win32Support.hpp>
 
 #include <QtCore/QBuffer>
 #include <QtCore/QDir>
@@ -2677,6 +2678,59 @@ void TestPublicApiUi::managerActionRowsShareOneWidth() {
                               .arg(width)));
     }
   }
+}
+
+void TestPublicApiUi::openSubtitlesApiKeyMigratesOutOfQSettings() {
+#ifndef Q_OS_WIN
+  // P0-03: the key lives in a 0600 file under AppDataLocation, never in
+  // plaintext QSettings. XDG_DATA_HOME redirects AppDataLocation at a temp
+  // dir so the test never touches the real app data.
+  QTemporaryDir dataHome;
+  QVERIFY(dataHome.isValid());
+  const bool hadXdg = qEnvironmentVariableIsSet("XDG_DATA_HOME");
+  const QByteArray previousXdg = qgetenv("XDG_DATA_HOME");
+  struct RestoreXdg {
+    bool present;
+    QByteArray value;
+    ~RestoreXdg() {
+      if (present) {
+        qputenv("XDG_DATA_HOME", value);
+      } else {
+        qunsetenv("XDG_DATA_HOME");
+      }
+    }
+  } restore{hadXdg, previousXdg};
+  QVERIFY(qputenv("XDG_DATA_HOME", dataHome.path().toUtf8()));
+  // The store must resolve inside the redirected home before anything is
+  // written, or the test would touch the real app data dir.
+  const QString path = mikai::gui::openSubtitlesApiKeyFilePath();
+  QVERIFY2(path.startsWith(dataHome.path()),
+           qPrintable(QStringLiteral("credential store escaped the redirected home: %1")
+                          .arg(path)));
+
+  QSettings settings;
+  settings.setValue(QStringLiteral("access/openSubtitlesApiKey"),
+                    QStringLiteral("mk_test_key_synthetic"));
+  QCOMPARE(mikai::gui::loadOpenSubtitlesApiKey(), QStringLiteral("mk_test_key_synthetic"));
+  QVERIFY2(!settings.contains(QStringLiteral("access/openSubtitlesApiKey")),
+           "migration left the plaintext QSettings key behind");
+  QVERIFY2(QFileInfo::exists(path), "migration wrote no credential file");
+  const QFile::Permissions permissions = QFile::permissions(path);
+  QVERIFY(permissions.testFlag(QFile::ReadOwner));
+  QVERIFY(permissions.testFlag(QFile::WriteOwner));
+  QVERIFY(!(permissions & (QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup |
+                           QFile::ReadOther | QFile::WriteOther | QFile::ExeOther)));
+
+  // Round-trip through the new store, then clearing removes the file.
+  QVERIFY(mikai::gui::saveOpenSubtitlesApiKey(QStringLiteral("mk_test_key_2_synthetic")));
+  QCOMPARE(mikai::gui::loadOpenSubtitlesApiKey(),
+           QStringLiteral("mk_test_key_2_synthetic"));
+  QVERIFY(mikai::gui::saveOpenSubtitlesApiKey(QString()));
+  QVERIFY(!QFileInfo::exists(path));
+  QCOMPARE(mikai::gui::loadOpenSubtitlesApiKey(), QString());
+#else
+  QSKIP("the 0600-file fallback is the non-Windows store; Windows uses DPAPI");
+#endif
 }
 
 int runTestPublicApiUi(int argc, char** argv) {

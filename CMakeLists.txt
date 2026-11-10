@@ -355,6 +355,11 @@ target_link_libraries(mikai_player PUBLIC
   ${MIKAI_PLATFORM_SESSION_LIBS}
 )
 
+# P0-03: Win32Support's DPAPI credential helper needs CryptProtectData.
+if(WIN32)
+  target_link_libraries(mikai_player PRIVATE crypt32)
+endif()
+
 # ---------------------------------------------------------------------------
 # 4. mikai_app & mikai — Desktop Client Pages, Dialogs, State & Workers
 # ---------------------------------------------------------------------------

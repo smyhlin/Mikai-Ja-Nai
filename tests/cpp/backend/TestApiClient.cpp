@@ -524,9 +524,9 @@ class CallOutcome {
 }  // namespace
 
 void TestApiClient::initTestCase() {
-  // The client searches the working directory and the executable's
-  // neighbourhood for a .env (T-304), which would find the repository's: point
-  // it at a scratch file for the suite.
+  // The client searches the executable's neighbourhood for a .env (T-304),
+  // which would find the repository's: point it at a scratch file for the
+  // suite. (P0-03: the working directory is no longer searched at all.)
   QVERIFY2(envDirectory_.isValid(), "cannot create the isolated .env directory");
   setEnvFilePathOverride(QDir(envDirectory_.path()).filePath(QStringLiteral(".env")));
 }
@@ -1389,6 +1389,47 @@ void TestApiClient::explicitApiKeyConfigurationKeepsItsEnvironmentPrecedence() {
                     QByteArrayLiteral("X-API-Key: mk_file_key_synthetic\n")));
   MikaiClient fromFile({}, baseUrl);
   QCOMPARE(fromFile.apiKey(), QStringLiteral("mk_file_key_synthetic"));
+}
+
+void TestApiClient::aPlantedDotEnvInTheWorkingDirectoryIsNotRead() {
+  // P0-03: the working directory is deliberately not searched, so a .env
+  // planted there must never supply the key — even with no override installed.
+  QTemporaryDir planted;
+  QVERIFY(planted.isValid());
+  QVERIFY(writeFile(QDir(planted.path()).filePath(QStringLiteral(".env")),
+                    QByteArrayLiteral("X-API-Key: planted\n")));
+  const QString previousDir = QDir::currentPath();
+  const bool hadValue = qEnvironmentVariableIsSet("MIKAI_API_KEY");
+  const QByteArray previous = qgetenv("MIKAI_API_KEY");
+  struct Restore {
+    QString dir;
+    QString overridePath;
+    bool present;
+    QByteArray value;
+    ~Restore() {
+      QDir::setCurrent(dir);
+      setEnvFilePathOverride(overridePath);
+      if (present) {
+        qputenv("MIKAI_API_KEY", value);
+      } else {
+        qunsetenv("MIKAI_API_KEY");
+      }
+    }
+  } restore{previousDir,
+            QDir(envDirectory_.path()).filePath(QStringLiteral(".env")),
+            hadValue,
+            previous};
+  QVERIFY(QDir::setCurrent(planted.path()));
+  QVERIFY(qunsetenv("MIKAI_API_KEY"));
+  setEnvFilePathOverride(QString());
+
+  const QString baseUrl = QStringLiteral("http://127.0.0.1:1/public/v1");
+  QVERIFY2(!mikai::backend::envFilePath().startsWith(planted.path()),
+           qPrintable(QStringLiteral("envFilePath still points at the working directory: %1")
+                          .arg(mikai::backend::envFilePath())));
+  MikaiClient fromPlanted({}, baseUrl);
+  QVERIFY2(fromPlanted.apiKey() != QStringLiteral("planted"),
+           "a .env planted in the working directory supplied the API key");
 }
 
 void TestApiClient::aKeyChangedWhileARequestWasParkedDoesNotSendTheOldKey() {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QString>
 #include <utility>
 
@@ -46,5 +47,29 @@ bool missing(LSTATUS status);
 // sentence and its "Unknown Windows error" fallback in its own context.
 QString systemMessage(DWORD status);
 
+// DPAPI for one credential value (P0-03): protect ties the blob to the
+// current user on this machine; unprotect reverses it. False when Windows
+// refuses; no prompt is ever shown.
+bool protectCredential(const QString& plaintext, QByteArray* blob);
+bool unprotectCredential(const QByteArray& blob, QString* plaintext);
+
 }  // namespace mikai::gui::win32
 #endif
+
+// OpenSubtitles API key storage (P0-03, rung 5 — OS credential store where
+// one exists, 0600 file otherwise; no new dependency, no keyring invented).
+//
+// The key must never live in plaintext QSettings (registry on Windows, a
+// 0644 ini on Linux). On Windows the bytes are DPAPI-protected for the
+// current user and stored in the same app-data file; elsewhere the file
+// itself is the protection, written through QSaveFile with 0600 permissions,
+// and the settings UI says so. Either way the file lives under
+// QStandardPaths::AppDataLocation and the legacy QSettings key
+// "access/openSubtitlesApiKey" is deleted on first migration.
+namespace mikai::gui {
+
+QString openSubtitlesApiKeyFilePath();
+QString loadOpenSubtitlesApiKey();
+bool saveOpenSubtitlesApiKey(const QString& key, QString* reason = nullptr);
+
+}  // namespace mikai::gui

@@ -58,6 +58,9 @@ class TestApiClient : public QObject {
   void aSameOriginRedirectKeepsTheApiCredential();
   void aThreadLocalTransportManagerIsDeletedWhenItsThreadFinishes();
   void explicitApiKeyConfigurationKeepsItsEnvironmentPrecedence();
+  // P0-03: the working directory is deliberately not searched, so a .env
+  // planted there must never supply the key.
+  void aPlantedDotEnvInTheWorkingDirectoryIsNotRead();
 
   // Validating a candidate key is the same reading path: a named failure comes
   // back named, so the dialog can offer the API's reason rather than a guess.

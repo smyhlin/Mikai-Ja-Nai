@@ -4,6 +4,7 @@
 #include "dialogs/AnimeJanaiManagerPanel.hpp"
 #include "dialogs/settings/SettingsHelpers.hpp"
 #include "dialogs/settings/SettingsUi.hpp"
+#include "gui/Win32Support.hpp"
 #include "state/Feeds.hpp"
 #include "theme/Colors.hpp"
 #include "theme/Theme.hpp"
@@ -588,7 +589,17 @@ void SettingsDialog::save() {
     appearanceCommitted_ = true;
     QSettings settings;
     settings.setValue(QString::fromLatin1(kUiLanguageSettingKey), chosenLanguage);
-    settings.setValue(QStringLiteral("access/openSubtitlesApiKey"), openSubtitlesKey_->text().trimmed());
+    // P0-03: the OpenSubtitles key no longer lives in plaintext QSettings. A
+    // failed save is logged and the other preferences still commit — the typed
+    // value stays in the field, so the user can retry.
+    {
+        QString keyReason;
+        if (!mikai::gui::saveOpenSubtitlesApiKey(openSubtitlesKey_->text().trimmed(),
+                                                 &keyReason)) {
+            qWarning().noquote() << "mikai: could not save the OpenSubtitles API key:"
+                                 << keyReason;
+        }
+    }
     settings.setValue(feeds::settingsKey(), feeds::serialize(chosen));
     // T-101/T-104: the HDR tone-mapping policy and the native-on-HDR override
     // commit with the rest: the statics are the live truth every engine reads
