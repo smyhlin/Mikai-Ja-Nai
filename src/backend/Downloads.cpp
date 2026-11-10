@@ -17,6 +17,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcess>
+#include <QDebug>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QStandardPaths>
@@ -619,6 +620,195 @@ QString ensureSevenZip(const QString& toolsDirectory) {
     }
 }
 
+namespace {
+
+// P0-01 (rung 3 — list entries first, reject bad ones; do not write a custom
+// extractor). A crafted pack must never write outside its destination, so an
+// archive is listed before anything is extracted and extraction never starts
+// on an unlisted archive. The in-code check is mandatory regardless of the
+// extractor version: the bundled 7-Zip is 26.03 (>= 25.01, which fixed
+// CVE-2025-55188; 25.00 fixed CVE-2025-11001 / CVE-2025-11002), but a system
+// 7-Zip from PATH may be older and no call passes -snld20.
+bool archiveEntriesAreSafe(const QStringList& entries, QString* reason) {
+    for (const QString& raw : entries) {
+        const QString entry = QDir::cleanPath(raw);
+        // After cleanPath, ".." can only be leading; the contains() check is
+        // the plan's belt-and-braces form of the same rule. The drive-letter
+        // check covers "C:..." on platforms where QDir::isAbsolutePath does
+        // not recognise it.
+        if (entry.startsWith(QLatin1String("..")) || QDir::isAbsolutePath(entry) ||
+            entry.contains(QLatin1String("..")) ||
+            (entry.size() >= 2 && entry.at(1) == QLatin1Char(':'))) {
+            if (reason) {
+                *reason =
+                    QStringLiteral("archive entry escapes destination: %1").arg(raw);
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
+struct ArchiveListing {
+    QStringList entries;
+    bool hasSymlink = false;
+};
+
+// One bounded listing run: start the tool, reap it, capture stdout. A listing
+// that never starts, is cancelled, or does not finish in time refuses the
+// archive instead of letting extraction proceed unlisted.
+bool runArchiveListing(const QString& program, const QStringList& args, QByteArray* output,
+                       QString* reason) {
+    QProcess process;
+    process.start(program, args);
+    if (!process.waitForStarted(5000)) {
+        if (reason) {
+            *reason = QStringLiteral("could not list archive: %1 failed to start").arg(program);
+        }
+        return false;
+    }
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (process.state() != QProcess::NotRunning) {
+        if (WorkCancellationScope::cancellationRequested()) {
+            process.kill();
+            process.waitForFinished(2000);
+            if (reason) *reason = QStringLiteral("archive extraction was cancelled");
+            return false;
+        }
+        const int remaining = 30000 - static_cast<int>(elapsed.elapsed());
+        if (remaining <= 0) {
+            process.kill();
+            process.waitForFinished(2000);
+            if (reason) *reason = QStringLiteral("could not list archive: listing timed out");
+            return false;
+        }
+        process.waitForFinished(qMin(200, remaining));
+    }
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        if (reason) {
+            *reason =
+                QStringLiteral("could not list archive (exit %1)").arg(process.exitCode());
+        }
+        return false;
+    }
+    if (output) *output = process.readAllStandardOutput();
+    return true;
+}
+
+// `tar --zstd -tf` names the entries; `tar --zstd -tvf` is the symlink
+// oracle. A verbose line starts with the entry mode, so any line starting
+// with 'l' is a link entry. The names come from -tf alone because -tvf
+// column layout differs between GNU and BSD tar. cleanPath() is lexical and
+// keeps symlinks (REV5 V-34), so the name check alone cannot catch a link
+// escape — the oracle is mandatory, not advisory.
+bool listTarEntries(const QString& archive, ArchiveListing* listing, QString* reason) {
+    QByteArray names;
+    if (!runArchiveListing(QStringLiteral("tar"),
+                           {QStringLiteral("--zstd"), QStringLiteral("-tf"), archive}, &names,
+                           reason)) {
+        return false;
+    }
+    QByteArray verbose;
+    if (!runArchiveListing(QStringLiteral("tar"),
+                           {QStringLiteral("--zstd"), QStringLiteral("-tvf"), archive}, &verbose,
+                           reason)) {
+        return false;
+    }
+    listing->entries = QString::fromUtf8(names).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    for (const QByteArray& line : verbose.split('\n')) {
+        if (!line.isEmpty() && line.at(0) == 'l') {
+            listing->hasSymlink = true;
+            break;
+        }
+    }
+    return true;
+}
+
+// `7z l -slt` prints one blank-line-separated block per entry, each with
+// "Path = ..." and "Attributes = ...". The first block describes the archive
+// itself — it carries a "Type = ..." line, which no entry block has — and is
+// skipped. (Skipping by block order would be wrong: blank lines in the header
+// precede the first block.) A link entry carries an Attributes value starting
+// with 'l' (the Unix mode string) or a "Symbolic Link = " line.
+bool listSevenZipEntries(const QString& sevenZip, const QString& archive,
+                         ArchiveListing* listing, QString* reason) {
+    QByteArray output;
+    if (!runArchiveListing(sevenZip,
+                           {QStringLiteral("l"), QStringLiteral("-slt"), archive}, &output,
+                           reason)) {
+        return false;
+    }
+    const QString text = QString::fromUtf8(output);
+    QString pendingPath;
+    bool pendingIsArchive = false;
+    bool pendingSymlink = false;
+    const auto flushBlock = [&] {
+        if (!pendingIsArchive && !pendingPath.isEmpty()) {
+            if (pendingSymlink) listing->hasSymlink = true;
+            listing->entries.append(pendingPath);
+        }
+        pendingPath.clear();
+        pendingIsArchive = false;
+        pendingSymlink = false;
+    };
+    for (const QString& line : text.split(QLatin1Char('\n'))) {
+        const QString trimmed = line.trimmed();
+        if (trimmed.isEmpty()) {
+            flushBlock();
+            continue;
+        }
+        if (trimmed.startsWith(QLatin1String("Path = "))) {
+            pendingPath = trimmed.mid(7);
+        } else if (trimmed.startsWith(QLatin1String("Type = "))) {
+            pendingIsArchive = true;
+        } else if (trimmed.startsWith(QLatin1String("Attributes = "))) {
+            if (trimmed.mid(13).trimmed().startsWith(QLatin1Char('l'))) {
+                pendingSymlink = true;
+            }
+        } else if (trimmed.startsWith(QLatin1String("Symbolic Link = "))) {
+            pendingSymlink = true;
+        }
+    }
+    flushBlock();
+    return true;
+}
+
+// Lists the archive and rejects anything that would escape the destination
+// or smuggle a symlink through it. Returns false with *reason set; nothing
+// has been extracted when this returns false.
+bool archiveListingIsSafe(const QString& sevenZip, const QString& archive, bool useTar,
+                          QString* reason) {
+    ArchiveListing listing;
+    const bool listed = useTar ? listTarEntries(archive, &listing, reason)
+                               : listSevenZipEntries(sevenZip, archive, &listing, reason);
+    if (!listed) {
+        if (reason != nullptr) {
+            qWarning().noquote() << "mikai: refusing unlisted archive:"
+                                 << redactDiagnostic(*reason);
+        }
+        return false;
+    }
+    if (listing.hasSymlink) {
+        if (reason != nullptr) {
+            *reason = QStringLiteral("archive contains a symbolic link entry; "
+                                     "symlinks are not extracted");
+        }
+        qWarning("mikai: refusing archive with a symbolic link entry");
+        return false;
+    }
+    if (!archiveEntriesAreSafe(listing.entries, reason)) {
+        if (reason != nullptr) {
+            qWarning().noquote() << "mikai: refusing archive entry:"
+                                 << redactDiagnostic(*reason);
+        }
+        return false;
+    }
+    return true;
+}
+
+}  // namespace
+
 bool extractArchive(const QString& sevenZip, const QString& archive, const QString& destination,
                     QString* reason) {
     enum class ProcessResult { Finished, StartFailed, TimedOut, Cancelled };
@@ -673,6 +863,10 @@ bool extractArchive(const QString& sevenZip, const QString& archive, const QStri
     if (cancelled()) return false;
 #ifndef Q_OS_WIN
     if (archive.endsWith(QLatin1String(".tar.zst"), Qt::CaseInsensitive)) {
+        // P0-01: list first, extract second — a rejected listing extracts nothing.
+        if (!archiveListingIsSafe(sevenZip, archive, true, reason)) {
+            return false;
+        }
         QProcess tarProcess;
         if (cancelled()) return false;
         tarProcess.start(QStringLiteral("tar"),
@@ -690,10 +884,6 @@ bool extractArchive(const QString& sevenZip, const QString& archive, const QStri
         QProcess process;
         QStringList args{QStringLiteral("x"),
                          QStringLiteral("-o%1").arg(QDir(outDir).absolutePath())};
-#ifndef Q_OS_WIN
-        // Restore symlinks as links on POSIX (matches AnimeJaNaiUpdater Extract -snl).
-        args << QStringLiteral("-snl");
-#endif
         args << QStringLiteral("-y") << inputArchive;
         if (cancelled()) return false;
         process.start(sevenZip, args);
@@ -723,6 +913,14 @@ bool extractArchive(const QString& sevenZip, const QString& archive, const QStri
         return true;
     };
 
+    // P0-01: list first, extract second — a rejected listing extracts nothing.
+    // The -snl flag is gone: symlink entries are rejected by the listing, and
+    // no caller opts in to extracting them (7-Zip >= 25.01 is pinned for the
+    // bundled tool; never pass -snld20).
+    if (!archiveListingIsSafe(sevenZip, archive, false, reason)) {
+        return false;
+    }
+
     if (!runSevenZip(archive, destination)) {
         return false;
     }
@@ -739,6 +937,12 @@ bool extractArchive(const QString& sevenZip, const QString& archive, const QStri
                                         QDir::Files | QDir::NoSymLinks);
         if (entries.size() == 1) {
             const QString innerTar = QDir(destination).filePath(entries.first());
+            // P0-01: the inner .tar is its own archive — list it before the
+            // second pass, or it would be extracted unlisted.
+            if (!archiveListingIsSafe(sevenZip, innerTar, false, reason)) {
+                QFile::remove(innerTar);
+                return false;
+            }
             if (!runSevenZip(innerTar, destination)) {
                 QFile::remove(innerTar);
                 return false;
