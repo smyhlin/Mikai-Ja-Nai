@@ -1,28 +1,18 @@
 #include <utility>
 #include "Models.hpp"
+#include "Json.hpp"
 
+#include <QDebug>
 #include <QJsonArray>
 #include <QJsonValue>
+#include <QUrl>
 
 #include <cmath>
 
 namespace mikai::backend {
+// P2-01: the JSON accessors live in backend/Json.hpp now.
+using namespace json;
 namespace {
-
-// Python's `data.get("x") or ""` collapses missing keys, nulls and wrong
-// types into one empty fallback, which is what an empty QString carries here.
-QString text(const QJsonValue& value) {
-    if (value.isString()) {
-        return value.toString();
-    }
-    if (value.isDouble()) {
-        return QString::number(value.toDouble(), 'g', 17);
-    }
-    if (value.isBool()) {
-        return value.toBool() ? QStringLiteral("true") : QStringLiteral("false");
-    }
-    return {};
-}
 
 // Every poster field ships a webp and a jpg sibling, and webp is the smaller
 // one, so it wins. That only works because the imageformats plugin carries
@@ -34,46 +24,6 @@ QString imageUrl(const ImageVariant& variant) {
     return variant.webp.isEmpty() ? variant.jpg : variant.webp;
 }
 
-std::optional<int> optInt(const QJsonValue& value) {
-    if (value.isDouble()) {
-        return static_cast<int>(value.toDouble());
-    }
-    if (value.isString()) {
-        bool ok = false;
-        const int parsed = value.toString().toInt(&ok);
-        if (ok) {
-            return parsed;
-        }
-    }
-    return std::nullopt;
-}
-
-std::optional<qint64> optInt64(const QJsonValue& value) {
-    if (value.isDouble()) {
-        return static_cast<qint64>(value.toDouble());
-    }
-    if (value.isString()) {
-        bool ok = false;
-        const qint64 parsed = value.toString().toLongLong(&ok);
-        if (ok) return parsed;
-    }
-    return std::nullopt;
-}
-
-std::optional<double> optDouble(const QJsonValue& value) {
-    if (value.isDouble()) {
-        return value.toDouble();
-    }
-    if (value.isString()) {
-        bool ok = false;
-        const double parsed = value.toString().toDouble(&ok);
-        if (ok) {
-            return parsed;
-        }
-    }
-    return std::nullopt;
-}
-
 QVariant optionalVariant(const QJsonValue& value) {
     if (value.isUndefined() || value.isNull()) {
         return {};
@@ -81,12 +31,13 @@ QVariant optionalVariant(const QJsonValue& value) {
     return value.toVariant();
 }
 
-QJsonObject objectOrEmpty(const QJsonValue& value) {
-    return value.isObject() ? value.toObject() : QJsonObject{};
-}
-
-QJsonArray arrayOrEmpty(const QJsonValue& value) {
-    return value.isArray() ? value.toArray() : QJsonArray{};
+// P1-07: an external-link id is a single path segment. Anything containing
+// a separator, a query/fragment marker or a parent traversal is rejected
+// outright instead of being encoded into a link.
+bool externalLinkIdIsSafe(const QString& id) {
+    return !id.isEmpty() && !id.contains(QLatin1Char('/')) &&
+           !id.contains(QLatin1Char('?')) && !id.contains(QLatin1Char('#')) &&
+           !id.contains(QStringLiteral(".."));
 }
 
 }  // namespace
@@ -220,26 +171,37 @@ QString teamLinkServiceName(const QString& key) {
 QVector<std::pair<QString, QString>> externalLinks(const AnimeDetail& detail) {
     QVector<std::pair<QString, QString>> links;
     const auto id = [&detail](const QString& key) { return detail.ids.value(key).toString(); };
-
-    const QString mal = id(QStringLiteral("mal"));
-    if (!mal.isEmpty()) {
-        links.append(
-            {QStringLiteral("MyAnimeList"), QStringLiteral("https://myanimelist.net/anime/") + mal});
-    }
-    const QString al = id(QStringLiteral("al"));
-    if (!al.isEmpty()) {
-        links.append({QStringLiteral("AniList"), QStringLiteral("https://anilist.co/anime/") + al});
-    }
-    const QString hikka = id(QStringLiteral("hikka"));
-    if (!hikka.isEmpty()) {
-        links.append(
-            {QStringLiteral("Shikimori"), QStringLiteral("https://shikimori.one/animes/") + hikka});
-    }
-    const QString imdb = id(QStringLiteral("imdb"));
-    if (!imdb.isEmpty()) {
-        links.append({QStringLiteral("IMDb"),
-                      QStringLiteral("https://www.imdb.com/title/") + imdb + QStringLiteral("/")});
-    }
+    // P1-07: build each URL with QUrl instead of concatenating the raw id,
+    // so a crafted id can never walk the path off-site or smuggle a query.
+    // Base URLs and link order are unchanged; IMDb keeps its trailing slash.
+    const auto appendLink = [&links](const QString& name, const QString& base,
+                                     const QString& linkId, bool trailingSlash) {
+        if (linkId.isEmpty()) {
+            return;
+        }
+        if (!externalLinkIdIsSafe(linkId)) {
+            // Never log the id itself: it is attacker-controlled input.
+            qWarning("Models: externalLinks: rejecting unsafe id for '%s'",
+                     qPrintable(name));
+            return;
+        }
+        QUrl url(base);
+        QString path = url.path() + QLatin1Char('/') +
+                       QString::fromUtf8(QUrl::toPercentEncoding(linkId));
+        if (trailingSlash) {
+            path += QLatin1Char('/');
+        }
+        url.setPath(path);
+        links.append({name, url.toString()});
+    };
+    appendLink(QStringLiteral("MyAnimeList"), QStringLiteral("https://myanimelist.net/anime"),
+               id(QStringLiteral("mal")), false);
+    appendLink(QStringLiteral("AniList"), QStringLiteral("https://anilist.co/anime"),
+               id(QStringLiteral("al")), false);
+    appendLink(QStringLiteral("Shikimori"), QStringLiteral("https://shikimori.one/animes"),
+               id(QStringLiteral("hikka")), false);
+    appendLink(QStringLiteral("IMDb"), QStringLiteral("https://www.imdb.com/title"),
+               id(QStringLiteral("imdb")), true);
     return links;
 }
 
@@ -309,7 +271,14 @@ AnimeUpdate parseUpdate(const QJsonObject& entry) {
         update.teams.append(parseTeam(value.toObject()));
     }
     update.team_name = text(entry.value(QStringLiteral("teamName")));
-    update.is_collab = entry.value(QStringLiteral("isCollab")).toBool();
+    // P1-07: checked read — a missing or wrong-typed field keeps the old
+    // default (false) and logs once instead of silently collapsing.
+    const QJsonValue isCollabValue = entry.value(QStringLiteral("isCollab"));
+    if (isCollabValue.isBool()) {
+        update.is_collab = isCollabValue.toBool();
+    } else {
+        qWarning("Models: parseUpdate: 'isCollab' missing or wrong type; using default");
+    }
     update.kind = text(entry.value(QStringLiteral("kind")));
     update.provider = text(entry.value(QStringLiteral("provider")));
     update.episode = optionalVariant(entry.value(QStringLiteral("episode")));
@@ -323,7 +292,12 @@ AiringEntry parseAiringEntry(const QJsonObject& entry) {
     airing.anime = parseSummary(objectOrEmpty(entry.value(QStringLiteral("anime"))));
     airing.episode = optionalVariant(entry.value(QStringLiteral("episode")));
     airing.airing = text(entry.value(QStringLiteral("airing")));
-    airing.finished = entry.value(QStringLiteral("finished")).toBool();
+    const QJsonValue finishedValue = entry.value(QStringLiteral("finished"));
+    if (finishedValue.isBool()) {
+        airing.finished = finishedValue.toBool();
+    } else {
+        qWarning("Models: parseAiringEntry: 'finished' missing or wrong type; using default");
+    }
     return airing;
 }
 
@@ -377,7 +351,12 @@ AnimeDetail parseDetail(const QJsonObject& data) {
         const QJsonObject raw = value.toObject();
         UaPoster poster;
         poster.id = optInt64(raw.value(QStringLiteral("id"))).value_or(0);
-        poster.is_selected = raw.value(QStringLiteral("isSelected")).toBool();
+        const QJsonValue isSelectedValue = raw.value(QStringLiteral("isSelected"));
+        if (isSelectedValue.isBool()) {
+            poster.is_selected = isSelectedValue.toBool();
+        } else {
+            qWarning("Models: parseDetail: 'isSelected' missing or wrong type; using default");
+        }
         poster.author = text(raw.value(QStringLiteral("author")));
         if (raw.value(QStringLiteral("team")).isObject()) {
             poster.team = parseTeam(raw.value(QStringLiteral("team")).toObject());
@@ -415,7 +394,12 @@ AnimeDetail parseDetail(const QJsonObject& data) {
             optionalVariant(raw.value(QStringLiteral("episode"))),
             text(raw.value(QStringLiteral("airing")))};
     }
-    detail.licensed = data.value(QStringLiteral("licensed")).toBool();
+    const QJsonValue licensedValue = data.value(QStringLiteral("licensed"));
+    if (licensedValue.isBool()) {
+        detail.licensed = licensedValue.toBool();
+    } else {
+        qWarning("Models: parseDetail: 'licensed' missing or wrong type; using default");
+    }
     detail.license = objectOrEmpty(data.value(QStringLiteral("license")));
 
     const QJsonArray relations = arrayOrEmpty(data.value(QStringLiteral("relations")));
@@ -439,7 +423,12 @@ AnimeDetail parseDetail(const QJsonObject& data) {
 
 PlayerResult parsePlayer(const QJsonObject& data) {
     PlayerResult player;
-    player.licensed = data.value(QStringLiteral("licensed")).toBool();
+    const QJsonValue licensedValue = data.value(QStringLiteral("licensed"));
+    if (licensedValue.isBool()) {
+        player.licensed = licensedValue.toBool();
+    } else {
+        qWarning("Models: parsePlayer: 'licensed' missing or wrong type; using default");
+    }
     player.license = objectOrEmpty(data.value(QStringLiteral("license")));
 
     const QJsonArray releases = arrayOrEmpty(data.value(QStringLiteral("releases")));
@@ -449,7 +438,12 @@ PlayerResult parsePlayer(const QJsonObject& data) {
         Release release;
         release.id = text(raw.value(QStringLiteral("id")));
         release.kind = text(raw.value(QStringLiteral("kind")));
-        release.is_collab = raw.value(QStringLiteral("isCollab")).toBool();
+        const QJsonValue isCollabValue = raw.value(QStringLiteral("isCollab"));
+        if (isCollabValue.isBool()) {
+            release.is_collab = isCollabValue.toBool();
+        } else {
+            qWarning("Models: parsePlayer: 'isCollab' missing or wrong type; using default");
+        }
 
         const QJsonArray teams = arrayOrEmpty(raw.value(QStringLiteral("teams")));
         release.teams.reserve(teams.size());

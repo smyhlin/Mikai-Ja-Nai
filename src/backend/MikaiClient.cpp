@@ -1,9 +1,11 @@
 #include "MikaiClient.hpp"
 
 #include "HttpTransport.hpp"
+#include "Json.hpp"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QDebug>
 #include <QDeadlineTimer>
 #include <QDir>
 #include <QElapsedTimer>
@@ -159,17 +161,11 @@ QString reasonFor(int status) {
 
 SearchResult searchFromPayload(const QJsonObject& payload, int fallbackPage) {
     SearchResult result;
-    const QJsonValue total = payload.value(QStringLiteral("total"));
-    if (total.isDouble()) {
-        result.total = static_cast<int>(total.toDouble());
-    }
-    const QJsonValue page = payload.value(QStringLiteral("page"));
-    result.page = page.isDouble() ? std::optional<int>(static_cast<int>(page.toDouble()))
-                                  : std::optional<int>(fallbackPage);
-    const QJsonValue pages = payload.value(QStringLiteral("pages"));
-    if (pages.isDouble()) {
-        result.pages = static_cast<int>(pages.toDouble());
-    }
+    // P1-07: checked numbers — out-of-range doubles fall back with a
+    // warning inside json::optInt instead of undefined behaviour.
+    result.total = json::optInt(payload.value(QStringLiteral("total")));
+    result.page = json::optInt(payload.value(QStringLiteral("page"))).value_or(fallbackPage);
+    result.pages = json::optInt(payload.value(QStringLiteral("pages")));
     const QJsonArray items = payload.value(QStringLiteral("result")).toArray();
     result.items.reserve(items.size());
     for (const QJsonValue& value : items) {
@@ -181,20 +177,61 @@ SearchResult searchFromPayload(const QJsonObject& payload, int fallbackPage) {
 TeamProfile parseTeamProfile(const QJsonObject& data) {
     TeamProfile profile;
     profile.team = parseTeam(data);
-    profile.description = data.value(QStringLiteral("description")).toString();
-    profile.birthday = data.value(QStringLiteral("birthday")).toString();
+    // P1-07: checked reads — a missing or wrong-typed field keeps the old
+    // default and logs once instead of silently collapsing to ""/false/0.
+    const QJsonValue descriptionValue = data.value(QStringLiteral("description"));
+    if (descriptionValue.isString()) {
+        profile.description = descriptionValue.toString();
+    } else {
+        qWarning("MikaiClient: parseTeamProfile: 'description' missing or wrong type; "
+                 "using default");
+    }
+    const QJsonValue birthdayValue = data.value(QStringLiteral("birthday"));
+    if (birthdayValue.isString()) {
+        profile.birthday = birthdayValue.toString();
+    } else {
+        qWarning("MikaiClient: parseTeamProfile: 'birthday' missing or wrong type; using default");
+    }
     profile.avatar = parsePosterSet(data.value(QStringLiteral("avatar")).toObject());
     const QJsonObject links = data.value(QStringLiteral("links")).toObject();
     for (auto it = links.begin(); it != links.end(); ++it) {
         if (it.value().isString()) profile.links.insert(it.key(), it.value().toString());
     }
-    profile.has_voice = data.value(QStringLiteral("hasVoice")).toBool();
-    profile.has_subs = data.value(QStringLiteral("hasSubs")).toBool();
-    profile.anime_count = data.value(QStringLiteral("animeCount")).toInt();
+    const QJsonValue hasVoiceValue = data.value(QStringLiteral("hasVoice"));
+    if (hasVoiceValue.isBool()) {
+        profile.has_voice = hasVoiceValue.toBool();
+    } else {
+        qWarning("MikaiClient: parseTeamProfile: 'hasVoice' missing or wrong type; using default");
+    }
+    const QJsonValue hasSubsValue = data.value(QStringLiteral("hasSubs"));
+    if (hasSubsValue.isBool()) {
+        profile.has_subs = hasSubsValue.toBool();
+    } else {
+        qWarning("MikaiClient: parseTeamProfile: 'hasSubs' missing or wrong type; using default");
+    }
+    const QJsonValue animeCountValue = data.value(QStringLiteral("animeCount"));
+    if (const std::optional<int> animeCount = json::optInt(animeCountValue)) {
+        profile.anime_count = *animeCount;
+    } else if (!animeCountValue.isDouble()) {
+        // An out-of-range double is already warned about inside optInt.
+        qWarning("MikaiClient: parseTeamProfile: 'animeCount' missing or wrong type; "
+                 "using default");
+    }
     const QJsonObject views = data.value(QStringLiteral("views")).toObject();
-    profile.views_total = static_cast<qint64>(views.value(QStringLiteral("total")).toDouble());
-    profile.views_last_30_days =
-        static_cast<qint64>(views.value(QStringLiteral("last30Days")).toDouble());
+    const QJsonValue viewsTotalValue = views.value(QStringLiteral("total"));
+    if (const std::optional<qint64> viewsTotal = json::optInt64(viewsTotalValue)) {
+        profile.views_total = *viewsTotal;
+    } else if (!viewsTotalValue.isDouble()) {
+        qWarning("MikaiClient: parseTeamProfile: 'views.total' missing or wrong type; "
+                 "using default");
+    }
+    const QJsonValue viewsLast30DaysValue = views.value(QStringLiteral("last30Days"));
+    if (const std::optional<qint64> viewsLast30Days = json::optInt64(viewsLast30DaysValue)) {
+        profile.views_last_30_days = *viewsLast30Days;
+    } else if (!viewsLast30DaysValue.isDouble()) {
+        qWarning("MikaiClient: parseTeamProfile: 'views.last30Days' missing or wrong type; "
+                 "using default");
+    }
     return profile;
 }
 
@@ -894,10 +931,9 @@ UpdatesResult MikaiClient::getUpdates(int page, int limit, const QString& since)
     if (!since.isEmpty()) params.insert(QStringLiteral("since"), since);
     const QJsonObject payload = get(QStringLiteral("/updates"), params);
     UpdatesResult result;
-    const QJsonValue total = payload.value(QStringLiteral("total"));
-    if (total.isDouble()) {
-        result.total = static_cast<int>(total.toDouble());
-    }
+    // P1-07: checked number (plan ground truth missed this second `total`
+    // site; same unchecked cast as searchFromPayload above).
+    result.total = json::optInt(payload.value(QStringLiteral("total")));
     if (payload.value(QStringLiteral("page")).isDouble()) result.page = payload.value(QStringLiteral("page")).toInt();
     if (payload.value(QStringLiteral("pages")).isDouble()) result.pages = payload.value(QStringLiteral("pages")).toInt();
     const QJsonArray items = payload.value(QStringLiteral("result")).toArray();
