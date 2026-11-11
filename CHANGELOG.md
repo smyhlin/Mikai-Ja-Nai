@@ -46,6 +46,7 @@ Published changes are recorded with their downloads on the [GitHub releases page
 ### Interface
 
 - Show the player's centre spinner while a source opens, so the wait for the first frame is a visible state instead of a bare black window.
+- Keep the player's chrome on screen while the viewer reads a tooltip or rests the pointer on it, instead of auto-hiding the chip underneath its own explanation.
 - Keep backend remarks out of the player's status chip: the "RTX builds the engine in-process, so `--skipInference` is not used" detail now lives in the chip's and the engine row's tooltip instead of widening a line read over the picture.
 - Split the Components action bar into a selection row and an action row so the page fits the minimum dialog width in both languages.
 - Promote the backend display for an RTX GPU only when nothing is stored; the stored explicit choice is never overwritten by the promotion.

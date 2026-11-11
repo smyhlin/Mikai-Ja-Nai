@@ -8,6 +8,7 @@
 #include "gui/SystemDefaultPlayer.hpp"
 #include "gui/UiProfile.hpp"
 
+#include <QApplication>
 #include <QCoreApplication>
 #include <QCursor>
 #include <QDir>
@@ -24,6 +25,7 @@
 #include <QSettings>
 #include <QShowEvent>
 #include <QStyle>
+#include <QToolTip>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -1511,6 +1513,23 @@ void PlayerShell::enterAutoHidden() {
         (hoverPreview_ != nullptr && hoverPreview_->isVisible())) {
         hideTimer_.start(kAutohideMs);
         return;
+    }
+    // A tip the viewer is reading outranks the timer: the chip it explains is
+    // part of the chrome, so hiding the chrome while the tip is up takes the
+    // subject away and leaves the explanation floating over the picture.
+    if (QToolTip::isVisible() || QApplication::activePopupWidget() != nullptr) {
+        hideTimer_.start(kAutohideMs);
+        return;
+    }
+    // The pointer resting on any chrome control - not on the picture - is the
+    // same interaction: the chip, the strip, the title bar and the footer all
+    // sit above the surface, so a hit that is not the surface is chrome.
+    if (surface_ != nullptr) {
+        QWidget* under = childAt(mapFromGlobal(QCursor::pos()));
+        if (under != nullptr && under != surface_ && under->window() == this->window()) {
+            hideTimer_.start(kAutohideMs);
+            return;
+        }
     }
     hudHidden_ = true;
     applyState();
