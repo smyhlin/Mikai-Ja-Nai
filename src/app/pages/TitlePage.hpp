@@ -4,6 +4,7 @@
 
 #include <backend/Errors.hpp>
 #include <backend/Models.hpp>
+#include <native/bundle/NativeRuntimeSelection.hpp>
 
 #include <state/WatchHistory.hpp>
 
