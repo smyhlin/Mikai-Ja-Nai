@@ -580,7 +580,7 @@ QString settingsStylesheet(const theme::Appearance& appearance) {
             background: none;
             height: 0px;
         }
-    )QSS";
+    )QSS");
     // Named markers, filled from the (marker, value) list below: adding,
     // removing, or reordering a value can no longer silently shift every
     // later marker, the failure the deleted button rules caused with the
