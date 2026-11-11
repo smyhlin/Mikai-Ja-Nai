@@ -2,6 +2,7 @@
 
 #include "theme/Appearance.hpp"
 
+#include <dialogs/NativeAssetsPanel.hpp>
 #include <native/bundle/NativePrefs.hpp>
 #include <player/shaders/Anime4K.hpp>
 #include <player/shaders/PresetShortcuts.hpp>
