@@ -97,6 +97,13 @@ typedef struct aji_native_snapshot_v2 {
     char prepared_build_keys[AJI_NATIVE_MAX_STAGES][AJI_NATIVE_BUILD_KEY_CAPACITY]; /* empty unless independently verified */
 } aji_native_snapshot_v2;
 
+#ifdef __cplusplus
+/* X-M25: the v2 snapshot is a cross-binary ABI — a field added without a
+   version bump silently shifts every offset. Measured 3072 (Y-1, never 400). */
+static_assert(sizeof(aji_native_snapshot_v2) == 3072,
+              "aji_native_snapshot_v2 must stay 3072 bytes (ABI v2)");
+#endif
+
 AJI_NATIVE_EXPORT int aji_native_get_snapshot(
     aji_ctx *ctx, uint32_t requested_protocol, aji_native_snapshot_v2 *snapshot);
 
@@ -179,19 +186,10 @@ typedef struct aji_native_prepared_stage_v1 {
     char output_tensor[AJI_NATIVE_BINDING_NAME_CAPACITY];
 } aji_native_prepared_stage_v1;
 
-/* ABI layout guard (tasks/11 Y-1, tasks/12 Z-10): sizes measured from the
-   field layouts above with natural alignment — snapshot 9xu32 (36, pad 40) +
-   4xu64 (72) + 8xu32 (104) + 5xchar[128] (744) + 9xchar[65] (1329) +
-   9xchar[65] (1914) + 9xchar[128] (3066), align 8 = 3072; prepared stage
-   20xu32 (80) + double (88) + 128+128 (344) + 65+65 (474) + 128 (602) +
-   260+260 (1122) + 64+64 (1250), align 8 = 1256. Never 400. If an assert
-   fires, the struct changed: recompute the value from the new layout.
-   C++ only; the plain-C ABI and the #ifndef guard are untouched. */
 #ifdef __cplusplus
-static_assert(sizeof(aji_native_snapshot_v2) == 3072,
-              "aji_native_snapshot_v2 ABI layout drift");
+/* X-M25: same ABI pin as the snapshot above. Measured 1256 (Y-1). */
 static_assert(sizeof(aji_native_prepared_stage_v1) == 1256,
-              "aji_native_prepared_stage_v1 ABI layout drift");
+              "aji_native_prepared_stage_v1 must stay 1256 bytes");
 #endif
 
 /* The whole admitted plan. stages[] is inline and fixed-capacity; stage_count
