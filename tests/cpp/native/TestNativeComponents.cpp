@@ -2,6 +2,7 @@
 
 #include "dialogs/ComponentStoreTab.hpp"
 #include "dialogs/ComponentStoreTabInternal.hpp"
+#include "state/NativeComponentProvisioner.hpp"
 #include "workers/Runner.hpp"
 
 #include "native/components/NativeComponentCatalog.hpp"
