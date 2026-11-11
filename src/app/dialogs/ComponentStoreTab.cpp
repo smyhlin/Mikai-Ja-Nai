@@ -589,6 +589,12 @@ void ComponentStoreTab::buildUi() {
     // now: selection context on the first, the actions right-aligned on the
     // second, and the summary yields its width so it wraps instead of
     // voting its whole advance into the page.
+    // uk-overflow (CI run #75): Verify + Install selected side by side
+    // still overflowed the dialog minimum in Ukrainian under DejaVu Sans
+    // (327 px bar vs 316 px available, 11 px of horizontal panning), so
+    // Verify — the tertiary action — joins the selection row, right-aligned
+    // after the stretch, and the actions row keeps only Install selected
+    // (+ Cancel while a download is busy).
     auto* actionBar = new QFrame(content);
     actionBar->setObjectName(QStringLiteral("componentActionBar"));
     auto* barLayout = new QVBoxLayout(actionBar);
@@ -607,19 +613,18 @@ void ComponentStoreTab::buildUi() {
     yieldCaptionWidth(selectionSummary_);
     selectionRow->addWidget(selectionSummary_, 0, Qt::AlignVCenter);
     selectionRow->addStretch(1);
+    verifyButton_ = new QPushButton(actionBar);
+    verifyButton_->setObjectName(QStringLiteral("nativeComponentVerifyButton"));
+    // Verify reads the installed set; it is the tertiary action of the page.
+    theme::applyActionRole(verifyButton_, theme::ActionRole::Ghost);
+    verifyButton_->setFixedHeight(theme::kControlHeight);
+    selectionRow->addWidget(verifyButton_, 0, Qt::AlignVCenter);
     barLayout->addLayout(selectionRow);
 
     auto* actionsRow = new QHBoxLayout();
     actionsRow->setContentsMargins(0, 0, 0, 0);
     actionsRow->setSpacing(theme::kSpacingSmall);
     actionsRow->addStretch(1);
-    verifyButton_ = new QPushButton(actionBar);
-    verifyButton_->setObjectName(QStringLiteral("nativeComponentVerifyButton"));
-    // Verify reads the installed set; it is the tertiary action of the page.
-    theme::applyActionRole(verifyButton_, theme::ActionRole::Ghost);
-    verifyButton_->setFixedHeight(theme::kControlHeight);
-    actionsRow->addWidget(verifyButton_, 0, Qt::AlignVCenter);
-
     downloadButton_ = new QPushButton(actionBar);
     downloadButton_->setObjectName(QStringLiteral("componentDownloadButton"));
     // The page's one emphasised action. It dims to disabled while nothing is
