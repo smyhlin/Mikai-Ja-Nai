@@ -74,6 +74,21 @@ WINDOWS_SDK = (
 )
 
 
+# libmpv-2.dll carries vulkan-1.dll as a load-time import, and the player only
+# ever needs the loader DLL itself (vo=libmpv renders through OpenGL), but the
+# GitHub Windows runner is a headless VM with no GPU driver, so no Vulkan
+# loader is installed and every test that loads the bundled mpv refuses it.
+# The Vulkan Runtime installer is the legitimate redistributable source for
+# the loader. Pinned to 1.4.363.0 — the same loader the Linux bundle was built
+# against — so both platforms test against one loader version.
+VULKAN_RUNTIME = {
+    'url': 'https://sdk.lunarg.com/sdk/download/1.4.363.0/windows/'
+           'VulkanRT-X64-1.4.363.0-Installer.exe',
+    'bytes': 25699768,
+    'sha256': '3f03bda2522d1d10d05461ce8a47364f9af6f5dc8642b7c45e43943dba164303',
+}
+
+
 def seven_zip():
     for name in ('7z', '7za', '7zr'):
         found = shutil.which(name)
@@ -116,6 +131,37 @@ def install_windows_sdk(root, evidence):
                          'url': entry['url']})
         print(f'  extracted {name} into {destination}', flush=True)
     return archives
+
+
+def install_windows_vulkan_runtime(evidence):
+    """Install the Vulkan loader the bundled libmpv-2.dll imports.
+
+    The installer is an NSIS package; /S runs it silently and it places
+    vulkan-1.dll in System32. The app's loader gate refuses the module unless
+    the loader exists in the Windows system directory, so staging the DLL
+    beside a test binary would not satisfy it — the runtime must be installed.
+    """
+    downloads = evidence / 'downloads'
+    downloads.mkdir(parents=True, exist_ok=True)
+    name = Path(urllib.parse.urlparse(VULKAN_RUNTIME['url']).path).name
+    target = downloads / name
+    if not target.is_file() or target.stat().st_size != VULKAN_RUNTIME['bytes']:
+        print(f'+ curl {VULKAN_RUNTIME["url"]}', flush=True)
+        with urllib.request.urlopen(VULKAN_RUNTIME['url'], timeout=600) as response, \
+                target.open('wb') as stream:
+            shutil.copyfileobj(response, stream, 1 << 20)
+    measured = hashlib.file_digest(target.open('rb'), 'sha256').hexdigest()
+    if measured != VULKAN_RUNTIME['sha256'] or target.stat().st_size != VULKAN_RUNTIME['bytes']:
+        raise RuntimeError(
+            f'{name} does not match its pin ({measured}, {target.stat().st_size} bytes)')
+    print(f'+ {target} /S', flush=True)
+    subprocess.run([str(target), '/S'], check=True)
+    system32 = Path(os.environ['SystemRoot']) / 'System32' / 'vulkan-1.dll'
+    if not system32.is_file():
+        raise RuntimeError(f'Vulkan Runtime installed but {system32} is missing')
+    print(f'  vulkan-1.dll present in {system32.parent}', flush=True)
+    return {'installer': name, 'bytes': VULKAN_RUNTIME['bytes'], 'sha256': measured,
+            'url': VULKAN_RUNTIME['url']}
 
 
 def main():
@@ -162,8 +208,10 @@ def main():
             print(result, flush=True)
 
     archives = []
+    vulkan = None
     if host == 'windows':
         archives = install_windows_sdk(args.root, args.evidence)
+        vulkan = install_windows_vulkan_runtime(args.evidence)
     else:
         install('install-qt', host, 'desktop', '6.12.0', arch, '-O', str(args.root),
                 '-m', 'qtimageformats')
@@ -193,6 +241,8 @@ def main():
             'path': [str(path) for path in bins], 'host': host,
             'acquisition': 'pinned-archives' if archives else 'aqt',
             'archives': archives}
+    if vulkan is not None:
+        data['vulkanRuntime'] = vulkan
     (args.evidence / 'toolchain.json').write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
     if os.getenv('GITHUB_ENV'):
         with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as stream:
