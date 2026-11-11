@@ -1645,7 +1645,7 @@ void ComponentStoreTab::updateCardStates() {
         // The card stays visible when no kernel pack is offered for this GPU,
         // so the badge states the fact instead of the card disappearing.
         setState(kernelsState_, tr("Unavailable"),
-                 backend == Backend::TensorRTRTX
+                 backend == native::Backend::TensorRTRTX
                      ? tr("TensorRT for RTX builds the kernels in-process.")
                      : tr("No TensorRT kernel pack is offered for this GPU."));
     } else if (kernelsInstalled && !kernelsUsable) {
