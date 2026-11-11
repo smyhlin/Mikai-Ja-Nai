@@ -21,4 +21,5 @@ private slots:
   void xdgRecognizesAndRemovesLegacyGeneratedEntries();
   void xdgRefreshesOnlyMissingOwnedInstallations();
   void idleInhibitorIsHeldUntilTheLastPlaybackOwnerReleases();
+  void idleInhibitorTracksMoreThanEightOwners();
 };

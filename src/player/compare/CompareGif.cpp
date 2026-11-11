@@ -1,4 +1,5 @@
 #include "CompareGif.hpp"
+#include "PictureMetrics.hpp"
 
 #include <QCoreApplication>
 #include <QPainter>
@@ -58,19 +59,6 @@ private:
 void appendWord(QByteArray& bytes, int value) {
     bytes.append(static_cast<char>(value & 255));
     bytes.append(static_cast<char>((value >> 8) & 255));
-}
-
-QImage fitFrame(const QImage& image, QSize size) {
-    if (image.size() == size && image.format() == QImage::Format_RGB32) return image;
-    QImage frame(size, QImage::Format_RGB32);
-    if (frame.isNull()) return {};
-    frame.fill(Qt::black);
-    QPainter painter(&frame);
-    painter.setRenderHint(QPainter::SmoothPixmapTransform);
-    const QSize fitted = image.size().scaled(size, Qt::KeepAspectRatio);
-    painter.drawImage(QRect(QPoint((size.width() - fitted.width()) / 2,
-                                  (size.height() - fitted.height()) / 2), fitted), image);
-    return frame;
 }
 
 struct ColorBin {

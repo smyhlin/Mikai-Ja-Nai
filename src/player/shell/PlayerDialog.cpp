@@ -112,6 +112,10 @@ constexpr double kShellRateMax = 2.0;
 
 constexpr auto kAnime4KSettingKey = "player/anime4k";
 constexpr auto kAnimeJanaiBackendSettingKey = "player/animejanai/backend";
+// Same value as app::kOpenSubtitlesApiKey (SettingsKeys.hpp); the player
+// layer cannot include that header, so the spelling is kept local and must
+// stay identical.
+constexpr auto kOpenSubtitlesApiKeySettingKey = "access/openSubtitlesApiKey";
 
 constexpr int kSeriesWidth = 190;
 constexpr int kStripHeight = 30;

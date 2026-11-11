@@ -1,5 +1,10 @@
 #include "CompareLayout.hpp"
 
+#include "ShellTheme.hpp"
+
+#include <QFontMetrics>
+#include <QToolButton>
+
 #include <QByteArray>
 #include <QColor>
 #include <QCoreApplication>
@@ -316,6 +321,56 @@ void Camera::reset() {
     split = 0.5;
     flickerHz = 1.0;
     diffGain = 1;
+}
+
+// ── P2-03 / X-D21: the one shared selector/choice helper set ────────────────
+
+void fitSelectorLabel(QToolButton* button, const QString& full) {
+    if (button == nullptr) return;
+    const QString suffix = QStringLiteral("  ▾");
+    const int pad = kCompareSelectorInset * 2 + 24;
+    const int avail = button->width() - pad;
+    QString text = full + suffix;
+    if (avail > 24) {
+        const QFontMetrics fm(button->font());
+        const QString elided = fm.elidedText(full, Qt::ElideRight, avail);
+        text = (elided.isEmpty() ? full : elided) + suffix;
+    }
+    if (button->text() != text) {
+        button->setText(text);
+    }
+}
+
+bool sameChoiceShape(const QVector<ChoiceEntry>& a, const QVector<ChoiceEntry>& b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (qsizetype i = 0; i < a.size(); ++i) {
+        if (a.at(i).id != b.at(i).id || a.at(i).path != b.at(i).path ||
+            a.at(i).disabled != b.at(i).disabled) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void restateChoiceLeaves(const QVector<QAction*>& leaves, const QVector<ChoiceEntry>& entries) {
+    if (leaves.size() != entries.size()) {
+        return;
+    }
+    for (qsizetype i = 0; i < entries.size(); ++i) {
+        QAction* action = leaves.at(i);
+        if (action == nullptr) {
+            continue;
+        }
+        if (action->text() != entries.at(i).label) {
+            action->setText(entries.at(i).label);
+        }
+        action->setEnabled(!entries.at(i).disabled);
+        if (action->toolTip() != entries.at(i).tooltip) {
+            action->setToolTip(entries.at(i).tooltip);
+        }
+    }
 }
 
 }  // namespace mplayer::shell

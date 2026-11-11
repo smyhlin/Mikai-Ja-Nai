@@ -17,10 +17,7 @@
 #include <cstring>
 
 #ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
+#include <QtCore/qt_windows.h>
 #else
 #include <csignal>
 #include <ctime>

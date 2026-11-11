@@ -45,7 +45,7 @@ IdleInhibitor::~IdleInhibitor() {
     releaseScreenSaver();
 }
 
-bool IdleInhibitor::active() const { return ownerCount_ > 0; }
+bool IdleInhibitor::active() const { return !owners_.empty(); }
 
 #ifdef Q_OS_LINUX
 
@@ -109,18 +109,16 @@ void IdleInhibitor::releaseScreenSaver() {}
 
 void IdleInhibitor::setActiveFor(const void* owner, bool active) {
     if (owner == nullptr) return;
-    const bool wasActive = ownerCount_ > 0;
-    const auto end = owners_ + static_cast<std::ptrdiff_t>(ownerCount_);
-    const auto found = std::find(owners_, end, owner);
+    const bool wasActive = !owners_.empty();
+    const auto found = std::find(owners_.begin(), owners_.end(), owner);
     if (active) {
-        if (found == end) {
-            if (ownerCount_ == static_cast<int>(std::size(owners_))) return;
-            owners_[ownerCount_++] = owner;
-        }
-    } else if (found != end) {
-        *found = owners_[--ownerCount_];
+        if (found == owners_.end()) owners_.push_back(owner);
+    } else if (found != owners_.end()) {
+        // Unordered removal: the last owner takes the freed slot.
+        *found = owners_.back();
+        owners_.pop_back();
     }
-    const bool isActive = ownerCount_ > 0;
+    const bool isActive = !owners_.empty();
     if (isActive != wasActive) apply(isActive);
 }
 

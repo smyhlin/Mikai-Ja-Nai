@@ -711,3 +711,23 @@ void TestSystemIntegration::idleInhibitorIsHeldUntilTheLastPlaybackOwnerReleases
   inhibitor.release(&mainPlayer);
   QVERIFY(!inhibitor.active());
 }
+
+void TestSystemIntegration::idleInhibitorTracksMoreThanEightOwners() {
+  // The old fixed array held 8 owners and silently dropped the 9th; the
+  // container is now unbounded, so all 9 must be tracked and the session
+  // must stay awake until the last of them releases.
+  auto& inhibitor = mikai::gui::idleInhibitor();
+  QVERIFY(!inhibitor.active());
+  int owners[9] = {};
+  for (int i = 0; i < 9; ++i) {
+    inhibitor.setActiveFor(&owners[i], true);
+    QVERIFY(inhibitor.active());
+  }
+  // Releasing any 8 leaves the session held by the one that remains.
+  for (int i = 0; i < 8; ++i) {
+    inhibitor.setActiveFor(&owners[i], false);
+    QVERIFY(inhibitor.active());
+  }
+  inhibitor.release(&owners[8]);
+  QVERIFY(!inhibitor.active());
+}

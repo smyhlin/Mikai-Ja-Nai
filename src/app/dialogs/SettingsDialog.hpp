@@ -2,10 +2,7 @@
 
 #include "theme/Appearance.hpp"
 
-#include <dialogs/NativeAssetsPanel.hpp>
-#include <dialogs/NativeRifeControls.hpp>
 #include <native/bundle/NativePrefs.hpp>
-#include <state/NativeComponentProvisioner.hpp>
 #include <player/shaders/Anime4K.hpp>
 #include <player/shaders/PresetShortcuts.hpp>
 #include <player/shell/ProcessingSettingsIntent.hpp>
@@ -46,7 +43,16 @@ class QTreeWidgetItem;
 
 namespace mikai::backend {
 class MikaiClient;
-}
+}  // namespace mikai::backend
+
+namespace mikai::app {
+// Forward-declared: only held as pointers (NativeAssetsPanel*,
+// NativeRifeControls*, QPointer<NativeComponentProvisioner>) or passed by
+// pointer; the includes live in SettingsDialog.cpp.
+class NativeAssetsPanel;
+class NativeComponentProvisioner;
+class NativeRifeControls;
+}  // namespace mikai::app
 
 namespace mikai::app {
 

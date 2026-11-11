@@ -1,9 +1,13 @@
 #include "Anime4K.hpp"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QMap>
+#include <QMutex>
+#include <QMutexLocker>
 
 #include <algorithm>
 #include <optional>
@@ -507,6 +511,49 @@ QVector<MenuRow> menuRows(const QString& parent) {
     return rows;
 }
 
+// ── P2-04: the shaders-directory listing, memoised per resolved dir ─────────
+// Only the file list is cached, never the Candidate vector: candidate labels
+// and hints are translate() results, and caching them would freeze the first
+// language for the process's whole life (T-307). An entry is keyed by the
+// directory's mtime, so a shader added or removed while the app runs is
+// picked up on the next call; invalidateShaderFileCache() is the explicit
+// refresh for a caller that just wrote the directory.
+struct ShaderFileListing {
+    QStringList files;
+    QDateTime dirModified;
+};
+
+QMutex& shaderFileCacheMutex() {
+    static QMutex mutex;
+    return mutex;
+}
+
+QMap<QString, ShaderFileListing>& shaderFileCache() {
+    static QMap<QString, ShaderFileListing> cache;
+    return cache;
+}
+
+QStringList shaderFiles(const QString& dir) {
+    const QDateTime modified = QFileInfo(dir).lastModified();
+    {
+        QMutexLocker lock(&shaderFileCacheMutex());
+        const auto it = shaderFileCache().find(dir);
+        if (it != shaderFileCache().end() && it->dirModified == modified) {
+            return it->files;
+        }
+    }
+    const QStringList files =
+        QDir(dir).entryList({QStringLiteral("*.glsl")}, QDir::Files, QDir::Name);
+    QMutexLocker lock(&shaderFileCacheMutex());
+    shaderFileCache().insert(dir, ShaderFileListing{files, modified});
+    return files;
+}
+
+void invalidateShaderFileCache() {
+    QMutexLocker lock(&shaderFileCacheMutex());
+    shaderFileCache().clear();
+}
+
 QVector<Candidate> allCandidates(const QString& shadersDir) {
     QVector<Candidate> candidates;
     // Presets first: they are the chains most viewers actually want, and the
@@ -530,7 +577,7 @@ QVector<Candidate> allCandidates(const QString& shadersDir) {
     if (dir.isEmpty()) {
         return candidates;
     }
-    QStringList files = QDir(dir).entryList({QStringLiteral("*.glsl")}, QDir::Files, QDir::Name);
+    QStringList files = shaderFiles(dir);
     // The presets are already listed as chains. Re-listing Clamp_Highlights on
     // its own is still useful - it is a filter a viewer may want alone - but the
     // AutoDownscale steps are plumbing inside every preset and are noise as

@@ -9,6 +9,8 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
   return()
 endif()
 
+include("${CMAKE_CURRENT_LIST_DIR}/MikaiPatchelf.cmake")
+
 option(MIKAI_LINUX_BUNDLE_MPV
   "Bundle the pinned Linux libmpv runtime and its private dependencies into the install tree"
   OFF)
@@ -20,6 +22,26 @@ set(MIKAI_LINUX_MPV_INSTALL_SUBDIR "${CMAKE_INSTALL_BINDIR}/mpv" CACHE STRING
   "Prefix-relative directory holding the bundled libmpv runtime")
 file(RELATIVE_PATH mikai_linux_mpv_from_bin
   "/${CMAKE_INSTALL_BINDIR}" "/${MIKAI_LINUX_MPV_INSTALL_SUBDIR}")
+
+# One mpv copy loop for both build-tree consumers (mikai and mikai_tests):
+# the pinned private runtime is copied next to the executable so the app and
+# the runtime-selection tests resolve the same module. `target` is the
+# executable target; `comment` is the POST_BUILD step's wording.
+function(mikai_linux_deploy_mpv_build_tree target comment)
+  set(_mikai_linux_mpv_copy_commands
+    COMMAND "${CMAKE_COMMAND}" -E make_directory
+      "$<TARGET_FILE_DIR:${target}>/${mikai_linux_mpv_from_bin}")
+  foreach(_library IN LISTS MIKAI_LINUX_MPV_BUILD_LIBRARIES)
+    get_filename_component(_library_name "${_library}" NAME)
+    list(APPEND _mikai_linux_mpv_copy_commands
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${_library}" "$<TARGET_FILE_DIR:${target}>/${mikai_linux_mpv_from_bin}/${_library_name}")
+  endforeach()
+  add_custom_command(TARGET ${target} POST_BUILD
+    ${_mikai_linux_mpv_copy_commands}
+    COMMENT "${comment}"
+    VERBATIM)
+endfunction()
 
 # The published archive at this commit was configured without an FFmpeg TLS
 # backend, so it cannot open any https URL. This pin is the same runtime with a
@@ -55,13 +77,10 @@ if(NOT MIKAI_LINUX_BUNDLE_MPV)
   return()
 endif()
 
-find_program(MIKAI_PATCHELF_EXECUTABLE NAMES patchelf)
-if(NOT MIKAI_PATCHELF_EXECUTABLE)
-  message(FATAL_ERROR
-    "MIKAI_LINUX_BUNDLE_MPV requires patchelf (build-only dependency) to set "
-    "$ORIGIN RUNPATH on freshly owned private .so copies; install patchelf or "
-    "disable MIKAI_LINUX_BUNDLE_MPV.")
-endif()
+mikai_find_patchelf(
+  "MIKAI_LINUX_BUNDLE_MPV requires patchelf (build-only dependency) to set "
+  "$ORIGIN RUNPATH on freshly owned private .so copies; install patchelf or "
+  "disable MIKAI_LINUX_BUNDLE_MPV.")
 
 if(IS_SYMLINK "${MIKAI_LINUX_MPV_CACHE_DIR}")
   message(FATAL_ERROR "Refusing a symlink Linux mpv cache directory: ${MIKAI_LINUX_MPV_CACHE_DIR}")

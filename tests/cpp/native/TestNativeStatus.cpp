@@ -1191,6 +1191,29 @@ void TestNativeStatus::detachingClearsTheViewSoNoPlanOutlivesItsCore() {
   QCOMPARE(consumer.snapshot().has_value(), false);
 }
 
+void TestNativeStatus::destroyingTheCoreWithoutDetachLeavesNoDanglingUse() {
+  // P2-10: the consumer is bound to the borrowed core's lifetime token, so
+  // destroying the core without detach() must read as detached and a later
+  // tick() must not touch the dead handle (ASan proves the no-dangle).
+  if (!requireRuntime()) return;
+  NativeStatusConsumer consumer;
+  {
+    MpvHandle handle = makeHandle();
+    consumer.attach(&handle);
+    QVERIFY(consumer.attached());
+    consumer.tick(0, 1, true);
+    QCOMPARE(consumer.requestCount(), quint64{1});
+  }  // The core dies here with no detach(): the old contract's use-after-free.
+  QVERIFY(!consumer.attached());
+  QCOMPARE(consumer.availability().value, Availability::Unavailable);
+  consumer.tick(1000, 2, true);
+  QVERIFY(!consumer.attached());
+  QCOMPARE(consumer.availability().reasonKey, QStringLiteral("native.status.unread"));
+  QCOMPARE(consumer.snapshot().has_value(), false);
+  consumer.detach();  // Safe on a dead binding.
+  QVERIFY(!consumer.attached());
+}
+
 void TestNativeStatus::aRefusedSnapshotHaltsThePollInsteadOfRepeatingIt() {
   // The halt is a property of the refusal key rather than of a hidden member, so
   // the decision the consumer makes is what is asserted here; the predicate is

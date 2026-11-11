@@ -24,6 +24,7 @@ class TestNativeStatus : public QObject {
   void aRevisionRegressionIsStaleWhileANewSessionIsAccepted();
   void aSensitiveUrlOrCredentialIsRefusedAndNeverExported();
   void detachingClearsTheViewSoNoPlanOutlivesItsCore();
+  void destroyingTheCoreWithoutDetachLeavesNoDanglingUse();
   void aRefusedSnapshotHaltsThePollInsteadOfRepeatingIt();
   void aPreparingSnapshotIsPublishedAsPreparingAndNeverAsReady();
   void anEffectivePlanUnderAStateThatRunsNothingIsRefused();

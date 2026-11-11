@@ -27,6 +27,8 @@ endif()
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+# P2-06: stays C++17 while the root build is C++20 — this is the separate
+# MSVC/nvcc toolchain for the external AJI tree, not the app build.
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 

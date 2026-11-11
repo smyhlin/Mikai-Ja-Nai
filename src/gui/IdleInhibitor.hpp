@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 // Keeps the session from blanking the screen while something is playing.
 //
@@ -33,8 +34,10 @@ private:
     void releaseScreenSaver();
 
     std::unique_ptr<Platform> platform_;
-    const void* owners_[8] = {};
-    int ownerCount_ = 0;
+    // Unbounded: an owner is a reason, not a slot, so the 9th owner is
+    // tracked exactly like the 2nd — the old fixed array silently dropped
+    // it. Only 2 owners exist today (main player + PiP float).
+    std::vector<const void*> owners_;
 };
 
 // One per process, so every playback surface shares the same session request.

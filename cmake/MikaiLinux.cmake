@@ -15,34 +15,11 @@ if(MIKAI_LINUX_MPV_BUNDLE)
     MIKAI_LINUX_MPV_MODULE_RELATIVE="${mikai_linux_mpv_from_bin}/libmpv.so.2")
   file(GLOB MIKAI_LINUX_MPV_BUILD_LIBRARIES LIST_DIRECTORIES FALSE
     "${MIKAI_LINUX_MPV_BUNDLE_ROOT}/*.so*")
-  set(_mikai_linux_mpv_build_copy_commands
-    COMMAND "${CMAKE_COMMAND}" -E make_directory
-      "$<TARGET_FILE_DIR:mikai>/${mikai_linux_mpv_from_bin}")
-  foreach(_library IN LISTS MIKAI_LINUX_MPV_BUILD_LIBRARIES)
-    get_filename_component(_library_name "${_library}" NAME)
-    list(APPEND _mikai_linux_mpv_build_copy_commands
-      COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-        "${_library}" "$<TARGET_FILE_DIR:mikai>/${mikai_linux_mpv_from_bin}/${_library_name}")
-  endforeach()
-  add_custom_command(TARGET mikai POST_BUILD
-    ${_mikai_linux_mpv_build_copy_commands}
-    COMMENT "Deploying pinned Linux libmpv and private dependencies"
-    VERBATIM)
+  mikai_linux_deploy_mpv_build_tree(mikai
+    "Deploying pinned Linux libmpv and private dependencies")
 else()
   target_compile_definitions(mikai_native_support PRIVATE
     MIKAI_LINUX_SYSTEM_MPV_MODULE="${mpv_system_real_library}")
-endif()
-set(MIKAI_LINUX_MPV_MODE "${MIKAI_LINUX_MPV_BUNDLE_MODE}")
-# Host libmpv header/pkg-config evidence stays independent of bundled runtime identity.
-if(NOT DEFINED MIKAI_SYSTEM_MPV_PC_VERSION)
-  set(MIKAI_SYSTEM_MPV_PC_VERSION "")
-endif()
-set(MIKAI_LINUX_MPV_HEADER_PKGCONFIG "${MIKAI_SYSTEM_MPV_PC_VERSION}")
-set(MIKAI_LINUX_MPV_ARCHIVE_SHA256 "${MIKAI_LINUX_MPV_BUNDLE_ARCHIVE_SHA256}")
-if(MIKAI_LINUX_MPV_BUNDLE)
-  set(MIKAI_LINUX_MPV_MODULE_RELATIVE "${MIKAI_LINUX_MPV_INSTALL_SUBDIR}/libmpv.so.2")
-else()
-  set(MIKAI_LINUX_MPV_MODULE_RELATIVE "not-bundled")
 endif()
 
 option(MIKAI_LINUX_DEPLOY_QT
@@ -132,12 +109,9 @@ if(MIKAI_LINUX_DEPLOY_QT)
   # one) strips those entries because its libraries live in the default search
   # path, so every plugin would abort the install. Qt's own patchelf path adds
   # the entry instead of rewriting one.
-  find_program(MIKAI_DEPLOY_PATCHELF_EXECUTABLE NAMES patchelf)
-  if(NOT MIKAI_DEPLOY_PATCHELF_EXECUTABLE)
-    message(FATAL_ERROR
-      "MIKAI_LINUX_DEPLOY_QT needs patchelf to give the gathered Qt plugins their "
-      "relative RUNPATH; install patchelf and reconfigure.")
-  endif()
+  mikai_find_patchelf(
+    "MIKAI_LINUX_DEPLOY_QT needs patchelf to give the gathered Qt plugins their "
+    "relative RUNPATH; install patchelf and reconfigure.")
   set(QT_DEPLOY_USE_PATCHELF ON)
   # The C library, the loader and the graphics-driver libraries must come from
   # the host. A private libc beside the host ld.so is not a portable bundle: it

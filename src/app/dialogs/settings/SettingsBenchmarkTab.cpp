@@ -1,4 +1,5 @@
 #include "dialogs/SettingsDialog.hpp"
+#include "state/SettingsKeys.hpp"
 
 #include "dialogs/settings/BenchmarkPlayback.hpp"
 #include "dialogs/settings/BenchmarkReport.hpp"
@@ -123,7 +124,7 @@ QString benchmarkEngineName(mplayer::native::Backend backend) {
 // Read the player's Standard-AJI choice, not the private Native preference.
 std::optional<mplayer::native::Backend> storedStandardAnimeJanaiBackendChoice() {
     const QString stored =
-        QSettings().value(QStringLiteral("player/animejanai/backend")).toString();
+        QSettings().value(QString::fromUtf8(kAnimeJanaiBackend)).toString();
     return mplayer::native::backendFromName(stored);
 }
 

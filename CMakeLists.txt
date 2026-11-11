@@ -33,7 +33,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/MinGWRuntime.cmake)
 set(QT_DEPLOY_USE_PATCHELF ON)
 
 find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Network LinguistTools)
-get_filename_component(MIKAI_TEST_QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
+# P2-06: the Qt prefix is computed once, here; MikaiTests.cmake and the
+# translation deployment below both read MIKAI_QT_PREFIX.
+get_filename_component(MIKAI_QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
 
 option(MIKAI_BUILD_PROBES "Build the QA probes and mikai_tests" ON)
 option(MIKAI_WITH_MODEL_INSPECTION "Build the owned ONNX model inspector" OFF)
@@ -412,6 +414,7 @@ set(APP_SOURCES
   src/app/dialogs/settings/SettingsHelpers.cpp
   src/app/dialogs/settings/SettingsPresetsTab.cpp
   src/app/dialogs/settings/SettingsProcessingTab.cpp
+  src/app/dialogs/settings/SettingsUi.cpp
   src/app/pages/MainWindow.cpp
   src/app/pages/SearchPage.cpp
   src/app/pages/TitlePage.cpp
@@ -438,6 +441,7 @@ set(APP_HEADERS
   src/app/state/NativeComponentProvisioner.hpp
   src/app/state/NativePlaybackAssembly.hpp
   src/app/state/QualityCache.hpp
+  src/app/state/SettingsKeys.hpp
   src/app/state/WatchHistory.hpp
   src/app/workers/Runner.hpp
   src/app/widgets/FailureView.hpp
@@ -524,6 +528,8 @@ execute_process(
 if(MIKAI_BUILD_DIRTY)
   string(APPEND MIKAI_BUILD_REVISION "-dirty")
 endif()
+# P2-06: string(TIMESTAMP) honours SOURCE_DATE_EPOCH when it is set (CMake
+# >= 3.8), so a reproducible build pins the stamp with no code path here.
 string(TIMESTAMP MIKAI_BUILD_STAMP "%Y-%m-%dT%H:%M:%SZ" UTC)
 target_compile_definitions(mikai PRIVATE
   MIKAI_PROJECT_VERSION="${PROJECT_VERSION}"
@@ -570,7 +576,6 @@ qt_add_translations(mikai
   LRELEASE_OPTIONS -nounfinished
 )
 
-get_filename_component(MIKAI_QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
 set(MIKAI_QTBASE_UK_CATALOG "${MIKAI_QT_PREFIX}/translations/qtbase_uk.qm")
 if(EXISTS "${MIKAI_QTBASE_UK_CATALOG}")
   add_custom_command(TARGET mikai POST_BUILD
@@ -661,18 +666,8 @@ if(TARGET mikai_tests AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
   if(MIKAI_LINUX_MPV_BUNDLE)
     target_compile_definitions(mikai_tests PRIVATE
       MIKAI_LINUX_MPV_MODULE_RELATIVE="mpv/libmpv.so.2")
-    set(_mikai_linux_test_mpv_copy_commands
-      COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:mikai_tests>/mpv")
-    foreach(_library IN LISTS MIKAI_LINUX_MPV_BUILD_LIBRARIES)
-      get_filename_component(_library_name "${_library}" NAME)
-      list(APPEND _mikai_linux_test_mpv_copy_commands
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-          "${_library}" "$<TARGET_FILE_DIR:mikai_tests>/mpv/${_library_name}")
-    endforeach()
-    add_custom_command(TARGET mikai_tests POST_BUILD
-      ${_mikai_linux_test_mpv_copy_commands}
-      COMMENT "Deploying pinned Linux libmpv for runtime-selection tests"
-      VERBATIM)
+    mikai_linux_deploy_mpv_build_tree(mikai_tests
+      "Deploying pinned Linux libmpv for runtime-selection tests")
   else()
     target_compile_definitions(mikai_tests PRIVATE
       MIKAI_LINUX_SYSTEM_MPV_MODULE="${mpv_system_real_library}")

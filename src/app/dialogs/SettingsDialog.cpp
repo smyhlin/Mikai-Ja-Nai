@@ -1,4 +1,5 @@
 #include "dialogs/SettingsDialog.hpp"
+#include "state/SettingsKeys.hpp"
 
 #include "I18n.hpp"
 #include "dialogs/AnimeJanaiManagerPanel.hpp"
@@ -16,11 +17,13 @@
 #include <backend/MikaiClient.hpp>
 #include <dialogs/ComponentStoreTab.hpp>
 #include <dialogs/NativeAssetsPanel.hpp>
+#include <dialogs/NativeRifeControls.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
 #include <native/status/NativeStatus.hpp>
 #include <player/shell/ShellTheme.hpp>
 #include <player/shaders/Anime4K.hpp>
 #include <player/shaders/PresetShortcuts.hpp>
+#include <state/NativeComponentProvisioner.hpp>
 
 #include <QAccessible>
 #include <QApplication>

@@ -53,10 +53,7 @@
 // Last, like the window it exercises: winsock/windows macros must not reach the
 // project headers above.
 #ifdef Q_OS_WIN
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
+#include <QtCore/qt_windows.h>
 #endif
 
 using namespace mplayer;

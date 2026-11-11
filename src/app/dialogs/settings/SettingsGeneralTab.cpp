@@ -1,4 +1,5 @@
 #include "dialogs/SettingsDialog.hpp"
+#include "state/SettingsKeys.hpp"
 
 #include <VideoSurface.hpp>
 

@@ -9,8 +9,11 @@
 #include <QObject>
 #include <QStringList>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#include <QtCore/qt_windows.h>
+#else
 #include <dlfcn.h>
+using HMODULE = void*;
 #endif
 
 #include <algorithm>
@@ -315,7 +318,6 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
                         .arg(headerVersion));
     }
 
-    state_.module = module;
     state_.funcs = table;
     state_.bundle = bundle;
     state_.bundle.root = canonicalRoot;
@@ -340,11 +342,6 @@ MpvBundle MpvApi::bundle() const {
 MpvApiInstance MpvApi::functions() const {
     QMutexLocker lock(&mutex_);
     return state_.funcs;
-}
-
-HMODULE MpvApi::module() const noexcept {
-    QMutexLocker lock(&mutex_);
-    return state_.module;
 }
 
 quint64 MpvApi::apiVersion() const {

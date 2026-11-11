@@ -156,12 +156,13 @@ LaunchRequest parseLaunchRequest(const QStringList& arguments) {
 
 void showLaunchError(const QString& error, QWidget* parent = nullptr) {
     qCritical().noquote() << "mikai: cannot open command-line video:" << error;
-    auto* message = new QMessageBox(QMessageBox::Critical,
+    // P2-06: a stack dialog. Both callers pass no parent, so nothing can
+    // delete it mid-exec; the heap allocation + manual delete bought nothing.
+    QMessageBox message(QMessageBox::Critical,
         QCoreApplication::translate("CommandLine", "Cannot open video"),
         error, QMessageBox::Ok, parent);
-    message->setTextFormat(Qt::PlainText);
-    message->exec();
-    delete message;
+    message.setTextFormat(Qt::PlainText);
+    message.exec();
 }
 
 // Cold runtime selection is the launch's one expensive step: describing the

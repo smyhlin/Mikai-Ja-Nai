@@ -1,4 +1,5 @@
 #include "state/QualityCache.hpp"
+#include "state/SettingsKeys.hpp"
 
 #include <QDateTime>
 #include <QDebug>
@@ -16,7 +17,7 @@ const int kQualityCacheMaxEntries = 240;
 
 namespace {
 
-QString defaultKey() { return QStringLiteral("quality/urls"); }
+QString defaultKey() { return QString::fromUtf8(kQualityUrls); }
 
 }  // namespace
 

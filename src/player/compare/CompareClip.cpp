@@ -1,4 +1,5 @@
 #include "CompareClip.hpp"
+#include "PictureMetrics.hpp"
 
 #include <QCoreApplication>
 #include <QImageWriter>
@@ -51,19 +52,6 @@ QByteArray riffChunk(const char type[5], const QByteArray& payload) {
     out.append(payload);
     if (payload.size() & 1) out.append('\0');
     return out;
-}
-
-QImage fitFrame(const QImage& source, QSize canvas) {
-    if (source.size() == canvas && source.format() == QImage::Format_RGB32) return source;
-    QImage frame(canvas, QImage::Format_RGB32);
-    if (frame.isNull()) return {};
-    frame.fill(Qt::black);
-    QPainter painter(&frame);
-    painter.setRenderHint(QPainter::SmoothPixmapTransform);
-    const QSize fitted = source.size().scaled(canvas, Qt::KeepAspectRatio);
-    painter.drawImage(QRect(QPoint((canvas.width() - fitted.width()) / 2,
-                                  (canvas.height() - fitted.height()) / 2), fitted), source);
-    return frame;
 }
 
 bool encode(const QImage& image, const char* format, QByteArray& bytes, QString* error) {

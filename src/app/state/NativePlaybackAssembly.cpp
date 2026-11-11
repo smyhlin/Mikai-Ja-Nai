@@ -22,6 +22,8 @@
 
 #include <PlayerDialog.hpp>
 
+#include <backend/Downloads.hpp>
+
 #include "dialogs/NativeAssetsPanel.hpp"
 #include "native/prepare/NativeArtifactStore.hpp"
 #include "native/bundle/NativeBundle.hpp"
@@ -232,101 +234,6 @@ std::optional<CoreProvenance> bundleCoreProvenance(const Bundle& bundle, Backend
 
 QString describeDeviceSchema() { return QStringLiteral("mikai.native.preparation.environment/1"); }
 
-/// The child environment the helper needs: its own directory first, then the
-/// provider runtime directories, then the system directories. The ambient PATH
-/// is deliberately not inherited, so the helper loads the runtime it was
-/// measured against rather than whatever happens to be reachable.
-QProcessEnvironment describeChildEnvironment(const mplayer::native::BuilderToolPaths& tools) {
-  QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-  QStringList path;
-  if (!tools.prepExecutable.isEmpty()) {
-    path.append(QFileInfo(tools.prepExecutable).absolutePath());
-  }
-  if (!tools.trtBinDir.isEmpty()) path.append(QDir::toNativeSeparators(tools.trtBinDir));
-  if (!tools.cudaBinDir.isEmpty()) path.append(QDir::toNativeSeparators(tools.cudaBinDir));
-  const QString systemRoot = qEnvironmentVariable("SystemRoot");
-  if (!systemRoot.isEmpty()) {
-    path.append(QDir::toNativeSeparators(systemRoot + QStringLiteral("/System32")));
-    path.append(QDir::toNativeSeparators(systemRoot));
-  }
-  environment.insert(QStringLiteral("PATH"), path.join(QLatin1Char(';')));
-  return environment;
-}
-
-/// Runs `mikai_native_prep --describe-device --json --device-uuid <uuid>`, the
-/// only non-building observation of this machine's device, runtime and builder
-/// policy. The compute device is named explicitly: a helper that picked a
-/// default adapter would measure a machine this process is not decoding on.
-bool runDescribeDevice(const mplayer::native::BuilderToolPaths& tools, const QString& deviceUuid,
-                       QString* document, QString* reasonKey, QString* reason) {
-  const auto fail = [reasonKey, reason](const QString& key, const QString& text) {
-    if (reasonKey != nullptr) *reasonKey = key;
-    if (reason != nullptr) *reason = text;
-    return false;
-  };
-  if (tools.prepExecutable.isEmpty()) {
-    return fail(QStringLiteral("native.prepare.identityUnobserved"),
-                assemblyText("No preparation helper is present, so this machine's build identity "
-                             "cannot be measured."));
-  }
-  QProcess process;
-  process.setProcessEnvironment(describeChildEnvironment(tools));
-  process.setProgram(tools.prepExecutable);
-  process.setArguments({QStringLiteral("--describe-device"), QStringLiteral("--json"),
-                        QStringLiteral("--device-uuid"), deviceUuid});
-  process.start();
-  if (!process.waitForStarted(10000)) {
-    return fail(QStringLiteral("native.prepare.identityLaunch"),
-                assemblyText("The preparation helper could not be started: %1")
-                    .arg(process.errorString()));
-  }
-  if (!process.waitForFinished(60000)) {
-    process.kill();
-    process.waitForFinished(5000);
-    return fail(QStringLiteral("native.prepare.identityTimeout"),
-                assemblyText("The preparation helper did not report this machine's build identity "
-                             "within its deadline."));
-  }
-  const QByteArray output = process.readAllStandardOutput();
-  const QByteArray errors = process.readAllStandardError();
-  if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0 ||
-      output.trimmed().isEmpty()) {
-    const QString detail = QString::fromUtf8(errors).trimmed();
-    return fail(QStringLiteral("native.prepare.identityUnobserved"),
-                detail.isEmpty()
-                    ? assemblyText("The preparation helper refused to describe this machine (exit "
-                                   "%1).")
-                          .arg(process.exitCode())
-                    : detail);
-  }
-  if (document != nullptr) *document = QString::fromUtf8(output).trimmed();
-  if (reasonKey != nullptr) reasonKey->clear();
-  if (reason != nullptr) reason->clear();
-  return true;
-}
-
-/// The canonical option set the builder derives from the flags the helper
-/// measured. A different set would produce a build key for a configuration the
-/// helper never used, so this matches the builder's own derivation exactly.
-QVector<BuildOption> measuredBuildOptions(qint64 builderFlags, qint64 tacticSources,
-                                          qint64 networkFlags, qint64 builderOptimizationLevel,
-                                          const QString& engineCapability) {
-  const auto option = [](const QString& name, const QString& value) {
-    BuildOption build;
-    build.name = name;
-    build.value = value;
-    build.hasValue = true;
-    return build;
-  };
-  QVector<BuildOption> options;
-  options.append(option(QStringLiteral("builderFlags"), QString::number(builderFlags)));
-  options.append(option(QStringLiteral("tacticSources"), QString::number(tacticSources)));
-  options.append(option(QStringLiteral("networkFlags"), QString::number(networkFlags)));
-  options.append(option(QStringLiteral("builderOptimizationLevel"),
-                        QString::number(builderOptimizationLevel)));
-  options.append(option(QStringLiteral("engineCapability"), engineCapability));
-  return options;
-}
 
 /// Parses the describe document into the measured build identity, verifying it
 /// against the context this process observed and the provenance the validated
@@ -570,6 +477,116 @@ DynamicProfileResolver recordedResolutionResolver(const QVector<StoredModel>& ro
 }
 
 }  // namespace
+
+// ── P2-01 / D14: the one measured-identity helper set (declared in
+// NativePlaybackAssembly.hpp; the preparation worker calls these instead of
+// its own copies). identityFromDescribe is deliberately NOT shared: the
+// assembly verifies against the observed device + core provenance, the panel
+// against the core SHA.
+
+QProcessEnvironment describeChildEnvironment(const mplayer::native::BuilderToolPaths& tools) {
+  QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+  QStringList path;
+  if (!tools.prepExecutable.isEmpty()) {
+    path.append(QFileInfo(tools.prepExecutable).absolutePath());
+  }
+  if (!tools.trtBinDir.isEmpty()) path.append(QDir::toNativeSeparators(tools.trtBinDir));
+  if (!tools.cudaBinDir.isEmpty()) path.append(QDir::toNativeSeparators(tools.cudaBinDir));
+  const QString systemRoot = qEnvironmentVariable("SystemRoot");
+  if (!systemRoot.isEmpty()) {
+    path.append(QDir::toNativeSeparators(systemRoot + QStringLiteral("/System32")));
+    path.append(QDir::toNativeSeparators(systemRoot));
+  }
+  environment.insert(QStringLiteral("PATH"), path.join(QLatin1Char(';')));
+  return environment;
+}
+
+bool runDescribeDevice(const mplayer::native::BuilderToolPaths& tools, const QString& deviceUuid,
+                       QString* document, QString* reasonKey, QString* reason) {
+  const auto fail = [reasonKey, reason](const QString& key, const QString& text) {
+    if (reasonKey != nullptr) *reasonKey = key;
+    if (reason != nullptr) *reason = text;
+    return false;
+  };
+  if (tools.prepExecutable.isEmpty()) {
+    return fail(QStringLiteral("native.prepare.identityUnobserved"),
+                assemblyText("No preparation helper is present, so this machine's build identity "
+                             "cannot be measured."));
+  }
+  QProcess process;
+  process.setProcessEnvironment(describeChildEnvironment(tools));
+  process.setProgram(tools.prepExecutable);
+  QStringList arguments{QStringLiteral("--describe-device"), QStringLiteral("--json")};
+  if (!deviceUuid.isEmpty()) {
+    arguments.append(QStringLiteral("--device-uuid"));
+    arguments.append(deviceUuid);
+  }
+  process.setArguments(arguments);
+  process.start();
+  // The waits are the one shared bounded, cancellation-aware helper
+  // (backend::waitForProcessStarted/Finished, 10 s start / 60 s finish).
+  const mikai::backend::ProcessWaitResult started =
+      mikai::backend::waitForProcessStarted(process, 10000);
+  if (started == mikai::backend::ProcessWaitResult::Cancelled) {
+    return fail(QStringLiteral("native.prepare.identityCancelled"),
+                assemblyText("The preparation helper was cancelled before it reported this "
+                             "machine's build identity."));
+  }
+  if (started != mikai::backend::ProcessWaitResult::Finished) {
+    return fail(QStringLiteral("native.prepare.identityLaunch"),
+                assemblyText("The preparation helper could not be started: %1")
+                    .arg(process.errorString()));
+  }
+  const mikai::backend::ProcessWaitResult finished =
+      mikai::backend::waitForProcessFinished(process, 60000);
+  if (finished == mikai::backend::ProcessWaitResult::Cancelled) {
+    return fail(QStringLiteral("native.prepare.identityCancelled"),
+                assemblyText("The preparation helper was cancelled before it reported this "
+                             "machine's build identity."));
+  }
+  if (finished == mikai::backend::ProcessWaitResult::TimedOut) {
+    return fail(QStringLiteral("native.prepare.identityTimeout"),
+                assemblyText("The preparation helper did not report this machine's build identity "
+                             "within its deadline."));
+  }
+  const QByteArray output = process.readAllStandardOutput();
+  const QByteArray errors = process.readAllStandardError();
+  if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0 ||
+      output.trimmed().isEmpty()) {
+    const QString detail = QString::fromUtf8(errors).trimmed();
+    return fail(QStringLiteral("native.prepare.identityUnobserved"),
+                detail.isEmpty()
+                    ? assemblyText("The preparation helper refused to describe this machine (exit "
+                                   "%1).")
+                          .arg(process.exitCode())
+                    : detail);
+  }
+  if (document != nullptr) *document = QString::fromUtf8(output).trimmed();
+  if (reasonKey != nullptr) reasonKey->clear();
+  if (reason != nullptr) reason->clear();
+  return true;
+}
+
+QVector<BuildOption> measuredBuildOptions(qint64 builderFlags, qint64 tacticSources,
+                                          qint64 networkFlags, qint64 builderOptimizationLevel,
+                                          const QString& engineCapability) {
+  const auto option = [](const QString& name, const QString& value) {
+    BuildOption build;
+    build.name = name;
+    build.value = value;
+    build.hasValue = true;
+    return build;
+  };
+  QVector<BuildOption> options;
+  options.append(option(QStringLiteral("builderFlags"), QString::number(builderFlags)));
+  options.append(option(QStringLiteral("tacticSources"), QString::number(tacticSources)));
+  options.append(option(QStringLiteral("networkFlags"), QString::number(networkFlags)));
+  options.append(option(QStringLiteral("builderOptimizationLevel"),
+                        QString::number(builderOptimizationLevel)));
+  options.append(option(QStringLiteral("engineCapability"), engineCapability));
+  return options;
+}
+
 
 NativeAssemblyOutcome assembleNativeAdmission(const NativeAssemblyRequest& input) {
   if (input.selection.recipeId.isEmpty()) {

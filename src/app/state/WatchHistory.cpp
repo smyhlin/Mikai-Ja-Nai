@@ -17,7 +17,7 @@
 namespace mikai::app {
 namespace {
 
-QString defaultKey() { return QString::fromLatin1(kWatchHistoryKey); }
+QString defaultKey() { return QString::fromUtf8(kWatchHistoryKey); }
 
 class HistoryWriter {
 public:

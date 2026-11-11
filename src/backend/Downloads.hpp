@@ -2,12 +2,34 @@
 
 #include <QByteArray>
 #include <QMap>
+#include <QProcess>
 #include <QString>
 #include <QUrl>
 
 #include <functional>
 
 namespace mikai::backend {
+
+/// Outcome of a bounded, cancellation-aware wait on a child process.
+/// (P2-01: the single wait shape; the bootstrap/extraction/describe waits
+/// below are all built on these two functions.)
+enum class ProcessWaitResult {
+    Finished,     ///< The waited-for transition happened.
+    StartFailed,  ///< The process never reached Running (start wait only).
+    TimedOut,     ///< The finish deadline passed; the process was killed.
+    Cancelled,    ///< WorkCancellationScope was requested; the process was killed.
+};
+
+/// Wait until `process` leaves Starting, polling WorkCancellationScope every
+/// 200 ms. The process is killed and reaped on timeout or cancellation.
+/// Returns Finished only when the process is Running.
+ProcessWaitResult waitForProcessStarted(QProcess& process, int startTimeoutMs);
+
+/// Wait until `process` reaches NotRunning, polling WorkCancellationScope
+/// every 200 ms. The process is killed and reaped on timeout or
+/// cancellation (`reapTimeoutMs` bounds the reap after the kill).
+ProcessWaitResult waitForProcessFinished(QProcess& process, int finishTimeoutMs,
+                                         int reapTimeoutMs = 1000);
 
 QByteArray fetchUrlBytes(const QUrl& url, const QMap<QString, QString>& headers, int timeoutMs);
 

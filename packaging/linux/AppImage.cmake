@@ -70,12 +70,11 @@ if(EXISTS "${OUTPUT_DIR}" OR IS_SYMLINK "${OUTPUT_DIR}")
   message(FATAL_ERROR "Output already exists; choose a fresh directory: ${OUTPUT_DIR}")
 endif()
 
-find_program(MIKAI_PATCHELF_EXECUTABLE NAMES patchelf)
-if(NOT MIKAI_PATCHELF_EXECUTABLE)
-  message(FATAL_ERROR
-    "patchelf is required to give the copied Qt plugins a RUNPATH; install it and "
-    "retry.")
-endif()
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/MikaiPatchelf.cmake")
+
+mikai_find_patchelf(
+  "patchelf is required to give the copied Qt plugins a RUNPATH; install it and "
+  "retry.")
 if(DEFINED APPIMAGE_TOOL AND NOT APPIMAGE_TOOL STREQUAL "")
   set(appimage_tool "${APPIMAGE_TOOL}")
 else()

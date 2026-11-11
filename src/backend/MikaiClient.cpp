@@ -7,6 +7,7 @@
 #include <QCryptographicHash>
 #include <QDebug>
 #include <QDeadlineTimer>
+#include <QDebug>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -25,13 +26,10 @@
 #include <QVector>
 
 #ifdef Q_OS_WIN
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <windows.h>
+#include <QtCore/qt_windows.h>
 #include <aclapi.h>
 #include <io.h>
 #endif
@@ -107,14 +105,26 @@ int cacheMaxAge(const QString& control) {
 }
 
 void pruneCache(JsonCache& cache) {
-    while (cache.entries.size() > kMaxCacheEntries || cache.bytes > kMaxCacheBytes) {
-        auto oldest = cache.entries.end();
-        for (auto it = cache.entries.begin(); it != cache.entries.end(); ++it) {
-            if (oldest == cache.entries.end() || it->touched < oldest->touched) oldest = it;
-        }
-        if (oldest == cache.entries.end()) break;
-        cache.bytes -= oldest->bytes;
-        cache.entries.erase(oldest);
+    // P2-04: one sort, then evict oldest-first. The old loop rescanned the
+    // whole hash for the single oldest entry on every eviction (O(k*n));
+    // entries are now ordered once by `touched` and dropped in that order.
+    // Same eviction rule as before: oldest `touched` first, until both the
+    // entry count and the byte budget are back inside their limits.
+    if (cache.entries.size() <= kMaxCacheEntries && cache.bytes <= kMaxCacheBytes) return;
+    QVector<std::pair<quint64, QByteArray>> byAge;
+    byAge.reserve(cache.entries.size());
+    for (auto it = cache.entries.cbegin(); it != cache.entries.cend(); ++it) {
+        byAge.append({it->touched, it.key()});
+    }
+    std::sort(byAge.begin(), byAge.end(), [](const auto& left, const auto& right) {
+        return left.first < right.first;
+    });
+    for (const auto& oldest : byAge) {
+        if (cache.entries.size() <= kMaxCacheEntries && cache.bytes <= kMaxCacheBytes) break;
+        const auto it = cache.entries.find(oldest.second);
+        if (it == cache.entries.end()) continue;
+        cache.bytes -= it->bytes;
+        cache.entries.erase(it);
     }
 }
 
@@ -376,6 +386,8 @@ bool restrictWindowsFileAcl(QSaveFile& file, const QString& path, QString* reaso
 QString readApiKeyFromEnv() {
     QFile file(envFilePath());
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qWarning() << "mikai: MikaiClient::readApiKeyFromEnv: could not open API key file:"
+                   << envFilePath();
         return {};
     }
     while (!file.atEnd()) {
@@ -395,6 +407,7 @@ QString readApiKeyFromEnv() {
             return value.isEmpty() ? QString{} : value;
         }
     }
+    qWarning() << "mikai: MikaiClient::readApiKeyFromEnv: no API key entry in file";
     return {};
 }
 
@@ -738,6 +751,9 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
         QJsonParseError parseError{};
         const QJsonDocument document = QJsonDocument::fromJson(result.body, &parseError);
         if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+            qWarning() << "mikai: MikaiClient::apiGet: unparsable JSON response; status:"
+                       << status << "body bytes:" << result.body.size()
+                       << "parse error:" << parseError.errorString();
             throw MikaiApiError(QStringLiteral("http_error"), reasonFor(status), status);
         }
         const QJsonObject object = document.object();

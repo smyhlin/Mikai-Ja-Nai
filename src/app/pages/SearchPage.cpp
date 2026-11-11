@@ -1,4 +1,5 @@
 #include <utility>
+#include "state/SettingsKeys.hpp"
 #include "pages/SearchPage.hpp"
 
 #include "gui/Clipboard.hpp"
@@ -77,7 +78,6 @@ namespace mikai::app {
 namespace {
 
 const QString kRecentKey = QStringLiteral("recent");
-const char* kRecentSettingsKey = "home/recentTitles";
 
 bool isRemoteUrl(const QString& value) {
     return value.startsWith(QLatin1String("https://")) ||
@@ -1591,7 +1591,7 @@ QList<backend::AnimeSummary> SearchPage::readRecentTitles() {
     QSettings settings;
     QJsonParseError error{};
     const QJsonDocument document = QJsonDocument::fromJson(
-        settings.value(QLatin1String(kRecentSettingsKey)).toString().toUtf8(), &error);
+        settings.value(QString::fromUtf8(kHomeRecentTitles)).toString().toUtf8(), &error);
     if (error.error != QJsonParseError::NoError || !document.isArray()) {
         return {};
     }
@@ -1637,7 +1637,7 @@ void SearchPage::persistRecentTitles() {
         records.append(record);
     }
     QSettings settings;
-    settings.setValue(QLatin1String(kRecentSettingsKey),
+    settings.setValue(QString::fromUtf8(kHomeRecentTitles),
                       QString::fromUtf8(QJsonDocument(records).toJson(QJsonDocument::Compact)));
 }
 

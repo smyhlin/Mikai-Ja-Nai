@@ -3,9 +3,9 @@
 #include <QLocale>
 #include <QString>
 
-namespace mikai::app {
+#include "state/SettingsKeys.hpp"
 
-inline constexpr char kUiLanguageSettingKey[] = "ui/language";
+namespace mikai::app {
 
 QString languagePreference();
 QString localizedApiError(const QString& code);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "state/SettingsKeys.hpp"
+
 #include <QMap>
 #include <QString>
 #include <QStringList>

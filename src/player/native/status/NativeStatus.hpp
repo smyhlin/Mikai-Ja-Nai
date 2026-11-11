@@ -1,7 +1,9 @@
 // Two strictly validated layers (the `vf-metadata/mikai_native` tag map and its
 // `snapshot` document): any disagreement is a NAMED refusal. The decode device
 // identity belongs to the probe protocol; the borrowed MpvHandle reader polls one
-// request per 500 ms at most and MUST be detached before the borrowed core dies.
+// request per 500 ms at most and is bound to the borrowed core's lifetime token:
+// when the core dies the reader reads as detached, so no manual detach is needed
+// before the core goes away.
 //
 // Only the outer tag map is string-typed; inside `snapshot` every scalar keeps its
 // real JSON type, so `revision`, `epoch` and the counter fields are numbers there.
@@ -12,6 +14,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <optional>
 
 #include <QtCore/QByteArray>
@@ -332,10 +335,11 @@ class NativeStatusConsumer {
   /// Binds the handle to poll (never owned; null is `detach()`). Rebinding resets the
   /// view: another core's snapshot says nothing about this one.
   void attach(MpvHandle* handle);
-  /// Unbinds and cancels an outstanding request; safe twice and on a null binding,
-  /// and MUST run before the borrowed core is destroyed.
+  /// Unbinds and cancels an outstanding request; safe twice and on a null binding.
+  /// Safe to skip before the borrowed core dies: the core's lifetime token
+  /// expires with it, so every use then reads as detached and the view clears.
   void detach();
-  bool attached() const { return handle_ != nullptr; }
+  bool attached() const { return coreAlive(); }
 
   /// One pump step. Issues at most one request per `kNativeStatusPollIntervalMs`,
   /// never while one is outstanding; superseded-epoch or changed-binding replies drop.
@@ -355,12 +359,21 @@ class NativeStatusConsumer {
   quint64 droppedCount() const { return dropped_; }
 
  private:
+  /// True only while the borrowed core is still alive: a null binding and an
+  /// expired lifetime token both read as detached, without dereferencing the
+  /// borrowed pointer.
+  bool coreAlive() const { return handle_ != nullptr && !coreLifetime_.expired(); }
+
   /// Publishes and notifies only on an actual change.
   void publish(NativeStatusView next);
   void publishUnavailable(const QString& reasonKey, const QString& reason);
   void accept(const AsyncReply& reply);
 
   MpvHandle* handle_ = nullptr;
+  /// Weak half of the borrowed core's lifetime token (MpvHandle::lifetimeToken),
+  /// stored at attach(). Expires when the core dies, so a use after core death
+  /// is detected without dereferencing the borrowed pointer.
+  std::weak_ptr<const void> coreLifetime_;
   /// Bumped on attach/detach so an in-flight reply for a previous binding is dropped.
   quint64 token_ = 0;
   quint64 currentEpoch_ = 0;

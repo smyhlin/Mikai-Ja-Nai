@@ -109,6 +109,10 @@ struct Candidate {
 /// candidate.
 QVector<Candidate> allCandidates(const QString& shadersDir = QString());
 
+/// Drops the memoised shaders-directory listing (P2-04). Call after writing
+/// shaders into the folder, so the next lookup re-enumerates it.
+void invalidateShaderFileCache();
+
 /// The id of a mode, which is its persistence key. Empty for a mode the table
 /// does not carry: a disabled chain has no preset, and writing an ordinal
 /// instead is what would let a preset added later silently repoint an existing

@@ -1,4 +1,5 @@
 #include "state/AppearanceStore.hpp"
+#include "state/SettingsKeys.hpp"
 
 #include <QApplication>
 #include <QEvent>
@@ -8,19 +9,6 @@
 
 namespace mikai::app {
 namespace {
-
-constexpr char kThemeKey[] = "customization/theme";
-constexpr char kTitleLanguageKey[] = "customization/titleLanguage";
-constexpr char kNameLanguageKey[] = "customization/nameLanguage";
-constexpr char kCoverGradientKey[] = "customization/coverGradient";
-constexpr char kAdultContentKey[] = "customization/adultContent";
-constexpr char kAccentKey[] = "customization/accent";
-constexpr char kRadiusKey[] = "customization/radiusStep";
-constexpr char kBackgroundGradientKey[] = "customization/backgroundGradient";
-constexpr char kGradientIntensityKey[] = "customization/gradientIntensity";
-constexpr char kGradientHeightKey[] = "customization/gradientHeight";
-constexpr char kGradientModeKey[] = "customization/gradientMode";
-constexpr char kGradientColorKey[] = "customization/gradientColor";
 
 theme::Appearance& stored() {
     static theme::Appearance appearance = loadAppearance();
@@ -33,32 +21,32 @@ theme::Appearance loadAppearance() {
     QSettings settings;
     theme::Appearance appearance;
     appearance.siteTheme =
-        theme::themeFromId(settings.value(QString::fromLatin1(kThemeKey)).toString());
+        theme::themeFromId(settings.value(QString::fromUtf8(kCustomizationTheme)).toString());
     appearance.titleLanguage = theme::titleLanguageFromId(
-        settings.value(QString::fromLatin1(kTitleLanguageKey)).toString());
+        settings.value(QString::fromUtf8(kCustomizationTitleLanguage)).toString());
     appearance.nameLanguage = theme::nameLanguageFromId(
-        settings.value(QString::fromLatin1(kNameLanguageKey)).toString());
+        settings.value(QString::fromUtf8(kCustomizationNameLanguage)).toString());
     appearance.coverGradient =
-        settings.value(QString::fromLatin1(kCoverGradientKey), true).toBool();
+        settings.value(QString::fromUtf8(kCustomizationCoverGradient), true).toBool();
     // Explicit content is allowed unless the viewer turns it off: the warning
     // dialog is the exception, not the default reading mode.
     appearance.showAdult =
-        settings.value(QString::fromLatin1(kAdultContentKey), true).toBool();
-    const QString accent = settings.value(QString::fromLatin1(kAccentKey)).toString();
+        settings.value(QString::fromUtf8(kCustomizationAdultContent), true).toBool();
+    const QString accent = settings.value(QString::fromUtf8(kCustomizationAccent)).toString();
     if (QColor(accent).isValid()) {
         appearance.accent = accent;
     }
     appearance.radiusStep = qBound(
-        0, settings.value(QString::fromLatin1(kRadiusKey), appearance.radiusStep).toInt(),
+        0, settings.value(QString::fromUtf8(kCustomizationRadiusStep), appearance.radiusStep).toInt(),
         theme::radiusStepCount() - 1);
     appearance.backgroundGradient =
-        settings.value(QString::fromLatin1(kBackgroundGradientKey), true).toBool();
+        settings.value(QString::fromUtf8(kCustomizationBackgroundGradient), true).toBool();
     appearance.gradientIntensity =
-        qBound(0, settings.value(QString::fromLatin1(kGradientIntensityKey), 30).toInt(), 100);
+        qBound(0, settings.value(QString::fromUtf8(kCustomizationGradientIntensity), 30).toInt(), 100);
     appearance.gradientHeight =
-        qBound(10, settings.value(QString::fromLatin1(kGradientHeightKey), 100).toInt(), 100);
+        qBound(10, settings.value(QString::fromUtf8(kCustomizationGradientHeight), 100).toInt(), 100);
     const QString gradient =
-        settings.value(QString::fromLatin1(kGradientColorKey)).toString();
+        settings.value(QString::fromUtf8(kCustomizationGradientColor)).toString();
     if (QColor(gradient).isValid()) {
         appearance.gradientColor = gradient;
     }
@@ -67,11 +55,11 @@ theme::Appearance loadAppearance() {
     // stored colour chose that colour deliberately and keeps it; one with
     // neither key never made the choice, so it joins the accent instead of
     // inheriting the old blue default.
-    if (settings.contains(QString::fromLatin1(kGradientModeKey))) {
+    if (settings.contains(QString::fromUtf8(kCustomizationGradientMode))) {
         appearance.gradientMode = theme::gradientModeFromId(
-            settings.value(QString::fromLatin1(kGradientModeKey)).toString());
+            settings.value(QString::fromUtf8(kCustomizationGradientMode)).toString());
     } else {
-        appearance.gradientMode = settings.contains(QString::fromLatin1(kGradientColorKey))
+        appearance.gradientMode = settings.contains(QString::fromUtf8(kCustomizationGradientColor))
                                       ? theme::GradientMode::Custom
                                       : theme::GradientMode::Auto;
     }
@@ -80,29 +68,29 @@ theme::Appearance loadAppearance() {
 
 void saveAppearance(const theme::Appearance& appearance) {
     QSettings settings;
-    settings.setValue(QString::fromLatin1(kThemeKey), theme::themeId(appearance.siteTheme));
-    settings.setValue(QString::fromLatin1(kTitleLanguageKey),
+    settings.setValue(QString::fromUtf8(kCustomizationTheme), theme::themeId(appearance.siteTheme));
+    settings.setValue(QString::fromUtf8(kCustomizationTitleLanguage),
                       theme::languageId(appearance.titleLanguage));
-    settings.setValue(QString::fromLatin1(kNameLanguageKey),
+    settings.setValue(QString::fromUtf8(kCustomizationNameLanguage),
                       theme::nameLanguageId(appearance.nameLanguage));
-    settings.setValue(QString::fromLatin1(kCoverGradientKey), appearance.coverGradient);
-    settings.setValue(QString::fromLatin1(kAdultContentKey), appearance.showAdult);
-    settings.setValue(QString::fromLatin1(kAccentKey), theme::hexOf(theme::accentColor(appearance)));
-    settings.setValue(QString::fromLatin1(kRadiusKey),
+    settings.setValue(QString::fromUtf8(kCustomizationCoverGradient), appearance.coverGradient);
+    settings.setValue(QString::fromUtf8(kCustomizationAdultContent), appearance.showAdult);
+    settings.setValue(QString::fromUtf8(kCustomizationAccent), theme::hexOf(theme::accentColor(appearance)));
+    settings.setValue(QString::fromUtf8(kCustomizationRadiusStep),
                       qBound(0, appearance.radiusStep, theme::radiusStepCount() - 1));
-    settings.setValue(QString::fromLatin1(kBackgroundGradientKey),
+    settings.setValue(QString::fromUtf8(kCustomizationBackgroundGradient),
                       appearance.backgroundGradient);
-    settings.setValue(QString::fromLatin1(kGradientIntensityKey),
+    settings.setValue(QString::fromUtf8(kCustomizationGradientIntensity),
                       qBound(0, appearance.gradientIntensity, 100));
-    settings.setValue(QString::fromLatin1(kGradientHeightKey),
+    settings.setValue(QString::fromUtf8(kCustomizationGradientHeight),
                       qBound(10, appearance.gradientHeight, 100));
-    settings.setValue(QString::fromLatin1(kGradientModeKey),
+    settings.setValue(QString::fromUtf8(kCustomizationGradientMode),
                       theme::gradientModeId(appearance.gradientMode));
     // Only a Custom gradient is written: while Auto is selected the stored
     // colour is the viewer's last custom choice, and saving the accent over it
     // would silently destroy a preference they can return to.
     if (appearance.gradientMode == theme::GradientMode::Custom) {
-        settings.setValue(QString::fromLatin1(kGradientColorKey),
+        settings.setValue(QString::fromUtf8(kCustomizationGradientColor),
                           theme::hexOf(theme::gradientColor(appearance)));
     }
     settings.sync();

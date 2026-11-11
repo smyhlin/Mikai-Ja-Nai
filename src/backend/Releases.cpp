@@ -1,6 +1,7 @@
 #include "Releases.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace mikai::backend {
 namespace {
@@ -43,20 +44,41 @@ int playableEpisodeCount(const Release& release) {
 }
 
 QVector<Release> sortReleases(QVector<Release> releases) {
-    std::stable_sort(releases.begin(), releases.end(), [](const Release& left, const Release& right) {
-        const int leftKind = kindOrder(left.kind);
-        const int rightKind = kindOrder(right.kind);
-        if (leftKind != rightKind) {
-            return leftKind < rightKind;
+    // P2-04: decorate-sort-undecorate. The comparator used to recompute
+    // playableEpisodeCount() (a scan over episodes and sources) and teamKey()
+    // (a join + toLower) on every comparison; each is now computed once per
+    // release. Ordering is unchanged: same keys, same stable sort.
+    struct Scored {
+        Release release;
+        int kind = 0;
+        int playable = 0;
+        QString team;
+    };
+    QVector<Scored> scored;
+    scored.reserve(releases.size());
+    for (Release& release : releases) {
+        Scored entry;
+        entry.kind = kindOrder(release.kind);
+        entry.playable = playableEpisodeCount(release);
+        entry.team = teamKey(release);
+        entry.release = std::move(release);
+        scored.append(std::move(entry));
+    }
+    std::stable_sort(scored.begin(), scored.end(), [](const Scored& left, const Scored& right) {
+        if (left.kind != right.kind) {
+            return left.kind < right.kind;
         }
-        const int leftPlayable = playableEpisodeCount(left);
-        const int rightPlayable = playableEpisodeCount(right);
-        if (leftPlayable != rightPlayable) {
-            return leftPlayable > rightPlayable;
+        if (left.playable != right.playable) {
+            return left.playable > right.playable;
         }
-        return teamKey(left) < teamKey(right);
+        return left.team < right.team;
     });
-    return releases;
+    QVector<Release> sorted;
+    sorted.reserve(scored.size());
+    for (Scored& entry : scored) {
+        sorted.append(std::move(entry.release));
+    }
+    return sorted;
 }
 
 }  // namespace mikai::backend
