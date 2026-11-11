@@ -18,7 +18,6 @@
 #include <QApplication>
 #include <atomic>
 #include <backend/Cancellation.hpp>
-#include <QMessageBox>
 #include <QAccessible>
 #include <QMetaObject>
 #include <QThreadPool>
@@ -29,6 +28,7 @@
 #include "PlayerShell.hpp"
 #include "PresetShortcuts.hpp"
 #include "gui/Clipboard.hpp"
+#include "gui/Win32Support.hpp"
 #include "ShellSliders.hpp"
 #include "ShellTheme.hpp"
 #include "ShellWidgets.hpp"
@@ -40,7 +40,6 @@
 #include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
-#include <QEasingCurve>
 #include <QEnterEvent>
 #include <QFileInfo>
 #include <QFrame>
@@ -52,7 +51,6 @@
 #include <QImage>
 #include <QKeyEvent>
 #include <QLabel>
-#include <QLinearGradient>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QOpenGLWidget>
@@ -60,18 +58,14 @@
 #include <QPixmap>
 #include <QPixmapCache>
 #include <QPushButton>
-#include <QRegion>
 #include <QResizeEvent>
 #include <QScreen>
 #include <QShortcut>
 #include <QShowEvent>
 #include <QWindowStateChangeEvent>
-#include <QSignalBlocker>
-#include <QSlider>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
-#include <QVariantAnimation>
 
 #include <algorithm>
 #include <cmath>
@@ -113,6 +107,10 @@ constexpr double kShellRateMax = 2.0;
 
 constexpr auto kAnime4KSettingKey = "player/anime4k";
 constexpr auto kAnimeJanaiBackendSettingKey = "player/animejanai/backend";
+// Same value as app::kOpenSubtitlesApiKey (SettingsKeys.hpp); the player
+// layer cannot include that header, so the spelling is kept local and must
+// stay identical.
+constexpr auto kOpenSubtitlesApiKeySettingKey = "access/openSubtitlesApiKey";
 
 constexpr int kSeriesWidth = 190;
 constexpr int kStripHeight = 30;
@@ -1726,8 +1724,13 @@ void PlayerDialog::applySubtitleSearchReply(const QVariantMap& reply, const QStr
         status->setText(reply.value(QStringLiteral("error")).toString());
         return;
     }
-    QSettings settings;
-    settings.setValue(QStringLiteral("access/openSubtitlesApiKey"), apiKey);
+    // P0-03: the key from a successful search is stored in the credential
+    // store, never in plaintext QSettings.
+    QString keyReason;
+    if (!mikai::gui::saveOpenSubtitlesApiKey(apiKey, &keyReason)) {
+        qWarning().noquote() << "mikai: could not save the OpenSubtitles API key:"
+                             << keyReason;
+    }
     const QVariantList hits = reply.value(QStringLiteral("hits")).toList();
     for (const QVariant& entry : hits) {
         const QVariantMap row = entry.toMap();
@@ -1803,8 +1806,9 @@ void PlayerDialog::openSubtitlesSearchDialog() {
     auto* key = new QLineEdit(&dialog);
     key->setEchoMode(QLineEdit::Password);
     key->setPlaceholderText(tr("OpenSubtitles API key"));
-    QSettings settings;
-    key->setText(settings.value(QStringLiteral("access/openSubtitlesApiKey")).toString());
+    // P0-03: read from the credential store (migrates the legacy QSettings
+    // value on first read), never from plaintext QSettings.
+    key->setText(mikai::gui::loadOpenSubtitlesApiKey());
     auto* keyHint = new QLabel(tr("A free API key from opensubtitles.com is required."), &dialog);
     layout->addWidget(keyHint);
     layout->addWidget(key);
