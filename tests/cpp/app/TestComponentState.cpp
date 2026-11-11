@@ -8,9 +8,11 @@
 
 #include "backend/MikaiClient.hpp"
 
+#include "native/components/AnimeJanaiRuntime.hpp"
 #include "native/components/NativeComponentCatalog.hpp"
 #include "native/components/NativeComponentProvisioning.hpp"
 #include "native/components/NativeComponentStore.hpp"
+#include "native/components/NativeGpuProbe.hpp"
 #include "native/models/NativeSpatialAssets.hpp"
 
 #include <QtCore/QCoreApplication>
@@ -96,6 +98,130 @@ void waitUntil(const std::function<bool()>& condition, int timeoutMs = 5000) {
         QTest::qWait(10);
     }
     QApplication::processEvents();
+}
+
+/// The installation root the production predicate reads. describe() sets it
+/// even when no record exists yet, so the fixture never duplicates the
+/// "aji/v0.24.0/trt" layout.
+QString closureRoot() {
+    return describeAnimeJanaiInstallation(Backend::TensorRT).root;
+}
+
+/// A minimal x64 binary image: header only, enough for validBinaryImageX64.
+/// Mirrors TestAnimeJanaiRuntime::fixtureImage().
+QByteArray minimalBinaryImage() {
+#ifdef Q_OS_WIN
+    QByteArray image(90, '\0');
+    image[0] = 'M'; image[1] = 'Z';
+    image[0x3c] = 64;
+    image[64] = 'P'; image[65] = 'E';
+    image[68] = char(0x64); image[69] = char(0x86);
+    image[88] = char(0x0b); image[89] = char(0x02);
+    return image;
+#else
+    QByteArray image(64, '\0');
+    image[0] = '\x7f'; image[1] = 'E'; image[2] = 'L'; image[3] = 'F';
+    image[4] = 2; image[5] = 1; image[18] = 0x3e;
+    return image;
+#endif
+}
+
+/// The closure members describeAnimeJanaiInstallation requires for the
+/// selected backend: the dispatcher, the backend library, the CUDA/TensorRT
+/// libraries, the GPU-matched builder resource and trtexec (plus the two
+/// license notices, which are required members of the Windows closure).
+/// Mirrors TestAnimeJanaiRuntime::required().
+QStringList closureFileNames(const ComponentPack* resource) {
+#ifdef Q_OS_WIN
+    QStringList files{QStringLiteral("aji.dll"), QStringLiteral("aji_trt.dll"),
+                      QStringLiteral("cudart64_13.dll"), QStringLiteral("nvinfer_11.dll"),
+                      QStringLiteral("nvinfer_plugin_11.dll"),
+                      QStringLiteral("nvonnxparser_11.dll")};
+    if (resource != nullptr) files << resource->resourceFile;
+    files << QStringLiteral("trtexec.exe") << QStringLiteral("CUDA_LICENSE.txt")
+          << QStringLiteral("DirectML_LICENSE.txt");
+    return files;
+#else
+    QStringList files{QStringLiteral("libaji.so"), QStringLiteral("libaji_trt.so"),
+                      QStringLiteral("libcudart.so.13"), QStringLiteral("libnvinfer.so.11"),
+                      QStringLiteral("libnvinfer_plugin.so.11"),
+                      QStringLiteral("libnvonnxparser.so.11")};
+    if (resource != nullptr) files << resource->resourceFile;
+    files << QStringLiteral("trtexec");
+    return files;
+#endif
+}
+
+/// Creates the backend closure record (install.json + closure files) the way
+/// the installer would, so the runtime card exercises the real installed
+/// path: the inventory counts the card installed only when
+/// describeAnimeJanaiInstallation reports the closure installed, which
+/// needs the record's schema/version/backend/abi, the Linux/Windows closure
+/// files above (libaji.so/aji.dll present, the GPU-matched builder resource,
+/// trtexec executable on Linux) and matching sizes and hashes. The
+/// dispatcher and backend libraries are the real test dispatcher when the
+/// build provides it, so the record also survives the verify re-hash: a
+/// header-only image has no aji_api_version export and no pinned digest, so
+/// a re-hash would refuse it. Returns false when a record already exists,
+/// so a stale closure is never silently reused.
+bool populateClosure() {
+    const QString root = closureRoot();
+    if (root.isEmpty() || QFileInfo::exists(root)) return false;
+    const GpuComputeCapability& capability = observeComputeCapability();
+    const ComponentPack* resource = capability.nvidia
+        ? tensorRtResourcePackFor(capability.smMajor, capability.smMinor)
+        : tensorRtResourcePackFor(12, 0);
+    if (resource == nullptr) return false;
+    const QStringList names = closureFileNames(resource);
+#ifdef Q_OS_WIN
+    const QString dispatcherFile = QStringLiteral("aji.dll");
+    const QString backendFile = QStringLiteral("aji_trt.dll");
+#else
+    const QString dispatcherFile = QStringLiteral("libaji.so");
+    const QString backendFile = QStringLiteral("libaji_trt.so");
+#endif
+    QByteArray dispatcherBytes;
+    bool abiExporting = false;
+#ifdef MIKAI_TEST_AJI_DISPATCHER
+    QFile dispatcher(QString::fromUtf8(MIKAI_TEST_AJI_DISPATCHER));
+    if (dispatcher.open(QIODevice::ReadOnly)) {
+        dispatcherBytes = dispatcher.readAll();
+        abiExporting = !dispatcherBytes.isEmpty();
+    }
+#endif
+    QJsonArray entries;
+    for (const QString& name : names) {
+        const QByteArray bytes =
+            (name == dispatcherFile || name == backendFile) && abiExporting
+                ? dispatcherBytes
+                : minimalBinaryImage();
+        if (!writeBytes(QDir(root).filePath(name), bytes)) return false;
+#ifndef Q_OS_WIN
+        if (name == QLatin1String("trtexec") &&
+            !QFile::setPermissions(QDir(root).filePath(name),
+                                   QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                       QFileDevice::ExeOwner))
+            return false;
+#endif
+        QJsonObject entry;
+        entry.insert(QStringLiteral("path"), name);
+        entry.insert(QStringLiteral("bytes"), static_cast<qint64>(bytes.size()));
+        entry.insert(QStringLiteral("sha256"), sha256Of(bytes));
+        entries.append(entry);
+    }
+    QJsonObject record;
+    record.insert(QStringLiteral("schema"), QStringLiteral("mikai.native.animejanai/3"));
+    record.insert(QStringLiteral("version"), QStringLiteral("v0.24.0"));
+    record.insert(QStringLiteral("backend"), QStringLiteral("trt"));
+    record.insert(QStringLiteral("abi"), 9);
+    record.insert(QStringLiteral("provenance"), QStringLiteral("local"));
+    record.insert(QStringLiteral("archiveBytes"), 0);
+    record.insert(QStringLiteral("archiveSha256"), QString());
+    record.insert(QStringLiteral("heavyRifeSupported"), abiExporting);
+    record.insert(QStringLiteral("files"), entries);
+    record.insert(QStringLiteral("acquisitions"), QJsonArray{});
+    return writeBytes(QDir(root).filePath(QStringLiteral("install.json")),
+                      QJsonDocument(record).toJson(QJsonDocument::Compact));
 }
 
 }  // namespace
@@ -231,7 +357,9 @@ void TestComponentState::deletedFilesClearTheStaleBarOnRefresh() {
     QVERIFY(installedPackNames(store).isEmpty());
     const QString releaseDirectory = componentReleaseDirectory(store);
     const QString tensorRtDirectory = QFileInfo(releaseDirectory).absolutePath();
+    const QString closureDirectory = closureRoot();
     const auto cleanup = qScopeGuard([&] {
+        QDir(closureDirectory).removeRecursively();
         QDir(releaseDirectory).removeRecursively();
         QDir().rmdir(tensorRtDirectory);
     });
@@ -242,6 +370,14 @@ void TestComponentState::deletedFilesClearTheStaleBarOnRefresh() {
     const ComponentPack* runtime = tensorRtRuntimePack();
     QVERIFY(runtime != nullptr);
     QVERIFY(populateStore(store, {*runtime}));
+    // The runtime card counts installed only through the backend's own
+    // closure record: a stored pack without it is a download, not readiness,
+    // and the bar is withdrawn. The fixture creates the real closure, so the
+    // 100 below is the installed path, not a stale row.
+    QVERIFY(populateClosure());
+    const AnimeJanaiInstallation closure =
+        describeAnimeJanaiInstallation(Backend::TensorRT);
+    QVERIFY2(closure.installed, qPrintable(closure.reason));
 
     mikai::app::Runner runner;
     mikai::app::NativeComponentProvisioner provisioner(runner);
@@ -268,6 +404,10 @@ void TestComponentState::deletedFilesClearTheStaleBarOnRefresh() {
     QCOMPARE(runtimeBar->value(), 100);
 
     QVERIFY(QDir(releaseDirectory).removeRecursively());
+    // Removing the runtime from disk removes its closure record too: while
+    // the record survives, the inventory still confirms the card and the
+    // stale bar legitimately survives with it.
+    QVERIFY(QDir(closureDirectory).removeRecursively());
     tab.refresh();
     waitUntil([&] { return !tab.acquisitionRunning(); });
 
@@ -399,13 +539,23 @@ void TestComponentState::verificationTurnsAConfirmedBarIndeterminate() {
     QVERIFY(installedPackNames(store).isEmpty());
     const QString releaseDirectory = componentReleaseDirectory(store);
     const QString tensorRtDirectory = QFileInfo(releaseDirectory).absolutePath();
+    const QString closureDirectory = closureRoot();
     const auto cleanup = qScopeGuard([&] {
+        QDir(closureDirectory).removeRecursively();
         QDir(releaseDirectory).removeRecursively();
         QDir().rmdir(tensorRtDirectory);
     });
     const ComponentPack* runtime = tensorRtRuntimePack();
     QVERIFY(runtime != nullptr);
     QVERIFY(populateStore(store, {*runtime}));
+    // Same real closure as deletedFilesClearTheStaleBarOnRefresh, proved
+    // here through the verify re-hash as well: the proof run re-hashes the
+    // backend record, so only a closure the production predicate accepts
+    // with rehash can read 100 again afterwards.
+    QVERIFY(populateClosure());
+    const AnimeJanaiInstallation closure =
+        describeAnimeJanaiInstallation(Backend::TensorRT, true);
+    QVERIFY2(closure.installed, qPrintable(closure.reason));
 
     mikai::app::Runner runner;
     mikai::app::NativeComponentProvisioner provisioner(runner);

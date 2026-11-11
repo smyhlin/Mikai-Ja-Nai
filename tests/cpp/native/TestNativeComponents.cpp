@@ -454,8 +454,14 @@ void TestNativeComponents::upscalingPackReviewsAndQueuesMissingGraphs() {
     QVERIFY(!pack->isChecked());
     pack->click();
     QVERIFY(pack->isChecked());
+    // The "Select all" box is tristate by design: with exactly one pack
+    // selected it reads PartiallyChecked, and Qt's isChecked() is true for
+    // that state, so it is asserted on its check state, not on isChecked().
+    auto* selectAll = tab.findChild<QCheckBox*>(QStringLiteral("componentSelectAll"));
+    QVERIFY(selectAll != nullptr);
+    QCOMPARE(selectAll->checkState(), Qt::PartiallyChecked);
     for (QCheckBox* box : tab.findChildren<QCheckBox*>()) {
-        if (box != pack) QVERIFY(!box->isChecked());
+        if (box != pack && box != selectAll) QVERIFY(!box->isChecked());
     }
 
     qint64 expectedBytes = 0;

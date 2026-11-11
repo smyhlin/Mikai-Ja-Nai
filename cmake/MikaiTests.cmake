@@ -482,19 +482,28 @@ if(MIKAI_BUILD_PROBES)
   # Missing display/GL support must remain a visible skip.
   if(TARGET fullscreen_stability_probe)
     add_dependencies(mikai_tests fullscreen_stability_probe)
+    set(_mikai_hover_canary_args
+      "$<TARGET_FILE:fullscreen_stability_probe>"
+      "${MIKAI_ANIME4K_SHADERS_DIR}"
+      "${MIKAI_SELECTED_MPV_MODULE}"
+      "$<TARGET_FILE_DIR:Qt6::Core>"
+      "${MIKAI_TEST_QT_PLUGIN_DIR}"
+      "${CMAKE_BINARY_DIR}/_test-runs"
+      "${CMAKE_SOURCE_DIR}/tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4"
+      "30"
+      "${CMAKE_BINARY_DIR}/_hover-canary"
+      "off"
+      "--hover-canary"
+    )
+    # Without the staged mpv runtime dir the launcher stages only libmpv.so.2
+    # and the canary dies in dlopen on the missing FFmpeg dependency
+    # (libavcodec.so.63). Same guard as the mikai_tests launcher args above.
+    if(MIKAI_SELECTED_MPV_BUNDLED)
+      list(APPEND _mikai_hover_canary_args
+        --mpv-runtime-dir "${MIKAI_SELECTED_MPV_DEPENDENCY_ROOT}")
+    endif()
     add_test(NAME HoverPlaybackCanary
-      COMMAND mikai_test_launcher
-        "$<TARGET_FILE:fullscreen_stability_probe>"
-        "${MIKAI_ANIME4K_SHADERS_DIR}"
-        "${MIKAI_SELECTED_MPV_MODULE}"
-        "$<TARGET_FILE_DIR:Qt6::Core>"
-        "${MIKAI_TEST_QT_PLUGIN_DIR}"
-        "${CMAKE_BINARY_DIR}/_test-runs"
-        "${CMAKE_SOURCE_DIR}/tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4"
-        "30"
-        "${CMAKE_BINARY_DIR}/_hover-canary"
-        "off"
-        "--hover-canary"
+      COMMAND mikai_test_launcher ${_mikai_hover_canary_args}
     )
     set_tests_properties(HoverPlaybackCanary PROPERTIES
       TIMEOUT 240
@@ -535,15 +544,24 @@ if(MIKAI_BUILD_PROBES)
 
   if(TARGET native_settings_probe)
     add_dependencies(mikai_tests native_settings_probe)
+    set(_mikai_video_scaling_args
+      "$<TARGET_FILE:native_settings_probe>"
+      "${MIKAI_ANIME4K_SHADERS_DIR}"
+      "${MIKAI_SELECTED_MPV_MODULE}"
+      "$<TARGET_FILE_DIR:Qt6::Core>"
+      "${MIKAI_TEST_QT_PLUGIN_DIR}"
+      "${CMAKE_BINARY_DIR}/_test-runs"
+      --video-scaling-smoke
+    )
+    # Without the staged mpv runtime dir the launcher stages only libmpv.so.2
+    # and the probe dies in dlopen on the missing FFmpeg dependency
+    # (libavcodec.so.63). Same guard as the mikai_tests launcher args above.
+    if(MIKAI_SELECTED_MPV_BUNDLED)
+      list(APPEND _mikai_video_scaling_args
+        --mpv-runtime-dir "${MIKAI_SELECTED_MPV_DEPENDENCY_ROOT}")
+    endif()
     add_test(NAME VideoScalingPersistence
-      COMMAND mikai_test_launcher
-        "$<TARGET_FILE:native_settings_probe>"
-        "${MIKAI_ANIME4K_SHADERS_DIR}"
-        "${MIKAI_SELECTED_MPV_MODULE}"
-        "$<TARGET_FILE_DIR:Qt6::Core>"
-        "${MIKAI_TEST_QT_PLUGIN_DIR}"
-        "${CMAKE_BINARY_DIR}/_test-runs"
-        --video-scaling-smoke
+      COMMAND mikai_test_launcher ${_mikai_video_scaling_args}
     )
     set_tests_properties(VideoScalingPersistence PROPERTIES
       TIMEOUT 300

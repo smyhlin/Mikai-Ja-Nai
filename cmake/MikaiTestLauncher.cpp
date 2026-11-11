@@ -518,6 +518,164 @@ struct JobInstaller {
         }
     }
 };
+
+// 0xC0000139 (STATUS_ENTRYPOINT_NOT_FOUND): the loader could not resolve a
+// load-time import, so the child died before main ran and left no test output
+// at all. This is diagnostic scaffolding only: it prints the child's
+// effective PATH and where each direct import resolves, and changes nothing
+// about the run's verdict.
+constexpr unsigned int kEntryPointNotFound = 0xC0000139u;
+
+// File offset of an RVA in a PE image, or -1 when the RVA is in no section.
+qint64 peRvaToFileOffset(const IMAGE_NT_HEADERS* nt, DWORD rva) {
+    const IMAGE_SECTION_HEADER* sections = IMAGE_FIRST_SECTION(nt);
+    for (WORD index = 0; index < nt->FileHeader.NumberOfSections; ++index) {
+        const IMAGE_SECTION_HEADER& section = sections[index];
+        const DWORD size = section.Misc.VirtualSize > section.SizeOfRawData
+                               ? section.Misc.VirtualSize
+                               : section.SizeOfRawData;
+        if (rva >= section.VirtualAddress && rva < section.VirtualAddress + size) {
+            return static_cast<qint64>(rva - section.VirtualAddress + section.PointerToRawData);
+        }
+    }
+    return -1;
+}
+
+QString peStringAt(const QByteArray& image, const IMAGE_NT_HEADERS* nt, DWORD rva) {
+    const qint64 offset = peRvaToFileOffset(nt, rva);
+    if (offset < 0 || offset >= image.size()) return {};
+    const char* begin = image.constData() + offset;
+    const qsizetype maxLength = image.size() - offset;
+    qsizetype length = 0;
+    while (length < maxLength && begin[length] != '\0') ++length;
+    return QString::fromLatin1(begin, static_cast<int>(length));
+}
+
+// Direct (load-time) DLL imports of a PE file, in import-table order. An
+// empty list means the file could not be read or has no import table; a child
+// that died in the loader still lists its direct imports, but a missing
+// transitive import of one of those DLLs will not appear here.
+QStringList peImportDllNames(const QString& executable) {
+    QFile file(executable);
+    if (!file.open(QIODevice::ReadOnly)) return {};
+    const QByteArray image = file.readAll();
+    if (image.size() < static_cast<qsizetype>(sizeof(IMAGE_DOS_HEADER))) return {};
+    const IMAGE_DOS_HEADER* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(image.constData());
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return {};
+    const qint64 ntOffset = dos->e_lfanew;
+    if (ntOffset < 0 ||
+        ntOffset + static_cast<qint64>(sizeof(DWORD) + sizeof(IMAGE_FILE_HEADER)) >
+            image.size()) {
+        return {};
+    }
+    const IMAGE_NT_HEADERS* nt =
+        reinterpret_cast<const IMAGE_NT_HEADERS*>(image.constData() + ntOffset);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) return {};
+    const qint64 optionalEnd =
+        ntOffset + static_cast<qint64>(FIELD_OFFSET(IMAGE_NT_HEADERS, OptionalHeader)) +
+        nt->FileHeader.SizeOfOptionalHeader;
+    if (optionalEnd > image.size()) return {};
+    if (nt->OptionalHeader.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_IMPORT) return {};
+    const IMAGE_DATA_DIRECTORY& imports =
+        nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (imports.VirtualAddress == 0) return {};
+    const qint64 sectionTableEnd =
+        optionalEnd + static_cast<qint64>(nt->FileHeader.NumberOfSections) *
+                          static_cast<qint64>(sizeof(IMAGE_SECTION_HEADER));
+    if (sectionTableEnd > image.size()) return {};
+    const qint64 descriptorsOffset = peRvaToFileOffset(nt, imports.VirtualAddress);
+    if (descriptorsOffset < 0 ||
+        descriptorsOffset + static_cast<qint64>(sizeof(IMAGE_IMPORT_DESCRIPTOR)) >
+            image.size()) {
+        return {};
+    }
+    const qsizetype maxDescriptors =
+        (image.size() - descriptorsOffset) /
+        static_cast<qsizetype>(sizeof(IMAGE_IMPORT_DESCRIPTOR));
+    const IMAGE_IMPORT_DESCRIPTOR* descriptors =
+        reinterpret_cast<const IMAGE_IMPORT_DESCRIPTOR*>(image.constData() + descriptorsOffset);
+    QStringList names;
+    for (qsizetype index = 0; index < maxDescriptors; ++index) {
+        const IMAGE_IMPORT_DESCRIPTOR& descriptor = descriptors[index];
+        if (descriptor.OriginalFirstThunk == 0 && descriptor.Name == 0) break;
+        const QString name = peStringAt(image, nt, descriptor.Name);
+        if (!name.isEmpty()) names.append(name);
+    }
+    return names;
+}
+
+void dumpEntryPointFailureDiagnostics(const QString& executable,
+                                      const QString& effectivePath) {
+    std::fprintf(stderr,
+                 "[mikai_test_launcher] child died with 0xc0000139 "
+                 "(STATUS_ENTRYPOINT_NOT_FOUND): the loader could not resolve a load-time "
+                 "import; dumping the import resolution (diagnostic only)\n");
+    std::fprintf(stderr, "[mikai_test_launcher] test executable: %s\n",
+                 qPrintable(QDir::toNativeSeparators(executable)));
+    std::fprintf(stderr, "[mikai_test_launcher] child PATH: %s\n", qPrintable(effectivePath));
+    const QStringList dlls = peImportDllNames(executable);
+    if (dlls.isEmpty()) {
+        std::fprintf(stderr,
+                     "[mikai_test_launcher] no load-time imports found in the test executable "
+                     "(or its import table could not be read)\n");
+        std::fflush(stderr);
+        return;
+    }
+    // The loader looks in the application directory first, then System32, the
+    // Windows directory, and the directories on PATH, in that order.
+    QStringList searchDirs;
+    searchDirs.append(QFileInfo(executable).absolutePath());
+    const UINT systemLength = ::GetSystemDirectoryW(nullptr, 0);
+    if (systemLength > 0) {
+        std::vector<wchar_t> buffer(systemLength);
+        if (::GetSystemDirectoryW(buffer.data(), systemLength) != 0) {
+            searchDirs.append(
+                QDir::fromNativeSeparators(QString::fromWCharArray(buffer.data())));
+        }
+    }
+    const UINT windowsLength = ::GetWindowsDirectoryW(nullptr, 0);
+    if (windowsLength > 0) {
+        std::vector<wchar_t> buffer(windowsLength);
+        if (::GetWindowsDirectoryW(buffer.data(), windowsLength) != 0) {
+            searchDirs.append(
+                QDir::fromNativeSeparators(QString::fromWCharArray(buffer.data())));
+        }
+    }
+    for (const QString& entry : effectivePath.split(QDir::listSeparator(), Qt::SkipEmptyParts)) {
+        QString dir = entry.trimmed();
+        if (dir.size() >= 2 && dir.startsWith(QLatin1Char('"')) && dir.endsWith(QLatin1Char('"')))
+            dir = dir.mid(1, dir.size() - 2);
+        if (!dir.isEmpty()) searchDirs.append(QDir::fromNativeSeparators(dir));
+    }
+    for (const QString& dll : dlls) {
+        if (dll.startsWith(QStringLiteral("api-ms-"), Qt::CaseInsensitive) ||
+            dll.startsWith(QStringLiteral("ext-ms-"), Qt::CaseInsensitive)) {
+            std::fprintf(stderr,
+                         "[mikai_test_launcher] %s: api-set contract, resolved by the "
+                         "loader's api-set schema rather than a file on PATH\n",
+                         qPrintable(dll));
+            continue;
+        }
+        QString resolved;
+        for (const QString& dir : searchDirs) {
+            const QString candidate = QDir(dir).filePath(dll);
+            if (QFile::exists(candidate)) {
+                resolved = candidate;
+                break;
+            }
+        }
+        if (resolved.isEmpty()) {
+            std::fprintf(stderr,
+                         "[mikai_test_launcher] %s: NOT FOUND in the exe directory, "
+                         "System32, the Windows directory, or PATH\n",
+                         qPrintable(dll));
+        } else {
+            std::fprintf(stderr, "[mikai_test_launcher] %s: %s\n", qPrintable(dll),
+                         qPrintable(QDir::toNativeSeparators(resolved)));
+        }
+    }
+    std::fflush(stderr);
+}
 #endif
 
 bool stageMpvRuntime(const QString& moduleSource, const QString& runtimeRoot,
@@ -809,6 +967,13 @@ int stageAndRun(const QStringList& arguments, const QString& directory,
     const QProcess::ExitStatus exitStatus = child.exitStatus();
 
 #ifdef Q_OS_WIN
+    // 0xc0000139 is the loader's STATUS_ENTRYPOINT_NOT_FOUND: the child died
+    // before main, so no test output exists. Dump the import resolution as a
+    // log-only diagnostic; the run's verdict is unchanged.
+    if (static_cast<unsigned int>(result) == kEntryPointNotFound) {
+        dumpEntryPointFailureDiagnostics(executable,
+                                         environment.value(QStringLiteral("PATH")));
+    }
     // QProcess retains its native process handle until it is closed. Close it
     // before querying the job so a completed root process is not counted as a
     // remaining job member while its handle is still owned by QProcess.

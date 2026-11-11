@@ -1641,7 +1641,14 @@ void ComponentStoreTab::updateCardStates() {
         setState(runtimeState_, runtimeOffer.badge, runtimeOffer.detail);
     }
     setState(rifeState_, rifeInstalled ? tr("OK") : tr("optional"));
-    if (kernelsInstalled && !kernelsUsable) {
+    if (!kernelsOffered) {
+        // The card stays visible when no kernel pack is offered for this GPU,
+        // so the badge states the fact instead of the card disappearing.
+        setState(kernelsState_, tr("Unavailable"),
+                 backend == Backend::TensorRTRTX
+                     ? tr("TensorRT for RTX builds the kernels in-process.")
+                     : tr("No TensorRT kernel pack is offered for this GPU."));
+    } else if (kernelsInstalled && !kernelsUsable) {
         setState(kernelsState_, tr("downloaded"),
                  tr("Downloaded, but the runtime closure it needs is missing."));
     } else {
@@ -1720,9 +1727,14 @@ void ComponentStoreTab::updateCardStates() {
     spatialCheck_->setAccessibleDescription(
         tr("Select all five pinned upscaling graphs for download or repair."));
     kernelsCheck_->setAccessibleName(tr("TensorRT kernels for this GPU"));
+    // The kernels card stays visible even when no pack is offered for this
+    // GPU: the badge says "Unavailable" instead of the card vanishing, so the
+    // catalogue stays complete. An unoffered pack cannot be selected, so its
+    // box is not checkable while the card is shown.
     if (QWidget* kernelsCard = kernelsCheck_->parentWidget())
-        kernelsCard->setVisible(kernelsOffered);
-    kernelsCheck_->setVisible(kernelsOffered);
+        kernelsCard->setVisible(true);
+    kernelsCheck_->setVisible(true);
+    kernelsCheck_->setCheckable(kernelsOffered);
     if (!componentSelectionsInitialized_ && inventoryReady_) {
         componentSelectionsInitialized_ = true;
         if (runtimeRecommended) selectedPacks_.insert(QStringLiteral("component:runtime"));
@@ -2207,6 +2219,11 @@ void ComponentStoreTab::renderCardProgress(const QString& cardId) {
         state.inventory.known && state.inventory.installed == 0 &&
         activeLines.isEmpty() && failedLines.isEmpty() && cancelledLines.isEmpty();
     if (inventoryContradictsInstalled) {
+        // A withdrawn bar must not keep reporting a stale value: Qt leaves a
+        // never-set bar at -1 and a previously full one at 100, so reset it
+        // to a determinate 0 while hidden. Nothing visible changes.
+        bar->setRange(0, 100);
+        bar->setValue(0);
         bar->hide();
         label->clear();
         label->hide();
@@ -2216,6 +2233,9 @@ void ComponentStoreTab::renderCardProgress(const QString& cardId) {
                           state.transfer.failed > 0 || state.transfer.cancelled > 0 ||
                           state.transfer.installed > 0;
     if (!hasItems) {
+        // Same withdrawal as above: a hidden bar reads 0, never -1 or 100.
+        bar->setRange(0, 100);
+        bar->setValue(0);
         bar->hide();
         label->clear();
         label->hide();
