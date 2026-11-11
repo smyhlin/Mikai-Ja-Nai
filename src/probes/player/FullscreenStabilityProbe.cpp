@@ -22,7 +22,9 @@
 #include <QJsonObject>
 #include <QMouseEvent>
 #include <QMutex>
+#include <QOffscreenSurface>
 #include <QOpenGLContext>
+#include <QOpenGLFramebufferObject>
 #include <QOpenGLFunctions>
 #include <QPointer>
 #include <QRunnable>
@@ -310,6 +312,60 @@ bool attachMetricSupported() {
 #else
     return false;
 #endif
+}
+
+/// What the driver actually offers for a presented GL surface, measured on
+/// a throwaway context before any widget paints. A context that cannot be
+/// created at all, or one older than the 2.1 mpv needs, cannot present the
+/// surface: QOpenGLWidget renders into an FBO and calls glUseProgram and
+/// glBindBuffer on the first paint with no version guard (Qt 6.12
+/// qopenglwidget.cpp, QOpenGLWidgetPrivate::render), so on a driver that
+/// only exports GL 1.1 entry points — Windows GDI Generic on a headless
+/// runner — that first paint is a crash, not a failed frame. The version
+/// alone is not the whole test: framebuffer-object support is checked too,
+/// because the widget's FBO is what the first paint creates.
+struct GlCapability {
+    bool usable = false;
+    QString version;
+    bool framebuffers = false;
+    QString failure;
+};
+
+GlCapability probeGlCapability() {
+    QOffscreenSurface offscreen;
+    offscreen.create();
+    if (!offscreen.isValid()) {
+        return {false, QString(), false,
+                QStringLiteral("no offscreen surface for a GL probe")};
+    }
+    QOpenGLContext context;
+    context.setFormat(offscreen.format());
+    if (!context.create()) {
+        return {false, QString(), false, QStringLiteral("no GL context could be created")};
+    }
+    if (!context.makeCurrent(&offscreen)) {
+        return {false, QString(), false,
+                QStringLiteral("the GL context could not be made current")};
+    }
+    const QSurfaceFormat format = context.format();
+    const QString version =
+        QStringLiteral("%1.%2").arg(format.majorVersion()).arg(format.minorVersion());
+    const bool framebuffers = QOpenGLFramebufferObject::hasOpenGLFramebufferObjects();
+    context.doneCurrent();
+    // mpv needs at least OpenGL 2.1 (or OpenGL ES 2.0); the widget needs
+    // framebuffer objects on top of that.
+    const bool versionOk = format.renderableType() == QSurfaceFormat::OpenGLES
+                               ? format.version() >= qMakePair(2, 0)
+                               : format.version() >= qMakePair(2, 1);
+    if (!versionOk) {
+        return {false, version, framebuffers,
+                QStringLiteral("OpenGL %1 is older than the 2.1 the player needs").arg(version)};
+    }
+    if (!framebuffers) {
+        return {false, version, framebuffers,
+                QStringLiteral("OpenGL %1 has no framebuffer objects").arg(version)};
+    }
+    return {true, version, framebuffers, QString()};
 }
 
 void spinFor(int milliseconds) {
@@ -1954,6 +2010,26 @@ int runHoverCanaryMode(mplayer::shell::PlayerDialog* dialog, mplayer::VideoSurfa
                            {"required", "windows, xcb, wayland or cocoa with a working GL context"}});
         *error = QStringLiteral("display prerequisite missing: platform '%1' cannot present the "
                                 "player").arg(platform);
+        return 77;
+    }
+    // The driver behind a real platform can still be too old to paint: a
+    // headless runner's GDI Generic GL 1.1 accepts a context, so the
+    // surface's initializeGL runs and reports ready=0, but QOpenGLWidget's
+    // first paint then calls into entry points the driver does not export
+    // and the process dies before waitForVideo or the context check below
+    // can refuse. Probe the capability before the first pump: waitForVideo
+    // is the first event-loop pump in this mode, and the pump is what
+    // delivers the first paint.
+    const GlCapability gl = probeGlCapability();
+    if (!gl.usable) {
+        record(QJsonObject{{"event", "hoverCanary"},
+                           {"result", "REFUSED"},
+                           {"reason", gl.failure},
+                           {"platform", platform},
+                           {"glVersion", gl.version},
+                           {"glFramebuffers", gl.framebuffers},
+                           {"required", "OpenGL 2.1+ with framebuffer objects"}});
+        *error = QStringLiteral("render-context prerequisite missing: %1").arg(gl.failure);
         return 77;
     }
     if (!waitForVideo(surface, 20000)) {
