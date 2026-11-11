@@ -712,8 +712,19 @@ void TestPublicApiUi::titleMetadataPreservesUnknownCountsBadgesAndFutureAiring()
   QVERIFY2(airing.contains(QStringLiteral("3")),
            qPrintable(QStringLiteral("the upcoming episode number is not on the label: %1").arg(airing)));
 
-  QTRY_VERIFY_WITH_TIMEOUT(
-      !page.findChildren<QPushButton*>(QStringLiteral("episodeButton")).isEmpty(), 20000);
+  // Pills are created hidden and shown by the next event-loop pass, so a
+  // wait for their mere existence can snapshot them before Qt shows them.
+  // Wait until one is actually visible instead.
+  const auto anyPillVisible = [&page] {
+    for (const QPushButton* pill :
+         page.findChildren<QPushButton*>(QStringLiteral("episodeButton"))) {
+      if (pill->isVisible()) {
+        return true;
+      }
+    }
+    return false;
+  };
+  QTRY_VERIFY_WITH_TIMEOUT(anyPillVisible(), 20000);
   const auto buttons = page.findChildren<QPushButton*>(QStringLiteral("episodeButton"));
   bool sawFillerClassification = false;
   bool sawVisibleFillerIndicator = false;
@@ -804,8 +815,19 @@ void TestPublicApiUi::aWatchedFractionalEpisodeKeepsItsClassificationBadge() {
   page.resize(1120, 800);
   page.show();
 
-  QTRY_VERIFY_WITH_TIMEOUT(
-      !page.findChildren<QPushButton*>(QStringLiteral("episodeButton")).isEmpty(), 20000);
+  // Pills are created hidden and shown by the next event-loop pass, so a
+  // wait for their mere existence can snapshot them before Qt shows them.
+  // Wait until one is actually visible instead.
+  const auto anyPillVisible = [&page] {
+    for (const QPushButton* pill :
+         page.findChildren<QPushButton*>(QStringLiteral("episodeButton"))) {
+      if (pill->isVisible()) {
+        return true;
+      }
+    }
+    return false;
+  };
+  QTRY_VERIFY_WITH_TIMEOUT(anyPillVisible(), 20000);
   const auto buttons = page.findChildren<QPushButton*>(QStringLiteral("episodeButton"));
   QPushButton* fractionalFiller = nullptr;
   for (QPushButton* pill : buttons) {
