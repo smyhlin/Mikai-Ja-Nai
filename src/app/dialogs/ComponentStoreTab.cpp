@@ -543,16 +543,17 @@ void ComponentStoreTab::buildUi() {
                                      static_cast<int>(native::Backend::TensorRTRTX));
 #endif
     const auto& gpu = native::observeComputeCapability();
-    // A restored selection is shown, but on an RTX GPU an uninstalled classic
-    // TensorRT selection is automatically promoted to the hardware-matched RTX runtime.
+    // A restored selection is shown exactly as stored: an explicit choice is
+    // never overridden or re-persisted here. Only when nothing is stored does
+    // an RTX GPU promote the display to the hardware-matched RTX runtime,
+    // and that promotion stays display-only — the stored key is written only
+    // by the combo's own change handler, when the user actually picks a backend.
     const auto restoredBackend = [&]() -> std::optional<native::Backend> {
         QSettings settings;
         auto b = native::backendFromName(
             settings.value(QString::fromUtf8(kAnimeJanaiBackend)).toString());
-        if (native::isNvidiaRtx(gpu) && (!b.has_value() || (*b == native::Backend::TensorRT && !animeJanaiTensorRtInstalled_))) {
+        if (native::isNvidiaRtx(gpu) && !b.has_value()) {
             b = native::Backend::TensorRTRTX;
-            settings.setValue(QString::fromUtf8(kAnimeJanaiBackend),
-                              mplayer::native::stableName(native::Backend::TensorRTRTX));
         }
         return b;
     }();
