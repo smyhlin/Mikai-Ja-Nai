@@ -4,6 +4,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <mutex>
+
 namespace mikai::app {
 
 inline constexpr char kWatchHistoryKey[] = "title/watchHistory";
@@ -54,9 +56,21 @@ public:
 private:
     void load();
     void save();
+    // Lock-held helpers: the caller holds titlesMutex_ across the whole
+    // load()+mutate()+save() sequence, so two writers cannot interleave and
+    // the second save() cannot silently overwrite the first's write.
+    void loadLocked();
+    void saveLocked();
+    // Returns true when the watched set actually changed (so the caller knows
+    // whether a save is due). Assumes titlesMutex_ is held.
+    bool setWatchedLocked(const QString& ref, const QString& episode, bool watched);
 
     QString key_;
     QMap<QString, TitleWatchProgress> titles_;
+    // Guards titles_. One lock, held across load+mutate+save; the
+    // HistoryWriter queue lock (WatchHistory.cpp) is a separate lock for the
+    // write queue only and is left alone.
+    mutable std::mutex titlesMutex_;
 };
 
 }  // namespace mikai::app

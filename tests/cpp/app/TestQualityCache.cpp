@@ -36,6 +36,16 @@ QString embedFor(int index) {
   return QStringLiteral("https://ashdi.vip/vod/%1").arg(index);
 }
 
+// qInstallMessageHandler takes a plain function pointer, so a capturing
+// lambda cannot collect warnings; a file-scope sink pointer can.
+QStringList* g_capturedQualityWarnings = nullptr;
+
+void captureQualityWarnings(QtMsgType, const QMessageLogContext&, const QString& message) {
+  if (g_capturedQualityWarnings != nullptr) {
+    g_capturedQualityWarnings->append(message);
+  }
+}
+
 }  // namespace
 
 void TestQualityCache::init() {
@@ -330,4 +340,95 @@ void TestQualityCache::theTtlIsThirtyMinutes() {
 
 void TestQualityCache::theEntryCapIsTwoHundredAndForty() {
   QCOMPARE(kQualityCacheMaxEntries, 240);
+}
+
+void TestQualityCache::capsThreeHundredEntriesAtTwoHundredAndForty() {
+  QualityCache cache(QString::fromLatin1(kTestSettingsKey));
+  cache.load();
+  for (int i = 0; i < 300; ++i) {
+    cache.remember(embedFor(i), qualities(720, urlFor(i)), stamp(i));
+  }
+  QCOMPARE(cache.size(), kQualityCacheMaxEntries);
+  // The sixty oldest went; the newest survived. Asserted by size and by
+  // which entries remain, not by timing.
+  for (int i = 0; i < 60; ++i) {
+    QVERIFY(cache.qualities(embedFor(i)).isEmpty());
+  }
+  QCOMPARE(cache.qualities(embedFor(60)).value(720), urlFor(60));
+  QCOMPARE(cache.qualities(embedFor(299)).value(720), urlFor(299));
+}
+
+void TestQualityCache::aCorruptBlobWarnsInsteadOfSilentlyDropping() {
+  {
+    QSettings settings;
+    settings.setValue(QString::fromLatin1(kTestSettingsKey), QStringLiteral("{not json at all"));
+    settings.sync();
+  }
+  QStringList warnings;
+  g_capturedQualityWarnings = &warnings;
+  const QtMessageHandler previous = qInstallMessageHandler(&captureQualityWarnings);
+  QualityCache cache(QString::fromLatin1(kTestSettingsKey));
+  cache.load();
+  qInstallMessageHandler(previous);
+  g_capturedQualityWarnings = nullptr;
+
+  // load() returns without crashing and leaves an empty cache.
+  QCOMPARE(cache.size(), 0);
+  QVERIFY(cache.qualities(embedFor(0)).isEmpty());
+  bool warned = false;
+  for (const QString& warning : warnings) {
+    if (warning.contains(QStringLiteral("quality cache"))) {
+      warned = true;
+    }
+  }
+  QVERIFY2(warned, "expected a qWarning naming the quality cache on a corrupt blob");
+}
+
+void TestQualityCache::fetchedAtRoundTripsToTheMillisecond() {
+  const QString embed = QStringLiteral("https://ashdi.vip/vod/268104");
+  // A stamp with a non-zero millisecond component: the old double-seconds
+  // form could not have carried it exactly.
+  const qint64 stampMs = (QDateTime::currentMSecsSinceEpoch() / 1000) * 1000 + 456;
+  {
+    QualityCache cache(QString::fromLatin1(kTestSettingsKey));
+    cache.load();
+    cache.remember(embed, qualities(720, urlFor(720)), stampMs);
+    cache.flushNow();
+  }
+  // The persisted form itself must be integer milliseconds, not seconds.
+  {
+    QSettings settings;
+    const QString raw = settings.value(QString::fromLatin1(kTestSettingsKey)).toString();
+    const QJsonObject root = QJsonDocument::fromJson(raw.toUtf8()).object();
+    const QJsonObject record =
+        root.value(QStringLiteral("entries")).toObject().value(embed).toObject();
+    const double atValue = record.value(QStringLiteral("at")).toDouble(-1.0);
+    QVERIFY2(atValue >= 1e12, "expected fetchedAt persisted as milliseconds, not seconds");
+    QCOMPARE(static_cast<qint64>(atValue), stampMs);
+  }
+  QualityCache reloaded(QString::fromLatin1(kTestSettingsKey));
+  reloaded.load();
+  QCOMPARE(reloaded.qualities(embed).value(720), urlFor(720));
+  QCOMPARE(reloaded.size(), 1);
+}
+
+void TestQualityCache::anOldDoubleSecondsBlobStillLoads() {
+  // One-release compat: an "at" below 1e12 is the old double-seconds form.
+  const QString embed = QStringLiteral("https://ashdi.vip/vod/268104");
+  const qint64 stampMs = (QDateTime::currentMSecsSinceEpoch() / 1000) * 1000 + 123;
+  const QJsonObject record{
+      {QStringLiteral("at"), stampMs / 1000.0},
+      {QStringLiteral("heights"), QJsonObject{{QStringLiteral("720"), urlFor(720)}}}};
+  const QJsonObject root{
+      {QStringLiteral("entries"), QJsonObject{{embed, record}}}};
+  {
+    QSettings settings;
+    settings.setValue(QString::fromLatin1(kTestSettingsKey),
+                      QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact)));
+    settings.sync();
+  }
+  QualityCache cache(QString::fromLatin1(kTestSettingsKey));
+  cache.load();
+  QCOMPARE(cache.qualities(embed).value(720), urlFor(720));
+  QCOMPARE(cache.size(), 1);
 }

@@ -35,4 +35,10 @@ class TestQualityCache : public QObject {
 
   void theTtlIsThirtyMinutes();
   void theEntryCapIsTwoHundredAndForty();
+
+  // P0-06 §5 checks.
+  void capsThreeHundredEntriesAtTwoHundredAndForty();
+  void aCorruptBlobWarnsInsteadOfSilentlyDropping();
+  void fetchedAtRoundTripsToTheMillisecond();
+  void anOldDoubleSecondsBlobStillLoads();
 };
