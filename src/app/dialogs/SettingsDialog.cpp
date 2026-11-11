@@ -3,8 +3,10 @@
 
 #include "I18n.hpp"
 #include "dialogs/AnimeJanaiManagerPanel.hpp"
+#include "dialogs/UpscalersPanel.hpp"
 #include "dialogs/settings/SettingsHelpers.hpp"
 #include "dialogs/settings/SettingsUi.hpp"
+#include "gui/Win32Support.hpp"
 #include "state/Feeds.hpp"
 #include "theme/Colors.hpp"
 #include "theme/Theme.hpp"
@@ -590,8 +592,18 @@ void SettingsDialog::save() {
     mplayer::shell::setCornerRadius(theme::radiusSmall(appearanceDraft_));
     appearanceCommitted_ = true;
     QSettings settings;
-    settings.setValue(QString::fromUtf8(kUiLanguageSettingKey), chosenLanguage);
-    settings.setValue(QString::fromUtf8(kOpenSubtitlesApiKey), openSubtitlesKey_->text().trimmed());
+    settings.setValue(QString::fromLatin1(kUiLanguageSettingKey), chosenLanguage);
+    // P0-03: the OpenSubtitles key no longer lives in plaintext QSettings. A
+    // failed save is logged and the other preferences still commit — the typed
+    // value stays in the field, so the user can retry.
+    {
+        QString keyReason;
+        if (!mikai::gui::saveOpenSubtitlesApiKey(openSubtitlesKey_->text().trimmed(),
+                                                 &keyReason)) {
+            qWarning().noquote() << "mikai: could not save the OpenSubtitles API key:"
+                                 << keyReason;
+        }
+    }
     settings.setValue(feeds::settingsKey(), feeds::serialize(chosen));
     // T-101/T-104: the HDR tone-mapping policy and the native-on-HDR override
     // commit with the rest: the statics are the live truth every engine reads
@@ -603,6 +615,10 @@ void SettingsDialog::save() {
     settings.setValue(
         QString::fromLatin1(mplayer::VideoSurface::kAnimeJanaiHdrOverrideSettingKey),
         nativeHdrOverride_->isChecked());
+    // P0-08: the one auto-advance bool, default ON, in the existing playback
+    // settings - no new settings page.
+    settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kAutoAdvanceSettingKey),
+                      autoAdvance_->isChecked());
     using HdrPolicy = mplayer::VideoSurface::HdrToneMappingPolicy;
     switch (committedHdrPolicy) {
         case 1: mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Stable); break;
@@ -652,6 +668,51 @@ void SettingsDialog::save() {
     if (saveFeedbackTimer_ != nullptr) {
         saveFeedbackTimer_->start();
     }
+}
+
+QWidget* SettingsDialog::buildUpscalersTab() {
+    auto* panel = new UpscalersPanel(this);
+    panel->setRunner(&runner_);
+    panel->setClient(&client_);
+    return panel;
+}
+
+QWidget* SettingsDialog::buildComponentsTab() {
+    auto* scroll = new QScrollArea(this);
+    scroll->setObjectName(QStringLiteral("componentsScroll"));
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+
+    auto* page = new QWidget(scroll);
+    page->setObjectName(QStringLiteral("componentsPage"));
+    auto* root = new QVBoxLayout(page);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
+
+    ComponentStoreTab* tab = nullptr;
+    const bool adopted = adoptedComponents_ != nullptr;
+    if (adopted) {
+        adoptedComponentsTab_ = true;
+        adoptedComponentsHome_ = adoptedComponents_->parentWidget();
+        tab = adoptedComponents_;
+        tab->setParent(page);
+        tab->show();
+    } else {
+        tab = new ComponentStoreTab(page);
+        tab->setClient(&client_);
+    }
+    componentStoreTab_ = tab;
+    if (componentProvisioner_ != nullptr) tab->setComponentProvisioner(componentProvisioner_);
+    // The runner is bound last: binding it is what starts the tab's first
+    // inventory scan, and any later setter bumps the run generation, which
+    // cancels that scan without a replacement.
+    if (!adopted) tab->setRunner(&runner_);
+    root->addWidget(tab);
+
+    scroll->setWidget(page);
+    componentsScroll_ = scroll;
+    return scroll;
 }
 
 }  // namespace mikai::app

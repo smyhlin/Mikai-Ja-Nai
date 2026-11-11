@@ -6,6 +6,7 @@
 #include "I18n.hpp"
 #include "dialogs/settings/SettingsHelpers.hpp"
 #include "dialogs/settings/SettingsUi.hpp"
+#include "gui/Win32Support.hpp"
 #include "state/Feeds.hpp"
 #include "support/SystemContextMenu.hpp"
 #include "support/SystemStartup.hpp"
@@ -202,7 +203,14 @@ QWidget* SettingsDialog::buildGeneralTab() {
     stylePageHeading(openSubtitlesTitle_);
     subtitlesLayout->addWidget(openSubtitlesTitle_);
     openSubtitlesHint_ = new QLabel(
-        tr("Enter your OpenSubtitles API key to search for subtitles in the player."),
+#ifdef Q_OS_WIN
+        tr("Enter your OpenSubtitles API key to search for subtitles in the player. "
+           "The key is protected with Windows DPAPI and stored in the app data folder."),
+#else
+        tr("Enter your OpenSubtitles API key to search for subtitles in the player. "
+           "The key is stored in a file only your user account can read, not in a "
+           "keyring."),
+#endif
         subtitlesCard);
     styleMutedCaption(openSubtitlesHint_);
     subtitlesLayout->addWidget(openSubtitlesHint_);
@@ -218,8 +226,7 @@ QWidget* SettingsDialog::buildGeneralTab() {
     openSubtitlesKey_->setEchoMode(QLineEdit::Password);
     openSubtitlesKey_->setClearButtonEnabled(true);
     openSubtitlesKey_->setMinimumHeight(theme::kSettingsControlSize);
-    openSubtitlesKey_->setText(
-        QSettings().value(QString::fromUtf8(kOpenSubtitlesApiKey)).toString());
+    openSubtitlesKey_->setText(mikai::gui::loadOpenSubtitlesApiKey());
     subtitlesLayout->addWidget(openSubtitlesKey_);
     root->addWidget(subtitlesCard);
 
@@ -347,6 +354,15 @@ QWidget* SettingsDialog::buildGeneralTab() {
         hdrCard);
     styleMutedCaption(nativeHdrOverrideHint_);
     hdrLayout->addWidget(nativeHdrOverrideHint_);
+
+    // P0-08: the one auto-advance setting, default ON, in the existing
+    // playback card - no new settings page.
+    autoAdvance_ = new QCheckBox(tr("Automatically play the next episode"), hdrCard);
+    autoAdvance_->setObjectName(QStringLiteral("autoAdvanceCheck"));
+    polishInteractiveControl(autoAdvance_, theme::kSettingsControlSize);
+    autoAdvance_->setChecked(policySettings.value(
+        QString::fromLatin1(mplayer::VideoSurface::kAutoAdvanceSettingKey), true).toBool());
+    hdrLayout->addWidget(autoAdvance_);
 
     root->addWidget(hdrCard);
 
@@ -779,6 +795,7 @@ void SettingsDialog::retranslateGeneralTab() {
         tr("Native enhancement stages require 8-bit NV12 and are normally skipped for HDR "
            "sources. Enabling this allows that processing on HDR video; it does not convert "
            "the source to SDR, and may reduce HDR image quality."));
+    autoAdvance_->setText(tr("Automatically play the next episode"));
 
     scalingTitle_->setText(tr("Video scaling"));
     scalingHint_->setText(

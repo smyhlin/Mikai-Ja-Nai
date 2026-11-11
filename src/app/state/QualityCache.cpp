@@ -28,7 +28,10 @@ QualityCache::QualityCache(const QString& settingsKey, QObject* parent)
 
 QualityCache::~QualityCache() = default;
 
-void QualityCache::setSettingsKey(const QString& key) { key_ = key; }
+void QualityCache::setSettingsKey(const QString& key) {
+    const QMutexLocker lock(&mutex_);
+    key_ = key;
+}
 
 void QualityCache::prune() {
     const qint64 cutoff = QDateTime::currentMSecsSinceEpoch() - kQualityCacheTtlMs;
@@ -42,7 +45,10 @@ void QualityCache::prune() {
 }
 
 void QualityCache::load() {
+    const QMutexLocker lock(&mutex_);
     if (dirty_) {
+        qWarning() << "mikai: skipping quality cache load with unsaved changes for"
+                   << QSettings().fileName();
         return;
     }
     entries_.clear();
@@ -55,9 +61,12 @@ void QualityCache::load() {
     QJsonParseError error{};
     const QJsonDocument document = QJsonDocument::fromJson(raw.toUtf8(), &error);
     if (error.error != QJsonParseError::NoError || !document.isObject()) {
-        qWarning() << "mikai: QualityCache::load: corrupt stored quality JSON, discarding;"
-                   << "key:" << key_ << "bytes:" << raw.size()
-                   << "parse error:" << error.errorString();
+        qWarning().noquote() << "mikai: could not read quality cache" << settings.fileName()
+                             << QStringLiteral(":")
+                             << (error.error != QJsonParseError::NoError
+                                     ? error.errorString()
+                                     : QStringLiteral("expected an object"))
+                             << "key:" << key_ << "bytes:" << raw.size();
         return;
     }
     const QJsonObject entries = document.object().value(QStringLiteral("entries")).toObject();
@@ -65,8 +74,13 @@ void QualityCache::load() {
     bool needsWrite = false;
     for (auto it = entries.constBegin(); it != entries.constEnd(); ++it) {
         const QJsonObject record = it.value().toObject();
-        const qint64 fetchedAt =
-            static_cast<qint64>(record.value(QStringLiteral("at")).toDouble() * 1000.0);
+        // fetchedAt is persisted as qint64 milliseconds. One-release compat:
+        // a value below 1e12 is the old double-seconds form, so multiply by
+        // 1000; millisecond stamps are ~1.8e12 and cannot be confused with it.
+        const double atValue = record.value(QStringLiteral("at")).toDouble(-1.0);
+        const qint64 fetchedAt = atValue < 1e12
+                                     ? static_cast<qint64>(atValue * 1000.0)
+                                     : static_cast<qint64>(atValue);
         if (fetchedAt < cutoff) {
             needsWrite = true;
             continue;
@@ -90,21 +104,23 @@ void QualityCache::load() {
 }
 
 bool QualityCache::trimToLimit() {
-    bool trimmed = false;
-    while (entries_.size() > kQualityCacheMaxEntries) {
-        auto oldest = entries_.begin();
-        for (auto it = entries_.begin(); it != entries_.end(); ++it) {
-            if (it->fetchedAt < oldest->fetchedAt) {
-                oldest = it;
-            }
-        }
-        entries_.erase(oldest);
-        trimmed = true;
+    // One sort by fetchedAt, then drop the oldest entries in a single pass.
+    const qsizetype excess = static_cast<qsizetype>(entries_.size()) - kQualityCacheMaxEntries;
+    if (excess <= 0) {
+        return false;
     }
-    return trimmed;
+    auto keys = entries_.keys();
+    std::sort(keys.begin(), keys.end(), [this](const QString& a, const QString& b) {
+        return entries_.value(a).fetchedAt < entries_.value(b).fetchedAt;
+    });
+    for (qsizetype i = 0; i < excess; ++i) {
+        entries_.remove(keys.at(i));
+    }
+    return true;
 }
 
 void QualityCache::flushNow() {
+    const QMutexLocker lock(&mutex_);
     if (!dirty_) {
         // Avoid rewriting unchanged settings during teardown.
         return;
@@ -117,7 +133,7 @@ void QualityCache::flushNow() {
             heights.insert(QString::number(h.key()), h.value());
         }
         QJsonObject record;
-        record.insert(QStringLiteral("at"), it->fetchedAt / 1000.0);
+        record.insert(QStringLiteral("at"), QJsonValue(it->fetchedAt));
         record.insert(QStringLiteral("heights"), heights);
         entries.insert(it.key(), record);
     }
@@ -130,6 +146,7 @@ void QualityCache::flushNow() {
 }
 
 void QualityCache::clear() {
+    const QMutexLocker lock(&mutex_);
     entries_.clear();
     noSource_.clear();
     QSettings settings;
@@ -139,6 +156,7 @@ void QualityCache::clear() {
 }
 
 QMap<int, QString> QualityCache::qualities(const QString& embed) const {
+    const QMutexLocker lock(&mutex_);
     const auto it = entries_.constFind(embed);
     if (it == entries_.constEnd()) {
         return {};
@@ -154,6 +172,7 @@ void QualityCache::remember(const QString& embed, const QMap<int, QString>& map,
     if (embed.isEmpty() || map.isEmpty()) {
         return;
     }
+    const QMutexLocker lock(&mutex_);
     const qint64 stamp =
         nowMsecsSinceEpoch != 0 ? nowMsecsSinceEpoch : QDateTime::currentMSecsSinceEpoch();
     entries_.insert(embed, Entry{stamp, map});
@@ -162,6 +181,7 @@ void QualityCache::remember(const QString& embed, const QMap<int, QString>& map,
 }
 
 void QualityCache::forget(const QString& embed) {
+    const QMutexLocker lock(&mutex_);
     entries_.remove(embed);
     // The no-source mark goes too: the provider may well serve the episode now,
     // and a page-lifetime veto is not the place to keep a recovered one.
@@ -169,10 +189,19 @@ void QualityCache::forget(const QString& embed) {
     dirty_ = true;
 }
 
-bool QualityCache::isNoSource(const QString& embed) const { return noSource_.contains(embed); }
+bool QualityCache::isNoSource(const QString& embed) const {
+    const QMutexLocker lock(&mutex_);
+    return noSource_.contains(embed);
+}
 
-void QualityCache::markNoSource(const QString& embed) { noSource_.insert(embed); }
+void QualityCache::markNoSource(const QString& embed) {
+    const QMutexLocker lock(&mutex_);
+    noSource_.insert(embed);
+}
 
-int QualityCache::size() const { return static_cast<int>(entries_.size()); }
+int QualityCache::size() const {
+    const QMutexLocker lock(&mutex_);
+    return static_cast<int>(entries_.size());
+}
 
 }  // namespace mikai::app
