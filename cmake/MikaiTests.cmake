@@ -472,11 +472,26 @@ if(MIKAI_BUILD_PROBES)
   # added to one registry and not the other either never runs under ctest or
   # fails at launch as unknown; this script parses main.cpp and asserts the
   # two sets agree, with the names attached.
+  # The list travels comma-joined: a ;-list cannot reach the script as one
+  # -D value, because add_test splits "${MIKAI_TEST_SUITES}" into one
+  # argument per suite at generate time (the script then saw only the first
+  # suite, with a stray quote, and reported every suite missing). The
+  # script splits the commas back into a list on arrival. The value is
+  # passed BARE (no quotes): quotes inside an add_test argument are literal
+  # characters, so "-DEXPECTED_SUITES=\"...\"" would hand the script a list
+  # whose first and last names carry a stray double-quote.
+  string(REPLACE ";" "," _mikai_expected_suites_csv "${MIKAI_TEST_SUITES}")
+  if(WIN32)
+    set(_mikai_with_win32 ON)
+  else()
+    set(_mikai_with_win32 OFF)
+  endif()
   add_test(NAME SuiteRegistryContracts
     COMMAND ${CMAKE_COMMAND}
       -DMAIN_CPP=${CMAKE_SOURCE_DIR}/tests/cpp/main.cpp
-      -DEXPECTED_SUITES="${MIKAI_TEST_SUITES}"
+      -DEXPECTED_SUITES=${_mikai_expected_suites_csv}
       -DWITH_MODEL_INSPECTION=${MIKAI_WITH_MODEL_INSPECTION}
+      -DWITH_WIN32=${_mikai_with_win32}
       -P ${CMAKE_SOURCE_DIR}/tests/cmake/SuiteRegistryContracts.cmake
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )

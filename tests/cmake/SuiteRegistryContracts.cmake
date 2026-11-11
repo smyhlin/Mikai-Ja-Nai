@@ -13,14 +13,21 @@
 #
 # Run (as ctest does):
 #   cmake -DMAIN_CPP=<abs path to tests/cpp/main.cpp>
-#         -DEXPECTED_SUITES="TestA;TestB;..."
+#         -DEXPECTED_SUITES="TestA,TestB,..."
 #         -DWITH_MODEL_INSPECTION=ON|OFF
+#         -DWITH_WIN32=ON|OFF
 #         -P tests/cmake/SuiteRegistryContracts.cmake
+# The expected list is comma-joined on the way in: a ;-list cannot survive
+# add_test as one -D value (CMake splits "${list}" into one argument per
+# item at generate time), so the caller joins with commas and this script
+# splits them back. Suite names never contain a comma.
 # Exit 0 = the registries agree; non-zero = a suite is missing from one side.
 
 if(NOT MAIN_CPP OR NOT DEFINED EXPECTED_SUITES)
   message(FATAL_ERROR "SuiteRegistryContracts: MAIN_CPP and EXPECTED_SUITES are required")
 endif()
+
+string(REPLACE "," ";" EXPECTED_SUITES "${EXPECTED_SUITES}")
 
 file(READ "${MAIN_CPP}" _main_text)
 
@@ -49,6 +56,14 @@ endforeach()
 # it only counts when the build has inspection enabled.
 if(NOT WITH_MODEL_INSPECTION)
   list(REMOVE_ITEM _parsed "TestNativeCatalog")
+endif()
+
+# TestWin32Support is inside `#ifdef Q_OS_WIN` in main.cpp and appended to
+# MIKAI_TEST_SUITES under `if(WIN32)`, so it only counts on Windows. The
+# parser above reads source text, not preprocessed code, so the name is
+# present in the text on every platform.
+if(NOT WITH_WIN32)
+  list(REMOVE_ITEM _parsed "TestWin32Support")
 endif()
 
 list(SORT _parsed)
