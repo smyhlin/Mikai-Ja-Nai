@@ -214,8 +214,25 @@ bool WindowRaisePolicy::eventFilter(QObject* watched, QEvent* event) {
             if (ownerHwnd != nullptr && IsWindow(ownerHwnd)) {
                 SetWindowLongPtrW(popupHwnd, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(ownerHwnd));
             }
+            const LONG_PTR bandBefore = GetWindowLongPtrW(popupHwnd, GWL_EXSTYLE);
             SetWindowPos(popupHwnd, HWND_TOPMOST, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            // Folded into the existing profile switch, and only there: a popup
+            // that still lands under its window is diagnosable from the log
+            // (band before/after, who the owner is) instead of from a guess.
+            if (mikai::gui::uiprofile::enabled()) {
+                mikai::gui::uiprofile::log(
+                    "popup.show",
+                    QStringLiteral("type=%1 hwnd=%2 owner=%3 ex_before=%4 ex_after=%5 "
+                                   "owner_ex=%6 owner_visible=%7")
+                        .arg(window->windowType())
+                        .arg(reinterpret_cast<quintptr>(popupHwnd), 0, 16)
+                        .arg(reinterpret_cast<quintptr>(ownerHwnd), 0, 16)
+                        .arg(bandBefore, 0, 16)
+                        .arg(GetWindowLongPtrW(popupHwnd, GWL_EXSTYLE), 0, 16)
+                        .arg(ownerHwnd ? GetWindowLongPtrW(ownerHwnd, GWL_EXSTYLE) : 0, 0, 16)
+                        .arg(ownerHwnd ? IsWindowVisible(ownerHwnd) : 0));
+            }
         }
         return false;
     }
