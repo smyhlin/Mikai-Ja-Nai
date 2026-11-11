@@ -325,11 +325,43 @@ void Camera::reset() {
 
 // ── P2-03 / X-D21: the one shared selector/choice helper set ────────────────
 
+// X-M23: minimum slot width a still-hidden selector badge is fitted against.
+// Wide enough for a typical "B · A (Fast)"-class label plus the "  ▾" suffix
+// at 9 pt bold, so a fit before the first layout keeps the full name; the real
+// slot governs once the row is laid out (Resize filter / placeBadges() /
+// showEvent re-fit).
+constexpr int kCompareSelectorMinSlotWidth = 240;
+
 void fitSelectorLabel(QToolButton* button, const QString& full) {
     if (button == nullptr) return;
     const QString suffix = QStringLiteral("  ▾");
     const int pad = kCompareSelectorInset * 2 + 24;
-    const int avail = button->width() - pad;
+    // X-M23: the button's own width is still Qt's default 100 px before the
+    // row is laid out, so eliding against it mangles the label
+    // ("B · A (Fast)" down to "B · A (…  ▾") and the layout never
+    // re-triggers a resize once shown if the allocated width happens to
+    // match. The row splits its width evenly over its selector buttons, so
+    // the slot is the row width over that count.
+    int slotWidth = button->width();
+    if (QWidget* row = button->parentWidget()) {
+        int buttons = 0;
+        for (QObject* child : row->children()) {
+            if (qobject_cast<QToolButton*>(child) != nullptr) {
+                ++buttons;
+            }
+        }
+        if (row->width() > 0 && buttons > 0) {
+            slotWidth = std::max(slotWidth, row->width() / buttons);
+        }
+    }
+    // Still unlaid-out (the badge is hidden, so neither width is real yet):
+    // do not elide against a guessed slot — keep the full label. The badge
+    // Resize filter, placeBadges()/placeSelector() on resize, and showEvent
+    // re-fit with the real slot once it exists.
+    if (!button->isVisible() && slotWidth < kCompareSelectorMinSlotWidth) {
+        slotWidth = kCompareSelectorMinSlotWidth;
+    }
+    const int avail = slotWidth - pad;
     QString text = full + suffix;
     if (avail > 24) {
         const QFontMetrics fm(button->font());
