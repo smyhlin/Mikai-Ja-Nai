@@ -360,6 +360,12 @@ signals:
   /// The owned model catalogue changed after a refresh.
   void catalogRefreshed();
 
+  /// X-H3: delivered on the GUI thread once a cache snapshot has been
+  /// rendered from cache_ (async completion or the no-runner fallback).
+  /// The §5 observable: a QSignalSpy on this signal proves the
+  /// enumeration arrived via the queued completion.
+  void cacheRefreshed();
+
   /// Delivered on the GUI thread once the submitted import settled - accepted,
   /// refused or cancelled. `ok` is the store's own `ModelImportOutcome::ok`.
   void importFinished(bool ok);
@@ -428,6 +434,10 @@ private:
   /// still paints itself in the language that is active when it arrives.
   void retranslateUi();
   void refreshModels();
+  /// X-H3: render-only. Renders the cache table from the last snapshot
+  /// delivered to cache_ (by refreshCacheAsync() or its no-runner
+  /// fallback); it never enumerates or hashes, so opening the panel
+  /// cannot stall the GUI thread re-proving whole engines.
   void refreshCache();
   /// X-H3: enumerates the proven cache off the GUI thread (readArtifact
   /// re-hashes whole engines) and delivers the snapshot through a queued
