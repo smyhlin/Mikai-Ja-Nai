@@ -24,6 +24,7 @@
 
 #include <functional>
 #include <memory>
+#include <vector>
 
 class QBoxLayout;
 class QButtonGroup;
@@ -626,7 +627,7 @@ protected:
     /// host bridge. Nothing outside this vector owns a session; the dialog is
     /// Qt-owned (WA_DeleteOnClose) and only ever borrowed through QPointer or
     /// the session's raw dialog pointer while the session is registered.
-    QVector<std::unique_ptr<PlayerSession>> sessions_;
+    std::vector<std::unique_ptr<PlayerSession>> sessions_;
     /// Next stable session id; never reused, so a disposed id can never name
     /// a replacement session.
     quint64 nextSessionId_ = 1;

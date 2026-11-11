@@ -147,11 +147,11 @@ private:
 TitlePage::PlayerSession::~PlayerSession() = default;
 
 TitlePage::PlayerSession* TitlePage::sessionById(quint64 id) {
-    const auto it = std::find_if(sessions_.begin(), sessions_.end(),
+    const auto it = std::find_if(sessions_.cbegin(), sessions_.cend(),
                                  [id](const std::unique_ptr<PlayerSession>& held) {
                                      return held != nullptr && held->id == id;
                                  });
-    return it == sessions_.end() ? nullptr : it->get();
+    return it == sessions_.cend() ? nullptr : it->get();
 }
 
 bool TitlePage::isLiveSession(PlayerSession* session) {
@@ -175,7 +175,7 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
     int currentIndex = 0;
     session->playlist = tabPlaylist(entry->stateIndex, entry->number, &currentIndex);
     const quint64 sessionId = session->id;
-    sessions_.append(std::move(owned));
+    sessions_.push_back(std::move(owned));
 
     session->dialog = new mplayer::shell::PlayerDialog(
         QStringLiteral("%1 · %2p").arg(entry->label).arg(height), qualities.value(height),
@@ -350,11 +350,11 @@ void TitlePage::disposeSession(quint64 sessionId, bool forced) {
     }
     // Erasing the owning pointer destroys the session and its host bridge;
     // nothing below may touch `session` again.
-    const auto it = std::find_if(sessions_.begin(), sessions_.end(),
+    const auto it = std::find_if(sessions_.cbegin(), sessions_.cend(),
                                  [session](const std::unique_ptr<PlayerSession>& held) {
                                      return held.get() == session;
                                  });
-    if (it != sessions_.end()) sessions_.erase(it);
+    if (it != sessions_.cend()) sessions_.erase(it);
 }
 
 void TitlePage::requestRuntime(PlayerSession* session) {
