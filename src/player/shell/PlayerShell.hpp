@@ -132,6 +132,10 @@ public:
     /// Shows the centered comparison-loading indicator without changing the
     /// player's playback or HUD state.
     void setCompareLoading(bool loading);
+    /// The first-frame wait for an opening source. It reuses the centre glyph's
+    /// spinner - chrome that this shell already paints over the picture - so the
+    /// wait is visible even when there is no frame to draw a card over.
+    void setOpeningLoading(bool loading);
     void setVolume(double volume, bool fromHost = false);
     void setMuted(bool muted);
     void setRate(double rate);

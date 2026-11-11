@@ -2654,6 +2654,10 @@ void PlayerDialog::showOpeningOverlay() {
     // ambiguity a dark window already had.
     const QString headline = tr("Opening stream…");
     const QString detail = runtimeVisibleDetail();
+    // Visible from the moment the window exists: the card below is drawn over
+    // the picture, and the glyph is what a viewer sees before there is a
+    // picture to draw it over.
+    if (shell_ != nullptr) shell_->setOpeningLoading(true);
     if (!openingOverlay_->isOpening() || openingOverlay_->headline() != headline) {
         openingOverlay_->showOpening(headline, detail.isEmpty() ? caption_ : detail);
     } else {
@@ -2673,6 +2677,7 @@ void PlayerDialog::syncOpeningOverlay() {
 }
 
 void PlayerDialog::hideOpeningOverlay() {
+    if (shell_ != nullptr) shell_->setOpeningLoading(false);
     if (openingOverlay_ != nullptr) openingOverlay_->hideOpening();
 }
 

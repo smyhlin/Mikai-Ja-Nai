@@ -1699,6 +1699,20 @@ void PlayerShell::setCompareLoading(bool loading) {
     updateCenterGlyph();
 }
 
+void PlayerShell::setOpeningLoading(bool loading) {
+    if (center_ == nullptr) return;
+    center_->setLoading(loading);
+    // A wait with no picture is exactly when the spinner has to be on screen:
+    // the kind would otherwise be cleared while the source has no frame yet.
+    if (loading) {
+        center_->setKind(CenterGlyph::Kind::None);
+        center_->show();
+    } else {
+        updateCenterGlyph();
+    }
+    if (surface_ != nullptr) surface_->update();
+}
+
 void PlayerShell::updateCenterGlyph() {
     if (center_ == nullptr) {
         return;

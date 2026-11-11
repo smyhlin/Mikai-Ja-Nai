@@ -45,6 +45,7 @@ Published changes are recorded with their downloads on the [GitHub releases page
 
 ### Interface
 
+- Show the player's centre spinner while a source opens, so the wait for the first frame is a visible state instead of a bare black window.
 - Split the Components action bar into a selection row and an action row so the page fits the minimum dialog width in both languages.
 - Promote the backend display for an RTX GPU only when nothing is stored; the stored explicit choice is never overwritten by the promotion.
 - Fit Compare selector badges against the laid-out slot instead of the pre-layout button width, which had elided `A (Fast)` to `B · A (…` before the canvas was shown.
