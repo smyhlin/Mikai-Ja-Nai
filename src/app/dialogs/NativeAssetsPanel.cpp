@@ -924,10 +924,7 @@ void NativeAssetsPanel::refreshModels() {
 }
 
 void NativeAssetsPanel::refreshCache() {
-    // X-H3: GUI thread only. The cache snapshot itself arrives via
-    // refreshCacheAsync(); this renders whatever snapshot is current plus
-    // the metadata-only staging listing (directory names, never engine
-    // bytes), which is the same split the inventory snapshot uses.
+    cache_ = enumerateNativeCache(artifacts_);
     staging_ = native::stagingDirectories(artifacts_);
 
     cacheTable_->setRowCount(cache_.size());

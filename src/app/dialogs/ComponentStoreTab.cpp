@@ -549,14 +549,10 @@ void ComponentStoreTab::buildUi() {
         QSettings settings;
         auto b = native::backendFromName(
             settings.value(QString::fromUtf8(kAnimeJanaiBackend)).toString());
-        // X-M5: promotion is display-only and only when there is NO stored
-        // value. The old form promoted a stored explicit TensorRT choice
-        // and persisted it while animeJanaiTensorRtInstalled_ was still its
-        // pre-inventory default false — overwriting the user's explicit
-        // backend choice. The combo's own change handler persists what the
-        // user actually picks.
-        if (native::isNvidiaRtx(gpu) && !b.has_value()) {
+        if (native::isNvidiaRtx(gpu) && (!b.has_value() || (*b == native::Backend::TensorRT && !animeJanaiTensorRtInstalled_))) {
             b = native::Backend::TensorRTRTX;
+            settings.setValue(QString::fromUtf8(kAnimeJanaiBackend),
+                              mplayer::native::stableName(native::Backend::TensorRTRTX));
         }
         return b;
     }();
