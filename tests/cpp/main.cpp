@@ -14,8 +14,12 @@
 #include "TestLayering.hpp"
 #include "TestWatchHistory.hpp"
 #include "TestWindowRaise.hpp"
+#ifdef Q_OS_WIN
+#include "TestWin32Support.hpp"
+#endif
 #include "TestLiveOracle.hpp"
 #include "TestSystemIntegration.hpp"
+#include "TestCrashLog.hpp"
 #include "TestModels.hpp"
 #include "TestUpdateFeed.hpp"
 #include "TestPublicApiUi.hpp"
@@ -122,7 +126,11 @@ constexpr const char* kSuites[] = {
     "TestQualityCache", "TestRateLimiter", "TestWatchHistory", "TestDownloads", "TestDiagnostics",
     "TestApiClient", "TestFeedRender", "TestChromeCache", "TestUpdateFeed", "TestPublicApiUi",
     "TestRunner",
-    "TestLayering", "TestWindowRaise", "TestSystemIntegration", "TestClipboard", "TestLiveOracle"};
+    "TestLayering", "TestWindowRaise", "TestSystemIntegration", "TestCrashLog", "TestClipboard", "TestLiveOracle",
+#ifdef Q_OS_WIN
+    "TestWin32Support",
+#endif
+};
 
 bool nativeFixtureRootIsSafe() {
   const QString path = QDir(QCoreApplication::applicationDirPath())
@@ -299,8 +307,12 @@ int main(int argc, char** argv) {
   TestRateLimiter rateLimiter;
   TestLayering layering;
   TestWindowRaise windowRaise;
+#ifdef Q_OS_WIN
+  TestWin32Support win32Support;
+#endif
   TestClipboard clipboard;
   TestSystemIntegration systemIntegration;
+  TestCrashLog crashLog;
   TestLiveOracle liveOracle;
 
   // A suite name on the command line runs only that suite; otherwise every
@@ -400,6 +412,11 @@ int main(int argc, char** argv) {
   run("TestClipExport", &clipExport, true);
   run("TestCompareLoading", &compareLoading, true);
   run("TestComparePipeline", &comparePipeline, true);
+  // TestCrashLog runs before the wrapper suites: its pre-install slots need
+  // a process in which no suite has installed the crash log yet
+  // (TestDiagnostics installs it), and the skip guards are the fallback if
+  // that ordering ever changes.
+  run("TestCrashLog", &crashLog, true);
   runWrapper("TestDownloads", runTestDownloads);
   runWrapper("TestDiagnostics", runTestDiagnostics);
   runWrapper("TestApiClient", runTestApiClient);
@@ -427,6 +444,9 @@ int main(int argc, char** argv) {
   run("TestLayering", &layering, true);
   run("TestSystemIntegration", &systemIntegration, true);
   run("TestWindowRaise", &windowRaise, true);
+#ifdef Q_OS_WIN
+  run("TestWin32Support", &win32Support, true);
+#endif
   run("TestClipboard", &clipboard, true);
   // Last, and off unless MIKAI_LIVE=1 with a key: it needs the network and the
   // quota, and a hermetic run must not be recorded as having exercised either.

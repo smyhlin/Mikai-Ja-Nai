@@ -270,6 +270,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/app/TestWatchHistory.cpp
     tests/cpp/app/TestSystemIntegration.hpp
     tests/cpp/app/TestSystemIntegration.cpp
+    tests/cpp/app/TestCrashLog.hpp
+    tests/cpp/app/TestCrashLog.cpp
     tests/cpp/app/TestWindowRaise.hpp
     tests/cpp/app/TestWindowRaise.cpp
   )
@@ -280,6 +282,15 @@ if(MIKAI_BUILD_PROBES)
     )
     target_link_libraries(mikai_tests PRIVATE mikai_model_inspection)
     target_compile_definitions(mikai_tests PRIVATE MIKAI_WITH_MODEL_INSPECTION=1)
+  endif()
+  # P2-11: Windows-only suite — Win32Support.hpp is empty outside Q_OS_WIN,
+  # so the files enter the build on Windows only (same shape as the
+  # model-inspection suite above).
+  if(WIN32)
+    target_sources(mikai_tests PRIVATE
+      tests/cpp/app/TestWin32Support.hpp
+      tests/cpp/app/TestWin32Support.cpp
+    )
   endif()
   set_target_properties(mikai_tests PROPERTIES AUTOMOC ON)
   target_include_directories(mikai_tests PRIVATE
@@ -404,6 +415,7 @@ if(MIKAI_BUILD_PROBES)
     TestLayering
     TestWindowRaise
     TestSystemIntegration
+    TestCrashLog
     TestClipboard
     TestLiveOracle
   )
@@ -411,6 +423,9 @@ if(MIKAI_BUILD_PROBES)
   # conditional native suite is appended rather than spliced into position.
   if(MIKAI_WITH_MODEL_INSPECTION)
     list(APPEND MIKAI_TEST_SUITES TestNativeCatalog)
+  endif()
+  if(WIN32)
+    list(APPEND MIKAI_TEST_SUITES TestWin32Support)
   endif()
   foreach(_mikai_suite IN LISTS MIKAI_TEST_SUITES)
     add_test(NAME mikai_tests_${_mikai_suite}
