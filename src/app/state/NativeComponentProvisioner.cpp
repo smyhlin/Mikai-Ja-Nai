@@ -54,10 +54,10 @@ QMutex& currentRunSlotMutex() {
 /// The declared files of one bundle directory: every file whose path starts
 /// with `<dirName>/`. One definition for the three call sites that used to
 /// repeat this scan (ensure() / needsDownload()).
-QStringList declaredFilesForDir(const Bundle& bundle, const QString& dirName) {
+QStringList declaredFilesForDir(const native::Bundle& bundle, const QString& dirName) {
     QStringList declared;
     const QString prefix = dirName + QLatin1Char('/');
-    for (const BundleFile& file : bundle.files) {
+    for (const native::BundleFile& file : bundle.files) {
         if (file.path.startsWith(prefix)) {
             declared.append(file.path);
         }
@@ -271,7 +271,7 @@ bool NativeComponentProvisioner::startProvisioning(const native::ComponentStore&
         const QMutexLocker lock(&currentRunSlotMutex());
         currentRunSlot() = this;
     }
-    const QString scratchRoot = nativeSubdirectory(QStringLiteral("scratch"));
+    const QString scratchRoot = native::nativeSubdirectory(QStringLiteral("scratch"));
     const std::shared_ptr<std::atomic<bool>> flag = cancelFlag_;
 
     // One GUI dispatch binder, built on the GUI thread before the worker starts.
