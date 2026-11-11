@@ -294,6 +294,11 @@ public:
     native::AnimeJanaiSourceContext animeJanaiSourceContext() const;
     native::AnimeJanaiPlan animeJanaiPlan() const { return animeJanaiPlan_; }
     QString animeJanaiStatus() const { return animeJanaiStatus_; }
+    /// Backend remarks that describe the plan rather than the current state
+    /// ("RTX builds the engine in-process, so --skipInference is not used").
+    /// They are detail, not status: the chip stays short and puts this in its
+    /// tooltip, so a remark that never changes cannot crowd the picture.
+    QString animeJanaiPlanNote() const;
     bool animeJanaiEngineBuildActive() const { return animeJanaiEngineBuildActive_; }
     QString animeJanaiEngineBuildDetail() const { return animeJanaiEngineBuildDetail_; }
     bool animeJanaiProcessingObserved() const;

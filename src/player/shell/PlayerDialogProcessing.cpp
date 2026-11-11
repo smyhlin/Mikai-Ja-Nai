@@ -342,7 +342,9 @@ void PlayerDialog::applyAnimeJanaiRequest(const QString& id) {
                     const QString status = !plan.available
                         ? PlayerDialog::tr("Unavailable · %1").arg(plan.reason)
                         : (owner != nullptr ? owner->animeJanaiStatus() : PlayerDialog::tr("Off"));
-                    guard->shell_->setAnimeJanaiSelection(plan.presetId, status);
+                    guard->shell_->setAnimeJanaiSelection(
+                        plan.presetId, status,
+                        owner != nullptr ? owner->animeJanaiPlanNote() : QString());
                     if (guard.isNull() || cancelled->load()) return;
                     if (plan.enabled && !plan.available) {
                         guard->showProcessingFailure(plan.reasonKey, plan.reason);
@@ -389,7 +391,9 @@ void PlayerDialog::onAnimeJanaiStatusChanged(const QString& status) {
     auto* owner = qobject_cast<VideoSurface*>(sender());
     if (closed_ || owner == nullptr || owner != playbackSurface()) return;
     syncAnimeJanaiEngineBuildState(owner);
-    shell_->setAnimeJanaiSelection(animeJanaiPresetId_, status);
+    shell_->setAnimeJanaiSelection(animeJanaiPresetId_, status,
+                                   owner != nullptr ? owner->animeJanaiPlanNote()
+                                                    : QString());
 }
 
 void PlayerDialog::onAnimeJanaiFailure(const QString& reason) {
@@ -1463,7 +1467,8 @@ void PlayerDialog::leavePip(bool closing) {
     // place the request only records the intent.
     moveEnginePreparationPause(closing || closed_ ? nullptr : surface_);
     if (!closing && !closed_) surface_->setPaused(returningPaused);
-    shell_->setAnimeJanaiSelection(animeJanaiPresetId_, surface_->animeJanaiStatus());
+    shell_->setAnimeJanaiSelection(animeJanaiPresetId_, surface_->animeJanaiStatus(),
+                                   surface_->animeJanaiPlanNote());
     // The owning core returns to the main player, so a capture asked of the
     // float can no longer describe what the viewer is watching.
     cancelPendingReferenceCapture(QStringLiteral("native.reference.coreChanged"),

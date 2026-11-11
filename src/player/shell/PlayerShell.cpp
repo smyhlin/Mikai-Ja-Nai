@@ -176,7 +176,8 @@ QString animeJanaiTitle(const QString& levelId) {
     return levelId.section(QLatin1Char(':'), -1).toUpper();
 }
 
-QVector<MenuEntry> animeJanaiEntries(const QString& levelId, const QString& currentId) {
+QVector<MenuEntry> animeJanaiEntries(const QString& levelId, const QString& currentId,
+                                     const QString& backendNote) {
     QVector<MenuEntry> entries;
     const QVector<native::AnimeJanaiPreset> presets = native::animeJanaiPresets();
     auto addSubmenu = [&entries](const QString& label, const QString& id) {
@@ -259,6 +260,9 @@ QVector<MenuEntry> animeJanaiEntries(const QString& levelId, const QString& curr
             } else if (row.backend == native::Backend::TensorRTRTX) {
                 entry.tooltip = QObject::tr(
                     "In-process TensorRT-RTX 1.7 engine builds; CUDA GPUs, Windows only.");
+                // The plan's own remark about this backend belongs on the row
+                // that names it, not in a line over the picture.
+                if (!backendNote.isEmpty()) entry.tooltip += QStringLiteral("\n\n") + backendNote;
             }
 #else
             if (row.backend == native::Backend::TensorRTRTX) {
@@ -305,7 +309,8 @@ bool sameEntries(const QVector<MenuEntry>& entries, const MenuPopup* panel) {
 }
 
 QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& currentId,
-                                      const native::menu::Inputs& native) {
+                                      const native::menu::Inputs& native,
+                                      const QString& backendNote) {
     QVector<MenuEntry> entries;
     if (levelId == QLatin1String(kInterpolationRoot)) {
         QVector<MenuEntry> entries;
@@ -332,7 +337,8 @@ QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& cur
             missing.disabled = true;
             entries.append(missing);
         }
-        entries += animeJanaiEntries(QString::fromLatin1(kAnimeJanaiRife), currentId);
+        entries += animeJanaiEntries(QString::fromLatin1(kAnimeJanaiRife), currentId,
+                                     QString());
         return entries;
     }
     const QVector<native::AnimeJanaiPreset> presets = native::animeJanaiPresets();
@@ -494,7 +500,7 @@ QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& cur
     if (levelId == QLatin1String(kAnimeJanaiRife) ||
         levelId == QLatin1String(kAnimeJanaiBackend) ||
         levelId.startsWith(QLatin1String(kAnimeJanaiRife) + QStringLiteral(":"))) {
-        return animeJanaiEntries(levelId, currentId);
+        return animeJanaiEntries(levelId, currentId, backendNote);
     }
     const native::RuntimeSelection& runtime = native::currentSelection();
     const bool privateNativeRuntime =
@@ -2106,12 +2112,14 @@ void PlayerShell::setQualityOptions(const QVector<SettingsFlyout::QualityOption>
     qualityOptions_ = options;
 }
 
-void PlayerShell::setAnimeJanaiSelection(const QString& id, const QString& status) {
+void PlayerShell::setAnimeJanaiSelection(const QString& id, const QString& status,
+                                         const QString& note) {
     const bool selectionChanged = animeJanaiPresetId_ != id;
     animeJanaiPresetId_ = id;
     // Retained as well as rendered: a language change re-derives this chip from
     // the same selection and status instead of asking the host for it again.
     animeJanaiStatus_ = status;
+    animeJanaiNote_ = note;
     updateAnimeJanaiChip();
     if (selectionChanged) {
         refreshEnhancementTree();
@@ -2123,6 +2131,13 @@ void PlayerShell::setAnimeJanaiSelection(const QString& id, const QString& statu
 /// selection and status. The status line is partly ours - "Preparing…" and the
 /// backend/model form - so it has to be rebuilt on a language change; the
 /// status text itself is the host's and is never invented here.
+QString PlayerShell::animeJanaiChipToolTip(const QString& detail) const {
+    QStringList parts;
+    if (!animeJanaiNote_.isEmpty()) parts << animeJanaiNote_;
+    if (!detail.isEmpty() && detail != animeJanaiNote_) parts << detail;
+    return parts.join(QStringLiteral("\n\n"));
+}
+
 void PlayerShell::updateAnimeJanaiChip() {
     const QString& id = animeJanaiPresetId_;
     const QString& status = animeJanaiStatus_;
@@ -2168,7 +2183,8 @@ void PlayerShell::updateAnimeJanaiChip() {
                 const QString missing = tr("Unavailable · %1").arg(id);
                 lblAnimeJanai_->setText(
                     QStringLiteral("│ %1 · %2").arg(backendShort, missing));
-                lblAnimeJanai_->setToolTip(status.isEmpty() ? missing : status);
+                lblAnimeJanai_->setToolTip(
+                    animeJanaiChipToolTip(status.isEmpty() ? missing : status));
                 lblAnimeJanai_->setAccessibleName(missing);
                 lblAnimeJanai_->show();
                 footerLeft_->adjustSize();
@@ -2212,7 +2228,7 @@ void PlayerShell::updateAnimeJanaiChip() {
                 alreadyPrefixed
                     ? QStringLiteral("│ %1").arg(visibleStatus)
                     : QStringLiteral("│ %1 · %2").arg(backendShort, visibleStatus));
-            lblAnimeJanai_->setToolTip(status);
+            lblAnimeJanai_->setToolTip(animeJanaiChipToolTip(status));
             lblAnimeJanai_->setAccessibleName(visibleStatus);
             lblAnimeJanai_->show();
         }
@@ -2318,7 +2334,7 @@ void PlayerShell::refreshEnhancementTree() {
             entryLevel,
             entryLevel == QLatin1String(kAnimeJanaiBackend)
                 ? animeJanaiBackend_ : (usesAnimeJanaiSelection ? animeJanaiPresetId_ : currentId),
-            nativeInputs_);
+            nativeInputs_, animeJanaiNote_);
         if (!sameEntries(entries, panel)) {
             panel->setEntries(entries);
         }
@@ -2442,7 +2458,7 @@ void PlayerShell::showEnhancementLevel(int depth, const QString& levelId, QWidge
                      ? animeJanaiBackend_
                      : (usesAnimeJanaiSelection ? animeJanaiPresetId_
                                                 : anime4k::modeId(anime4kMode_)),
-        nativeInputs_));
+        nativeInputs_, animeJanaiNote_));
     enhancementLevels_[depth] = levelId;
     panel->setProperty("enhancementLevel", levelId);
     watchEnhancementRows(panel);
@@ -2700,8 +2716,8 @@ void PlayerShell::openEnhancements() {
     collapseEnhancementTree(0);
     MenuPopup* root = enhancementPanels_.first();
     root->setTitle(tr("ENHANCEMENTS"));
-    root->setEntries(
-        enhancementEntries(QString(), anime4k::modeId(anime4kMode_), nativeInputs_));
+    root->setEntries(enhancementEntries(QString(), anime4k::modeId(anime4kMode_), nativeInputs_,
+                                        animeJanaiNote_));
     root->setProperty("enhancementLevel", QString());
     watchEnhancementRows(root);
     root->popupNear(btnEnhance_->mapToGlobal(QPoint(btnEnhance_->width(), 0)));

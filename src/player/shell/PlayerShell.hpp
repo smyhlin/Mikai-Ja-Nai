@@ -143,7 +143,10 @@ public:
     /// The heights the settings popover offers, in the host's own naming.
     void setQualityOptions(const QVector<SettingsFlyout::QualityOption>& options);
     void setAnime4KMode(anime4k::Mode mode);
-    void setAnimeJanaiSelection(const QString& id, const QString& status);
+    /// `note` is backend detail rather than state: it never widens the chip and
+    /// is read from the chip's own tooltip.
+    void setAnimeJanaiSelection(const QString& id, const QString& status,
+                                const QString& note = QString());
     void setAnimeJanaiBackend(const QString& backend);
 
     // ── native processing (the enhancement tree's native branch) ────
@@ -420,6 +423,9 @@ private:
     /// from setAnimeJanaiSelection() so a language change re-derives the chip
     /// without re-announcing a selection to the filter.
     void updateAnimeJanaiChip();
+    /// The chip's tooltip: the backend detail first, then the state line, so a
+    /// hover answers "why" before "what".
+    QString animeJanaiChipToolTip(const QString& detail) const;
     /// Re-derives the held-pause chip's words from the retained hold state, so a
     /// language change rewords it without the engine saying anything.
     void updatePauseHoldChip();
@@ -532,6 +538,9 @@ private:
     /// so the chip can be rebuilt in another language: its wording is partly
     /// ours ("Preparing…") and only the host can say what the filter is doing.
     QString animeJanaiStatus_;
+    /// Backend detail reported beside the status; it is the chip's tooltip, not
+    /// part of the chip, so it survives a language change without widening it.
+    QString animeJanaiNote_;
     /// The persisted Standard-AJI backend spelling the host selected:
     /// "tensorrt", "directml" or "tensorrt-rtx". The default stays classic
     /// TensorRT, as it was before RTX existed.

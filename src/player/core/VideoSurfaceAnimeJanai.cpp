@@ -633,19 +633,24 @@ void VideoSurface::publishPendingAnimeJanaiObservation(uint64_t epoch, quint64 g
     }
 }
 
+QString VideoSurface::animeJanaiPlanNote() const {
+    if (!animeJanaiPlan_.enabled || !animeJanaiPlan_.available || animeJanaiSourceGated_) {
+        return QString();
+    }
+    return animeJanaiPlan_.note;
+}
+
 void VideoSurface::setAnimeJanaiStatus(const QString& status) {
     if (animeJanaiObserved_ && animeJanaiObservedEpoch_ == (mpv_ ? mpv_->sourceEpoch() : 0) &&
         animeJanaiObservedGeneration_ == animeJanaiGeneration_ &&
         status != animeJanaiObservedStatus_) return;
-    QString display = status;
-    if (animeJanaiPlan_.enabled && animeJanaiPlan_.available &&
-        !animeJanaiSourceGated_ && !animeJanaiPlan_.note.isEmpty() &&
-        !status.startsWith(QStringLiteral("Processing failed"))) {
-        display += QStringLiteral(" · ") + animeJanaiPlan_.note;
-    }
-    if (animeJanaiStatus_ == display) return;
-    animeJanaiStatus_ = display;
-    emit animeJanaiStatusChanged(display);
+    // The plan's own remarks are not state: they describe the backend for as
+    // long as it is selected, so they travel beside the status (and land in the
+    // chip's tooltip) instead of being appended to a line that is read at a
+    // glance over the picture.
+    if (animeJanaiStatus_ == status) return;
+    animeJanaiStatus_ = status;
+    emit animeJanaiStatusChanged(status);
 }
 
 bool VideoSurface::enginePauseHeld() const {
