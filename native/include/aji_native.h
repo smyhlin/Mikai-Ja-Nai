@@ -99,7 +99,12 @@ typedef struct aji_native_snapshot_v2 {
 
 #ifdef __cplusplus
 /* X-M25: the v2 snapshot is a cross-binary ABI — a field added without a
-   version bump silently shifts every offset. Measured 3072 (Y-1, never 400). */
+   version bump silently shifts every offset. Measured 3072 (Y-1, never 400).
+   Per-field arithmetic (Z-10): 9 x uint32_t = 36, +4 pad to align the first
+   uint64_t, + 4 x uint64_t = 32, + 8 x uint32_t = 32, + 5 x char[128] = 640,
+   + 9 x 65 engine_sha256 = 585, + 9 x 65 model_sha256 = 585,
+   + 9 x 128 prepared_build_keys = 1152, +6 tail pad to the 8-byte struct
+   alignment: 36+4+32+32+640+585+585+1152+6 = 3072. */
 static_assert(sizeof(aji_native_snapshot_v2) == 3072,
               "aji_native_snapshot_v2 must stay 3072 bytes (ABI v2)");
 #endif
@@ -187,7 +192,10 @@ typedef struct aji_native_prepared_stage_v1 {
 } aji_native_prepared_stage_v1;
 
 #ifdef __cplusplus
-/* X-M25: same ABI pin as the snapshot above. Measured 1256 (Y-1). */
+/* X-M25: same ABI pin as the snapshot above. Measured 1256 (Y-1).
+   Per-field arithmetic (Z-10): 20 x uint32_t = 80, + double = 8 (already
+   8-aligned, no pad), + char fields 128+128+65+65+128+260+260+64+64 = 1162,
+   +6 tail pad to the 8-byte struct alignment: 80+8+1162+6 = 1256. */
 static_assert(sizeof(aji_native_prepared_stage_v1) == 1256,
               "aji_native_prepared_stage_v1 must stay 1256 bytes");
 #endif
