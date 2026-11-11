@@ -10,6 +10,8 @@
 
 namespace mikai::app {
 
+inline constexpr char kWatchHistoryKey[] = "title/watchHistory";
+
 struct TitleWatchProgress {
     QString current;
     QStringList watched;
