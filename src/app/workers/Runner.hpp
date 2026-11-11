@@ -46,7 +46,9 @@ namespace mikai::app {
 ///  * `shutdownAll()` is the explicit asynchronous drain for application
 ///    shutdown. It cancels and drains on a background thread so the GUI event
 ///    loop keeps answering, and reports on the GUI thread once every pool has
-///    actually been retired.
+///    actually been retired — or after a bounded 5 s wait per pool, in which
+///    case the timed-out pools are abandoned (leaked, never destroyed on the
+///    GUI thread) and the report still runs.
 class Runner : public QObject {
     Q_OBJECT
 
@@ -97,9 +99,13 @@ public:
 
     /// Asynchronously cancels and drains every Runner's pools, keeping the GUI
     /// event loop responsive, and invokes `finished` on the GUI thread once
-    /// every pool has been retired. Safe with no Runner alive. Use it before
-    /// the application quits, so backend objects a worker still references
-    /// outlive the last task.
+    /// every pool has been retired — or after a bounded 5 s wait per pool, in
+    /// which case the timed-out pools are abandoned (leaked, never destroyed
+    /// on the GUI thread) and `finished` still runs. If the application
+    /// object is already gone, `finished` is dropped, never run off the GUI
+    /// thread. Safe with no Runner alive. Use it before the application
+    /// quits, so backend objects a worker still references outlive the last
+    /// task.
     static void shutdownAll(std::function<void()> finished);
 
     void run(Work work, OnOk onOk, OnErr onErr);

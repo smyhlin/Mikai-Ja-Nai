@@ -839,6 +839,50 @@ void TestRunner::shutdownAllRunsItsFinishCallbackOnceTheWorkIsReallyGone() {
   QCOMPARE(ledger.deliveries.load(), 0);
 }
 
+void TestRunner::shutdownAllTimesOutInsteadOfBlockingForever() {
+  // P0-05 (tasks/11 Y-17): a task that never unwinds must not park shutdown
+  // behind it. The drain waits a bounded 5 s per pool, then abandons the pool
+  // — leaking it rather than destroying it on the GUI thread, where
+  // ~QThreadPool() would freeze in waitForDone(-1) — and still reports
+  // finished. The 30 s sleep is deliberately uncooperative: it reads no
+  // cancellation scope, so only the drain's bound can release shutdown.
+  Runner runner;
+  std::atomic_bool entered{false};
+  runner.run(
+      [&entered]() -> QVariant {
+        entered = true;
+        QThread::sleep(30);
+        return QVariant::fromValue(1);
+      },
+      [](const QVariant&) {}, [](const backend::Failure&) {});
+  QVERIFY2(spinUntil([&entered] { return entered.load(); }),
+           "the uncooperative task entered its work");
+
+  Heartbeat heartbeat;
+  std::atomic_bool finished{false};
+  std::atomic_int finishCalls{0};
+  QElapsedTimer clock;
+  clock.start();
+  Runner::shutdownAll([&finished, &finishCalls] {
+    finished = true;
+    ++finishCalls;
+  });
+
+  // The GUI thread must keep answering while the drain waits out its bound.
+  const int before = heartbeat.ticks();
+  QVERIFY2(spinUntil([&finished] { return finished.load(); }, kShortBudgetMs + 3000),
+           "the finish callback ran even though the work never unwound");
+  const qint64 elapsed = clock.elapsed();
+  QVERIFY2(heartbeat.ticks() > before,
+           "the GUI thread kept answering while the drain waited out its bound");
+  // 5 s bound plus scheduling slack: far short of the 30 s the work would
+  // have taken unbounded, and the callback fired exactly once.
+  QVERIFY2(elapsed < 8000,
+           qPrintable(QStringLiteral("shutdownAll finished after %1 ms with a 30 s task outstanding")
+                          .arg(elapsed)));
+  QCOMPARE(finishCalls.load(), 1);
+}
+
 void TestRunner::workCancelledBeforeShutdownNeverDelivers() {
   // Cancellation followed by a drain: the cancelled work must be retired by the
   // drain itself, not delivered on the way out. This is the late-callback bug

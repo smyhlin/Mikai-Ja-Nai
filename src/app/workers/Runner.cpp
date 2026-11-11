@@ -6,17 +6,18 @@
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QMetaObject>
+#include <QThread>
 #include <QThreadPool>
 #include <backend/Cancellation.hpp>
 #include <backend/Errors.hpp>
 #include <backend/Streams.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <condition_variable>
 #include <exception>
 #include <memory>
 #include <mutex>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -149,19 +150,30 @@ void dropReferenceOffWorker(std::shared_ptr<Shared>& reference) {
     releaseOnGui(std::move(reference));
 }
 
-/// Posts `callback` to the GUI thread, or runs it there-and-then when the
-/// application object is already gone: a shutdown report outlives every Runner,
-/// so it cannot be anchored on one.
+/// Posts `callback` to the GUI thread. If the application object is already
+/// gone the callback is DROPPED (and logged), never run on the calling
+/// thread: a finished() callback after quit must never execute off the GUI
+/// thread, where it could touch widgets that no longer exist.
 void postToGui(std::function<void()> callback) {
     if (!callback) {
         return;
     }
     QObject* appRoot = QCoreApplication::instance();
     if (appRoot == nullptr) {
-        callback();
+        qWarning("runner: dropping GUI callback after QCoreApplication is gone");
         return;
     }
     QMetaObject::invokeMethod(appRoot, std::move(callback), Qt::QueuedConnection);
+}
+
+/// Intentionally leaks one timed-out pool's shared state (tasks/11 Y-17).
+/// Destroying it would run ~QThreadPool() — waitForDone(-1) — on whichever
+/// thread drops the last reference, and the GUI thread must never be that
+/// thread while a worker is still parked. The leaked state outlives the
+/// process instead of freezing shutdown.
+void leakTimedOutPool(std::shared_ptr<Shared> shared) {
+    auto* leaked = new std::shared_ptr<Shared>(std::move(shared));
+    (void)leaked;
 }
 
 std::mutex& runnerRegistryMutex() {
@@ -411,28 +423,54 @@ void Runner::shutdownAll(std::function<void()> finished) {
         postToGui(std::move(finished));
         return;
     }
-    // The drain must not happen on the caller's thread: a parked worker unwinds
-    // within a cancellation slice, but that is still time the GUI event loop
-    // would spend not answering. Every reference is held by this thread, so no
-    // backend object a worker still reads can be destroyed behind its back.
-    std::thread drain([live = std::move(live), finished = std::move(finished)]() mutable {
-        for (const std::shared_ptr<Shared>& shared : live) {
-            std::unique_lock<std::mutex> guard(shared->mutex);
-            shared->abandoned = true;
-            shared->idle.wait(guard, [&shared] {
-                return shared->pending == 0 && shared->liveTasks == 0;
-            });
-        }
-        // Retiring a pool is a QObject destruction, so it waits for the GUI
-        // thread - as do the Runners' own pending releases.
-        postToGui([live = std::move(live), finished = std::move(finished)]() mutable {
-            live.clear();
-            if (finished) {
-                finished();
+    // The drain runs on a QThread, never joined from the GUI thread and
+    // owned until it finishes (deleteLater on `finished`): the drain waits
+    // with a BOUNDED timeout per pool, so shutdown can never park behind a
+    // worker that never unwinds. The 25 pool threads are not retuned here
+    // (tasks/05 P0-05 non-goal).
+    QThread* drain = QThread::create(
+        [live = std::move(live), finished = std::move(finished)]() mutable {
+            std::vector<std::shared_ptr<Shared>> quiescent;
+            for (const std::shared_ptr<Shared>& shared : live) {
+                bool drained = false;
+                {
+                    std::unique_lock<std::mutex> guard(shared->mutex);
+                    shared->abandoned = true;
+                    drained = shared->idle.wait_for(guard, std::chrono::seconds(5), [&shared] {
+                        return shared->pending == 0 && shared->liveTasks == 0;
+                    });
+                }
+                if (drained) {
+                    quiescent.push_back(shared);
+                    continue;
+                }
+                int pending = 0;
+                int liveTasks = 0;
+                {
+                    const std::lock_guard<std::mutex> guard(shared->mutex);
+                    pending = shared->pending;
+                    liveTasks = shared->liveTasks;
+                }
+                qWarning("runner drain timed out; %d pending, %d live", pending, liveTasks);
+                // A timed-out pool is leaked on purpose (tasks/11 Y-17):
+                // handing it to the GUI thread's clear() below would destroy
+                // it there, and ~QThreadPool() calls waitForDone(-1) — freezing
+                // shutdown on the GUI thread behind the worker that never
+                // unwound. Only quiescent pools are retired on the GUI thread.
+                leakTimedOutPool(shared);
             }
+            // Retiring a pool is a QObject destruction, so it waits for the GUI
+            // thread - as do the Runners' own pending releases.
+            postToGui([quiescent = std::move(quiescent),
+                       finished = std::move(finished)]() mutable {
+                quiescent.clear();
+                if (finished) {
+                    finished();
+                }
+            });
         });
-    });
-    drain.detach();
+    QObject::connect(drain, &QThread::finished, drain, &QObject::deleteLater);
+    drain->start();
 }
 
 void Runner::start(QThreadPool* pool, Work work, OnOk onOk, OnErr onErr) {

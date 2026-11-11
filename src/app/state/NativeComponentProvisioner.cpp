@@ -14,6 +14,9 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
+#include <QMutex>
+#include <QPointer>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <QVariant>
 
@@ -29,31 +32,72 @@ QString translated(const char* message) {
     return QCoreApplication::translate("NativeComponentProvisioner", message);
 }
 
-}  // namespace
+/// The one provisioner the current run delivers for, or null once its owner
+/// has gone away. One run per process, so this is a class-wide slot rather
+/// than per-instance state: the delivered bodies resolve their owner through
+/// it on the GUI thread. A QPointer — a weak, auto-nulling observer that never
+/// keeps the provisioner alive — so destroying the owner nulls the slot even
+/// if the destructor's own clear never runs. Function-local statics, like
+/// Runner's runnerRegistryMutex()/runnerRegistry().
+QPointer<NativeComponentProvisioner>& currentRunSlot() {
+    static QPointer<NativeComponentProvisioner> slot;
+    return slot;
+}
 
-NativeComponentProvisioner* NativeComponentProvisioner::currentRun_ = nullptr;
+/// Guards currentRunSlot() (and the running_ check in the destructor): the
+/// slot is claimed, read and cleared only under this lock.
+QMutex& currentRunSlotMutex() {
+    static QMutex mutex;
+    return mutex;
+}
+
+/// The declared files of one bundle directory: every file whose path starts
+/// with `<dirName>/`. One definition for the three call sites that used to
+/// repeat this scan (ensure() / needsDownload()).
+QStringList declaredFilesForDir(const Bundle& bundle, const QString& dirName) {
+    QStringList declared;
+    const QString prefix = dirName + QLatin1Char('/');
+    for (const BundleFile& file : bundle.files) {
+        if (file.path.startsWith(prefix)) {
+            declared.append(file.path);
+        }
+    }
+    return declared;
+}
+
+}  // namespace
 
 NativeComponentProvisioner::NativeComponentProvisioner(Runner& runner, QObject* parent)
     : QObject(parent), runner_(runner) {
-    if (currentRun_ == nullptr) {
-        currentRun_ = this;
+    // Claim the slot only if it is empty: a second provisioner never takes
+    // over a run that is already in flight.
+    const QMutexLocker lock(&currentRunSlotMutex());
+    if (currentRunSlot().isNull()) {
+        currentRunSlot() = this;
     }
 }
 
 NativeComponentProvisioner* NativeComponentProvisioner::currentRun() {
     // Only ever called from a body the Runner's dispatcher delivered, which is
     // on the GUI thread, in the one moment the owner is known to be readable.
-    return currentRun_;
+    const QMutexLocker lock(&currentRunSlotMutex());
+    return currentRunSlot().data();
 }
 
-void NativeComponentProvisioner::runFinished() {
-    // One settled run frees the slot so the same owner can run again. GUI thread
-    // only: every delivery arrives through the Runner's dispatcher.
-    currentRun_ = nullptr;
+void NativeComponentProvisioner::runFinished(NativeComponentProvisioner* finished) {
+    // One settled run frees the slot so the same owner can run again — but
+    // only if the slot still points at the run that settled. A second run
+    // that re-claimed the slot must not have it yanked from under it, or its
+    // completion would find no owner and its running_ would stay true forever.
+    // GUI thread only: every delivery arrives through the Runner's dispatcher.
+    const QMutexLocker lock(&currentRunSlotMutex());
+    if (currentRunSlot() == finished) {
+        currentRunSlot() = nullptr;
+    }
 }
 
 void NativeComponentProvisioner::finish(bool ok, bool cancelled, const QString& summary) {
-    runFinished();
+    runFinished(this);
     running_ = false;
     emit finished(ok, cancelled, summary);
 }
@@ -99,13 +143,7 @@ bool NativeComponentProvisioner::ensure(QString* reason) {
     }
 
     const QString trtDirName = preparation.runtime.trt;
-    QStringList declaredTrtFiles;
-    const QString prefix = trtDirName + QLatin1Char('/');
-    for (const BundleFile& file : bundle->files) {
-        if (file.path.startsWith(prefix)) {
-            declaredTrtFiles.append(file.path);
-        }
-    }
+    const QStringList declaredTrtFiles = declaredFilesForDir(*bundle, trtDirName);
 
     const ComponentStore store = componentStore();
     const ComponentBinDirs resolved =
@@ -190,12 +228,7 @@ bool NativeComponentProvisioner::needsDownload(QString* reason) const {
         bundleRoot = selection.root;
         trtDirName = selection.resolvedBundle->preparation->runtime.trt;
         cudaDirName = selection.resolvedBundle->preparation->runtime.cuda;
-        const QString prefix = trtDirName + QLatin1Char('/');
-        for (const BundleFile& file : selection.resolvedBundle->files) {
-            if (file.path.startsWith(prefix)) {
-                declaredTrtFiles.append(file.path);
-            }
-        }
+        declaredTrtFiles = declaredFilesForDir(*selection.resolvedBundle, trtDirName);
     } else {
         for (const Bundle& candidate : discoverBundles()) {
             if (candidate.kind != BundleKind::Native || !candidate.preparation.has_value()) {
@@ -204,12 +237,7 @@ bool NativeComponentProvisioner::needsDownload(QString* reason) const {
             bundleRoot = candidate.root;
             trtDirName = candidate.preparation->runtime.trt;
             cudaDirName = candidate.preparation->runtime.cuda;
-            const QString prefix = trtDirName + QLatin1Char('/');
-            for (const BundleFile& file : candidate.files) {
-                if (file.path.startsWith(prefix)) {
-                    declaredTrtFiles.append(file.path);
-                }
-            }
+            declaredTrtFiles = declaredFilesForDir(candidate, trtDirName);
             break;
         }
     }
@@ -239,7 +267,10 @@ bool NativeComponentProvisioner::startProvisioning(const ComponentStore& store,
     // Each run re-claims the shared delivery slot: `finish()` clears it when a
     // run settles, so without this re-claim the second run's completion would
     // find no owner and `running_` would stay true forever.
-    currentRun_ = this;
+    {
+        const QMutexLocker lock(&currentRunSlotMutex());
+        currentRunSlot() = this;
+    }
     const QString scratchRoot = nativeSubdirectory(QStringLiteral("scratch"));
     const std::shared_ptr<std::atomic<bool>> flag = cancelFlag_;
 
@@ -317,8 +348,20 @@ NativeComponentProvisioner::~NativeComponentProvisioner() {
     // waits. The Runner itself is borrowed, never owned - cancelling it here
     // would retire the shared pools' queues for every other owner, so this
     // destructor only sets the run's own gate.
-    cancel();
-    if (currentRun_ == this) currentRun_ = nullptr;
+    //
+    // The cancel is gated on running_ under the slot lock: a run that already
+    // settled must not have its flag set after the fact. The slot is cleared
+    // only if it still points at this provisioner, so destroying one owner
+    // never yanks the slot from a second run that re-claimed it.
+    {
+        const QMutexLocker lock(&currentRunSlotMutex());
+        if (running_) {
+            cancel();
+        }
+        if (currentRunSlot() == this) {
+            currentRunSlot() = nullptr;
+        }
+    }
 }
 
 }  // namespace mikai::app
