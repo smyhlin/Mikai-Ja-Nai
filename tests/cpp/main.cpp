@@ -28,6 +28,7 @@
 #include "TestRateLimiter.hpp"
 #include "TestReleases.hpp"
 #include "TestDownloads.hpp"
+#include "TestJson.hpp"
 #include "TestDiagnostics.hpp"
 #include "TestApiClient.hpp"
 #include "TestFeedRender.hpp"
@@ -118,7 +119,7 @@ constexpr const char* kSuites[] = {
 #ifdef MIKAI_WITH_MODEL_INSPECTION
     "TestNativeCatalog",
 #endif
-    "TestModels", "TestReleases", "TestAnime4K", "TestBenchmarkReport", "TestComponentState",
+    "TestJson", "TestModels", "TestReleases", "TestAnime4K", "TestBenchmarkReport", "TestComponentState",
     "TestI18n",
     "TestThemeIcons",
     "TestThemeRoles",
@@ -291,6 +292,7 @@ int main(int argc, char** argv) {
 #ifdef MIKAI_WITH_MODEL_INSPECTION
   TestNativeCatalog nativeCatalog;
 #endif
+  TestJson json;
   TestModels models;
   TestReleases releases;
   TestAnime4K anime4k;
@@ -427,6 +429,7 @@ int main(int argc, char** argv) {
 #ifdef MIKAI_WITH_MODEL_INSPECTION
   run("TestNativeCatalog", &nativeCatalog, true);
 #endif
+  run("TestJson", &json, true);
   run("TestModels", &models, true);
   run("TestReleases", &releases, true);
   run("TestAnime4K", &anime4k, true);

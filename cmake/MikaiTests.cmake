@@ -153,6 +153,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/backend/TestDiagnostics.cpp
     tests/cpp/backend/TestDownloads.hpp
     tests/cpp/backend/TestDownloads.cpp
+    tests/cpp/backend/TestJson.hpp
+    tests/cpp/backend/TestJson.cpp
     tests/cpp/backend/TestLiveOracle.hpp
     tests/cpp/backend/TestLiveOracle.cpp
     tests/cpp/backend/TestModels.hpp
@@ -392,6 +394,7 @@ if(MIKAI_BUILD_PROBES)
     TestClipExport
     TestCompareLoading
     TestComparePipeline
+    TestJson
     TestModels
     TestReleases
     TestAnime4K
