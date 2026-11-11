@@ -901,9 +901,12 @@ TeamsResult MikaiClient::getTeams(const QString& search, int page, int limit) co
     if (!search.trimmed().isEmpty()) params.insert(QStringLiteral("search"), search.trimmed());
     const QJsonObject payload = get(QStringLiteral("/teams"), params);
     TeamsResult result;
-    if (payload.value(QStringLiteral("total")).isDouble()) result.total = payload.value(QStringLiteral("total")).toInt();
-    if (payload.value(QStringLiteral("page")).isDouble()) result.page = payload.value(QStringLiteral("page")).toInt();
-    if (payload.value(QStringLiteral("pages")).isDouble()) result.pages = payload.value(QStringLiteral("pages")).toInt();
+    // P1-07: checked numbers — out-of-range doubles fall back with a
+    // warning inside json::optInt instead of undefined behaviour
+    // (same unchecked cast as searchFromPayload above, fixed here).
+    result.total = json::optInt(payload.value(QStringLiteral("total")));
+    result.page = json::optInt(payload.value(QStringLiteral("page")));
+    result.pages = json::optInt(payload.value(QStringLiteral("pages")));
     const QJsonArray items = payload.value(QStringLiteral("result")).toArray();
     result.items.reserve(items.size());
     for (const QJsonValue& raw : items) result.items.append(parseTeamProfile(raw.toObject()));
@@ -950,8 +953,8 @@ UpdatesResult MikaiClient::getUpdates(int page, int limit, const QString& since)
     // P1-07: checked number (plan ground truth missed this second `total`
     // site; same unchecked cast as searchFromPayload above).
     result.total = json::optInt(payload.value(QStringLiteral("total")));
-    if (payload.value(QStringLiteral("page")).isDouble()) result.page = payload.value(QStringLiteral("page")).toInt();
-    if (payload.value(QStringLiteral("pages")).isDouble()) result.pages = payload.value(QStringLiteral("pages")).toInt();
+    result.page = json::optInt(payload.value(QStringLiteral("page")));
+    result.pages = json::optInt(payload.value(QStringLiteral("pages")));
     const QJsonArray items = payload.value(QStringLiteral("result")).toArray();
     result.items.reserve(items.size());
     for (const QJsonValue& value : items) {
