@@ -2,6 +2,7 @@
 
 #include "theme/Appearance.hpp"
 #include "theme/Metrics.hpp"
+#include "theme/Theme.hpp"
 
 #include <QAbstractButton>
 #include <QCheckBox>
