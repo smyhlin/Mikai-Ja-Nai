@@ -3044,9 +3044,21 @@ void TestFeedRender::switchingReleasePreservesAnOpenPlayerQualityRequest() {
   QTRY_VERIFY_WITH_TIMEOUT(tabs->count() > 0, 30000);
   QWidget* openingTab = tabs->currentWidget();
   QVERIFY(openingTab != nullptr);
-  QTRY_VERIFY_WITH_TIMEOUT(
-      openingTab->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size() >= kEpisodes,
-      30000);
+  // Pills are created hidden and shown by the next event-loop pass, so a
+  // wait that only counts them can snapshot them before Qt shows them and
+  // episodePill() (which needs a visible pill) then returns null. Wait
+  // until enough pills are actually visible instead.
+  const auto visiblePillCount = [&openingTab] {
+    int count = 0;
+    for (const QPushButton* pill :
+         openingTab->findChildren<QPushButton*>(QStringLiteral("episodeButton"))) {
+      if (pill->isVisible()) {
+        ++count;
+      }
+    }
+    return count;
+  };
+  QTRY_VERIFY_WITH_TIMEOUT(visiblePillCount() >= kEpisodes, 30000);
 
   QPushButton* firstEpisode = episodePill(*openingTab, QStringLiteral("1"));
   QPushButton* secondEpisode = episodePill(*openingTab, QStringLiteral("2"));
