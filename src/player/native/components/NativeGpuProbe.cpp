@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
+#include <QtCore/QScopeGuard>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -186,47 +187,59 @@ bool probeCudaDriver(GpuComputeCapability& cap) {
 bool probeDxgi(GpuComputeCapability& cap) {
     HMODULE dxgi = LoadLibraryExW(L"dxgi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (dxgi == nullptr) return false;
+    const auto unloadDxgi = qScopeGuard([dxgi] { FreeLibrary(dxgi); });
+
     using CreateFactoryFn = HRESULT (WINAPI*)(REFIID, void**);
-    auto createFactory = reinterpret_cast<CreateFactoryFn>(GetProcAddress(dxgi, "CreateDXGIFactory1"));
-    if (createFactory == nullptr) {
-        FreeLibrary(dxgi);
-        return false;
-    }
+    auto createFactory = reinterpret_cast<CreateFactoryFn>(
+        GetProcAddress(dxgi, "CreateDXGIFactory1"));
+    if (createFactory == nullptr) return false;
 
     IDXGIFactory1* factory = nullptr;
-    if (FAILED(createFactory(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory))) || factory == nullptr) {
-        FreeLibrary(dxgi);
+    const HRESULT factoryHr = createFactory(
+        __uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory));
+    // Declared after unloadDxgi, so it runs first: COM is released while
+    // dxgi.dll is still loaded.
+    const auto releaseFactory = qScopeGuard([&factory] {
+        if (factory != nullptr) factory->Release();
+    });
+    if (FAILED(factoryHr) || factory == nullptr) {
+        qWarning() << "NativeGpuProbe: CreateDXGIFactory1 failed:"
+                   << static_cast<quint32>(factoryHr);
         return false;
     }
 
     bool found = false;
-    IDXGIAdapter1* adapter = nullptr;
-    for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
-        DXGI_ADAPTER_DESC1 desc;
-        if (SUCCEEDED(adapter->GetDesc1(&desc))) {
-            if (desc.VendorId == 0x10DE) { // NVIDIA Corporation
-                cap.nvidia = true;
-                cap.name = QString::fromWCharArray(desc.Description).trimmed();
-                const QString upper = cap.name.toUpper();
-                if (upper.contains(QLatin1String("RTX"))) {
-                    cap.smMajor = 8;
-                    cap.smMinor = 0;
-                } else if (upper.contains(QLatin1String("GTX 16"))) {
-                    cap.smMajor = 7;
-                    cap.smMinor = 5;
-                } else if (upper.contains(QLatin1String("GTX 10"))) {
-                    cap.smMajor = 6;
-                    cap.smMinor = 1;
-                }
-                found = true;
-                adapter->Release();
-                break;
-            }
+    for (UINT i = 0; i < 32; ++i) {
+        IDXGIAdapter1* adapter = nullptr;  // fresh output for every iteration
+        const HRESULT hr = factory->EnumAdapters1(i, &adapter);
+        const auto releaseAdapter = qScopeGuard([&adapter] {
+            if (adapter != nullptr) adapter->Release();
+        });
+        if (hr == DXGI_ERROR_NOT_FOUND) break;
+        if (FAILED(hr) || adapter == nullptr) {
+            qWarning() << "NativeGpuProbe: EnumAdapters1 failed:"
+                       << static_cast<quint32>(hr);
+            break;  // never continue on a persistent non-NOT_FOUND failure
         }
-        adapter->Release();
+
+        DXGI_ADAPTER_DESC1 desc{};
+        const HRESULT descHr = adapter->GetDesc1(&desc);
+        if (FAILED(descHr)) {
+            qWarning() << "NativeGpuProbe: GetDesc1 failed:"
+                       << static_cast<quint32>(descHr);
+            continue;  // this adapter is released by its guard; try the next one
+        }
+        if (desc.VendorId == 0x10DE) {  // NVIDIA Corporation
+            cap.nvidia = true;
+            cap.name = QString::fromWCharArray(desc.Description).trimmed();
+            // No SM inference from the marketing name: an RTX 5090 is SM 12.0,
+            // not 8.0, and any guess here is wrong for the next part. When NVML
+            // and CUDA both failed, smMajor/smMinor stay 0 (UNKNOWN); every
+            // caller already treats smMajor <= 0 as unknown.
+            found = true;
+            break;
+        }
     }
-    factory->Release();
-    FreeLibrary(dxgi);
     return found;
 }
 #else
@@ -244,11 +257,9 @@ bool probeLinuxProcfs(GpuComputeCapability& cap) {
                 if (line.startsWith(QLatin1String("Model:"), Qt::CaseInsensitive)) {
                     cap.nvidia = true;
                     cap.name = line.section(QLatin1Char(':'), 1).trimmed();
-                    const QString upper = cap.name.toUpper();
-                    if (upper.contains(QLatin1String("RTX"))) {
-                        cap.smMajor = 8;
-                        cap.smMinor = 0;
-                    }
+                    // No SM inference from the marketing name (see probeDxgi):
+                    // smMajor/smMinor stay 0 (UNKNOWN) when NVML and CUDA
+                    // both failed.
                     return true;
                 }
             }

@@ -37,28 +37,6 @@ struct GlApi {
     // wglGetProcAddress returns NULL for core GL 1.1 entry points, and mpv then
     // rejects the context as "not supported".
     void* (*GetProcAddress)(const char* name) = nullptr;
-    void (*genTextures)(GLsizei n, GLuint* t) = nullptr;
-    void (*deleteTextures)(GLsizei n, const GLuint* t) = nullptr;
-    void (*bindTexture)(GLenum target, GLuint texture) = nullptr;
-    void (*texImage2D)(GLenum t, GLint l, GLint i, GLsizei w, GLsizei h, GLint b,
-                       GLenum f, GLenum t2, const void* p) = nullptr;
-    void (*texParameteri)(GLenum t, GLenum pname, GLint param) = nullptr;
-    void (*texImage3D)(GLenum t, GLint l, GLint i, GLsizei w, GLsizei h, GLint d,
-                       GLint b, GLenum f, GLenum t2, const void* p) = nullptr;
-    void (*getIntegerv)(GLenum pname, GLint* data) = nullptr;
-    void (*getTexLevelParameteriv)(GLenum t, GLint l, GLenum pname, GLint* data) = nullptr;
-    void (*bindFramebuffer)(GLenum target, GLuint fb) = nullptr;
-    void (*genFramebuffers)(GLsizei n, GLuint* fb) = nullptr;
-    void (*framebufferTexture2D)(GLenum t, GLenum a, GLenum texT, GLuint tex, GLint level) = nullptr;
-    void (*blitFramebuffer)(GLint sx0, GLint sy0, GLint sx1, GLint sy1,
-                            GLint dx0, GLint dy0, GLint dx1, GLint dy1,
-                            GLbitfield mask, GLenum filter) = nullptr;
-    void (*viewport)(GLint x, GLint y, GLsizei w, GLsizei h) = nullptr;
-    void (*clearColor)(GLfloat r, GLfloat g, GLfloat b, GLfloat a) = nullptr;
-    void (*clear)(GLbitfield mask) = nullptr;
-    void (*flush)() = nullptr;
-    void (*readPixels)(GLint x, GLint y, GLsizei w, GLsizei h, GLenum f, GLenum t,
-                       void* pixels) = nullptr;
 };
 
 // Platform GL proc resolver with core-profile fallback.
