@@ -402,8 +402,14 @@ int verifyBenchmarkLifecycle(MikaiClient& client, Runner& runner) {
     }
     check(save != nullptr, "lifecycle: the real Settings Save action exists");
     if (save) save->click();
-    check(!dialog.isVisible() && dialog.result() == QDialog::Accepted,
-          "lifecycle: Save accepts the active dialog");
+    // Since 25bc266 ("Let Save commit without closing Settings"), Save
+    // commits without closing: the dialog stays open, result stays Rejected,
+    // the button shows the "Saved" acknowledgment and is disabled.
+    check(save != nullptr && dialog.result() == QDialog::Rejected &&
+              save->text() ==
+                  QCoreApplication::translate("mikai::app::SettingsDialog", "Saved") &&
+              !save->isEnabled(),
+          "lifecycle: Save commits without closing the dialog");
     check(waitForUi([&] { return run->isEnabled(); }, 2000) &&
               status->text().contains(QStringLiteral("cancel"), Qt::CaseInsensitive),
           "lifecycle: Save also cancels sampling without destroying Settings");

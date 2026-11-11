@@ -370,7 +370,14 @@ int main(int argc, char** argv) {
             save->click();
         }
         QApplication::processEvents();
-        check(dialog.result() == static_cast<int>(QDialog::Accepted), "Save accepted the dialog");
+        // Since 25bc266 ("Let Save commit without closing Settings"), Save
+        // commits without closing: result stays Rejected, the button shows
+        // the "Saved" acknowledgment and is disabled.
+        check(save != nullptr && dialog.result() == static_cast<int>(QDialog::Rejected) &&
+                  save->text() ==
+                      QCoreApplication::translate("mikai::app::SettingsDialog", "Saved") &&
+                  !save->isEnabled(),
+              "Save commits without closing the dialog");
         {
             QSettings settings;
             settings.beginGroup(mplayer::native::nativeSettingsGroup());
