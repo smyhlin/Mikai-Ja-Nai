@@ -34,6 +34,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QPointer>
 #include <QtCore/QSettings>
+#include <QtCore/QStandardPaths>
 #include <QtCore/QScopeGuard>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QTimer>
@@ -2707,22 +2708,38 @@ void TestPublicApiUi::openSubtitlesApiKeyMigratesOutOfQSettings() {
   // P0-03: the key lives in a 0600 file under AppDataLocation, never in
   // plaintext QSettings. XDG_DATA_HOME redirects AppDataLocation at a temp
   // dir so the test never touches the real app data.
+  // Qt test mode (set for the whole test binary) makes AppDataLocation
+  // ignore XDG_DATA_HOME and resolve under ~/.qttest instead, so the mode
+  // is switched off for this test; XDG_CONFIG_HOME is redirected too, so
+  // the QSettings side of the migration stays inside the temp dir as well.
   QTemporaryDir dataHome;
   QVERIFY(dataHome.isValid());
-  const bool hadXdg = qEnvironmentVariableIsSet("XDG_DATA_HOME");
-  const QByteArray previousXdg = qgetenv("XDG_DATA_HOME");
-  struct RestoreXdg {
+  struct RestoreEnv {
+    const char* name;
     bool present;
     QByteArray value;
-    ~RestoreXdg() {
+    ~RestoreEnv() {
       if (present) {
-        qputenv("XDG_DATA_HOME", value);
+        qputenv(name, value);
       } else {
-        qunsetenv("XDG_DATA_HOME");
+        qunsetenv(name);
       }
     }
-  } restore{hadXdg, previousXdg};
+  };
+  const bool hadData = qEnvironmentVariableIsSet("XDG_DATA_HOME");
+  const QByteArray previousData = qgetenv("XDG_DATA_HOME");
+  RestoreEnv restoreData{"XDG_DATA_HOME", hadData, previousData};
+  const bool hadConfig = qEnvironmentVariableIsSet("XDG_CONFIG_HOME");
+  const QByteArray previousConfig = qgetenv("XDG_CONFIG_HOME");
+  RestoreEnv restoreConfig{"XDG_CONFIG_HOME", hadConfig, previousConfig};
+  struct RestoreTestMode {
+    bool wasEnabled;
+    ~RestoreTestMode() { QStandardPaths::setTestModeEnabled(wasEnabled); }
+  } restoreTestMode{QStandardPaths::isTestModeEnabled()};
+  QStandardPaths::setTestModeEnabled(false);
   QVERIFY(qputenv("XDG_DATA_HOME", dataHome.path().toUtf8()));
+  QVERIFY(qputenv("XDG_CONFIG_HOME",
+                  (dataHome.path() + QStringLiteral("/config")).toUtf8()));
   // The store must resolve inside the redirected home before anything is
   // written, or the test would touch the real app data dir.
   const QString path = mikai::gui::openSubtitlesApiKeyFilePath();
