@@ -39,6 +39,7 @@ result_name='mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst'
 
 command -v docker >/dev/null 2>&1 || { printf 'docker is required\n' >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || { printf 'curl is required\n' >&2; exit 1; }
+command -v readelf >/dev/null 2>&1 || { printf 'readelf (binutils) is required\n' >&2; exit 1; }
 
 work="$(mktemp -d /var/tmp/mikai-mpv-tls.XXXXXX)"
 trap 'rm -rf "$work"' EXIT
@@ -96,8 +97,16 @@ for lib in ('libssl.so.3', 'libcrypto.so.3'):
     shutil.copy2(f'{work}/fflibs/{lib}', f'{work}/bundle/{lib}')
 PY
 
-if strings "$work/bundle/libavformat.so.63" | grep -q "recompile FFmpeg with openssl"; then
-  printf 'The rebuilt libavformat still reports no TLS backend.\n' >&2
+# Do NOT test TLS support by grepping the binary for the "recompile FFmpeg
+# with openssl" advice text: libavformat/avio.c url_find_protocol() carries it
+# unconditionally, so it is present in every build, TLS-enabled or not, and
+# that test rejected a correct rebuild with exit 3 on every Linux CI run
+# (before configure ever ran). Read the backend from libavformat's own
+# dynamic requirements instead, the same test configure applies in
+# cmake/MikaiLinuxMpv.cmake: a TLS backend is present only when libavformat
+# needs a TLS library.
+if ! readelf -d "$work/bundle/libavformat.so.63" | grep -Eq 'NEEDED.*lib(ssl|crypto|gnutls|mbedtls)\.so'; then
+  printf 'The rebuilt libavformat has no TLS backend (no TLS library in its NEEDED entries).\n' >&2
   exit 3
 fi
 rm -f "$work/bundle/mpv"
