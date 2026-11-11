@@ -4,6 +4,7 @@
 #include "dialogs/ComponentStoreTab.hpp"
 #include "dialogs/SettingsDialog.hpp"
 #include "state/NativeComponentProvisioner.hpp"
+#include "state/SettingsKeys.hpp"
 #include "workers/Runner.hpp"
 
 #include "backend/MikaiClient.hpp"
@@ -24,6 +25,7 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
+#include <QtCore/QSettings>
 #include <QtCore/qscopeguard.h>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QComboBox>
@@ -358,10 +360,17 @@ void TestComponentState::deletedFilesClearTheStaleBarOnRefresh() {
     const QString releaseDirectory = componentReleaseDirectory(store);
     const QString tensorRtDirectory = QFileInfo(releaseDirectory).absolutePath();
     const QString closureDirectory = closureRoot();
+    // The backend selection is global state the tab persists: save it so the
+    // pin below leaves no trace for the next test in this process.
+    const QString backendKey = QString::fromUtf8(mikai::app::kAnimeJanaiBackend);
+    const QVariant savedBackend = QSettings().value(backendKey);
+    const bool hadSavedBackend = QSettings().contains(backendKey);
     const auto cleanup = qScopeGuard([&] {
         QDir(closureDirectory).removeRecursively();
         QDir(releaseDirectory).removeRecursively();
         QDir().rmdir(tensorRtDirectory);
+        if (hadSavedBackend) QSettings().setValue(backendKey, savedBackend);
+        else QSettings().remove(backendKey);
     });
 
     // The runtime pack is hardware-independent; a GPU-matched kernels pack is
@@ -384,6 +393,18 @@ void TestComponentState::deletedFilesClearTheStaleBarOnRefresh() {
     mikai::app::ComponentStoreTab tab;
     tab.setComponentProvisioner(&provisioner);
     tab.setRunner(&runner);
+    // The runtime card answers for the tab's selected backend, and on Windows
+    // without an NVIDIA GPU the tab defaults to DirectML while this fixture
+    // populates the TensorRT closure — the card would then report the
+    // DirectML closure (not installed) instead of the closure the test built.
+    // Pin the tab to TensorRT so the card the test asserts is the closure the
+    // test built. On Linux the tab already defaults to TensorRT, so this is a
+    // no-op there.
+    auto* backendCombo = tab.findChild<QComboBox*>(QStringLiteral("animeJanaiRuntimeBackend"));
+    QVERIFY(backendCombo != nullptr);
+    const int tensorRtIndex = backendCombo->findData(static_cast<int>(Backend::TensorRT));
+    QVERIFY(tensorRtIndex >= 0);
+    backendCombo->setCurrentIndex(tensorRtIndex);
     waitUntil([&] { return tab.inventoryReady() && !tab.acquisitionRunning(); });
     QVERIFY(tab.inventoryReady());
 
@@ -540,10 +561,17 @@ void TestComponentState::verificationTurnsAConfirmedBarIndeterminate() {
     const QString releaseDirectory = componentReleaseDirectory(store);
     const QString tensorRtDirectory = QFileInfo(releaseDirectory).absolutePath();
     const QString closureDirectory = closureRoot();
+    // The backend selection is global state the tab persists: save it so the
+    // pin below leaves no trace for the next test in this process.
+    const QString backendKey = QString::fromUtf8(mikai::app::kAnimeJanaiBackend);
+    const QVariant savedBackend = QSettings().value(backendKey);
+    const bool hadSavedBackend = QSettings().contains(backendKey);
     const auto cleanup = qScopeGuard([&] {
         QDir(closureDirectory).removeRecursively();
         QDir(releaseDirectory).removeRecursively();
         QDir().rmdir(tensorRtDirectory);
+        if (hadSavedBackend) QSettings().setValue(backendKey, savedBackend);
+        else QSettings().remove(backendKey);
     });
     const ComponentPack* runtime = tensorRtRuntimePack();
     QVERIFY(runtime != nullptr);
@@ -562,6 +590,18 @@ void TestComponentState::verificationTurnsAConfirmedBarIndeterminate() {
     mikai::app::ComponentStoreTab tab;
     tab.setComponentProvisioner(&provisioner);
     tab.setRunner(&runner);
+    // The runtime card answers for the tab's selected backend, and on Windows
+    // without an NVIDIA GPU the tab defaults to DirectML while this fixture
+    // populates the TensorRT closure — the card would then report the
+    // DirectML closure (not installed) instead of the closure the test built.
+    // Pin the tab to TensorRT so the card the test asserts is the closure the
+    // test built. On Linux the tab already defaults to TensorRT, so this is a
+    // no-op there.
+    auto* backendCombo = tab.findChild<QComboBox*>(QStringLiteral("animeJanaiRuntimeBackend"));
+    QVERIFY(backendCombo != nullptr);
+    const int tensorRtIndex = backendCombo->findData(static_cast<int>(Backend::TensorRT));
+    QVERIFY(tensorRtIndex >= 0);
+    backendCombo->setCurrentIndex(tensorRtIndex);
     waitUntil([&] { return tab.inventoryReady() && !tab.acquisitionRunning(); });
     QVERIFY(tab.inventoryReady());
 
