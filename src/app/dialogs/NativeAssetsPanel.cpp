@@ -64,9 +64,9 @@
 namespace mikai::app {
 
 // The panel owns the app-side surface; the model, recipe and artifact
-// vocabulary it reads stays in mplayer::native and is named through this
-// file-local using-directive rather than re-homed.
-using namespace mplayer::native;
+// vocabulary it reads stays in mplayer::native and is named through the
+// file-local `native` alias rather than re-homed.
+namespace native = mplayer::native;
 
 namespace {
 
@@ -83,12 +83,12 @@ QString statusCell(const NativeModelView& view) {
 
 }  // namespace
 
-NativeModelView describeStoredModel(const StoredModel& model) {
+NativeModelView describeStoredModel(const native::StoredModel& model) {
     NativeModelView view;
     view.id = model.record.id;
     view.label = model.record.displayName.isEmpty() ? model.record.id : model.record.displayName;
     view.contentId = model.record.contentId();
-    view.role = model.record.role == ModelRole::Spatial
+    view.role = model.record.role == native::ModelRole::Spatial
                     ? QCoreApplication::translate("NativeAssetsPanel", "Spatial")
                     : QCoreApplication::translate("NativeAssetsPanel", "Temporal");
     view.dtype = model.record.actualProfile.input.dtype;
@@ -103,7 +103,7 @@ NativeModelView describeStoredModel(const StoredModel& model) {
     return view;
 }
 
-QVector<NativeCacheEntry> enumerateNativeCache(const ArtifactStore& store) {
+QVector<NativeCacheEntry> enumerateNativeCache(const native::ArtifactStore& store) {
     QVector<NativeCacheEntry> entries;
     // An unowned root is never walked: nothing beside a user directory is ours.
     if (!store.isOwned(nullptr)) return entries;
@@ -117,7 +117,7 @@ QVector<NativeCacheEntry> enumerateNativeCache(const ArtifactStore& store) {
         // they are never listed for deletion and never removed here.
         if (!name.startsWith(prefix)) continue;
         const QString token = name.mid(prefix.size());
-        if (!isSha256Hex(token)) continue;
+        if (!native::isSha256Hex(token)) continue;
 
         NativeCacheEntry entry;
         entry.buildKey = QStringLiteral("sha256:") + token;
@@ -125,8 +125,8 @@ QVector<NativeCacheEntry> enumerateNativeCache(const ArtifactStore& store) {
 
         QString reasonKey;
         QString reason;
-        const std::optional<ArtifactRecord> record =
-            readArtifact(store, entry.buildKey, &reasonKey, &reason);
+        const std::optional<native::ArtifactRecord> record =
+            native::readArtifact(store, entry.buildKey, &reasonKey, &reason);
         if (record.has_value()) {
             entry.proven = true;
             entry.enginePath = record->enginePath;
@@ -140,7 +140,7 @@ QVector<NativeCacheEntry> enumerateNativeCache(const ArtifactStore& store) {
     return entries;
 }
 
-bool deleteNativeCacheEntry(const ArtifactStore& store, const QVector<NativeCacheEntry>& entries,
+bool deleteNativeCacheEntry(const native::ArtifactStore& store, const QVector<NativeCacheEntry>& entries,
                             const QString& buildKey, QString* reasonKey, QString* reason) {
     const auto refuse = [reasonKey, reason](const QString& key, const QString& text) {
         if (reasonKey != nullptr) *reasonKey = key;
@@ -170,7 +170,7 @@ bool deleteNativeCacheEntry(const ArtifactStore& store, const QVector<NativeCach
                                 "This cache entry does not verify, so it is not deleted.")
                           : found->reason);
     }
-    return removeArtifact(store, buildKey, reasonKey, reason);
+    return native::removeArtifact(store, buildKey, reasonKey, reason);
 }
 
 QString nativePreparationToolchainReason(const QString& reasonKey, const QString& reason) {
@@ -217,17 +217,17 @@ NativePreparationToolchain observeNativePreparationToolchain() {
     // The selected native bundle is where a locally built toolchain and its
     // provider runtimes live. Nothing is created, copied or downloaded here.
     QString bundleRoot;
-    std::optional<Bundle> validated;
-    const RuntimeSelection& selection = currentSelection();
-    if (selection.loaded && selection.kind == BundleKind::Native && !selection.root.isEmpty()) {
+    std::optional<native::Bundle> validated;
+    const native::RuntimeSelection& selection = native::currentSelection();
+    if (selection.loaded && selection.kind == native::BundleKind::Native && !selection.root.isEmpty()) {
         bundleRoot = selection.root;
         toolchain.modulePath = selection.modulePath;
         validated = selection.resolvedBundle;
     }
     if (bundleRoot.isEmpty()) {
-        const QList<Bundle> bundles = discoverBundles();
-        for (const Bundle& candidate : bundles) {
-            if (candidate.kind == BundleKind::Native) {
+        const QList<native::Bundle> bundles = native::discoverBundles();
+        for (const native::Bundle& candidate : bundles) {
+            if (candidate.kind == native::BundleKind::Native) {
                 bundleRoot = candidate.root;
                 toolchain.modulePath = candidate.modulePath;
                 validated = candidate;
@@ -245,7 +245,7 @@ NativePreparationToolchain observeNativePreparationToolchain() {
     if (!validated.has_value() || !validated->preparation.has_value()) {
         return refuseWithKey(QStringLiteral("native.prepare.provenance"));
     }
-    const BundlePreparation& preparation = *validated->preparation;
+    const native::BundlePreparation& preparation = *validated->preparation;
     toolchain.tools.inspectExecutable = QDir(bundleRoot).filePath(preparation.tools.inspect);
     toolchain.tools.prepExecutable = QDir(bundleRoot).filePath(preparation.tools.prep);
     toolchain.tools.verifierExecutable = QDir(bundleRoot).filePath(preparation.tools.verifier);
@@ -257,14 +257,14 @@ NativePreparationToolchain observeNativePreparationToolchain() {
     // resource are always the same upstream pack set.
     QStringList declaredTrtFiles;
     const QString trtPrefix = preparation.runtime.trt + QLatin1Char('/');
-    for (const BundleFile& file : validated->files) {
+    for (const native::BundleFile& file : validated->files) {
         if (file.path.startsWith(trtPrefix)) {
             declaredTrtFiles.append(file.path);
         }
     }
-    const ComponentBinDirs componentDirs = componentBinDirs(
+    const native::ComponentBinDirs componentDirs = native::componentBinDirs(
         bundleRoot, preparation.runtime.trt, preparation.runtime.cuda, declaredTrtFiles,
-        observeComputeCapability(), componentStore());
+        native::observeComputeCapability(), native::componentStore());
     if (!componentDirs.reasonKey.isEmpty()) {
         return refuse(componentDirs.reasonKey, componentDirs.reason);
     }
@@ -276,7 +276,7 @@ NativePreparationToolchain observeNativePreparationToolchain() {
     // backends it carries; a backend the block does not declare is not offered
     // even if a DLL happens to be present.
     for (const QString& type : preparation.types) {
-        const std::optional<Backend> declared = backendFromName(type);
+        const std::optional<native::Backend> declared = native::backendFromName(type);
         if (declared.has_value() && !toolchain.backends.available.contains(*declared)) {
             toolchain.backends.available.append(*declared);
         }
@@ -286,15 +286,15 @@ NativePreparationToolchain observeNativePreparationToolchain() {
     // compiled plugin the validated bundle carries, so a cache entry is tied to
     // real bytes rather than to a version string nobody measured.
     const auto digestOf = [&validated](const QString& declaredPath) -> QString {
-        for (const BundleFile& file : validated->files) {
+        for (const native::BundleFile& file : validated->files) {
             if (file.path == declaredPath) return QStringLiteral("sha256:") + file.sha256;
         }
         return {};
     };
     toolchain.pluginShaTensorRt =
-        digestOf(bundlePreparationBackendLibrary(QStringLiteral("tensorrt")));
+        digestOf(native::bundlePreparationBackendLibrary(QStringLiteral("tensorrt")));
     toolchain.pluginShaDirectMl =
-        digestOf(bundlePreparationBackendLibrary(QStringLiteral("directml")));
+        digestOf(native::bundlePreparationBackendLibrary(QStringLiteral("directml")));
 
     if (toolchain.tools.inspectExecutable.isEmpty() ||
         toolchain.tools.prepExecutable.isEmpty() ||
@@ -347,13 +347,13 @@ QString cacheSummaryLine(const QVector<NativeCacheEntry>& entries) {
 }  // namespace
 
 NativeAssetsPanel::NativeAssetsPanel(QWidget* parent)
-    : QWidget(parent), artifacts_(ArtifactStore()) {
+    : QWidget(parent), artifacts_(native::ArtifactStore()) {
     // The single address a delivered worker body may hand a result to. One panel
     // owns the import/preparation surface at a time; the destructor clears it.
     livePanel_ = this;
-    modelRoot_ = nativeSubdirectory(QStringLiteral("models"));
+    modelRoot_ = native::nativeSubdirectory(QStringLiteral("models"));
 #ifdef MIKAI_WITH_MODEL_INSPECTION
-    runtime_ = defaultInspectionRuntime();
+    runtime_ = native::defaultInspectionRuntime();
 #endif
     buildUi();
 }
@@ -655,7 +655,7 @@ void NativeAssetsPanel::buildUi() {
         if (answer != QMessageBox::Yes) return;
         QString reasonKey;
         QString reason;
-        if (discardStaging(artifacts_, directory, &reasonKey, &reason)) {
+        if (native::discardStaging(artifacts_, directory, &reasonKey, &reason)) {
             applyStatus({}, tr("Discarded scratch directory %1.").arg(directory), stagingNote_);
         } else {
             applyStatus(reasonKey, reason, stagingNote_);
@@ -865,7 +865,7 @@ void NativeAssetsPanel::refreshModels() {
     // a build without the inspector. Importing a new graph still is not.
     QString catalogKey;
     QString catalogReason;
-    const ModelInventory inventory(modelRoot_);
+    const native::ModelInventory inventory(modelRoot_);
     QString ownedReason;
     if (!inventory.isOwned(&ownedReason)) {
         catalogKey = QStringLiteral("model.store.unowned");
@@ -874,9 +874,9 @@ void NativeAssetsPanel::refreshModels() {
                             : ownedReason;
     } else {
         QString reason;
-        const QVector<StoredModel> rows = inventory.stored(&reason);
+        const QVector<native::StoredModel> rows = inventory.stored(&reason);
         storedModels_ = rows;
-        for (const StoredModel& row : rows) models_.append(describeStoredModel(row));
+        for (const native::StoredModel& row : rows) models_.append(describeStoredModel(row));
         if (!reason.isEmpty()) {
             // A genuine read failure names itself; it is never hidden behind an
             // empty table.
@@ -928,7 +928,7 @@ void NativeAssetsPanel::refreshCache() {
     // refreshCacheAsync(); this renders whatever snapshot is current plus
     // the metadata-only staging listing (directory names, never engine
     // bytes), which is the same split the inventory snapshot uses.
-    staging_ = stagingDirectories(artifacts_);
+    staging_ = native::stagingDirectories(artifacts_);
 
     cacheTable_->setRowCount(cache_.size());
     for (int row = 0; row < cache_.size(); ++row) {
@@ -990,11 +990,11 @@ void NativeAssetsPanel::applyCacheSnapshot(const QVector<NativeCacheEntry>& entr
 void NativeAssetsPanel::refreshSourceData() {
     // Widget-free: the pinned catalogue and the published copies the data API
     // resolves by digest. The Components tab owns the visible inventory.
-    sourceAssets_ = spatialAssetCatalog();
-    publishedAssets_ = SpatialAssetStore().stored();
+    sourceAssets_ = native::spatialAssetCatalog();
+    publishedAssets_ = native::SpatialAssetStore().stored();
 }
 QString NativeAssetsPanel::publishedAssetPath(const QString& id) const {
-    for (const StoredSpatialAsset& row : publishedAssets_) {
+    for (const native::StoredSpatialAsset& row : publishedAssets_) {
         if (row.verified && row.asset.id == id) return row.graphPath;
     }
     return {};

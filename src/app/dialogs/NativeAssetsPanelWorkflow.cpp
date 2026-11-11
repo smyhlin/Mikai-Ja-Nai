@@ -60,15 +60,16 @@
 #include <native/components/NativeComponentToolchain.hpp>
 #include <native/components/NativeGpuProbe.hpp>
 #include "state/NativeComponentProvisioner.hpp"
+#include "state/NativePlaybackAssembly.hpp"
 #include "workers/Runner.hpp"
 #include "theme/Metrics.hpp"
 
 namespace mikai::app {
 
 // The panel owns the app-side surface; the model, recipe and artifact
-// vocabulary it reads stays in mplayer::native and is named through this
-// file-local using-directive rather than re-homed.
-using namespace mplayer::native;
+// vocabulary it reads stays in mplayer::native and is named through the
+// file-local `native` alias rather than re-homed.
+namespace native = mplayer::native;
 
 namespace {
 
@@ -105,144 +106,6 @@ bool isCudaDeviceUuid(const QString& uuid) { return normalizedUuid(uuid).size() 
 
 #ifdef MIKAI_WITH_MODEL_INSPECTION
 
-/// The child environment the toolchain needs: its own directory first, then the
-/// provider runtime directories, then the system directories. The ambient PATH is
-/// deliberately not inherited, so the helper loads the runtimes it was measured
-/// against rather than whatever happens to be reachable.
-QProcessEnvironment describeChildEnvironment(const BuilderToolPaths& tools) {
-    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-    QStringList path;
-    if (!tools.prepExecutable.isEmpty()) {
-        path.append(QFileInfo(tools.prepExecutable).absolutePath());
-    }
-    if (!tools.trtBinDir.isEmpty()) path.append(QDir::toNativeSeparators(tools.trtBinDir));
-    if (!tools.cudaBinDir.isEmpty()) path.append(QDir::toNativeSeparators(tools.cudaBinDir));
-    const QString systemRoot = qEnvironmentVariable("SystemRoot");
-    if (!systemRoot.isEmpty()) {
-        path.append(QDir::toNativeSeparators(systemRoot + QStringLiteral("/System32")));
-        path.append(QDir::toNativeSeparators(systemRoot));
-    }
-    environment.insert(QStringLiteral("PATH"), path.join(QLatin1Char(';')));
-    return environment;
-}
-
-/// Runs `mikai_native_prep --describe-device --json` - naming the observed device
-/// when one is known, so the helper measures the adapter this job will build for
-/// - and returns its stdout document. A helper that does not answer, or answers
-/// with nothing, refuses by name; nothing is read from a file the operator wrote.
-bool runDescribeDevice(const BuilderToolPaths& tools, const QString& deviceUuid, QString* document,
-                       QString* reasonKey, QString* reason) {
-    const auto refuse = [reasonKey, reason](const QString& key, const QString& text) {
-        if (reasonKey != nullptr) *reasonKey = key;
-        if (reason != nullptr) *reason = text;
-        return false;
-    };
-    if (tools.prepExecutable.isEmpty()) {
-        return refuse(QStringLiteral("native.prepare.identityUnobserved"),
-                      QCoreApplication::translate(
-                          "NativeAssetsPanel",
-                          "No preparation helper is present, so this machine's build identity "
-                          "cannot be measured."));
-    }
-    QProcess process;
-    process.setProcessEnvironment(describeChildEnvironment(tools));
-    process.setProgram(tools.prepExecutable);
-    QStringList arguments{QStringLiteral("--describe-device"), QStringLiteral("--json")};
-    if (!deviceUuid.isEmpty()) {
-        arguments.append(QStringLiteral("--device-uuid"));
-        arguments.append(deviceUuid);
-    }
-    process.setArguments(arguments);
-    process.start();
-    if (!process.waitForStarted(10000)) {
-        return refuse(QStringLiteral("native.prepare.identityLaunch"),
-                      QCoreApplication::translate(
-                          "NativeAssetsPanel",
-                          "The preparation helper could not be started: %1")
-                          .arg(process.errorString()));
-    }
-    // X-H6: was a single 60 s waitForFinished() that never polled the
-    // cancellation scope. 100 ms slices now, killing the child when the
-    // scope is cancelled or the 60 s deadline hits, with distinct
-    // cancelled vs timed-out errors.
-    {
-        QElapsedTimer deadline;
-        deadline.start();
-        bool cancelled = false;
-        bool timedOut = false;
-        while (!process.waitForFinished(100)) {
-            if (mikai::backend::WorkCancellationScope::cancellationRequested()) {
-                cancelled = true;
-                break;
-            }
-            if (deadline.elapsed() >= 60000) {
-                timedOut = true;
-                break;
-            }
-            if (process.state() == QProcess::NotRunning) break;
-        }
-        if (cancelled) {
-            process.kill();
-            process.waitForFinished(5000);
-            return refuse(QStringLiteral("native.prepare.identityCancelled"),
-                          QCoreApplication::translate(
-                              "NativeAssetsPanel",
-                              "The preparation helper was cancelled while reporting this "
-                              "machine's build identity."));
-        }
-        if (timedOut) {
-            process.kill();
-            process.waitForFinished(5000);
-            return refuse(QStringLiteral("native.prepare.identityTimeout"),
-                          QCoreApplication::translate(
-                              "NativeAssetsPanel",
-                              "The preparation helper did not report this machine's build identity "
-                              "within its deadline."));
-        }
-    }
-    const QByteArray output = process.readAllStandardOutput();
-    const QByteArray errors = process.readAllStandardError();
-    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0 ||
-        output.trimmed().isEmpty()) {
-        const QString detail = QString::fromUtf8(errors).trimmed();
-        return refuse(QStringLiteral("native.prepare.identityUnobserved"),
-                      detail.isEmpty()
-                          ? QCoreApplication::translate(
-                                "NativeAssetsPanel",
-                                "The preparation helper refused to describe this machine (exit "
-                                "%1).")
-                                .arg(process.exitCode())
-                          : detail);
-    }
-    if (document != nullptr) *document = QString::fromUtf8(output).trimmed();
-    if (reasonKey != nullptr) reasonKey->clear();
-    if (reason != nullptr) reason->clear();
-    return true;
-}
-
-/// Exactly the canonical option set the builder derives from the flags the
-/// helper measured. A different set would produce a build key for a
-/// configuration the helper never used, so the builder compares this back.
-QVector<BuildOption> measuredBuildOptions(quint64 builderFlags, quint64 tacticSources,
-                                          quint64 networkFlags, int builderOptimizationLevel,
-                                          const QString& engineCapability) {
-    const auto option = [](const QString& name, const QString& value) {
-        BuildOption build;
-        build.name = name;
-        build.value = value;
-        build.hasValue = true;
-        return build;
-    };
-    QVector<BuildOption> options;
-    options.append(option(QStringLiteral("builderFlags"), QString::number(builderFlags)));
-    options.append(option(QStringLiteral("tacticSources"), QString::number(tacticSources)));
-    options.append(option(QStringLiteral("networkFlags"), QString::number(networkFlags)));
-    options.append(
-        option(QStringLiteral("builderOptimizationLevel"), QString::number(builderOptimizationLevel)));
-    options.append(option(QStringLiteral("engineCapability"), engineCapability));
-    return options;
-}
-
 /// The one schema this consumer reads from the helper's describe mode.
 QString describeDeviceSchema() {
     return QStringLiteral("mikai.native.preparation.environment/1");
@@ -251,9 +114,9 @@ QString describeDeviceSchema() {
 /// Parses the describe document into the build identity. Strict: the schema, the
 /// device, the runtime, the core provenance and the measured build flags must all
 /// be present and well typed, or the whole document is refused by name.
-bool identityFromDescribe(const QJsonObject& document, Backend provider, const QString& coreSha,
-                          int sourceAbi, const QString& pluginVersion, const DeviceIdentity& device,
-                          EngineBuildIdentity* out, QString* reasonKey, QString* reason) {
+bool identityFromDescribe(const QJsonObject& document, native::Backend provider, const QString& coreSha,
+                          int sourceAbi, const QString& pluginVersion, const native::DeviceIdentity& device,
+                          native::EngineBuildIdentity* out, QString* reasonKey, QString* reason) {
     const auto refuse = [reasonKey, reason](const QString& key, const QString& text) {
         if (reasonKey != nullptr) *reasonKey = key;
         if (reason != nullptr) *reason = text;
@@ -310,7 +173,7 @@ bool identityFromDescribe(const QJsonObject& document, Backend provider, const Q
     // helper's own build events record, so a describe record and a build log
     // compare key by key. Nothing is defaulted, and a fact the helper cannot
     // measure is refused by name rather than completed with a plausible value.
-    EngineBuildIdentity identity;
+    native::EngineBuildIdentity identity;
     identity.provider = provider;
     QString missing;
     QString tool;
@@ -425,11 +288,8 @@ bool identityFromDescribe(const QJsonObject& document, Backend provider, const Q
     identity.pluginVersion = pluginVersion;
     identity.tf32 = tf32Allowed;
     identity.stronglyTyped = stronglyTyped;
-    identity.options = measuredBuildOptions(static_cast<quint64>(builderFlags),
-                                            static_cast<quint64>(tacticSources),
-                                            static_cast<quint64>(networkFlags),
-                                            static_cast<int>(builderOptimizationLevel),
-                                            engineCapability);
+    identity.options = measuredBuildOptions(builderFlags, tacticSources, networkFlags,
+                                            builderOptimizationLevel, engineCapability);
 
     // `policy` is what this helper prepares, deliberately grouped rather than
     // dressed as a device readback: fp16 because the models are, and
@@ -450,7 +310,7 @@ bool identityFromDescribe(const QJsonObject& document, Backend provider, const Q
                           "The describe document's policy has no usable %1.")
                           .arg(missing));
     }
-    const std::optional<EnginePrecision> precision = enginePrecisionFromName(precisionText);
+    const std::optional<native::EnginePrecision> precision = native::enginePrecisionFromName(precisionText);
     if (!precision.has_value()) {
         return refuse(QStringLiteral("native.prepare.identityIncomplete"),
                       QCoreApplication::translate(
@@ -532,7 +392,7 @@ struct NativeAssetsPanel::PrepareResult {
 void NativeAssetsPanel::updateImportControls() {
     bool runtimePresent = false;
 #ifdef MIKAI_WITH_MODEL_INSPECTION
-    runtimePresent = inspectionRuntimeIsPresent(runtime_, nullptr);
+    runtimePresent = native::inspectionRuntimeIsPresent(runtime_, nullptr);
 #endif
     const bool canImport = runtimePresent && runner_ != nullptr && !importInFlight_;
     importButton_->setEnabled(canImport);
@@ -688,7 +548,7 @@ void NativeAssetsPanel::clearPrepareStatus() {
 QString NativeAssetsPanel::inspectionRuntimeReason() const {
 #ifdef MIKAI_WITH_MODEL_INSPECTION
     QString reason;
-    if (!inspectionRuntimeIsPresent(runtime_, &reason)) {
+    if (!native::inspectionRuntimeIsPresent(runtime_, &reason)) {
         return reason.isEmpty() ? tr("The ONNX Runtime is not present.") : reason;
     }
 #endif
@@ -750,13 +610,13 @@ bool NativeAssetsPanel::importModel(const QString& sourcePath, const QSize& stag
         return false;
     }
 #ifdef MIKAI_WITH_MODEL_INSPECTION
-    if (!inspectionRuntimeIsPresent(runtime_, nullptr)) {
+    if (!native::inspectionRuntimeIsPresent(runtime_, nullptr)) {
         applyStatus(QStringLiteral("native.inspect.runtimeUnavailable"),
                     inspectionRuntimeReason(), importStatus_);
         return false;
     }
 
-    auto cancellation = std::make_shared<ImportCancellation>();
+    auto cancellation = std::make_shared<native::ImportCancellation>();
     importCancel_ = cancellation;
     auto result = std::make_shared<ImportResult>();
     importInFlight_ = true;
@@ -764,7 +624,7 @@ bool NativeAssetsPanel::importModel(const QString& sourcePath, const QSize& stag
     updateImportControls();
 
     const QString root = modelRoot_;
-    const InspectionRuntime runtime = runtime_;
+    const native::InspectionRuntime runtime = runtime_;
     const QString path = QFileInfo(sourcePath).absoluteFilePath();
     // The completions' only reference to this widget is its own alive flag: no
     // widget pointer is captured off-thread, and the GUI body resolves the
@@ -780,9 +640,9 @@ bool NativeAssetsPanel::importModel(const QString& sourcePath, const QSize& stag
                     "NativeAssetsPanel", "The import was cancelled before it started.");
                 return QVariant();
             }
-            ModelInventory inventory(root);
-            const ModelImportOutcome outcome =
-                inventory.importFile(path, runtime, stageGeometry, BackendAvailability(),
+            native::ModelInventory inventory(root);
+            const native::ModelImportOutcome outcome =
+                inventory.importFile(path, runtime, stageGeometry, native::BackendAvailability(),
                                      QString(), cancellation.get());
             result->ok = outcome.ok;
             result->published = outcome.published;
@@ -815,8 +675,8 @@ bool NativeAssetsPanel::importModel(const QString& sourcePath, const QSize& stag
 
 void NativeAssetsPanel::cancelImport() {
     if (!importInFlight_ || !importCancel_) return;
-    const ImportCancellation::CancelResult result = importCancel_->cancel();
-    if (result == ImportCancellation::CancelResult::TooLate) {
+    const native::ImportCancellation::CancelResult result = importCancel_->cancel();
+    if (result == native::ImportCancellation::CancelResult::TooLate) {
         // The worker already passed the publication gate. Nothing can stop the
         // write, so the import is not reported as cancelled and its committed
         // outcome is still delivered by the completion.
@@ -871,20 +731,20 @@ bool NativeAssetsPanel::deleteCacheEntry(const QString& buildKey) {
     return removed;
 }
 
-void NativeAssetsPanel::setRequestedBackend(Backend backend) {
+void NativeAssetsPanel::setRequestedBackend(native::Backend backend) {
     requestedBackend_ = backend;
     updateImportControls();
 }
 
 void NativeAssetsPanel::setPreparationDesiredBackend(
-    std::function<Backend()> provider) {
+    std::function<native::Backend()> provider) {
     preparationDesiredBackendProvider_ = std::move(provider);
 }
 
 bool NativeAssetsPanel::selectModelAsRecipe(const QString& modelId) {
     applyStatus({}, {}, selectRecipeReason_);
-    const StoredModel* found = nullptr;
-    for (const StoredModel& model : storedModels_) {
+    const native::StoredModel* found = nullptr;
+    for (const native::StoredModel& model : storedModels_) {
         if (model.record.id == modelId) {
             found = &model;
             break;
@@ -906,17 +766,17 @@ bool NativeAssetsPanel::selectModelAsRecipe(const QString& modelId) {
 
     // The store owns the recipe document and its stable id; this panel only asks
     // for it and reports the id. It never writes the requested selection.
-    UserRecipeStore store;
+    native::UserRecipeStore store;
     QString reasonKey;
     QString reason;
-    const std::optional<Recipe> recipe =
+    const std::optional<native::Recipe> recipe =
         store.addSpatialModel(found->record, requestedBackend_, &reasonKey, &reason);
     if (!recipe.has_value()) {
         applyStatus(reasonKey, reason, selectRecipeReason_);
         return false;
     }
     selectRecipeReason_->setText(tr("Registered recipe %1 for %2.")
-                                     .arg(recipe->id, stableName(requestedBackend_)));
+                                     .arg(recipe->id, native::stableName(requestedBackend_)));
     emit recipeRequested(recipe->id);
     return true;
 }
@@ -1048,7 +908,7 @@ void NativeAssetsPanel::setRequestedRecipe(const QString& recipeId) {
     updatePrepareControls();
 }
 
-std::optional<NativePreparationContext> NativeAssetsPanel::currentContext() const {
+std::optional<native::NativePreparationContext> NativeAssetsPanel::currentContext() const {
     return contextProvider_ ? contextProvider_() : std::nullopt;
 }
 
@@ -1137,10 +997,10 @@ void NativeAssetsPanel::prepareRefusal(QString* reasonKey, QString* reason,
             return refuse(PrepareRefusalState::Template::RecipeRequired,
                           QStringLiteral("native.prepare.recipe"));
         }
-        UserRecipeStore recipes;
+        native::UserRecipeStore recipes;
         QString recipeKey;
         QString recipeReason;
-        const std::optional<Recipe> recipe =
+        const std::optional<native::Recipe> recipe =
             recipes.find(requestedRecipeId_, &recipeKey, &recipeReason);
         if (!recipe.has_value()) {
             return refuse(PrepareRefusalState::Template::RecipeMissing,
@@ -1151,13 +1011,13 @@ void NativeAssetsPanel::prepareRefusal(QString* reasonKey, QString* reason,
         // The private Native ABI-8 toolchain carries TensorRT and DirectML only.
         // A recipe naming the Standard-only TensorRT for RTX is refused here, by
         // name, before any model, probe, plan or build work is submitted.
-        if (!privateNativeCarries(recipe->backend)) {
+        if (!native::privateNativeCarries(recipe->backend)) {
             return refuse(PrepareRefusalState::Template::BackendUnavailable,
-                          QStringLiteral("backend.unavailable"), stableName(recipe->backend));
+                          QStringLiteral("backend.unavailable"), native::stableName(recipe->backend));
         }
-        for (const SpatialStage& stage : recipe->spatial) {
+        for (const native::SpatialStage& stage : recipe->spatial) {
             bool usable = false;
-            for (const StoredModel& row : storedModels_) {
+            for (const native::StoredModel& row : storedModels_) {
                 if (row.record.id == stage.modelId && row.record.availability.isUsable()) {
                     usable = true;
                     break;
@@ -1199,7 +1059,7 @@ void NativeAssetsPanel::prepareRefusal(QString* reasonKey, QString* reason,
         }
         if (!observedToolchain_.backends.has(recipe->backend)) {
             return refuse(PrepareRefusalState::Template::BackendUnavailable,
-                          QStringLiteral("backend.unavailable"), stableName(recipe->backend));
+                          QStringLiteral("backend.unavailable"), native::stableName(recipe->backend));
         }
         if (!frameRequest_) {
             return refuse(PrepareRefusalState::Template::Capture,
@@ -1262,10 +1122,10 @@ bool NativeAssetsPanel::prepareArtifact() {
     // How many actual frames the oracle needs is decided by the recipe before any
     // capture is requested: a spatial chain needs one, an interpolation stage two
     // distinct ones, and the surface never fabricates a pair.
-    UserRecipeStore recipes;
+    native::UserRecipeStore recipes;
     QString recipeKey;
     QString recipeReason;
-    const std::optional<Recipe> recipe =
+    const std::optional<native::Recipe> recipe =
         recipes.find(requestedRecipeId_, &recipeKey, &recipeReason);
     if (!recipe.has_value()) {
         // Recorded as a typed refusal: the store's own words ride along verbatim in
@@ -1280,7 +1140,7 @@ bool NativeAssetsPanel::prepareArtifact() {
         return false;
     }
 
-    prepareCancel_ = std::make_shared<NativeBuildCancellation>();
+    prepareCancel_ = std::make_shared<native::NativeBuildCancellation>();
     capturedFrames_.clear();
     framesNeeded_ = recipe->temporal.has_value() ? 2 : 1;
     frameIndexRequested_ = -1;
@@ -1301,7 +1161,7 @@ bool NativeAssetsPanel::prepareArtifact() {
     // The context the core already observed, or - only now, because the user
     // actually clicked Prepare - an explicit request that arms the live core's own
     // native probe. Opening the settings page never arms anything.
-    const std::optional<NativePreparationContext> observed = currentContext();
+    const std::optional<native::NativePreparationContext> observed = currentContext();
     if (observed.has_value()) {
         jobContext_ = observed;
         requestNextPreparationFrame();
@@ -1342,9 +1202,9 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
     }
     const QString recipeId = requestedRecipeId_;
     const QString modelRoot = modelRoot_;
-    const InspectionRuntime runtime = runtime_;
-    const ArtifactStore store = artifacts_;
-    const NativePreparationContext ctx = *jobContext_;
+    const native::InspectionRuntime runtime = runtime_;
+    const native::ArtifactStore store = artifacts_;
+    const native::NativePreparationContext ctx = *jobContext_;
     const NativePreparationToolchain tools = observedToolchain_;
     // The worker's only route back to this widget: a binder built here, on the
     // GUI thread, plus this widget's own alive flag. Neither is a QPointer, so
@@ -1362,10 +1222,10 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
                     "NativeAssetsPanel", "The preparation was cancelled before it started.");
                 return QVariant();
             }
-            UserRecipeStore recipes;
+            native::UserRecipeStore recipes;
             QString recipeKey;
             QString recipeReason;
-            const std::optional<Recipe> recipe =
+            const std::optional<native::Recipe> recipe =
                 recipes.find(recipeId, &recipeKey, &recipeReason);
             if (!recipe.has_value()) {
                 result->reasonKey = recipeKey.isEmpty() ? QStringLiteral("native.prepare.recipe")
@@ -1403,25 +1263,25 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
                                      .arg(describeError.errorString());
                 return QVariant();
             }
-            EngineBuildIdentity identity;
+            native::EngineBuildIdentity identity;
             // Every private backend names its own preparation module revision. The
             // Standard-only TensorRT for RTX has no private module here, so it is
             // refused by name instead of being handed the TensorRT revision.
             QString pluginRevision;
             switch (recipe->backend) {
-                case Backend::TensorRT:
+                case native::Backend::TensorRT:
                     pluginRevision = tools.pluginShaTensorRt;
                     break;
-                case Backend::DirectML:
+                case native::Backend::DirectML:
                     pluginRevision = tools.pluginShaDirectMl;
                     break;
-                case Backend::TensorRTRTX:
+                case native::Backend::TensorRTRTX:
                     result->reasonKey = QStringLiteral("backend.unavailable");
                     result->reason = QCoreApplication::translate(
                                          "NativeAssetsPanel",
                                          "The private Native pipeline does not carry the %1 "
                                          "backend, so no engine can be built for it.")
-                                         .arg(stableName(recipe->backend));
+                                         .arg(native::stableName(recipe->backend));
                     return QVariant();
             }
             if (!identityFromDescribe(describe.object(), recipe->backend, tools.coreSha,
@@ -1432,7 +1292,7 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
                 return QVariant();
             }
 
-            InspectedPlanResolver resolver(modelRoot, runtime);
+            native::InspectedPlanResolver resolver(modelRoot, runtime);
             QString storeKey;
             QString storeReason;
             if (!resolver.refresh(&storeKey, &storeReason)) {
@@ -1440,16 +1300,16 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
                 result->reason = storeReason;
                 return QVariant();
             }
-            PlanRequest planRequest;
+            native::PlanRequest planRequest;
             planRequest.recipe = *recipe;
             planRequest.catalog = resolver.catalog();
             planRequest.backends = tools.backends;
             planRequest.source = ctx.source;
             planRequest.device = ctx.device;
-            planRequest.window = ChainWindow();
+            planRequest.window = native::ChainWindow();
             planRequest.dynamicResolver = resolver.resolver();
 
-            const PreparationPlan plan = resolvePreparationPlan(planRequest);
+            const native::PreparationPlan plan = native::resolvePreparationPlan(planRequest);
             if (!plan.blockers.isEmpty()) {
                 result->reasonKey = plan.blockers.first().reasonKey;
                 result->reason = plan.blockers.first().reason;
@@ -1467,12 +1327,12 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
 
             // One owned row per stage, in stage order, from the store the plan
             // was resolved against.
-            const QVector<StoredModel> rows = resolver.rows();
-            QVector<StoredModel> models;
+            const QVector<native::StoredModel> rows = resolver.rows();
+            QVector<native::StoredModel> models;
             for (int index = 0; index < plan.stages.size(); ++index) {
-                const ResolvedStage& stage = plan.stages.at(index);
-                const StoredModel* found = nullptr;
-                for (const StoredModel& row : rows) {
+                const native::ResolvedStage& stage = plan.stages.at(index);
+                const native::StoredModel* found = nullptr;
+                for (const native::StoredModel& row : rows) {
                     if (row.record.id == stage.modelId) {
                         found = &row;
                         break;
@@ -1495,8 +1355,8 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
             const int stageCount = static_cast<int>(plan.stages.size());
             // The binder is the worker's only route back: it posts, so nothing
             // here touches a widget and nothing reads this panel off-thread.
-            const BuilderProgressCallback progress =
-                [post, alive, generation, stageCount](const BuilderProgress& event) {
+            const native::BuilderProgressCallback progress =
+                [post, alive, generation, stageCount](const native::BuilderProgress& event) {
                     const int stageIndex = event.stageIndex;
                     const QString phase = event.phase;
                     const QString detail = event.detail;
@@ -1512,12 +1372,12 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
             // next stage's input, and an interpolation stage's eleven-channel
             // input is built from the actual frame pair. The frames are the ones
             // the live core actually captured, never a stretched copy.
-            PlanReferenceRequest lineage;
+            native::PlanReferenceRequest lineage;
             lineage.plan = plan;
             lineage.source = ctx.source;
             lineage.frames.reserve(frames.size());
             for (int index = 0; index < frames.size(); ++index) {
-                ReferenceFrame frame;
+                native::ReferenceFrame frame;
                 frame.fixture = frames.at(index);
                 frame.unprocessed = true;
                 frame.sourceIndex = index;
@@ -1528,10 +1388,10 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
             lineage.scratchDirectory = result->scratch->path();
             lineage.cancellation = cancellation.get();
             lineage.progress = progress;
-            QVector<BuilderStageReference> references;
+            QVector<native::BuilderStageReference> references;
             QString referenceKey;
             QString referenceReason;
-            if (!buildPlanReferenceLineage(lineage, &references, &referenceKey, &referenceReason)) {
+            if (!native::buildPlanReferenceLineage(lineage, &references, &referenceKey, &referenceReason)) {
                 result->reasonKey = referenceKey.isEmpty()
                                         ? QStringLiteral("native.prepare.reference")
                                         : referenceKey;
@@ -1548,7 +1408,7 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
                 return QVariant();
             }
 
-            BuilderRequest request;
+            native::BuilderRequest request;
             request.plan = plan;
             request.models = models;
             request.build = identity;
@@ -1558,7 +1418,7 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
             request.modelRoot = modelRoot;
             request.workspaceBytes = 0;
 
-            const BuilderResult built = runNativeBuild(request, cancellation.get(), progress);
+            const native::BuilderResult built = native::runNativeBuild(request, cancellation.get(), progress);
             result->ok = built.ok;
             result->cancelled = built.cancelled;
             result->reasonKey = built.reasonKey;
@@ -1591,8 +1451,8 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
 
 void NativeAssetsPanel::cancelPrepare() {
     if (!prepareInFlight_ || !prepareCancel_) return;
-    const NativeBuildCancellation::CancelResult result = prepareCancel_->cancel();
-    if (result == NativeBuildCancellation::CancelResult::TooLate) {
+    const native::NativeBuildCancellation::CancelResult result = prepareCancel_->cancel();
+    if (result == native::NativeBuildCancellation::CancelResult::TooLate) {
         // The worker already passed the publication gate. Nothing can stop the
         // write, so the job is not reported as cancelled and its committed
         // outcome is still delivered by the completion.
