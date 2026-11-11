@@ -5,6 +5,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QToolTip>
 #include <QCursor>
 #include <QDebug>
 #include <QEvent>
@@ -839,6 +840,12 @@ void ProcessingOverlay::maintainTopmost() {
         stopStackingTimer();
         return;
     }
+    // A popup the viewer is reading outranks this window's band. Re-asserting
+    // topmost here while a menu or tooltip is on screen moves this window above
+    // it, because the last topmost request wins - that is how a popup ends up
+    // underneath the thing it explains. The timer keeps running, so the band is
+    // taken back the moment the popup closes.
+    if (QApplication::activePopupWidget() != nullptr || QToolTip::isVisible()) return;
 #ifdef Q_OS_WIN
     const HWND window = reinterpret_cast<HWND>(winId());
     if (window != nullptr) {

@@ -196,7 +196,15 @@ bool WindowRaisePolicy::eventFilter(QObject* watched, QEvent* event) {
     if (window->windowType() == Qt::ToolTip || window->windowType() == Qt::Popup) {
         HWND popupHwnd = reinterpret_cast<HWND>(window->winId());
         if (popupHwnd != nullptr && IsWindow(popupHwnd)) {
-            QWidget* ownerCandidate = QApplication::activeWindow();
+            // The popup's OWN window first: a menu or a tip belongs to the
+            // widget that opened it, and that is not always the active window -
+            // a player shown without activation, or a second top-level beside
+            // it, leaves the active window somewhere else entirely. Adopting the
+            // popup into that window's band is what puts a tooltip behind the
+            // player that spawned it.
+            QWidget* ownerCandidate = nullptr;
+            if (QWidget* opener = window->parentWidget()) ownerCandidate = opener->window();
+            if (ownerCandidate == nullptr) ownerCandidate = QApplication::activeWindow();
             if (ownerCandidate == nullptr) {
                 if (QWidget* atCursor = QApplication::widgetAt(QCursor::pos())) {
                     ownerCandidate = atCursor->window();
