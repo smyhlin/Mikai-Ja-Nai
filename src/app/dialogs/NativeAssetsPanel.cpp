@@ -924,7 +924,12 @@ void NativeAssetsPanel::refreshModels() {
 }
 
 void NativeAssetsPanel::refreshCache() {
-    cache_ = enumerateNativeCache(artifacts_);
+    // X-H3: render-only. The snapshot in cache_ is delivered by
+    // refreshCacheAsync() (or, with no worker pool, by its synchronous
+    // fallback); this function never enumerates or hashes. Re-enumerating
+    // here re-hashed every prepared engine on the GUI thread — including
+    // from applyCacheSnapshot(), which defeated the async delivery.
+    // stagingDirectories() is a name-only directory listing, not a proof.
     staging_ = native::stagingDirectories(artifacts_);
 
     cacheTable_->setRowCount(cache_.size());
@@ -946,6 +951,8 @@ void NativeAssetsPanel::refreshCache() {
     for (const QString& directory : staging_) stagingList_->addItem(directory);
     discardStagingButton_->setEnabled(false);
     updateSummaries();
+    // X-H3: the §5 observable — a snapshot was delivered and rendered.
+    emit cacheRefreshed();
 }
 
 void NativeAssetsPanel::refreshCacheAsync() {
@@ -981,6 +988,8 @@ void NativeAssetsPanel::applyCacheSnapshot(const QVector<NativeCacheEntry>& entr
                                            quint64 generation) {
     if (generation != cacheRefreshGeneration_) return;
     cache_ = entries;
+    // X-H3: refreshCache() is render-only, so the worker-delivered snapshot
+    // is what renders; nothing is re-hashed on the GUI thread here.
     refreshCache();
 }
 
