@@ -55,6 +55,9 @@ inline constexpr std::string_view kAnimeJanaiBackend = "player/animejanai/backen
 inline constexpr std::string_view kHomeFeeds = "home/feeds";
 inline constexpr std::string_view kHomeRecentTitles = "home/recentTitles";
 
+// Watch history (WatchHistory.cpp).
+inline constexpr std::string_view kWatchHistoryKey = "title/watchHistory";
+
 // Quality cache backing key (QualityCache.cpp).
 inline constexpr std::string_view kQualityUrls = "quality/urls";
 
