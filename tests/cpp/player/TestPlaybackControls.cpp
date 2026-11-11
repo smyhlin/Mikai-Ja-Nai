@@ -843,3 +843,142 @@ void TestPlaybackControls::aSkipForwardAtTheEndDoesNotRestartTheSource() {
     QVERIFY2(durationAfter.has_value() && std::abs(*durationAfter - *duration) < 0.01,
              "the loaded source keeps its length");
 }
+
+namespace {
+
+// P0-08: records what the dialog asks its host to do. The dialog must never
+// ask for an episode on its own: EOF only emits episodePlaybackFinished and
+// the host decides whether to step.
+class StubPlayerHost : public mplayer::shell::PlayerHost {
+public:
+    void requestVariant(const QString&, const QString&) override {}
+    void requestEpisode(int index) override { requestedEpisodes.append(index); }
+    void requestTrackProbe(const QString&) override {}
+    void requestCopyStreamUrl() override {}
+    void playerClosed() override {}
+    void playbackFailed() override {}
+
+    QList<int> requestedEpisodes;
+};
+
+QVector<QVariantMap> threeEpisodePlaylist() {
+    QVector<QVariantMap> playlist;
+    for (int episode = 1; episode <= 3; ++episode) {
+        QVariantMap item;
+        item.insert(QStringLiteral("label"), QStringLiteral("Episode %1").arg(episode));
+        item.insert(QStringLiteral("number"), QString::number(episode));
+        item.insert(QStringLiteral("embed"), QStringLiteral("https://example.invalid/ep%1").arg(episode));
+        playlist.append(item);
+    }
+    return playlist;
+}
+
+}  // namespace
+
+void TestPlaybackControls::anEofEmitsFinishedOnceAndDoesNotStepItself() {
+    // No core is needed: the EOF is simulated by emitting the surface's
+    // mediaEnded signal with the token of episode 2 (tokens are index + 1),
+    // exactly as VideoSurface does on MPV_EVENT_END_FILE / EOF.
+    StubPlayerHost host;
+    const QList<mplayer::shell::QualityEntry> qualities{
+        mplayer::shell::QualityEntry{720, fixtureClip()}};
+    const std::unique_ptr<mplayer::shell::PlayerDialog> dialog(
+        new mplayer::shell::PlayerDialog(QStringLiteral("Episode 2 · 720p"), fixtureClip(),
+                                         qualities, 720, &host));
+    auto* shell = dialog->findChild<mplayer::shell::PlayerShell*>();
+    QVERIFY2(shell != nullptr, "the dialog hosts a shell");
+    auto* surface = shell->findChild<mplayer::VideoSurface*>();
+    QVERIFY2(surface != nullptr, "the shell hosts a surface");
+    dialog->setPlaylist(threeEpisodePlaylist(), 1);
+    QCOMPARE(dialog->currentEpisodeIndex(), 1);
+
+    QSignalSpy finished(dialog.get(),
+                        &mplayer::shell::PlayerDialog::episodePlaybackFinished);
+    QVERIFY(QMetaObject::invokeMethod(surface, "mediaEnded", Q_ARG(quint64, 2)));
+    QCOMPARE(finished.count(), 1);
+    QCOMPARE(finished.at(0).at(0).toInt(), 1);
+    QVERIFY2(host.requestedEpisodes.isEmpty(),
+             "EOF must not make the dialog step on its own");
+
+    // A second end for the same episode is deduped by lastFinishedEpisodeIndex_.
+    QVERIFY(QMetaObject::invokeMethod(surface, "mediaEnded", Q_ARG(quint64, 2)));
+    QCOMPARE(finished.count(), 1);
+    QVERIFY2(host.requestedEpisodes.isEmpty(),
+             "a duplicate EOF must not make the dialog step either");
+
+    // The last episode still emits, and still does not step by itself.
+    dialog->setPlaylist(threeEpisodePlaylist(), 2);
+    QVERIFY(QMetaObject::invokeMethod(surface, "mediaEnded", Q_ARG(quint64, 3)));
+    QCOMPARE(finished.count(), 2);
+    QCOMPARE(finished.at(1).at(0).toInt(), 2);
+    QVERIFY2(host.requestedEpisodes.isEmpty(),
+             "the last episode's EOF must not step anywhere");
+}
+
+void TestPlaybackControls::anUnfilteredCaptureReturnsAtOnceAndArrivesByCallback() {
+    if (!nativePlatformAvailable()) {
+        QSKIP("the player needs a native window and a real GL context");
+    }
+    if (!requireRuntime()) return;
+
+    const QString fixture = fixtureClip();
+    QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
+
+    const std::unique_ptr<mplayer::shell::PlayerDialog> dialog(
+        new mplayer::shell::PlayerDialog(QStringLiteral("controls"), fixture));
+    dialog->show();
+    if (!QTest::qWaitForWindowExposed(dialog.get(), 15000)) {
+        QSKIP("the player window was never exposed on this platform");
+    }
+    auto* shell = dialog->findChild<mplayer::shell::PlayerShell*>();
+    QVERIFY2(shell != nullptr, "the dialog hosts a shell");
+    auto* surface = shell->findChild<mplayer::VideoSurface*>();
+    QVERIFY2(surface != nullptr, "the shell hosts a surface");
+    if (!surface->waitForContext(20000)) {
+        QSKIP("no OpenGL context for the player surface");
+    }
+
+    dialog->startPlayer();
+    QVERIFY2(settleUntil([surface] { return surface->duration() > 10.0; }, 30000),
+             qPrintable(QStringLiteral("the player never loaded %1 (duration %2)")
+                            .arg(fixture)
+                            .arg(surface->duration())));
+    surface->setPaused(true);
+    surface->seek(1.0);
+    QVERIFY2(settleUntil([surface] { return std::abs(surface->position() - 1.0) < 0.25; }, 15000),
+             qPrintable(QStringLiteral("the player never reached 1.0 s (position %1)")
+                            .arg(surface->position())));
+
+    const std::optional<QString> filtersBefore = coreText(surface, "vf");
+    const std::optional<QString> shadersBefore = coreText(surface, "glsl-shaders");
+
+    // The call itself must not block the GUI thread: the frame arrives later,
+    // through the completion callback.
+    QElapsedTimer callClock;
+    callClock.start();
+    bool completed = false;
+    QImage captured;
+    QString captureReason;
+    surface->grabUnfilteredFrameAsync([&](QImage image, QString reason) {
+        captured = std::move(image);
+        captureReason = std::move(reason);
+        completed = true;
+    });
+    QVERIFY2(callClock.elapsed() < 100,
+             qPrintable(QStringLiteral("the async capture call blocked the GUI thread for %1 ms")
+                            .arg(callClock.elapsed())));
+    QTRY_VERIFY_WITH_TIMEOUT(completed, 15000);
+    QVERIFY2(captureReason.isEmpty(),
+             qPrintable(QStringLiteral("the capture failed: %1").arg(captureReason)));
+    QVERIFY2(!captured.isNull(), "the capture must deliver a frame");
+    QCOMPARE(captured.size(), QSize(320, 180));
+
+    // The playhead returns to where it was: the second seek lands back on 1 s.
+    QVERIFY2(settleUntil([surface] { return std::abs(surface->position() - 1.0) < 0.25; }, 10000),
+             qPrintable(QStringLiteral("the capture left the playhead at %1 s")
+                            .arg(surface->position())));
+    // The filter chain the capture cleared is restored afterwards.
+    QCOMPARE(coreText(surface, "vf"), filtersBefore);
+    QCOMPARE(coreText(surface, "glsl-shaders"), shadersBefore);
+    QVERIFY2(coreIsPaused(surface), "the capture must not unpause the player");
+}

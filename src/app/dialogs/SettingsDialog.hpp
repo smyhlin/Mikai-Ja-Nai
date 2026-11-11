@@ -367,6 +367,8 @@ private:
     QComboBox* hdrPolicy_ = nullptr;
     QCheckBox* nativeHdrOverride_ = nullptr;
     QLabel* nativeHdrOverrideHint_ = nullptr;
+    // P0-08: auto-advance to the next episode on EOF (default ON).
+    QCheckBox* autoAdvance_ = nullptr;
     // ── Video scaling (GOAL-H2) ──────────────────────────────────────────
     QLabel* scalingTitle_ = nullptr;
     QLabel* scalingHint_ = nullptr;

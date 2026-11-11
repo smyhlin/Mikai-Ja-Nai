@@ -135,6 +135,10 @@ public:
     /// list clears the offers.
     void setSkipSegments(const QVector<QVariantMap>& segments);
     void stepEpisode(int delta);
+    /// The playlist index of the episode now playing. The host's staleness
+    /// guard: a finished episode that is no longer current (the viewer already
+    /// stepped away) must not auto-advance.
+    int currentEpisodeIndex() const { return episodeIndex_; }
     /// Badges one track with the quality a probe found for it.
     void setTrackQuality(const QString& embed, int quality);
     void showError(const QString& message);

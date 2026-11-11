@@ -19,6 +19,7 @@
 #include "workers/Runner.hpp"
 
 #include <PlayerDialog.hpp>
+#include <VideoSurface.hpp>
 #include <backend/HttpTransport.hpp>
 #include <backend/MikaiClient.hpp>
 #include <backend/Releases.hpp>
@@ -43,6 +44,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSettings>
 #include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QStandardPaths>
@@ -250,6 +252,21 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
                 if (!number.isEmpty()) {
                     setEpisodeWatched(number, true);
                 }
+                // P0-08: host-driven auto-advance. PlayerDialog owns neither
+                // the playlist nor the decision: it only dedupes and emits.
+                // Advance only when the finished episode is still the one
+                // playing, a next episode exists, and the viewer has not
+                // disabled auto-advance (one bool, default ON). The step goes
+                // through the existing manual episode-stepping path, so the
+                // last episode simply stops: no loop, no replay.
+                const bool autoAdvance = QSettings().value(
+                    QString::fromLatin1(mplayer::VideoSurface::kAutoAdvanceSettingKey),
+                    true).toBool();
+                if (!autoAdvance || playlistIndex != session->dialog->currentEpisodeIndex() ||
+                    playlistIndex + 1 >= session->playlist.size()) {
+                    return;
+                }
+                session->dialog->stepEpisode(1);
             });
     // The app-owned assembly answers this episode player's native requests: it
     // reads the owned model store, the requested recipe and the measured machine

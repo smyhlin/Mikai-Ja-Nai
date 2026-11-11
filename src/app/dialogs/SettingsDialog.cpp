@@ -611,6 +611,10 @@ void SettingsDialog::save() {
     settings.setValue(
         QString::fromLatin1(mplayer::VideoSurface::kAnimeJanaiHdrOverrideSettingKey),
         nativeHdrOverride_->isChecked());
+    // P0-08: the one auto-advance bool, default ON, in the existing playback
+    // settings - no new settings page.
+    settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kAutoAdvanceSettingKey),
+                      autoAdvance_->isChecked());
     using HdrPolicy = mplayer::VideoSurface::HdrToneMappingPolicy;
     switch (committedHdrPolicy) {
         case 1: mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Stable); break;

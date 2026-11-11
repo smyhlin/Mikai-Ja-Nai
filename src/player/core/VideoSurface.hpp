@@ -342,6 +342,9 @@ public:
     /// writer spells them identically.
     inline static constexpr char kHdrToneMappingSettingKey[] = "playback/hdrToneMapping";
     inline static constexpr char kAnimeJanaiHdrOverrideSettingKey[] = "playback/nativeOnHdr";
+    /// P0-08: whether the host advances to the next episode when the current
+    /// one ends. Default ON; read by the episodePlaybackFinished subscriber.
+    inline static constexpr char kAutoAdvanceSettingKey[] = "playback/autoAdvance";
 
     /// Display scaling, adopted by every surface on its state pump exactly like
     /// the HDR policy: one process-wide viewing preference, no per-window copy.
@@ -442,7 +445,27 @@ public:
     /// The playhead returns to where it was. Used where a consumer needs the
     /// untouched source and cannot open a second decode of it (a signed stream
     /// URL, for instance). GUI thread only; requires a paused frame.
+    ///
+    /// Restored verbatim from 7642f50 (option 1): the synchronous path
+    /// stays until P1-01(c) converts the CompareWindow call site; new
+    /// code must use grabUnfilteredFrameAsync instead.
     QImage grabUnfilteredFrame(QString* reason = nullptr);
+    ///
+    /// P1-01(a): asynchronous - the call returns at once (well under 100 ms)
+    /// and the frame arrives through `completion` on the GUI thread, with an
+    /// empty reason on success. The two seeks are preserved in order: a paused
+    /// core only decodes a fresh frame through the cleared chain after a small
+    /// seek back and forward. Each seek waits for a source-valid frame
+    /// presentation (`frameSwapped` paired with the expected position and the
+    /// source epoch), never a poll loop. Filter properties travel
+    /// `MpvHandle::getPropertyAsync`; the pixels arrive through an async
+    /// `screenshot-raw` reply, the same mechanism FramePreviewService and
+    /// CompareRenderer already use - no second screenshot path. One capture
+    /// at a time: a second call while one is in flight completes at once with
+    /// "an unfiltered capture is already running". If the surface is destroyed
+    /// mid-capture, the completion never fires: the caller must guard with its
+    /// own QPointer/teardown instead of waiting on it unconditionally.
+    void grabUnfilteredFrameAsync(std::function<void(QImage, QString)> completion);
 
     /// The video readback for consumers that must not capture chrome: the same
     /// framebuffer Qt would hand grabFramebuffer(), rendered with this surface's
@@ -1126,6 +1149,55 @@ private:
     bool requestedPause() const {
         return pendingPauseWrite_.has_value() ? pendingPauseWrite_->target : observedPaused_;
     }
+    /// P1-01(a): one async unfiltered capture, shared by its phases. The
+    /// phases run on the GUI thread only, chained off mpv async replies,
+    /// `frameSwapped` / `positionChanged`, and a per-phase timeout - never a
+    /// poll loop. `surface` is weak: a capture abandoned by a destroyed
+    /// surface still completes its caller instead of hanging it.
+    struct UnfilteredCapture {
+        QPointer<VideoSurface> surface;
+        std::function<void(QImage, QString)> completion;
+        /// Source epoch at capture start: a reply or presentation from a
+        /// replaced source is stale, not the frame this capture is owed.
+        uint64_t epoch = 0;
+        /// Playhead at capture start; the second seek returns to it.
+        double target = 0.0;
+        /// The chain this capture cleared, restored on every exit path.
+        QString filter;
+        QString shaders;
+        /// True only for the properties this capture actually cleared, so a
+        /// restore never writes a chain something else changed mid-capture.
+        bool clearedFilter = false;
+        bool clearedShaders = false;
+        /// Replies outstanding for the two filter reads / clears.
+        int readsPending = 0;
+        int setsPending = 0;
+        bool readFailed = false;
+        bool setFailed = false;
+        /// Position the waited frame must be near, and the presented-frame
+        /// count before the seek that produced it.
+        double expectedPosition = 0.0;
+        uint64_t framesBeforeSeek = 0;
+        /// 1 after the first seek, 2 after the second.
+        int waitPhase = 0;
+        QPointer<QTimer> timer;
+        QMetaObject::Connection frameSwappedConnection;
+        QMetaObject::Connection positionConnection;
+        bool finished = false;
+    };
+    /// The capture in flight, if any. One at a time: a second call completes
+    /// at once instead of queuing behind the first.
+    std::shared_ptr<UnfilteredCapture> unfilteredCapture_;
+    void onUnfilteredFiltersRead(const std::shared_ptr<UnfilteredCapture>& state);
+    void onUnfilteredFiltersCleared(const std::shared_ptr<UnfilteredCapture>& state);
+    void waitUnfilteredFrame(const std::shared_ptr<UnfilteredCapture>& state,
+                             double seekPosition);
+    void checkUnfilteredFramePresented(const std::shared_ptr<UnfilteredCapture>& state);
+    void captureUnfilteredFrame(const std::shared_ptr<UnfilteredCapture>& state);
+    void finishUnfilteredCapture(const std::shared_ptr<UnfilteredCapture>& state,
+                                 const QImage& image, const QString& reason);
+    void restoreUnfilteredFilters(const std::shared_ptr<UnfilteredCapture>& state);
+    bool unfilteredCaptureActive(const std::shared_ptr<UnfilteredCapture>& state) const;
     /// Set while a readback is suppressing this surface's overlay, so a paint made
     /// for it stays out of the captured image.
     bool overlaySuppressed_ = false;
