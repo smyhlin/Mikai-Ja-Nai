@@ -1859,7 +1859,8 @@ void PlayerDialog::openSubtitlesSearchDialog() {
 
     const QPointer<PlayerDialog> self(this);
     connect(search, &QPushButton::clicked, &dialog, [this, self, query, language, key, results,
-                                                     status, search, download] {
+                                                     status, search, download, subtitleSlot,
+                                                     cancelled] {
         if (self == nullptr) return;
         const QString apiKey = key->text().trimmed();
         if (apiKey.isEmpty()) {
@@ -1910,7 +1911,8 @@ void PlayerDialog::openSubtitlesSearchDialog() {
             }));
     });
 
-    connect(download, &QPushButton::clicked, &dialog, [this, self, results, status, key, download] {
+    connect(download, &QPushButton::clicked, &dialog,
+              [this, self, results, status, key, download, subtitleSlot, cancelled] {
         if (self == nullptr) return;
         QListWidgetItem* item = results->currentItem();
         if (item == nullptr) return;
