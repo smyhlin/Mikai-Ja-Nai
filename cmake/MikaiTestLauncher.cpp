@@ -815,7 +815,17 @@ int stageAndRun(const QStringList& arguments, const QString& directory,
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
     environment.remove(QStringLiteral("MIKAI_NATIVE_ROOT"));
 #ifdef Q_OS_WIN
-    environment.insert(QStringLiteral("PATH"), arguments.at(4) + QDir::listSeparator() +
+    // The staged DLLs cover the test child itself, but tests that spawn their
+    // own children build those children's environment from the ambient
+    // systemEnvironment(): the toolchain bin must precede Git's ucrt64 there
+    // too, or the grandchild dies with 0xc0000139 before main. Prepending it
+    // to the child PATH covers every current and future grandchild with one
+    // change and no per-site edits. A caller that named no toolchain keeps
+    // the old PATH exactly.
+    QString childPath = arguments.at(4);
+    if (!toolchainBinDir.isEmpty())
+        childPath.prepend(toolchainBinDir + QDir::listSeparator());
+    environment.insert(QStringLiteral("PATH"), childPath + QDir::listSeparator() +
                        environment.value(QStringLiteral("PATH")));
 #else
     environment.insert(QStringLiteral("LD_LIBRARY_PATH"), arguments.at(4));
