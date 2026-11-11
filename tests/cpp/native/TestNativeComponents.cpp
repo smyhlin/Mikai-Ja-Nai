@@ -992,7 +992,11 @@ void TestNativeComponents::storeRejectsSymlinkedComponentFiles() {
     }
 #endif
 
-    QCOMPARE(QFileInfo(componentPath).size(), static_cast<qint64>(content.size()));
+    // QFileInfo::size() reports the reparse point itself (0) for a symlink on
+    // Windows; the fixture check must read through the link instead.
+    QFile linked(componentPath);
+    QVERIFY(linked.open(QIODevice::ReadOnly));
+    QCOMPARE(linked.readAll().size(), content.size());
     const StoredPack stored = storedPack(store, *pack);
     QVERIFY(!stored.installed);
     const StoredPack verified = verifyPack(store, *pack);
