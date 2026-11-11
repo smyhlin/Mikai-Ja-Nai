@@ -1,12 +1,12 @@
 #pragma once
 
+#include "state/SettingsKeys.hpp"
+
 #include <QMap>
 #include <QString>
 #include <QStringList>
 
 #include <mutex>
-
-#include "state/SettingsKeys.hpp"
 
 namespace mikai::app {
 

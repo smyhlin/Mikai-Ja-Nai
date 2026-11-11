@@ -334,9 +334,6 @@ MpvHandle::MpvHandle(MpvHandle&& other) noexcept
       // The identity travels with the core, so a request issued before the move
       // is still recognised as belonging to the handle that now owns it.
       identity_(other.identity_),
-      // The lifetime token travels with the core too: a borrower bound before
-      // the move stays bound to the same core, not to the moved-from shell.
-      lifetime_(std::move(other.lifetime_)),
       // A drain in progress on the moved-from handle stays guarded on the
       // handle that now owns the core: a reentrant drain must still see it.
       drainingEvents_(other.drainingEvents_),
@@ -351,6 +348,9 @@ MpvHandle::MpvHandle(MpvHandle&& other) noexcept
     other.developerVerboseLogs_ = false;
     other.requestedLogLevel_ = '\0';
     other.epoch_ = 0;
+    // The lifetime token travels with the core too: a borrower bound before
+    // the move stays bound to the same core, not to the moved-from shell.
+    lifetime_ = std::move(other.lifetime_);
 }
 
 MpvHandle& MpvHandle::operator=(MpvHandle&& other) noexcept {
@@ -375,7 +375,6 @@ MpvHandle& MpvHandle::operator=(MpvHandle&& other) noexcept {
     // Adopt the incoming core's identity and epoch: the moved requests were
     // issued against them, so they stay live rather than being dropped.
     identity_ = other.identity_;
-    lifetime_ = std::move(other.lifetime_);
     // A drain in progress on the moved-from handle stays guarded here.
     drainingEvents_ = std::exchange(other.drainingEvents_, false);
     developerVerboseLogs_ = other.developerVerboseLogs_;
@@ -388,6 +387,9 @@ MpvHandle& MpvHandle::operator=(MpvHandle&& other) noexcept {
     other.developerVerboseLogs_ = false;
     other.requestedLogLevel_ = '\0';
     other.epoch_ = 0;
+    // The lifetime token travels with the core too: a borrower bound before
+    // the move stays bound to the same core, not to the moved-from shell.
+    lifetime_ = std::move(other.lifetime_);
     return *this;
 }
 

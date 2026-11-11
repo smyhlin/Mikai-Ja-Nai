@@ -65,8 +65,7 @@ void QualityCache::load() {
                              << QStringLiteral(":")
                              << (error.error != QJsonParseError::NoError
                                      ? error.errorString()
-                                     : QStringLiteral("expected an object"))
-                             << "key:" << key_ << "bytes:" << raw.size();
+                                     : QStringLiteral("expected an object"));
         return;
     }
     const QJsonObject entries = document.object().value(QStringLiteral("entries")).toObject();
