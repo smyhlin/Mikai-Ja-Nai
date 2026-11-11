@@ -2205,6 +2205,11 @@ void ComponentStoreTab::renderCardProgress(const QString& cardId) {
         state.inventory.known && state.inventory.installed == 0 &&
         activeLines.isEmpty() && failedLines.isEmpty() && cancelledLines.isEmpty();
     if (inventoryContradictsInstalled) {
+        // A withdrawn bar must not keep reporting a stale value: Qt leaves a
+        // never-set bar at -1 and a previously full one at 100, so reset it
+        // to a determinate 0 while hidden. Nothing visible changes.
+        bar->setRange(0, 100);
+        bar->setValue(0);
         bar->hide();
         label->clear();
         label->hide();
@@ -2214,6 +2219,9 @@ void ComponentStoreTab::renderCardProgress(const QString& cardId) {
                           state.transfer.failed > 0 || state.transfer.cancelled > 0 ||
                           state.transfer.installed > 0;
     if (!hasItems) {
+        // Same withdrawal as above: a hidden bar reads 0, never -1 or 100.
+        bar->setRange(0, 100);
+        bar->setValue(0);
         bar->hide();
         label->clear();
         label->hide();
