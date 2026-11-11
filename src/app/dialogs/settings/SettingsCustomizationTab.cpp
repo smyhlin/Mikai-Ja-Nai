@@ -1,6 +1,7 @@
 #include "dialogs/SettingsDialog.hpp"
 
 #include "dialogs/settings/SettingsUi.hpp"
+#include "state/AppearanceStore.hpp"
 #include "theme/Appearance.hpp"
 #include "theme/Metrics.hpp"
 #include "theme/Palette.hpp"
