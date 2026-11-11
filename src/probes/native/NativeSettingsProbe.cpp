@@ -1131,8 +1131,15 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
     check(managerSave != nullptr, "Settings exposes its real Save action for the manager");
     if (managerSave != nullptr) managerSave->click();
     QApplication::processEvents();
-    check(managerDialog.result() == static_cast<int>(QDialog::Accepted),
-          "the Settings Save action accepted the manager changes");
+    // Since 25bc266 ("Let Save commit without closing Settings"), Save
+    // commits without closing: result stays Rejected, the button shows
+    // the "Saved" acknowledgment and is disabled.
+    check(managerSave != nullptr &&
+              managerDialog.result() == static_cast<int>(QDialog::Rejected) &&
+              managerSave->text() ==
+                  QCoreApplication::translate("mikai::app::SettingsDialog", "Saved") &&
+              !managerSave->isEnabled(),
+          "the Settings Save action commits without closing the dialog");
 
     QFile savedConfig(mplayer::native::AnimeJanaiConfigStore::configFilePath());
     const QByteArray savedBytes =
