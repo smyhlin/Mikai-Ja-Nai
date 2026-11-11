@@ -542,16 +542,25 @@ if(MIKAI_BUILD_PROBES)
   # surfaces), so a broken manifest fails ctest with its file named.
   if(TARGET probe_runner)
     add_dependencies(mikai_tests probe_runner)
+    set(_mikai_probe_manifest_args
+      "$<TARGET_FILE:probe_runner>"
+      "${MIKAI_ANIME4K_SHADERS_DIR}"
+      "${MIKAI_SELECTED_MPV_MODULE}"
+      "$<TARGET_FILE_DIR:Qt6::Core>"
+      "${MIKAI_TEST_QT_PLUGIN_DIR}"
+      "${CMAKE_BINARY_DIR}/_test-runs"
+      "${CMAKE_SOURCE_DIR}/probes"
+      --isolate --list
+    )
+    # Without the staged mpv runtime dir the launcher stages only libmpv.so.2
+    # and the probe dies in dlopen on the missing FFmpeg dependency
+    # (libavcodec.so.63). Same guard as the VideoScalingPersistence entry.
+    if(MIKAI_SELECTED_MPV_BUNDLED)
+      list(APPEND _mikai_probe_manifest_args
+        --mpv-runtime-dir "${MIKAI_SELECTED_MPV_DEPENDENCY_ROOT}")
+    endif()
     add_test(NAME ProbeManifestsList
-      COMMAND mikai_test_launcher
-        "$<TARGET_FILE:probe_runner>"
-        "${MIKAI_ANIME4K_SHADERS_DIR}"
-        "${MIKAI_SELECTED_MPV_MODULE}"
-        "$<TARGET_FILE_DIR:Qt6::Core>"
-        "${MIKAI_TEST_QT_PLUGIN_DIR}"
-        "${CMAKE_BINARY_DIR}/_test-runs"
-        "${CMAKE_SOURCE_DIR}/probes"
-        --isolate --list
+      COMMAND mikai_test_launcher ${_mikai_probe_manifest_args}
     )
     set_tests_properties(ProbeManifestsList PROPERTIES
       TIMEOUT 600
