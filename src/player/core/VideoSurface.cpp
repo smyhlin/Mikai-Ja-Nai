@@ -1049,7 +1049,15 @@ bool VideoSurface::drawEngineFrameHold(unsigned int target, int width, int heigh
 }
 
 void VideoSurface::invalidatePresentedPicture() {
+    // X-C8: ~QOpenGLFramebufferObject() must run with the render context
+    // current, like clearEngineFrameHold() does for the engine hold FBO.
+    // This is called off the paint path too (open/stop/clear via
+    // invalidateEngineFrameHold), where no context may be current.
+    if (!presentedPictureFbo_) return;
+    QOpenGLContext* previous = nullptr;
+    const bool current = makeRenderContextCurrent(&previous);
     presentedPictureFbo_.reset();
+    if (current) releaseRenderContextCurrent(previous);
     presentedPictureFormat_ = 0;
 }
 
@@ -2935,12 +2943,12 @@ void VideoSurface::paintGL() {
                                        renderInternalFormat_, renderDepthBitsPerChannel_);
         presentedFrame = haveFrame;
         if (renderResult >= 0) {
-            if (presentedFrame) {
-                // The picture moved on: the snapshot describes the frame before it.
-                invalidatePresentedPicture();
-            } else {
-                capturePresentedPicture(target, targetWidth, targetHeight);
-            }
+            // X-C8: capture (not invalidate) after every successful render.
+            // capturePresentedPicture reuses the FBO when its size still
+            // matches, so a chrome-only overlay repaint finds the picture in
+            // drawPresentedPicture() instead of forcing an out-of-turn
+            // render_->render() and reallocating the FBO every frame (KB-30).
+            capturePresentedPicture(target, targetWidth, targetHeight);
         }
     }
     if (phaseTimed) {

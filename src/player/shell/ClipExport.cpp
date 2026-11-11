@@ -76,14 +76,24 @@ QString sanitizedError(QString message, const ClipExportRequest& request) {
     return message;
 }
 
-void publish(QPointer<ClipExport> target, double progress, bool final,
+/// X-M22 (X-C1 pattern): the publish slot is created on the GUI thread in
+/// start() and captured into the pool thread by shared_ptr — copying a
+/// shared_ptr is thread-safe, copying a QPointer is not. The QPointer
+/// inside is only ever read in the queued callback, which runs on the GUI
+/// thread. The dispatcher is captured the same way: QCoreApplication is
+/// the object invokeMethod queues onto.
+struct PublishSlot {
+    QPointer<ClipExport> target;
+};
+
+void publish(const std::shared_ptr<PublishSlot>& slot, double progress, bool final,
              bool succeeded, const QString& path, const QString& error) {
     QCoreApplication* dispatcher = QCoreApplication::instance();
     if (dispatcher == nullptr) return;
-    QMetaObject::invokeMethod(dispatcher, [target, progress, final, succeeded, path, error] {
-        if (!target) return;
-        if (final) emit target->finished(succeeded, path, error);
-        else emit target->progressChanged(progress);
+    QMetaObject::invokeMethod(dispatcher, [slot, progress, final, succeeded, path, error] {
+        if (slot == nullptr || !slot->target) return;
+        if (final) emit slot->target->finished(succeeded, path, error);
+        else emit slot->target->progressChanged(progress);
     }, Qt::QueuedConnection);
 }
 
@@ -161,11 +171,11 @@ bool mp4ContainsStreams(const QString& path, const std::string& codec, bool requ
     return video && mediaData && (!requireAudio || audio);
 }
 
-void publishCodec(QPointer<ClipExport> target, const QString& codec) {
+void publishCodec(const std::shared_ptr<PublishSlot>& slot, const QString& codec) {
     QCoreApplication* dispatcher = QCoreApplication::instance();
     if (dispatcher == nullptr) return;
-    QMetaObject::invokeMethod(dispatcher, [target, codec] {
-        if (target) emit target->encodingStarted(codec);
+    QMetaObject::invokeMethod(dispatcher, [slot, codec] {
+        if (slot != nullptr && slot->target) emit slot->target->encodingStarted(codec);
     }, Qt::QueuedConnection);
 }
 
@@ -238,16 +248,17 @@ void ClipExport::start(const ClipExportRequest& request) {
     }
     state_->cancelled.store(false, std::memory_order_relaxed);
     const auto state = state_;
-    const QPointer<ClipExport> target(this);
-    QThreadPool::globalInstance()->start(QRunnable::create([state, target, request] {
+    const auto slot = std::make_shared<PublishSlot>();
+    slot->target = this;
+    QThreadPool::globalInstance()->start(QRunnable::create([state, slot, request] {
         QString failure;
         QString outputPath = request.outputPath;
         QString tempPath;
         bool succeeded = false;
         auto done = [&] {
             state->running.store(false, std::memory_order_release);
-            if (succeeded) publish(target, 1.0, false, false, outputPath, {});
-            publish(target, 0.0, true, succeeded, outputPath, sanitizedError(failure, request));
+            if (succeeded) publish(slot, 1.0, false, false, outputPath, {});
+            publish(slot, 0.0, true, succeeded, outputPath, sanitizedError(failure, request));
         };
         const double length = request.endSeconds - request.startSeconds;
         if (request.source.trimmed().isEmpty() || request.outputPath.trimmed().isEmpty() ||
@@ -355,11 +366,11 @@ void ClipExport::start(const ClipExportRequest& request) {
             if (request.externalAudioPath.isEmpty() && request.audioTrackId &&
                 *request.audioTrackId > 0)
                 clipOptions += ",aid=" + std::to_string(*request.audioTrackId);
-            publishCodec(target, codec == "libx264" ? QObject::tr("H.264") : QObject::tr("MPEG-4 Part 2"));
+            publishCodec(slot, codec == "libx264" ? QObject::tr("H.264") : QObject::tr("MPEG-4 Part 2"));
             const char* command[] = {"loadfile", source.c_str(), "replace", "-1", clipOptions.c_str(), nullptr};
             int rc = api.functions().command(handle->raw(), command);
             if (rc < 0) throw std::runtime_error(errorText("mpv loadfile", rc, api).toStdString());
-            publish(target, 0.0, false, false, outputPath, {});
+            publish(slot, 0.0, false, false, outputPath, {});
             bool ended = false;
             bool requireAudio = false;
             while (!ended) {
@@ -375,7 +386,7 @@ void ClipExport::start(const ClipExportRequest& request) {
                     if (api.functions().getProperty(handle->raw(), "time-pos", MPV_FORMAT_DOUBLE, &currentTime) >= 0 &&
                         std::isfinite(currentTime)) {
                         const double fraction = std::clamp((currentTime - request.startSeconds) / length, 0.0, 0.99);
-                        publish(target, fraction, false, false, outputPath, {});
+                        publish(slot, fraction, false, false, outputPath, {});
                     }
                     continue;
                 }
@@ -410,7 +421,7 @@ void ClipExport::start(const ClipExportRequest& request) {
                         const char* stop[] = {"stop", nullptr};
                         api.functions().command(handle->raw(), stop);
                     }
-                    publish(target, 0.1, false, false, outputPath, {});
+                    publish(slot, 0.1, false, false, outputPath, {});
                 }
             }
             handle.reset();

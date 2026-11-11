@@ -660,7 +660,7 @@ void NativeAssetsPanel::buildUi() {
         } else {
             applyStatus(reasonKey, reason, stagingNote_);
         }
-        refreshCache();
+        refreshCacheAsync();
     });
     connect(modelTable_, &QTableWidget::itemSelectionChanged, this, [this] {
         updateImportControls();
@@ -819,7 +819,7 @@ void NativeAssetsPanel::showEvent(QShowEvent* event) {
 void NativeAssetsPanel::refresh() {
     initialRefreshDone_ = true;
     refreshModels();
-    refreshCache();
+    refreshCacheAsync();
     refreshSourceData();
     // One observation per refresh, on the GUI thread: the toolchain and the
     // provider runtimes the validated bundle and the application directory
@@ -946,6 +946,42 @@ void NativeAssetsPanel::refreshCache() {
     for (const QString& directory : staging_) stagingList_->addItem(directory);
     discardStagingButton_->setEnabled(false);
     updateSummaries();
+}
+
+void NativeAssetsPanel::refreshCacheAsync() {
+    if (runner_ == nullptr) {
+        // No worker pool (probe/test construction): fall back to the
+        // synchronous enumeration rather than dropping the cache.
+        cache_ = enumerateNativeCache(artifacts_);
+        refreshCache();
+        return;
+    }
+    const quint64 generation = ++cacheRefreshGeneration_;
+    const std::shared_ptr<std::atomic_bool> alive = alive_;
+    const mplayer::native::ArtifactStore store = artifacts_;
+    auto result = std::make_shared<QVector<NativeCacheEntry>>();
+    runner_->run(
+        [store, result]() -> QVariant {
+            *result = enumerateNativeCache(store);
+            return QVariant();
+        },
+        [alive, result, generation](const QVariant&) {
+            NativeAssetsPanel* target = livePanel();
+            if (target == nullptr || !alive->load(std::memory_order_relaxed)) return;
+            target->applyCacheSnapshot(*result, generation);
+        },
+        [alive, result, generation](const backend::Failure&) {
+            NativeAssetsPanel* target = livePanel();
+            if (target == nullptr || !alive->load(std::memory_order_relaxed)) return;
+            target->applyCacheSnapshot(*result, generation);
+        });
+}
+
+void NativeAssetsPanel::applyCacheSnapshot(const QVector<NativeCacheEntry>& entries,
+                                           quint64 generation) {
+    if (generation != cacheRefreshGeneration_) return;
+    cache_ = entries;
+    refreshCache();
 }
 
 void NativeAssetsPanel::refreshSourceData() {

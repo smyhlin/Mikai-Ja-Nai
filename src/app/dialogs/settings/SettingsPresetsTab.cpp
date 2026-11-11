@@ -176,7 +176,7 @@ QWidget* SettingsDialog::buildPresetsTab() {
                             QSignalBlocker blocker(edit);
                             edit->setKeySequence(previous);
                             rowWidget->setProperty("hasBinding", !previous.isEmpty());
-                            repolishWidget(rowWidget);
+                            theme::repolish(rowWidget);
                             showPresetError(presetConflictMessage(
                                 conflict, mplayer::shell::shortcutClaimKey(sequence), label));
                             return;
@@ -184,7 +184,7 @@ QWidget* SettingsDialog::buildPresetsTab() {
                     }
                     previous = sequence;
                     rowWidget->setProperty("hasBinding", !sequence.isEmpty());
-                    repolishWidget(rowWidget);
+                    theme::repolish(rowWidget);
                     presetError_->clear();
                     presetError_->hide();
                 });
@@ -203,7 +203,7 @@ QWidget* SettingsDialog::buildPresetsTab() {
             }
             if (row.container != nullptr) {
                 row.container->setProperty("hasBinding", false);
-                repolishWidget(row.container);
+                theme::repolish(row.container);
             }
         }
         presetError_->clear();

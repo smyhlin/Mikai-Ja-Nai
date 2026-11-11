@@ -98,7 +98,9 @@ ComparePane::ComparePane(QWidget* parent) : QGraphicsView(parent) {
     badge_->setToolButtonStyle(Qt::ToolButtonTextOnly);
     badge_->setPopupMode(QToolButton::InstantPopup);
     badge_->setMinimumWidth(0);
-    badge_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    // X-M23: see CompareCanvas — Expanding lets a long label's sizeHint force
+    // the bar wider than its slot; Ignored takes the width the layout assigns.
+    badge_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     badge_->installEventFilter(this);
     row->addWidget(badge_, 1);
 
@@ -473,6 +475,13 @@ void ComparePane::changeEvent(QEvent* event) {
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
     }
+}
+
+void ComparePane::showEvent(QShowEvent* event) {
+    QGraphicsView::showEvent(event);
+    // X-M23: the label fitted before the first layout used the pre-layout
+    // width; re-fit once the pane is shown and the bar has its real slot.
+    fitSelectorLabel(badge_, label_);
 }
 
 void ComparePane::retranslateUi() {

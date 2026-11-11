@@ -168,6 +168,8 @@ if(AJI_BUILD_TRT)
     "${CMAKE_CURRENT_LIST_DIR}/tools/mikai_native_prep.cpp"
   )
   target_include_directories(mikai_native_prep PRIVATE
+    # X-D20: aji_tool_support.h lives in native/include.
+    "${CMAKE_CURRENT_LIST_DIR}/include"
     "${AJI_TRT_ROOT}/include"
   )
   target_link_libraries(mikai_native_prep PRIVATE
@@ -184,6 +186,8 @@ if(AJI_BUILD_TRT)
     "${AJI_STAGE_DIR}/src/kernels.cu"
   )
   target_include_directories(mikai_native_verify PRIVATE
+    # X-D20: aji_tool_support.h lives in native/include.
+    "${CMAKE_CURRENT_LIST_DIR}/include"
     "${AJI_STAGE_DIR}/src"
     "${AJI_TRT_ROOT}/include"
   )

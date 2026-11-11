@@ -8,6 +8,8 @@
 
 #include "NativePreparationReferences.hpp"
 
+#include "NativeBuilderInternal.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -50,34 +52,6 @@ bool refuse(QString* key, QString* reason, const QString& k, const QString& r) {
   return false;
 }
 
-/// Binary32 -> binary16, round to nearest even, subnormals flushed to zero. The
-/// same rules as the canonical frame packer's converter, which is private to its
-/// translation unit; this is the auxiliary-plane conversion (timestep, mesh and
-/// multipliers) at that same precision, and the tests hold it to the original's
-/// own bytes.
-quint16 halfFromFloat(float value) {
-  quint32 bits;
-  static_assert(sizeof(bits) == sizeof(value), "a binary32 float is 32 bits");
-  memcpy(&bits, &value, sizeof(bits));
-
-  const quint32 sign = (bits >> 16) & 0x8000u;
-  const qint32 exponent = static_cast<qint32>((bits >> 23) & 0xFFu) - 127 + 15;
-  const quint32 mantissa = bits & 0x007FFFFFu;
-
-  if (exponent <= 0) {
-    return static_cast<quint16>(sign);
-  }
-  if (exponent >= 31) {
-    return static_cast<quint16>(sign | 0x7C00u);
-  }
-  const quint32 halfMantissa = mantissa >> 13;
-  const quint32 remainder = mantissa & 0x1FFFu;
-  quint32 result = sign | (static_cast<quint32>(exponent) << 10) | halfMantissa;
-  if (remainder > 0x1000u || (remainder == 0x1000u && (halfMantissa & 1u) != 0u)) {
-    ++result;
-  }
-  return static_cast<quint16>(result & 0xFFFFu);
-}
 
 float halfToFloat(quint16 half) {
   const quint32 sign = (half >> 15) & 0x1u;
@@ -192,33 +166,17 @@ bool isPlainDirectory(const QString& path, QString* canonicalOut = nullptr) {
   return true;
 }
 
-QString toolPathList(const BuilderToolPaths& tools) {
-  QStringList parts;
-  if (!tools.trtBinDir.isEmpty()) parts.append(QDir::toNativeSeparators(tools.trtBinDir));
-  if (!tools.cudaBinDir.isEmpty()) parts.append(QDir::toNativeSeparators(tools.cudaBinDir));
-  const QString systemRoot =
-      QProcessEnvironment::systemEnvironment().value(QStringLiteral("SystemRoot"),
-                                                     QStringLiteral("C:\\Windows"));
-  parts.append(QDir::toNativeSeparators(systemRoot + QStringLiteral("\\System32")));
-  parts.append(QDir::toNativeSeparators(systemRoot));
-  return parts.join(QLatin1Char(';'));
-}
-
-/// The same child environment the builder gives its own inspector call: only the
-/// observed provider directories, the system directories and this executable's
-/// own directory, never the inherited PATH.
+/// X-M17: the same child environment the builder gives its own inspector
+/// call, reused instead of a local copy: only the observed provider
+/// directories, the system directories and this executable's own directory,
+/// never the inherited PATH. (Note: builder_detail::toolPathList carries the
+/// same SystemRoot fallback, so this dedup does not remove that fallback
+/// itself — it removes the second copy of it.)
 QProcessEnvironment inspectEnvironment(const BuilderToolPaths& tools) {
-  QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-  environment.insert(QStringLiteral("PATH"), toolPathList(tools));
-  environment.remove(QStringLiteral("LD_LIBRARY_PATH"));
-  environment.remove(QStringLiteral("DYLD_LIBRARY_PATH"));
-  const QString exeDir = QFileInfo(QCoreApplication::applicationFilePath()).absolutePath();
-  if (!exeDir.isEmpty()) {
-    environment.insert(QStringLiteral("PATH"),
-                       QDir::toNativeSeparators(exeDir) + QLatin1Char(';') +
-                           environment.value(QStringLiteral("PATH")));
-  }
-  return environment;
+  builder_detail::ToolPaths mapped;
+  mapped.trtBin = tools.trtBinDir;
+  mapped.cudaBin = tools.cudaBinDir;
+  return builder_detail::childEnvironment(mapped, true);
 }
 
 struct ToolRun {
@@ -268,7 +226,13 @@ ToolRun runInspector(const QString& executable, const QStringList& arguments,
     run.exitStatus = process.exitStatus();
     run.exitCode = process.exitCode();
   }
+  // X-M17: was an unbounded readAllStandardOutput(); the builder caps
+  // tool output at kMaxToolBytes (2 MiB). Keep the tail, like
+  // builder_detail::appendBounded does.
   run.output = process.readAllStandardOutput();
+  if (run.output.size() > builder_detail::kMaxToolBytes) {
+    run.output = run.output.right(static_cast<qsizetype>(builder_detail::kMaxToolBytes));
+  }
   return run;
 }
 
@@ -549,7 +513,7 @@ bool resampleFp16Planar(const QByteArray& source, const QSize& from, const QSize
               weights[j] * intermediate[static_cast<qsizetype>(sy) * to.width() + x];
         }
         writeHalf(&result, channel * targetPlane + static_cast<qint64>(y) * to.width() + x,
-                  halfFromFloat(accumulated));
+                  builder_detail::floatToHalf(accumulated));
       }
     }
   }
@@ -630,7 +594,7 @@ bool packRifeElevenChannel(const QByteArray& a, const QByteArray& b, const QSize
 
   // Channel 6: the timestep plane.
   {
-    const quint16 half = halfFromFloat(static_cast<float>(timestep));
+    const quint16 half = builder_detail::floatToHalf(static_cast<float>(timestep));
     for (qint64 pixel = 0; pixel < paddedPlane; ++pixel) {
       writeHalf(&tensor, 6 * paddedPlane + pixel, half);
     }
@@ -639,14 +603,14 @@ bool packRifeElevenChannel(const QByteArray& a, const QByteArray& b, const QSize
   // Channels 7..10: the original's constant planes, over the padded plane.
   const float widthDivisor = static_cast<float>(padded.width() - 1);
   const float heightDivisor = static_cast<float>(padded.height() - 1);
-  const quint16 multiplyWidth = halfFromFloat(2.0f / widthDivisor);
-  const quint16 multiplyHeight = halfFromFloat(2.0f / heightDivisor);
+  const quint16 multiplyWidth = builder_detail::floatToHalf(2.0f / widthDivisor);
+  const quint16 multiplyHeight = builder_detail::floatToHalf(2.0f / heightDivisor);
   for (int y = 0; y < padded.height(); ++y) {
     const quint16 meshY =
-        halfFromFloat(2.0f * static_cast<float>(y) / heightDivisor - 1.0f);
+        builder_detail::floatToHalf(2.0f * static_cast<float>(y) / heightDivisor - 1.0f);
     for (int x = 0; x < padded.width(); ++x) {
       const quint16 meshX =
-          halfFromFloat(2.0f * static_cast<float>(x) / widthDivisor - 1.0f);
+          builder_detail::floatToHalf(2.0f * static_cast<float>(x) / widthDivisor - 1.0f);
       const qint64 pixel = static_cast<qint64>(y) * padded.width() + x;
       writeHalf(&tensor, 7 * paddedPlane + pixel, meshX);
       writeHalf(&tensor, 8 * paddedPlane + pixel, meshY);

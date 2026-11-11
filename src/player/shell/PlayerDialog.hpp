@@ -26,9 +26,7 @@ class QPushButton;
 class QResizeEvent;
 class QShowEvent;
 class QScreen;
-class QSlider;
 class QTimer;
-class QVariantAnimation;
 class QWidget;
 QT_END_NAMESPACE
 
@@ -410,7 +408,6 @@ private:
     QString runtimeVisibleDetail() const;
     void placeWindowed();
     void rememberWindowedGeometry();
-    void fillQualityMenu();
     void probeUnknownTracks();
     void setVariantsVisibility();
     void watchMediaTracks(VideoSurface* source);

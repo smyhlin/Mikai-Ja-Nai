@@ -1,5 +1,6 @@
 #include "NativeBundle.hpp"
 
+#include "native/bundle/NativeJsonHelpers.hpp"
 #include "native/bundle/NativePaths.hpp"
 #include "native/bundle/NativePeImage.hpp"
 
@@ -87,35 +88,6 @@ QString mpvApiVersionText(quint64 version) {
         .arg(version & 0xFFFFu, 4, 10, QLatin1Char('0'));
 }
 
-bool jsonInteger(const QJsonValue& value, qint64* out) {
-    if (!value.isDouble()) return false;
-    const double d = value.toDouble();
-    if (!std::isfinite(d)) return false;
-    if (std::floor(d) != d) return false;
-    if (d < -9.2e18 || d > 9.2e18) return false;
-    *out = static_cast<qint64>(d);
-    return true;
-}
-
-bool jsonString(const QJsonObject& object, const QString& key, QString* out) {
-    const QJsonValue value = object.value(key);
-    if (!value.isString()) return false;
-    *out = value.toString();
-    return true;
-}
-
-/// Refuses a member this schema version does not define. A silently ignored
-/// typo ("modulePath", "sha2560") produces a bundle whose manifest says
-/// something other than what was verified.
-bool noUnknownKeys(const QJsonObject& object, const QStringList& known, QString* offender) {
-    for (auto it = object.constBegin(); it != object.constEnd(); ++it) {
-        if (known.contains(it.key())) continue;
-        if (offender) *offender = it.key();
-        return false;
-    }
-    return true;
-}
-
 QStringList manifestKeys() {
     return {QStringLiteral("schema"),   QStringLiteral("kind"),     QStringLiteral("version"),
             QStringLiteral("module"),   QStringLiteral("mpvApiVersion"),
@@ -198,28 +170,6 @@ bool preparationInventoryCoherent(const Bundle& bundle, QString* reason) {
 
 QStringList fileKeys() {
     return {QStringLiteral("path"), QStringLiteral("bytes"), QStringLiteral("sha256")};
-}
-
-QString sha256OfFile(const QString& path, qint64* bytes, QString* reason) {
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        setReason(reason, QStringLiteral("%1 cannot be read: %2").arg(path, file.errorString()));
-        return {};
-    }
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    qint64 total = 0;
-    while (!file.atEnd()) {
-        const QByteArray chunk = file.read(1 << 16);
-        if (chunk.isEmpty()) break;
-        total += chunk.size();
-        hash.addData(chunk);
-    }
-    if (file.error() != QFile::NoError) {
-        setReason(reason, QStringLiteral("%1 failed while reading: %2").arg(path, file.errorString()));
-        return {};
-    }
-    if (bytes) *bytes = total;
-    return QString::fromLatin1(hash.result().toHex());
 }
 
 QString sha256OfBytes(const QByteArray& data) {
@@ -761,9 +711,11 @@ bool verifyInventory(const QString& root, const QVector<BundleFile>& files, cons
                                        .arg(info.size())
                                        .arg(file.bytes)),
                     false);
-        QString digestReason;
-        const QString digest = sha256OfFile(canonical, nullptr, &digestReason);
-        if (digest.isEmpty()) return (setReason(reason, digestReason), false);
+        QString digestError;
+        const QString digest = hashFile(canonical, nullptr, {}, &digestError);
+        if (digest.isEmpty()) {
+            return (setReason(reason, QStringLiteral("%1 %2").arg(canonical, digestError)), false);
+        }
         if (digest != file.sha256)
             return (setReason(reason, QStringLiteral("'%1' hashes to %2, the manifest records %3")
                                        .arg(file.path, digest, file.sha256)),
@@ -1091,8 +1043,12 @@ std::optional<Bundle> describeRuntime(const QString& modulePath, BundleLayout la
         if (relative.compare(QLatin1String(kManifestFileName), Qt::CaseInsensitive) == 0) continue;
         const QString canonical = canonicalPath(QDir(root).filePath(relative));
         qint64 bytes = 0;
-        const QString digest = sha256OfFile(canonical, &bytes, reason);
-        if (digest.isEmpty()) return std::nullopt;
+        QString digestError;
+        const QString digest = hashFile(canonical, &bytes, {}, &digestError);
+        if (digest.isEmpty()) {
+            setReason(reason, QStringLiteral("%1 %2").arg(canonical, digestError));
+            return std::nullopt;
+        }
         bundle.files.append(BundleFile{relative, bytes, digest});
     }
     std::sort(bundle.files.begin(), bundle.files.end(), [](const BundleFile& a, const BundleFile& b) {
@@ -1765,8 +1721,12 @@ bool installAtomic(const Bundle& source, const QString& runtimeRoot, QString* re
             break;
         }
         qint64 copiedBytes = 0;
-        const QString digest = sha256OfFile(destination, &copiedBytes, &writeFailure);
-        if (digest.isEmpty()) break;
+        QString digestError;
+        const QString digest = hashFile(destination, &copiedBytes, {}, &digestError);
+        if (digest.isEmpty()) {
+            writeFailure = QStringLiteral("%1 %2").arg(destination, digestError);
+            break;
+        }
         if (copiedBytes != file.bytes || digest != file.sha256) {
             writeFailure = QStringLiteral("the staged copy of '%1' does not match the manifest")
                                .arg(file.path);

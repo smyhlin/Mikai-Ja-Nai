@@ -1,6 +1,7 @@
 #include <utility>
 #include "AnimeJanaiRuntime.hpp"
 
+#include "backend/Cancellation.hpp"
 #include "backend/Downloads.hpp"
 #include "native/bundle/NativePaths.hpp"
 #include "native/components/NativeComponentCatalog.hpp"
@@ -9,7 +10,7 @@
 #include "native/components/NativeGpuProbe.hpp"
 
 #include <QtCore/QCoreApplication>
-#include <QtCore/QCryptographicHash>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -322,21 +323,6 @@ QString sourceRuntimeDirectory(const QString& source) {
     }
     return source;
 }
-QString hashFile(const QString& path, qint64* bytes = nullptr) {
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly)) return {};
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    qint64 total = 0;
-    QByteArray buffer(64 * 1024, Qt::Uninitialized);
-    while (!f.atEnd()) {
-        const qint64 n = f.read(buffer.data(), buffer.size());
-        if (n <= 0) return {};
-        hash.addData(QByteArrayView(buffer.constData(), n));
-        total += n;
-    }
-    if (bytes) *bytes = total;
-    return QString::fromLatin1(hash.result().toHex());
-}
 bool validPeX64(const QString& path) {
     constexpr quint16 kImageFileMachineAmd64 = 0x8664;
     QFile f(path);
@@ -598,8 +584,42 @@ bool validateArchiveListing(const QString& sevenZip, const QString& archive, con
                             QString* error) {
     QProcess process;
     process.start(sevenZip, {QStringLiteral("l"), QStringLiteral("-slt"), archive});
-    if (!process.waitForStarted() || !process.waitForFinished(-1) ||
-        process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+    if (!process.waitForStarted()) {
+        *error = QStringLiteral("The verified runtime archive listing could not be read (%1).")
+                     .arg(processFailureDetails(process));
+        return false;
+    }
+    // X-H6: was waitForFinished(-1) — unbounded, and a hung archive tool
+    // blocked a transferPool_ thread forever. 100 ms slices, 60 s cap,
+    // honouring the surrounding cancellation scope; the child is killed
+    // on cancel or timeout.
+    {
+        QElapsedTimer deadline;
+        deadline.start();
+        bool cancelled = false;
+        bool timedOut = false;
+        while (!process.waitForFinished(100)) {
+            if (mikai::backend::WorkCancellationScope::cancellationRequested()) {
+                cancelled = true;
+                break;
+            }
+            if (deadline.elapsed() >= 60000) {
+                timedOut = true;
+                break;
+            }
+            if (process.state() == QProcess::NotRunning) break;
+        }
+        if (cancelled || timedOut) {
+            process.kill();
+            process.waitForFinished();
+            *error = cancelled
+                         ? QStringLiteral("The verified runtime archive listing was cancelled.")
+                         : QStringLiteral(
+                               "The verified runtime archive listing timed out after 60 seconds.");
+            return false;
+        }
+    }
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
         *error = QStringLiteral("The verified runtime archive listing could not be read (%1).")
                      .arg(processFailureDetails(process));
         return false;

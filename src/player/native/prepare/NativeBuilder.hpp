@@ -133,6 +133,10 @@ BuilderResult runNativeBuild(const BuilderRequest& request,
 /// it is held to the tensor's own size rather than to the shape's bound.
 bool tensorStridesAreContiguous(const QJsonArray& strides, const QJsonArray& shape);
 
+// X-D12: probe-only — compiled only when MIKAI_BUILD_PROBES is on (the
+// only callers are the builder probe and TestNativeBuilder, both built
+// under that option). A production build without probes carries none of it.
+#ifdef MIKAI_BUILD_PROBES
 // The whole input of the hand-run builder probe: the observed facts a plan has
 // to be resolved against, and the build inputs a real `runNativeBuild` is invoked
 // with.
@@ -164,5 +168,6 @@ struct BuilderProbeRequest {
 /// a caller that ignores the return value cannot act on a half-built request.
 bool parseBuilderProbeRequest(const QJsonObject& object, BuilderProbeRequest* out,
                               QString* reasonKey = nullptr, QString* reason = nullptr);
+#endif  // MIKAI_BUILD_PROBES
 }  // namespace native
 }  // namespace mplayer

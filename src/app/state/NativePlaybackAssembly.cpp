@@ -7,6 +7,8 @@
 #include <optional>
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QElapsedTimer>
+#include <backend/Cancellation.hpp>
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>

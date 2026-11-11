@@ -498,23 +498,6 @@ QString qualityUrl(const QVector<QualityVariant>& variants, int height) {
     return variants.first().url;
 }
 
-QStringList listSegments(QNetworkAccessManager* manager, const QString& qualityUrl,
-                         const QMap<QString, QString>& headers) {
-    const QUrl base(qualityUrl);
-    QStringList urls;
-    const QStringList lines = fetchText(manager, qualityUrl, headers).split(QLatin1Char('\n'));
-    for (const QString& rawLine : lines) {
-        const QString line = rawLine.trimmed();
-        if (line.isEmpty() || line.startsWith(QLatin1Char('#'))) {
-            continue;
-        }
-        urls.append(line.startsWith(QStringLiteral("http"))
-                        ? line
-                        : base.resolved(QUrl(line)).toString());
-    }
-    return urls;
-}
-
 QMap<int, QString> qualityStreams(const QString& pageUrl) {
     const QString site = detectSite(pageUrl);
     // T-403: the shared per-thread manager. One manager per worker thread

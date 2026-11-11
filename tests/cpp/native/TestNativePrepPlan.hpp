@@ -8,7 +8,6 @@ class TestNativePrepPlan : public QObject {
  private slots:
   void paddingMatchesTheReferenceMultipleOf64();
   void paddingIsCentredAndRoundedDownToEven();
-  void paddingExtentIsTheTotalAdded();
 
   void aCadenceScalesToLowestTerms();
   void aCadenceOverflowIsRefusedNotWrapped();

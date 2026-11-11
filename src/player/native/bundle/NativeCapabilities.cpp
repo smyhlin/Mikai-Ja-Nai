@@ -2,7 +2,6 @@
 
 #include "native/status/NativeStatus.hpp"
 
-#include <QCoreApplication>
 
 namespace mplayer::native {
 
@@ -31,31 +30,6 @@ NativeCapabilities nativeCapabilitiesFrom(const NativeFactoryObservation& observ
     }
     capabilities.supportsRife = observation.rife;
     return capabilities;
-}
-
-QString unavailableReason(const NativeCapabilities& caps, const QString& detail) {
-    if (!caps.hasTensorRT && !caps.hasDirectML) {
-        return QCoreApplication::translate(
-            "NativeCapabilities",
-            "Native unavailable: no inference backend present (TensorRT or DirectML).");
-    }
-    // A reported 0 is "that side observed no protocol", not a mismatch: a
-    // mismatch needs two observed versions, and a capability set projected from a
-    // factory observation carries neither this field nor an engine schema. Such a
-    // set is reported by the backend branch above and by `detail`.
-    if (caps.protocolVersion != 0 && caps.protocolVersion != kNativeProtocolVersion) {
-        return QCoreApplication::translate(
-                   "NativeCapabilities",
-                   "Native unavailable: protocol mismatch (backend %1, player %2).")
-            .arg(caps.protocolVersion)
-            .arg(kNativeProtocolVersion);
-    }
-    if (!detail.isEmpty()) {
-        return detail;
-    }
-    return QCoreApplication::translate(
-        "NativeCapabilities",
-        "Native unavailable: required capability not present.");
 }
 
 } // namespace mplayer::native

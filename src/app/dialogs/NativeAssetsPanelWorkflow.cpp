@@ -11,6 +11,8 @@
 #include <atomic>
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QElapsedTimer>
+#include <backend/Cancellation.hpp>
 #include <QtCore/QDir>
 #include <QtCore/QEvent>
 #include <QtGui/QShowEvent>
@@ -723,7 +725,9 @@ bool NativeAssetsPanel::deleteCacheEntry(const QString& buildKey) {
     QString reason;
     const bool removed = deleteNativeCacheEntry(artifacts_, cache_, buildKey, &reasonKey, &reason);
     applyStatus(reasonKey, reason, cacheStatus_);
-    refreshCache();
+    // X-H3: deleteCacheEntry keeps operating on the last-delivered snapshot
+    // and re-enumerates asynchronously after the removal completes.
+    refreshCacheAsync();
     return removed;
 }
 

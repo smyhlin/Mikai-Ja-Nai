@@ -157,6 +157,33 @@ bool plainPathNoReparse(const QString& canonical) {
   return true;
 }
 
+// X-D19: moved here from the frame packer (NativeFrameFixture) and the
+// auxiliary-plane converter (NativePreparationReferences::halfFromFloat);
+// the packed bytes are hashed and compared, so no compiler intrinsic.
+quint16 floatToHalf(float value) {
+  quint32 bits;
+  static_assert(sizeof(bits) == sizeof(value), "a binary32 float is 32 bits");
+  memcpy(&bits, &value, sizeof(bits));
+
+  const quint32 sign = (bits >> 16) & 0x8000u;
+  const qint32 exponent = static_cast<qint32>((bits >> 23) & 0xFFu) - 127 + 15;
+  const quint32 mantissa = bits & 0x007FFFFFu;
+
+  if (exponent <= 0) {
+    return static_cast<quint16>(sign);
+  }
+  if (exponent >= 31) {
+    return static_cast<quint16>(sign | 0x7C00u);
+  }
+  const quint32 halfMantissa = mantissa >> 13;
+  const quint32 remainder = mantissa & 0x1FFFu;
+  quint32 result = sign | (static_cast<quint32>(exponent) << 10) | halfMantissa;
+  if (remainder > 0x1000u || (remainder == 0x1000u && (halfMantissa & 1u) != 0u)) {
+    ++result;
+  }
+  return static_cast<quint16>(result & 0xFFFFu);
+}
+
 bool canonicalDir(const QString& path, QString* canonicalOut) {
   if (path.isEmpty() || !QDir::isAbsolutePath(path)) {
     return false;

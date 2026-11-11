@@ -679,15 +679,6 @@ bool isValidModelId(const QString& id) {
   return true;
 }
 
-bool isSha256Hex(const QString& digest) {
-  if (digest.size() != 64) return false;
-  for (const QChar c : digest) {
-    const char16_t u = c.unicode();
-    if (!((u >= '0' && u <= '9') || (u >= 'a' && u <= 'f'))) return false;
-  }
-  return true;
-}
-
 bool isBuiltinModelId(const QString& id) {
   return isValidModelId(id) && !id.startsWith(QLatin1String(kUserModelIdPrefix));
 }

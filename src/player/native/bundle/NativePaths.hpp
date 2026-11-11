@@ -30,6 +30,8 @@
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 
+#include <functional>
+
 class QByteArray;
 class QFileInfo;
 class QSaveFile;
@@ -177,6 +179,21 @@ qint64 metadataChangeTimeMs(const QString& path, const QFileInfo& info);
 /// is an ordinary commit. Callers keep writing, hashing and preparing before
 /// the call, outside the lock.
 bool commitMetadataFile(QSaveFile& file, QString* error = nullptr);
+
+/// X-D17: the one SHA-256-a-file implementation. The lowercase hex digest of
+/// the file's bytes, or empty when the file cannot be opened or read (or
+/// `cancelled` answers true between chunks — polled so a multi-gigabyte model
+/// hash still unwinds promptly). `*bytes` receives the byte count on success.
+/// `*error`, when given, carries the phase-specific failure
+/// ("cannot be read: <os reason>" / "failed while reading: <os reason>");
+/// it is left untouched on cancellation. A 64 KiB heap buffer: never a stack
+/// buffer on pool threads.
+QString hashFile(const QString& path, qint64* bytes = nullptr,
+                 const std::function<bool()>& cancelled = {},
+                 QString* error = nullptr);
+
+/// 64 lowercase hex characters. A record without one has no verifiable identity.
+bool isSha256Hex(const QString& value);
 
 }  // namespace native
 }  // namespace mplayer

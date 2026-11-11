@@ -109,6 +109,7 @@ add_library(mikai_native_support STATIC
   src/player/native/bundle/NativeDiagnostics.cpp
   src/player/native/bundle/NativeDiagnostics.hpp
   src/player/native/bundle/NativeManifest.cpp
+  src/player/native/bundle/NativeJsonHelpers.hpp
   src/player/native/bundle/NativeManifest.hpp
   src/player/native/bundle/NativePaths.cpp
   src/player/native/bundle/NativePaths.hpp
@@ -192,6 +193,12 @@ target_include_directories(mikai_native_support PUBLIC
 )
 target_link_libraries(mikai_native_support PUBLIC Qt6::Core mikai_backend ${CMAKE_DL_LIBS})
 set_target_properties(mikai_native_support PROPERTIES POSITION_INDEPENDENT_CODE ON AUTOMOC ON)
+# X-D12: the probe-document parser in NativeBuilder is probe-only; the option
+# is a PUBLIC define so the header guard agrees in every dependent TU (the
+# probe and TestNativeBuilder are only built under this option).
+if(MIKAI_BUILD_PROBES)
+  target_compile_definitions(mikai_native_support PUBLIC MIKAI_BUILD_PROBES=1)
+endif()
 
 add_executable(mikai_bundle EXCLUDE_FROM_ALL native/tools/bundle_tool.cpp)
 target_link_libraries(mikai_bundle PRIVATE mikai_native_support)
@@ -247,7 +254,6 @@ set(PLAYER_SOURCES
   src/player/shell/PlayerDialog.cpp
   src/player/shell/ClipExport.cpp
   src/player/shell/ClipDialog.cpp
-  src/player/shell/ClipSheet.cpp
   src/player/shell/PlayerDialogProcessing.cpp
   src/player/shell/MediaInformationDialog.cpp
   src/player/shell/MediaInformationPresentation.cpp
@@ -292,7 +298,6 @@ set(PLAYER_HEADERS
   src/player/shell/PipFloat.hpp
   src/player/shell/ClipExport.hpp
   src/player/shell/ClipDialog.hpp
-  src/player/shell/ClipSheet.hpp
   src/player/shell/PlayerDialog.hpp
   src/player/shell/MediaInformationDialog.hpp
   src/player/shell/MediaInformationPresentation.hpp

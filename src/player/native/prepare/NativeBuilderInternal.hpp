@@ -56,6 +56,12 @@ bool shapeDims(const QString& text, qint64 (&dims)[4]);
 QString dimsText(const QJsonArray& array);
 int elementBytes(const QString& dtype);
 bool plainPathNoReparse(const QString& canonical);
+
+/// X-D19: Binary32 -> binary16, round to nearest even, subnormals flushed to
+/// zero. One converter for the frame packer and the auxiliary-plane (timestep,
+/// mesh, multipliers) conversions; it avoids every compiler intrinsic on
+/// purpose, so the packed bytes are the same in every toolchain.
+quint16 floatToHalf(float value);
 bool canonicalDir(const QString& path, QString* canonicalOut);
 bool canonicalExe(const QString& path, QString* canonicalOut);
 bool canonicalFileInside(const QString& rootCanonical, const QString& path,

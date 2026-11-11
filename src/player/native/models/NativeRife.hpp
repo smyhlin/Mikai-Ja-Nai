@@ -73,6 +73,12 @@ struct RifeModelPin {
 /// order. Data only; nothing here is a claim about what the store holds.
 const QVector<RifeModelPin>& rifeModelPins();
 
+/// X-D23: The pinned inventory size. Both install paths check pins.size()
+/// against this before the compiled check (matchesCompiledRifePins) runs;
+/// it must equal rifeModelPins().size() — pinned by TestNativeRife and
+/// TestNativeTypes, which assert pins.size() == 47.
+constexpr qsizetype kRifePinCount = 47;
+
 /// The pin for the exact variant identity, or nullptr.
 const RifeModelPin* rifeModelPin(RifeVersion version, RifeVariant variant, bool ensemble);
 
@@ -84,33 +90,6 @@ const RifeModelPin* rifeModelPinForGraphSha(const QString& sha256);
 /// The pin a curated model name (`rife_v4.14_lite_ensemble`, ...) names, or
 /// nullptr. This is identity lookup only - never a resolution.
 const RifeModelPin* rifeModelPinForName(const QString& modelId);
-
-/// One row of the capability table: the exact original variant this build's
-/// model space reaches, its content pin, and its honest availability.
-struct RifeCapability {
-    RifeVersion version = RifeVersion::V4_14;
-    RifeVariant variant = RifeVariant::Full;
-    bool ensemble = false;
-
-    /// The stable `rife_vX.Y` name, including its exact variant/ensemble suffix.
-    /// The identity, never an ordinal.
-    QString modelId;
-
-    /// The version-aware reference model number: 414 for v4.14 full, 4141 for
-    /// v4.14 lite. Ensemble is a separate conf key and never changes it.
-    int modelCode = 0;
-
-    /// The exact graph digest this row resolves to. Never empty.
-    QString graphSha256;
-
-    /// The owned catalogue row's own content-addressed id, once the pin has been
-    /// resolved against a store. Empty when it has not been resolved here. This
-    /// is the identity planning and selection consume - never the curated name.
-    QString resolvedModelId;
-
-    /// Usability now, with the mandatory reason when it is not.
-    AvailabilityState availability;
-};
 
 /// The outcome of resolving one curated variant against supplied owned rows.
 struct RifeModelResolution {
@@ -150,21 +129,6 @@ RifeModelResolution resolveRifeModel(RifeVersion version, RifeVariant variant, b
 /// only facts consulted; the stage's factor, order and threshold are preserved by
 /// the caller, never by this join.
 RifeModelResolution resolveRifeModel(const TemporalStage& stage, const CatalogView& catalog);
-
-/// The curated variants with availability observed from `catalog`. Each row
-/// resolves its pin; a row whose pinned owned graph is present and usable is
-/// offered, and every other row carries the refusal `resolveRifeModel` produced.
-QVector<RifeCapability> rifeCapabilities(const CatalogView& catalog);
-
-/// Identity lookup only: the capability row naming `modelId`, or nullptr. Its
-/// availability has not been observed against any store, so it is Preparing with
-/// the reason that says so - a caller that needs usability must call
-/// `rifeCapabilities(catalog)` or `resolveRifeModel`.
-const RifeCapability* findRifeCapability(const QString& modelId);
-
-/// The row for the exact variant identity, or nullptr. Same unresolved
-/// availability as above.
-const RifeCapability* findRifeCapability(RifeVersion version, RifeVariant variant, bool ensemble);
 
 /// Everything the user asked a RIFE stage to be, plus the surface it sits on.
 struct RifeRequest {

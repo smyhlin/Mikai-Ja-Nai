@@ -7,6 +7,7 @@
 #include "native/models/NativeUpscalers.hpp"
 #include "native/status/NativeFilterCommand.hpp"
 
+#include <QDebug>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
@@ -25,6 +26,10 @@
 #include <limits>
 #include <mutex>
 #include <QtCore/QMap>
+
+#ifndef Q_OS_WIN
+#include <dlfcn.h>
+#endif
 
 namespace mplayer::native {
 namespace detail {
@@ -68,7 +73,18 @@ QString shellSafeLibDir(const QString& libDir) {
         bool complete = true;
         for (const QFileInfo& lib : libs) {
             const QString link = QDir(mirror).filePath(lib.fileName());
-            if (QFileInfo(link).isSymLink()) continue;
+            if (QFileInfo(link).isSymLink()) {
+                // X-H2: the mirror name is deterministic, so an existing
+                // link is ours only while it still points at the verified
+                // closure member; a pre-planted link to an attacker's
+                // library must fail safe instead of being adopted.
+                if (QDir::cleanPath(QFileInfo(link).symLinkTarget()) !=
+                    QDir::cleanPath(lib.absoluteFilePath())) {
+                    complete = false;
+                    break;
+                }
+                continue;
+            }
             if (!QFile::link(lib.absoluteFilePath(), link)) {
                 complete = false;
                 break;
@@ -115,20 +131,6 @@ void fail(AnimeJanaiPlan& plan, const QString& key, const QString& message) {
     plan.cacheLease.reset();
 }
 
-QString sha256(const QString& path, const std::function<bool()>& cancelled = {}) {
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) return {};
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    QByteArray buffer(64 * 1024, Qt::Uninitialized);
-    while (!file.atEnd()) {
-        if (cancelled && cancelled()) return {};
-        const qint64 count = file.read(buffer.data(), buffer.size());
-        if (count <= 0) return {};
-        hash.addData(QByteArrayView(buffer.constData(), count));
-    }
-    return QString::fromLatin1(hash.result().toHex());
-}
-
 bool regularFile(const QString& path) {
     const QFileInfo info(path);
     return info.isFile() && !info.isSymLink();
@@ -137,7 +139,9 @@ bool regularFile(const QString& path) {
 bool hashMatches(const QString& path, qint64 size, const QString& digest,
                  const std::function<bool()>& cancelled = {}) {
     const QFileInfo info(path);
-    return regularFile(path) && info.size() == size && sha256(path, cancelled) == digest;
+    // X-D17: was a local sha256() loop; the shared native::hashFile polls the
+    // same cancellation callback between chunks.
+    return regularFile(path) && info.size() == size && hashFile(path, nullptr, cancelled) == digest;
 }
 
 bool pathInside(const QString& root, const QString& path) {
@@ -1743,6 +1747,38 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
     plan.cacheKeys.append(QDir::cleanPath(QFileInfo(plan.modelDir).absoluteFilePath()));
     plan.cacheKeys.append(QDir::cleanPath(QFileInfo(plan.rifeModelDir).absoluteFilePath()));
     return plan;
+}
+
+/// X-H5: the one shared backend-closure preload. Body copied verbatim from
+/// the former VideoSurfaceAnimeJanai.cpp copy (the CompareRenderer.cpp copy
+/// differed only in comments): glob the closure, skip resident sonames,
+/// preload the rest RTLD_GLOBAL.
+void preloadAnimeJanaiBackendLibs(const QStringList& dirs) {
+#ifndef Q_OS_WIN
+    for (const QString& dirPath : dirs) {
+        if (dirPath.isEmpty()) continue;
+        const QDir dir(dirPath);
+        const QFileInfoList entries = dir.entryInfoList(
+            {QStringLiteral("*.so"), QStringLiteral("*.so.*")}, QDir::Files, QDir::Name);
+        for (const QFileInfo& entry : entries) {
+            // Skip a soname another core or a comparison pane already loaded: a
+            // second TensorRT runtime image in one process is what turns a
+            // working filter into heap corruption.
+            const QByteArray name = entry.fileName().toUtf8();
+            if (void* resident = ::dlopen(name.constData(), RTLD_NOW | RTLD_NOLOAD)) {
+                ::dlclose(resident);
+                continue;
+            }
+            const QByteArray path = entry.absoluteFilePath().toUtf8();
+            if (::dlopen(path.constData(), RTLD_NOW | RTLD_GLOBAL) != nullptr)
+                continue;
+            qWarning().noquote() << "[animejanai] backend preload failed for"
+                                 << entry.fileName() << ":" << ::dlerror();
+        }
+    }
+#else
+    Q_UNUSED(dirs);
+#endif
 }
 
 } // namespace mplayer::native

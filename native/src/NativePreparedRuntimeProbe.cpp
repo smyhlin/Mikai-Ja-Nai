@@ -43,6 +43,7 @@
 
 #include "aji.h"
 #include "aji_native.h"
+#include "aji_tool_support.h"
 
 #include <windows.h>
 #include <bcrypt.h>
@@ -64,6 +65,8 @@
 #include <vector>
 
 namespace {
+// X-D20: CudaDriver / CU* aliases live in aji_tool (see aji_tool_support.h).
+using namespace aji_tool;
 
 constexpr const char *kProbeName = "NativePreparedRuntimeProbe";
 
@@ -88,29 +91,6 @@ constexpr uint32_t kControlTimeoutMs = 5000u;
 // small helpers
 // ---------------------------------------------------------------------------
 
-std::wstring widen(const std::string &utf8) {
-    if (utf8.empty()) return {};
-    const int length = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(),
-                                           static_cast<int>(utf8.size()), nullptr, 0);
-    if (length <= 0) return {};
-    std::wstring out(static_cast<size_t>(length), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), static_cast<int>(utf8.size()),
-                        out.data(), length);
-    return out;
-}
-
-std::string narrowUtf8(const std::wstring &wide) {
-    if (wide.empty()) return {};
-    const int length = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(),
-                                           static_cast<int>(wide.size()), nullptr, 0,
-                                           nullptr, nullptr);
-    if (length <= 0) return {};
-    std::string out(static_cast<size_t>(length), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), static_cast<int>(wide.size()),
-                        out.data(), length, nullptr, nullptr);
-    return out;
-}
-
 std::string toUtf8(const std::filesystem::path &path) {
     const std::string u8 = path.u8string();
     return u8;
@@ -120,10 +100,6 @@ std::string lowerAscii(std::string text) {
     for (char &ch : text)
         if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
     return text;
-}
-
-bool equalsNoCase(const std::string &a, const std::string &b) {
-    return lowerAscii(a) == lowerAscii(b);
 }
 
 bool containsNoCase(const std::string &haystack, const std::string &needle) {
@@ -929,144 +905,8 @@ bool loadReference(const std::filesystem::path &manifestPath, Reference *referen
 // CUDA driver (resolved from nvcuda.dll; no link dependency)
 // ---------------------------------------------------------------------------
 
-using CUresult = int;
-using CUdevice = int;
-using CUdeviceptr = unsigned long long;
-struct CUuuid { char bytes[16]; };
-struct CUctx_st;
-using CUcontext = CUctx_st *;
-struct CUstream_st;
-using CUstream = CUstream_st *;
-
-constexpr CUresult kCudaSuccess = 0;
 constexpr int kAttributeComputeCapabilityMajor = 75;
 constexpr int kAttributeComputeCapabilityMinor = 76;
-
-void *driverSymbol(HMODULE module, const char *preferred, const char *fallback) {
-    void *resolved = reinterpret_cast<void *>(GetProcAddress(module, preferred));
-    if (!resolved && fallback) resolved = reinterpret_cast<void *>(GetProcAddress(module, fallback));
-    return resolved;
-}
-
-struct CudaDriver {
-    HMODULE module = nullptr;
-    CUresult(__stdcall *init)(unsigned int) = nullptr;
-    CUresult(__stdcall *deviceGetCount)(int *) = nullptr;
-    CUresult(__stdcall *deviceGet)(CUdevice *, int) = nullptr;
-    CUresult(__stdcall *deviceGetUuid)(CUuuid *, CUdevice) = nullptr;
-    CUresult(__stdcall *deviceGetName)(char *, int, CUdevice) = nullptr;
-    CUresult(__stdcall *deviceGetAttribute)(int *, int, CUdevice) = nullptr;
-    CUresult(__stdcall *primaryCtxRetain)(CUcontext *, CUdevice) = nullptr;
-    CUresult(__stdcall *primaryCtxRelease)(CUdevice) = nullptr;
-    CUresult(__stdcall *ctxGetCurrent)(CUcontext *) = nullptr;
-    CUresult(__stdcall *ctxSetCurrent)(CUcontext) = nullptr;
-    CUresult(__stdcall *ctxGetDevice)(CUdevice *) = nullptr;
-    CUresult(__stdcall *memAlloc)(CUdeviceptr *, size_t) = nullptr;
-    CUresult(__stdcall *memFree)(CUdeviceptr) = nullptr;
-    CUresult(__stdcall *memcpyHtoD)(CUdeviceptr, const void *, size_t) = nullptr;
-    CUresult(__stdcall *memcpyDtoH)(void *, CUdeviceptr, size_t) = nullptr;
-    CUresult(__stdcall *streamCreate)(CUstream *, unsigned int) = nullptr;
-    CUresult(__stdcall *streamDestroy)(CUstream) = nullptr;
-    CUresult(__stdcall *streamSynchronize)(CUstream) = nullptr;
-    CUresult(__stdcall *driverGetVersion)(int *) = nullptr;
-    CUresult(__stdcall *getErrorName)(CUresult, const char **) = nullptr;
-    CUresult(__stdcall *getErrorString)(CUresult, const char **) = nullptr;
-
-    CudaDriver() = default;
-    CudaDriver(const CudaDriver &) = delete;
-    CudaDriver &operator=(const CudaDriver &) = delete;
-    ~CudaDriver() {
-        if (module) FreeLibrary(module);
-    }
-
-    bool load(std::string *why) {
-        module = LoadLibraryExW(L"nvcuda.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-        if (!module) {
-            *why = "nvcuda.dll is not loadable from System32 (error " +
-                   std::to_string(GetLastError()) + ")";
-            return false;
-        }
-        init = reinterpret_cast<decltype(init)>(driverSymbol(module, "cuInit", nullptr));
-        deviceGetCount = reinterpret_cast<decltype(deviceGetCount)>(driverSymbol(module, "cuDeviceGetCount", nullptr));
-        deviceGet = reinterpret_cast<decltype(deviceGet)>(driverSymbol(module, "cuDeviceGet", nullptr));
-        deviceGetUuid = reinterpret_cast<decltype(deviceGetUuid)>(driverSymbol(module, "cuDeviceGetUuid_v2", "cuDeviceGetUuid"));
-        deviceGetName = reinterpret_cast<decltype(deviceGetName)>(driverSymbol(module, "cuDeviceGetName", nullptr));
-        deviceGetAttribute = reinterpret_cast<decltype(deviceGetAttribute)>(driverSymbol(module, "cuDeviceGetAttribute", nullptr));
-        primaryCtxRetain = reinterpret_cast<decltype(primaryCtxRetain)>(driverSymbol(module, "cuDevicePrimaryCtxRetain", nullptr));
-        primaryCtxRelease = reinterpret_cast<decltype(primaryCtxRelease)>(driverSymbol(module, "cuDevicePrimaryCtxRelease_v2", "cuDevicePrimaryCtxRelease"));
-        ctxGetCurrent = reinterpret_cast<decltype(ctxGetCurrent)>(driverSymbol(module, "cuCtxGetCurrent", nullptr));
-        ctxSetCurrent = reinterpret_cast<decltype(ctxSetCurrent)>(driverSymbol(module, "cuCtxSetCurrent", nullptr));
-        ctxGetDevice = reinterpret_cast<decltype(ctxGetDevice)>(driverSymbol(module, "cuCtxGetDevice", nullptr));
-        memAlloc = reinterpret_cast<decltype(memAlloc)>(driverSymbol(module, "cuMemAlloc_v2", "cuMemAlloc"));
-        memFree = reinterpret_cast<decltype(memFree)>(driverSymbol(module, "cuMemFree_v2", "cuMemFree"));
-        memcpyHtoD = reinterpret_cast<decltype(memcpyHtoD)>(driverSymbol(module, "cuMemcpyHtoD_v2", "cuMemcpyHtoD"));
-        memcpyDtoH = reinterpret_cast<decltype(memcpyDtoH)>(driverSymbol(module, "cuMemcpyDtoH_v2", "cuMemcpyDtoH"));
-        streamCreate = reinterpret_cast<decltype(streamCreate)>(driverSymbol(module, "cuStreamCreate", nullptr));
-        streamDestroy = reinterpret_cast<decltype(streamDestroy)>(driverSymbol(module, "cuStreamDestroy_v2", "cuStreamDestroy"));
-        streamSynchronize = reinterpret_cast<decltype(streamSynchronize)>(driverSymbol(module, "cuStreamSynchronize", nullptr));
-        driverGetVersion = reinterpret_cast<decltype(driverGetVersion)>(driverSymbol(module, "cuDriverGetVersion", nullptr));
-        getErrorName = reinterpret_cast<decltype(getErrorName)>(driverSymbol(module, "cuGetErrorName", nullptr));
-        getErrorString = reinterpret_cast<decltype(getErrorString)>(driverSymbol(module, "cuGetErrorString", nullptr));
-        if (!init || !deviceGetCount || !deviceGet || !deviceGetUuid || !deviceGetAttribute ||
-            !primaryCtxRetain || !primaryCtxRelease || !ctxGetCurrent || !ctxSetCurrent ||
-            !ctxGetDevice || !memAlloc || !memFree || !memcpyHtoD || !memcpyDtoH ||
-            !streamCreate || !streamDestroy || !streamSynchronize) {
-            *why = "nvcuda.dll is missing a required driver entry point";
-            return false;
-        }
-        return true;
-    }
-
-    std::string text(CUresult result) const {
-        std::string out = "CUDA error " + std::to_string(result);
-        const char *name = nullptr;
-        if (getErrorName && getErrorName(result, &name) == kCudaSuccess && name && *name)
-            out = name;
-        const char *detail = nullptr;
-        if (getErrorString && getErrorString(result, &detail) == kCudaSuccess && detail && *detail)
-            out += std::string(" (") + detail + ")";
-        return out;
-    }
-};
-
-std::string uuidHex(const CUuuid &uuid) {
-    static const char digits[] = "0123456789abcdef";
-    std::string out;
-    out.reserve(32);
-    for (char raw : uuid.bytes) {
-        const unsigned char byte = static_cast<unsigned char>(raw);
-        out.push_back(digits[byte >> 4]);
-        out.push_back(digits[byte & 0x0f]);
-    }
-    return out;
-}
-
-bool parseUuid(const std::string &input, CUuuid *uuid, std::string *why) {
-    std::string digits = input;
-    if (digits.rfind("GPU-", 0) == 0) digits.erase(0, 4);
-    std::memset(uuid, 0, sizeof(*uuid));
-    int nibbles = 0;
-    for (char ch : digits) {
-        if (ch == '-' || ch == '{' || ch == '}') continue;
-        int value = -1;
-        if (ch >= '0' && ch <= '9') value = ch - '0';
-        else if (ch >= 'a' && ch <= 'f') value = ch - 'a' + 10;
-        else if (ch >= 'A' && ch <= 'F') value = ch - 'A' + 10;
-        if (value < 0 || nibbles >= 32) {
-            *why = "--device-uuid \"" + input + "\" is not a 16-byte CUDA UUID";
-            return false;
-        }
-        unsigned char &byte = reinterpret_cast<unsigned char *>(uuid->bytes)[nibbles / 2];
-        if (nibbles % 2 == 0) byte = static_cast<unsigned char>(value << 4);
-        else byte = static_cast<unsigned char>(byte | value);
-        ++nibbles;
-    }
-    if (nibbles != 32) {
-        *why = "--device-uuid \"" + input + "\" is not a 16-byte CUDA UUID";
-        return false;
-    }
-    return true;
-}
 
 struct DeviceBuffer {
     CudaDriver *driver = nullptr;
@@ -1094,34 +934,6 @@ struct DeviceBuffer {
 // ---------------------------------------------------------------------------
 // fp16 + the documented 4:4:4 matrix (mirrors kernels.cu k_pre444/k_post444)
 // ---------------------------------------------------------------------------
-
-float halfToFloat(uint16_t half) {
-    const uint32_t sign = static_cast<uint32_t>(half & 0x8000u) << 16;
-    uint32_t exponent = (half >> 10) & 0x1Fu;
-    uint32_t mantissa = half & 0x3FFu;
-    uint32_t bits = 0;
-    if (exponent == 0) {
-        if (mantissa == 0) {
-            bits = sign;
-        } else {
-            int shift = -1;
-            uint32_t value = mantissa;
-            do {
-                ++shift;
-                value <<= 1;
-            } while ((value & 0x400u) == 0);
-            bits = sign | (static_cast<uint32_t>(127 - 15 - shift) << 23) |
-                   ((value & 0x3FFu) << 13);
-        }
-    } else if (exponent == 31) {
-        bits = sign | 0x7F800000u | (mantissa << 13);
-    } else {
-        bits = sign | ((exponent - 15 + 127) << 23) | (mantissa << 13);
-    }
-    float out = 0.0f;
-    std::memcpy(&out, &bits, sizeof(out));
-    return out;
-}
 
 struct Csp {
     double kr = 0.2126;

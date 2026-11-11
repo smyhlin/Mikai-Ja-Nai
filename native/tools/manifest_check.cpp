@@ -301,6 +301,20 @@ int main(int argc, char** argv) {
                     invalid = true;
                 }
             }
+            // X-M14: the comment above promises digests are recomputed
+            // when a root was supplied, but this branch never called
+            // verifyFile() — every current commitIdentity source carries 0
+            // digest records, so this was latent. Call it now.
+            if (roots.contains(id)) {
+                for (const auto &file : files) {
+                    if (!file.isObject() ||
+                        !verifyFile(id, roots.value(id), file.toObject(), errors)) {
+                        invalid = true;
+                        continue;
+                    }
+                    ++verified;
+                }
+            }
             if (files.isEmpty() && !roots.contains(id)) continue;
         }
         // documentationOnly: nothing is shipped, so no digest is required.

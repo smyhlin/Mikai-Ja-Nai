@@ -723,17 +723,29 @@ void TestNativeBundle::pruningRemovesAbandonedStagingAndKeepsInstalledState() {
     // the release directory, which is where a killed publish leaves one.
     const QString staleBackup =
         seedEntry(base + QStringLiteral("/components/aji/v0.17.1/trt.previous"), 3);
+    // X-M11: a killed RIFE install leaves <version>.staging-<uuid> /
+    // <version>.previous-<uuid> beside the release directory, and a killed
+    // AJI import leaves aji-import-* inside the release directory.
+    const QString staleRifeStage =
+        seedEntry(base + QStringLiteral("/components/rife/3.7.0.staging-01234567-89ab-cdef-0123-456789abcdef"), 3);
+    const QString staleRifeBackup =
+        seedEntry(base + QStringLiteral("/components/rife/3.7.0.previous-01234567-89ab-cdef-0123-456789abcdef"), 3);
+    const QString staleAjiImport =
+        seedEntry(base + QStringLiteral("/components/aji/v0.24.0/aji-import-AbCdEf"), 3);
     const QString installed = seedEntry(base + QStringLiteral("/components/tensorrt/3.7.0/trtexec"), 3);
     const QString model =
         seedEntry(base + QStringLiteral("/animejanai/models/spatial/graph.onnx"), 3);
 
     const QStringList removed = mplayer::native::pruneNativeStore(base);
 
-    QCOMPARE(removed.size(), 4);
+    QCOMPARE(removed.size(), 7);
     QVERIFY(!QFileInfo::exists(staleScratch));
     QVERIFY(!QFileInfo::exists(staleStage));
     QVERIFY(!QFileInfo::exists(stalePartial));
     QVERIFY(!QFileInfo::exists(staleBackup));
+    QVERIFY(!QFileInfo::exists(staleRifeStage));
+    QVERIFY(!QFileInfo::exists(staleRifeBackup));
+    QVERIFY(!QFileInfo::exists(staleAjiImport));
     QVERIFY2(QFileInfo::exists(installed), "an installed component file was removed");
     QVERIFY2(QFileInfo::exists(model), "a model the viewer installed was removed");
 }

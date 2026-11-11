@@ -7,6 +7,9 @@
 #include <QtCore/QVector>
 #include <QtWidgets/QWidget>
 
+#include <atomic>
+#include <memory>
+
 namespace mikai::backend {
 class MikaiClient;
 }
@@ -28,6 +31,7 @@ class UpscalersPanel : public QWidget {
 
 public:
     explicit UpscalersPanel(QWidget* parent = nullptr);
+    ~UpscalersPanel() override;
 
     void setRunner(Runner* runner);
     void setClient(backend::MikaiClient* client);
@@ -63,6 +67,7 @@ private:
 
     Runner* runner_ = nullptr;
     backend::MikaiClient* client_ = nullptr;
+    std::shared_ptr<std::atomic_bool> alive_ = std::make_shared<std::atomic_bool>(true);
     QVector<Row> rows_;
     QLabel* countLabel_ = nullptr;
 };

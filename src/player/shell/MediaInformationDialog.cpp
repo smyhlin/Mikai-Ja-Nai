@@ -246,43 +246,10 @@ void MediaInformationDialog::updateActiveView() {
 }
 
 void MediaInformationDialog::updatePlainText() {
-    QString text = mediaInformationPlainText(document_);
-    text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
-    text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
-    text.replace(QChar(0x2028), QLatin1Char('\n'));
-    text.replace(QChar(0x2029), QLatin1Char('\n'));
-    const QString previous = plain_->toPlainText();
-    if (previous == text) return;
-    const QTextCursor selection = plain_->textCursor();
-    const int anchor = selection.anchor();
-    const int position = selection.position();
-    const int scroll = plain_->verticalScrollBar()->value();
-
-    // Change only the differing span: positions in unchanged text before and
-    // after it stay attached to their content when track selection refreshes.
-    qsizetype prefix = 0;
-    const qsizetype commonSize = std::min(previous.size(), text.size());
-    while (prefix < commonSize && previous[prefix] == text[prefix]) ++prefix;
-    qsizetype suffix = 0;
-    while (suffix < commonSize - prefix &&
-           previous[previous.size() - suffix - 1] == text[text.size() - suffix - 1]) ++suffix;
-    const int oldEnd = static_cast<int>(previous.size() - suffix);
-    QTextCursor edit(plain_->document());
-    edit.setPosition(static_cast<int>(prefix));
-    edit.setPosition(oldEnd, QTextCursor::KeepAnchor);
-    edit.insertText(text.mid(prefix, text.size() - prefix - suffix));
-    const int newEnd = edit.position();
-    const auto updatedPosition = [prefix, oldEnd, newEnd](int position) {
-        if (position <= prefix) return position;
-        if (position >= oldEnd) return position + newEnd - oldEnd;
-        return std::min(position, newEnd);
-    };
-
-    QTextCursor restored(plain_->document());
-    restored.setPosition(updatedPosition(anchor));
-    restored.setPosition(updatedPosition(position), QTextCursor::KeepAnchor);
-    plain_->setTextCursor(restored);
-    plain_->verticalScrollBar()->setValue(scroll);
+    // X-H8: one shared helper (MediaInformationPresentation.hpp) — it
+    // normalises, diffs, deletes a pure deletion via removeSelectedText(),
+    // and keeps selection/scroll.
+    updateTextEditPreservingSelection(plain_, mediaInformationPlainText(document_));
 }
 
 void MediaInformationDialog::changeEvent(QEvent* event) {

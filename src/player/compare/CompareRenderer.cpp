@@ -1,13 +1,10 @@
 #include "CompareRenderer.hpp"
 
-#ifndef Q_OS_WIN
-#include <dlfcn.h>
-#endif
-
 #include "Anime4K.hpp"
 #include "MpvHandle.hpp"
 #include "MpvRenderContext.hpp"
 #include "native/components/AnimeJanaiBuildLog.hpp"
+#include "native/components/AnimeJanaiRuntime.hpp"
 #include "native/components/NativePipelineSpec.hpp"
 
 #include <QCoreApplication>
@@ -28,42 +25,6 @@
 #include <cmath>
 
 namespace mplayer::shell {
-
-namespace {
-/// The fork's TensorRT backend resolves libnvinfer by bare soname, so the
-/// closure has to be on the process loader path before the filter initialises.
-/// A comparison pane creates its own core, so it needs the same preload the
-/// playing surface does; without it the pane fails with the opaque "Failed to
-/// create inference context".
-void preloadCompareBackendLibs(const QStringList& dirs) {
-#ifndef Q_OS_WIN
-    for (const QString& dirPath : dirs) {
-        if (dirPath.isEmpty()) continue;
-        const QDir dir(dirPath);
-        const QFileInfoList entries = dir.entryInfoList(
-            {QStringLiteral("*.so"), QStringLiteral("*.so.*")}, QDir::Files, QDir::Name);
-        for (const QFileInfo& entry : entries) {
-            // A second copy of the same soname is worse than none: the player has
-            // usually preloaded the closure already, and two TensorRT runtime
-            // images in one process corrupt the heap. RTLD_NOLOAD answers whether
-            // this soname is already resident without loading anything.
-            const QByteArray name = entry.fileName().toUtf8();
-            if (void* resident = ::dlopen(name.constData(), RTLD_NOW | RTLD_NOLOAD)) {
-                ::dlclose(resident);
-                continue;
-            }
-            const QByteArray path = entry.absoluteFilePath().toUtf8();
-            if (::dlopen(path.constData(), RTLD_NOW | RTLD_GLOBAL) != nullptr) continue;
-            qWarning().noquote() << "[animejanai] backend preload failed for"
-                                 << entry.fileName() << ":" << ::dlerror();
-        }
-    }
-#else
-    Q_UNUSED(dirs);
-#endif
-}
-}  // namespace
-
 
 namespace {
 constexpr int kPollMs = 40;
@@ -782,7 +743,7 @@ struct CompareRenderer::State {
         requestedBackend = plan.backend;
         requestedSlot = plan.slot;
         ajiPollIndex = 0;
-        if (attachStage) preloadCompareBackendLibs(plan.backendLibDirs);
+        if (attachStage) native::preloadAnimeJanaiBackendLibs(plan.backendLibDirs);
         const QString hwdec = spec.hwdec.isEmpty() ? QStringLiteral("auto-safe") : spec.hwdec;
         const QString vf = attachStage ? spec.vf : QString();
 
@@ -1263,7 +1224,7 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
             !state.waitForCommand(state.command({"set", "hwdec", targetHwdec}), cancelled) ||
             !state.waitForCommand(state.command({"set", "start", "0"}), cancelled) ||
             !state.waitForCommand(state.command({"set", "glsl-shaders", chain.toStdString()}), cancelled)) return {};
-        if (plan.requiresAji) preloadCompareBackendLibs(plan.backendLibDirs);
+        if (plan.requiresAji) native::preloadAnimeJanaiBackendLibs(plan.backendLibDirs);
         if (!filter.isEmpty()) {
             state.acceptBuildEvidence = true;
             // Buffered filters need repeated input even though Compare freezes one frame.
@@ -1311,10 +1272,18 @@ void CompareRenderer::stop() {
         // plus one drain left the TensorRT build running inside a filter the
         // process was already tearing down - an abort inside the runtime, which
         // is why the window could vanish without a message.
-        const std::function<bool()> never = [] { return false; };
+        // X-M13: was a `never` cancel predicate, so each label's removal
+        // could wait the full 20 s kSourceTimeoutMs on the close path
+        // (20 s x N labels). Each label now gets a 3 s deadline; the
+        // wait still pumps events, so this is latency, not a freeze.
+        QElapsedTimer labelDeadline;
         for (const QString& filterLabel : state.ajiLabels) {
             const std::string label = "@" + filterLabel.toStdString();
-            if (!state.waitForCommand(state.command({"vf", "remove", label}), never))
+            labelDeadline.start();
+            const std::function<bool()> expired = [&labelDeadline] {
+                return labelDeadline.elapsed() >= 3000;
+            };
+            if (!state.waitForCommand(state.command({"vf", "remove", label}), expired))
                 state.error.clear();
         }
     } catch (const MpvError&) {
@@ -1366,6 +1335,9 @@ QImage CompareRenderer::State::queryVoFrame() {
                 else if (entry.first == "data") bytes = value.bytes;
             }
             if (width <= 0 || height <= 0 || stride < width * 4 || bytes.empty()) return;
+            // X-C5: QImage(...).copy() reads stride * height bytes; a
+            // truncated node would read past the end of `bytes`.
+            if (qint64(bytes.size()) < qint64(stride) * qint64(height)) return;
             if (format != QLatin1String("bgr0")) return;
             // copy(): the reply's storage dies with the next drain.
             reply->image = QImage(reinterpret_cast<const uchar*>(bytes.data()), width, height,

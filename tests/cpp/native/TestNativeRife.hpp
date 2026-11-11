@@ -6,7 +6,6 @@ class TestNativeRife : public QObject {
     Q_OBJECT
 
 private slots:
-    void unknownRifeVariantsAreRejected();
     void requestedVariantsResolveTheExactOriginalModelNames();
     void allPinnedGraphsHaveDistinctExactDigests();
     void thePinnedOwnedRowResolvesToItsContentIdentity();

@@ -138,13 +138,6 @@ const char* stateName(RoleState state) {
     return "normal";
 }
 
-void repolish(QWidget* widget) {
-    if (widget == nullptr || widget->style() == nullptr) return;
-    widget->style()->unpolish(widget);
-    widget->style()->polish(widget);
-    widget->update();
-}
-
 void setVisualState(QPushButton& button, RoleState state) {
     button.setAttribute(Qt::WA_UnderMouse, false);
     button.setDown(false);
@@ -171,7 +164,7 @@ void setVisualState(QPushButton& button, RoleState state) {
             button.setEnabled(false);
             break;
     }
-    repolish(&button);
+    mikai::app::theme::repolish(&button);
     QApplication::processEvents();
 }
 

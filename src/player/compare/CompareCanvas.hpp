@@ -51,7 +51,6 @@ public:
     void setFlickerShowA(bool showA);
     /// -1 for neither, 0 for A, 1 for B: the hold-to-peek override.
     void setHeldSide(int side);
-    int heldSide() const { return heldSide_; }
 
     Camera& camera() { return camera_; }
     const Camera& camera() const { return camera_; }
@@ -85,6 +84,7 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void leaveEvent(QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    void showEvent(QShowEvent* event) override;
     void drawForeground(QPainter* painter, const QRectF& rect) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void changeEvent(QEvent* event) override;

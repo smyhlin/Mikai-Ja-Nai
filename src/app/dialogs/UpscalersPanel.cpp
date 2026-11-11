@@ -34,6 +34,10 @@ UpscalersPanel::UpscalersPanel(QWidget* parent) : QWidget(parent) {
     refresh();
 }
 
+UpscalersPanel::~UpscalersPanel() {
+    alive_->store(false, std::memory_order_release);
+}
+
 void UpscalersPanel::setRunner(Runner* runner) {
     runner_ = runner;
 }
@@ -255,7 +259,8 @@ void UpscalersPanel::startDownload(Row& row) {
             }
             return QVariant(registered);
         },
-        [this, fileName = row.model.fileName](const QVariant&) {
+        [this, alive = alive_, fileName = row.model.fileName](const QVariant&) {
+            if (!alive->load(std::memory_order_acquire)) return;
             if (Row* target = rowByFileName(fileName)) {
                 target->running = false;
                 target->progress->hide();
@@ -265,7 +270,8 @@ void UpscalersPanel::startDownload(Row& row) {
             refresh();
             emit modelsChanged();
         },
-        [this, fileName = row.model.fileName](const backend::Failure& failure) {
+        [this, alive = alive_, fileName = row.model.fileName](const backend::Failure& failure) {
+            if (!alive->load(std::memory_order_acquire)) return;
             if (Row* target = rowByFileName(fileName)) {
                 target->running = false;
                 target->progress->hide();
@@ -294,7 +300,8 @@ void UpscalersPanel::startRemoval(Row& row) {
             }
             return QVariant();
         },
-        [this, fileName = row.model.fileName](const QVariant&) {
+        [this, alive = alive_, fileName = row.model.fileName](const QVariant&) {
+            if (!alive->load(std::memory_order_acquire)) return;
             if (Row* target = rowByFileName(fileName)) {
                 target->running = false;
                 target->removing = false;
@@ -304,7 +311,8 @@ void UpscalersPanel::startRemoval(Row& row) {
             refresh();
             emit modelsChanged();
         },
-        [this, fileName = row.model.fileName](const backend::Failure& failure) {
+        [this, alive = alive_, fileName = row.model.fileName](const backend::Failure& failure) {
+            if (!alive->load(std::memory_order_acquire)) return;
             if (Row* target = rowByFileName(fileName)) {
                 target->running = false;
                 target->removing = false;

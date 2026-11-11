@@ -746,12 +746,8 @@ QString shaderStringForCandidate(const QString& id, const QString& shadersDir, Q
     // glsl-shaders back without validating it, so a chain naming a file that
     // is not there reads back complete and fails silently at the next frame;
     // refusing to build it here is the only place that can catch it.
-    if (files.isEmpty()) {
-        if (reason != nullptr) {
-            *reason = QStringLiteral("Unknown Anime4K candidate '%1'").arg(id);
-        }
-        return QString();
-    }
+    // (X-D8: the duplicate files.isEmpty() guard that used to sit here was
+    // unreachable — the identical check above already returns.)
     for (const QString& file : files) {
         const QString path = QDir(dir).filePath(file);
         const QFileInfo info(path);

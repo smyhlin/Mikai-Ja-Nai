@@ -31,15 +31,6 @@
 
 namespace mikai::app {
 
-/// Re-polishes a widget after a dynamic property change so QSS selectors update
-/// immediately without rebuilding the widget hierarchy.
-inline void repolishWidget(QWidget* widget) {
-    if (widget == nullptr || widget->style() == nullptr) return;
-    widget->style()->unpolish(widget);
-    widget->style()->polish(widget);
-    widget->update();
-}
-
 /// Enables OpenType tabular figures (`tnum`) on a widget's font so live
 /// counters, rate-limit timers, selection counts, and FPS tables never jitter
 /// horizontally when digits change.
@@ -214,7 +205,7 @@ inline void stylePillBadge(QLabel* label, const QString& tone = QStringLiteral("
     label->setProperty("badgeTone", tone);
     label->setAlignment(Qt::AlignCenter);
     applyTabularNumerals(label);
-    repolishWidget(label);
+    theme::repolish(label);
 }
 
 /// Styles a semantic status/error/callout banner (`"neutral"`, `"info"`,
@@ -223,7 +214,7 @@ inline void styleStatusBanner(QLabel* label, const QString& state) {
     if (label == nullptr) return;
     label->setProperty("statusTone", state);
     applyTabularNumerals(label);
-    repolishWidget(label);
+    theme::repolish(label);
 }
 
 /// Creates a 1px hairline horizontal divider within a card or between sections.

@@ -464,6 +464,21 @@ if(MIKAI_BUILD_PROBES)
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
   )
 
+  # X-M19: the per-suite ctest names above are generated from MIKAI_TEST_SUITES
+  # while the test binary runs kSuites[] from tests/cpp/main.cpp. A suite
+  # added to one registry and not the other either never runs under ctest or
+  # fails at launch as unknown; this script parses main.cpp and asserts the
+  # two sets agree, with the names attached.
+  add_test(NAME SuiteRegistryContracts
+    COMMAND ${CMAKE_COMMAND}
+      -DMAIN_CPP=${CMAKE_SOURCE_DIR}/tests/cpp/main.cpp
+      -DEXPECTED_SUITES="${MIKAI_TEST_SUITES}"
+      -DWITH_MODEL_INSPECTION=${MIKAI_WITH_MODEL_INSPECTION}
+      -P ${CMAKE_SOURCE_DIR}/tests/cmake/SuiteRegistryContracts.cmake
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  )
+  set_tests_properties(SuiteRegistryContracts PROPERTIES TIMEOUT 60)
+
   # Missing display/GL support must remain a visible skip.
   if(TARGET fullscreen_stability_probe)
     add_dependencies(mikai_tests fullscreen_stability_probe)
@@ -491,6 +506,31 @@ if(MIKAI_BUILD_PROBES)
       set_tests_properties(HoverPlaybackCanary PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=windows")
     endif()
+  endif()
+
+  # X-D16: the manifest-driven behaviour probes (probe_runner + probes/*.json)
+  # were registered as a probe target but had no ctest entry — live QA
+  # tooling in limbo. ProbeManifestsList runs every manifest through
+  # --isolate --list (parse + list only, one child per manifest, no real
+  # surfaces), so a broken manifest fails ctest with its file named.
+  if(TARGET probe_runner)
+    add_dependencies(mikai_tests probe_runner)
+    add_test(NAME ProbeManifestsList
+      COMMAND mikai_test_launcher
+        "$<TARGET_FILE:probe_runner>"
+        "${MIKAI_ANIME4K_SHADERS_DIR}"
+        "${MIKAI_SELECTED_MPV_MODULE}"
+        "$<TARGET_FILE_DIR:Qt6::Core>"
+        "${MIKAI_TEST_QT_PLUGIN_DIR}"
+        "${CMAKE_BINARY_DIR}/_test-runs"
+        "${CMAKE_SOURCE_DIR}/probes"
+        --isolate --list
+    )
+    set_tests_properties(ProbeManifestsList PROPERTIES
+      TIMEOUT 600
+      LABELS "mikai_tests_suite"
+      ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
   endif()
 
   if(TARGET native_settings_probe)

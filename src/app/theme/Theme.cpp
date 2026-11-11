@@ -1550,6 +1550,13 @@ void applyActionRole(QAbstractButton* button, ActionRole role) {
     if (button->style() != nullptr) button->style()->polish(button);
 }
 
+void repolish(QWidget* widget) {
+    if (widget == nullptr || widget->style() == nullptr) return;
+    widget->style()->unpolish(widget);
+    widget->style()->polish(widget);
+    widget->update();
+}
+
 int equalizedWidth(std::span<QAbstractButton* const> buttons, int minimum) {
     int width = qMax(0, minimum);
     qreal ratio = 1.0;

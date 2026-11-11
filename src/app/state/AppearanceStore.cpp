@@ -111,7 +111,11 @@ void setCurrentAppearance(const theme::Appearance& appearance) {
         QEvent event(QEvent::LanguageChange);
         const QList<QWidget*> windows = QApplication::topLevelWidgets();
         for (QWidget* window : windows) {
-            if (window != nullptr && window->isVisible()) {
+            // X-M12: no isVisible() filter — a hidden PlayerDialog (PiP
+            // owns the pooled float) missed the event and was never
+            // re-notified. Qt's own installTranslator path posts to all
+            // top-levels regardless of visibility.
+            if (window != nullptr) {
                 QCoreApplication::sendEvent(window, &event);
             }
         }

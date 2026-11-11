@@ -961,6 +961,11 @@ void FramePreviewService::noteActivity() {
 }
 
 void FramePreviewService::cancel() {
+    // X-M2: drop the pending request's epoch too — otherwise a failed /
+    // superseded hover leaks one entry, and the wholesale clear at
+    // > 128 entries can erase a still-pending token's epoch, silently
+    // discarding its reply.
+    requestEpochs_.remove(pendingToken_);
     pendingToken_ = 0;
     prewarmToken_ = 0;
     if (worker_ != nullptr) emit cancelRequested();
@@ -1041,6 +1046,9 @@ void FramePreviewService::ensureWorker() {
     connect(worker, &FramePreviewWorker::frameUnavailable, this,
             [this](quint64 token, double seconds, const QString& reason) {
                 if (stopped_ || isInternal(token)) return;
+                // X-M2: take the epoch before the pending check — a failed
+                // reply for a superseded token must not leak its entry.
+                requestEpochs_.take(token);
                 if (token != pendingToken_) return;
                 pendingToken_ = 0;
                 stats_.lastSettleLatencyMs = pendingSince_.elapsed();

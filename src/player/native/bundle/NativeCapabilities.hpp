@@ -45,7 +45,6 @@ struct ProbeOnlyPassthrough {
 struct NativeCapabilities {
     bool hasTensorRT = false;
     bool hasDirectML = false;
-    bool supportsProbePassthrough = false; // the additive path above
     bool supportsRife = false;
     /// The status protocol the observed side reported; 0 is "not observed".
     /// Never the producer's query protocol, native protocol/schema or source
@@ -83,8 +82,5 @@ struct NativeCapabilities {
 /// `protocolVersion`/`engineSchemaVersion` stay 0: absent is reported absent
 /// rather than approximated.
 NativeCapabilities nativeCapabilitiesFrom(const NativeFactoryObservation& observation);
-
-// One-line factual reason when a capability or whole native path is unavailable.
-QString unavailableReason(const NativeCapabilities& caps, const QString& detail = {});
 
 }  // namespace mplayer::native

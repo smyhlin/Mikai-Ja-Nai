@@ -6,6 +6,7 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QStringList>
 
+#include "NativeBuilderInternal.hpp"
 #include "native/bundle/NativePaths.hpp"
 
 namespace mplayer {
@@ -25,37 +26,6 @@ void clearReason(QString* key, QString* reason) {
   if (reason != nullptr) reason->clear();
 }
 
-/// `QDir::cleanPath` splitting, so a drive-letter root is not read as a relative
-/// component. Mirrors the builder's own containment walk; no shared public helper
-/// exists for it.
-bool plainPathNoReparse(const QString& canonical) {
-  const QString cleaned = QDir::cleanPath(canonical);
-  const QStringList parts = cleaned.split(QLatin1Char('/'), Qt::SkipEmptyParts);
-  if (cleaned.size() >= 2 && cleaned.at(1) == QLatin1Char(':')) {
-    if (parts.isEmpty()) return false;
-    QString current = parts.first() + QLatin1Char('/');
-    if (!pathHasNoReparsePoints(current, current)) return false;
-    for (int i = 1; i < parts.size(); ++i) {
-      current += parts.at(i);
-      if (!pathHasNoReparsePoints(current, current)) return false;
-      current += QLatin1Char('/');
-    }
-    return true;
-  }
-  QString current;
-  if (cleaned.startsWith(QLatin1String("//"))) {
-    current = QStringLiteral("//");
-  } else if (cleaned.startsWith(QLatin1Char('/'))) {
-    current = QStringLiteral("/");
-  }
-  if (!current.isEmpty() && !pathHasNoReparsePoints(current, current)) return false;
-  for (const QString& part : parts) {
-    current += current.endsWith(QLatin1Char('/')) ? part : QLatin1Char('/') + part;
-    if (!pathHasNoReparsePoints(current, current)) return false;
-  }
-  return true;
-}
-
 /// An existing plain directory with no reparse point on the way to it. Empty or
 /// non-absolute, a symlink, a file, or a path whose existing part walks through a
 /// junction is refused.
@@ -65,25 +35,16 @@ bool canonicalOwnedDir(const QString& path, QString* canonicalOut) {
   const QString canonical = canonicalPath(path);
   if (canonical.isEmpty() || !QFileInfo(canonical).isDir()) return false;
   if (QFileInfo(canonical).isSymLink()) return false;
-  if (!plainPathNoReparse(canonical)) return false;
+  // X-D19: was a local copy without the empty-input guard (it returned
+  // true for an empty path); the builder's own
+  // builder_detail::plainPathNoReparse is the same walk with the guard.
+  if (!builder_detail::plainPathNoReparse(canonical)) return false;
   if (canonicalOut != nullptr) *canonicalOut = canonical;
   return true;
 }
 
 /// An absolute plain file inside `rootCanonical`, reached without a reparse
 /// point. Mirrors the builder's owned-copy proof.
-bool ownedFileInside(const QString& rootCanonical, const QString& path, QString* canonicalOut) {
-  if (path.isEmpty() || !QDir::isAbsolutePath(path)) return false;
-  if (QFileInfo(path).isSymLink()) return false;
-  const QString canonical = canonicalPath(path);
-  if (canonical.isEmpty() || !QFileInfo(canonical).isFile()) return false;
-  if (QFileInfo(canonical).isSymLink()) return false;
-  if (!pathWithinRoot(rootCanonical, canonical)) return false;
-  if (!pathHasNoReparsePoints(rootCanonical, canonical)) return false;
-  if (canonicalOut != nullptr) *canonicalOut = canonical;
-  return true;
-}
-
 QJsonValue jsonInt(qint64 value) { return QJsonValue(value); }
 
 bool sameSource(const SourceGeometry& left, const SourceGeometry& right) {
@@ -428,7 +389,9 @@ bool proveOwnedModel(const QString& rootCanonical, const ModelRecord& record,
     return false;
   }
   QString canonical;
-  if (!ownedFileInside(rootCanonical, record.onnxPath, &canonical)) {
+  // X-D19: ownedFileInside was a verbatim copy of
+  // builder_detail::canonicalFileInside (same checks, same order).
+  if (!builder_detail::canonicalFileInside(rootCanonical, record.onnxPath, &canonical)) {
     setReason(key, reason, QStringLiteral("model.owned.missing"),
               QStringLiteral("model %1's copy is not a plain file inside the owned models root")
                   .arg(record.id));
@@ -772,7 +735,11 @@ std::optional<PreparedAdmission> resolvePreparedAdmission(const PreparedAdmissio
     // for, then the source bytes, then the record itself re-proved on disk.
     if (!verifyArtifactRuntime(artifact, request.build, reasonKey, reason)) return std::nullopt;
     if (!verifyArtifactSource(artifact, modelPath, reasonKey, reason)) return std::nullopt;
-    if (!verifyArtifact(request.store, artifact, reasonKey, reason)) return std::nullopt;
+    // X-H4: no second verifyArtifact() pass here. The record above was
+    // just proved by findArtifactForRequest() (fresh manifest + engine
+    // hash), and acquireArtifactLease() below re-proves the engine bytes
+    // it leases under the removal lock — proving it a third time only
+    // doubles the GUI-thread stall for no new fact.
 
     const std::optional<ArtifactLease> lease =
         acquireArtifactLease(request.store, built.buildKey(), reasonKey, reason);

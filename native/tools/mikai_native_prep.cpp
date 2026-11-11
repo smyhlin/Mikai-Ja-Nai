@@ -11,6 +11,8 @@
 // Exit 0 only when --out received a non-empty plan. Codes 2..6 all leave --out
 // exactly as it was found and name their cause.
 
+#include "aji_tool_support.h"
+
 #include <windows.h>
 
 #include <NvInfer.h>
@@ -55,30 +57,6 @@ int report(const ExitCode code, const std::wstring& reason) {
 // One JSON object per line on stdout, written only after the transition it
 // names has actually happened. No event claims a plan is verified, prepared or
 // active; the raw record says so explicitly.
-std::string utf8(const std::wstring& text) {
-    if (text.empty())
-        return std::string();
-    const int bytes = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), nullptr, 0,
-                                          nullptr, nullptr);
-    if (bytes <= 0)
-        return std::string();
-    std::string out(static_cast<size_t>(bytes), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), out.data(), bytes, nullptr,
-                        nullptr);
-    return out;
-}
-
-std::wstring wide(const std::string& utf8Text) {
-    if (utf8Text.empty())
-        return std::wstring();
-    const int characters = MultiByteToWideChar(CP_UTF8, 0, utf8Text.c_str(), -1, nullptr, 0);
-    if (characters <= 1)
-        return std::wstring();
-    std::wstring out(static_cast<size_t>(characters - 1), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, utf8Text.c_str(), -1, out.data(), characters);
-    return out;
-}
-
 void appendJsonString(std::string& out, const std::string_view text) {
     out.push_back('"');
     for (const char c : text) {
@@ -124,7 +102,7 @@ std::string signedNumber(const int64_t value) {
 
 std::string quoted(const std::wstring& text) {
     std::string out;
-    appendJsonString(out, utf8(text));
+    appendJsonString(out, narrowUtf8(text));
     return out;
 }
 
@@ -495,7 +473,7 @@ bool parseShapes(const std::wstring_view spec, std::vector<ShapeSpec>& shapes, s
             return false;
         }
         ShapeSpec shape;
-        shape.name = utf8(std::wstring(name));
+        shape.name = narrowUtf8(std::wstring(name));
         if (shape.name.empty()) {
             reason = L"--shapes entry \"" + std::wstring(entry) + L"\" has an unusable input name";
             return false;
@@ -574,7 +552,7 @@ bool parseUuid(const std::wstring_view text, cudaUUID_t& uuid, std::wstring& rea
 std::wstring cudaFailure(const std::wstring& what, const cudaError_t status) {
     const char* const text = cudaGetErrorString(status);
     return what + L" failed (" + std::to_wstring(static_cast<int>(status)) + L": " +
-           wide(text != nullptr ? text : "no description") + L")";
+           widen(text != nullptr ? text : "no description") + L")";
 }
 
 // The version of the nvcuda.dll the process actually has loaded, read from
@@ -936,12 +914,12 @@ bool describeBindings(nvinfer1::INetworkDefinition& network, std::string& json,
             return false;
         }
         if (tensor->isShapeTensor()) {
-            reason = L"network input \"" + wide(name) +
+            reason = L"network input \"" + widen(name) +
                      L"\" is a shape tensor, whose element values this helper does not set";
             return false;
         }
         if (!supportedInputType(tensor->getType())) {
-            reason = L"network input \"" + wide(name) + L"\" is " + wide(typeName(tensor->getType())) +
+            reason = L"network input \"" + widen(name) + L"\" is " + widen(typeName(tensor->getType())) +
                      L"; only float32, float16 and bfloat16 network inputs are supported";
             return false;
         }
@@ -1011,7 +989,7 @@ bool bindShapes(nvinfer1::IBuilder& builder, nvinfer1::INetworkDefinition& netwo
                 match = candidate;
         }
         if (match == nullptr) {
-            reason = L"--shapes names input \"" + wide(shape.name) +
+            reason = L"--shapes names input \"" + widen(shape.name) +
                      L"\", which the graph does not declare as a network input";
             return false;
         }
@@ -1019,7 +997,7 @@ bool bindShapes(nvinfer1::IBuilder& builder, nvinfer1::INetworkDefinition& netwo
 
         const nvinfer1::Dims declared = match->getDimensions();
         if (declared.nbDims != 4) {
-            reason = L"network input \"" + wide(shape.name) + L"\" is rank-" +
+            reason = L"network input \"" + widen(shape.name) + L"\" is rank-" +
                      std::to_wstring(declared.nbDims) + L", not rank-4";
             return false;
         }
@@ -1029,7 +1007,7 @@ bool bindShapes(nvinfer1::IBuilder& builder, nvinfer1::INetworkDefinition& netwo
                 continue;
             }
             if (declared.d[axis] != shape.extent[axis]) {
-                reason = L"--shapes gives input \"" + wide(shape.name) + L"\" extent " +
+                reason = L"--shapes gives input \"" + widen(shape.name) + L"\" extent " +
                          std::to_wstring(shape.extent[axis]) + L" on axis " + std::to_wstring(axis) +
                          L", but the graph declares " + std::to_wstring(declared.d[axis]);
                 return false;
@@ -1054,7 +1032,7 @@ bool bindShapes(nvinfer1::IBuilder& builder, nvinfer1::INetworkDefinition& netwo
         if (!profile->setDimensions(name, nvinfer1::OptProfileSelector::kMIN, dims) ||
             !profile->setDimensions(name, nvinfer1::OptProfileSelector::kOPT, dims) ||
             !profile->setDimensions(name, nvinfer1::OptProfileSelector::kMAX, dims)) {
-            reason = L"TensorRT refused the fixed shape set for input \"" + wide(shapes[index].name) +
+            reason = L"TensorRT refused the fixed shape set for input \"" + widen(shapes[index].name) +
                      L"\" (rank-4, min = opt = max)";
             return false;
         }
@@ -1076,7 +1054,7 @@ void appendDeviceFacts(std::string& json, const DeviceFacts& facts, const cudaUU
                        const uint64_t requestedWorkspace, const bool workspaceFromFlag) {
     appendNumber(json, "deviceOrdinal", static_cast<uint64_t>(facts.ordinal));
     appendField(json, "deviceUuid", quoted(uuidText(requested)));
-    appendField(json, "deviceName", quoted(wide(facts.name)));
+    appendField(json, "deviceName", quoted(widen(facts.name)));
     appendField(json, "computeCapability",
                 quoted(std::to_wstring(facts.major) + L"." + std::to_wstring(facts.minor)));
     appendNumber(json, "totalGlobalMemoryBytes", facts.totalGlobalMemory);
@@ -1139,7 +1117,7 @@ int reportDescribeFailure(const ExitCode code, const char* phase, const char* er
     json += ",\"error\":{\"code\":";
     appendJsonString(json, errorCode);
     json += ",\"message\":";
-    appendJsonString(json, utf8(reason));
+    appendJsonString(json, narrowUtf8(reason));
     json += "}}";
     emit(std::move(json));
     std::fwprintf(stderr, L"%ls: %hs/%hs: %ls\n", kName, phase, errorCode, reason.c_str());
@@ -1518,7 +1496,7 @@ int wmain(int argc, wchar_t** argv) {
     try {
         return run(argc, argv);
     } catch (const std::exception& failure) {
-        return report(kBuild, L"an unexpected failure interrupted the build: " + wide(failure.what()));
+        return report(kBuild, L"an unexpected failure interrupted the build: " + widen(failure.what()));
     } catch (...) {
         return report(kBuild, L"an unexpected failure of unknown kind interrupted the build; --out is "
                                L"unchanged");
