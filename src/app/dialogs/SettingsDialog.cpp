@@ -1,4 +1,5 @@
 #include "dialogs/SettingsDialog.hpp"
+#include "state/AppearanceStore.hpp"
 #include "state/SettingsKeys.hpp"
 
 #include "I18n.hpp"
