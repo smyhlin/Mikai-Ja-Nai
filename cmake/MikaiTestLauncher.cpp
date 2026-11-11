@@ -742,8 +742,46 @@ bool copyTree(const QString& source, const QString& destination) {
     return true;
 }
 
+#ifdef Q_OS_WIN
+// The test executable must load the MinGW runtime of the toolchain that built
+// it. Other GCC builds ship identically named DLLs — Git for Windows' ucrt64
+// runtime precedes the toolchain bin in PATH on CI runners — and a test binary
+// that imports an entry point the wrong build does not export dies with
+// 0xc0000139 before main. The loader searches the application directory
+// first, so staging the toolchain's DLLs next to the staged executable wins
+// regardless of PATH order. An empty directory means the caller did not name
+// a toolchain: unchanged behaviour. A named directory that lacks a DLL is a
+// refusal, not a run that would die the same way.
+bool stageToolchainRuntime(const QString& toolchainBinDir, const QString& directory) {
+    if (toolchainBinDir.isEmpty()) return true;
+    static const char* const kRuntimeDlls[] = {
+        "libstdc++-6.dll",
+        "libgcc_s_seh-1.dll",
+        "libwinpthread-1.dll",
+    };
+    for (const char* name : kRuntimeDlls) {
+        const QString source = QDir(toolchainBinDir).filePath(QString::fromLatin1(name));
+        const QString destination = QDir(directory).filePath(QString::fromLatin1(name));
+        if (!QFile::exists(source)) {
+            std::fprintf(stderr,
+                         "[mikai_test_launcher] toolchain runtime DLL is missing: %s\n",
+                         qPrintable(source));
+            return false;
+        }
+        if (!QFile::copy(source, destination)) {
+            std::fprintf(stderr,
+                         "[mikai_test_launcher] cannot stage toolchain runtime DLL: %s\n",
+                         qPrintable(source));
+            return false;
+        }
+    }
+    return true;
+}
+#endif
+
 int stageAndRun(const QStringList& arguments, const QString& directory,
                  const QString& explicitTimeoutSpec, const QString& runtimeRoot,
+                 const QString& toolchainBinDir,
                  const QStringList& forwarded) {
     const QString executable = QDir(directory).filePath(QFileInfo(arguments.at(1)).fileName());
     const QString mpvDirectory = QDir(directory).filePath(QStringLiteral("mpv"));
@@ -756,6 +794,15 @@ int stageAndRun(const QStringList& arguments, const QString& directory,
                      qPrintable(directory));
         return 2;
     }
+#ifdef Q_OS_WIN
+    if (!stageToolchainRuntime(toolchainBinDir, directory)) {
+        std::fprintf(stderr, "[mikai_test_launcher] cannot stage the toolchain MinGW runtime in %s\n",
+                     qPrintable(directory));
+        return 2;
+    }
+#else
+    Q_UNUSED(toolchainBinDir);
+#endif
     if (!QFileInfo(arguments.at(4)).isDir() ||
         !QFileInfo(QDir(arguments.at(5)).filePath(QStringLiteral("platforms"))).isDir()) {
         std::fprintf(stderr, "[mikai_test_launcher] configured Qt runtime/plugins are missing\n");
@@ -1063,13 +1110,15 @@ int main(int argc, char** argv) {
                      "options consumed by this launcher:\n"
                      "  --launcher-timeout-ms <ms>  bound the child run (default 600000)\n"
                      "  --launcher-deadline         print the effective deadline and exit\n"
-                     "  --mpv-runtime-dir <path>    stage a private Linux mpv dependency closure\n");
+                     "  --mpv-runtime-dir <path>    stage a private Linux mpv dependency closure\n"
+                     "  --toolchain-bin-dir <path>  stage the toolchain MinGW runtime DLLs next to the test executable (Windows only)\n");
         return 2;
     }
     // Options are consumed here, never forwarded: a child that received one
     // would treat it as an unknown QTest argument rather than a deadline.
     QString explicitTimeoutSpec;
     QString runtimeRoot;
+    QString toolchainBinDir;
     QStringList forwarded;
     for (int i = 7; i < arguments.size(); ++i) {
         const QString& argument = arguments.at(i);
@@ -1087,6 +1136,14 @@ int main(int argc, char** argv) {
                 return 2;
             }
             runtimeRoot = arguments.at(++i);
+            continue;
+        }
+        if (argument == QLatin1String("--toolchain-bin-dir")) {
+            if (i + 1 >= arguments.size() || !toolchainBinDir.isEmpty()) {
+                std::fprintf(stderr, "[mikai_test_launcher] --toolchain-bin-dir needs one value\n");
+                return 2;
+            }
+            toolchainBinDir = arguments.at(++i);
             continue;
         }
         if (argument.startsWith(QLatin1String("--launcher-timeout-ms="))) {
@@ -1115,7 +1172,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     const int result = stageAndRun(arguments, scratch.path(), explicitTimeoutSpec,
-                                   runtimeRoot, forwarded);
+                                   runtimeRoot, toolchainBinDir, forwarded);
     // Remove only the directory QTemporaryDir created, even after fixture/test
     // failure, a child crash or a timeout kill. The public build output is never
     // moved/edited. This is the sole cleanup owner; the child is already gone by

@@ -327,6 +327,22 @@ if(MIKAI_BUILD_PROBES)
 
   add_dependencies(mikai_tests mikai_shader_deployment)
 
+  # The Windows test child must load the MinGW runtime of the toolchain that
+  # built it (Tools\mingw1310_64\bin on CI). Other GCC builds ship identically
+  # named DLLs — Git for Windows' ucrt64 runtime precedes the toolchain bin in
+  # PATH — and a test binary importing an entry point the wrong build does not
+  # export dies with 0xc0000139 before main. The launcher stages the
+  # toolchain's trio next to the staged executable, where the loader looks
+  # first. Empty on Linux and when the compiler is not a path; the launcher
+  # then keeps its previous behaviour.
+  set(_mikai_toolchain_bin_args)
+  if(WIN32)
+    get_filename_component(_mikai_toolchain_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    if(_mikai_toolchain_bin_dir)
+      set(_mikai_toolchain_bin_args --toolchain-bin-dir "${_mikai_toolchain_bin_dir}")
+    endif()
+  endif()
+
   set(_mikai_tests_launcher_args
     "$<TARGET_FILE:mikai_tests>"
     "${MIKAI_ANIME4K_SHADERS_DIR}"
@@ -339,6 +355,7 @@ if(MIKAI_BUILD_PROBES)
     list(APPEND _mikai_tests_launcher_args
       --mpv-runtime-dir "${MIKAI_SELECTED_MPV_DEPENDENCY_ROOT}")
   endif()
+  list(APPEND _mikai_tests_launcher_args ${_mikai_toolchain_bin_args})
   add_test(NAME mikai_tests COMMAND mikai_test_launcher
     ${_mikai_tests_launcher_args}
   )
@@ -502,6 +519,7 @@ if(MIKAI_BUILD_PROBES)
       list(APPEND _mikai_hover_canary_args
         --mpv-runtime-dir "${MIKAI_SELECTED_MPV_DEPENDENCY_ROOT}")
     endif()
+    list(APPEND _mikai_hover_canary_args ${_mikai_toolchain_bin_args})
     add_test(NAME HoverPlaybackCanary
       COMMAND mikai_test_launcher ${_mikai_hover_canary_args}
     )
@@ -534,6 +552,7 @@ if(MIKAI_BUILD_PROBES)
         "${CMAKE_BINARY_DIR}/_test-runs"
         "${CMAKE_SOURCE_DIR}/probes"
         --isolate --list
+        ${_mikai_toolchain_bin_args}
     )
     set_tests_properties(ProbeManifestsList PROPERTIES
       TIMEOUT 600
@@ -560,6 +579,7 @@ if(MIKAI_BUILD_PROBES)
       list(APPEND _mikai_video_scaling_args
         --mpv-runtime-dir "${MIKAI_SELECTED_MPV_DEPENDENCY_ROOT}")
     endif()
+    list(APPEND _mikai_video_scaling_args ${_mikai_toolchain_bin_args})
     add_test(NAME VideoScalingPersistence
       COMMAND mikai_test_launcher ${_mikai_video_scaling_args}
     )
