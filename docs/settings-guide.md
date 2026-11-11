@@ -72,13 +72,13 @@ Use **Test** to check the text currently in the field; testing does not itself s
 
 Leaving the field blank saves anonymous access, as the field's placeholder says. Saving a changed blank key writes an empty `.env` file in place instead of deleting it.
 
-The client first checks `.env` in the current working directory, then beside the executable, then in its immediate parent directory; the first existing file wins, and it does not search farther up. When a save changes the key, it writes the first location that already existed, or `.env` in the current working directory when none did; an unchanged key is not rewritten. At client initialization, a non-empty `MIKAI_API_KEY` environment variable takes precedence over the file. If saving the key fails, the app reports the error and leaves the active key unchanged.
+The client first checks `.env` beside the executable, then in its immediate parent directory; the first existing file wins, and it does not search farther up. The current working directory is deliberately not searched. When a save changes the key, it writes the first location that already existed, or `.env` beside the executable when none did; an unchanged key is not rewritten. At client initialization, a non-empty `MIKAI_API_KEY` environment variable takes precedence over the file. If saving the key fails, the app reports the error and leaves the active key unchanged.
 
 The **API usage** readout shows the current limit and, after API responses arrive, usage/remaining requests, active and queued work, and reset countdown where available. It may initially say it is waiting for the next response.
 
 ### OpenSubtitles
 
-Create an API key on the linked [OpenSubtitles API consumers page](https://www.opensubtitles.com/en/consumers), enter it under **Access** and select **Save**. The player uses the same key for its OpenSubtitles search; the key is stored in the application's settings and can also be entered in the search dialog.
+Create an API key on the linked [OpenSubtitles API consumers page](https://www.opensubtitles.com/en/consumers), enter it under **Access** and select **Save**. The player uses the same key for its OpenSubtitles search; the key is stored in the app-data folder — protected with Windows DPAPI on Windows, in a file only your user account can read elsewhere — and can also be entered in the search dialog.
 
 ### Home page sections
 

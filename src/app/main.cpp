@@ -129,6 +129,21 @@ LaunchRequest parseLaunchRequest(const QStringList& arguments) {
         // first segment of "tests/fixtures/clip.mp4" as a host and turns a
         // relative path into "http://tests/...". A written scheme is the only
         // thing that distinguishes the two on a command line.
+        // P1-08 (rung 6): a URL is passed through only when its scheme is
+        // allowlisted (http/https/file). A single-letter scheme is a Windows
+        // drive letter ("C:..."), not a URL scheme. Anything else with a
+        // scheme — javascript:, data:, ms-msdt: — is a CLI error, like the
+        // other malformed launches above (showLaunchError, exit code 2).
+        const QUrl url(path);
+        const QString scheme = url.scheme().toLower();
+        const bool isDriveLetter =
+            scheme.size() == 1 && path.size() > 1 && path.at(1) == QLatin1Char(':');
+        if (!scheme.isEmpty() && !isDriveLetter && scheme != QLatin1String("http") &&
+            scheme != QLatin1String("https") && scheme != QLatin1String("file")) {
+            request.error = QCoreApplication::translate(
+                "CommandLine", "The video URL scheme is not allowed: %1").arg(scheme);
+            return request;
+        }
         if (path.contains(QLatin1String("://"))) {
             request.video = QUrl(path).toString(QUrl::FullyEncoded);
         } else {
@@ -322,8 +337,18 @@ int main(int argc, char** argv) {
             mplayer::videoScalePolicyFromSettings(settings));
     }
     if (!launch.frameTimingLog.isEmpty()) {
-        mplayer::VideoSurface::setFrameTimingLogPath(launch.frameTimingLog);
-        qInfo().noquote() << "mikai: frame timing log:" << launch.frameTimingLog;
+        // P1-08 (rung 6): the parent directory must exist and be writable
+        // before the path is handed to the surface. A bad path logs a warning
+        // and startup continues without timing logging; it never aborts startup.
+        const QFileInfo parentInfo(QFileInfo(launch.frameTimingLog).absolutePath());
+        if (!parentInfo.isDir() || !parentInfo.isWritable()) {
+            qWarning().noquote() << "mikai: frame timing log disabled: parent directory is "
+                                    "missing or not writable:"
+                                 << parentInfo.absoluteFilePath();
+        } else {
+            mplayer::VideoSurface::setFrameTimingLogPath(launch.frameTimingLog);
+            qInfo().noquote() << "mikai: frame timing log:" << launch.frameTimingLog;
+        }
     }
 
     // After the application object exists (the policy installs an event filter

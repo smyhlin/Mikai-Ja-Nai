@@ -45,6 +45,10 @@ struct QualityVariant {
 
 QString detectSite(const QString& pageUrl);  // throws std::invalid_argument
 
+// P0-02: http/https only (host must be non-empty). The one URL-allowlist rule:
+// every OS URL dispatch gates on this, including TitlePage::openEmbedInBrowser.
+bool isSafeStreamUrl(const QString& rawUrl);
+
 // Blocking GET honouring kTimeoutMs and kFetchRetries. Transport failures -
 // timeout, remote close, a refused connection - retry under the same budget
 // as the 429/5xx statuses; a cancellation and a definite non-retryable 4xx

@@ -19,6 +19,7 @@
 using mikai::backend::QualityVariant;
 using mikai::backend::StreamError;
 using mikai::backend::detectSite;
+using mikai::backend::isSafeStreamUrl;
 using mikai::backend::kFetchRetries;
 using mikai::backend::kTimeoutMs;
 using mikai::backend::kUserAgent;
@@ -480,4 +481,73 @@ void TestStreams::theFetchRetriesTwice() {
   // what carries a title through a provider's 502 blip.
   QCOMPARE(kFetchRetries, 2);
   QVERIFY(!kUserAgent.isEmpty());
+}
+
+void TestStreams::safeStreamUrlAllowsOnlyHttpAndHttps_data() {
+  QTest::addColumn<QString>("rawUrl");
+  QTest::addColumn<bool>("safe");
+  QTest::newRow("https") << QStringLiteral("https://example.com/x") << true;
+  QTest::newRow("http") << QStringLiteral("http://example.com/x") << true;
+  QTest::newRow("https uppercase scheme") << QStringLiteral("HTTPS://example.com/x") << true;
+  QTest::newRow("file") << QStringLiteral("file:///etc/passwd") << false;
+  QTest::newRow("ms-msdt") << QStringLiteral("ms-msdt://x") << false;
+  QTest::newRow("javascript") << QStringLiteral("javascript:alert(1)") << false;
+  QTest::newRow("data") << QStringLiteral("data:text/html,<script>alert(1)</script>") << false;
+  QTest::newRow("ftp") << QStringLiteral("ftp://example.com/x") << false;
+  QTest::newRow("empty") << QString() << false;
+  QTest::newRow("schemeless") << QStringLiteral("example.com/x") << false;
+  QTest::newRow("https without host") << QStringLiteral("https:///x") << false;
+}
+
+void TestStreams::safeStreamUrlAllowsOnlyHttpAndHttps() {
+  QFETCH(QString, rawUrl);
+  QFETCH(bool, safe);
+  QCOMPARE(isSafeStreamUrl(rawUrl), safe);
+}
+
+void TestStreams::aSignedUrlNeverReachesAnExceptionMessage() {
+  // detectSite refuses the URL, and the refusal must not echo the token that
+  // rode in its query.
+  bool raised = false;
+  QString message;
+  try {
+    detectSite(QStringLiteral("https://cdn.example.com/v.mp4?token=SECRET"));
+  } catch (const std::invalid_argument& caught) {
+    raised = true;
+    message = QString::fromUtf8(caught.what());
+  }
+  QVERIFY(raised);
+  QVERIFY2(!message.contains(QStringLiteral("SECRET")), qPrintable(message));
+  QVERIFY2(!message.contains(QStringLiteral("token=")), qPrintable(message));
+  QVERIFY2(message.contains(QStringLiteral("cdn.example.com")), qPrintable(message));
+}
+
+void TestStreams::aFailedFetchDoesNotLeakItsSignedUrl() {
+  QTcpServer server;
+  QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+  connect(&server, &QTcpServer::newConnection, &server, [&] {
+    while (QTcpSocket* socket = server.nextPendingConnection()) {
+      connect(socket, &QTcpSocket::readyRead, &server, [&, socket] {
+        socket->readAll();
+        socket->write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n"
+                      "Connection: close\r\n\r\n");
+        socket->flush();
+      });
+    }
+  });
+  QNetworkAccessManager manager;
+  bool failed = false;
+  QString failure;
+  try {
+    mikai::backend::fetchText(
+        &manager,
+        QStringLiteral("http://127.0.0.1:%1/v.mp4?token=SECRET").arg(server.serverPort()), {});
+  } catch (const StreamError& caught) {
+    failed = true;
+    failure = QString::fromUtf8(caught.what());
+  }
+  QVERIFY(failed);
+  QVERIFY2(!failure.contains(QStringLiteral("SECRET")), qPrintable(failure));
+  QVERIFY2(!failure.contains(QStringLiteral("token=")), qPrintable(failure));
+  QVERIFY2(failure.contains(QStringLiteral("HTTP 404")), qPrintable(failure));
 }

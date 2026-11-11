@@ -1,5 +1,6 @@
 #include "Streams.hpp"
 
+#include "Diagnostics.hpp"
 #include "HttpTransport.hpp"
 #include "Cancellation.hpp"
 
@@ -9,9 +10,11 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QNetworkRequest>
 #include <QRegularExpression>
-#include <QThread>
+#include <QWaitCondition>
 #include <QUrl>
 
 #include <algorithm>
@@ -68,12 +71,17 @@ QString decodeMoonPayload(const QString& html, const QString& pageUrl) {
     static const QRegularExpression blobPattern(QStringLiteral("atob\\(\"([A-Za-z0-9+/=]{100,})\"\\)"));
     const QRegularExpressionMatch blobMatch = blobPattern.match(html);
     if (!blobMatch.hasMatch()) {
-        throw StreamError(QStringLiteral("moonanime payload not found in %1").arg(pageUrl));
+        // P1-05: every URL in an exception is wrapped with redactDiagnostic()
+        // at construction, so a signed URL (token in path and query) can never
+        // reach logs or the UI through the exception chain.
+        throw StreamError(redactDiagnostic(
+            QStringLiteral("moonanime payload not found in %1").arg(pageUrl)));
     }
 
     const QByteArray cipher = QByteArray::fromBase64(blobMatch.captured(1).toLatin1());
     if (cipher.size() < 34) {
-        throw StreamError(QStringLiteral("moonanime payload too short in %1").arg(pageUrl));
+        throw StreamError(redactDiagnostic(
+            QStringLiteral("moonanime payload too short in %1").arg(pageUrl)));
     }
     const char* key = cipher.constData() + 1;
     const char* enc = cipher.constData() + 33;
@@ -107,7 +115,8 @@ QString detectSite(const QString& pageUrl) {
     if (pageUrl.contains(QStringLiteral("tortuga.tw/vod/"))) {
         return QStringLiteral("tortuga");
     }
-    throw std::invalid_argument("unsupported episode url: " + pageUrl.toStdString());
+    throw std::invalid_argument(
+        redactDiagnostic(QStringLiteral("unsupported episode url: ") + pageUrl).toStdString());
 }
 
 QString fetchText(QNetworkAccessManager* manager, const QString& url,
@@ -138,25 +147,36 @@ QString fetchText(QNetworkAccessManager* manager, const QString& url,
         const bool retryable =
             !result.cancelled && (transportFailure || retryableStatus(result.status));
         if (result.cancelled) {
-            throw StreamError(
-                QStringLiteral("GET failed for %1: the request was cancelled").arg(url));
+            throw StreamError(redactDiagnostic(
+                QStringLiteral("GET failed for %1: the request was cancelled").arg(url)));
         }
         if (retryable) {
             if (attempt < kFetchRetries) {
                 int remainingMs =
                     static_cast<int>(retryDelaySeconds(result.headers, attempt) * 1000.0);
+                // P1-05 (rung 3): an interruptible QWaitCondition wait, not a
+                // blocking sleep, on the 2-thread stream pool. The same
+                // retryDelaySeconds() backoff (0.25-2.0 s) in 200 ms slices,
+                // so cancellation is still observed at most a slice late.
+                // No waker is wired to this wait yet: it times out per slice
+                // and the cancellation check above runs each time round.
+                QMutex backoffMutex;
+                QWaitCondition backoffWait;
+                QMutexLocker backoffLocker(&backoffMutex);
                 while (remainingMs > 0) {
                     if (WorkCancellationScope::cancellationRequested()) {
-                        throw StreamError(
-                            QStringLiteral("GET failed for %1: the request was cancelled").arg(url));
+                        throw StreamError(redactDiagnostic(
+                            QStringLiteral("GET failed for %1: the request was cancelled")
+                                .arg(url)));
                     }
                     const int sleepMs = std::min(200, remainingMs);
-                    QThread::msleep(static_cast<unsigned long>(sleepMs));
+                    backoffWait.wait(&backoffMutex, sleepMs);
                     remainingMs -= sleepMs;
                 }
                 if (WorkCancellationScope::cancellationRequested()) {
-                    throw StreamError(
-                        QStringLiteral("GET failed for %1: the request was cancelled").arg(url));
+                    throw StreamError(redactDiagnostic(
+                        QStringLiteral("GET failed for %1: the request was cancelled")
+                            .arg(url)));
                 }
                 continue;
             }
@@ -169,16 +189,17 @@ QString fetchText(QNetworkAccessManager* manager, const QString& url,
                     : result.status >= 400
                           ? QStringLiteral("HTTP %1").arg(result.status)
                           : result.networkError;
-            throw StreamError(
-                QStringLiteral("GET failed for %1: exhausted retries (%2)").arg(url, detail));
+            throw StreamError(redactDiagnostic(
+                QStringLiteral("GET failed for %1: exhausted retries (%2)").arg(url, detail)));
         }
         if (result.status >= 400) {
-            throw StreamError(
-                QStringLiteral("GET failed for %1: HTTP %2").arg(url).arg(result.status));
+            throw StreamError(redactDiagnostic(
+                QStringLiteral("GET failed for %1: HTTP %2").arg(url).arg(result.status)));
         }
         return QString::fromUtf8(result.body);
     }
-    throw StreamError(QStringLiteral("GET failed for %1: exhausted retries").arg(url));
+    throw StreamError(redactDiagnostic(
+        QStringLiteral("GET failed for %1: exhausted retries").arg(url)));
 }
 
 QString ashdiMaster(QNetworkAccessManager* manager, const QString& pageUrl) {
@@ -187,7 +208,8 @@ QString ashdiMaster(QNetworkAccessManager* manager, const QString& pageUrl) {
         QStringLiteral("file\\s*:\\s*['\"](https?://[^'\"]+?\\.m3u8[^'\"]*)['\"]"));
     const QRegularExpressionMatch match = pattern.match(html);
     if (!match.hasMatch()) {
-        throw StreamError(QStringLiteral("ashdi master playlist not found in %1").arg(pageUrl));
+        throw StreamError(redactDiagnostic(
+            QStringLiteral("ashdi master playlist not found in %1").arg(pageUrl)));
     }
     return match.captured(1);
 }
@@ -200,8 +222,8 @@ QString moonSourceText(QNetworkAccessManager* manager, const QString& pageUrl) {
     static const QRegularExpression emptySource(
         QStringLiteral("var rawVideo\\s*=\\s*[\"']\\s*[\"']|file:\\s*[\"']\\s*[\"']"));
     if (emptySource.match(js).hasMatch()) {
-        throw NoSourceError(
-            QStringLiteral("moonanime has no video source for %1 (no_source)").arg(pageUrl));
+        throw NoSourceError(redactDiagnostic(
+            QStringLiteral("moonanime has no video source for %1 (no_source)").arg(pageUrl)));
     }
 
     static const QRegularExpression xkPattern(
@@ -211,13 +233,15 @@ QString moonSourceText(QNetworkAccessManager* manager, const QString& pageUrl) {
     const QRegularExpressionMatch xkMatch = xkPattern.match(js);
     const QRegularExpressionMatch rawMatch = rawPattern.match(js);
     if (!xkMatch.hasMatch() || !rawMatch.hasMatch()) {
-        throw StreamError(QStringLiteral("moonanime keys not found in %1").arg(pageUrl));
+        throw StreamError(redactDiagnostic(
+            QStringLiteral("moonanime keys not found in %1").arg(pageUrl)));
     }
 
     const QByteArray xk = xkMatch.captured(1).toUtf8();
     const QByteArray raw = QByteArray::fromBase64(rawMatch.captured(1).toLatin1());
     if (xk.isEmpty()) {
-        throw StreamError(QStringLiteral("moonanime keys not found in %1").arg(pageUrl));
+        throw StreamError(redactDiagnostic(
+            QStringLiteral("moonanime keys not found in %1").arg(pageUrl)));
     }
     QByteArray decoded(raw.size(), Qt::Uninitialized);
     for (int i = 0; i < raw.size(); ++i) {
@@ -236,7 +260,8 @@ QString legacyMoonMaster(const QString& text, const QString& pageUrl) {
         master.remove(0, 1);
     }
     if (!master.startsWith(QStringLiteral("http"))) {
-        throw StreamError(QStringLiteral("moonanime master not found in %1").arg(pageUrl));
+        throw StreamError(redactDiagnostic(
+            QStringLiteral("moonanime master not found in %1").arg(pageUrl)));
     }
     return master;
 }
@@ -383,17 +408,21 @@ QString tortugaMaster(QNetworkAccessManager* manager, const QString& pageUrl) {
     static const QRegularExpression pattern(QStringLiteral("file:\\s*\"([^\"]+)\""));
     const QRegularExpressionMatch match = pattern.match(html);
     if (!match.hasMatch()) {
-        throw StreamError(QStringLiteral("tortuga file token not found in %1").arg(pageUrl));
+        throw StreamError(redactDiagnostic(
+            QStringLiteral("tortuga file token not found in %1").arg(pageUrl)));
     }
     try {
         return tortugaDecode(match.captured(1));
     } catch (const std::exception& exc) {
-        throw StreamError(QStringLiteral("tortuga token decode failed for %1: %2")
-                              .arg(pageUrl, QString::fromUtf8(exc.what())));
+        throw StreamError(redactDiagnostic(
+            QStringLiteral("tortuga token decode failed for %1: %2")
+                .arg(pageUrl, QString::fromUtf8(exc.what()))));
     }
 }
 
-namespace {
+// P0-02: http/https only, shared so callers outside this file (TitlePage)
+// gate OS URL dispatch on the same rule. Exact semantics preserved from the
+// anonymous-namespace version.
 bool isSafeStreamUrl(const QString& rawUrl) {
     const QUrl parsed(rawUrl, QUrl::StrictMode);
     if (!parsed.isValid() || parsed.host().isEmpty()) {
@@ -402,7 +431,6 @@ bool isSafeStreamUrl(const QString& rawUrl) {
     const QString scheme = parsed.scheme().toLower();
     return scheme == QLatin1String("https") || scheme == QLatin1String("http");
 }
-}  // namespace
 
 QVector<QualityVariant> parseVariants(const QString& masterText, const QString& baseUrl) {
     QVector<QualityVariant> variants;

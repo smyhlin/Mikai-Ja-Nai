@@ -213,11 +213,11 @@ QString envFilePath() {
     if (!override.isEmpty()) {
         return override;
     }
-    // Search the working directory, executable directory and its parent only.
-    const QString fromCwd = QDir::current().filePath(QStringLiteral(".env"));
-    if (QFile::exists(fromCwd)) {
-        return fromCwd;
-    }
+    // P0-03 (rung 1 — delete the branch): the working directory is
+    // deliberately NOT searched. It depends on how the app was launched, and a
+    // planted .env there would supply the API key. Only the executable's
+    // directory and its parent are searched; when neither holds a .env the
+    // exe-dir path is still returned, so setApiKey() writes there.
     QDir dir = QCoreApplication::applicationDirPath();
     for (int depth = 0; depth < 2; ++depth) {
         const QString candidate = dir.filePath(QStringLiteral(".env"));
@@ -228,7 +228,7 @@ QString envFilePath() {
             break;
         }
     }
-    return fromCwd;
+    return QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral(".env"));
 }
 
 void setEnvFilePathOverride(const QString& path) { envOverride() = path; }

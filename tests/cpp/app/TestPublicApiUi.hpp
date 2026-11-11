@@ -36,6 +36,9 @@ class TestPublicApiUi : public QObject {
   void componentCardsKeepASingleLineBadgeAndASeparateCountLine();
   void theUpscalersPageListsEveryPinnedModel();
   void settingsPagesFitTheDialogMinimum();
+  // P0-03: the OpenSubtitles key lives in the credential store, never in
+  // plaintext QSettings.
+  void openSubtitlesApiKeyMigratesOutOfQSettings();
   void managerActionRowsShareOneWidth();
 };
 

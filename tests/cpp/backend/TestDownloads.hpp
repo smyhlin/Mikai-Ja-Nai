@@ -51,6 +51,12 @@ class TestDownloads : public QObject {
   void aQuietFetchReportsItsDeadline();
   void cancellationTakesPrecedenceWhenSevenZipIsAlreadyInstalled();
   void cancelledExtractionDoesNotTouchTheDestination();
+#ifndef Q_OS_WIN
+  // P0-01: a crafted .tar.zst must be listed before it is extracted, and an
+  // entry that escapes the destination, an absolute-path entry, or a symlink
+  // entry refuses the whole archive with nothing extracted.
+  void anArchiveEntryThatEscapesItsDestinationIsRefused();
+#endif
     void aPinnedPayloadFollowsAMirrorRedirect();
 };
 

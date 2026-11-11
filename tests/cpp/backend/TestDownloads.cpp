@@ -16,6 +16,8 @@
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QProcess>
+#include <QtCore/QStandardPaths>
 #include <QtCore/QStringList>
 #include <QtCore/QTemporaryFile>
 #include <QtCore/QTemporaryDir>
@@ -601,6 +603,83 @@ void TestDownloads::cancelledExtractionDoesNotTouchTheDestination() {
              QStringList{QStringLiteral("existing.txt")});
   }
 }
+
+#ifndef Q_OS_WIN
+void TestDownloads::anArchiveEntryThatEscapesItsDestinationIsRefused() {
+  // P0-01: the production code shells out to tar for .tar.zst, so the test
+  // builds its crafted archives with the same tool it is guarding against.
+  const QString tar = QStandardPaths::findExecutable(QStringLiteral("tar"));
+  if (tar.isEmpty()) QSKIP("tar is not available to build the crafted archive");
+  QTemporaryDir root;
+  QVERIFY(root.isValid());
+  const QString destination = QDir(root.path()).filePath(QStringLiteral("dest"));
+  QVERIFY(QDir().mkpath(destination));
+
+  const auto pack = [&](const QString& archive, const QStringList& args) {
+    QProcess process;
+    process.setWorkingDirectory(destination);
+    process.start(tar, args);
+    QVERIFY2(process.waitForFinished(30000), "tar could not build the crafted archive");
+    QCOMPARE(process.exitCode(), 0);
+    QVERIFY(QFileInfo::exists(archive));
+  };
+
+  // A ".." entry: the listing refuses the archive and the file outside the
+  // destination survives untouched.
+  const QString outside = QDir(root.path()).filePath(QStringLiteral("outside.txt"));
+  QVERIFY(writeFile(outside, QByteArrayLiteral("keep")));
+  const QString escapeArchive = QDir(root.path()).filePath(QStringLiteral("escape.tar.zst"));
+  pack(escapeArchive, {QStringLiteral("--zstd"), QStringLiteral("-cf"), escapeArchive,
+                       QStringLiteral("-P"), QStringLiteral("../outside.txt")});
+  QString reason;
+  QVERIFY(!mikai::backend::extractArchive(QStringLiteral("missing-7zip"), escapeArchive,
+                                           destination, &reason));
+  QVERIFY2(reason.contains(QStringLiteral("escapes"), Qt::CaseInsensitive),
+           qPrintable(reason));
+  QCOMPARE(readFile(outside), QByteArrayLiteral("keep"));
+  QVERIFY(QDir(destination).entryList(QDir::Files | QDir::NoDotAndDotDot).isEmpty());
+
+  // An absolute-path entry is refused the same way.
+  const QString absoluteArchive = QDir(root.path()).filePath(QStringLiteral("absolute.tar.zst"));
+  pack(absoluteArchive, {QStringLiteral("--zstd"), QStringLiteral("-cf"), absoluteArchive,
+                         QStringLiteral("-P"), outside});
+  reason.clear();
+  QVERIFY(!mikai::backend::extractArchive(QStringLiteral("missing-7zip"), absoluteArchive,
+                                           destination, &reason));
+  QVERIFY2(reason.contains(QStringLiteral("escapes"), Qt::CaseInsensitive),
+           qPrintable(reason));
+  QCOMPARE(readFile(outside), QByteArrayLiteral("keep"));
+
+  // A symlink entry pointing outside is refused even though its name is safe.
+  const QString stage = QDir(root.path()).filePath(QStringLiteral("stage"));
+  QVERIFY(QDir().mkpath(stage));
+  QVERIFY(writeFile(QDir(stage).filePath(QStringLiteral("good.txt")),
+                    QByteArrayLiteral("good")));
+  QVERIFY(QFile::link(QDir(stage).filePath(QStringLiteral("good.txt")),
+                      QDir(stage).filePath(QStringLiteral("link.txt"))));
+  const QString linkArchive = QDir(root.path()).filePath(QStringLiteral("link.tar.zst"));
+  pack(linkArchive, {QStringLiteral("--zstd"), QStringLiteral("-cf"), linkArchive,
+                     QStringLiteral("-P"), QStringLiteral("-C"), stage,
+                     QStringLiteral("link.txt")});
+  reason.clear();
+  QVERIFY(!mikai::backend::extractArchive(QStringLiteral("missing-7zip"), linkArchive,
+                                           destination, &reason));
+  QVERIFY2(reason.contains(QStringLiteral("symbolic link"), Qt::CaseInsensitive),
+           qPrintable(reason));
+  QVERIFY(QDir(destination).entryList(QDir::Files | QDir::NoDotAndDotDot).isEmpty());
+
+  // A clean archive still extracts and returns true.
+  const QString cleanArchive = QDir(root.path()).filePath(QStringLiteral("clean.tar.zst"));
+  pack(cleanArchive, {QStringLiteral("--zstd"), QStringLiteral("-cf"), cleanArchive,
+                      QStringLiteral("-P"), QStringLiteral("-C"), stage,
+                      QStringLiteral("good.txt")});
+  reason.clear();
+  QVERIFY(mikai::backend::extractArchive(QStringLiteral("missing-7zip"), cleanArchive,
+                                          destination, &reason));
+  QCOMPARE(readFile(QDir(destination).filePath(QStringLiteral("good.txt"))),
+           QByteArrayLiteral("good"));
+}
+#endif
 
 void TestDownloads::aQuietFetchReportsItsDeadline() {
   QTcpServer server;

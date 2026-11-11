@@ -111,7 +111,7 @@ The subtitle selector ends with a **Subtitle delay** group: **0.1 s earlier**, *
 
 ## Subtitles from OpenSubtitles
 
-Right-click the picture → **Subtitles ›** offers **From disk…** for local or network video and **OpenSubtitles…**. The second opens a search dialog seeded with the current caption and the system language, with the language list selectable. Enter a free API key from opensubtitles.com — it is stored under `access/openSubtitlesApiKey` and reused — then **Search**, pick a result and **Download and attach**. The file is written to a temporary folder that lives as long as the player and attached with the same `sub-add` path as a disk file, so it appears in the subtitle selector immediately.
+Right-click the picture → **Subtitles ›** offers **From disk…** for local or network video and **OpenSubtitles…**. The second opens a search dialog seeded with the current caption and the system language, with the language list selectable. Enter a free API key from opensubtitles.com — it is stored in the app-data folder, protected with Windows DPAPI on Windows and in a file only your user account can read elsewhere, never in the application's settings, and reused — then **Search**, pick a result and **Download and attach**. The file is written to a temporary folder that lives as long as the player and attached with the same `sub-add` path as a disk file, so it appears in the subtitle selector immediately.
 
 The search is a boundary of its own: it needs network access and the key, and it is the only player feature that talks to a service other than Mikai and the catalogue providers. Nothing is uploaded — the query is the title text you see in the dialog and the language code.
 

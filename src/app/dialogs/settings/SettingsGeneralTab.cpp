@@ -5,6 +5,7 @@
 #include "I18n.hpp"
 #include "dialogs/settings/SettingsHelpers.hpp"
 #include "dialogs/settings/SettingsUi.hpp"
+#include "gui/Win32Support.hpp"
 #include "state/Feeds.hpp"
 #include "support/SystemContextMenu.hpp"
 #include "support/SystemStartup.hpp"
@@ -201,7 +202,14 @@ QWidget* SettingsDialog::buildGeneralTab() {
     stylePageHeading(openSubtitlesTitle_);
     subtitlesLayout->addWidget(openSubtitlesTitle_);
     openSubtitlesHint_ = new QLabel(
-        tr("Enter your OpenSubtitles API key to search for subtitles in the player."),
+#ifdef Q_OS_WIN
+        tr("Enter your OpenSubtitles API key to search for subtitles in the player. "
+           "The key is protected with Windows DPAPI and stored in the app data folder."),
+#else
+        tr("Enter your OpenSubtitles API key to search for subtitles in the player. "
+           "The key is stored in a file only your user account can read, not in a "
+           "keyring."),
+#endif
         subtitlesCard);
     styleMutedCaption(openSubtitlesHint_);
     subtitlesLayout->addWidget(openSubtitlesHint_);
@@ -217,8 +225,7 @@ QWidget* SettingsDialog::buildGeneralTab() {
     openSubtitlesKey_->setEchoMode(QLineEdit::Password);
     openSubtitlesKey_->setClearButtonEnabled(true);
     openSubtitlesKey_->setMinimumHeight(theme::kSettingsControlSize);
-    openSubtitlesKey_->setText(
-        QSettings().value(QStringLiteral("access/openSubtitlesApiKey")).toString());
+    openSubtitlesKey_->setText(mikai::gui::loadOpenSubtitlesApiKey());
     subtitlesLayout->addWidget(openSubtitlesKey_);
     root->addWidget(subtitlesCard);
 
