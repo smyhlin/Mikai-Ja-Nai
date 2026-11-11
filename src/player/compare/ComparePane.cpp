@@ -480,8 +480,9 @@ void ComparePane::changeEvent(QEvent* event) {
 void ComparePane::showEvent(QShowEvent* event) {
     QGraphicsView::showEvent(event);
     // X-M23: the label fitted before the first layout used the pre-layout
-    // width; re-fit once the pane is shown and the bar has its real slot.
-    fitSelectorLabel(badge_, label_);
+    // width. refreshBadge() re-places the selector (activating the bar layout)
+    // before fitting, so the label is fitted to the real slot.
+    refreshBadge();
 }
 
 void ComparePane::retranslateUi() {

@@ -1,5 +1,6 @@
 #include "TestCompareLoading.hpp"
 
+#include <player/compare/CompareCanvas.hpp>
 #include <player/compare/ComparePane.hpp>
 #include <player/shell/PlayerShell.hpp>
 #include <player/shell/ShellTheme.hpp>
@@ -105,4 +106,25 @@ void TestCompareLoading::selectorLabelRefitsAfterBadgeResize() {
 
     QVERIFY(badge->width() > 70);
     QCOMPARE(badge->text(), fullLabel);
+}
+
+void TestCompareLoading::unshownCanvasBadgeKeepsFullName() {
+    // X-M23: names set before the canvas is shown or laid out used to elide
+    // against Qt's default 100 px unshown width ("B · A (…  ▾"). The full
+    // name must survive until the row has its real slot, and still be there
+    // once the canvas is shown at full width.
+    mplayer::shell::CompareCanvas canvas;
+    canvas.setSideNames(QStringLiteral("Original"), QStringLiteral("A (Fast)"));
+    QCoreApplication::processEvents();
+
+    auto* badgeB = canvas.findChild<QToolButton*>(QStringLiteral("compareBadgeB"));
+    QVERIFY(badgeB != nullptr);
+    QVERIFY(badgeB->text().contains(QStringLiteral("Fast")));
+
+    canvas.resize(900, 560);
+    canvas.setSideImages(QImage(64, 64, QImage::Format_ARGB32),
+                         QImage(64, 64, QImage::Format_ARGB32), QImage());
+    canvas.show();
+    QCoreApplication::processEvents();
+    QVERIFY(badgeB->text().contains(QStringLiteral("Fast")));
 }

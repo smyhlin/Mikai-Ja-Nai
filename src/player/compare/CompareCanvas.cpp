@@ -809,10 +809,10 @@ void CompareCanvas::changeEvent(QEvent* event) {
 
 void CompareCanvas::showEvent(QShowEvent* event) {
     QGraphicsView::showEvent(event);
-    // X-M23: labels fitted before the first layout used the pre-layout width;
-    // re-fit once the view is shown and the row has its real slot.
-    fitSelectorLabel(badgeA_, labelA_);
-    fitSelectorLabel(badgeB_, labelB_);
+    // X-M23: labels fitted before the first layout used the pre-layout width.
+    // placeBadges() re-lays out the row first, so the fit sees the real 50/50
+    // slot instead of the unlaid-out button width.
+    placeBadges();
 }
 
 void CompareCanvas::retranslateUi() {

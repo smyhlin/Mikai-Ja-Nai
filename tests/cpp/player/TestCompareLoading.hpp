@@ -9,4 +9,5 @@ private slots:
     void centeredIndicatorRendersAndIsAccessible();
     void loadingSurvivesHudPlaybackAndMediaChangesThenRestoresLatestGlyph();
     void selectorLabelRefitsAfterBadgeResize();
+    void unshownCanvasBadgeKeepsFullName();
 };
