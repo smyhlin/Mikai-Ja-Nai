@@ -91,7 +91,6 @@ public:
     // ever escapes the lock.
     MpvBundle bundle() const;
     MpvApiInstance functions() const;
-    HMODULE module() const noexcept;
     quint64 apiVersion() const;
     static quint64 headerApiVersion();
     QString error() const;
