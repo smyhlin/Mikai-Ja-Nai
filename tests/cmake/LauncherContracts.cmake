@@ -294,6 +294,10 @@ run_launcher(_rc _out _err "${_workspace}/deadline-missing-value"
   --launcher-timeout-ms)
 check(_rc EQUAL 2 "a deadline option with no value is refused")
 
+run_launcher(_rc _out _err "${_workspace}/toolchain-missing-value"
+  --toolchain-bin-dir)
+check(_rc EQUAL 2 "a toolchain-bin-dir option with no value is refused")
+
 # The protocol is six positional inputs; a shorter call is a launcher-side
 # failure, not a run. Spelled out because run_launcher always supplies the full
 # protocol by design.
