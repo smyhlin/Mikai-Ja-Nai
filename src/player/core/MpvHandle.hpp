@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -79,6 +80,12 @@ inline NodeValue::NodeValue(NodeValue&&) noexcept = default;
 inline NodeValue& NodeValue::operator=(const NodeValue&) = default;
 inline NodeValue& NodeValue::operator=(NodeValue&&) noexcept = default;
 
+// Deep-copies an mpv-owned node tree into owned storage; the source may be
+// reclaimed by mpv on the next wait_event, so a caller that must keep it
+// copies here instead of walking the raw tree. Trees nested deeper than
+// kMaxNodeDepth (32) are refused with a warning and copied as empty.
+void copyNode(const mpv_node* source, NodeValue& out, int depth = 0);
+
 // Every payload field is an owned copy: nothing points into mpv storage and
 // nothing has to be freed by the caller.
 struct AsyncReply {
@@ -131,11 +138,6 @@ public:
     /// instead of the nearest keyframe. A frame-accurate replay needs it; the
     /// plain form keeps the user's hr-seek setting.
     void seekExact(double seconds);
-    void setPaused(bool paused);
-    void setSpeed(double speed);
-    void setVolume(double volume);
-    void setMuted(bool muted);
-    void stop();
     // Enables backend-observation logs for a request while preserving the
     // developer's MIKAI_MPV_VERBOSE baseline.
     void setBackendLogObservationEnabled(bool enabled);
@@ -150,6 +152,22 @@ public:
     void setNumber(const std::string& name, double value);
     void setFlag(const std::string& name, bool value);
     void setString(const std::string& name, const std::string& value);
+
+    // Arena that owns every string, key and container of a node tree built
+    // for one mpv call; mpv copies what it needs during the call, so this
+    // storage only has to outlive the call. Public so ClipExport builds its
+    // property nodes through the same arena instead of hand-building
+    // mpv_node trees with const_cast.
+    struct OutgoingNode {
+        mpv_node node = {};
+        std::vector<std::unique_ptr<char[]>> strings;
+        std::vector<std::unique_ptr<char*[]>> keyArrays;
+        std::vector<std::unique_ptr<mpv_node[]>> valueArrays;
+        std::vector<std::unique_ptr<mpv_node_list>> lists;
+
+        void build(const NodeValue& value, mpv_node& target, int depth = 0);
+        mpv_node* buildRoot(const NodeValue& value);
+    };
 
     // ── asynchronous transport ───────────────────────────────────────────
 
@@ -185,8 +203,9 @@ public:
     // value is recognised as stale rather than delivered.
     uint64_t sourceEpoch() const noexcept { return epoch_; }
     // Advances the source epoch and drops every outstanding callback: those
-    // requests belonged to the source being replaced. loadFile and stop call
-    // this before touching the source; others call it when they replace the core.
+    // requests belonged to the source being replaced. loadFile calls this
+    // before touching the source; a caller that unloads one calls it too,
+    // before issuing the stop command through commandAsync.
     void invalidateAsyncEpoch();
 
     // Processes a bounded batch so log/reply floods cannot starve GUI rendering.
@@ -231,8 +250,10 @@ private:
         uint64_t epoch = 0;
     };
 
-    // Never null for a constructed handle; set once and never re-read.
-    const MpvApiInstance* api_ = nullptr;
+    // Copied once at construction from the process-wide selection; the table
+    // is immutable for the life of the process, so the copy stays good and no
+    // reference into the loader's state is ever held past the mutex.
+    MpvApiInstance api_;
     mpv_handle* handle_ = nullptr;
     std::function<void(mpv_event*)> sink_;
     uint64_t sinkRevision_ = 0;

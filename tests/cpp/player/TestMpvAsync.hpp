@@ -54,6 +54,14 @@ private slots:
     void probeSnapshotsKeepTheStatusReaderPolling_data();
     void probeSnapshotsKeepTheStatusReaderPolling();
 
+    // ── node marshalling; these cases need no mpv runtime ──────────────────
+    //
+    // copyNode / OutgoingNode::build take trees from property replies, i.e.
+    // untrusted input, so a hostile nesting depth must be refused, not
+    // recursed into.
+    void aDeeplyNestedNodeIsRefusedByCopyNode();
+    void aDeeplyNestedNodeIsRefusedByTheOutgoingArena();
+
     // ── transport against a real core ──────────────────────────────────────
     void anAsyncPropertyReplyCarriesItsOwnValue();
     void eventBacklogYieldsToTheGui();
@@ -69,6 +77,7 @@ private slots:
     void aPendingReplyIsDroppedWhenPlaybackStops();
     void observerIdsAreUniqueAndUnobserveStopsDelivery();
     void aMovedHandleStillDrivesTheSameCore();
+    void aMoveAssignedHandleDrivesTheAdoptedCore();
     void twoCoresKeepTheirRepliesApart();
     void aRequestOnAReplacedCoreIsNeverDelivered();
 

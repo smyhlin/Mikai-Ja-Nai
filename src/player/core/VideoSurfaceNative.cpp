@@ -35,8 +35,8 @@ std::string mpvNumber(double value) {
 
 
 /// The runtime module the live core was loaded from, or empty when none was
-/// selected. bundle() hands back a reference into the loader's state, so the
-/// value is copied here rather than read after the lock is gone.
+/// selected. bundle() returns the selection by value, so this is the copy the
+/// loader handed back under its lock, never a reference into loader state.
 QString currentMpvModulePath() {
     MpvApi& api = MpvApi::instance();
     if (!api.loaded()) return QString();

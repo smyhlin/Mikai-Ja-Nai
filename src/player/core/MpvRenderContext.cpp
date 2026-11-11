@@ -85,7 +85,10 @@ MpvRenderContext::MpvRenderContext(MpvHandle& mpv, const GlApi& gl, std::functio
         throw MpvError("no mpv runtime is selected: a render context cannot be created before "
                        "MpvApi::load has succeeded");
     }
-    api_ = &api.functions();
+    // Copied once: the table is immutable for the life of the process,
+    // so the copy stays good and no reference into the loader's state
+    // is ever held past the mutex.
+    api_ = api.functions();
 
     // Advanced control hands mpv's loop to the caller: every callback must be
     // answered with update(), which is exactly what onUpdate_ is for. A caller
@@ -106,23 +109,23 @@ MpvRenderContext::MpvRenderContext(MpvHandle& mpv, const GlApi& gl, std::functio
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
 
-    const int rc = api_->renderContextCreate(&ctx_, mpv.raw(), params);
+    const int rc = api_.renderContextCreate(&ctx_, mpv.raw(), params);
     if (rc < 0) {
         ctx_ = nullptr;
-        throw MpvError(std::string("mpv_render_context_create: ") + api_->errorString(rc));
+        throw MpvError(std::string("mpv_render_context_create: ") + api_.errorString(rc));
     }
     // Registered last, when the target is already in `onUpdate_`: mpv raises the
     // callback from inside this call, and a target assigned afterwards would be
     // reached - from another thread - while still empty.
-    api_->renderContextSetUpdateCallback(ctx_, &MpvRenderContext::sUpdate, this);
+    api_.renderContextSetUpdateCallback(ctx_, &MpvRenderContext::sUpdate, this);
 }
 
 MpvRenderContext::~MpvRenderContext() {
-    if (ctx_ != nullptr && api_ != nullptr) {
+    if (ctx_ != nullptr) {
         // Detach before the mpv handle goes: the callback would otherwise fire
         // against a freed context during teardown.
-        api_->renderContextSetUpdateCallback(ctx_, nullptr, nullptr);
-        api_->renderContextFree(ctx_);
+        api_.renderContextSetUpdateCallback(ctx_, nullptr, nullptr);
+        api_.renderContextFree(ctx_);
         ctx_ = nullptr;
     }
 }
@@ -144,20 +147,20 @@ void MpvRenderContext::setFlipY(bool flip) {
 }
 
 uint64_t MpvRenderContext::update() {
-    if (ctx_ == nullptr || api_ == nullptr) return 0;
-    return api_->renderContextUpdate(ctx_);
+    if (ctx_ == nullptr) return 0;
+    return api_.renderContextUpdate(ctx_);
 }
 
 bool MpvRenderContext::nextFrameInfo(mpv_render_frame_info& info) const {
-    if (ctx_ == nullptr || api_ == nullptr || api_->renderContextGetInfo == nullptr)
+    if (ctx_ == nullptr || api_.renderContextGetInfo == nullptr)
         return false;
     mpv_render_param p{MPV_RENDER_PARAM_NEXT_FRAME_INFO, &info};
-    return api_->renderContextGetInfo(ctx_, p) == 0;
+    return api_.renderContextGetInfo(ctx_, p) == 0;
 }
 
 int64_t MpvRenderContext::timeUs() const {
-    return mpv_ != nullptr && api_ != nullptr && api_->getTimeUs != nullptr
-               ? api_->getTimeUs(mpv_)
+    return mpv_ != nullptr && api_.getTimeUs != nullptr
+               ? api_.getTimeUs(mpv_)
                : 0;
 }
 
@@ -168,11 +171,11 @@ bool isRealNewFrame(const mpv_render_frame_info& info) {
 }
 
 void MpvRenderContext::reportSwap() {
-    if (ctx_ != nullptr && api_ != nullptr) api_->renderContextReportSwap(ctx_);
+    if (ctx_ != nullptr) api_.renderContextReportSwap(ctx_);
 }
 
 int MpvRenderContext::skipRendering() {
-    if (ctx_ == nullptr || api_ == nullptr) return 0;
+    if (ctx_ == nullptr) return 0;
     int skip = 1;
     // Never block the calling thread: mpv's own target-time wait belongs to the
     // presentation path, and a skip is exactly the case where nothing is shown.
@@ -182,12 +185,12 @@ int MpvRenderContext::skipRendering() {
         {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &blockForTargetTime},
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
-    return api_->renderContextRender(ctx_, params);
+    return api_.renderContextRender(ctx_, params);
 }
 
 int MpvRenderContext::render(int fbo, int width, int height, int internalFormat,
                              int depthBitsPerChannel) {
-    if (ctx_ == nullptr || api_ == nullptr || width <= 0 || height <= 0) return 0;
+    if (ctx_ == nullptr || width <= 0 || height <= 0) return 0;
 
     mpv_opengl_fbo target{};
     target.fbo = fbo;
@@ -203,7 +206,7 @@ int MpvRenderContext::render(int fbo, int width, int height, int internalFormat,
         {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &blockForTargetTime},
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
-    return api_->renderContextRender(ctx_, params);
+    return api_.renderContextRender(ctx_, params);
 }
 
 }  // namespace mplayer

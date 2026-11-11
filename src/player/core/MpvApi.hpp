@@ -1,5 +1,5 @@
 // The table is immutable once a load succeeds, so the module is never
-// unloaded: that is what lets every wrapper cache a table pointer.
+// unloaded: that is what lets every wrapper cache a copy of the table.
 
 #pragma once
 
@@ -92,9 +92,11 @@ public:
     bool load(const MpvBundle& bundle, QString* reason = nullptr);
 
     bool loaded() const;
-    const MpvBundle& bundle() const;
-    // Valid only while loaded(); hold the reference, never copy it per frame.
-    const MpvApiInstance& functions() const;
+    // Returned by value: the table is ~30 function pointers, and the copy is
+    // what keeps the mutex meaningful - no reference into the loader's state
+    // ever escapes the lock.
+    MpvBundle bundle() const;
+    MpvApiInstance functions() const;
     HMODULE module() const noexcept;
     quint64 apiVersion() const;
     static quint64 headerApiVersion();

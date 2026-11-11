@@ -686,12 +686,12 @@ int main(int argc, char** argv) {
             if (!check(!shim.isEmpty(),
                        "the named shim is the selected bundle's own declared producer library")) {
                 std::fprintf(stderr, "shim: %s\n", qPrintable(shimReason));
-                handle.stop();
+                command(handle, {"stop"});
                 return finish();
             }
         } else if (!admissionPath.isEmpty()) {
             check(false, "an admission run names the shim it admits against (MIKAI_AJI_LIB)");
-            handle.stop();
+            command(handle, {"stop"});
             return finish();
         }
 
@@ -703,7 +703,7 @@ int main(int argc, char** argv) {
                 nativeFilterSpec({{QStringLiteral("lib"), shim}}, &refusalKey, &refusalReason);
             if (!check(!shimSpec.isEmpty() && refusalKey.isEmpty(),
                        "the same producer builds the shim-only filter spec")) {
-                handle.stop();
+                command(handle, {"stop"});
                 return finish();
             }
             check(command(handle, {"vf", "add", shimSpec.toStdString()}).ok(),
@@ -766,7 +766,7 @@ int main(int argc, char** argv) {
             if (!check(admission.has_value(),
                        "the admission fixture resolves against the observed source and device")) {
                 std::fprintf(stderr, "admission: %s\n", qPrintable(admissionReason));
-                handle.stop();
+                command(handle, {"stop"});
                 return finish();
             }
             const QByteArray admitJson = QJsonDocument(*admission).toJson(QJsonDocument::Compact);
@@ -933,11 +933,11 @@ int main(int argc, char** argv) {
                       soughtAdmission->effective.has_value(),
                   "a source seek keeps the admitted plan, advancing the epoch without a reload");
 
-            handle.stop();
+            command(handle, {"stop"});
             return finish();
         }
 
-        handle.stop();
+        command(handle, {"stop"});
         return finish();
     } catch (const std::exception& error) {
         check(false, error.what());
