@@ -29,6 +29,44 @@ Published changes are recorded with their downloads on the [GitHub releases page
   - Group processing controls into Restore, Upscale and Interpolation; improve Anime4K shader selection.
   - Refine antialias settings controls, make episode buttons more compact and remove the redundant Episodes button from the title hero.
 
+### Safety, lifetime and playback correctness
+
+- Contain archive extraction: both the `tar` and 7-Zip paths list entries before extracting and refuse `..`, absolute and drive-letter entries and symlink entries, instead of trusting the archive. Digest and size verification of the downloaded archive is unchanged.
+- Allow only `http`, `https`, `file` and local paths for `--open-video`; other schemes are a usage error. `--frame-timing-log` validates that its parent directory exists and is writable before timing logging is enabled.
+- Move the OpenSubtitles key out of plaintext settings into a store in the app-data folder — Windows DPAPI, a user-only-readable file elsewhere — with a one-time migration that deletes the legacy value. A `.env` file in the current working directory is no longer read.
+- Redact credential-bearing URLs from every embed exception in the streams layer, and wait interruptibly during retry backoff instead of sleeping, so cancellation unwinds promptly.
+- Range-check JSON numbers before conversion in the client, the models and native playback assembly; validate and percent-encode external-link identifiers. Out-of-range values are refused with one warning instead of being truncated by a cast.
+- Guard watch history and the quality cache with one mutex per store, keep load+mutate+save a single critical section, warn once on a corrupt cache blob instead of discarding it silently, and trim deterministically oldest-first with millisecond timestamps.
+- Own player sessions by value and look them up by stable id; observe dialogs weakly. Subtitle search and download workers now capture their shared slot and cancellation flag, removing a use-after-free and a compile-time capture defect.
+- Cancel the Compare still writer through an atomic only, guard the native provisioner slot with a mutex, bound the runner's shutdown drain with a per-pool timeout instead of blocking forever, and drop GUI callbacks once `QCoreApplication` is gone rather than running them off the GUI thread.
+- Degrade instead of aborting when an OpenGL context is lost during render-context release; delete the duplicate context resolvers and sixteen dead GL entry points; refuse `advancedControl` without an update callback instead of silently downgrading.
+- Windows: inhibit display and system sleep while a surface is playing, and bound DXGI adapter enumeration with per-adapter failure reporting. Guessed shader-model inference is removed — an unmeasured SM stays unknown instead of being reported as a device capability.
+- Drive end-of-file auto-advance from the player host.
+
+### Interface
+
+- Split the Components action bar into a selection row and an action row so the page fits the minimum dialog width in both languages.
+- Promote the backend display for an RTX GPU only when nothing is stored; the stored explicit choice is never overwritten by the promotion.
+- Fit Compare selector badges against the laid-out slot instead of the pre-layout button width, which had elided `A (Fast)` to `B · A (…` before the canvas was shown.
+- Build the settings stylesheet from named `%{…}` markers instead of a positional 52-call `.arg()` chain, so adding or removing a value cannot shift every later one.
+- Render the native cache from the snapshot delivered by the worker; enumeration and hashing no longer run on the GUI thread during refresh.
+
+### Internal cleanup
+
+- Delete the dead `MpvApi::module()` accessor, the unused `MpvHandle` synchronous setters, the unwired ClipSheet widget and its probe, and five render-only status reasons.
+- Share one implementation of the mpv number helper, frame fitting, `theme::repolish`, `native::hashFile`, JSON reading, the MSVC native tool helpers and the Compare layout helpers; move the stylesheet into `SettingsUi.cpp` and the settings keys into `SettingsKeys.hpp`.
+- Make the idle-inhibitor owner list unbounded, and add `TestWin32Support`, `TestCrashLog` and `TestJson` suites covering the registry and secret-store helpers, the crash-log contract, and the range-checked JSON accessors.
+
+### Build and CI
+
+- Fix the Linux lane's TLS gate: it now checks `libavformat`'s real `NEEDED` TLS dependency instead of the warning string every FFmpeg build contains, which had rejected every correct rebuild.
+- Stage the toolchain MinGW runtime next to the Windows test child and prepend its bin directory to the child `PATH`, so tests and their grandchildren stop dying with `0xc0000139` against Git's runtime.
+- Install the pinned Vulkan Runtime during Windows provisioning; `libmpv-2.dll` imports the loader, and the app refuses a module whose system driver is missing.
+- Refuse the hover canary before the first paint when the context cannot be created or is older than mpv requires, instead of crashing in `QOpenGLWidget`'s first paint.
+- Fix the base CI regressions: benchmark filter selection loss, settings page overflow, the stale `Save` probe contract, the component progress bar against a real closure record, and `IN_LIST` in `cmake -P` script mode.
+
+Verification for these changes is recorded in [release status](docs/release-status.md#audit-remediation-consolidated--2026-11-11): the merged tree compiles on Windows and produced the packaged artifacts. The individual audit changes were reviewed by reading and grep, not by running the QtTest suites, which were not executed for this tree.
+
 ## 0.2.1 — 2026-11-07
 
 - Keep test fixtures in their disposable native store even when `MIKAI_NATIVE_ROOT` is set; direct test runs refuse a different or populated store.

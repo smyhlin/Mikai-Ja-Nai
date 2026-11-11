@@ -1,7 +1,7 @@
 # Release status
 
 Published packages, release-specific changes and checksums are available on the [GitHub releases page](https://github.com/smyhlin/Mikai-Ja-Nai/releases). The original [v0.1.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0) was followed by the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101). Local rebuilds produce their own `SHA256SUMS`; a rebuild alone does not require a documentation update.
-The latest published release recorded here is [v0.2.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.0). The current `main` branch contains post-v0.2.0 changes listed as **Unreleased** in the changelog; no release artifacts or release-gate result for those changes are recorded here. Do not present a source build as a new published package. Public release remains blocked by the unresolved rights and verification gates below.
+The latest published release recorded here is [v0.2.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.0). Post-v0.2.0 work now lives on the `cppfixes` branch (the audit remediation consolidated at `022c98c`, followed only by documentation changes); `main` is at `7642f50` and does not contain the 0.2.1–0.2.2 changes or the audit remediation, both of which are listed as **Unreleased** in the changelog. Windows packages were rebuilt from `022c98c` locally (see below), but no release gate has run for them and nothing here is a published package. Public release remains blocked by the unresolved rights and verification gates below.
 
 ## What remains open
 
@@ -90,6 +90,47 @@ before-side evidence rather than describing these zero-event observations as
 a demonstrated fix.
 
 ## Recorded verification
+
+### Audit remediation consolidated — 2026-11-11
+
+The C++/DX audit remediation — task PRs #1–#14 plus follow-ups #17–#26 — is consolidated on
+`cppfixes` at `022c98c`. Every branch and pull request that carried it has been merged or
+recorded as superseded, and the remote holds only `main` and `cppfixes`.
+
+Verified here:
+
+- The merged tree compiles on Windows MinGW64 with Qt 6.12: `mikai`, `mikai_test_launcher`,
+  `mikai_tests` and all 30 probe targets build and link, and `mikai --version` prints
+  `mikai 0.2.2 (022c98c, built 2026-11-11T18:38:11Z)`.
+- That build found one defect introduced by a merged branch, fixed in `022c98c`: the deferred
+  X-D24 stylesheet rewrite dropped `QStringLiteral`'s closing parenthesis in `SettingsUi.cpp`,
+  which made the file unparsable. The branch carrying it had never been compiled.
+- The Windows packages were rebuilt from `022c98c` with `packaging/windows/package.ps1`:
+
+| Artifact | Bytes | SHA-256 |
+|---|---:|---|
+| `mikai-0.2.2-windows-x64-portable.zip` | 72,021,328 | `d40dce2ae1fdb7384d5037eea11b9bb7440d6206ba16f69e2fcda10827843f86` |
+| `mikai-0.2.2-windows-x64-setup.exe` | 54,660,665 | `01493923e099784d0d4ba60bafd79946d095536060f7ef35c77009115c0b7cb6` |
+| `mikai-0.2.2-windows-x64-release.json` | 84,529 | `61d5a2e9e747095f8d09d0dd0e876b6551c31802714474b463fa7bc2fd6523fa` |
+
+- The packaged `VERSION` file, the release evidence and the binary agree on `022c98c`. The
+  payload is 138 files, including `mpv/libmpv-2.dll` from the pinned
+  `mpv-dev-x86_64-20261024-git-b4f9f5bfed.7z` (archive SHA-256
+  `2efe77b9e3028c32cd74c9d871c5d2cd8315758d0da3f59bf64c867c8e7e6d0c`). The evidence file
+  records `publicationStatus=blocked`.
+
+Not verified here:
+
+- No QtTest suite, probe, native inference or benchmark was executed for this tree. The audit
+  branches were reviewed by reading and grep, and their CI runs never reached a green build, so
+  the fixes recorded in the changelog are compile-checked changes, not reproduced-and-observed
+  behaviour. Open symptoms are listed in [known bugs](../known_bugs.md).
+- The Linux lane, the distribution packages and the sanitizer jobs were not run for this tree.
+- An earlier packaging run on the same tree stamped the binary with the revision cached at the
+  last configure (`9768155`) while its `VERSION` file named `022c98c`. `MIKAI_BUILD_REVISION` is
+  resolved at configure time, so a commit made after the last configure is invisible to
+  `cmake --build`; reconfigure before packaging. The artifacts listed above were rebuilt after
+  reconfiguring and agree with themselves.
 
 ### 0.2.0 published — 2026-11-05
 

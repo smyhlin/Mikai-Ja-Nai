@@ -93,6 +93,8 @@ Building into a dated or review subdirectory (for example `release-artifacts/win
 
 Verify the executable inside the canonical portable ZIP with `--version`, not only the executable in the build directory. Rebuilds can share the `0.2.0` product number; the embedded source revision and package checksums distinguish their actual contents.
 
+`MIKAI_BUILD_REVISION` is resolved when CMake configures, and the packaging script only builds — it does not reconfigure. A commit made after the last `cmake --preset …` therefore leaves the binary stamped with the previous revision while the `VERSION` file the dist step writes names the current one. Reconfigure before packaging and confirm that the packaged binary's `--version` matches the receipt's committed revision; a mismatch is a stale build, not a receipt error. A cross build that cannot read the checkout states the revision with `-DMIKAI_BUILD_REVISION=<short-rev>` instead.
+
 Expected outputs are:
 
 - `mikai-0.2.0-windows-x64-portable.zip`

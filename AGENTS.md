@@ -7,10 +7,10 @@
 Strict architectural layering is enforced by `TestLayering` (`tests/cpp/app/TestLayering.cpp`):
 
 1. **`src/backend/` (`mikai::backend`) — Pure Domain & Network Layer:**
-   - Contains `Models.hpp`, `Errors.hpp`, `Releases.hpp`, `MikaiClient.hpp`, `Streams.hpp`, `Downloads.hpp`, `Runtime.hpp`, `Cancellation.hpp`, and `Diagnostics.hpp`.
+   - Contains `Models.hpp`, `Errors.hpp`, `Releases.hpp`, `MikaiClient.hpp`, `Json.hpp` (shared JSON accessors that range-check before converting), `Streams.hpp`, `Downloads.hpp`, `Runtime.hpp`, `Cancellation.hpp`, and `Diagnostics.hpp`.
    - **Hard Rule:** Must never `#include` any Qt GUI/Widgets headers (`QWidget`, `QImage`, `QPixmap`, `QColor`, etc.) and must never reference `src/app/`, `src/gui/`, or `src/player/`.
 2. **`src/gui/` (`mikai::gui`) — Shared GUI Helpers:**
-   - Lightweight Qt GUI utilities shared across `src/app/` and `src/player/`: `Clipboard.hpp`, `ImageDecode`, `XdgDesktopIntegration`, `VideoDropTarget`, and `IdleInhibitor` (per-playing-surface session idle block through logind's `idle` lock, with the screen-saver interface as the fallback when logind is absent).
+   - Lightweight Qt GUI utilities shared across `src/app/` and `src/player/`: `Clipboard.hpp`, `ImageDecode`, `XdgDesktopIntegration`, `Win32Support` (registry/`FormatMessage` helpers and the DPAPI-protected secret store the OpenSubtitles key lives in; the Unix counterpart is a 0600 file under `AppDataLocation`), `VideoDropTarget`, and `IdleInhibitor` (per-playing-surface session idle block through logind's `idle` lock, with the screen-saver interface as the fallback when logind is absent; on Windows a reference-counted `SetThreadExecutionState` block).
 3. **`src/player/` (`mplayer`) — Video Surface, Shader/AI Pipelines & Compare Workstation:**
    - `src/player/core/` — Dynamic `libmpv` loader (`MpvApi`), async transport (`MpvHandle`), diagnostics (`PlaybackDiagnostics`), and OpenGL render bridge (`MpvRenderContext`, `VideoSurface`, `VideoSurfaceAnimeJanai`, `VideoSurfaceNative`). `MpvApi`, `MpvHandle`, and `PlaybackDiagnostics` are GUI-free and compiled in `mikai_native_support` so the static library graph is strictly acyclic (`mikai_backend` → `mikai_native_support` → `mikai_player` → `mikai_app`).
    - `src/player/shaders/` — `Anime4K` shader chain builder (`Anime4K.{hpp,cpp}`) and `PresetShortcuts.{hpp,cpp}`.
@@ -28,8 +28,8 @@ Strict architectural layering is enforced by `TestLayering` (`tests/cpp/app/Test
 4. **`src/app/` (`mikai::app`) — Application Pages, Settings, Support & Worker Dispatch:**
    - `src/app/support/` — `CrashLog`, `I18n`, `Labels`, `WindowRaisePolicy`.
    - `src/app/pages/` — `MainWindow`, `SearchPage`, `TitlePage`, `TitlePagePlayerSession`, `EpisodeGrid`.
-   - `src/app/state/` — `AppearanceStore` (load/save, `currentAppearance()`, change notifier), `WatchHistory` (per-title `current`, `watched`, and `offsets`/`durations` keyed by episode; resume offsets below 30 s are not stored, 90 % of a known length marks the episode watched and drops its offset), `QualityCache`.
-   - `src/app/dialogs/` — `SettingsDialog` (`settings/` tabs: General, Presets, Processing, Components, Benchmark), `AnimeJanaiManagerPanel`, `ComponentStoreTab` (`ComponentStoreTabAcquisition`), `NativeAssetsPanel` (`NativeAssetsPanelWorkflow`), `NativeRifeControls`, `CoverViewer`.
+   - `src/app/state/` — `AppearanceStore` (load/save, `currentAppearance()`, change notifier), `SettingsKeys.hpp` (the single registry of stored settings keys), `WatchHistory` (per-title `current`, `watched`, and `offsets`/`durations` keyed by episode; resume offsets below 30 s are not stored, 90 % of a known length marks the episode watched and drops its offset), `QualityCache`. Both stores guard their own shared state with one mutex each; load+mutate+save is a single critical section.
+   - `src/app/dialogs/` — `SettingsDialog` (`settings/` tabs: General, Presets, Processing, Components, Benchmark; `settings/SettingsUi.cpp` holds the shared page stylesheet, built from named `%{…}` markers), `AnimeJanaiManagerPanel`, `ComponentStoreTab` (`ComponentStoreTabAcquisition`), `NativeAssetsPanel` (`NativeAssetsPanelWorkflow`), `NativeRifeControls`, `CoverViewer`.
    - `src/app/workers/` — `Runner` (`src/app/workers/Runner.hpp`) manages 5 dedicated `QThreadPool` queues (`shared`, `bulk`, `stream`, `image`, `transfer`) and `Runner::GuiDispatch` (`runner.post()`).
 
 ---
