@@ -147,9 +147,10 @@ def install_windows_vulkan_runtime(evidence):
     target = downloads / name
     if not target.is_file() or target.stat().st_size != VULKAN_RUNTIME['bytes']:
         print(f'+ curl {VULKAN_RUNTIME["url"]}', flush=True)
-        with urllib.request.urlopen(VULKAN_RUNTIME['url'], timeout=600) as response, \
-                target.open('wb') as stream:
-            shutil.copyfileobj(response, stream, 1 << 20)
+        # sdk.lunarg.com rejects urllib's default User-Agent with HTTP 403,
+        # so fetch with curl (already required on the runner: Git ships it).
+        subprocess.run(['curl', '-fL', '-o', str(target), VULKAN_RUNTIME['url']],
+                       check=True)
     measured = hashlib.file_digest(target.open('rb'), 'sha256').hexdigest()
     if measured != VULKAN_RUNTIME['sha256'] or target.stat().st_size != VULKAN_RUNTIME['bytes']:
         raise RuntimeError(
