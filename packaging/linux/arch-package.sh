@@ -46,7 +46,7 @@ for tool in cmake ninja patchelf; do
     exit 1
   fi
 done
-for dependency in qt6-base libglvnd; do
+for dependency in qt6-base qt6-declarative qt6-tools libglvnd; do
   if ! pacman -Q "$dependency" >/dev/null 2>&1; then
     printf 'Missing build dependency: %s (pacman -S --needed %s)\n' "$dependency" "$dependency" >&2
     exit 1

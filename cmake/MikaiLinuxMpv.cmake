@@ -203,7 +203,9 @@ if(NOT _mikai_linux_mpv_cache_valid)
   # SONAME module the loader needs is libmpv.so.2.
   file(GLOB _mikai_linux_mpv_version_aliases
     LIST_DIRECTORIES FALSE "${MIKAI_LINUX_MPV_EXTRACTED_DIR}/libmpv.so.2.*")
-  file(REMOVE ${_mikai_linux_mpv_version_aliases})
+  if(_mikai_linux_mpv_version_aliases)
+    file(REMOVE ${_mikai_linux_mpv_version_aliases})
+  endif()
 
   file(GLOB _mikai_linux_mpv_so_files
     LIST_DIRECTORIES FALSE "${MIKAI_LINUX_MPV_EXTRACTED_DIR}/*.so*")

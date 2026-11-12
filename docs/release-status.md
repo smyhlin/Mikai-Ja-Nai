@@ -7,6 +7,7 @@ The latest published release recorded here is [v0.2.0](https://github.com/smyhli
 
 - Packages are unsigned. Linux builds also depend on compatible host graphics, audio, glibc and loader support; no package is universal.
 - Third-party corresponding-source, license and redistribution obligations remain unresolved. Both platform profiles in `packaging/third-party.json` retain `publicReleaseReady: false`; see [redistribution evidence](redistribution.md). Publication does not establish rights clearance or a passed release gate.
+- The native Quick player adds a Qt Declarative runtime/import closure (Qt Qml/Quick/QuickControls2, imported QML modules/styles and plugin dependencies) to the deployment requirements. The current final Linux and broad build/package gates are deferred; this status records no new Linux package test or complete production-UI verification. Earlier native core-only composition/resize/paused/live-resource evidence is limited to that core path and is not a Quick frontend, package, or release-gate result.
 - Wayland compositors control window stacking, including the AnimeJaNai engine-build overlay.
 - A Windows 0.2.1 run reported `animejanai.build.pollRefused` shortly after a TensorRT background build started. The saved log does not establish why mpv refused the poll or whether the engine build itself failed; this remains unverified on hardware.
 

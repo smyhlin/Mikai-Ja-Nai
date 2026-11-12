@@ -19,6 +19,8 @@ This document records the source/artifact evidence required to accompany release
 - Its `SHA256SUMS` covered the staged regular payload files. This is build/package identity and inventory evidence, not a runtime-QA result or complete redistribution clearance.
 
 - The staged Qt 6.12.0 runtime consists of deployed Qt shared modules, plugins, translations and ICU 73.2; module attributions and Qt license texts are included under `share/licenses/mikai/third-party/`.
+- The native Quick player requires Qt Declarative runtime components in addition to Qt base: Qml/Quick/QuickControls2 and the imported Qt Quick QML modules, including Controls Basic, plus their QML assets and plugin dependencies. The Windows payload uses a reviewed named QML import manifest; Linux deployment scans imports from the executable's `Mikai.App` module, which imports the shared `Mikai.Player` module. This changes the deployed Qt component inventory, not the Qt version.
+- The Qt Declarative attribution file (`licenses/Qt-6.12.0-qtdeclarative-attributions.txt`) is generated from the official SDK SBOM and includes attributions for bundled third-party components. It is an SDK superset, not a per-artifact mapping: exact deployed modules/plugins, applicable license elections, corresponding sources, modifications and replacement/relinking fulfillment still need to be matched to each final package. The retained official Qt source archive and attribution do not by themselves close that obligation.
 - The official source archive matches the official upstream checksum.
 - Its acquisition is recorded in `source-materials.json`, whose `completeCorrespondingSource` field is `false`.
 - This retained archive is evidence of that source material only, not a complete corresponding-source claim.

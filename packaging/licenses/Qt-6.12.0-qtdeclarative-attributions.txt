@@ -1,0 +1,991 @@
+Qt 6.12.0 — qtdeclarative: installed SDK attribution evidence
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+This is an attribution/source-evidence SUPERSET for this SDK module, not a
+claim that every item below is shipped by Mikai. Build tools and unselected
+plugins appear because the publisher SBOM describes the SDK, not our package.
+A final per-file package inventory selects the deployed subset. NOASSERTION
+and unresolved source/build obligations are not cleared by this notice.
+For LGPL use, see qt/LGPL-3.0-only.txt and qt/GPL-3.0-only.txt.
+Other SPDX texts named below are in qt/ or upstream source; extracted custom
+license texts follow the attribution list. No commercial Qt license is selected.
+
+qtdeclarative
+  Version: 4332fbbb+HEAD
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): NOASSERTION
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlToolingSettingsPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlTypeRegistrarPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlIntegration
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+Qml_Attribution_masm
+  Version: unknown
+  Source: https://trac.webkit.org/wiki/JavaScriptCore
+  License expression (publisher): BSD-2-Clause
+Copyright (C) 2003-2018 Apple Inc. All rights reserved.
+Copyright (C) 2007 Justin Haygood (jhaygood@reaktix.com)
+Copyright (C) 2007-2009 Torch Mobile, Inc. All rights reserved. (http://www.torchmobile.com/)
+Copyright (C) 2009, 2010 University of Szeged
+Copyright (C) 2009-2011 STMicroelectronics. All rights reserved.
+Copyright (C) 2010 MIPS Technologies, Inc. All rights reserved.
+Copyright (C) 2010 Peter Varga (pvarga@inf.u-szeged.hu), University of Szeged
+Copyright (C) 2010 MIPS Technologies, Inc. All rights reserved.
+Copyright (C) 2010, 2011 Research In Motion Limited. All rights reserved.
+Copyright (C) 2011 Google Inc. All rights reserved.
+Copyright (C) 2013 Samsung Electronics. All rights reserved.
+Copyright (C) 2015 Cisco Systems, Inc. All rights reserved.
+Copyright (c) 2002-2009 Vivek Thampi
+
+Qml
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlPreviewPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlModels
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+modelsplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlCore
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtqmlcoreplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlNetwork
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlNetworkplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlWorkerScript
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+workerscriptplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlMeta
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlLocalStorage
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmllocalstorageplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlXmlListModel
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlxmllistmodelplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+quickwindow
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+Quick
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquick2plugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickLayouts_Attribution_yoga
+  Version: 2.0.1
+  Source: https://github.com/facebook/yoga/tree/v2.0.1
+  License expression (publisher): MIT
+Copyright (c) Facebook, Inc. and its affiliates.
+Copyright (c) Meta Platforms, Inc. and affiliates.
+
+QuickLayouts
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qquicklayoutsplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickParticles
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+particlesplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickEffects
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+effectsplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickShapesDesignHelpers
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickshapesdesignhelpersplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickShapes
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlshapesplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickVectorImageGeneratorPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickVectorImage
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qquickvectorimageplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickVectorImageHelpers
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qquickvectorimagehelpersplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickWidgets
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickTemplates2
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquicktemplates2plugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2Impl
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2implplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickNativeStyle
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquicknativestyleplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2BasicStyleImpl
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2basicstyleimplplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2Basic
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2basicstyleplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2FusionStyleImpl
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2fusionstyleimplplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2Fusion
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2fusionstyleplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2ImagineStyleImpl
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2imaginestyleimplplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2Imagine
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2imaginestyleplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2MaterialStyleImpl
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2materialstyleimplplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2Material_Attribution_shadow_angular_material
+  Version: unknown
+  Source: https://angularjs.org/
+  License expression (publisher): MIT
+Copyright (c) 2014-2016 Google, Inc
+
+QuickControls2Material
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2materialstyleplugin_Attribution_shadow_angular_material
+  Version: unknown
+  Source: https://angularjs.org/
+  License expression (publisher): MIT
+Copyright (c) 2014-2016 Google, Inc
+
+qtquickcontrols2materialstyleplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2UniversalStyleImpl
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2universalstyleimplplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2Universal
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2universalstyleplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2FluentWinUI3StyleImpl
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2fluentwinui3styleimplplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2FluentWinUI3
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2fluentwinui3styleplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2WindowsStyleImpl
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2windowsstyleimplplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2Windows
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2windowsstyleplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2Native
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2nativestyleplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControls2
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickcontrols2plugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+LabsSynchronizer
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+LabsSynchronizerplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+LabsSettings
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlsettingsplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+LabsQmlModels
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+labsmodelsplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+LabsFolderListModel
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlfolderlistmodelplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+LabsAnimation
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+labsanimationplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+LabsPlatform
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+LabsPlatformplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+LabsWavefrontMesh
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlwavefrontmeshplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+LabsStyleKitImpl
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+LabsStyleKitImplplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+LabsStyleKit
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+LabsStyleKitplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+LabsSharedImage
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+sharedimageplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickDialogs2Utils
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickDialogs2QuickImpl
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickdialogs2quickimplplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickDialogs2
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtquickdialogsplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlCompiler
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlDomPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlLintPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmltcPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlFormatPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlaotstats
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlcachegen
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlLSPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+PacketProtocolPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QQmlNativeDebugConnectorFactoryPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QDebugMessageServiceFactoryPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QQmlProfilerServiceFactoryPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QQmlDebuggerServiceFactoryPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QQmlNativeDebugServiceFactoryPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QQmlDebugServerFactoryPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QTcpServerConnectionFactoryPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QLocalClientConnectionFactoryPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QQmlInspectorServiceFactoryPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QQuickEventReplayServiceFactoryPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QQuickProfilerAdapterFactoryPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QQmlPreviewServiceFactoryPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlLintQuickPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlLintQdsPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlLSQuickPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+quicktooling
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlDebugPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickTest
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickTestplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickTestUtilsPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControlsTestUtilsPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QuickControlsTestUtilsPrivateplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlDesignSupport
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QmlDesignSupportplugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmldom
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmllint
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmltc
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmltyperegistrar
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmljsrootgen
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlformat
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlcontextpropertydump
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlimportscanner
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlls
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qml_tool
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlprofiler
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlpreview
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlscene
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmltime
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmlplugindump
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmltestrunner
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmleasing
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+svgtoqml
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtdeclarative.git@4332fbbb4c340463dc8cee36dda0c85d932122d8
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+CMake
+  Version: 4.3.2
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+CMake generator Ninja
+  Version: 1.10.2
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+Compiler GNU
+  Version: 15.1.0
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+Linker
+  Version: unknown
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+

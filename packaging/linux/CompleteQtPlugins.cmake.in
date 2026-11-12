@@ -9,8 +9,14 @@
 # libraries live in the same install tree rather than in the host's search path.
 
 set(_plugins_source "@MIKAI_LINUX_QT_PLUGIN_DIR@")
-set(_plugins_destination "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@QT6_INSTALL_PLUGINS@")
+set(_plugins_relative_dir "@QT6_INSTALL_PLUGINS@")
+set(_plugins_destination "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${_plugins_relative_dir}")
 set(_patchelf "@MIKAI_PATCHELF_EXECUTABLE@")
+
+if(_plugins_relative_dir STREQUAL "" OR IS_ABSOLUTE "${_plugins_relative_dir}")
+  message(FATAL_ERROR
+    "Qt deployment needs a prefix-relative QT6_INSTALL_PLUGINS directory.")
+endif()
 
 if(_plugins_source STREQUAL "" OR NOT IS_DIRECTORY "${_plugins_source}")
   message(FATAL_ERROR
@@ -27,26 +33,44 @@ endif()
 file(MAKE_DIRECTORY "${_plugins_destination}")
 foreach(_relative IN LISTS _plugins)
   set(_source "${_plugins_source}/${_relative}")
-  if(IS_SYMLINK "${_source}")
-    continue()
-  endif()
   set(_target "${_plugins_destination}/${_relative}")
   get_filename_component(_target_dir "${_target}" DIRECTORY)
   file(MAKE_DIRECTORY "${_target_dir}")
+  if(IS_SYMLINK "${_source}")
+    file(READ_SYMLINK "${_source}" _symlink_target)
+    if(IS_ABSOLUTE "${_symlink_target}" OR NOT EXISTS "${_source}")
+      message(FATAL_ERROR "Qt plugin symlink is absolute, broken, or not relocatable: ${_source}")
+    endif()
+    file(REAL_PATH "${_source}" _plugin_real)
+    file(REAL_PATH "${_plugins_source}" _plugins_source_real)
+    file(RELATIVE_PATH _plugin_real_relative "${_plugins_source_real}" "${_plugin_real}")
+    if(IS_ABSOLUTE "${_plugin_real_relative}" OR _plugin_real_relative MATCHES "^\\.\\.")
+      message(FATAL_ERROR "Qt plugin symlink escapes its source tree: ${_source}")
+    endif()
+    if(EXISTS "${_target}" OR IS_SYMLINK "${_target}")
+      file(REMOVE "${_target}")
+    endif()
+    file(CREATE_LINK "${_symlink_target}" "${_target}" SYMBOLIC RESULT _link_result)
+    if(NOT _link_result STREQUAL "0")
+      message(FATAL_ERROR "Could not preserve Qt plugin symlink ${_target}: ${_link_result}")
+    endif()
+    continue()
+  endif()
   file(COPY_FILE "${_source}" "${_target}" ONLY_IF_DIFFERENT)
 
-  # Depth-relative, so a nested plugin type resolves the same prefix lib dir.
+  # Compute from the installed file directory to GNUInstallDirs' actual
+  # library directory. Qt distributions may use lib64 or a multiarch libdir.
   get_filename_component(_relative_dir "${_relative}" DIRECTORY)
-  set(_rpath "$ORIGIN")
-  set(_steps 2)
+  set(_plugin_dir "${CMAKE_INSTALL_PREFIX}/@QT6_INSTALL_PLUGINS@")
   if(NOT _relative_dir STREQUAL "")
-    string(REPLACE "/" ";" _parts "${_relative_dir}")
-    list(LENGTH _parts _depth)
-    math(EXPR _steps "${_depth} + 2")
+    string(APPEND _plugin_dir "/${_relative_dir}")
   endif()
-  foreach(_ignored RANGE 1 ${_steps})
-    string(APPEND _rpath "/..")
-  endforeach()
+  file(RELATIVE_PATH _plugin_to_lib "${_plugin_dir}"
+    "${CMAKE_INSTALL_PREFIX}/@CMAKE_INSTALL_LIBDIR@")
+  set(_rpath "$ORIGIN")
+  if(NOT _plugin_to_lib STREQUAL "")
+    string(APPEND _rpath "/${_plugin_to_lib}")
+  endif()
   execute_process(COMMAND "${_patchelf}" --set-rpath "${_rpath}" "${_target}"
     RESULT_VARIABLE _patch_result ERROR_VARIABLE _patch_error OUTPUT_QUIET)
   if(NOT _patch_result EQUAL 0)
@@ -55,3 +79,61 @@ foreach(_relative IN LISTS _plugins)
 endforeach()
 
 message(STATUS "Qt plugin tree completed at ${_plugins_destination}")
+
+# The QML import tree needs the same treatment. Its plugin libraries are loaded
+# by the QML engine rather than recorded in the executable's import table, and
+# nothing patches their RUNPATH once Qt's own deployment has copied them: a
+# distribution Qt ships them stripped because its libraries sit in the default
+# search path, which is exactly the assumption a relocatable tree breaks. The
+# depth is derived from each library's own directory, so QtQuick/Controls/Basic
+# and any two- or three-level module resolve the same prefix lib dir.
+set(_qml_dir "@QT6_INSTALL_QML@")
+if(_qml_dir STREQUAL "" OR IS_ABSOLUTE "${_qml_dir}")
+  message(FATAL_ERROR
+    "Qt deployment needs a prefix-relative QT6_INSTALL_QML import directory.")
+endif()
+set(_qml_destination "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${_qml_dir}")
+if(NOT IS_DIRECTORY "${_qml_destination}")
+  message(FATAL_ERROR
+    "No QML import tree was deployed at ${_qml_destination}; the executable's QML "
+    "module must exist so its imports are recorded for deployment.")
+endif()
+file(GLOB_RECURSE _qml_plugins RELATIVE "${_qml_destination}"
+  "${_qml_destination}/*.so" "${_qml_destination}/*.so.*")
+if(NOT _qml_plugins)
+  message(FATAL_ERROR "No QML plugin libraries found under ${_qml_destination}")
+endif()
+foreach(_relative IN LISTS _qml_plugins)
+  set(_target "${_qml_destination}/${_relative}")
+  if(IS_SYMLINK "${_target}")
+    file(READ_SYMLINK "${_target}" _symlink_target)
+    if(IS_ABSOLUTE "${_symlink_target}" OR NOT EXISTS "${_target}")
+      message(FATAL_ERROR "QML plugin symlink is absolute, broken, or not relocatable: ${_target}")
+    endif()
+    file(REAL_PATH "${_target}" _qml_plugin_real)
+    file(REAL_PATH "${_qml_destination}" _qml_destination_real)
+    file(RELATIVE_PATH _qml_plugin_real_relative "${_qml_destination_real}" "${_qml_plugin_real}")
+    if(IS_ABSOLUTE "${_qml_plugin_real_relative}" OR _qml_plugin_real_relative MATCHES "^\\.\\.")
+      message(FATAL_ERROR "QML plugin symlink escapes its import tree: ${_target}")
+    endif()
+    continue()
+  endif()
+  get_filename_component(_relative_dir "${_relative}" DIRECTORY)
+  set(_module_dir "${CMAKE_INSTALL_PREFIX}/${_qml_dir}")
+  if(NOT _relative_dir STREQUAL "")
+    string(APPEND _module_dir "/${_relative_dir}")
+  endif()
+  file(RELATIVE_PATH _qml_plugin_to_lib "${_module_dir}"
+    "${CMAKE_INSTALL_PREFIX}/@CMAKE_INSTALL_LIBDIR@")
+  set(_rpath "$ORIGIN")
+  if(NOT _qml_plugin_to_lib STREQUAL "")
+    string(APPEND _rpath "/${_qml_plugin_to_lib}")
+  endif()
+  execute_process(COMMAND "${_patchelf}" --set-rpath "${_rpath}" "${_target}"
+    RESULT_VARIABLE _patch_result ERROR_VARIABLE _patch_error OUTPUT_QUIET)
+  if(NOT _patch_result EQUAL 0)
+    message(FATAL_ERROR "Could not set the RUNPATH of ${_target}: ${_patch_error}")
+  endif()
+endforeach()
+
+message(STATUS "QML plugin tree completed at ${_qml_destination}")

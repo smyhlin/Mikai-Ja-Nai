@@ -107,6 +107,7 @@ Expected outputs are:
 - Portable and manually copied installations have no installer registration and are not automatically detected. Choose the intended folder explicitly if updating one.
 - Upgrades and repairs preserve settings, logs, acquired models and user data; uninstall removes only integrations owned by the installation and does not erase acquired models by default.
 - The portable application requires its deployed Qt/image-format/TLS/MinGW/mpv runtime files and a system Vulkan loader supplied with graphics drivers.
+- The native Quick player also needs Qt Declarative at runtime: Qt Qml/Quick/QuickControls2 and the QML imports it uses, including the Basic Controls style, their `qmldir`/QML assets and plugin dependencies. Windows packaging uses the reviewed named import closure in `packaging/windows/qml-imports.json`, obtained from the QML scan; do not replace it with a recursive Qt SDK copy.
 - Optional AI components are not part of the base portable package.
 
 For an isolated per-user install/upgrade/uninstall check after packaging, invoke `packaging/windows/smoke.ps1` with the setup artifact and a new, absent output directory. Match the result to the exact installer SHA-256 recorded in its evidence:
@@ -148,7 +149,7 @@ The Windows DEV archive supplies headers, an import library and `libmpv-2.dll`; 
 - A specific local build/package observation is recorded in [release status](release-status.md); it does not establish distro-wide compatibility or a libc baseline.
 - CI's Ubuntu 24.04 + separately supplied Qt 6.12 target is likewise not a claim about all distributions.
 
-- Optional Qt deployment (`MIKAI_LINUX_DEPLOY_QT=ON`) deploys Qt libraries/plugins and relative RPATH.
+- Optional Qt deployment (`MIKAI_LINUX_DEPLOY_QT=ON`) deploys Qt libraries/plugins and relative RPATH. For the Quick player it must also deploy the executable's scanned QML import closure (Qt Declarative/Qml/Quick/QuickControls2, imported Quick modules, style and plugin dependencies). The hosting executable owns the `Mikai.App` QML module and imports `Mikai.Player`; `qt_deploy_qml_imports()` scans that executable module, so deploying Qt libraries alone cannot create the player scene. `QT6_INSTALL_QML` must be available at configure time, and relocatable `qt.conf` must direct `QmlImports` to the prefix-relative import tree (commonly `lib/qt6/qml` for distribution Qt, `qml` for the official SDK).
 - `MIKAI_LINUX_BUNDLE_MPV=ON` bundles our pinned libmpv fork — the runtime the player and AnimeJaNai are built against — with its private shared-library closure under `MIKAI_LINUX_MPV_INSTALL_SUBDIR` (`bin/mpv`, or `lib/mikai/mpv` in a distribution package), with owned `$ORIGIN` RUNPATH patching via build-time `patchelf`; it does not bundle the mpv CLI, docs or updaters, and a Linux artifact that sets it never depends on the host's mpv.
 - Host glibc/loader, graphics drivers and GL/EGL integration, and audio subsystems remain dependencies.
 - CI and release preparation configure both options on, so the package and renderer smoke use the selected bundled runtime rather than host mpv.
@@ -169,7 +170,7 @@ bash packaging/linux/package.sh \
 - The shown Unix Makefiles preset is single-configuration; for a multi-configuration build, pass `--config Release` to the package script.
 - The output directory must not already exist; the package script creates it. CI creates only the output parent and leaves final output creation to the package script; supplying a populated output directory, user data or an existing deployment is refused.
 - The script writes `mikai-0.2.0-linux-x86_64.tar.gz`, `SHA256SUMS`, and a named install tree.
-- The archive extracts to a directory containing `mikai-0.2.0-linux-x86_64/bin/mikai`; run that executable with compatible Qt plugins and desktop OpenGL available.
+- The archive extracts to a directory containing `mikai-0.2.0-linux-x86_64/bin/mikai`; run that executable with compatible Qt libraries, QML import modules/plugins, platform plugins and desktop OpenGL available. A Qt library-only tree is insufficient for the Quick player: its QML import tree must include the scanned modules and Basic Controls style.
 - Its libmpv runtime and private closure sit in `bin/mpv`, so no system mpv is required.
 - When using a custom Qt installation, configure `LD_LIBRARY_PATH` for the Qt libraries only during development; packaged runtime discovery uses relative RPATH and does not require a global `LD_LIBRARY_PATH` for the bundled mpv closure.
 
@@ -277,7 +278,7 @@ bash packaging/linux/arch-package.sh --output-dir /fresh/output
 - The driver requires `makepkg`, `git`, `cmake`, `ninja`, `sha256sum`, `patchelf`, and checks that `qt6-base` and `libglvnd` are installed; the configure step still needs mpv/libmpv development headers on the build host. `check()` runs this repository's CTest suite, so a package is only produced after the tests pass.
 - The result is `mikai-<version>-<pkgrel>-x86_64.pkg.tar.zst` plus the generated `.SRCINFO`.
 - Both Linux drivers resolve the pinned Anime4K tarball (`--anime4k-archive`, then `MIKAI_ANIME4K_ARCHIVE`, then `~/.cache/mikai/anime4k/`, then any `build/*/_dist-cache/anime4k/`) and hand it to the build, because the Debian builder runs without a guaranteed network path and the Arch package builds from a `git archive` that carries no shader blobs. Every package installs the 49 staged shaders beside the binary.
-- The package depends at runtime on `qt6-base` and `libglvnd`, installs the executable as `/usr/bin/mikai` (with `/usr/bin/mikai-<version>` as its real name and `/usr/bin/shaders` linking to the shader directory), and relies on the distribution's Qt 6.12 — which is why this format only applies to Arch, where Qt 6.12 is current. `mpv` is a build-host dependency only.
+- The package depends at runtime on `qt6-base` and `libglvnd`, installs the executable as `/usr/bin/mikai` (with `/usr/bin/mikai-<version>` as its real name and `/usr/bin/shaders` linking to the shader directory), and relies on the distribution's Qt 6.12 — which is why this format only applies to Arch, where Qt 6.12 is current. That Qt installation must also supply the Quick player's Qt Declarative runtime, imported QML modules and plugin files; `qt6-base` alone is insufficient. `mpv` is a build-host dependency only.
 
 **Debian** is built inside Debian 13 (trixie) because the binary's glibc floor is the build base's, and no Debian-family distribution ships Qt 6.12.
 
@@ -291,6 +292,7 @@ bash packaging/linux/deb-package.sh \
 - It mounts the checkout read-only, the Qt SDK at `/qt` and the runtime archive at `/mpv/runtime.tar.zst`, and runs `packaging/debian/in-container.sh`.
 - That script configures with `MIKAI_LINUX_DEPLOY_QT=ON` and `MIKAI_LINUX_BUNDLE_MPV=ON`, installs into `/usr` with the runtime at `/usr/lib/mikai/mpv`, derives `Depends` from what each shipped object can actually resolve (the runtime is bundled, so no distribution mpv is required), and builds `mikai_0.2.0_amd64.deb` with `dpkg-deb`.
 
+- The deployed Qt payload also contains the Qt Declarative/Quick runtime and scanned QML imports/plugins needed by the player scene. Its relocatable `qt.conf` provides the bundled import path; deploying Qt shared libraries without those QML modules is not a working player package.
 - The Qt 6.12 SDK links ICU 73, which Debian 13 does not provide (it ships ICU 76).
 - ICU 73 is compiled once into the builder image and shipped beside the Qt runtime under `/usr/lib`; every library there resolves its siblings through `$ORIGIN`.
 - The build-time `LD_LIBRARY_PATH` is cleared before packaging and testing so a missing private dependency cannot be masked.

@@ -37,6 +37,23 @@ if(NOT DEFINED SOURCE_DIR OR SOURCE_DIR STREQUAL "")
   message(FATAL_ERROR "dist: the source directory was not provided")
 endif()
 
+# The QML player's import closure is compiled into Qt resources, so windeployqt
+# has no source files to inspect without this scan directory.
+if(NOT DEFINED MIKAI_QML_SCAN_DIR OR MIKAI_QML_SCAN_DIR STREQUAL "")
+  message(FATAL_ERROR "dist: the player QML scan directory was not provided")
+endif()
+if(NOT IS_DIRECTORY "${MIKAI_QML_SCAN_DIR}")
+  message(FATAL_ERROR
+    "dist: the player QML scan directory was not found: ${MIKAI_QML_SCAN_DIR}")
+endif()
+if(NOT DEFINED MIKAI_QML_IMPORT_MANIFEST
+    OR NOT EXISTS "${MIKAI_QML_IMPORT_MANIFEST}")
+  message(FATAL_ERROR "dist: the reviewed QML import manifest was not found: ${MIKAI_QML_IMPORT_MANIFEST}")
+endif()
+if(NOT DEFINED MIKAI_QT_VERSION OR MIKAI_QT_VERSION STREQUAL "")
+  message(FATAL_ERROR "dist: the configured Qt version was not provided")
+endif()
+
 # The installed app resolves its benchmark clips beside the executable, so the
 # generated clips are payload inputs. Validate them before the first write: a
 # folder or installer without one of them reports "clip not found" for that
@@ -131,6 +148,43 @@ endif()
 
 get_filename_component(qt_bin_dir "${WINDEPLOYQT}" DIRECTORY)
 get_filename_component(qt_prefix "${qt_bin_dir}" DIRECTORY)
+file(READ "${MIKAI_QML_IMPORT_MANIFEST}" qml_manifest)
+string(JSON qml_manifest_schema ERROR_VARIABLE qml_json_error
+  GET "${qml_manifest}" schema)
+if(qml_json_error OR NOT qml_manifest_schema STREQUAL "mikai.qt.qml-imports/1")
+  message(FATAL_ERROR "dist: invalid Qt QML import manifest schema: ${qml_json_error}")
+endif()
+string(JSON qml_manifest_version ERROR_VARIABLE qml_json_error
+  GET "${qml_manifest}" qtVersion)
+if(qml_json_error OR NOT qml_manifest_version STREQUAL MIKAI_QT_VERSION)
+  message(FATAL_ERROR
+    "dist: QML import manifest Qt version '${qml_manifest_version}' does not match '${MIKAI_QT_VERSION}'")
+endif()
+string(JSON qml_file_count ERROR_VARIABLE qml_json_error
+  LENGTH "${qml_manifest}" files)
+if(qml_json_error OR qml_file_count LESS 1)
+  message(FATAL_ERROR "dist: QML import manifest has no files: ${qml_json_error}")
+endif()
+set(qml_manifest_files "")
+foreach(index RANGE 0 ${qml_file_count})
+    if(index GREATER_EQUAL qml_file_count)
+      break()
+    endif()
+    string(JSON qml_relative ERROR_VARIABLE qml_json_error
+      GET "${qml_manifest}" files ${index})
+    if(qml_json_error OR NOT qml_relative MATCHES "^qml/[A-Za-z0-9_./+-]+$"
+        OR qml_relative MATCHES "//|(^|/)\\.\\.?(/|$)")
+      message(FATAL_ERROR "dist: unsafe QML import manifest entry '${qml_relative}'")
+    endif()
+    if(qml_relative IN_LIST qml_manifest_files)
+      message(FATAL_ERROR "dist: duplicate QML import manifest entry '${qml_relative}'")
+    endif()
+    set(qml_source "${qt_prefix}/${qml_relative}")
+    if(NOT EXISTS "${qml_source}" OR IS_DIRECTORY "${qml_source}" OR IS_SYMLINK "${qml_source}")
+      message(FATAL_ERROR "dist: named QML runtime file is missing or unsafe: ${qml_source}")
+    endif()
+    list(APPEND qml_manifest_files "${qml_relative}")
+endforeach()
 
 if(MIKAI_PUBLIC_RELEASE)
   if(MIKAI_DIST_NATIVE)
@@ -226,7 +280,7 @@ file(COPY "${EXE}" DESTINATION "${DIST_DIR}")
 get_filename_component(exe_name "${EXE}" NAME)
 set(dist_exe "${DIST_DIR}/${exe_name}")
 
-set(deploy_arguments --release --translations uk)
+set(deploy_arguments --release --translations uk --qmldir "${MIKAI_QML_SCAN_DIR}")
 if(MIKAI_PUBLIC_RELEASE)
   # Plugin inputs are copied by the explicit allowlist below. This avoids
   # silently adding a new optional codec/TLS dependency after a Qt update.
@@ -241,6 +295,18 @@ execute_process(
 if(NOT deploy_rc EQUAL 0)
   message(FATAL_ERROR "dist: windeployqt failed (${deploy_rc}): ${deploy_err}")
 endif()
+if(MIKAI_PUBLIC_RELEASE)
+  # windeployqt scans source but can deploy modules outside the reviewed file
+  # list. Rebuild only the staged QML tree from named manifest entries below.
+  file(REMOVE_RECURSE "${DIST_DIR}/qml")
+endif()
+foreach(qml_relative IN LISTS qml_manifest_files)
+  set(qml_source "${qt_prefix}/${qml_relative}")
+  set(qml_target "${DIST_DIR}/${qml_relative}")
+  get_filename_component(qml_target_dir "${qml_target}" DIRECTORY)
+  file(MAKE_DIRECTORY "${qml_target_dir}")
+  file(COPY_FILE "${qml_source}" "${qml_target}" ONLY_IF_DIFFERENT)
+endforeach()
 
 if(MIKAI_PUBLIC_RELEASE)
   file(MAKE_DIRECTORY "${DIST_DIR}/shaders")
@@ -397,7 +463,8 @@ if(MIKAI_PUBLIC_RELEASE)
   file(COPY_FILE "${SOURCE_DIR}/LICENSE" "${DIST_DIR}/LICENSE")
   file(COPY_FILE "${SOURCE_DIR}/packaging/third-party.json" "${DIST_DIR}/third-party.json")
   file(COPY "${SOURCE_DIR}/packaging/licenses" DESTINATION "${DIST_DIR}")
-  file(WRITE "${DIST_DIR}/qt.conf" "[Paths]\nPrefix=.\nPlugins=.\nTranslations=translations\n")
+  file(WRITE "${DIST_DIR}/qt.conf"
+    "[Paths]\nPrefix=.\nPlugins=.\nQmlImports=qml\nTranslations=translations\n")
 
   # Schannel uses the OS certificate store; do not ship an unproven OpenSSL
   # DLL or a plugin that would silently depend on a developer's PATH.
@@ -530,7 +597,7 @@ if(MIKAI_PUBLIC_RELEASE)
       get_filename_component(dependency_name "${dependency}" NAME)
       # Only known runtime families are redistributable inputs to this package.
       # An unknown mpv import needs provenance review, not a directory-wide copy.
-      if(NOT dependency_name MATCHES "^(Qt6(Core|Gui|Widgets|Network|OpenGL|OpenGLWidgets|Svg)|libgcc_s_seh-1|libstdc\\+\\+-6|libwinpthread-1|libmpv-2)\\.dll$")
+      if(NOT dependency_name MATCHES "^(Qt6(Core|Gui|Widgets|Network|OpenGL|OpenGLWidgets|Svg|Qml|QmlCore|QmlModels|QmlWorkerScript|QmlMeta|Quick|QuickControls2|QuickControls2Impl|QuickControls2Basic|QuickControls2BasicStyleImpl|QuickTemplates2|QuickLayouts|QuickDialogs2|QuickDialogs2QuickImpl|QuickDialogs2Utils|QuickShapes|LabsFolderListModel|LabsQmlModels)|libgcc_s_seh-1|libstdc\\+\\+-6|libwinpthread-1|libmpv-2)\\.dll$")
         message(FATAL_ERROR "dist: dependency outside the reviewed runtime allowlist: ${dependency_name}")
       endif()
       if(NOT dependency_name STREQUAL "libmpv-2.dll")
@@ -548,9 +615,17 @@ if(MIKAI_PUBLIC_RELEASE)
   endforeach()
 
   foreach(required Qt6Core.dll Qt6Gui.dll Qt6Widgets.dll Qt6Network.dll
-      Qt6OpenGL.dll Qt6OpenGLWidgets.dll platforms/qwindows.dll
+      Qt6OpenGL.dll Qt6OpenGLWidgets.dll Qt6Qml.dll Qt6QmlCore.dll
+      Qt6QmlModels.dll Qt6QmlWorkerScript.dll Qt6Quick.dll
+      Qt6QuickControls2.dll Qt6QuickControls2Basic.dll
+      Qt6QuickControls2BasicStyleImpl.dll
+      Qt6QuickTemplates2.dll Qt6QuickLayouts.dll platforms/qwindows.dll
       imageformats/qjpeg.dll imageformats/qwebp.dll tls/qschannelbackend.dll
       libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll mpv/libmpv-2.dll
+      qml/QtQml/qmldir qml/QtQuick/qmldir qml/QtQuick/Window/qmldir
+      qml/QtQuick/Layouts/qmldir qml/QtQuick/Templates/qmldir
+      qml/QtQuick/Controls/qmldir qml/QtQuick/Controls/Basic/qmldir
+      qml/QtQuick/Controls/impl/qmldir qml/QtQuick/Controls/Basic/impl/qmldir
       ${dist_benchmark_entries})
     if(NOT EXISTS "${DIST_DIR}/${required}")
       message(FATAL_ERROR "dist: required public runtime file is missing: ${required}")
@@ -571,8 +646,9 @@ if(MIKAI_PUBLIC_RELEASE)
     endif()
     if(entry MATCHES "^(mikai\\.exe|run\\.bat|VERSION|qt\\.conf|LICENSE|third-party\\.json)$")
       set(owner mikai)
-    elseif(entry MATCHES "^Qt6(Core|Gui|Widgets|Network|OpenGL|OpenGLWidgets|Svg)\\.dll$"
+    elseif(entry MATCHES "^Qt6(Core|Gui|Widgets|Network|OpenGL|OpenGLWidgets|Svg|Qml|QmlCore|QmlModels|QmlWorkerScript|QmlMeta|Quick|QuickControls2|QuickControls2Impl|QuickControls2Basic|QuickControls2BasicStyleImpl|QuickTemplates2|QuickLayouts|QuickDialogs2|QuickDialogs2QuickImpl|QuickDialogs2Utils|QuickShapes|LabsFolderListModel|LabsQmlModels)\\.dll$"
         OR entry MATCHES "^(platforms/qwindows|styles/q(modernwindowsstyle|windowsvistastyle)|iconengines/qsvgicon|networkinformation/qnetworklistmanager|tls/q(schannelbackend|certonlybackend)|imageformats/q(gif|ico|jpeg|svg|tga|tiff|wbmp|webp|icns))\\.dll$"
+        OR entry MATCHES "^qml/[A-Za-z0-9_./+-]+$"
         OR entry MATCHES "^translations/(qt|qtbase)_uk\\.qm$")
       set(owner qt)
     elseif(entry MATCHES "^(libgcc_s_seh-1|libstdc\\+\\+-6|libwinpthread-1)\\.dll$")

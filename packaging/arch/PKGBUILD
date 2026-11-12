@@ -8,8 +8,8 @@ pkgdesc='Mikai Ja Nai desktop client for the Mikai anime catalogue, with a libmp
 arch=('x86_64')
 url=''
 license=('Unlicense')
-depends=('qt6-base' 'libglvnd')
-makedepends=('cmake' 'ninja' 'patchelf')
+depends=('qt6-base' 'qt6-declarative' 'libglvnd')
+makedepends=('cmake' 'ninja' 'patchelf' 'qt6-tools')
 optdepends=('nvidia-utils: NVML GPU probe for optional AnimeJaNai components')
 # A stripped single package: this is a release build, not a rebuild service.
 options=('strip' '!debug')
@@ -32,14 +32,13 @@ build() {
     -DCMAKE_INSTALL_PREFIX=/usr \
     -DMIKAI_BUILD_REVISION="$_revision" \
     -DMIKAI_LINUX_BUNDLE_MPV=ON \
+    -DMIKAI_LINUX_DEPLOY_QT=OFF \
     -DMIKAI_LINUX_MPV_ARCHIVE="$srcdir/mpv-linux-x64-$_mpvver.tar.zst" \
     -DMIKAI_LINUX_MPV_INSTALL_SUBDIR=lib/mikai/mpv \
     "${anime4k_args[@]}"
   cmake --build build
 }
 
-# The repository's own gate: the launcher isolates each suite, and the shaders
-# plus a system libmpv are the only external inputs it needs.
 check() {
   ctest --test-dir build --output-on-failure --timeout 900 --no-tests=error
 }

@@ -34,6 +34,14 @@ WINDOWS_SDK = (
     },
     {
         'url': WINDOWS_QT_ROOT + '/qt6_6120/qt6_6120_mingw/qt.qt6.6120.win64_mingw/'
+               '6.12.0-0-202609280346qtdeclarative-Windows-Windows_11_24H2-Mingw-'
+               'Windows-Windows_11_24H2-X86_64.7z',
+        'bytes': 137670972,
+        'sha256': 'a567789b9c142da546db76ceaa47aa0ee92bb780d7102d1adb905d39a3bf441b',
+        'into': 'qt',
+    },
+    {
+        'url': WINDOWS_QT_ROOT + '/qt6_6120/qt6_6120_mingw/qt.qt6.6120.win64_mingw/'
                '6.12.0-0-202609280346qtsvg-Windows-Windows_11_24H2-Mingw-'
                'Windows-Windows_11_24H2-X86_64.7z',
         'bytes': 345663,
@@ -133,6 +141,22 @@ def install_windows_sdk(root, evidence):
     return archives
 
 
+def validate_quick_sdk(prefix):
+    """Refuse an SDK missing the Qt Quick build modules or runtime import."""
+    missing = [
+        prefix / 'lib' / 'cmake' / module / f'{module}Config.cmake'
+        for module in ('Qt6Qml', 'Qt6Quick', 'Qt6QuickControls2')
+        if not (prefix / 'lib' / 'cmake' / module / f'{module}Config.cmake').is_file()
+    ]
+    controls = prefix / 'qml' / 'QtQuick' / 'Controls' / 'Basic' / 'qmldir'
+    if not controls.is_file():
+        missing.append(controls)
+    if missing:
+        raise RuntimeError(
+            'Qt SDK is incomplete for the Qt Quick player; missing: ' +
+            ', '.join(str(path) for path in missing))
+
+
 def install_windows_vulkan_runtime(evidence):
     """Install the Vulkan loader the bundled libmpv-2.dll imports.
 
@@ -215,11 +239,12 @@ def main():
         vulkan = install_windows_vulkan_runtime(args.evidence)
     else:
         install('install-qt', host, 'desktop', '6.12.0', arch, '-O', str(args.root),
-                '-m', 'qtimageformats')
+                '-m', 'qtdeclarative', 'qtimageformats', 'qttools')
     prefixes = list((args.root / '6.12.0').glob('*/lib/cmake/Qt6/Qt6Config.cmake'))
     if len(prefixes) != 1:
         raise RuntimeError(f'Expected exactly one Qt6 SDK under {args.root}, found {prefixes}')
     prefix = prefixes[0].parents[3]
+    validate_quick_sdk(prefix)
     bins = [prefix / 'bin']
     compiler = 'g++'
     if host == 'linux':

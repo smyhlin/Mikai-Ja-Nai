@@ -3,16 +3,18 @@
 
 windeployqt.exe cannot run here (it needs Windows; it crashes under wine), so the
 payload is the explicit set the application actually loads: the executable, Qt's
-modules and the plugins it uses, the MinGW runtime DLLs, the pinned mpv DLL, the
-generated benchmark clips, shaders, translations and licence material. Every file
-is copied by name — no recursive source glob — and the installer list is generated
-from what was copied, so the two cannot disagree.
+modules and the plugins it uses, the reviewed QML import manifest
+(qml-imports.json), the MinGW runtime DLLs, the pinned mpv DLL, the generated
+benchmark clips, shaders, translations and licence material. Every file is copied
+by name — no recursive source glob — and the installer list is generated from
+what was copied, so the two cannot disagree.
 
 Usage:
   assemble-payload.py --build-dir DIR --qt PREFIX --runtime-dlls DIR \
       --mpv-archive FILE --source DIR --out DIR --iss FILE --version VERSION
 """
 import argparse
+import json
 import os
 import pathlib
 import re
@@ -64,10 +66,121 @@ PLUGINS = [
     "networkinformation/qnetworklistmanager.dll",
 ]
 
+# The QML engine lives in the app's Qt Quick player, but that import closure is
+# invisible to the executable's PE import table. The reviewed manifest names
+# every runtime file by Qt-prefix-relative path (qmldir, plugin DLL, style QML);
+# it must never be replaced by a recursive SDK copy.
+QML_MANIFEST_NAME = "qml-imports.json"
+QML_MANIFEST_SCHEMA = "mikai.qt.qml-imports/1"
+QML_IMPORT_ROOT = "qml"
+
+
+def load_qml_imports(manifest_path=None):
+    """Return the reviewed manifest's Qt-prefix-relative runtime paths."""
+    if manifest_path is None:
+        manifest_path = pathlib.Path(__file__).with_name(QML_MANIFEST_NAME)
+    manifest = json.loads(pathlib.Path(manifest_path).read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise ValueError(f"{manifest_path}: QML import manifest must be a JSON object")
+    if manifest.get("schema") != QML_MANIFEST_SCHEMA:
+        raise ValueError(f"{manifest_path}: unsupported QML import manifest schema")
+    qt_version = manifest.get("qtVersion")
+    if not isinstance(qt_version, str) or not qt_version.strip():
+        raise ValueError(f"{manifest_path}: qtVersion must be a non-empty string")
+    files = manifest.get("files")
+    if not isinstance(files, list) or not files:
+        raise ValueError(f"{manifest_path}: files must be a non-empty list")
+    seen = set()
+    for entry in files:
+        if not isinstance(entry, str) or not entry:
+            raise ValueError(f"{manifest_path}: invalid QML import entry {entry!r}")
+        path = pathlib.PurePosixPath(entry)
+        if (entry != path.as_posix() or path.is_absolute() or "\\" in entry
+                or any(part in ("", ".", "..") for part in path.parts)):
+            raise ValueError(f"{manifest_path}: unsafe QML import entry {entry!r}")
+        if path.parts[0] != QML_IMPORT_ROOT:
+            raise ValueError(
+                f"{manifest_path}: QML import entry is outside {QML_IMPORT_ROOT}/: {entry}")
+        if entry in seen:
+            raise ValueError(f"{manifest_path}: duplicate QML import entry {entry}")
+        seen.add(entry)
+    return files
+
+
+def copy_qml_imports(qt_root, out, imports):
+    """Copy the named QML files; a missing entry stops packaging by name."""
+    copied = []
+    missing = []
+    for relative in imports:
+        source = pathlib.Path(qt_root) / relative
+        if not source.is_file():
+            missing.append(relative)
+            continue
+        target = pathlib.Path(out) / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        copied.append(target)
+    if missing:
+        sys.exit("QML imports missing from the Qt SDK: " + ", ".join(missing))
+    return copied
+
+
+def close_imports(out, search, roots):
+    """Copy the complete non-system DLL closure of every deployed PE root.
+
+    QML plugin DLLs and libmpv are not reachable from the executable's import
+    table, so they are roots too and their imports are walked in the same pass.
+    """
+    out = pathlib.Path(out)
+    copied = {}
+    queue = [str(root) for root in roots
+             if pathlib.Path(root).suffix.lower() in (".dll", ".exe")]
+    inspected = set()
+
+    def take(name, importer):
+        key = name.casefold()
+        if key in SYSTEM or key.startswith(("api-ms-win-", "ext-ms-win-")):
+            return
+        if key in copied:
+            return
+        source = find(name, search)
+        if not source:
+            sys.exit(f"unresolved non-system PE import {name} required by {importer}")
+        target = out / os.path.basename(source)
+        if target.exists():
+            if pathlib.Path(source).resolve() != target.resolve():
+                if pathlib.Path(source).stat().st_size != target.stat().st_size:
+                    sys.exit(f"conflicting deployed dependency {name}: {source}")
+                if pathlib.Path(source).read_bytes() != target.read_bytes():
+                    sys.exit(f"conflicting deployed dependency {name}: {source}")
+        else:
+            shutil.copy2(source, target)
+        copied[key] = str(target)
+        queue.append(str(target))
+
+    while queue:
+        image = queue.pop()
+        image_key = os.path.normcase(os.path.abspath(image))
+        if image_key in inspected:
+            continue
+        inspected.add(image_key)
+        for dependency in imports(image):
+            take(dependency, image)
+    return copied
+
+
+def write_qt_conf(out):
+    """qt.conf must resolve the deployed qml/ tree, not the developer SDK."""
+    (pathlib.Path(out) / "qt.conf").write_text(
+        "[Paths]\nPrefix=.\nPlugins=.\nQmlImports=qml\nTranslations=translations\n",
+        encoding="utf-8")
+
 
 def imports(path):
-    out = subprocess.run(["objdump", "-p", path], capture_output=True, text=True).stdout
-    return [line.split(":", 1)[1].strip().lower() for line in out.splitlines()
+    result = subprocess.run(["objdump", "-p", path], capture_output=True, text=True)
+    if result.returncode:
+        sys.exit(f"cannot inspect PE imports for {path}: {result.stderr.strip()}")
+    return [line.split(":", 1)[1].strip().lower() for line in result.stdout.splitlines()
             if line.strip().startswith("DLL Name:")]
 
 
@@ -193,27 +306,11 @@ def main():
     args.out.mkdir(parents=True)
 
     search = [str(args.qt / "bin"), str(args.qt), str(args.runtime_dlls)]
-    queue, copied = [], {}
-
-    def take(name):
-        if name.lower() in copied or name.lower() in SYSTEM:
-            return
-        source = find(name, search)
-        if not source:
-            return
-        target = args.out / os.path.basename(source)
-        if not target.exists():
-            shutil.copy2(source, target)
-        copied[name.lower()] = str(target)
-        queue.append(str(target))
 
     app = args.out / "mikai.exe"
     shutil.copy2(executable, app)
-    queue.append(str(app))
-    while queue:
-        for dependency in imports(queue.pop()):
-            take(dependency)
 
+    runtime_roots = [app]
     missing = []
     for relative in PLUGINS:
         source = args.qt / "plugins" / relative
@@ -223,11 +320,28 @@ def main():
         target = args.out / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
-        for dependency in imports(target):
-            take(dependency)
+        runtime_roots.append(target)
     if missing:
         sys.exit(f"Qt plugins missing from the SDK: {missing}")
+
+    runtime_roots.extend(copy_qml_imports(
+        args.qt, args.out, load_qml_imports()))
+    extract = args.out.parent / "_mpv-extract"
+    if extract.exists():
+        shutil.rmtree(extract)
+    subprocess.run(["7z", "x", "-y", "-bso0", "-bsp0", str(args.mpv_archive),
+                    f"-o{extract}"], check=True)
+    dlls = list(extract.rglob("libmpv-2.dll"))
+    if len(dlls) != 1:
+        sys.exit(f"pinned archive must contain exactly one libmpv-2.dll (found {len(dlls)})")
+    (args.out / "mpv").mkdir(exist_ok=True)
+    mpv_dll = args.out / "mpv" / "libmpv-2.dll"
+    shutil.copy2(dlls[0], mpv_dll)
+    search.append(str(extract))
+    runtime_roots.append(mpv_dll)
+    close_imports(args.out, search, runtime_roots)
     validate_qt_mingw_runtime(args.out)
+    shutil.rmtree(extract)
 
     staged_shaders = args.build_dir / "shaders"
     if not staged_shaders.is_dir():
@@ -243,23 +357,10 @@ def main():
     if built_translation.is_file():
         shutil.copy2(built_translation, args.out / "translations" / "mikai_uk.qm")
 
-    extract = args.out.parent / "_mpv-extract"
-    if extract.exists():
-        shutil.rmtree(extract)
-    subprocess.run(["7z", "x", "-y", "-bso0", "-bsp0", str(args.mpv_archive),
-                    f"-o{extract}"], check=True)
-    dlls = list(extract.rglob("libmpv-2.dll"))
-    if not dlls:
-        sys.exit("libmpv-2.dll is missing from the pinned archive")
-    (args.out / "mpv").mkdir(exist_ok=True)
-    shutil.copy2(dlls[0], args.out / "mpv" / "libmpv-2.dll")
-    shutil.rmtree(extract)
-
     shutil.copy2(args.source / "LICENSE", args.out / "LICENSE")
     shutil.copy2(args.source / "packaging/third-party.json", args.out / "third-party.json")
     shutil.copytree(args.source / "packaging/licenses", args.out / "licenses", dirs_exist_ok=True)
-    (args.out / "qt.conf").write_text(
-        "[Paths]\nPrefix=.\nPlugins=.\nTranslations=translations\n", encoding="utf-8")
+    write_qt_conf(args.out)
     (args.out / "run.bat").write_bytes(b'@echo off\r\nstart "" "%~dp0mikai.exe" %*\r\n')
     revision = subprocess.run(["git", "-C", str(args.source), "rev-parse", "--short", "HEAD"],
                               capture_output=True, text=True).stdout.strip()

@@ -124,24 +124,103 @@ foreach(required_path IN LISTS required_paths)
   endif()
 endforeach()
 
-# Qt's deployment gathers plugins by module, but a distribution Qt without a
-# qpa description makes it skip the platform plugins, which leaves the image
-# unable to start. cmake/MikaiLinux.cmake completes the tree during install with
-# packaging/linux/CompleteQtPlugins.cmake; this only proves it happened.
-set(_qt_platform_plugins "${appdir}/usr/plugins/platforms"
-    "${appdir}/usr/lib/qt6/plugins/platforms")
-set(_qt_platform_files)
-foreach(_qt_platform_dir IN LISTS _qt_platform_plugins)
-  if(IS_DIRECTORY "${_qt_platform_dir}")
-    file(GLOB _qt_platform_dir_files "${_qt_platform_dir}/*.so")
-    list(APPEND _qt_platform_files ${_qt_platform_dir_files})
+# The Quick player also starts from a deployed QML import tree, not only from a
+# deployed Qt library set. Resolve all Qt paths from qt.conf; distribution Qt
+# and the official SDK use different prefix-relative layouts. The import
+# directory therefore works with lib/qt6/qml as well as qml.
+set(_qt_conf "${appdir}/usr/${MIKAI_LINUX_BINDIR}/qt.conf")
+if(NOT EXISTS "${_qt_conf}" OR IS_DIRECTORY "${_qt_conf}")
+  message(FATAL_ERROR "Qt deployment did not write a relocatable qt.conf: ${_qt_conf}")
+endif()
+file(STRINGS "${_qt_conf}" _qt_conf_paths
+  REGEX "^[ \t]*(Prefix|Libraries|Plugins|QmlImports)[ \t]*=")
+set(_qt_prefix ".")
+set(_qt_prefix_seen FALSE)
+set(_qt_libraries "")
+set(_qt_plugins "")
+set(_qt_qml_imports "")
+foreach(_qt_conf_path IN LISTS _qt_conf_paths)
+  if(_qt_conf_path MATCHES "^[ \t]*Prefix[ \t]*=[ \t]*(.+)$")
+    string(STRIP "${CMAKE_MATCH_1}" _qt_prefix)
+    set(_qt_prefix_seen TRUE)
+  elseif(_qt_conf_path MATCHES "^[ \t]*Libraries[ \t]*=[ \t]*(.+)$")
+    string(STRIP "${CMAKE_MATCH_1}" _qt_libraries)
+  elseif(_qt_conf_path MATCHES "^[ \t]*Plugins[ \t]*=[ \t]*(.+)$")
+    string(STRIP "${CMAKE_MATCH_1}" _qt_plugins)
+  elseif(_qt_conf_path MATCHES "^[ \t]*QmlImports[ \t]*=[ \t]*(.+)$")
+    string(STRIP "${CMAKE_MATCH_1}" _qt_qml_imports)
   endif()
 endforeach()
-if(NOT _qt_platform_files)
+if(NOT _qt_prefix_seen OR _qt_libraries STREQUAL ""
+    OR _qt_plugins STREQUAL "" OR _qt_qml_imports STREQUAL ""
+    OR IS_ABSOLUTE "${_qt_prefix}"
+    OR IS_ABSOLUTE "${_qt_libraries}"
+    OR IS_ABSOLUTE "${_qt_plugins}"
+    OR IS_ABSOLUTE "${_qt_qml_imports}")
   message(FATAL_ERROR
-    "No Qt platform plugin was installed under ${_qt_platform_plugins}")
+    "qt.conf must define prefix-relative Prefix, Libraries, Plugins and QmlImports paths; the AppImage relocates.")
+endif()
+set(_qt_prefix_dir "${appdir}/usr/${MIKAI_LINUX_BINDIR}/${_qt_prefix}")
+cmake_path(NORMAL_PATH _qt_prefix_dir)
+set(_qt_qml_dir "${_qt_prefix_dir}/${_qt_qml_imports}")
+set(_qt_plugins_dir "${_qt_prefix_dir}/${_qt_plugins}")
+cmake_path(NORMAL_PATH _qt_qml_dir)
+cmake_path(NORMAL_PATH _qt_plugins_dir)
+set(_qt_platform_dir "${_qt_plugins_dir}/platforms")
+set(_appimage_root "${appdir}/usr")
+cmake_path(NORMAL_PATH _appimage_root)
+file(RELATIVE_PATH _qt_plugins_relative "${_appimage_root}" "${_qt_plugins_dir}")
+if(IS_ABSOLUTE "${_qt_plugins_relative}" OR _qt_plugins_relative MATCHES "^\\.\\.")
+  message(FATAL_ERROR "qt.conf plugin path escapes the AppImage: ${_qt_plugins_dir}")
+endif()
+if(NOT IS_DIRECTORY "${_qt_platform_dir}")
+  message(FATAL_ERROR "No Qt platform plugin directory was installed at ${_qt_platform_dir}")
+endif()
+file(GLOB _qt_platform_files LIST_DIRECTORIES FALSE
+  "${_qt_platform_dir}/*.so" "${_qt_platform_dir}/*.so.*")
+if(NOT _qt_platform_files)
+  message(FATAL_ERROR "No Qt platform plugin was installed under ${_qt_platform_dir}")
 endif()
 message(STATUS "Qt platform plugins present: ${_qt_platform_files}")
+file(RELATIVE_PATH _qt_qml_relative "${_appimage_root}" "${_qt_qml_dir}")
+if(IS_ABSOLUTE "${_qt_qml_relative}" OR _qt_qml_relative MATCHES "^\\.\\.")
+  message(FATAL_ERROR "qt.conf QML import path escapes the AppImage: ${_qt_qml_dir}")
+endif()
+if(NOT IS_DIRECTORY "${_qt_qml_dir}")
+  message(FATAL_ERROR "The image has no deployed QML import tree at ${_qt_qml_dir}")
+endif()
+set(_qt_lib_dir "${_qt_prefix_dir}/${_qt_libraries}")
+cmake_path(NORMAL_PATH _qt_lib_dir)
+file(RELATIVE_PATH _qt_lib_relative "${_appimage_root}" "${_qt_lib_dir}")
+if(IS_ABSOLUTE "${_qt_lib_relative}" OR _qt_lib_relative MATCHES "^\\.\\.")
+  message(FATAL_ERROR "qt.conf library path escapes the AppImage: ${_qt_lib_dir}")
+endif()
+if(NOT IS_DIRECTORY "${_qt_lib_dir}")
+  message(FATAL_ERROR "The image has no deployed Qt library directory at ${_qt_lib_dir}")
+endif()
+foreach(_qml_module IN ITEMS
+    QtQuick QtQuick/Controls QtQuick/Controls/Basic QtQuick/Dialogs)
+  if(NOT EXISTS "${_qt_qml_dir}/${_qml_module}/qmldir"
+      OR IS_DIRECTORY "${_qt_qml_dir}/${_qml_module}/qmldir")
+    message(FATAL_ERROR
+      "The image is missing the deployed QML module ${_qml_module} under ${_qt_qml_dir}")
+  endif()
+  file(GLOB _qml_module_plugins LIST_DIRECTORIES FALSE
+    "${_qt_qml_dir}/${_qml_module}/*.so*")
+  if(NOT _qml_module_plugins)
+    message(FATAL_ERROR
+      "The image has no plugin library for the QML module ${_qml_module} under ${_qt_qml_dir}")
+  endif()
+endforeach()
+foreach(_qt_library IN ITEMS Qt6Core Qt6Gui Qt6Qml Qt6Quick Qt6QuickControls2)
+  file(GLOB _qt_library_files LIST_DIRECTORIES FALSE
+    "${_qt_lib_dir}/${_qt_library}.so*")
+  if(NOT _qt_library_files)
+    message(FATAL_ERROR
+      "The image is missing ${_qt_library} under ${_qt_lib_dir}; the Quick player needs it at run time.")
+  endif()
+endforeach()
+message(STATUS "Qt QML import tree present: ${_qt_qml_dir}")
 
 # AppImage's own layout: AppRun, the desktop entry, the icon and the AppStream
 # file at the AppDir root.

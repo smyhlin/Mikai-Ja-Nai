@@ -114,7 +114,7 @@ foreach ($file in @(Get-ChildItem -LiteralPath $payload -Recurse -File -Force | 
     $destination = '{app}'
     if ($directory) { $destination += '\' + $directory }
     $entries += 'Source: "{#StageDir}\' + $relative + '"; DestDir: "' + $destination + '"; Flags: ignoreversion'
-    $owner = if ($relative -match '^mpv\\') { 'mpv' } elseif ($relative -match '^shaders\\') { 'anime4k' } elseif ($relative -match '^licenses\\') { 'legal' } elseif ($relative -match '^lib(gcc|stdc|winpthread)') { 'mingw' } elseif ($relative -match '^Qt6|^(platforms|styles|imageformats|iconengines|tls|networkinformation)\\|^translations\\qt') { 'qt' } else { 'mikai' }
+    $owner = if ($relative -match '^mpv\\') { 'mpv' } elseif ($relative -match '^shaders\\') { 'anime4k' } elseif ($relative -match '^licenses\\') { 'legal' } elseif ($relative -match '^lib(gcc|stdc|winpthread)') { 'mingw' } elseif ($relative -match '^Qt6|^(platforms|styles|imageformats|iconengines|tls|networkinformation|qml)\\|^translations\\qt') { 'qt' } else { 'mikai' }
     $inventory += [ordered]@{ path = $relative.Replace('\', '/'); sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant(); bytes = $file.Length; component = $owner; fileVersion = $file.VersionInfo.FileVersion }
 }
 $filesInclude = Join-Path $stage 'payload-files.iss'

@@ -95,6 +95,121 @@ if(MIKAI_LINUX_MPV_BUNDLE_MODE STREQUAL "bundled")
     endif()
   endforeach()
 endif()
+# Qt deployment: the player is a native Quick window, so a package that carries
+# the Qt libraries but no QML import tree cannot create its scene at all.
+# Resolve the import directory the way the runtime does - through the deployed
+# qt.conf, whose Prefix and QmlImports keep the configured Qt's prefix-relative
+# layout (lib/qt6/qml for a distribution Qt, qml for the official SDK) - and
+# require the modules the player imports plus the libraries behind them. A
+# host-Qt package (MIKAI_LINUX_DEPLOY_QT=OFF) takes these from the host Qt by
+# design and is not checked here.
+if(MIKAI_LINUX_DEPLOY_QT)
+  set(package_qt_conf "${STAGE_DIR}/${MIKAI_LINUX_BINDIR}/qt.conf")
+  if(NOT EXISTS "${package_qt_conf}" OR IS_DIRECTORY "${package_qt_conf}")
+    message(FATAL_ERROR
+      "Linux package contract: Qt deployment did not write a relocatable qt.conf: ${package_qt_conf}")
+  endif()
+  file(STRINGS "${package_qt_conf}" package_qt_conf_paths
+    REGEX "^[ \t]*(Prefix|Libraries|Plugins|QmlImports)[ \t]*=")
+  set(package_qt_prefix ".")
+  set(package_qt_prefix_seen FALSE)
+  set(package_qt_libraries "")
+  set(package_qt_plugins "")
+  set(package_qt_qml_imports "")
+  foreach(package_qt_conf_path IN LISTS package_qt_conf_paths)
+    if(package_qt_conf_path MATCHES "^[ \t]*Prefix[ \t]*=[ \t]*(.+)$")
+      string(STRIP "${CMAKE_MATCH_1}" package_qt_prefix)
+      set(package_qt_prefix_seen TRUE)
+    elseif(package_qt_conf_path MATCHES "^[ \t]*Libraries[ \t]*=[ \t]*(.+)$")
+      string(STRIP "${CMAKE_MATCH_1}" package_qt_libraries)
+    elseif(package_qt_conf_path MATCHES "^[ \t]*Plugins[ \t]*=[ \t]*(.+)$")
+      string(STRIP "${CMAKE_MATCH_1}" package_qt_plugins)
+    elseif(package_qt_conf_path MATCHES "^[ \t]*QmlImports[ \t]*=[ \t]*(.+)$")
+      string(STRIP "${CMAKE_MATCH_1}" package_qt_qml_imports)
+    endif()
+  endforeach()
+  if(NOT package_qt_prefix_seen OR package_qt_libraries STREQUAL ""
+      OR package_qt_plugins STREQUAL "" OR package_qt_qml_imports STREQUAL ""
+      OR IS_ABSOLUTE "${package_qt_prefix}"
+      OR IS_ABSOLUTE "${package_qt_libraries}"
+      OR IS_ABSOLUTE "${package_qt_plugins}"
+      OR IS_ABSOLUTE "${package_qt_qml_imports}")
+    message(FATAL_ERROR
+      "Linux package contract: qt.conf must define prefix-relative Prefix, Libraries, Plugins and QmlImports paths.")
+  endif()
+  set(package_qt_prefix_dir "${STAGE_DIR}/${MIKAI_LINUX_BINDIR}/${package_qt_prefix}")
+  cmake_path(NORMAL_PATH package_qt_prefix_dir)
+  set(package_qt_qml_dir "${package_qt_prefix_dir}/${package_qt_qml_imports}")
+  cmake_path(NORMAL_PATH package_qt_qml_dir)
+  if(NOT IS_DIRECTORY "${package_qt_qml_dir}")
+    message(FATAL_ERROR
+      "Linux package contract: the deployed QML import tree is missing: ${package_qt_qml_dir}")
+  endif()
+  set(package_qt_plugins_dir "${package_qt_prefix_dir}/${package_qt_plugins}")
+  cmake_path(NORMAL_PATH package_qt_plugins_dir)
+  set(package_stage_dir "${STAGE_DIR}")
+  cmake_path(NORMAL_PATH package_stage_dir)
+  file(RELATIVE_PATH package_qt_plugins_relative "${package_stage_dir}"
+    "${package_qt_plugins_dir}")
+  if(IS_ABSOLUTE "${package_qt_plugins_relative}"
+      OR package_qt_plugins_relative MATCHES "^\\.\\."
+      OR NOT IS_DIRECTORY "${package_qt_plugins_dir}")
+    message(FATAL_ERROR
+      "Linux package contract: qt.conf plugin path is missing or escapes the package: ${package_qt_plugins_dir}")
+  endif()
+  set(package_qt_lib_dir "${package_qt_prefix_dir}/${package_qt_libraries}")
+  cmake_path(NORMAL_PATH package_qt_lib_dir)
+  file(RELATIVE_PATH package_qt_lib_relative "${package_stage_dir}"
+    "${package_qt_lib_dir}")
+  if(IS_ABSOLUTE "${package_qt_lib_relative}"
+      OR package_qt_lib_relative MATCHES "^\\.\\."
+      OR NOT IS_DIRECTORY "${package_qt_lib_dir}")
+    message(FATAL_ERROR
+      "Linux package contract: qt.conf library path is missing or escapes the package: ${package_qt_lib_dir}")
+  endif()
+  file(RELATIVE_PATH package_qt_qml_relative "${package_stage_dir}"
+    "${package_qt_qml_dir}")
+  if(IS_ABSOLUTE "${package_qt_qml_relative}"
+      OR package_qt_qml_relative MATCHES "^\\.\\.")
+    message(FATAL_ERROR
+      "Linux package contract: qt.conf points the QML import path outside the package: ${package_qt_qml_dir}")
+  endif()
+  # Names are the modules the player scene imports by name, so a package that
+  # lost one of them fails here instead of at the first window construction.
+  file(GLOB package_qt_platform_plugins LIST_DIRECTORIES FALSE
+    "${package_qt_plugins_dir}/platforms/*.so" "${package_qt_plugins_dir}/platforms/*.so.*")
+  if(NOT package_qt_platform_plugins)
+    message(FATAL_ERROR
+      "Linux package contract: no Qt platform plugins were deployed under ${package_qt_plugins_dir}/platforms")
+  endif()
+  foreach(package_qml_module IN ITEMS
+      QtQuick QtQuick/Controls QtQuick/Controls/Basic QtQuick/Dialogs)
+    set(package_qml_module_dir "${package_qt_qml_dir}/${package_qml_module}")
+    if(NOT EXISTS "${package_qml_module_dir}/qmldir"
+        OR IS_DIRECTORY "${package_qml_module_dir}/qmldir")
+      message(FATAL_ERROR
+        "Linux package contract: deployed QML module ${package_qml_module} has no qmldir: ${package_qml_module_dir}")
+    endif()
+    file(GLOB package_qml_plugins LIST_DIRECTORIES FALSE
+      "${package_qml_module_dir}/*.so*")
+    if(NOT package_qml_plugins)
+      message(FATAL_ERROR
+        "Linux package contract: deployed QML module ${package_qml_module} has no plugin library beside its qmldir: ${package_qml_module_dir}")
+    endif()
+  endforeach()
+  # The QML stack is loaded at run time, so the shared libraries it needs are
+  # not implied by the executable's own dependency list being satisfiable.
+  foreach(package_qt_library IN ITEMS
+      Qt6Core Qt6Gui Qt6Qml Qt6Quick Qt6QuickControls2)
+    file(GLOB package_qt_library_files LIST_DIRECTORIES FALSE
+      "${package_qt_lib_dir}/${package_qt_library}.so*")
+    if(NOT package_qt_library_files)
+      message(FATAL_ERROR
+        "Linux package contract: ${package_qt_library} was not deployed into ${package_qt_lib_dir}; the Quick player needs it at run time.")
+    endif()
+  endforeach()
+endif()
+
 file(GLOB_RECURSE staged_entries LIST_DIRECTORIES FALSE RELATIVE "${STAGE_DIR}" "${STAGE_DIR}/*")
 foreach(entry IN LISTS staged_entries)
   if(entry MATCHES "(^|/)(native|models|records|cache|logs|crashes|probes|tests)(/|$)"

@@ -1,5 +1,5 @@
 MIKAI 0.1.0 — THIRD-PARTY NOTICES AND DISTRIBUTION CONDITIONS
-Evidence reviewed: 2026-10-24
+Evidence reviewed: 2026-11-12
 
 This payload contains actual upstream license texts, source references and
 attributions. It is not a legal opinion, permission from a third party, a
@@ -21,12 +21,15 @@ optional AI files does not remove the base dependencies' obligations.
 
 Public binary release is BLOCKED on the present evidence. Package preparation
 for inspection/private testing is distinct from permission to publish. The
-Windows profile's publicReleaseReady is false. The recovered build log shows
-the pinned libmpv is a GPL-enabled non-LGPL build and statically includes a
-GPLv3 FFmpeg configuration; the complete linked source/license closure and
-rights-compatible distribution route are unestablished. Qt and MinGW source
-fulfillment is also incomplete. Do not convert that flag to true merely
-because package hashes, upstream URLs or license texts are now present.
+Windows profile's publicReleaseReady is false. The current pinned libmpv
+build's license configuration and linked dependency closure are not
+established by retained evidence: the recovered GPL-enabled non-LGPL build log
+and its GPLv3 FFmpeg configuration belong to the superseded 2026-10-09 build
+and must not be transferred to the current pin. Complete linked
+source/license closure and a rights-compatible distribution route remain
+unestablished. Qt and MinGW source fulfillment is also incomplete. Do not
+convert that flag to true merely because package hashes, upstream URLs or
+license texts are now present.
 
 BASE LINUX PROFILE (linux-x86_64)
 The completed Linux Release stage/archive inventory is recorded under
@@ -55,13 +58,32 @@ a Qt SDK includes tools and optional components with different licenses.
 
 The Qt-6.12.0-*-attributions.txt files preserve publisher SPDX package
 attribution/source fields and extracted custom license texts from the local
-SDK (qtbase, qtimageformats, qtsvg, qttranslations). They are explicitly an
-SDK SUPERSET, not an assertion all packages/tools/plugins are included.
+SDK (qtbase, qtdeclarative, qtimageformats, qtsvg, qttranslations). They are
+explicitly an SDK SUPERSET, not an assertion all packages/tools/plugins are
+included. Qt-6.12.0-qtdeclarative-attributions.txt was generated from the
+official Qt 6.12.0 SDK SBOM `sbom/qtdeclarative-6.12.0.spdx.json` (Qt Build
+System SPDX document; qtdeclarative git commit
+4332fbbb4c340463dc8cee36dda0c85d932122d8) and records all 161 SDK packages,
+including the bundled Yoga 2.0.1 (MIT), WebKit JavaScriptCore MASM
+(BSD-2-Clause) and Material shadow helper (MIT) attributions. Retain the
+applicable notices of any of those components that the shipped modules use.
+This attribution set grants no clearance: it does not establish which QML
+imports/plugins the final payload deploys and does not close Qt source or
+relink fulfillment.
 The Windows release payload inventory records the exact deployed Qt 6.12.0
 files, file versions, hashes and sizes, including Qt6Core/Gui/Network/OpenGL/
 OpenGLWidgets/Svg/Widgets, qwindows, qsvg/qjpeg/qwebp plugins, qmodernwindowsstyle,
 qnetworklistmanager, the Schannel/cert-only TLS plugins and UK translations.
-The complete authoritative per-file inventory is the `payload` array in
+The migrated native Quick player additionally ships the Qt Qml/Quick/
+QuickControls2/QuickTemplates2/Layouts/Dialogs runtime together with its QML
+import assets; that payload adds modules from the existing Qt 6.12.0
+framework, not a different Qt version or framework, and is subject to the
+same LGPL selection, notice and corresponding-source obligations described
+here. Its exact per-file set,
+versions, hashes and sizes are recorded by the packaging inventory for the
+release that ships it, not repeated here.
+For the 0.1.0 Windows package, the complete authoritative per-file inventory
+is the `payload` array in
 `release-artifacts/windows-runtime-review/mikai-0.1.0-windows-x64-release.json`;
 the smaller payload manifest is not repeated here. The SDK attribution files
 remain a superset, not a claim that every SDK package ships. The official Qt

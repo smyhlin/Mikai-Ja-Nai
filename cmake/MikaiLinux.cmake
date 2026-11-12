@@ -93,11 +93,20 @@ install(FILES "${CMAKE_BINARY_DIR}/mikai-runtime-requirements.txt"
 # distribution Qt ships no qpa description, so both the completed install tree
 # and the AppImage need the real directory.
 set(MIKAI_LINUX_QT_PLUGIN_DIR "")
-if(MIKAI_LINUX_DEPLOY_QT AND DEFINED QT6_INSTALL_PREFIX AND DEFINED QT6_INSTALL_PLUGINS)
-  set(_mikai_qt_plugin_dir "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}")
-  if(IS_DIRECTORY "${_mikai_qt_plugin_dir}")
-    set(MIKAI_LINUX_QT_PLUGIN_DIR "${_mikai_qt_plugin_dir}")
+if(MIKAI_LINUX_DEPLOY_QT)
+  if(NOT DEFINED QT6_INSTALL_PREFIX OR QT6_INSTALL_PREFIX STREQUAL ""
+      OR NOT DEFINED QT6_INSTALL_PLUGINS OR QT6_INSTALL_PLUGINS STREQUAL ""
+      OR IS_ABSOLUTE "${QT6_INSTALL_PLUGINS}")
+    message(FATAL_ERROR
+      "Qt deployment requires a prefix-relative QT6_INSTALL_PLUGINS directory "
+      "from the configured Qt.")
   endif()
+  set(_mikai_qt_plugin_dir "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}")
+  if(NOT IS_DIRECTORY "${_mikai_qt_plugin_dir}")
+    message(FATAL_ERROR
+      "Qt deployment plugin source directory is missing: ${_mikai_qt_plugin_dir}")
+  endif()
+  set(MIKAI_LINUX_QT_PLUGIN_DIR "${_mikai_qt_plugin_dir}")
 endif()
 
 if(MIKAI_LINUX_DEPLOY_QT)
@@ -113,44 +122,95 @@ if(MIKAI_LINUX_DEPLOY_QT)
     "MIKAI_LINUX_DEPLOY_QT needs patchelf to give the gathered Qt plugins their "
     "relative RUNPATH; install patchelf and reconfigure.")
   set(QT_DEPLOY_USE_PATCHELF ON)
+  # The player scene is a native Quick window: the executable owns the
+  # Mikai.App QML module and imports the static Mikai.Player module, so the QML
+  # import scan started from it resolves QtQuick, QtQuick.Controls (and its
+  # Basic style) and QtQuick.Dialogs. qt_deploy_qml_imports() reads the imports
+  # recorded for the target at generate time and needs an executable that is
+  # itself a QML module; without that module the deployed tree carries the Qt
+  # libraries but no QML modules, and the player window cannot be created.
+  get_target_property(mikai_linux_qml_uri mikai QT_QML_MODULE_URI)
+  if(NOT mikai_linux_qml_uri)
+    message(FATAL_ERROR
+      "Native Quick packaging needs a QML module on the 'mikai' executable: add "
+      "qt_add_qml_module(mikai URI Mikai.App ...) with the player entry scene "
+      "before configuring with -DMIKAI_LINUX_DEPLOY_QT=ON, or configure with "
+      "-DMIKAI_LINUX_DEPLOY_QT=OFF to run against the host Qt.")
+  endif()
+  # The import directory is the configured Qt's and prefix-relative (lib/qt6/qml
+  # for a distribution Qt, qml for the official SDK). Deploying into a
+  # hard-coded qml/ would leave the shipped tree's import path pointing at the
+  # build host's SDK, so the value is both written into qt.conf and used here.
+  if(NOT DEFINED QT6_INSTALL_QML OR QT6_INSTALL_QML STREQUAL ""
+      OR IS_ABSOLUTE "${QT6_INSTALL_QML}")
+    message(FATAL_ERROR
+      "The configured Qt does not report QT6_INSTALL_QML; the QML import "
+      "directory to deploy cannot be derived from it.")
+  endif()
   # The C library, the loader and the graphics-driver libraries must come from
   # the host. A private libc beside the host ld.so is not a portable bundle: it
   # raises the baseline to the build host and breaks as soon as the loader and
   # libc disagree. GL/EGL dispatch belongs to the installed driver for the same
   # reason, and Qt's deployment gathers them because the build links them.
-  qt6_generate_deploy_app_script(TARGET mikai OUTPUT_SCRIPT mikai_linux_qt_deploy
+  set(mikai_linux_qt_deploy_excludes
+    "ld-linux[^/]*\\.so[^/]*"
+    "libc\\.so[^/]*"
+    "libm\\.so[^/]*"
+    "libmvec\\.so[^/]*"
+    "libpthread\\.so[^/]*"
+    "libdl\\.so[^/]*"
+    "librt\\.so[^/]*"
+    "libresolv\\.so[^/]*"
+    "libutil\\.so[^/]*"
+    "libanl\\.so[^/]*"
+    "libnss_[^/]*\\.so[^/]*"
+    "libgcc_s\\.so[^/]*"
+    "libGL\\.so[^/]*"
+    "libGLX\\.so[^/]*"
+    "libGLESv2\\.so[^/]*"
+    "libOpenGL\\.so[^/]*"
+    "libGLdispatch\\.so[^/]*"
+    "libEGL\\.so[^/]*"
+    "libdrm\\.so[^/]*"
+    "libgbm\\.so[^/]*")
+  # The generated script is one run in two dependent steps. The QML imports go
+  # first because their plugin libraries have to exist before the dependency
+  # walk can follow what they load; the walk then covers the executable and
+  # every deployed QML plugin, which is how the Qt Quick libraries and the QML
+  # module plugins' own plugins reach the package. qmlimportscanner records
+  # these imports at generate time from the executable's QML files, so only the
+  # QML modules the player actually imports are taken from the host Qt.
+  # Quoted, with the backslashes doubled, so the generated script reads each
+  # expression without an invalid-escape diagnostic in an unquoted argument.
+  set(mikai_linux_qt_deploy_exclude_lines "")
+  foreach(mikai_linux_qt_deploy_exclude IN LISTS mikai_linux_qt_deploy_excludes)
+    string(REPLACE "\\" "\\\\" mikai_linux_qt_deploy_exclude_escaped
+      "${mikai_linux_qt_deploy_exclude}")
+    string(APPEND mikai_linux_qt_deploy_exclude_lines
+      "        \"${mikai_linux_qt_deploy_exclude_escaped}\"\n")
+  endforeach()
+  qt6_generate_deploy_script(TARGET mikai NAME linux_qt_deploy
+    OUTPUT_SCRIPT mikai_linux_qt_deploy
+    CONTENT "
+qt6_deploy_qml_imports(
+    TARGET mikai
+    QML_DIR \"${QT6_INSTALL_QML}\"
+    PLUGINS_FOUND mikai_linux_qml_plugins)
+qt6_deploy_runtime_dependencies(
+    EXECUTABLE \"$<TARGET_FILE:mikai>\"
+    ADDITIONAL_MODULES \${mikai_linux_qml_plugins}
+    GENERATE_QT_CONF
     PRE_EXCLUDE_REGEXES
-      "ld-linux[^/]*\\.so[^/]*"
-      "libc\\.so[^/]*"
-      "libm\\.so[^/]*"
-      "libmvec\\.so[^/]*"
-      "libpthread\\.so[^/]*"
-      "libdl\\.so[^/]*"
-      "librt\\.so[^/]*"
-      "libresolv\\.so[^/]*"
-      "libutil\\.so[^/]*"
-      "libanl\\.so[^/]*"
-      "libnss_[^/]*\\.so[^/]*"
-      "libgcc_s\\.so[^/]*"
-      "libGL\\.so[^/]*"
-      "libGLX\\.so[^/]*"
-      "libGLESv2\\.so[^/]*"
-      "libOpenGL\\.so[^/]*"
-      "libGLdispatch\\.so[^/]*"
-      "libEGL\\.so[^/]*"
-      "libdrm\\.so[^/]*"
-      "libgbm\\.so[^/]*"
-  )
+${mikai_linux_qt_deploy_exclude_lines})
+")
   install(SCRIPT "${mikai_linux_qt_deploy}")
   # The gathered set alone is not runnable: complete the tree and give every
   # plugin a relative RUNPATH. Without this the install tree starts only where
   # the one gathered platform plugin happens to apply (xcb on Arch, so a
   # Wayland session cannot start it at all).
-  if(NOT MIKAI_LINUX_QT_PLUGIN_DIR STREQUAL "")
-    configure_file("${CMAKE_SOURCE_DIR}/packaging/linux/CompleteQtPlugins.cmake.in"
-      "${CMAKE_BINARY_DIR}/mikai-linux-qt-plugins.cmake" @ONLY)
-    install(SCRIPT "${CMAKE_BINARY_DIR}/mikai-linux-qt-plugins.cmake")
-  endif()
+  configure_file("${CMAKE_SOURCE_DIR}/packaging/linux/CompleteQtPlugins.cmake.in"
+    "${CMAKE_BINARY_DIR}/mikai-linux-qt-plugins.cmake" @ONLY)
+  install(SCRIPT "${CMAKE_BINARY_DIR}/mikai-linux-qt-plugins.cmake")
 endif()
 
 # Preserve the configured feature switches for package-time refusal checks.
