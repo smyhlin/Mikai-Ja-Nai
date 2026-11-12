@@ -312,18 +312,6 @@ Item {
                     }
 
                     PlayerButton {
-                        id: moreButton
-                        controller: root.controller
-                        iconName: "more"
-                        toolTip: qsTr("More actions, capture and shortcuts")
-                        Accessible.name: toolTip
-                        compact: true
-                        implicitWidth: 40
-                        implicitHeight: 40
-                        onClicked: root.requestMenu(moreButton, "picture")
-                    }
-
-                    PlayerButton {
                         id: settingsButton
                         controller: root.controller
                         objectName: "player.settings.button"
@@ -460,17 +448,6 @@ Item {
                     implicitWidth: 34
                     implicitHeight: 34
                     onClicked: root.requestMenu(compactEnhanceButton, "enhancements")
-                }
-
-                PlayerButton {
-                    id: compactMoreButton
-                    controller: root.controller
-                    iconName: "more"
-                    toolTip: qsTr("More actions, capture and shortcuts")
-                    compact: true
-                    implicitWidth: 34
-                    implicitHeight: 34
-                    onClicked: root.requestMenu(compactMoreButton, "picture")
                 }
 
                 PlayerButton {

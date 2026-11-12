@@ -204,6 +204,7 @@ void PlayerController::buildModels() {
     enhancementMenu_ = new PlayerMenuModel(this);
     qualityMenu_ = new PlayerMenuModel(this);
     settingsMenu_ = new PlayerMenuModel(this);
+    scaleMenu_ = new PlayerMenuModel(this);
     seriesMenu_ = new PlayerMenuModel(this);
     keyHintsMenu_ = new PlayerMenuModel(this);
     remedyMenu_ = new PlayerMenuModel(this);

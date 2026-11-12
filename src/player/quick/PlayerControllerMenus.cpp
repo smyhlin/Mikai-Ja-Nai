@@ -202,6 +202,14 @@ QVector<PlayerMenuModel::Row> PlayerController::capturePictureRows() const {
     clip.action = Action::OpenClipDialog;
     rows.append(clip);
 
+    Row scale;
+    scale.id = QStringLiteral("picture.scale");
+    scale.label = tr("Video scaling");
+    scale.submenu = true;
+    scale.action = Action::OpenMenu;
+    scale.value = QStringLiteral("picture.scale");
+    rows.append(scale);
+
     Row subtitles;
     subtitles.id = QStringLiteral("picture.subtitles");
     subtitles.label = tr("Subtitles");
@@ -828,8 +836,8 @@ QVector<PlayerMenuModel::Row> PlayerController::enhancementLevelRows(const QStri
 // ── rebuilds ────────────────────────────────────────────────────────────────
 
 void PlayerController::rebuildPictureMenu() {
-    if (pictureMenu_ == nullptr) return;
-    pictureMenu_->setRows(capturePictureRows());
+    if (pictureMenu_ != nullptr) pictureMenu_->setRows(capturePictureRows());
+    if (scaleMenu_ != nullptr) scaleMenu_->setRows(videoScaleModeRows());
 }
 
 void PlayerController::rebuildSubtitleMenus() {
@@ -1160,6 +1168,10 @@ void PlayerController::pruneObsoleteSubmenuModels() {
 PlayerMenuModel* PlayerController::menuModel(const QString& menuId) const {
     if (menuId == QLatin1String("picture")) return pictureMenu_;
     if (menuId == QLatin1String("picture.subtitles")) return pictureSubtitlesMenu_;
+    if (menuId == QLatin1String("picture.scale")) {
+        if (scaleMenu_ != nullptr) scaleMenu_->setRows(videoScaleModeRows());
+        return scaleMenu_;
+    }
     if (menuId == QLatin1String("audio")) return audioMenu_;
     if (menuId == QLatin1String("subtitles")) return subtitlesMenu_;
     if (menuId == QLatin1String("enhancements")) return enhancementMenu_;

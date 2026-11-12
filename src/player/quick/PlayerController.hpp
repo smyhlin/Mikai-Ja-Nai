@@ -772,6 +772,7 @@ private:
     PlayerMenuModel* enhancementMenu_ = nullptr;
     PlayerMenuModel* qualityMenu_ = nullptr;
     PlayerMenuModel* settingsMenu_ = nullptr;
+    PlayerMenuModel* scaleMenu_ = nullptr;
     PlayerMenuModel* seriesMenu_ = nullptr;
     PlayerMenuModel* keyHintsMenu_ = nullptr;
     PlayerMenuModel* remedyMenu_ = nullptr;
