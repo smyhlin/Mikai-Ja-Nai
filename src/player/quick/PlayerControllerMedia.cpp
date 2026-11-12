@@ -903,7 +903,7 @@ void PlayerController::openClipWindow() {
         clipWindow_->activateWindow();
         return;
     }
-    auto* dialog = new shell::ClipDialog(session_, QString());
+    auto* dialog = new shell::ClipDialog(session_, caption_);
     dialog->setAttribute(Qt::WA_DeleteOnClose, true);
     connect(dialog, &QDialog::finished, this, [this, dialog] {
         if (clipWindow_ == dialog) clipWindow_.clear();
@@ -911,6 +911,8 @@ void PlayerController::openClipWindow() {
     attachAuxiliaryTransient(dialog);
     clipWindow_ = dialog;
     dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
 }
 
 // ── tracks ───────────────────────────────────────────────────────────────
