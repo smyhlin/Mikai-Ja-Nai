@@ -9,7 +9,6 @@
 - [ ] player black blink fix
 - [ ] fix elements hide under player screen
 - [ ] fix video screenshot resets playback and reloads stream ("Відкриття потоку...")
-- [ ] audio and subtitle selectors open full screen instead of popup chips/flyouts
 - [ ] cut clip (clapperboard) button does not invoke clip window at all
 - [ ] add episode list expand chevron (">") to top-left episode chip
 - [ ] compare window not invoked on element press
@@ -23,3 +22,4 @@
 - [x] fix flipped video orientation (MirrorVertically)
 - [x] show current upscale method in top-left info chip
 - [x] restore missing window buttons placeholder (- and X) in top-right corner
+- [x] audio and subtitle selectors open as popup flyouts instead of full screen sheets
