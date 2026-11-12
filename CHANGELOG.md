@@ -43,7 +43,7 @@ This release introduces the player-only Qt Quick/QML frontend while retaining th
   - Refresh the player speed, quality and scaling flyout with live appearance colors and corner radii.
   - Restore right-click access to the picture menu and enable the clip control when video becomes available.
   - Refine antialias settings controls, make episode buttons more compact and remove the redundant Episodes button from the title hero.
-  - The focused Windows production-player smoke passed 87 checks covering fullscreen auto-hide/wake, nested hover menus, click containment, uninterrupted fixture playback and close/reopen. Linux and broad workflow verification remain deferred.
+  - An earlier focused Windows production-player smoke passed 87 checks covering fullscreen auto-hide/wake, nested hover menus, click containment, fixture playback and close/reopen. The later QML-audit probe passed 157 requirements; its black-frame instrumentation was unavailable. Linux and broad workflow verification remain open.
 
 ### Safety, lifetime and playback correctness
 
@@ -85,7 +85,7 @@ This release introduces the player-only Qt Quick/QML frontend while retaining th
 - Refuse the hover canary before the first paint when the context cannot be created or is older than mpv requires, instead of crashing in `QOpenGLWidget`'s first paint.
 - Fix the base CI regressions: benchmark filter selection loss, settings page overflow, the stale `Save` probe contract, the component progress bar against a real closure record, and `IN_LIST` in `cmake -P` script mode.
 
-Verification for these changes is recorded in [release status](docs/release-status.md#audit-remediation-consolidated--2026-11-11): the merged tree compiles on Windows and produced the packaged artifacts. The individual audit changes were reviewed by reading and grep, not by running the QtTest suites, which were not executed for this tree.
+The historical verification for these audit changes is recorded in [release status](docs/release-status.md#audit-remediation-consolidated--2026-11-11): `022c98c` compiled on Windows and produced review artifacts, but its individual audit changes were not exercised by the QtTest suites. Later focused checks and current blockers are recorded separately in the [application state](docs/release-status.md#application-state--2026-11-13).
 
 ## 0.2.1 — 2026-11-07
 

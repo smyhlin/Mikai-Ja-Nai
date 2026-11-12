@@ -1,13 +1,67 @@
 # Release status
 
 Published packages, release-specific changes and checksums are available on the [GitHub releases page](https://github.com/smyhlin/Mikai-Ja-Nai/releases). The original [v0.1.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0) was followed by the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101). Local rebuilds produce their own `SHA256SUMS`; a rebuild alone does not require a documentation update.
-The latest published release recorded here is [v0.2.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.0). Post-v0.2.0 work now lives on the `cppfixes` branch (the audit remediation consolidated at `022c98c`, followed only by documentation changes); `main` is at `7642f50` and does not contain the 0.2.1–0.2.2 changes or the audit remediation, both of which are listed as **Unreleased** in the changelog. Windows packages were rebuilt from `022c98c` locally (see below), but no release gate has run for them and nothing here is a published package. Public release remains blocked by the unresolved rights and verification gates below.
+As checked on 2026-11-13, the latest non-prerelease published on GitHub is
+[v0.2.1](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.1), built from `14c7059`.
+Its assets are the Windows installer, portable ZIP and receipt, the Linux AppImage and tarball,
+and a checksum manifest. The source tree now identifies as **0.2.3, unreleased**. The local
+Windows review packages described below are not the published v0.2.1 downloads and are not a
+public-release approval.
+
+## Application state — 2026-11-13
+
+| Area | Current source state | Evidence or limitation |
+|---|---|---|
+| Catalogue and local state | Search, title/provider episodes, schedules and local watch history use the Widgets application and backend API client. | Upstream catalogue and providers control availability; no live catalogue/provider end-to-end run was performed for this status update. |
+| Player | A Qt Quick `PlayerWindow` and typed `PlayerController` use one `VideoSession`/libmpv core. PiP retains that session; episode, audio/subtitle, settings and right-click menus are in the Quick scene. | The Windows production-player probe exercised a synthetic local video, controls and close/reopen; Linux desktop parity and real provider playback were not established. |
+| Playback state | Watch history stores episode offsets; the Quick player queues a token-guarded resume offer. The AnimeJaNai reconfiguration path captures and restores the playhead and holds a picture during the transition. | The reported repeated resume prompt, black transition and playhead drift still need an end-to-end title-page/real-upscaler regression on this build, including paused and playing cases. Implementation is not proof that the report is resolved. |
+| Compare and Clip | Compare captures a held frame and renders candidate sides; Clip opens a separate seekable-media editor. | The Windows synthetic-video probe opened Clip and verified both Compare pictures and playback resume on close. It did not verify clip export, every Compare candidate or native model inference in Compare. |
+| Optional processing | Anime4K, Standard AnimeJaNai v0.24.0 and prepared Native workflows are separate. TensorRT for RTX is Windows-only; runtimes and models are acquired separately. | A recorded Windows RTX 5090 run built and loaded the 4× Real-ESRGAN AnimeVideo v3 fp32 engine; see below. This does not establish quality, throughput, every backend/model or Linux behavior. |
+| Settings and storage | Settings cover appearance, processing, components and benchmarks. Watch history and quality cache are local; native/model storage resolves through `MIKAI_NATIVE_ROOT`, a writable executable-adjacent store, then app-local data. | Existing settings, models and caches are not disposable test fixtures. See [architecture](architecture.md) and [building](building.md). |
+| Updates | In-app update notification, automatic updates and nightly builds remain listed in [TODO](../TODO.md). | These are planned items, not shipped updater guarantees. |
+
+### Current Windows review build and scoped checks
+
+The local `release-artifacts/` top level was rebuilt from `edfc45b-dirty` on 2026-11-13
+(local time), using Qt 6.12 and MinGW. The receipt records
+`edfc45b6a77ab72c155518979bf777dda116f527-dirty`; the executable extracted from the portable
+ZIP reported `mikai 0.2.3 (edfc45b-dirty, built 2026-11-12T22:45:51Z)`. The dirty suffix
+means the package cannot be identified by the commit alone. The package receipt's timestamp
+is `2026-11-12T22:49:18Z`. Hashes were checked against `SHA256SUMS`; previous top-level
+files were retained in a dated backup.
+
+| Local review artifact | Bytes | SHA-256 |
+|---|---:|---|
+| `mikai-0.2.3-windows-x64-portable.zip` | 82,302,471 | `ae4a23cec53bcfba8d93ea605f2fd71ff82b414ac1b7f86238c2897b52c5583e` |
+| `mikai-0.2.3-windows-x64-setup.exe` | 61,456,066 | `854416b50849ee7070fda5c34ac37dad96995f5fc0e591c447981f0b43e7a497` |
+| `mikai-0.2.3-windows-x64-release.json` | 129,753 | `25ee1cb42dfbd23c6068f986e1691e83d9647956b8213ea608e04162ee89adce` |
+
+The Windows `dialog_probe` at the QML-audit change passed **157/157** requirements on its
+synthetic FFV1 fixture, across player open and reopen. It covered track-menu keyboard input,
+PiP hover preview and dismissal, a mixed local/remote file drop, preparation progress,
+scaling selection, Compare, clip-window invocation and menu input. Two black-frame
+instrumentation checks were unavailable because the known-bright mode was not enabled.
+All 18 maintained QML files passed a direct Qt 6.12 `qmllint` run with the complete generated
+module metadata and zero warnings. These are focused development checks, not a clean-machine
+package, installer, full-suite or Linux verification.
+
+The installed Windows player's historical `mikai.log` and corresponding
+`.rtxengine.build.log` identify the 4× Real-ESRGAN AnimeVideo v3 fp32 graph at
+`1×3×1080×1920` on an RTX 5090. The builder reported **0.181218 s** engine generation and
+**0.33 s** warm-up; the player then logged engine deserialization, a
+`1920×1080 → 7680×4320` configured slot and CUDA-graph capture. These are observations of
+that specific run, not an independent output-quality test or throughput benchmark. A
+subsequent code change distinguishes cached-engine warm-up from compilation and does not
+treat a pre-completion background slot as ready; no new hardware build was launched to
+verify that change.
 
 ## What remains open
 
 - Packages are unsigned. Linux builds also depend on compatible host graphics, audio, glibc and loader support; no package is universal.
 - Third-party corresponding-source, license and redistribution obligations remain unresolved. Both platform profiles in `packaging/third-party.json` retain `publicReleaseReady: false`; see [redistribution evidence](redistribution.md). Publication does not establish rights clearance or a passed release gate.
-- The native Quick player adds a Qt Declarative runtime/import closure (Qt Qml/Quick/QuickControls2, imported QML modules/styles and plugin dependencies) to the deployment requirements. The current final Linux and broad build/package gates are deferred; this status records no new Linux package test or complete production-UI verification. Earlier native core-only composition/resize/paused/live-resource evidence is limited to that core path and is not a Quick frontend, package, or release-gate result.
+- The native Quick player adds a Qt Declarative runtime/import closure (Qt Qml/Quick/QuickControls2, imported QML modules/styles and plugin dependencies). The Windows review build is not an installer or clean-machine test; no current Linux build/package, desktop-parity or full release gate is recorded. Earlier native core-only evidence is not a Quick frontend or package result.
+- The current CMake QML-lint target is blocked before linting by pre-existing C++ errors in `FullscreenStabilityProbe.cpp`, `NativeSettingsProbe.cpp` and `VideoScalingLiveProbe.cpp`. A direct QML lint run passed as described above; the full current test suite was not run.
+- `packaging/third-party.json` still describes the official AnimeJaNai cohort as v0.22.2 while the installation code pins v0.24.0. Reconcile the release provenance and rights evidence before treating the manifest as current; neither version is cleared for redistribution.
 - Wayland compositors control window stacking, including the AnimeJaNai engine-build overlay.
 - A Windows 0.2.1 run reported `animejanai.build.pollRefused` shortly after a TensorRT background build started. The saved log does not establish why mpv refused the poll or whether the engine build itself failed; this remains unverified on hardware.
 

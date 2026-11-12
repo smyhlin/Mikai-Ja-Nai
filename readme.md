@@ -72,7 +72,7 @@ These manual Windows captures show the Ukrainian interface with a custom pink ap
 
 ## Download and install
 
-Builds are published at [github.com/smyhlin/Mikai-Ja-Nai/releases](https://github.com/smyhlin/Mikai-Ja-Nai/releases): a Windows portable ZIP and per-user setup, and four Linux formats — a dependency-based `tar.gz`, an `AppImage`, an Arch `pkg.tar.zst` and a Debian `.deb`.
+Builds are published at [github.com/smyhlin/Mikai-Ja-Nai/releases](https://github.com/smyhlin/Mikai-Ja-Nai/releases). Available formats vary by release: v0.2.1 has a Windows portable ZIP and per-user setup, and Linux `tar.gz` and AppImage packages. Arch and Debian packaging paths are also available in the source tree.
 
 Every release ships `SHA256SUMS`. Verify downloads against it before running them, and avoid unofficial mirrors.
 
@@ -80,7 +80,7 @@ The artifacts are unsigned, and [release status](docs/release-status.md) records
 
 Linux packages include the project's libmpv runtime, but still require compatible host graphics, audio and system libraries. They are not universal Linux bundles. The original Windows v0.1.0 packages have a startup-runtime issue; the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101) includes the fix.
 
-The latest published packages are for **v0.2.0**. The current source also contains later, unreleased changes; see the **Unreleased** section of the [changelog](CHANGELOG.md). Those changes are not in the v0.2.0 downloads. A new public release remains blocked by the third-party rights and release-verification gates in [release status](docs/release-status.md).
+As checked on 2026-11-13, the latest published release is **[v0.2.1](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.1)**. Current source is **0.2.3, unreleased**; its Qt Quick player and later changes are not in those downloads. Local Windows review artifacts are not a public release. See the [application state and release status](docs/release-status.md#application-state--2026-11-13) for observed checks, open issues and publication blockers.
 
 ## Quick start
 
@@ -132,6 +132,7 @@ The catalogue/API belongs to the Mikai service. This client is unofficial and do
 - [Settings & privacy](docs/settings-guide.md): application settings, access credentials, customization and local data.
 - [Building](docs/building.md): toolchains, dependencies, configure/build/test commands and runtime requirements.
 - [Releasing](docs/releasing.md): local package creation, artifact contents, legal and publication limitations.
+- [Application state and release status](docs/release-status.md): current feature boundaries, scoped verification, local artifact identity and open release gates.
 - [Architecture](docs/architecture.md): application layers, background work, playback/rendering, enhancement runtimes and data boundaries.
 - [AnimeJaNai troubleshooting](docs/animejanai.md): the fork's filter admission contract and the failures it produces.
 - [Public API v1 reference](https://api.mikai.me/public/docs); [benchmark evidence and limitations](bench_results.md); [Native build and bundle documentation](native/README.md) and [MSVC build guide](native/build-msvc.md).
