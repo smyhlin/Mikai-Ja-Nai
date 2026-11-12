@@ -237,6 +237,47 @@ void TestPlaybackControls::nestedEnhancementMenuActivatesTheSelectedPreset() {
     QVERIFY(quality->row(hqARow).selected);
 }
 
+void TestPlaybackControls::qualityMenuSortsAvailableHeightsDescendingAndMaintainsSelection() {
+    const QList<mplayer::shell::QualityEntry> qualities = {
+        {480, QStringLiteral("stream-480")},
+        {1080, QStringLiteral("stream-1080")},
+        {720, QStringLiteral("stream-720")},
+        {1080, QStringLiteral("duplicate-stream-1080")},
+        {360, QStringLiteral("stream-360")},
+    };
+    PlayerController controller(QStringLiteral("quality menu"), QStringLiteral("stream-720"),
+                                qualities, 720);
+
+    const auto* menu = controller.qualityMenu();
+    QVERIFY(menu != nullptr);
+    QCOMPARE(menu->rowCount(), 5);
+
+    const auto autoRow = menu->row(0);
+    QCOMPARE(autoRow.id, QStringLiteral("quality.auto"));
+    QCOMPARE(autoRow.selected, true);
+    QCOMPARE(autoRow.detail, QStringLiteral("720p"));
+
+    const int expected[] = {1080, 720, 480, 360};
+    for (int i = 0; i < 4; ++i) {
+        const auto row = menu->row(i + 1);
+        QCOMPARE(row.id, QStringLiteral("quality.%1").arg(expected[i]));
+        QCOMPARE(row.label, QStringLiteral("%1p").arg(expected[i]));
+        QCOMPARE(row.action, mplayer::quick::PlayerMenuModel::Action::SelectQuality);
+        QCOMPARE(row.selected, false);
+    }
+
+    controller.selectQuality(480);
+    QCOMPARE(controller.isAutoQuality(), false);
+    QCOMPARE(controller.currentHeight(), 480);
+    QCOMPARE(menu->row(0).selected, false);
+    QCOMPARE(menu->row(3).selected, true);
+
+    controller.selectQuality(0);
+    QCOMPARE(controller.isAutoQuality(), true);
+    QCOMPARE(menu->row(0).selected, true);
+    QCOMPARE(menu->row(3).selected, false);
+}
+
 void TestPlaybackControls::transportActionsUpdateTypedControllerAndSessionState() {
     if (!nativePlatformAvailable()) QSKIP("the Quick player needs a native window and GL context");
     if (!requireRuntime()) return;

@@ -224,7 +224,7 @@ void PlayerController::applyEpisodeInternal(const QString& label, const QString&
     setQualities(qualities);
     rebuildAudioMenu();
     rebuildSubtitlesMenu();
-    const int target = pickTargetHeight(0);
+    const int target = autoQuality_ ? pickTargetHeight(0) : pickTargetHeight(currentHeight_);
     const QString nextCaption = target > 0
         ? QStringLiteral("%1 · %2p").arg(label).arg(target)
         : label;
@@ -319,6 +319,29 @@ void PlayerController::applyRefreshedStreams(const QList<shell::QualityEntry>& q
 
 void PlayerController::selectQuality(int height) {
     if (closed_ || directMedia_) return;
+    if (height == 0) {
+        autoQuality_ = true;
+        const int target = pickTargetHeight(0);
+        if (target > 0 && target != currentHeight_) {
+            for (const shell::QualityEntry& entry : qualities_) {
+                if (entry.height != target) continue;
+                currentHeight_ = target;
+                qualityLabel_ = QStringLiteral("%1p").arg(target);
+                emit qualityChanged();
+                if (!openStream(entry.url, target, /*resume=*/true)) {
+                    ensureOpenFailureVisible();
+                    return;
+                }
+                flashStatus(tr("Switched to Auto (%1p)").arg(target));
+                rebuildQualityMenu();
+                return;
+            }
+        }
+        rebuildQualityMenu();
+        flashStatus(tr("Quality set to Auto"));
+        return;
+    }
+    autoQuality_ = false;
     for (const shell::QualityEntry& entry : qualities_) {
         if (entry.height != height) continue;
         currentHeight_ = height;

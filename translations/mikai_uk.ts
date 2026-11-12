@@ -3127,7 +3127,7 @@
 <context>
     <name>OverlayRoot</name>
     <message>
-        <location filename="../src/player/quick/qml/OverlayRoot.qml" line="18"/>
+        <location filename="../src/player/quick/qml/OverlayRoot.qml" line="21"/>
         <source>Player menus</source>
         <translation>Меню програвача</translation>
     </message>
@@ -3198,98 +3198,92 @@
 <context>
     <name>PlayerControls</name>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="87"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="83"/>
         <source>Previous episode</source>
         <translation>Попередня серія</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="105"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="101"/>
         <source>Next episode</source>
         <translation>Наступна серія</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="140"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="137"/>
         <source>Skip segment</source>
         <translation>Пропустити сегмент</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="187"/>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="363"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="184"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="348"/>
         <source>Pause (Space)</source>
         <translation>Пауза (Пробіл)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="187"/>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="363"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="184"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="348"/>
         <source>Play (Space)</source>
         <translation>Відтворити (Пробіл)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="203"/>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="378"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="200"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="363"/>
         <source>Skip forward 85 seconds</source>
         <translation>Перейти вперед на 85 секунд</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="224"/>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="398"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="221"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="383"/>
         <source>Picture in picture</source>
         <translation>Картинка в картинці</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="239"/>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="411"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="236"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="396"/>
         <source>Windowed mode (F)</source>
         <translation>Віконний режим (F)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="240"/>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="412"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="237"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="397"/>
         <source>Fullscreen (F)</source>
         <translation>Повноекранний режим (F)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="255"/>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="425"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="252"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="410"/>
         <source>Audio - choose a track (T)</source>
         <translation>Аудіо — вибрати доріжку (T)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="272"/>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="440"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="269"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="425"/>
         <source>Subtitles - choose a track (C)</source>
         <translation>Субтитри — вибрати доріжку (C)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="289"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="286"/>
         <source>Cut a short clip from this video</source>
         <translation>Вирізати короткий уривок із цього відео</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="309"/>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="461"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="306"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="446"/>
         <source>Open enhancements</source>
         <translation>Відкрити покращення</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="321"/>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="472"/>
-        <source>More actions, capture and shortcuts</source>
-        <translation>Інші дії, захоплення кадру та гарячі клавіші</translation>
-    </message>
-    <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="334"/>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="484"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="319"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="458"/>
         <source>Quality and speed (Q)</source>
         <translation>Якість і швидкість (Q)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="507"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="481"/>
         <source>Elapsed time</source>
         <translation>Час від початку</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerControls.qml" line="525"/>
+        <location filename="../src/player/quick/qml/PlayerControls.qml" line="499"/>
         <source>Remaining time</source>
         <translation>Час до завершення</translation>
     </message>
@@ -3412,22 +3406,18 @@
 <context>
     <name>PlayerSettings</name>
     <message>
-        <location filename="../src/player/quick/qml/PlayerSettings.qml" line="43"/>
+        <location filename="../src/player/quick/qml/PlayerSettings.qml" line="44"/>
         <source>Player settings</source>
         <translation>Налаштування програвача</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerSettings.qml" line="143"/>
-        <source>Settings</source>
-        <translation>Налаштування</translation>
+        <location filename="../src/player/quick/qml/PlayerSettings.qml" line="137"/>
+        <location filename="../src/player/quick/qml/PlayerSettings.qml" line="159"/>
+        <source>Playback speed</source>
+        <translation>Швидкість відтворення</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerSettings.qml" line="154"/>
-        <source>Close</source>
-        <translation>Закрити</translation>
-    </message>
-    <message>
-        <location filename="../src/player/quick/qml/PlayerSettings.qml" line="316"/>
+        <location filename="../src/player/quick/qml/PlayerSettings.qml" line="357"/>
         <source>Nothing to adjust</source>
         <translation>Немає параметрів для налаштування</translation>
     </message>
@@ -3435,43 +3425,63 @@
 <context>
     <name>PlayerView</name>
     <message>
-        <location filename="../src/player/quick/qml/PlayerView.qml" line="161"/>
+        <location filename="../src/player/quick/qml/PlayerView.qml" line="159"/>
         <source>No media loaded. Drop a file to begin.</source>
         <translation>Медіафайл не завантажено. Перетягніть файл, щоб почати.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerView.qml" line="179"/>
+        <location filename="../src/player/quick/qml/PlayerView.qml" line="177"/>
         <source>No media loaded — drop a file to begin</source>
         <translation>Медіафайл не завантажено — перетягніть файл сюди</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerView.qml" line="188"/>
+        <location filename="../src/player/quick/qml/PlayerView.qml" line="186"/>
         <source>Any local video opens here; subtitle and audio files attach to the current title.</source>
         <translation>Тут відкривається будь-яке локальне відео; файли субтитрів і аудіо додаються до поточного тайтлу.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerView.qml" line="224"/>
+        <location filename="../src/player/quick/qml/PlayerView.qml" line="222"/>
         <source>Preparing comparison</source>
         <translation>Підготовка порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerView.qml" line="390"/>
+        <location filename="../src/player/quick/qml/PlayerView.qml" line="361"/>
+        <source>Minimize</source>
+        <translation>Згорнути</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/qml/PlayerView.qml" line="374"/>
+        <source>Exit fullscreen (F11)</source>
+        <translation>Вийти з повноекранного режиму (F11)</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/qml/PlayerView.qml" line="374"/>
+        <source>Fullscreen (F11)</source>
+        <translation>Повноекранний режим (F11)</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/qml/PlayerView.qml" line="387"/>
+        <source>Close (Esc)</source>
+        <translation>Закрити (Esc)</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/qml/PlayerView.qml" line="456"/>
         <source>%1 dropped</source>
         <translation>%1 відпущено</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerView.qml" line="468"/>
+        <location filename="../src/player/quick/qml/PlayerView.qml" line="534"/>
         <source>Retry</source>
         <translation>Повторити</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerView.qml" line="470"/>
+        <location filename="../src/player/quick/qml/PlayerView.qml" line="536"/>
         <source>Retry loading this stream</source>
         <translation>Повторити завантаження цього потоку</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/PlayerView.qml" line="623"/>
-        <location filename="../src/player/quick/qml/PlayerView.qml" line="627"/>
+        <location filename="../src/player/quick/qml/PlayerView.qml" line="689"/>
+        <location filename="../src/player/quick/qml/PlayerView.qml" line="693"/>
         <source>Drop a video, subtitle or audio file</source>
         <translation>Перетягніть відео, файл субтитрів або аудіо</translation>
     </message>
@@ -3686,7 +3696,7 @@
         <translation>Команд: %1 · сторінка %2 з %3</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="585"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="586"/>
         <source>Team %1</source>
         <translation>Команда %1</translation>
     </message>
@@ -4198,10 +4208,10 @@ If a portable folder was moved, disable startup from the old location before mov
 <context>
     <name>TitlePage</name>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1373"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="1374"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4462"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4657"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1375"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4463"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4658"/>
         <source>Click to open the cover</source>
         <translation>Натисніть, щоб відкрити обкладинку</translation>
     </message>
@@ -4216,7 +4226,7 @@ If a portable folder was moved, disable startup from the old location before mov
         <translation>Не вдалося скопіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4484"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4485"/>
         <source>No cover</source>
         <translation>Немає обкладинки</translation>
     </message>
@@ -9089,444 +9099,444 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mikai::app::TitlePage</name>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="768"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="775"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4686"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="769"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="776"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="4687"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4688"/>
         <source>Back</source>
         <translation>Назад</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="782"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4690"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="783"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4691"/>
         <source>Home</source>
         <translation>На головну</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="805"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="806"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4693"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="807"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="4694"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4695"/>
         <source>API token settings</source>
         <translation>Налаштування токена API</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="863"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4617"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4648"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="864"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4618"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4649"/>
         <source>Loading…</source>
         <translation>Завантаження…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="941"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1201"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2780"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2828"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4776"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="942"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1202"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2781"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2829"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4777"/>
         <source>Watch</source>
         <translation>Дивитися</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="947"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2781"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="948"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2782"/>
         <source>Select an available episode to watch</source>
         <translation>Виберіть доступну серію для перегляду</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1077"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1922"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4697"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1078"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1923"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4698"/>
         <source>Episodes</source>
         <translation>Серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1006"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1683"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2482"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1007"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1684"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2483"/>
         <source>Read more</source>
         <translation>Читати далі</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="963"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="969"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2552"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4744"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="964"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="970"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2553"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4745"/>
         <source>More details</source>
         <translation>Докладніше</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="894"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="895"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="906"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="896"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="907"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1384"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1392"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4706"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="908"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1385"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1393"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="4707"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4710"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4708"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="4711"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4712"/>
         <source>Copy title</source>
         <translation>Скопіювати назву</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1925"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1926"/>
         <source>Jump to episodes</source>
         <translation>Перейти до серій</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="968"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2553"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4746"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="969"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2554"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4747"/>
         <source>Show title details</source>
         <translation>Показати подробиці про тайтл</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1039"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4755"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1040"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4756"/>
         <source>More to explore</source>
         <translation>Більше для перегляду</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1043"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2415"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4752"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1044"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2416"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4753"/>
         <source>Hide</source>
         <translation>Сховати</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1134"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4700"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1135"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4701"/>
         <source>Release</source>
         <translation>Випуск</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1189"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2757"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2845"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1190"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2758"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2846"/>
         <source>Watched</source>
         <translation>Переглянуто</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1222"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4703"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1223"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4704"/>
         <source>Provider</source>
         <translation>Провайдер</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1305"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1330"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4766"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1306"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1331"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4767"/>
         <source>Details</source>
         <translation>Деталі</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1312"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1340"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1313"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="1341"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4769"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1342"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="4770"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4773"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4771"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4774"/>
         <source>Close details</source>
         <translation>Закрити деталі</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1370"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1692"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1371"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="1693"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1761"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1694"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="1762"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2024"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4651"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4661"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1763"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2025"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4652"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4662"/>
         <source>No cover</source>
         <translation>Немає обкладинки</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1674"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2012"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4737"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1675"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2013"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4738"/>
         <source>No description available.</source>
         <translation>Опис відсутній.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1758"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4762"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1759"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4763"/>
         <source>Could not open this title</source>
         <translation>Не вдалося відкрити цей тайтл</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1822"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1823"/>
         <source>unknown</source>
         <translation>невідомо</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1824"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1825"/>
         <source>Aired: %1 · Localized: %2 · Total: %3</source>
         <translation>Випущено: %1 · Локалізовано: %2 · Усього: %3</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1829"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1868"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1830"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1869"/>
         <source>Episode availability</source>
         <translation>Доступність серій</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1839"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1840"/>
         <source>Next episode airing %1 (local time)</source>
         <translation>Наступна серія вийде %1 (за місцевим часом)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1840"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1841"/>
         <source>Episode %1 airs %2 (local time)</source>
         <translation>Серія %1 вийде %2 (за місцевим часом)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1843"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1844"/>
         <source>Next airing: %1</source>
         <translation>Наступний вихід: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1844"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1845"/>
         <source>Episode %1 airing: %2</source>
         <translation>Вихід серії %1: %2</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1872"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1873"/>
         <source>Type</source>
         <translation>Тип</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1875"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1876"/>
         <source>Duration</source>
         <translation>Тривалість</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1875"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1876"/>
         <source>%1 min</source>
         <translation>%1 хв</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1879"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1880"/>
         <source>Status</source>
         <translation>Стан</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1881"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1882"/>
         <source>Season</source>
         <translation>Сезон</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1883"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1884"/>
         <source>Original source</source>
         <translation>Оригінальне джерело</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1887"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1888"/>
         <source>Studio</source>
         <translation>Студія</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1890"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1891"/>
         <source>Country</source>
         <translation>Країна</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1892"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1893"/>
         <source>Age rating</source>
         <translation>Віковий рейтинг</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2003"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2004"/>
         <source>Genres</source>
         <translation>Жанри</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2004"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2005"/>
         <source>Tags</source>
         <translation>Теги</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2010"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2011"/>
         <source>Synopsis</source>
         <translation>Опис</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2038"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2039"/>
         <source>Mikai</source>
         <translation>Mikai</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2201"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4810"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2202"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4811"/>
         <source>Previous page</source>
         <translation>Попередня сторінка</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2203"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4813"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2204"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4814"/>
         <source>Next page</source>
         <translation>Наступна сторінка</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2252"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4828"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2253"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4829"/>
         <source>Poster unavailable</source>
         <translation>Постер недоступний</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2415"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4752"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2416"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4753"/>
         <source>Show</source>
         <translation>Показати</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2482"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2483"/>
         <source>Show less</source>
         <translation>Показати менше</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2552"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4744"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2553"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4745"/>
         <source>Hide details</source>
         <translation>Сховати деталі</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2553"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4745"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2554"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4746"/>
         <source>Hide title details</source>
         <translation>Сховати подробиці про тайтл</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2668"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2669"/>
         <source>%1, %2</source>
         <translation>%1, %2</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2670"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2671"/>
         <source>%1 — unavailable</source>
         <translation>%1 — недоступна</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2679"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2680"/>
         <source>%1 — no video for this player</source>
         <translation>%1 — немає відео для цього плеєра</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2687"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2833"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2837"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2688"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2834"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2838"/>
         <source>%1 — watch</source>
         <translation>%1 — дивитися</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2689"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2690"/>
         <source>current episode</source>
         <translation>поточна серія</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2692"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2693"/>
         <source>watched episode</source>
         <translation>переглянута серія</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2754"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2755"/>
         <source>Current</source>
         <translation>Поточна</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2760"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2805"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2761"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2806"/>
         <source>Unavailable</source>
         <translation>Недоступно</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2807"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4074"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2808"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4075"/>
         <source>No video available</source>
         <translation>Відео недоступне</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2828"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2829"/>
         <source>Continue</source>
         <translation>Продовжити</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2834"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2838"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3972"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4028"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4077"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2835"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2839"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3973"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4029"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4078"/>
         <source>This player has no video for this episode</source>
         <translation>У цьому плеєрі немає відео для цієї серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2845"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4115"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2846"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4116"/>
         <source>Mark as watched</source>
         <translation>Позначити як переглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2846"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2847"/>
         <source>Mark this episode as unwatched</source>
         <translation>Позначити цю серію як непереглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2847"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2848"/>
         <source>Mark this episode as watched</source>
         <translation>Позначити цю серію як переглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2850"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2851"/>
         <source>%1 — mark as unwatched</source>
         <translation>%1 — позначити як непереглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2851"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2852"/>
         <source>%1 — mark as watched</source>
         <translation>%1 — позначити як переглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2866"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3369"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2867"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3370"/>
         <source>Manga canon</source>
         <translation>Канон манґи</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2867"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3371"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2868"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3372"/>
         <source>Anime canon</source>
         <translation>Канон аніме</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2868"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3372"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2869"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3373"/>
         <source>Filler</source>
         <translation>Філер</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2869"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3370"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2870"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3371"/>
         <source>Mixed</source>
         <translation>Змішане</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2883"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2884"/>
         <source>This title is licensed, but license details were not provided by the API.</source>
         <translation>Цей тайтл ліцензовано, але API не надав відомостей про ліцензію.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2884"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2885"/>
         <source>Licensed information: %1</source>
         <translation>Відомості про ліцензію: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2886"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4619"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2887"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4620"/>
         <source>Playback unavailable due to licensing</source>
         <translation>Відтворення недоступне через ліцензійні обмеження</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/app/pages/TitlePage.cpp" line="2901"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2902"/>
         <source>%n episode(s)</source>
         <translation>
             <numerusform>%n серія</numerusform>
@@ -9535,14 +9545,14 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         </translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2939"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2960"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2987"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2940"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2961"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2988"/>
         <source> (collab)</source>
         <translation> (колаб)</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/app/pages/TitlePage.cpp" line="2964"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2965"/>
         <source> · %n episode(s)</source>
         <translation>
             <numerusform> · %n серія</numerusform>
@@ -9551,308 +9561,308 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         </translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2971"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2972"/>
         <source>Right-click to browse releases from %1</source>
         <translation>Правий клік — переглянути релізи %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3168"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3169"/>
         <source>Browse %1 releases</source>
         <translation>Переглянути релізи %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3169"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3170"/>
         <source>Browse titles from %1</source>
         <translation>Переглянути тайтли від %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3319"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4881"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3320"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4882"/>
         <source>Episode number</source>
         <translation>Номер серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3320"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4882"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3321"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4883"/>
         <source>Jump to episode</source>
         <translation>Перейти до серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3339"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3340"/>
         <source>Episode not found</source>
         <translation>Серію не знайдено</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3368"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4886"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3369"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4887"/>
         <source>All</source>
         <translation>Усі</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3574"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4889"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3575"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4890"/>
         <source>Show entire range</source>
         <translation>Показати весь діапазон</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3741"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3763"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3742"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3764"/>
         <source>Failed to copy title</source>
         <translation>Не вдалося скопіювати назву</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3743"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3765"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3744"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3766"/>
         <source>Title copied</source>
         <translation>Назву скопійовано</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3944"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3945"/>
         <source>Explicit content</source>
         <translation>Відвертий контент</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3944"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3945"/>
         <source>This title is rated 18+. Start playback?</source>
         <translation>Цей тайтл має рейтинг 18+. Почати відтворення?</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="3987"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4075"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="3988"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4076"/>
         <source>Loading quality options…</source>
         <translation>Завантаження варіантів якості…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4030"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4031"/>
         <source>Failed to load episode qualities</source>
         <translation>Не вдалося завантажити варіанти якості серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4038"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4039"/>
         <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="167"/>
         <source>Could not find a stream for this episode</source>
         <translation>Не вдалося знайти потік для цієї серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4068"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4069"/>
         <source>Copy to clipboard</source>
         <translation>Копіювати до буфера обміну</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4069"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4070"/>
         <source>Page URL</source>
         <translation>URL сторінки</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4070"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4071"/>
         <source>Copy the episode page URL</source>
         <translation>Копіювати URL сторінки серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4078"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4079"/>
         <source>Fetching direct video links</source>
         <translation>Отримання прямих посилань на відео</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4088"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4089"/>
         <source>%1p</source>
         <translation>%1p</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4117"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4118"/>
         <source>Add this episode to watched</source>
         <translation>Додати цю серію до переглянутих</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4121"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4122"/>
         <source>Unwatch</source>
         <translation>Позначити як непереглянуту</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4123"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4124"/>
         <source>Remove this episode from watched</source>
         <translation>Прибрати цю серію з переглянутих</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4153"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4154"/>
         <source>Watch all previous</source>
         <translation>Позначити всі попередні переглянутими</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4165"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4166"/>
         <source>Unwatch all previous</source>
         <translation>Позначити всі попередні непереглянутими</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4178"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4179"/>
         <source>Open in external player</source>
         <translation>Відкрити у зовнішньому плеєрі</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4179"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4180"/>
         <source>Open the best quality in mpv or VLC</source>
         <translation>Відкрити найкращу якість у mpv або VLC</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4182"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4183"/>
         <source>Open in browser</source>
         <translation>Відкрити у браузері</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4183"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4184"/>
         <source>Open the episode page</source>
         <translation>Відкрити сторінку серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4191"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4192"/>
         <source>Failed to copy link</source>
         <translation>Не вдалося скопіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4194"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4195"/>
         <source>Direct link copied (%1p)</source>
         <translation>Пряме посилання скопійовано (%1p)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4198"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4199"/>
         <source>Failed to copy episode URL</source>
         <translation>Не вдалося скопіювати URL серії</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4202"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4203"/>
         <source>URL copied (no video available for this player)</source>
         <translation>URL скопійовано (для цього плеєра немає відео)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4203"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4204"/>
         <source>URL copied</source>
         <translation>URL скопійовано</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4212"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4213"/>
         <source>Link blocked</source>
         <translation>Посилання заблоковано</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4216"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4217"/>
         <source>Opened in browser</source>
         <translation>Відкрито у браузері</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4218"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4219"/>
         <source>Failed to open in browser</source>
         <translation>Не вдалося відкрити у браузері</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4231"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4232"/>
         <source>No available video quality found</source>
         <translation>Не знайдено доступних варіантів якості відео</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4245"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4246"/>
         <source>External player not found — install mpv or VLC</source>
         <translation>Зовнішній плеєр не знайдено — встановіть mpv або VLC</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4254"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4255"/>
         <source>Opened in %1 · %2p</source>
         <translation>Відкрито в %1 · %2p</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4256"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4257"/>
         <source>Failed to launch %1</source>
         <translation>Не вдалося запустити %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4520"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4521"/>
         <source>Copy cover URL</source>
         <translation>Копіювати URL обкладинки</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4521"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4522"/>
         <source>Copy image address</source>
         <translation>Копіювати адресу зображення</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4524"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4525"/>
         <source>Save cover…</source>
         <translation>Зберегти обкладинку…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4525"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4526"/>
         <source>Save image to file</source>
         <translation>Зберегти зображення у файл</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4536"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4537"/>
         <source>Failed to copy cover URL</source>
         <translation>Не вдалося скопіювати URL обкладинки</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4539"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4540"/>
         <source>Cover URL copied</source>
         <translation>URL обкладинки скопійовано</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4550"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4551"/>
         <source>Save cover</source>
         <translation>Зберегти обкладинку</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4550"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4551"/>
         <source>cover.%1</source>
         <translation>cover.%1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4551"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4552"/>
         <source>Images (*.png *.jpg *.webp)</source>
         <translation>Зображення (*.png *.jpg *.webp)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4556"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4557"/>
         <source>Cover saved: %1</source>
         <translation>Обкладинку збережено: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4558"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4559"/>
         <source>Failed to save cover</source>
         <translation>Не вдалося зберегти обкладинку</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4591"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4608"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4722"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4592"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4609"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4723"/>
         <source>Episode status</source>
         <translation>Стан серій</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4621"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4622"/>
         <source>No releases available</source>
         <translation>Немає доступних релізів</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4623"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4624"/>
         <source>No sources in this release</source>
         <translation>У цьому релізі немає джерел</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4634"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4635"/>
         <source>Related titles</source>
         <translation>Пов’язані тайтли</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4637"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4638"/>
         <source>Similar anime</source>
         <translation>Схожі аніме</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="4640"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="4641"/>
         <source>Recommended on Mikai</source>
         <translation>Рекомендоване на Mikai</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2789"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="2907"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2790"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="2908"/>
         <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="793"/>
         <source>Episode %1</source>
         <translation>Серія %1</translation>
@@ -9863,10 +9873,10 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Термін дії потоку минув — оновлення URL…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/TitlePage.cpp" line="158"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="159"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1941"/>
-        <location filename="../src/app/pages/TitlePage.cpp" line="1986"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="160"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1942"/>
+        <location filename="../src/app/pages/TitlePage.cpp" line="1987"/>
         <source>Show titles in %1</source>
         <translation>Показати тайтли в «%1»</translation>
     </message>
@@ -10465,105 +10475,75 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::quick::PlayerController</name>
     <message>
-        <location filename="../src/player/quick/PlayerController.cpp" line="273"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="274"/>
         <source>The media source changed before the reference frame could be captured.</source>
         <translation>Джерело медіа змінилося, перш ніж вдалося захопити опорний кадр.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerController.cpp" line="376"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="377"/>
         <source>Could not open the player window: %1</source>
         <translation>Не вдалося відкрити вікно програвача: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerController.cpp" line="507"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="512"/>
         <source>Native processing did not acknowledge its stop; the player stays open so it can be retried.</source>
         <translation>Нативна обробка не підтвердила зупинку; плеєр залишається відкритим для повторної спроби.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerController.cpp" line="546"/>
-        <location filename="../src/player/quick/PlayerController.cpp" line="574"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="551"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="579"/>
         <source>No media loaded — drop a file to begin</source>
         <translation>Медіафайл не завантажено — перетягніть файл сюди</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerController.cpp" line="586"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="591"/>
         <source>Volume %1%</source>
         <translation>Гучність %1%</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerController.cpp" line="597"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="602"/>
         <source>Muted</source>
         <translation>Звук вимкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerController.cpp" line="597"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="602"/>
         <source>Unmuted</source>
         <translation>Звук увімкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerController.cpp" line="607"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="612"/>
         <source>Speed %1×</source>
         <translation>Швидкість %1×</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="937"/>
-        <source>Slow</source>
-        <translation>Повільна</translation>
-    </message>
-    <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="937"/>
-        <source>Normal</source>
-        <translation>Нормальна</translation>
-    </message>
-    <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="938"/>
-        <source>Slightly faster</source>
-        <translation>Трохи швидше</translation>
-    </message>
-    <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="938"/>
-        <source>Fast</source>
-        <translation>Швидка</translation>
-    </message>
-    <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="939"/>
-        <source>Very fast</source>
-        <translation>Дуже швидка</translation>
-    </message>
-    <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="939"/>
-        <source>Double speed</source>
-        <translation>Подвійна швидкість</translation>
-    </message>
-    <message>
-        <location filename="../src/player/quick/PlayerController.cpp" line="625"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="630"/>
         <source>In desktop settings, choose Mikai Ja Nai under Default Applications. Your defaults have not been changed.</source>
         <translation>У налаштуваннях робочого середовища виберіть Mikai Ja Nai у розділі «Типові програми». Ваші типові програми не змінено.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerController.cpp" line="628"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="633"/>
         <source>Choose Mikai Ja Nai in Windows Default Apps. Your defaults have not been changed.</source>
         <translation>Виберіть Mikai Ja Nai у налаштуваннях типових програм Windows. Ваші типові програми не змінено.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerController.cpp" line="660"/>
-        <location filename="../src/player/quick/PlayerController.cpp" line="910"/>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="437"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="665"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="924"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="460"/>
         <source>Could not play the stream</source>
         <translation>Не вдалося відтворити потік</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerController.cpp" line="821"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="835"/>
         <source>Picture in picture</source>
         <translation>Картинка в картинці</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerController.cpp" line="971"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="985"/>
         <source>Opening stream…</source>
         <translation>Відкриття потоку…</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerController.cpp" line="1186"/>
+        <location filename="../src/player/quick/PlayerController.cpp" line="1199"/>
         <source>Player — %1</source>
         <translation>Плеєр — %1</translation>
     </message>
@@ -10583,192 +10563,202 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Посилання на потік застаріло — оновлення</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="331"/>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="1372"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="335"/>
+        <source>Switched to Auto (%1p)</source>
+        <translation>Перемкнуто на Авто (%1p)</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="341"/>
+        <source>Quality set to Auto</source>
+        <translation>Якість встановлено на Авто</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="354"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="1367"/>
         <source>Switching to %1p…</source>
         <translation>Перемикання на %1p…</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="334"/>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="1375"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="357"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="1370"/>
         <source>%1p is not available for this release</source>
         <translation>%1p недоступно для цього релізу</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="557"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="580"/>
         <source>Continued from %1</source>
         <translation>Продовжено з %1</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="560"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="583"/>
         <source>Starting from the beginning</source>
         <translation>Початок з нуля</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="626"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="649"/>
         <source>Playing local file</source>
         <translation>Відтворення локального файлу</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="646"/>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="651"/>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1291"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="669"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="674"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1314"/>
         <source>The subtitle could not be loaded.</source>
         <translation>Не вдалося завантажити субтитри.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="653"/>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1003"/>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1298"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="676"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1026"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1321"/>
         <source>Subtitle attached</source>
         <translation>Субтитри додано</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="666"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="689"/>
         <source>Failed to copy link</source>
         <translation>Не вдалося скопіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="669"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="692"/>
         <source>Video link copied</source>
         <translation>Посилання на відео скопійовано</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="678"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="701"/>
         <source>No frame to copy</source>
         <translation>Немає кадру для копіювання</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="684"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="707"/>
         <source>Could not read the current frame</source>
         <translation>Не вдалося прочитати поточний кадр</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="688"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="711"/>
         <source>Failed to copy frame</source>
         <translation>Не вдалося скопіювати кадр</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="691"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="714"/>
         <source>Frame copied (%1×%2)</source>
         <translation>Кадр скопійовано (%1×%2)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="700"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="723"/>
         <source>This source is a stream — it has no folder</source>
         <translation>Це потокове відео — у нього немає локальної папки</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="707"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="730"/>
         <source>The video file is no longer there</source>
         <translation>Відеофайл більше не існує за вказаним шляхом</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="712"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="735"/>
         <source>Could not open the containing folder</source>
         <translation>Не вдалося відкрити папку з файлом</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="715"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="738"/>
         <source>Containing folder opened</source>
         <translation>Папку з файлом відкрито</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="760"/>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="765"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="783"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="788"/>
         <source>No video to compare</source>
         <translation>Немає відео для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="770"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="793"/>
         <source>Shaders folder not found — comparison is unavailable</source>
         <translation>Папку шейдерів не знайдено — порівняння недоступне</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="775"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="798"/>
         <source>Not enough variants to compare</source>
         <translation>Недостатньо варіантів для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="874"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="897"/>
         <source>A seekable video timeline is not available</source>
         <translation>Шкала часу відео з можливістю перемотування недоступна</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="969"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="992"/>
         <source>No other audio tracks available</source>
         <translation>Інших аудіодоріжок немає</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="983"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1006"/>
         <source>External audio needs a local video</source>
         <translation>Зовнішній звук потребує локального відео</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="987"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1010"/>
         <source>Subtitles (*.srt *.ass *.ssa *.vtt *.sub);;All files (*)</source>
         <translation>Субтитри (*.srt *.ass *.ssa *.vtt *.sub);;Усі файли (*)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="988"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1011"/>
         <source>Audio (*.mka *.aac *.ac3 *.flac *.mp3 *.opus *.ogg *.wav);;All files (*)</source>
         <translation>Аудіо (*.mka *.aac *.ac3 *.flac *.mp3 *.opus *.ogg *.wav);;Усі файли (*)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="991"/>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="427"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1014"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="435"/>
         <source>Select subtitles from disk…</source>
         <translation>Вибрати субтитри з диска…</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="991"/>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="427"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1014"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="435"/>
         <source>Select audio from disk…</source>
         <translation>Вибрати звук з диска…</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1000"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1023"/>
         <source>The track could not be loaded.</source>
         <translation>Не вдалося завантажити доріжку.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1003"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1026"/>
         <source>Audio track attached</source>
         <translation>Аудіодоріжку додано</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1015"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1038"/>
         <source>Subtitle delay %1 s</source>
         <translation>Затримка субтитрів %1 с</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1024"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1047"/>
         <source>Subtitle delay 0.0 s</source>
         <translation>Затримка субтитрів 0,0 с</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1139"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1162"/>
         <source>Enter a title or release name.</source>
         <translation>Введіть назву тайтлу або релізу.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1145"/>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1231"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1168"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1254"/>
         <source>Add your OpenSubtitles API key in Settings › Access.</source>
         <translation>Додайте ключ API OpenSubtitles у розділі «Налаштування › Доступ».</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1152"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1175"/>
         <source>Searching…</source>
         <translation>Пошук…</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1222"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1245"/>
         <source>Nothing found for that title.</source>
         <translation>За цією назвою нічого не знайдено.</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1223"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1246"/>
         <source>%n subtitle(s) found</source>
         <translation>
             <numerusform>Знайдено субтитрів: %n</numerusform>
@@ -10777,27 +10767,27 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         </translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1241"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1264"/>
         <source>Downloading…</source>
         <translation>Завантаження…</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1275"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1298"/>
         <source>No temporary folder for the subtitle.</source>
         <translation>Немає тимчасової папки для субтитрів.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1283"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1306"/>
         <source>The subtitle could not be written.</source>
         <translation>Не вдалося записати субтитри.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1295"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1318"/>
         <source>Attached.</source>
         <translation>Додано.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1320"/>
+        <location filename="../src/player/quick/PlayerControllerMedia.cpp" line="1343"/>
         <source>%1 · %2 · %3 downloads</source>
         <translation>%1 · %2 · завантажень: %3</translation>
     </message>
@@ -10881,16 +10871,16 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     <message>
         <location filename="../src/player/quick/PlayerControllerProcessing.cpp" line="651"/>
         <location filename="../src/player/quick/PlayerControllerProcessing.cpp" line="881"/>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="536"/>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="663"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="544"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="671"/>
         <source>Unavailable · %1</source>
         <translation>Недоступно · %1</translation>
     </message>
     <message>
         <location filename="../src/player/quick/PlayerControllerProcessing.cpp" line="654"/>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="360"/>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="527"/>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="650"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="368"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="535"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="658"/>
         <source>Off</source>
         <translation>Вимкнено</translation>
     </message>
@@ -10975,382 +10965,387 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="207"/>
+        <source>Video scaling</source>
+        <translation>Масштабування відео</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="215"/>
         <source>Subtitles</source>
         <translation>Субтитри</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="208"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="216"/>
         <source>Attach subtitles from disk or search OpenSubtitles</source>
         <translation>Додати субтитри з диска або знайти в OpenSubtitles</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="217"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="225"/>
         <source>Keyboard shortcuts  (?)</source>
         <translation>Гарячі клавіші  (?)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="224"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="232"/>
         <source>Exit  (Esc)</source>
         <translation>Вийти  (Esc)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="254"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="262"/>
         <source>Pause / play</source>
         <translation>Пауза / відтворення</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="255"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="263"/>
         <source>Fullscreen / windowed</source>
         <translation>На весь екран / у вікні</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="256"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="264"/>
         <source>Mute / unmute audio</source>
         <translation>Вимкнути / увімкнути звук</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="257"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="265"/>
         <source>Episode list</source>
         <translation>Список серій</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="258"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="266"/>
         <source>Choose audio track</source>
         <translation>Вибрати аудіодоріжку</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="259"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="267"/>
         <source>Choose subtitle track</source>
         <translation>Вибрати субтитри</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="260"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="268"/>
         <source>Quality, speed and scaling</source>
         <translation>Якість, швидкість і масштабування</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="261"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="269"/>
         <source>Seek ∓5 s</source>
         <translation>Перемотування ∓5 с</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="262"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="270"/>
         <source>Volume ±10 %</source>
         <translation>Гучність ±10 %</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="263"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="271"/>
         <source>Close panel / window</source>
         <translation>Закрити панель / вікно</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="264"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="272"/>
         <source>Show keyboard shortcuts in player</source>
         <translation>Показати комбінації клавіш у програвачі</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="265"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="273"/>
         <source>Search from the search field</source>
         <translation>Шукати з поля пошуку</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="266"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="274"/>
         <source>Jump through home feed rows</source>
         <translation>Переміщатися між рядками головної стрічки</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="267"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="275"/>
         <source>Scroll title rows or change provider</source>
         <translation>Прокручувати рядки назв або змінювати джерело</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="268"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="276"/>
         <source>Adjust volume over the player volume control</source>
         <translation>Регулювати гучність за допомогою регулятора гучності програвача</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="269"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="277"/>
         <source>Toggle player fullscreen</source>
         <translation>Перемкнути повноекранний режим програвача</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="270"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="278"/>
         <source>Compare: fit / swap / recapture / pin</source>
         <translation>Порівняння: вписати / поміняти місцями / захопити знову / закріпити</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="271"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="279"/>
         <source>Compare: hold to peek at side A</source>
         <translation>Порівняння: утримуйте, щоб побачити сторону A</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="272"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="280"/>
         <source>Cover viewer: zoom in / out / reset</source>
         <translation>Перегляд обкладинки: збільшити / зменшити / скинути масштаб</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="301"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="309"/>
         <source>Prepare</source>
         <translation>Підготувати</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="302"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="310"/>
         <source>Open processing and prepare this graph</source>
         <translation>Відкрити обробку та підготувати цей граф</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="308"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="316"/>
         <source>Settings</source>
         <translation>Налаштування</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="308"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="316"/>
         <source>Providers</source>
         <translation>Провайдери</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="309"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="317"/>
         <source>Open processing and component settings</source>
         <translation>Відкрити налаштування обробки та компонентів</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="310"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="318"/>
         <source>Choose the processing provider</source>
         <translation>Вибрати провайдера обробки</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="316"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="324"/>
         <source>Turn off AnimeJaNai</source>
         <translation>Вимкнути AnimeJaNai</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="316"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="324"/>
         <source>Original</source>
         <translation>Оригінал</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="317"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="325"/>
         <source>Stop AnimeJaNai processing</source>
         <translation>Зупинити обробку AnimeJaNai</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="318"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="326"/>
         <source>Stay on the Original picture</source>
         <translation>Залишити оригінальне зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="369"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="377"/>
         <source>Audio track %1</source>
         <translation>Аудіодоріжка %1</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="370"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="378"/>
         <source>Subtitle track %1</source>
         <translation>Доріжка субтитрів %1</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="374"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="382"/>
         <source>%1 ch</source>
         <translation>%1 кан.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="375"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="383"/>
         <source>External</source>
         <translation>Зовнішня</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="376"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="384"/>
         <source>Forced</source>
         <translation>Примусова</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="377"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="385"/>
         <source>Default</source>
         <translation>Типова</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="437"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="445"/>
         <source>Subtitle delay · %1 s</source>
         <translation>Затримка субтитрів · %1 с</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="449"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="457"/>
         <source>0.1 s earlier  (−0.1)</source>
         <translation>0,1 с раніше  (−0,1)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="450"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="458"/>
         <source>0.1 s later  (+0.1)</source>
         <translation>0,1 с пізніше  (+0,1)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="454"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="462"/>
         <source>Reset delay  (0.0 s)</source>
         <translation>Скинути затримку  (0,0 с)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="478"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="486"/>
         <source>Restore (Anime4K)</source>
         <translation>Відновлення (Anime4K)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="478"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="486"/>
         <source>Anime4K restoration shaders</source>
         <translation>Шейдери відновлення Anime4K</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="480"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="488"/>
         <source>Upscale</source>
         <translation>Масштабування</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="480"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="488"/>
         <source>AnimeJaNai models, spatial upscalers, and optional graphs</source>
         <translation>Моделі AnimeJaNai, просторові засоби масштабування та додаткові графи</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="482"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="490"/>
         <source>Interpolation (RIFE)</source>
         <translation>Інтерполяція (RIFE)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="482"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="490"/>
         <source>Temporal frame interpolation models</source>
         <translation>Моделі інтерполяції кадрів у часі</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="484"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="492"/>
         <source>Backend</source>
         <translation>Бекенд</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="484"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="492"/>
         <source>Standard AnimeJaNai execution backend</source>
         <translation>Стандартний бекенд виконання AnimeJaNai</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="528"/>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="651"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="536"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="659"/>
         <source>Disable the Standard AnimeJaNai preset; Anime4K is unchanged.</source>
         <translation>Вимкнути стандартний пресет AnimeJaNai; Anime4K не зміниться.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="537"/>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="664"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="545"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="672"/>
         <source>This model is no longer in the catalogue. The selection is kept until you choose another.</source>
         <translation>Цієї моделі більше немає в каталозі. Вибір зберігається, доки ви не оберете іншу.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="570"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="578"/>
         <source>RIFE v%1</source>
         <translation>RIFE v%1</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="584"/>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="711"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="592"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="719"/>
         <source>Unavailable: %1</source>
         <translation>Недоступно: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="600"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="608"/>
         <source>TensorRT</source>
         <translation>TensorRT</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="601"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="609"/>
         <source>TensorRT for RTX</source>
         <translation>TensorRT for RTX</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="602"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="610"/>
         <source>DirectML</source>
         <translation>DirectML</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="618"/>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="631"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="626"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="639"/>
         <source>Not installed. Install it in Settings › Components.</source>
         <translation>Не встановлено. Установіть його в розділі «Налаштування › Компоненти».</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="620"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="628"/>
         <source>In-process TensorRT-RTX 1.7 engine builds; CUDA GPUs, Windows only.</source>
         <translation>Збирання рушіїв TensorRT-RTX 1.7 у процесі застосунку; GPU CUDA, лише Windows.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="627"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="635"/>
         <source>TensorRT for RTX has no published runtime on this platform. The saved RTX request is kept but cannot run.</source>
         <translation>TensorRT for RTX не має опублікованого середовища виконання на цій платформі. Збережений запит RTX зберігається, але не може виконуватися.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="656"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="664"/>
         <source>Profiles</source>
         <translation>Профілі</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="657"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="665"/>
         <source>Spatial models</source>
         <translation>Просторові моделі</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="658"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="666"/>
         <source>Optional upscalers</source>
         <translation>Додаткові засоби масштабування</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="690"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="698"/>
         <source>Models %1–%2</source>
         <translation>Моделі %1–%2</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="752"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="760"/>
         <source>Custom models</source>
         <translation>Власні моделі</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="781"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="789"/>
         <source>%1  · installed</source>
         <translation>%1  · встановлено</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="782"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="790"/>
         <source>%1  · download…</source>
         <translation>%1  · завантажити…</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="783"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="791"/>
         <source>Stored under the app-owned model folder</source>
         <translation>Зберігається в папці моделей застосунку</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="784"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="792"/>
         <source>Opens Settings › Upscalers to download it</source>
         <translation>Відкриває «Налаштування › Збільшення» для завантаження</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="794"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="802"/>
         <source>Settings · manage upscalers</source>
         <translation>Налаштування · керування засобами масштабування</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="840"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="848"/>
         <source>From disk…</source>
         <translation>З диска…</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="847"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="855"/>
         <source>OpenSubtitles…</source>
         <translation>OpenSubtitles…</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="848"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="856"/>
         <source>Search subtitles by title and language</source>
         <translation>Пошук субтитрів за назвою та мовою</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="929"/>
-        <source>SPEED</source>
-        <translation>ШВИДКІСТЬ</translation>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="922"/>
+        <source>Auto</source>
+        <translation>Авто</translation>
     </message>
     <message>
         <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="953"/>
@@ -11359,32 +11354,27 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
     </message>
     <message>
         <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="960"/>
-        <source>QUALITY</source>
-        <translation>ЯКІСТЬ</translation>
-    </message>
-    <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="969"/>
         <source>Make mikai the default video player</source>
         <translation>Зробити mikai типовим відеопрогравачем</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="984"/>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="985"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="975"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="976"/>
         <source>Episode %1</source>
         <translation>Серія %1</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="1022"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="1013"/>
         <source>Skip segment</source>
         <translation>Пропустити сегмент</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="1022"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="1013"/>
         <source>Skip %1</source>
         <translation>Пропустити %1</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="1023"/>
+        <location filename="../src/player/quick/PlayerControllerMenus.cpp" line="1014"/>
         <source>Jump to %1</source>
         <translation>Перейти до %1</translation>
     </message>
@@ -11417,13 +11407,13 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <translation>Відеоповерхню програвача прив’язано до іншого сеансу.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerWindow.cpp" line="212"/>
+        <location filename="../src/player/quick/PlayerWindow.cpp" line="213"/>
         <source>The player scene could not be created.</source>
         <translation>Не вдалося створити сцену програвача.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/PlayerWindow.cpp" line="481"/>
-        <location filename="../src/player/quick/PlayerWindow.cpp" line="502"/>
+        <location filename="../src/player/quick/PlayerWindow.cpp" line="487"/>
+        <location filename="../src/player/quick/PlayerWindow.cpp" line="508"/>
         <source>The video surface is not available.</source>
         <translation>Відеоповерхня недоступна.</translation>
     </message>

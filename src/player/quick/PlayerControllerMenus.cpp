@@ -916,11 +916,23 @@ void PlayerController::rebuildQualityMenu() {
     std::sort(heights.begin(), heights.end(), std::greater<int>());
     heights.erase(std::unique(heights.begin(), heights.end()), heights.end());
     QVector<Row> rows;
+    if (heights.size() > 1) {
+        Row autoRow;
+        autoRow.id = QStringLiteral("quality.auto");
+        autoRow.label = tr("Auto");
+        if (currentHeight_ > 0) {
+            autoRow.detail = QStringLiteral("%1p").arg(currentHeight_);
+        }
+        autoRow.selected = autoQuality_;
+        autoRow.action = Action::SelectQuality;
+        autoRow.value = QStringLiteral("0");
+        rows.append(autoRow);
+    }
     for (int height : heights) {
         Row row;
         row.id = QStringLiteral("quality.") + QString::number(height);
         row.label = QStringLiteral("%1p").arg(height);
-        row.selected = height == currentHeight_;
+        row.selected = !autoQuality_ && (height == currentHeight_);
         row.action = Action::SelectQuality;
         row.value = QString::number(height);
         rows.append(row);
@@ -932,45 +944,16 @@ void PlayerController::rebuildQualityMenu() {
 void PlayerController::rebuildSettingsMenu() {
     if (settingsMenu_ == nullptr) return;
     QVector<Row> rows;
-    Row speedHeading;
-    speedHeading.id = QStringLiteral("settings.speed.heading");
-    speedHeading.label = tr("SPEED");
-    speedHeading.heading = true;
-    rows.append(speedHeading);
-    struct Preset {
-        double speed;
-        const char* label;
-    };
-    static const Preset presets[] = {
-        {0.5, QT_TR_NOOP("Slow")},         {1.0, QT_TR_NOOP("Normal")},
-        {1.2, QT_TR_NOOP("Slightly faster")}, {1.5, QT_TR_NOOP("Fast")},
-        {1.7, QT_TR_NOOP("Very fast")}, {2.0, QT_TR_NOOP("Double speed")},
-    };
-    for (const Preset& preset : presets) {
-        Row row;
-        row.id = QStringLiteral("settings.speed.") + QString::number(preset.speed);
-        row.label = tr(preset.label);
-        row.detail = QStringLiteral("%1×").arg(preset.speed, 0, 'f', 1);
-        row.selected = qFuzzyCompare(speed_, preset.speed);
-        row.action = Action::SetSpeed;
-        row.value = QString::number(preset.speed);
-        rows.append(row);
+    if (qualityMenu_ != nullptr) {
+        for (const Row& row : qualityMenu_->rows()) rows.append(row);
     }
+
     Row scaleHeading;
     scaleHeading.id = QStringLiteral("settings.scale.heading");
     scaleHeading.label = tr("SCALING");
     scaleHeading.heading = true;
     rows.append(scaleHeading);
     for (const Row& row : videoScaleModeRows()) rows.append(row);
-
-    Row qualityHeading;
-    qualityHeading.id = QStringLiteral("settings.quality.heading");
-    qualityHeading.label = tr("QUALITY");
-    qualityHeading.heading = true;
-    rows.append(qualityHeading);
-    if (qualityMenu_ != nullptr) {
-        for (const Row& row : qualityMenu_->rows()) rows.append(row);
-    }
 
     Row defaultPlayer;
     defaultPlayer.id = QStringLiteral("settings.defaultPlayer");

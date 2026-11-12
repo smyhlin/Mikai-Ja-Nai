@@ -4,9 +4,8 @@ import QtQuick
 import QtQuick.Controls.Basic
 import Mikai.Player
 
-// Player settings flyout: the settings menu level rendered as an in-scene
-// panel. Adjustment rows (speed, scale mode, volume) keep the panel open so
-// values can be changed repeatedly; rows that open another surface close it.
+// Player settings flyout: playback speed slider at the top with divider,
+// followed by sorted quality options and player adjustments.
 PlayerPanel {
     id: panel
 
@@ -19,7 +18,7 @@ PlayerPanel {
     objectName: "player.settings"
     readonly property string menuId: "settings"
     readonly property PlayerMenuModel menuModel: controller.settingsMenu
-    readonly property int rowHeight: 32
+    readonly property int rowHeight: 34
     readonly property int edgeMargin: 8
     readonly property color textColor: controller.darkTheme ? "#f4f4f5" : "#101014"
     readonly property color mutedColor: controller.darkTheme ? "#a1a1aa" : "#5a5a63"
@@ -29,14 +28,16 @@ PlayerPanel {
                                                 controller.darkTheme ? 0.18 : 0.12)
     readonly property real sceneWidth: sceneItem ? sceneItem.width : 640
     readonly property real sceneHeight: sceneItem ? sceneItem.height : 720
-    readonly property real panelWidth: Math.min(340, Math.max(1, sceneWidth - edgeMargin * 2))
-    readonly property int maxBodyHeight: Math.max(1, sceneHeight - edgeMargin * 2 - 60)
+    readonly property real panelWidth: Math.min(260, Math.max(1, sceneWidth - edgeMargin * 2))
+    readonly property int maxBodyHeight: Math.max(1, sceneHeight - edgeMargin * 2
+                                                  - speedControl.height - 8 - padding * 2)
     width: panelWidth
     height: Math.min(sceneHeight - edgeMargin * 2,
-                     padding * 2 + panelHeader.height + (list.count > 0
-                                                    ? Math.min(list.contentHeight, maxBodyHeight)
-                                                    : Math.max(44, emptyLabel.implicitHeight + 16)))
-    padding: 8
+                     padding * 2 + speedControl.height + 8
+                     + (list.count > 0
+                        ? Math.min(list.contentHeight, maxBodyHeight)
+                        : Math.max(44, emptyLabel.implicitHeight + 16)))
+    padding: 10
     z: 20
 
     Accessible.role: Accessible.PopupMenu
@@ -130,38 +131,77 @@ PlayerPanel {
     }
 
     Item {
-        id: panelHeader
+        id: speedControl
         width: panel.width - panel.padding * 2
-        height: 30
+        height: 32
+        Accessible.name: qsTr("Playback speed")
 
         Text {
+            id: speedLabel
             anchors.left: parent.left
-            anchors.right: closeButton.left
-            anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            elide: Text.ElideRight
-            text: qsTr("Settings")
+            text: Number(panel.controller.rate).toFixed(1) + "x"
             color: panel.textColor
-            font.pixelSize: 12
+            font.pixelSize: 13
             font.weight: Font.DemiBold
-            font.letterSpacing: 0.6
         }
 
-        PlayerButton {
-            id: closeButton
-            controller: panel.controller
-            iconName: "close"
-            toolTip: qsTr("Close")
-            compact: true
+        Slider {
+            id: speedSlider
+            anchors.left: speedLabel.right
+            anchors.leftMargin: 12
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            onClicked: panel.closeRequested()
+            from: 0.25
+            to: 2.0
+            stepSize: 0.05
+            value: panel.controller.rate
+            Accessible.name: qsTr("Playback speed")
+            Accessible.valueText: Number(value).toFixed(1) + "x"
+            onMoved: panel.controller.setRate(value)
+
+            background: Rectangle {
+                x: speedSlider.leftPadding
+                y: speedSlider.topPadding + speedSlider.availableHeight / 2 - height / 2
+                implicitWidth: 140
+                implicitHeight: 4
+                width: speedSlider.availableWidth
+                height: 4
+                radius: 2
+                color: Qt.rgba(panel.textColor.r, panel.textColor.g, panel.textColor.b, 0.22)
+
+                Rectangle {
+                    width: speedSlider.visualPosition * parent.width
+                    height: parent.height
+                    color: panel.controller.accentColor
+                    radius: 2
+                }
+            }
+
+            handle: Rectangle {
+                x: speedSlider.leftPadding + speedSlider.visualPosition * (speedSlider.availableWidth - width)
+                y: speedSlider.topPadding + speedSlider.availableHeight / 2 - height / 2
+                implicitWidth: 10
+                implicitHeight: 10
+                radius: 5
+                color: panel.controller.accentColor
+                visible: speedSlider.hovered || speedSlider.pressed
+            }
         }
+    }
+
+    Rectangle {
+        id: divider
+        anchors.top: speedControl.bottom
+        anchors.topMargin: 4
+        width: panel.width - panel.padding * 2
+        height: 1
+        color: Qt.rgba(panel.textColor.r, panel.textColor.g, panel.textColor.b, 0.12)
     }
 
     ListView {
         id: list
-        y: panelHeader.height
+        y: speedControl.height + 8
         width: panel.width - panel.padding * 2
         height: list.count > 0 ? Math.min(contentHeight, panel.maxBodyHeight)
                                : Math.max(44, emptyLabel.implicitHeight + 16)
@@ -214,24 +254,13 @@ PlayerPanel {
             readonly property string menuRowId: rowItem.model.id
             objectName: "player.settings.row." + menuRowId
             readonly property string menuRowLabel: rowItem.model.label
+            readonly property bool isSelected: rowItem.model.selected && !rowItem.headingRole
 
             Rectangle {
                 anchors.fill: parent
-                anchors.margins: 2
                 radius: Math.min(6, panel.controller.cornerRadius)
                 color: !rowItem.headingRole && (hoverHandler.hovered || list.currentIndex === rowItem.index)
                        ? panel.hoverColor : "transparent"
-            }
-
-            Rectangle {
-                visible: rowItem.model.selected && !rowItem.headingRole
-                width: 2
-                height: Math.max(8, rowItem.height - 14)
-                anchors.left: parent.left
-                anchors.leftMargin: 3
-                anchors.verticalCenter: parent.verticalCenter
-                radius: 1
-                color: panel.controller.accentColor
             }
 
             PlayerIcon {
@@ -242,37 +271,48 @@ PlayerPanel {
                 width: 16
                 height: 16
                 anchors.left: parent.left
-                anchors.leftMargin: 12
+                anchors.leftMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
             }
 
             Text {
                 id: labelText
                 anchors.left: parent.left
-                anchors.leftMargin: glyph.visible ? 36 : 14
-                anchors.right: detailText.visible ? detailText.left : parent.right
+                anchors.leftMargin: glyph.visible ? 34 : 10
+                anchors.right: detailText.visible ? detailText.left : (checkIcon.visible ? checkIcon.left : parent.right)
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 elide: Text.ElideRight
                 text: rowItem.model.label
-                color: panel.textColor
+                color: rowItem.isSelected ? panel.controller.accentColor : panel.textColor
                 font.pixelSize: rowItem.headingRole ? 11 : 13
-                font.weight: rowItem.headingRole || rowItem.model.selected ? Font.DemiBold : Font.Normal
+                font.weight: rowItem.headingRole || rowItem.isSelected ? Font.DemiBold : Font.Normal
                 font.letterSpacing: rowItem.headingRole ? 0.6 : 0
             }
 
             Text {
                 id: detailText
                 visible: !rowItem.headingRole && rowItem.model.detail !== ""
-                anchors.right: parent.right
-                anchors.rightMargin: 12
+                anchors.right: checkIcon.visible ? checkIcon.left : parent.right
+                anchors.rightMargin: checkIcon.visible ? 8 : 10
                 anchors.verticalCenter: parent.verticalCenter
-                width: Math.min(implicitWidth, list.width * 0.4)
                 elide: Text.ElideRight
                 horizontalAlignment: Text.AlignRight
                 text: rowItem.model.detail
                 color: panel.mutedColor
-                font.pixelSize: 11
+                font.pixelSize: 12
+            }
+
+            Text {
+                id: checkIcon
+                visible: rowItem.isSelected
+                anchors.right: parent.right
+                anchors.rightMargin: 10
+                anchors.verticalCenter: parent.verticalCenter
+                text: "\u2713"
+                color: panel.controller.accentColor
+                font.pixelSize: 14
+                font.bold: true
             }
 
             HoverHandler {
@@ -298,7 +338,8 @@ PlayerPanel {
             Accessible.description: rowItem.model.tooltip !== "" ? rowItem.model.tooltip : rowItem.model.detail
             Accessible.selected: rowItem.model.selected
             Accessible.selectable: !rowItem.headingRole && rowItem.rowEnabled
-            Accessible.checkable: false
+            Accessible.checkable: true
+            Accessible.checked: rowItem.isSelected
             Accessible.onPressAction: {
                 if (rowItem.headingRole || !rowItem.rowEnabled) return;
                 panel.activateRow(rowItem.index, rowItem.rowAction);
@@ -309,7 +350,7 @@ PlayerPanel {
     Text {
         id: emptyLabel
         visible: list.count === 0
-        y: panelHeader.height
+        y: speedControl.height + 16
         width: panel.width - panel.padding * 2
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap

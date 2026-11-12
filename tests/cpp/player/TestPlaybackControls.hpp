@@ -14,6 +14,7 @@ private slots:
 
     void transportActionsUpdateTypedControllerAndSessionState();
     void nestedEnhancementMenuActivatesTheSelectedPreset();
+    void qualityMenuSortsAvailableHeightsDescendingAndMaintainsSelection();
     void keyboardStepsAreResolvedByTheSessionCore();
     void enginePauseHoldRetainsExplicitPauseIntent();
     void compactPipKeepsTheSameWindowAndSession();

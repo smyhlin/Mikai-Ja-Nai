@@ -403,6 +403,7 @@ public:
     double streamFramesPerSecond() const { return streamFramesPerSecond_; }
 
     QString qualityLabel() const { return qualityLabel_; }
+    bool autoQuality() const { return autoQuality_; }
     bool audioTracksAvailable() const { return audioTrackCount_ > 0; }
     bool subtitleTracksAvailable() const { return subtitleTrackCount_ > 0; }
     double subtitleDelay() const { return subtitleDelay_; }
@@ -852,6 +853,7 @@ private:
     quint64 nextEpisodeMediaToken_ = 1;
     QString currentEmbed_;
     int currentHeight_ = 0;
+    bool autoQuality_ = true;
     int episodeIndex_ = 0;
     int lastFinishedEpisodeIndex_ = -1;
     bool hasPreviousEpisode_ = false;
