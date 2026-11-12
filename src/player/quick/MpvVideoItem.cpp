@@ -361,10 +361,7 @@ MpvVideoNode::MpvVideoNode(QQuickWindow* window, std::shared_ptr<VideoRenderBrid
       wakeGui_(std::move(wakeGui)) {
     qsgnode_set_description(this, QStringLiteral("mpv-video"));
     setFiltering(QSGTexture::Linear);
-    // mpv renders with flip_y set, so the stable output carries the image in the
-    // same orientation the scene graph samples a framebuffer texture with; the
-    // Widgets adapter composites the identical texture, so both views agree.
-    setTextureCoordinatesTransform(QSGSimpleTextureNode::NoTransform);
+    setTextureCoordinatesTransform(QSGSimpleTextureNode::MirrorVertically);
 
     // Both stages are emitted on this node's thread (the scene-graph thread, or
     // the GUI thread under the basic loop), so these are direct calls into it.
