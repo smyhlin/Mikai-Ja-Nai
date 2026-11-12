@@ -308,6 +308,9 @@ void PlayerController::applyRefreshedStreams(const QList<shell::QualityEntry>& q
         currentHeight_ = target;
         qualityLabel_ = target > 0 ? QStringLiteral("%1p").arg(target) : QString();
         emit qualityChanged();
+        if (entry.url == url_ && session_ != nullptr && session_->hasVideo()) {
+            return;
+        }
         if (!openStream(entry.url, target, /*resume=*/true)) {
             ensureOpenFailureVisible();
             return;
