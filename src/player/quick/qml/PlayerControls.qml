@@ -47,12 +47,6 @@ Item {
 
     implicitWidth: 320
     implicitHeight: 180
-    // A real press holds the chrome; resting over it does not.
-    TapHandler {
-        id: pointerPress
-        acceptedButtons: Qt.AllButtons
-    }
-
     opacity: root.chromeVisible ? 1 : 0
     visible: opacity > 0.001
     Behavior on opacity {
@@ -156,6 +150,11 @@ Item {
         width: root.dockWidth
         height: root.compactLayout ? 136 : 104
         padding: 12
+
+        TapHandler {
+            id: pointerPress
+            acceptedButtons: Qt.AllButtons
+        }
 
         ColumnLayout {
             anchors.fill: parent
