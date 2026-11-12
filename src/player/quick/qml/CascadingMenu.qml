@@ -251,7 +251,8 @@ PlayerPanel {
                     anchors.left: parent.left
                     anchors.leftMargin: glyph.visible ? 36 : 12
                     anchors.right: detailText.visible ? detailText.left
-                                                      : (chevron.visible ? chevron.left : parent.right)
+                                                      : (chevron.visible ? chevron.left
+                                                         : (checkMark.visible ? checkMark.left : parent.right))
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
                     elide: Text.ElideRight
@@ -265,7 +266,8 @@ PlayerPanel {
                 Text {
                     id: detailText
                     visible: !rowItem.headingRole && rowItem.model.detail !== ""
-                    anchors.right: chevron.visible ? chevron.left : parent.right
+                    anchors.right: chevron.visible ? chevron.left
+                                                   : (checkMark.visible ? checkMark.left : parent.right)
                     anchors.rightMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.min(implicitWidth, body.width * 0.45)
@@ -274,6 +276,18 @@ PlayerPanel {
                     text: rowItem.model.detail
                     color: menu.mutedColor
                     font.pixelSize: 11
+                }
+
+                Text {
+                    id: checkMark
+                    visible: rowItem.model.selected && !rowItem.headingRole && !rowItem.rowSubmenu
+                    anchors.right: parent.right
+                    anchors.rightMargin: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "\u2713"
+                    color: menu.controller.accentColor
+                    font.pixelSize: 14
+                    font.weight: Font.DemiBold
                 }
 
                 PlayerIcon {
@@ -292,6 +306,7 @@ PlayerPanel {
                     id: hoverHandler
                     onHoveredChanged: {
                         if (!hoverHandler.hovered || rowItem.headingRole) return;
+                        if (rowItem.rowEnabled) body.currentIndex = rowItem.index;
                         menu.rowHovered(rowItem.index, rowItem.rowSubmenu && rowItem.rowEnabled,
                                         rowItem.rowValue, menu.rowSceneRect(rowItem.index));
                     }

@@ -36,6 +36,7 @@ This release introduces the player-only Qt Quick/QML frontend while retaining th
   - Separate the episode-list control from the video information chip and make its list compact, opaque and focused on the current episode.
   - Anchor timeline frame previews above the hovered position, keeping them inside the player and preserving the frame's aspect ratio.
   - Give picture-menu actions consistent, descriptive icons, including local-file actions and video scaling.
+  - Keep scaling selection indicators synchronized between the picture menu and player settings, with a distinct checkmark for the active choice.
   - Capture comparisons from the Qt Quick player's visible video frame without requiring an unrelated retained transition image.
   - Refresh the player speed, quality and scaling flyout with live appearance colors and corner radii.
   - Restore right-click access to the picture menu and enable the clip control when video becomes available.

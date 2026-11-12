@@ -646,6 +646,49 @@ RunResult runPlayer(const QString& url, const QString& videoName, const QString&
             verdict.require(iconsVisible, QStringLiteral("all %1 actions have visible icons").arg(menuId));
         }
         saveImage(result.window->grabWindow(), QStringLiteral("dialog_probe_picture_menu.png"));
+        PlayerMenuModel* scaleModel = controller->menuModel(QStringLiteral("picture.scale"));
+        QQuickItem* scaleOpener = submenuRow(result.window->rootObject(),
+                                             QStringLiteral("picture"),
+                                             QStringLiteral("picture.scale"));
+        verdict.require(scaleOpener != nullptr && scaleModel != nullptr,
+                        QStringLiteral("video scaling submenu is available"));
+        if (scaleOpener != nullptr && scaleModel != nullptr) {
+            QTest::mouseMove(result.window,
+                             scaleOpener->mapToScene(QPointF(scaleOpener->width() / 2,
+                                                             scaleOpener->height() / 2)).toPoint());
+            QQuickItem* scalePanel = nullptr;
+            const bool scaleOpened = waitFor([&] {
+                scalePanel = menuPanel(result.window->rootObject(), QStringLiteral("picture.scale"));
+                return scalePanel != nullptr;
+            }, 2000);
+            verdict.require(scaleOpened, QStringLiteral("video scaling submenu opens"));
+            if (scaleOpened && scaleModel->rowCount() >= 2) {
+                const auto chooseScale = [&](int index) {
+                    const PlayerMenuModel::Row choice = scaleModel->row(index);
+                    QQuickItem* row = findVisualItem(scalePanel, [&choice](QQuickItem* item) {
+                        return item->isVisible() && item->property("rowValue").toString() == choice.value
+                               && item->property("rowAction").toInt() ==
+                                      int(PlayerMenuModel::Action::SetVideoScaleMode);
+                    });
+                    if (row == nullptr) return false;
+                    QTest::mouseClick(result.window, Qt::LeftButton, Qt::NoModifier,
+                                      row->mapToScene(QPointF(row->width() / 2,
+                                                               row->height() / 2)).toPoint());
+                    return waitFor([&] {
+                        int selected = 0;
+                        for (const auto& candidate : scaleModel->rows())
+                            if (candidate.selected) ++selected;
+                        return controller->videoScaleMode() == choice.value.toInt() &&
+                               scaleModel->row(index).selected && selected == 1;
+                    }, 2000);
+                };
+                verdict.require(chooseScale(scaleModel->rowCount() - 1),
+                                QStringLiteral("last scale option becomes the only selected option"));
+                verdict.require(chooseScale(0),
+                                QStringLiteral("first scale option replaces the previous selection"));
+                saveImage(result.window->grabWindow(), QStringLiteral("dialog_probe_scaling_menu.png"));
+            }
+        }
         QQuickItem* compareRow = findVisualItem(
             menuPanel(result.window->rootObject(), QStringLiteral("picture")), [](QQuickItem* item) {
                 return item->property("rowAction").toInt() == int(PlayerMenuModel::Action::OpenCompare)
@@ -711,6 +754,11 @@ RunResult runPlayer(const QString& url, const QString& videoName, const QString&
         }, 2000);
         verdict.require(opened, QStringLiteral("settings flyout opens"));
         if (opened) {
+            QQuickItem* scaleChoice = findVisualItem(result.window->rootObject(), [](QQuickItem* item) {
+                return item->objectName() == QLatin1String("player.settings.row.scale.0");
+            });
+            verdict.require(scaleChoice != nullptr && scaleChoice->property("isSelected").toBool(),
+                            QStringLiteral("settings shows the active scaling choice"));
             QQuickItem* preset = findVisualItem(result.window->rootObject(), [](QQuickItem* item) {
                 return item->objectName() == QLatin1String("player.speed.1.2") && item->isVisible();
             });

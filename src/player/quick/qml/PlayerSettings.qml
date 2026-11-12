@@ -312,7 +312,10 @@ PlayerPanel {
             readonly property string menuRowId: rowItem.model.id
             objectName: "player.settings.row." + menuRowId
             readonly property string menuRowLabel: rowItem.model.label
-            readonly property bool isSelected: rowItem.model.selected && !rowItem.headingRole
+            readonly property bool isSelected: !rowItem.headingRole
+                                               && (rowItem.rowAction === PlayerMenuModel.SetVideoScaleMode
+                                                   ? Number(rowItem.model.value) === panel.controller.videoScaleMode
+                                                   : rowItem.model.selected)
 
             Rectangle {
                 anchors.fill: parent
@@ -402,7 +405,7 @@ PlayerPanel {
             Accessible.role: rowItem.headingRole ? Accessible.StaticText : Accessible.MenuItem
             Accessible.name: rowItem.model.label
             Accessible.description: rowItem.model.tooltip !== "" ? rowItem.model.tooltip : rowItem.model.detail
-            Accessible.selected: rowItem.model.selected
+            Accessible.selected: rowItem.isSelected
             Accessible.selectable: !rowItem.headingRole && rowItem.rowEnabled
             Accessible.checkable: true
             Accessible.checked: rowItem.isSelected

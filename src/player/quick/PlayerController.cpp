@@ -618,6 +618,8 @@ void PlayerController::setVideoScaleMode(int mode) {
     if (videoScaleMode_ == mode) return;
     videoScaleMode_ = mode;
     VideoSession::setVideoScaleMode(static_cast<VideoScaleMode>(mode));
+    if (scaleMenu_ != nullptr) scaleMenu_->setRows(videoScaleModeRows());
+    rebuildSettingsMenu();
     emit videoScaleModeChanged();
 }
 
