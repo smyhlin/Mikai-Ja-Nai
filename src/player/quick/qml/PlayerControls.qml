@@ -230,22 +230,6 @@ Item {
                     }
 
                     PlayerButton {
-                        id: windowModeButton
-                        controller: root.controller
-                        iconName: root.controller.fullscreen ? "contract" : "expand"
-                        toolTip: root.controller.fullscreen ? qsTr("Windowed mode (F)")
-                                                            : qsTr("Fullscreen (F)")
-                        Accessible.name: toolTip
-                        compact: true
-                        implicitWidth: 40
-                        implicitHeight: 40
-                        onClicked: {
-                            root.controller.noteUserActivity()
-                            root.controller.toggleFullscreen()
-                        }
-                    }
-
-                    PlayerButton {
                         id: audioButton
                         controller: root.controller
                         iconName: "microphone"
@@ -387,20 +371,6 @@ Item {
                     onClicked: {
                         root.controller.noteUserActivity()
                         root.controller.togglePip()
-                    }
-                }
-
-                PlayerButton {
-                    controller: root.controller
-                    iconName: root.controller.fullscreen ? "contract" : "expand"
-                    toolTip: root.controller.fullscreen ? qsTr("Windowed mode (F)")
-                                                        : qsTr("Fullscreen (F)")
-                    compact: true
-                    implicitWidth: 34
-                    implicitHeight: 34
-                    onClicked: {
-                        root.controller.noteUserActivity()
-                        root.controller.toggleFullscreen()
                     }
                 }
 
