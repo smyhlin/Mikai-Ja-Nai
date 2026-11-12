@@ -1339,10 +1339,7 @@ void PlayerController::activateMenuRow(const QString& menuId, int row) {
         return;
     }
     if (source.action == Action::CaptureFrame || source.action == Action::OpenCompare) {
-        bool ok = false;
-        const qulonglong expectedEpoch = source.value.toULongLong(&ok);
-        if (!ok || session_ == nullptr || !session_->hasVideo() ||
-            session_->sourceEpoch() != expectedEpoch) {
+        if (session_ == nullptr || !session_->hasVideo()) {
             return;
         }
     }
