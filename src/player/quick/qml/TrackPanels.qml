@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Basic
+import Mikai.Player
 
 // Audio/subtitle track panel. Rows and their actions come from the controller's
 // typed models; the subtitle delay rows stay open so the value can be nudged
@@ -9,6 +10,7 @@ import QtQuick.Controls.Basic
 PlayerPanel {
     id: panel
 
+    objectName: "player.tracks"
     property Item sceneItem: null
     property string kind: "audio"
     property rect anchorRect: Qt.rect(0, 0, 0, 0)
@@ -24,7 +26,7 @@ PlayerPanel {
                                          : qsTr("No other audio tracks available")
     readonly property int rowHeight: 32
     readonly property int edgeMargin: 8
-    readonly property color textColor: controller.darkTheme ? "#f4f4f5" : "#101014"
+    readonly property color menuTextColor: controller.darkTheme ? "#f4f4f5" : "#101014"
     readonly property color mutedColor: controller.darkTheme ? "#a1a1aa" : "#5a5a63"
     readonly property color hoverColor: Qt.rgba(controller.accentColor.r,
                                                 controller.accentColor.g,
@@ -89,18 +91,16 @@ PlayerPanel {
     function activateRow(row, action) {
         if (row < 0) return;
         controller.activateMenuRow(menuId, row);
-        // SetSubtitleDelay / ResetSubtitleDelay: the panel remains open so the
-        // delay can be adjusted again; everything else commits and closes.
-        if (action === 12 || action === 13) return;
+        if (action === PlayerMenuModel.SetSubtitleDelay ||
+                action === PlayerMenuModel.ResetSubtitleDelay) return;
         panel.closeRequested();
     }
 
     function activateCurrent() {
         const row = list.currentIndex;
-        if (row < 0 || row >= list.count) return;
-        const rowData = menuRows[row];
-        if (!rowData || !rowData.selectable) return;
-        panel.activateRow(row, rowData.action);
+        if (!panel.rowIsSelectable(row)) return;
+        const action = menuModel.data(menuModel.index(row, 0), PlayerMenuModel.ActionRole);
+        panel.activateRow(row, action);
     }
 
     function computeX() {
@@ -143,7 +143,7 @@ PlayerPanel {
             anchors.rightMargin: 8
             elide: Text.ElideRight
             text: panel.panelTitle
-            color: panel.textColor
+            color: panel.menuTextColor
             font.pixelSize: 12
             font.weight: Font.DemiBold
             font.letterSpacing: 0.6
@@ -240,7 +240,7 @@ PlayerPanel {
                 anchors.verticalCenter: parent.verticalCenter
                 elide: Text.ElideRight
                 text: rowItem.model.label
-                color: panel.textColor
+                color: panel.menuTextColor
                 font.pixelSize: rowItem.headingRole ? 11 : 13
                 font.weight: rowItem.headingRole || rowItem.model.selected ? Font.DemiBold : Font.Normal
                 font.letterSpacing: rowItem.headingRole ? 0.6 : 0

@@ -25,6 +25,8 @@ Item {
                                                 || topLeftResize.pressed || topRightResize.pressed
                                                 || bottomLeftResize.pressed || bottomRightResize.pressed
 
+    readonly property Item timelineItem: timeline
+
     signal menuRequested(string menuId, rect anchorRect)
 
     anchors.fill: parent

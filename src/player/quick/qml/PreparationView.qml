@@ -123,12 +123,13 @@ Rectangle {
 
         ProgressBar {
             id: progress
+            objectName: "player.preparation.progress"
             Layout.fillWidth: true
             Layout.preferredHeight: 6
             visible: root.controller.preparationStageCount > 0 || root.succeeded || root.failed
             from: 0
             to: Math.max(1, root.controller.preparationStageCount)
-            value: root.succeeded ? 1
+            value: root.succeeded ? to
                                   : root.failed ? 0
                                                 : Math.max(0, Math.min(root.controller.preparationStageIndex,
                                                                        to))

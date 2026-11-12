@@ -21,7 +21,7 @@ PlayerPanel {
     readonly property var menuModel: controller.seriesMenu
     readonly property int rowHeight: 42
     readonly property int edgeMargin: 8
-    readonly property color textColor: controller.darkTheme ? "#f4f4f5" : "#101014"
+    readonly property color menuTextColor: controller.darkTheme ? "#f4f4f5" : "#101014"
     readonly property color mutedColor: controller.darkTheme ? "#a1a1aa" : "#5a5a63"
     readonly property color hoverColor: Qt.rgba(controller.accentColor.r,
                                                 controller.accentColor.g,
@@ -127,7 +127,7 @@ PlayerPanel {
             anchors.verticalCenter: parent.verticalCenter
             elide: Text.ElideRight
             text: qsTr("Episodes")
-            color: drawer.textColor
+            color: drawer.menuTextColor
             font.pixelSize: 13
             font.weight: Font.DemiBold
         }
@@ -238,7 +238,7 @@ PlayerPanel {
                 anchors.verticalCenter: parent.verticalCenter
                 elide: Text.ElideRight
                 text: rowItem.model.label
-                color: drawer.textColor
+                color: drawer.menuTextColor
                 font.pixelSize: rowItem.headingRole ? 11 : 13
                 font.weight: rowItem.model.selected || rowItem.headingRole ? Font.DemiBold : Font.Normal
                 font.letterSpacing: rowItem.headingRole ? 0.6 : 0

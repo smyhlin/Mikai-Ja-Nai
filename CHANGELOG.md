@@ -39,6 +39,7 @@ This release introduces the player-only Qt Quick/QML frontend while retaining th
   - Keep scaling selection indicators synchronized between the picture menu and player settings, with a distinct checkmark for the active choice.
   - Capture comparisons from the Qt Quick player's visible video frame without requiring an unrelated retained transition image.
   - Distinguish TensorRT engine compilation from cached-engine warm-up, display the elapsed time correctly, and wait for background preparation to finish before reporting a configured stage; never infer processing dimensions from an unobserved plan.
+  - Fix keyboard activation in track selectors, picture-in-picture timeline previews and their dismissal, local file drops, icon alignment, and the completed preparation progress indicator.
   - Refresh the player speed, quality and scaling flyout with live appearance colors and corner radii.
   - Restore right-click access to the picture menu and enable the clip control when video becomes available.
   - Refine antialias settings controls, make episode buttons more compact and remove the redundant Episodes button from the title hero.

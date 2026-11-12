@@ -74,7 +74,9 @@ ToolButton {
     contentItem: Item {
         id: contentBox
         readonly property real glyphGap: root.compact ? 6 : 8
-        readonly property real glyphWidth: glyph.visible ? glyph.width + glyphGap : 0
+        readonly property real glyphWidth: glyph.visible
+                                           ? glyph.width + (textLabel.visible ? glyphGap : 0)
+                                           : 0
         readonly property real labelWidth: textLabel.visible ? textLabel.implicitWidth : 0
         readonly property real groupWidth: glyphWidth + labelWidth
         readonly property real groupX: Math.max(0, Math.round((width - groupWidth) / 2))

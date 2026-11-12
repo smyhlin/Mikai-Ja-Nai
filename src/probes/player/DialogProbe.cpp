@@ -3,6 +3,11 @@
 
 #include <QApplication>
 #include <QColor>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QFile>
+#include <QMimeData>
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
@@ -18,6 +23,7 @@
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 #include <QSettings>
+#include <QSignalSpy>
 #include <QStringList>
 #include <QTemporaryDir>
 #include <QThread>
@@ -517,7 +523,17 @@ RunResult runPlayer(const QString& url, const QString& videoName, const QString&
                             QStringLiteral("preparation elapsed time has padded fields"));
             saveImage(preparation->grabWindow(), QStringLiteral("dialog_probe_preparation.png"));
         }
+        controller->updateEnginePreparation(1, 3, QStringLiteral("Building"),
+                                            QStringLiteral("Progress"));
         controller->endEnginePreparation(true, QStringLiteral("Complete"));
+        if (preparation != nullptr) {
+            auto* progress = preparation->rootObject()->findChild<QObject*>(
+                QStringLiteral("player.preparation.progress"));
+            verdict.require(progress != nullptr &&
+                                progress->property("value").toDouble() ==
+                                    progress->property("to").toDouble(),
+                            QStringLiteral("completed multi-stage progress reaches 100 percent"));
+        }
     }
     if (qEnvironmentVariableIntValue("MIKAI_DIALOG_HOVER_FIXTURE") == 1) {
         auto* timeline = qobject_cast<QQuickItem*>(
@@ -565,6 +581,59 @@ RunResult runPlayer(const QString& url, const QString& videoName, const QString&
                                 QStringLiteral("preview closes when leaving the timeline"));
             }
         }
+    }
+    if (qEnvironmentVariableIntValue("MIKAI_DIALOG_QML_AUDIT") == 1) {
+        controller->openSubtitlesMenu();
+        QQuickItem* trackPanel = nullptr;
+        const bool trackOpened = waitFor([&] {
+            trackPanel = findVisualItem(result.window->rootObject(), [](QQuickItem* item) {
+                return item->objectName() == QLatin1String("player.tracks") && item->isVisible();
+            });
+            return trackPanel != nullptr;
+        }, 2000);
+        verdict.require(trackOpened, QStringLiteral("subtitle track panel opens"));
+        PlayerMenuModel* tracks = controller->menuModel(QStringLiteral("subtitles"));
+        if (trackOpened && tracks != nullptr) {
+            const int later = tracks->indexOfId(QStringLiteral("delay.0.1"));
+            verdict.require(later >= 0, QStringLiteral("subtitle delay option is available"));
+            if (later >= 0) {
+                QTest::keyClick(result.window, Qt::Key_Home);
+                for (int row = 0; row < later; ++row)
+                    if (tracks->isSelectable(row)) QTest::keyClick(result.window, Qt::Key_Down);
+                QTest::keyClick(result.window, Qt::Key_Return);
+                verdict.require(waitFor([&] {
+                    return std::abs(controller->subtitleDelay() - 0.1) < 0.001;
+                }, 2000), QStringLiteral("keyboard activates the focused subtitle delay"));
+                verdict.require(trackPanel->isVisible(),
+                                QStringLiteral("subtitle delay panel stays open after adjustment"));
+                saveImage(result.window->grabWindow(), QStringLiteral("dialog_probe_tracks.png"));
+            }
+        }
+        controller->closeMenus();
+
+        controller->togglePip();
+        const bool pipEntered = waitFor([&] { return controller->isPipActive(); }, 5000);
+        verdict.require(pipEntered, QStringLiteral("picture-in-picture opens"));
+        if (pipEntered) {
+            QQuickItem* pipTimeline = findVisualItem(result.window->rootObject(), [](QQuickItem* item) {
+                return item->objectName() == QLatin1String("player.pip.timeline.scrub") &&
+                       item->isVisible();
+            });
+            verdict.require(pipTimeline != nullptr, QStringLiteral("picture-in-picture timeline is visible"));
+            if (pipTimeline != nullptr) {
+                QTest::mouseMove(result.window, pipTimeline->mapToScene(
+                    QPointF(pipTimeline->width() / 2, pipTimeline->height() / 2)).toPoint());
+                verdict.require(waitFor([&] { return controller->hoverPreviewVisible(); }, 10000),
+                                QStringLiteral("picture-in-picture timeline requests a frame preview"));
+            }
+            controller->leavePip();
+            verdict.require(waitFor([&] { return !controller->isPipActive(); }, 5000),
+                            QStringLiteral("picture-in-picture returns to the player"));
+            verdict.require(!controller->hoverPreviewVisible(),
+                            QStringLiteral("picture-in-picture preview is dismissed on return"));
+        }
+        controller->seekTo(0.0);
+        waitFor([&] { return session->position() < 1.0; }, 5000);
     }
     if (episodeFixture) {
         QQuickItem* button = findVisualItem(result.window->rootObject(), [](QQuickItem* item) {
@@ -979,6 +1048,31 @@ RunResult runPlayer(const QString& url, const QString& videoName, const QString&
                        .arg(forwardJumps));
 
     QObject::disconnect(frameSampleConnection);
+    QTemporaryDir dropDirectory;
+    if (qEnvironmentVariableIntValue("MIKAI_DIALOG_QML_AUDIT") == 1) {
+        const QString copy = QDir(dropDirectory.path()).filePath(QStringLiteral("dropped.mkv"));
+        const bool copied = dropDirectory.isValid() && QFile::copy(QUrl::fromUserInput(url).toLocalFile(), copy);
+        verdict.require(copied, QStringLiteral("file-drop fixture is prepared"));
+        if (copied) {
+            QMimeData mime;
+            mime.setUrls({QUrl(QStringLiteral("https://example.invalid/video")),
+                          QUrl::fromLocalFile(copy)});
+            const QPoint point(result.window->width() / 2, result.window->height() / 2);
+            const uint64_t epoch = session->sourceEpoch();
+            QSignalSpy loaded(session, &VideoSession::mediaLoaded);
+            QDragEnterEvent enter(point, Qt::CopyAction, &mime, Qt::NoButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(result.window, &enter);
+            QDragMoveEvent move(point, Qt::CopyAction, &mime, Qt::NoButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(result.window, &move);
+            QDropEvent drop(QPointF(point), Qt::CopyAction, &mime, Qt::NoButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(result.window, &drop);
+            verdict.require(drop.isAccepted(), QStringLiteral("player accepts the local file drop"));
+            verdict.require(waitFor([&] {
+                return !loaded.isEmpty() && session->sourceEpoch() > epoch && session->hasVideo() &&
+                       QFileInfo(session->sourceUrl()).absoluteFilePath() == QFileInfo(copy).absoluteFilePath();
+            }, 10000), QStringLiteral("a mixed drop opens the local video and ignores the remote URL"));
+        }
+    }
     const bool closeAccepted = closeWindow();
     verdict.require(closeAccepted, QStringLiteral("production requestClose acknowledged teardown"));
     if (closeAccepted) {

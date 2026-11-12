@@ -20,7 +20,7 @@ PlayerPanel {
     readonly property PlayerMenuModel menuModel: controller.settingsMenu
     readonly property int rowHeight: 40
     readonly property int edgeMargin: 8
-    readonly property color textColor: controller.darkTheme ? "#f4f4f5" : "#101014"
+    readonly property color menuTextColor: controller.darkTheme ? "#f4f4f5" : "#101014"
     readonly property color mutedColor: controller.darkTheme ? "#a1a1aa" : "#5a5a63"
     readonly property color hoverColor: Qt.rgba(controller.accentColor.r,
                                                 controller.accentColor.g,
@@ -150,7 +150,7 @@ PlayerPanel {
             anchors.right: parent.right
             anchors.top: parent.top
             text: Number(panel.controller.rate).toFixed(2).replace(/0+$/, "").replace(/\.$/, "") + "×"
-            color: panel.textColor
+            color: panel.menuTextColor
             font.pixelSize: 13
             font.weight: Font.DemiBold
         }
@@ -176,7 +176,7 @@ PlayerPanel {
                 width: speedSlider.availableWidth
                 height: 4
                 radius: 2
-                color: Qt.rgba(panel.textColor.r, panel.textColor.g, panel.textColor.b, 0.22)
+                color: Qt.rgba(panel.menuTextColor.r, panel.menuTextColor.g, panel.menuTextColor.b, 0.22)
 
                 Rectangle {
                     width: speedSlider.visualPosition * parent.width
@@ -221,13 +221,13 @@ PlayerPanel {
                                ? Qt.rgba(panel.controller.accentColor.r, panel.controller.accentColor.g,
                                          panel.controller.accentColor.b, panel.controller.darkTheme ? 0.32 : 0.22)
                                : (speedPreset.hovered ? panel.hoverColor
-                                  : Qt.rgba(panel.textColor.r, panel.textColor.g, panel.textColor.b, 0.06))
+                                  : Qt.rgba(panel.menuTextColor.r, panel.menuTextColor.g, panel.menuTextColor.b, 0.06))
                         border.width: Math.abs(panel.controller.rate - speedPreset.modelData) < 0.025 ? 1 : 0
                         border.color: panel.controller.accentColor
                     }
                     contentItem: Text {
                         text: speedPreset.text
-                        color: panel.textColor
+                        color: panel.menuTextColor
                         font.pixelSize: 12
                         font.weight: Font.Medium
                         horizontalAlignment: Text.AlignHCenter
@@ -244,7 +244,7 @@ PlayerPanel {
         anchors.topMargin: 4
         width: panel.width - panel.padding * 2
         height: 1
-        color: Qt.rgba(panel.textColor.r, panel.textColor.g, panel.textColor.b, 0.12)
+        color: Qt.rgba(panel.menuTextColor.r, panel.menuTextColor.g, panel.menuTextColor.b, 0.12)
     }
 
     ListView {
@@ -327,7 +327,7 @@ PlayerPanel {
                                    panel.controller.accentColor.b, panel.controller.darkTheme ? 0.32 : 0.22)
                          : (hoverHandler.hovered || list.currentIndex === rowItem.index)
                            ? panel.hoverColor
-                           : Qt.rgba(panel.textColor.r, panel.textColor.g, panel.textColor.b, 0.06)
+                           : Qt.rgba(panel.menuTextColor.r, panel.menuTextColor.g, panel.menuTextColor.b, 0.06)
                 border.width: rowItem.isSelected ? 1 : 0
                 border.color: panel.controller.accentColor
             }
@@ -353,7 +353,7 @@ PlayerPanel {
                 anchors.verticalCenter: parent.verticalCenter
                 elide: Text.ElideRight
                 text: rowItem.model.label
-                color: rowItem.headingRole ? panel.mutedColor : panel.textColor
+                color: rowItem.headingRole ? panel.mutedColor : panel.menuTextColor
                 font.pixelSize: rowItem.headingRole ? 11 : 13
                 font.weight: rowItem.headingRole || rowItem.isSelected ? Font.DemiBold : Font.Normal
                 font.letterSpacing: rowItem.headingRole ? 0.6 : 0

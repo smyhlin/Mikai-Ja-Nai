@@ -21,7 +21,7 @@ Item {
     readonly property bool chromeVisible: !pipMode
                                           && controller.chromeState
                                              !== PlayerController.FullscreenAutoHidden
-    readonly property Item timeline: controls.timelineItem
+    readonly property Item timeline: pipMode ? pipControls.timelineItem : controls.timelineItem
     readonly property real timelineTop: timeline ? timeline.mapToItem(root, 0, 0).y
                                                   : height - 140
 
@@ -42,6 +42,7 @@ Item {
                                            || controller.compareLoading
 
     onInteractionHoldChanged: controller.setInteractionActive(interactionHold)
+    onPipModeChanged: controller.hideHoverPreview()
 
     function openMenuAt(menuId, anchorRect) {
         if (!menuId || menuId.length === 0) return
@@ -304,6 +305,7 @@ Item {
                     model: root.controller.videoBadges
 
                     delegate: Rectangle {
+                        id: badge
                         required property var modelData
 
                         height: 18
@@ -315,7 +317,7 @@ Item {
                         Label {
                             id: badgeLabel
                             anchors.centerIn: parent
-                            text: modelData
+                            text: badge.modelData
                             color: root.controller.darkTheme ? "#d4d4d8" : "#3f3f46"
                             font.pixelSize: 10
                             font.letterSpacing: 0.4
@@ -702,7 +704,7 @@ Item {
         const accepted = []
         for (let i = 0; i < urls.length; ++i) {
             const url = urls[i]
-            if (url.scheme.toLowerCase() === "file") accepted.push(url)
+            if (/^file:/i.test(String(url))) accepted.push(url)
         }
         return accepted
     }
