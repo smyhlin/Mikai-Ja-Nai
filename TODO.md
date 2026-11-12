@@ -9,13 +9,12 @@
 - [ ] player black blink fix
 - [ ] fix elements hide under player screen
 - [ ] fix video screenshot resets playback and reloads stream ("Відкриття потоку...")
-- [ ] cut clip (clapperboard) button does not invoke clip window at all
-- [ ] add episode list expand chevron (">") to top-left episode chip
-- [ ] compare window not invoked on element press
-
 ## Done
 
 - [x] cpp fixes
+- [x] cut clip (clapperboard) button invokes and activates clip dialog
+- [x] add episode list expand chevron (">") to top-left episode chip
+- [x] fix compare quality window invocation from menu
 - [x] trt rtx
 - [x] quality settings redesign with speed slider and sorted qualities
 - [x] move 3-dots menu actions to right-click menu and remove 3-dots button
