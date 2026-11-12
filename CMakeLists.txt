@@ -1,6 +1,6 @@
 # Schema version 6 in CMakePresets.json requires CMake >= 3.25.
 cmake_minimum_required(VERSION 3.25)
-project(mikai VERSION 0.2.2 LANGUAGES CXX)
+project(mikai VERSION 0.2.3 LANGUAGES CXX)
 
 if(WIN32)
   enable_language(RC)

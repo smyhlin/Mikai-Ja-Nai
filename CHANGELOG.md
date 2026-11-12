@@ -2,7 +2,9 @@
 
 Published changes are recorded with their downloads on the [GitHub releases page](https://github.com/smyhlin/Mikai-Ja-Nai/releases). Artifact checksums live with each release, not in the documentation.
 
-## 0.2.2 — Unreleased
+## 0.2.3 — Unreleased
+
+This release introduces the player-only Qt Quick/QML frontend while retaining the C++ playback engine and Widgets application pages.
 
 - Upgrade Standard AnimeJaNai to v0.24.0 (ABI 9) across Windows and Linux, updating official runtime assets and SHA-256 cryptographic pins.
 - Add a Cut moment editor for selecting, previewing and exporting a short MP4:
@@ -30,7 +32,7 @@ Published changes are recorded with their downloads on the [GitHub releases page
   - Remove vertical scrollbar from discovery feed for clean full-width display; vertical scrolling supported via mouse wheel and explicit Alt + mouse wheel.
   - Group processing controls into Restore, Upscale and Interpolation; improve Anime4K shader selection.
   - Refine antialias settings controls, make episode buttons more compact and remove the redundant Episodes button from the title hero.
-  - The player migration's UI proof remains pending the parent integration's targeted Windows smoke; this entry does not claim that validation.
+  - The focused Windows production-player smoke passed 87 checks covering fullscreen auto-hide/wake, nested hover menus, click containment, uninterrupted fixture playback and close/reopen. Linux and broad workflow verification remain deferred.
 
 ### Safety, lifetime and playback correctness
 
