@@ -391,7 +391,7 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 16
-        width: windowControlRow.implicitWidth + 8
+        width: windowControlRow.implicitWidth + 16
         height: windowControlRow.implicitHeight + 8
         radius: infoChip.radius
         color: infoChip.color
@@ -402,15 +402,15 @@ Item {
         Row {
             id: windowControlRow
             anchors.centerIn: parent
-            spacing: 4
+            spacing: 8
 
             PlayerButton {
                 controller: root.controller
                 iconName: "minimize"
                 toolTip: qsTr("Minimize")
                 compact: true
-                implicitWidth: 32
-                implicitHeight: 32
+                implicitWidth: 36
+                implicitHeight: 36
                 onClicked: {
                     root.controller.noteUserActivity()
                     root.controller.minimizeWindow()
@@ -422,8 +422,8 @@ Item {
                 iconName: root.controller.fullscreen ? "restore" : "expand"
                 toolTip: root.controller.fullscreen ? qsTr("Exit fullscreen (F11)") : qsTr("Fullscreen (F11)")
                 compact: true
-                implicitWidth: 32
-                implicitHeight: 32
+                implicitWidth: 36
+                implicitHeight: 36
                 onClicked: {
                     root.controller.noteUserActivity()
                     root.controller.toggleFullscreen()
@@ -435,8 +435,8 @@ Item {
                 iconName: "close"
                 toolTip: qsTr("Close (Esc)")
                 compact: true
-                implicitWidth: 32
-                implicitHeight: 32
+                implicitWidth: 36
+                implicitHeight: 36
                 onClicked: {
                     root.controller.noteUserActivity()
                     root.controller.requestClose()
