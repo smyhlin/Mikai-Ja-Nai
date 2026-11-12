@@ -378,51 +378,62 @@ Item {
         }
     }
 
-    Row {
+    Rectangle {
         id: windowControls
         visible: root.chromeVisible && !root.pipMode
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.margins: 12
-        spacing: 4
+        anchors.margins: 16
+        width: windowControlRow.implicitWidth + 8
+        height: windowControlRow.implicitHeight + 8
+        radius: infoChip.radius
+        color: infoChip.color
+        border.width: infoChip.border.width
+        border.color: infoChip.border.color
         z: 15
 
-        PlayerButton {
-            controller: root.controller
-            iconName: "minimize"
-            toolTip: qsTr("Minimize")
-            compact: true
-            implicitWidth: 32
-            implicitHeight: 32
-            onClicked: {
-                root.controller.noteUserActivity()
-                root.controller.minimizeWindow()
-            }
-        }
+        Row {
+            id: windowControlRow
+            anchors.centerIn: parent
+            spacing: 4
 
-        PlayerButton {
-            controller: root.controller
-            iconName: root.controller.fullscreen ? "restore" : "expand"
-            toolTip: root.controller.fullscreen ? qsTr("Exit fullscreen (F11)") : qsTr("Fullscreen (F11)")
-            compact: true
-            implicitWidth: 32
-            implicitHeight: 32
-            onClicked: {
-                root.controller.noteUserActivity()
-                root.controller.toggleFullscreen()
+            PlayerButton {
+                controller: root.controller
+                iconName: "minimize"
+                toolTip: qsTr("Minimize")
+                compact: true
+                implicitWidth: 32
+                implicitHeight: 32
+                onClicked: {
+                    root.controller.noteUserActivity()
+                    root.controller.minimizeWindow()
+                }
             }
-        }
 
-        PlayerButton {
-            controller: root.controller
-            iconName: "close"
-            toolTip: qsTr("Close (Esc)")
-            compact: true
-            implicitWidth: 32
-            implicitHeight: 32
-            onClicked: {
-                root.controller.noteUserActivity()
-                root.controller.requestClose()
+            PlayerButton {
+                controller: root.controller
+                iconName: root.controller.fullscreen ? "restore" : "expand"
+                toolTip: root.controller.fullscreen ? qsTr("Exit fullscreen (F11)") : qsTr("Fullscreen (F11)")
+                compact: true
+                implicitWidth: 32
+                implicitHeight: 32
+                onClicked: {
+                    root.controller.noteUserActivity()
+                    root.controller.toggleFullscreen()
+                }
+            }
+
+            PlayerButton {
+                controller: root.controller
+                iconName: "close"
+                toolTip: qsTr("Close (Esc)")
+                compact: true
+                implicitWidth: 32
+                implicitHeight: 32
+                onClicked: {
+                    root.controller.noteUserActivity()
+                    root.controller.requestClose()
+                }
             }
         }
     }
