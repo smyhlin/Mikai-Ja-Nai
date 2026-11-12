@@ -434,6 +434,7 @@ Item {
             }
 
             PlayerButton {
+                objectName: "player.close"
                 controller: root.controller
                 iconName: "close"
                 toolTip: qsTr("Close (Esc)")

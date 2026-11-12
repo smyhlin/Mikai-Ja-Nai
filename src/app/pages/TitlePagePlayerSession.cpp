@@ -116,7 +116,13 @@ public:
         }
     }
     void playerClosed() override {
-        if (!page_.isNull()) page_->closeSession(sessionId_);
+        if (page_.isNull()) return;
+        const QPointer<TitlePage> page = page_;
+        const quint64 sessionId = sessionId_;
+        // The QML close handler must return before its window is destroyed.
+        QTimer::singleShot(0, page.data(), [page, sessionId] {
+            if (page) page->closeSession(sessionId);
+        });
     }
     void playbackFailed() override {
         if (PlayerSession* session = liveSession()) page_->recoverStream(session);

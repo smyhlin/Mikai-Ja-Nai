@@ -54,6 +54,7 @@
 #include <cstdio>
 
 #include <QtGui/QGuiApplication>
+#include <QtQuick/QQuickItem>
 #include <QtTest/QSignalSpy>
 #include <QtWidgets/QAbstractButton>
 #include <QtWidgets/QApplication>
@@ -3051,6 +3052,54 @@ void TestFeedRender::theTitlePageWatchActionFollowsTheSelectedRelease() {
                           .arg(watchedPaths.join(QLatin1Char('|')))));
 }
 
+void TestFeedRender::closingEpisodePlayerKeepsTitlePageUsable() {
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  api.setEmbedMarkers(true);
+  api.setSuccessfulEmbedResponses(true);
+
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  const auto drainBeforeClientDestruction =
+      drainWorkersBeforeClientDies(runner, "Title page workers did not stop");
+  QualityCache cache;
+  TitlePage page(runner, client, cache, QString::number(kRef));
+  page.resize(1100, 800);
+  page.show();
+
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY(tabs != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(tabs->currentWidget() != nullptr, 30000);
+  QPointer<QPushButton> episode;
+  QTRY_VERIFY_WITH_TIMEOUT([&] {
+    episode = episodePill(*tabs->currentWidget(), QStringLiteral("1"));
+    return !episode.isNull();
+  }(), 30000);
+
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    episode->click();
+    QPointer<mplayer::quick::PlayerController> controller;
+    QTRY_VERIFY_WITH_TIMEOUT([&] {
+      const auto controllers = page.findChildren<mplayer::quick::PlayerController*>();
+      if (controllers.size() != 1) return false;
+      controller = controllers.constFirst();
+      return controller->window() != nullptr && controller->window()->isVisible() &&
+             controller->window()->rootObject() != nullptr;
+    }(), 15000);
+    auto* player = controller->window();
+    controller->noteUserActivity();
+    QQuickItem* close = player->rootObject()->findChild<QQuickItem*>(QStringLiteral("player.close"));
+    QVERIFY(close != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(close->isVisible(), 5000);
+    const QPoint point = close->mapToScene(QPointF(close->width() / 2, close->height() / 2)).toPoint();
+    QTest::mouseClick(player, Qt::LeftButton, Qt::NoModifier, point);
+    QTRY_VERIFY_WITH_TIMEOUT(controller.isNull(), 10000);
+    QVERIFY(page.isVisible());
+    QVERIFY(episode && episode->isEnabled());
+  }
+}
+
 void TestFeedRender::switchingReleasePreservesAnOpenPlayerQualityRequest() {
   CannedApi api;
   QString error;
@@ -3095,17 +3144,17 @@ void TestFeedRender::switchingReleasePreservesAnOpenPlayerQualityRequest() {
   QTest::mouseClick(firstEpisode, Qt::LeftButton);
 
   mplayer::quick::PlayerController* controller = nullptr;
-  QTRY_VERIFY_WITH_TIMEOUT([&page, &controller] {
+  QTRY_VERIFY_WITH_TIMEOUT(([&page, &controller] {
     const auto controllers = page.findChildren<mplayer::quick::PlayerController*>();
     if (controllers.size() != 1) return false;
     controller = controllers.constFirst();
     return controller->window() != nullptr &&
            controller->window()->objectName() == QStringLiteral("playerWindow");
-  }(), 15000);
+  }()), 15000);
   mplayer::quick::PlayerWindow* player = controller->window();
   QTRY_VERIFY_WITH_TIMEOUT(controller->episodeLabel().contains(QStringLiteral("1")), 15000);
   QTRY_COMPARE_WITH_TIMEOUT(controller->currentHeight(), 1080, 15000);
-  QCOMPARE(player->windowTitle(), QStringLiteral("Episode 1 · 1080p"));
+  QCOMPARE(player->title(), QStringLiteral("Episode 1 · 1080p"));
   mplayer::VideoSession* session = controller->session();
   QVERIFY(session != nullptr);
   QCOMPARE(page.findChildren<mplayer::quick::PlayerController*>().size(), 1);

@@ -75,6 +75,7 @@ class TestFeedRender : public QObject {
   /// A release switch retires the old episode pill's pending playback callback
   /// without dropping an already-open player's pending request for that embed.
   void switchingReleasePreservesAnOpenPlayerQualityRequest();
+  void closingEpisodePlayerKeepsTitlePageUsable();
 
   void episodeMarksPersistAcrossReopenAndViewChanges();
   void episodeContextMenuActionsUpdateOnlyTheOrderedPreviousEpisodes();
