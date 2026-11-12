@@ -286,6 +286,7 @@ public:
 
     Q_INVOKABLE void showWindow();
     Q_INVOKABLE void hideWindow();
+    Q_INVOKABLE void minimizeWindow();
     /// Acknowledged close; false means refused and the window stays up.
     Q_INVOKABLE bool requestClose();
     PlayerWindow* window() const { return window_.get(); }

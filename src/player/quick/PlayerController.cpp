@@ -457,6 +457,10 @@ void PlayerController::hideWindow() {
     if (window_ != nullptr) window_->hideWindow();
 }
 
+void PlayerController::minimizeWindow() {
+    if (window_ != nullptr) window_->showMinimized();
+}
+
 bool PlayerController::requestClose() {
     if (shutdownComplete_ || closed_) return true;
     if (shuttingDown_) return shutdownComplete_;

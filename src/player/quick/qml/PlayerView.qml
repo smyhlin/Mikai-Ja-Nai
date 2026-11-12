@@ -325,6 +325,73 @@ Item {
                     font.features: ({ "tnum": 1 })
                 }
             }
+
+            Label {
+                id: upscaleLabel
+                readonly property string upscaleText: {
+                    if (root.controller.animeJanaiChipText !== "")
+                        return root.controller.animeJanaiChipText
+                    if (root.controller.enhancementChipText !== "")
+                        return root.controller.enhancementChipText
+                    return ""
+                }
+                visible: upscaleText !== ""
+                text: upscaleText
+                color: root.controller.accentColor
+                font.pixelSize: 10
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+                width: Math.min(root.width - 52, implicitWidth)
+            }
+        }
+    }
+
+    Row {
+        id: windowControls
+        visible: root.chromeVisible && !root.pipMode
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: 12
+        spacing: 4
+        z: 15
+
+        PlayerButton {
+            controller: root.controller
+            iconName: "minimize"
+            toolTip: qsTr("Minimize")
+            compact: true
+            implicitWidth: 32
+            implicitHeight: 32
+            onClicked: {
+                root.controller.noteUserActivity()
+                root.controller.minimizeWindow()
+            }
+        }
+
+        PlayerButton {
+            controller: root.controller
+            iconName: root.controller.fullscreen ? "restore" : "expand"
+            toolTip: root.controller.fullscreen ? qsTr("Exit fullscreen (F11)") : qsTr("Fullscreen (F11)")
+            compact: true
+            implicitWidth: 32
+            implicitHeight: 32
+            onClicked: {
+                root.controller.noteUserActivity()
+                root.controller.toggleFullscreen()
+            }
+        }
+
+        PlayerButton {
+            controller: root.controller
+            iconName: "close"
+            toolTip: qsTr("Close (Esc)")
+            compact: true
+            implicitWidth: 32
+            implicitHeight: 32
+            onClicked: {
+                root.controller.noteUserActivity()
+                root.controller.requestClose()
+            }
         }
     }
 
@@ -332,8 +399,8 @@ Item {
         id: nativeHud
         visible: !root.pipMode && root.controller.nativeHudVisible
         anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.margins: 16
+        anchors.top: windowControls.visible ? windowControls.bottom : parent.top
+        anchors.margins: 12
         width: Math.min(root.width - 32, 320)
         height: hudColumn.implicitHeight + 16
         radius: Math.max(2, root.controller.cornerRadius)
