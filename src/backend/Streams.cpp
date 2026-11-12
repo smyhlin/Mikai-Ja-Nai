@@ -106,14 +106,18 @@ bool knownMoonSegmentType(const QString& type) {
 }  // namespace
 
 QString detectSite(const QString& pageUrl) {
-    if (pageUrl.contains(QStringLiteral("ashdi.vip/vod/"))) {
+    if (pageUrl.contains(QStringLiteral("ashdi"), Qt::CaseInsensitive)) {
         return QStringLiteral("ashdi");
     }
-    if (pageUrl.contains(QStringLiteral("moonanime.art/iframe/"))) {
+    if (pageUrl.contains(QStringLiteral("moon"), Qt::CaseInsensitive)) {
         return QStringLiteral("moon");
     }
-    if (pageUrl.contains(QStringLiteral("tortuga.tw/vod/"))) {
+    if (pageUrl.contains(QStringLiteral("tortuga"), Qt::CaseInsensitive)) {
         return QStringLiteral("tortuga");
+    }
+    if (pageUrl.contains(QStringLiteral(".m3u8"), Qt::CaseInsensitive) ||
+        pageUrl.contains(QStringLiteral(".mp4"), Qt::CaseInsensitive)) {
+        return QStringLiteral("direct");
     }
     throw std::invalid_argument(
         redactDiagnostic(QStringLiteral("unsupported episode url: ") + pageUrl).toStdString());
@@ -500,6 +504,9 @@ QString qualityUrl(const QVector<QualityVariant>& variants, int height) {
 
 QMap<int, QString> qualityStreams(const QString& pageUrl) {
     const QString site = detectSite(pageUrl);
+    if (site == QLatin1String("direct")) {
+        return {{0, pageUrl}};
+    }
     // T-403: the shared per-thread manager. One manager per worker thread
     // rather than one per call: a fresh manager means a fresh cookie jar and a
     // fresh TLS handshake, so a local one paid for the provider handshake
@@ -523,9 +530,12 @@ QMap<int, QString> qualityStreams(const QString& pageUrl) {
     }
     QMap<int, QString> streams;
     for (const QualityVariant& variant : variants) {
-        if (variant.height > 0 && !variant.url.isEmpty() && isSafeStreamUrl(variant.url)) {
+        if (!variant.url.isEmpty() && isSafeStreamUrl(variant.url)) {
             streams.insert(variant.height, variant.url);
         }
+    }
+    if (streams.isEmpty() && isSafeStreamUrl(pageUrl)) {
+        streams.insert(0, pageUrl);
     }
     return streams;
 }
