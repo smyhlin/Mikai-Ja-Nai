@@ -157,7 +157,6 @@ PlayerPanel {
             stepSize: 0.05
             value: panel.controller.rate
             Accessible.name: qsTr("Playback speed")
-            Accessible.valueText: Number(value).toFixed(1) + "x"
             onMoved: panel.controller.setRate(value)
 
             background: Rectangle {

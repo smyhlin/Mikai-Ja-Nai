@@ -25,6 +25,7 @@ This release introduces the player-only Qt Quick/QML frontend while retaining th
   - Components tab features a compact top toolbar under the backend dropdown with a tri-state "Select all" checkbox, live selection counter, ghost "Verify", and "Install selected" (demoted from primary save-like styling, disabled when 0 items selected).
   - Obsolete "Refresh" and "Install local runtime..." buttons and manual import paths removed; acquisition "Cancel" appears only while active.
   - Components backend dropdown immediately stores the global engine (`player/animejanai/backend`), which the Benchmark tab toolbar reflects and follows; release inventory scanning latch on executor rebinding.
+- Fix player startup by removing an unsupported Qt Quick accessibility property from the speed slider.
 - Player and discovery enhancements:
   - Replace the player presentation with a native Qt Quick window and QML scene backed by a C++ `PlayerController` and the existing `VideoSession`; PiP changes the presentation of that same window/session rather than reopening media or creating another decoder. Playback and renderer lifetime remain in the player core, while Compare, Clip, Media Information, Settings and Components remain Widgets interfaces.
   - Keep frame composition tied to the live session and its current render target across window changes; stale media/session work is rejected rather than applied to a replacement source.
