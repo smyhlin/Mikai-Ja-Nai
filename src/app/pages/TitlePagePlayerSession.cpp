@@ -18,8 +18,8 @@
 #include "widgets/RateLimitLabel.hpp"
 #include "workers/Runner.hpp"
 
-#include <PlayerDialog.hpp>
-#include <VideoSurface.hpp>
+#include <player/quick/PlayerController.hpp>
+#include <player/core/VideoSession.hpp>
 #include <backend/HttpTransport.hpp>
 #include <backend/MikaiClient.hpp>
 #include <backend/Releases.hpp>
@@ -38,7 +38,6 @@
 #include <QLabel>
 #include <QLayout>
 #include <QMenu>
-#include <QMessageBox>
 #include <QPixmap>
 #include <QProcess>
 #include <QPushButton>
@@ -86,60 +85,63 @@ int maxQuality(const QMap<int, QString>& map) {
 }  // namespace
 
 /// Everything the player cannot do for itself, answered by the page that opened
-/// it. Non-owning: the session is freed when the dialog reports its close.
+/// it. Non-owning: the session is freed when the controller reports its close.
 class TitlePage::Host : public mplayer::shell::PlayerHost {
 public:
-    Host(TitlePage* page, PlayerSession* session) : page_(page), session_(session) {}
+    Host(TitlePage* page, PlayerSession* session)
+        : page_(page), sessionId_(session->id) {}
 
     void requestVariant(const QString& embed, const QString& label) override {
-        page_->switchPlayerVariant(session_, embed, label);
+        if (PlayerSession* session = liveSession()) {
+            page_->switchPlayerVariant(session, embed, label);
+        }
     }
     void requestEpisode(int index) override {
-        if (index < 0 || index >= session_->playlist.size()) {
+        PlayerSession* session = liveSession();
+        if (session == nullptr || index < 0 || index >= session->playlist.size()) {
             return;
         }
-        page_->playEpisodeFrom(session_, session_->playlist.at(index), index);
+        page_->playEpisodeFrom(session, session->playlist.at(index), index);
     }
     void requestTrackProbe(const QString& embed) override {
-        page_->probeTrackQuality(session_, embed);
+        if (PlayerSession* session = liveSession()) {
+            page_->probeTrackQuality(session, embed);
+        }
     }
     void requestCopyStreamUrl() override {
-        if (session_->entry != nullptr && !mikai::gui::copyText(session_->entry->embedUrl)) {
-            showPlayerWarning(QCoreApplication::translate("TitlePage", "Failed to copy link"));
+        PlayerSession* session = liveSession();
+        if (session != nullptr && session->entry != nullptr &&
+            !mikai::gui::copyText(session->entry->embedUrl)) {
+            reportCopyFailure(session, QCoreApplication::translate("TitlePage", "Failed to copy link"));
         }
     }
-    void playerClosed() override { page_->closeSession(session_->id); }
-    void playbackFailed() override { page_->recoverStream(session_); }
+    void playerClosed() override {
+        if (!page_.isNull()) page_->closeSession(sessionId_);
+    }
+    void playbackFailed() override {
+        if (PlayerSession* session = liveSession()) page_->recoverStream(session);
+    }
 
 private:
-    /// The named failure the dialog's clipboard action could not
-    /// complete. Parented to the player so the warning sits above the thing that
-    /// raised it and is reachable by a screen reader, with the page's status line
-    /// as the only fallback when there is no live dialog.
-    ///
-    /// The warning spins its own nested event loop, and everything that can
-    /// delete this page or this player inside it - a window close, a navigation,
-    /// the dialog's own close - has to be able to happen. Both pointers are
-    /// therefore read once, weakly, before the loop, and nothing is dereferenced
-    /// after it: the dialog's own close path is what disposes a session, and it
-    /// does that while the session is still registered.
-    void showPlayerWarning(const QString& message) {
-        // Read weakly, once, before the nested loop: a dialog already on its way
-        // to being deleted must not be handed a message box as its parent.
-        const QPointer<mplayer::shell::PlayerDialog> dialog = session_->dialog;
-        if (dialog.isNull()) {
-            const QPointer<TitlePage> page = page_;
-            if (!page.isNull()) {
-                page->flashStatus(message, true);
-            }
-            return;
-        }
-        const QString title = dialog->windowTitle();
-        QMessageBox::warning(dialog, title, message);
+    PlayerSession* liveSession() const {
+        return page_.isNull() ? nullptr : page_->sessionById(sessionId_);
     }
 
-    TitlePage* page_;
-    PlayerSession* session_;
+    /// Report clipboard refusal through the live player when possible, so its
+    /// notification and accessibility alert stay attached to the player window.
+    void reportCopyFailure(PlayerSession* session, const QString& message) {
+        const QPointer<mplayer::quick::PlayerController> controller = session->controller;
+        if (!controller.isNull()) {
+            controller->reportActionFailure(message);
+            return;
+        }
+        if (!page_.isNull()) {
+            page_->flashStatus(message, true);
+        }
+    }
+
+    QPointer<TitlePage> page_;
+    const quint64 sessionId_;
 };
 
 // Defined here, where Host is complete: destroying a session destroys its
@@ -177,40 +179,40 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
     const quint64 sessionId = session->id;
     sessions_.push_back(std::move(owned));
 
-    session->dialog = new mplayer::shell::PlayerDialog(
+    session->controller = new mplayer::quick::PlayerController(
         QStringLiteral("%1 · %2p").arg(entry->label).arg(height), qualities.value(height),
         toQualities(qualities), height, session->host.get(), this);
     // Core creation can report failure synchronously from startPlayer().
-    connect(session->dialog, &mplayer::shell::PlayerDialog::runtimeRequested, this,
+    connect(session->controller, &mplayer::quick::PlayerController::runtimeRequested, this,
             [this, sessionId] {
                 if (PlayerSession* live = sessionById(sessionId)) requestRuntime(live);
             });
     // A processing-failure remedy needs the application's Settings surface, which
-    // only the window owns. The page re-emits it with the dialog that raised it and
+    // only the window owns. The page re-emits it with the controller that raised it and
     // nothing else: no URL work, no quality probe, no episode or hostless control
     // is added here. The session registration is checked on every use, so a
     // remedy from a player this page has already disposed is dropped instead of
     // being forwarded for a core that no longer exists.
-    connect(session->dialog, &mplayer::shell::PlayerDialog::processingSettingsRequested, this,
+    connect(session->controller, &mplayer::quick::PlayerController::processingSettingsRequested, this,
             [this, sessionId](mplayer::shell::ProcessingSettingsIntent intent) {
                 PlayerSession* session = sessionById(sessionId);
-                if (session == nullptr || session->dialog == nullptr) {
+                if (session == nullptr || session->controller == nullptr) {
                     return;
                 }
-                emit playerProcessingSettingsRequested(session->dialog, intent);
+                emit playerProcessingSettingsRequested(session->controller, intent);
             });
-    connect(session->dialog, &mplayer::shell::PlayerDialog::componentSetupRequested,
+    connect(session->controller, &mplayer::quick::PlayerController::componentSetupRequested,
             this, [this, sessionId] {
                 PlayerSession* session = sessionById(sessionId);
-                if (session != nullptr && session->dialog != nullptr) {
+                if (session != nullptr && session->controller != nullptr) {
                     emit playerComponentSetupRequested();
                 }
             });
     // A provider switch can replace the grid, so resolve the session's own episode identity.
-    connect(session->dialog, &mplayer::shell::PlayerDialog::episodePlaybackStarted, this,
+    connect(session->controller, &mplayer::quick::PlayerController::episodePlaybackStarted, this,
             [this, sessionId](int playlistIndex) {
                 PlayerSession* session = sessionById(sessionId);
-                if (session == nullptr || session->dialog == nullptr) {
+                if (session == nullptr || session->controller == nullptr) {
                     return;
                 }
                 const QString number = session->playlist.value(playlistIndex)
@@ -220,10 +222,10 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
                     noteEpisodeStarted(number);
                 }
             });
-    connect(session->dialog, &mplayer::shell::PlayerDialog::episodeProgress, this,
+    connect(session->controller, &mplayer::quick::PlayerController::episodeProgress, this,
             [this, sessionId](int playlistIndex, double position, double duration) {
                 PlayerSession* session = sessionById(sessionId);
-                if (session == nullptr || session->dialog == nullptr) {
+                if (session == nullptr || session->controller == nullptr) {
                     return;
                 }
                 const QString number = session->playlist.value(playlistIndex)
@@ -233,10 +235,10 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
                     noteEpisodeProgress(number, position, duration);
                 }
             });
-    connect(session->dialog, &mplayer::shell::PlayerDialog::episodeResumeDeclined, this,
+    connect(session->controller, &mplayer::quick::PlayerController::episodeResumeDeclined, this,
             [this, sessionId](int playlistIndex) {
                 PlayerSession* session = sessionById(sessionId);
-                if (session == nullptr || session->dialog == nullptr) {
+                if (session == nullptr || session->controller == nullptr) {
                     return;
                 }
                 const QString number = session->playlist.value(playlistIndex)
@@ -249,10 +251,10 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
                     updateWatchPanel();
                 }
             });
-    connect(session->dialog, &mplayer::shell::PlayerDialog::episodePlaybackFinished, this,
+    connect(session->controller, &mplayer::quick::PlayerController::episodePlaybackFinished, this,
             [this, sessionId](int playlistIndex) {
                 PlayerSession* session = sessionById(sessionId);
-                if (session == nullptr || session->dialog == nullptr) {
+                if (session == nullptr || session->controller == nullptr) {
                     return;
                 }
                 const QString number = session->playlist.value(playlistIndex)
@@ -261,7 +263,7 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
                 if (!number.isEmpty()) {
                     setEpisodeWatched(number, true);
                 }
-                // P0-08: host-driven auto-advance. PlayerDialog owns neither
+                // P0-08: host-driven auto-advance. PlayerController owns neither
                 // the playlist nor the decision: it only dedupes and emits.
                 // Advance only when the finished episode is still the one
                 // playing, a next episode exists, and the viewer has not
@@ -269,28 +271,28 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
                 // through the existing manual episode-stepping path, so the
                 // last episode simply stops: no loop, no replay.
                 const bool autoAdvance = QSettings().value(
-                    QString::fromLatin1(mplayer::VideoSurface::kAutoAdvanceSettingKey),
+                    QString::fromLatin1(mplayer::VideoSession::kAutoAdvanceSettingKey),
                     true).toBool();
-                if (!autoAdvance || playlistIndex != session->dialog->currentEpisodeIndex() ||
+                if (!autoAdvance || playlistIndex != session->controller->currentEpisodeIndex() ||
                     playlistIndex + 1 >= session->playlist.size()) {
                     return;
                 }
-                session->dialog->stepEpisode(1);
+                session->controller->stepEpisode(1);
             });
     // The app-owned assembly answers this episode player's native requests: it
     // reads the owned model store, the requested recipe and the measured machine
     // identity off the GUI thread and submits the whole request back through the
-    // dialog. Every episode player gets its own binding, exactly as the
+    // controller. Every episode player gets its own binding, exactly as the
     // standalone media player does.
-    bindNativePlaybackAssembly(runner_, *session->dialog);
-    session->dialog->setPlaylist(session->playlist, currentIndex);
-    session->dialog->setVariants(episodeVariants(entry->number), entry->embedUrl);
+    bindNativePlaybackAssembly(runner_, *session->controller);
+    session->controller->setPlaylist(session->playlist, currentIndex);
+    session->controller->setVariants(episodeVariants(entry->number), entry->embedUrl);
     requestSkipSegments(session);
     // The episode the player opens first is not applied through applyEpisode, so
     // its resume point is handed over before startPlayer().
-    session->dialog->setEpisodeResumePoint(watchHistory_.offset(ref_, entry->number));
-    session->dialog->show();
-    session->dialog->startPlayer();
+    session->controller->setEpisodeResumePoint(watchHistory_.offset(ref_, entry->number));
+    session->controller->showWindow();
+    session->controller->startPlayer();
 }
 
 bool TitlePage::closeSession(quint64 sessionId) {
@@ -301,80 +303,77 @@ bool TitlePage::closeSession(quint64 sessionId) {
     // The player has to acknowledge its own stop first: a refused close means
     // native work is still stopping, so the session stays exactly as it is and
     // the removal can be retried.
-    if (session->dialog != nullptr && !session->dialog->close()) {
+    if (session->controller != nullptr && !session->controller->requestClose()) {
         qWarning().noquote() << "mikai: session removal refused (native stop unsettled)";
         return false;
     }
-    // close() spins the event loop while it settles, so the session may
-    // already be gone (its own playerClosed() disposed it); disposeSession
-    // re-resolves by id and is a no-op then.
+    // requestClose() may have called playerClosed() synchronously, disposing
+    // this session already; disposeSession re-resolves by id and is then a no-op.
     disposeSession(sessionId, false);
     return true;
 }
 
 void TitlePage::disposeSession(quint64 sessionId, bool forced) {
     // The player's own playerClosed() may already have disposed this session
-    // while close() was running, so resolve by id: the id can never name a
+    // while requestClose() was running, so resolve by id: the id can never name a
     // replacement session, where a pointer comparison could.
     PlayerSession* session = sessionById(sessionId);
     if (session == nullptr) {
         return;
     }
-    auto* dialog = session->dialog;
+    auto* controller = session->controller.data();
     for (auto waiting = trackWaiters_.begin(); waiting != trackWaiters_.end();) {
-        waiting->removeAll(session);
-        if (waiting->isEmpty()) {
+        auto& waiters = waiting.value();
+        waiters.erase(std::remove_if(waiters.begin(), waiters.end(),
+                                     [sessionId](const TrackWaiter& waiter) {
+                                         return waiter.sessionId == sessionId;
+                                     }),
+                      waiters.end());
+        if (waiters.isEmpty()) {
             waiting = trackWaiters_.erase(waiting);
         } else {
             ++waiting;
         }
     }
-    session->dialog = nullptr;
-    // The epoch this session was opened under goes with it, so a runtime reply
-    // that is still queued for the disposed player is dropped rather than
-    // starting a player that no longer exists. The resolution it may have started
-    // is released here, which is what keeps a closed player from holding the one
-    // process resolution a later request would need.
-    runtimeSeq_ += 1;
+    session->controller = nullptr;
+    ++session->runtimeSequence;
     session->runtimePending = false;
     releaseSessionResolution(session);
-    if (forced && dialog != nullptr) {
-        // A refused close leaves the host bridge live until the core is destroyed.
-        // Verified precondition (PlayerDialog.cpp:376): the dialog sets
-        // WA_DeleteOnClose, so only an *accepted* close schedules its
-        // deleteLater; this path runs only after close() was refused, so no
-        // deletion is pending and the direct delete cannot double-delete.
-        const QPointer<mplayer::shell::PlayerDialog> target(dialog);
-        target->hide();
-        delete target.data();
-    }
-    // Erasing the owning pointer destroys the session and its host bridge;
-    // nothing below may touch `session` again.
+
+    // Unregister before any controller teardown can call Host::playerClosed()
+    // again. Keep the bridge alive until the controller is destroyed.
+    std::unique_ptr<Host> host = std::move(session->host);
     const auto it = std::find_if(sessions_.cbegin(), sessions_.cend(),
                                  [session](const std::unique_ptr<PlayerSession>& held) {
                                      return held.get() == session;
                                  });
     if (it != sessions_.cend()) sessions_.erase(it);
+
+    if (controller != nullptr) {
+        const QPointer<mplayer::quick::PlayerController> target(controller);
+        if (forced) target->hideWindow();
+        delete target.data();
+    }
+    host.reset();
 }
 
 void TitlePage::requestRuntime(PlayerSession* session) {
-    if (closed_ || !isLiveSession(session) || session->dialog == nullptr) {
+    if (closed_ || !isLiveSession(session) || session->controller == nullptr) {
         return;
     }
-    auto* dialog = session->dialog;
+    auto* controller = session->controller.data();
     // The episode the viewer asked for is shown first, whatever happens below:
     // a startup that is still validating must not look like a refusal to open.
-    dialog->show();
+    controller->showWindow();
     if (mplayer::native::runtimeSelected()) {
-        // A module is pinned already, so this dialog has no core for the same
-        // reason the dialog itself retries.
+        // A module is pinned already, so the controller can retry immediately.
         return;
     }
     if (session->runtimePending) {
-        // This player is already waiting. The dialog can ask more than once (an
+        // This player is already waiting. The controller can ask more than once (an
         // open that failed while the wait holds, then a retry chip), so the ask
         // is answered with the wait's own status, never a second resolution.
-        dialog->showRuntimePendingStatus();
+        controller->showRuntimePendingStatus();
         return;
     }
     // One resolution per process. The app's own startup validation holds it while
@@ -383,10 +382,11 @@ void TitlePage::requestRuntime(PlayerSession* session) {
     // module is pinned, instead of being told the runtime is missing one turn
     // before it loads.
     if (mplayer::native::runtimeResolutionPending()) {
+        ++session->runtimeSequence;
         session->runtimePending = true;
         session->runtimeResolutionHeld = false;
         session->runtimeResolution = mplayer::native::ResolutionLease();
-        dialog->showRuntimePendingStatus();
+        controller->showRuntimePendingStatus();
         answerSessionWhenSettled(session);
         return;
     }
@@ -400,9 +400,10 @@ void TitlePage::requestRuntime(PlayerSession* session) {
         // The one process resolution was taken between the check above and here,
         // so this request joins whatever is running now rather than competing
         // with it.
+        ++session->runtimeSequence;
         session->runtimePending = true;
         session->runtimeResolutionHeld = false;
-        dialog->showRuntimePendingStatus();
+        controller->showRuntimePendingStatus();
         answerSessionWhenSettled(session);
         return;
     }
@@ -412,15 +413,15 @@ void TitlePage::requestRuntime(PlayerSession* session) {
 }
 
 void TitlePage::runSessionRuntimeResolution(PlayerSession* session) {
-    if (!isLiveSession(session) || session->dialog == nullptr) {
+    if (!isLiveSession(session) || session->controller == nullptr) {
         return;
     }
-    const int seq = ++runtimeSeq_;
+    const int seq = ++session->runtimeSequence;
     const int sourceSeq = session->sourceSequence;
     const EpisodeEntry* entry = session->entry;
     const quint64 sessionId = session->id;
     const QPointer<TitlePage> self(this);
-    const QPointer<mplayer::shell::PlayerDialog> target(session->dialog);
+    const QPointer<mplayer::quick::PlayerController> target(session->controller);
     // Validate the bundle off-thread; load the process-pinned module on the GUI thread.
     runner_.run(
         [] {
@@ -435,19 +436,17 @@ void TitlePage::runSessionRuntimeResolution(PlayerSession* session) {
             // module rather than a resolution that just ended.
             const mplayer::native::RuntimeSelection selection = mplayer::native::commitRuntime(
                 result.value<mplayer::native::RuntimeSelection>());
-            // Resolve by id: a disposed session's lease was already released
-            // by its disposal, so there is nothing left to release here (the
-            // old code released through the freed pointer).
             PlayerSession* session = self->sessionById(sessionId);
             if (session == nullptr) {
                 return;
             }
-            if (self->closed_ || seq != self->runtimeSeq_ || target.isNull() ||
-                session->dialog != target.data() ||
+            if (seq != session->runtimeSequence) {
+                return;
+            }
+            if (self->closed_ || target.isNull() || session->controller != target.data() ||
                 sourceSeq != session->sourceSequence || session->entry != entry) {
-                // A superseded player: its episode, its dialog or the whole page
-                // is gone. The resolution it started is already recorded, so the
-                // lease goes back without touching the player that replaced it.
+                ++session->runtimeSequence;
+                session->runtimePending = false;
                 self->releaseSessionResolution(session);
                 return;
             }
@@ -461,9 +460,13 @@ void TitlePage::runSessionRuntimeResolution(PlayerSession* session) {
             if (session == nullptr) {
                 return;
             }
-            if (self->closed_ || seq != self->runtimeSeq_ || target.isNull() ||
-                session->dialog != target.data() ||
+            if (seq != session->runtimeSequence) {
+                return;
+            }
+            if (self->closed_ || target.isNull() || session->controller != target.data() ||
                 sourceSeq != session->sourceSequence || session->entry != entry) {
+                ++session->runtimeSequence;
+                session->runtimePending = false;
                 self->releaseSessionResolution(session);
                 return;
             }
@@ -475,7 +478,11 @@ void TitlePage::runSessionRuntimeResolution(PlayerSession* session) {
 void TitlePage::answerSessionWhenSettled(PlayerSession* session) {
     const QPointer<TitlePage> self(this);
     const quint64 sessionId = session->id;
-    mplayer::native::whenRuntimeResolutionFinishes(self.data(), [self, sessionId] {
+    const int sourceSequence = session->sourceSequence;
+    const EpisodeEntry* entry = session->entry;
+    const int runtimeSequence = session->runtimeSequence;
+    mplayer::native::whenRuntimeResolutionFinishes(
+        self.data(), [self, sessionId, sourceSequence, entry, runtimeSequence] {
         // The wait is answered once, and only while the page and the player that
         // asked are still the ones on screen: a page that closed, or a source the
         // viewer switched away from, is answered with nothing.
@@ -484,6 +491,15 @@ void TitlePage::answerSessionWhenSettled(PlayerSession* session) {
         }
         PlayerSession* session = self->sessionById(sessionId);
         if (session == nullptr) {
+            return;
+        }
+        if (session->runtimeSequence != runtimeSequence) {
+            return;
+        }
+        if (session->sourceSequence != sourceSequence || session->entry != entry) {
+            ++session->runtimeSequence;
+            session->runtimePending = false;
+            self->releaseSessionResolution(session);
             return;
         }
         if (mplayer::native::runtimeSelected()) {
@@ -498,7 +514,7 @@ void TitlePage::answerSessionWhenSettled(PlayerSession* session) {
 void TitlePage::answerSessionResolved(PlayerSession* session,
                                       const mplayer::native::RuntimeSelection& selection,
                                       const QString& reason) {
-    if (closed_ || !isLiveSession(session) || session->dialog == nullptr) {
+    if (closed_ || !isLiveSession(session) || session->controller == nullptr) {
         return;
     }
     if (!session->runtimePending) {
@@ -513,14 +529,14 @@ void TitlePage::answerSessionResolved(PlayerSession* session,
             reason.isEmpty() ? mplayer::native::currentSelection().reason : reason;
         const QString text = mplayer::native::runtimeUnavailablePlaybackText(detail);
         releaseSessionResolution(session);
-        session->dialog->showError(text);
+        session->controller->showError(text);
         return;
     }
     releaseSessionResolution(session);
     // The episode this session is still on opens now that the module exists. It is
-    // the same startPlayer() the dialog itself retries, so the source that was
+    // the same startPlayer() the controller itself retries, so the source that was
     // asked for is the one that plays.
-    session->dialog->startPlayer();
+    session->controller->startPlayer();
 }
 
 void TitlePage::releaseSessionResolution(PlayerSession* session) {
@@ -535,18 +551,19 @@ void TitlePage::releaseSessionResolution(PlayerSession* session) {
 
 void TitlePage::requestSkipSegments(PlayerSession* session) {
     if (closed_ || !isLiveSession(session) ||
-        session->entry == nullptr || session->dialog == nullptr) {
+        session->entry == nullptr || session->controller == nullptr) {
         return;
     }
 
-    const QString embed = session->entry->embedUrl;
-    session->dialog->setSkipSegments({});
+    const EpisodeEntry* entry = session->entry;
+    const QString embed = entry->embedUrl;
+    session->controller->setSkipSegments({});
     if (!embed.contains(QStringLiteral("moonanime.art/iframe/"))) {
         return;
     }
 
     const QPointer<TitlePage> self(this);
-    const QPointer<mplayer::shell::PlayerDialog> target(session->dialog);
+    const QPointer<mplayer::quick::PlayerController> target(session->controller);
     const int seq = session->sourceSequence;
     const quint64 sessionId = session->id;
     runner_.runStream(
@@ -554,24 +571,26 @@ void TitlePage::requestSkipSegments(PlayerSession* session) {
             return QVariant::fromValue(
                 backend::moonSkipSegments(backend::transportManagerForThread(), embed));
         },
-        [self, target, sessionId, embed, seq](const QVariant& result) {
+        [self, target, sessionId, embed, entry, seq](const QVariant& result) {
             if (self.isNull() || self->closed_ || target.isNull()) {
                 return;
             }
             PlayerSession* session = self->sessionById(sessionId);
-            if (session == nullptr || session->dialog != target.data() ||
-                seq != session->sourceSequence || target->currentEmbed() != embed) {
+            if (session == nullptr || session->controller != target.data() ||
+                seq != session->sourceSequence || session->entry != entry ||
+                entry->embedUrl != embed || target->currentEmbed() != embed) {
                 return;
             }
             target->setSkipSegments(result.value<QVector<QVariantMap>>());
         },
-        [self, target, sessionId, embed, seq](const backend::Failure& failure) {
+        [self, target, sessionId, embed, entry, seq](const backend::Failure& failure) {
             if (self.isNull() || self->closed_ || target.isNull()) {
                 return;
             }
             PlayerSession* session = self->sessionById(sessionId);
-            if (session == nullptr || session->dialog != target.data() ||
-                seq != session->sourceSequence || target->currentEmbed() != embed) {
+            if (session == nullptr || session->controller != target.data() ||
+                seq != session->sourceSequence || session->entry != entry ||
+                entry->embedUrl != embed || target->currentEmbed() != embed) {
                 return;
             }
             qWarning().noquote() << "mikai: could not load skip segments:" << failure.message;
@@ -580,11 +599,12 @@ void TitlePage::requestSkipSegments(PlayerSession* session) {
 
 void TitlePage::recoverStream(PlayerSession* session) {
     // Signed stream URLs expire, so re-extract once before reporting failure.
-    // The re-extraction targets whatever track the dialog is on RIGHT NOW: a
+    // The re-extraction targets whatever track the controller is on RIGHT NOW: a
     // dub/sub switch replaces the record, so recovery must not rewind the
     // episode to the variant it opened with.
     if (closed_ || !isLiveSession(session) ||
-        session->entry == nullptr || session->dialog == nullptr) {
+        session->entry == nullptr || session->controller == nullptr ||
+        session->controller->currentEmbed() != session->entry->embedUrl) {
         return;
     }
     const EpisodeEntry* failedEntry = session->entry;
@@ -594,7 +614,7 @@ void TitlePage::recoverStream(PlayerSession* session) {
     qualityCache_.forget(embed);
     flashStatus(tr("Stream expired — refreshing URL…"), true);
     const QPointer<TitlePage> self(this);
-    const QPointer<mplayer::shell::PlayerDialog> target(session->dialog);
+    const QPointer<mplayer::quick::PlayerController> target(session->controller);
     const int seq = session->sourceSequence;
     const quint64 sessionId = session->id;
     runner_.runStream(
@@ -605,20 +625,22 @@ void TitlePage::recoverStream(PlayerSession* session) {
                 return;
             }
             PlayerSession* session = self->sessionById(sessionId);
-            if (session == nullptr || session->dialog != target.data() ||
-                seq != session->sourceSequence || session->entry != failedEntry) {
+            if (session == nullptr || session->controller != target.data() ||
+                seq != session->sourceSequence || session->entry != failedEntry ||
+                failedEntry->embedUrl != embed || target->currentEmbed() != embed) {
                 return;
             }
             self->qualityCache_.remember(embed, qualities);
             target->applyRefreshedStreams(toQualities(qualities), target->currentHeight());
         },
-        [self, target, sessionId, failedEntry, seq](const backend::Failure& failure) {
+        [self, target, sessionId, failedEntry, embed, seq](const backend::Failure& failure) {
             if (self.isNull() || self->closed_ || target.isNull()) {
                 return;
             }
             PlayerSession* session = self->sessionById(sessionId);
-            if (session == nullptr || session->dialog != target.data() ||
-                seq != session->sourceSequence || session->entry != failedEntry) {
+            if (session == nullptr || session->controller != target.data() ||
+                seq != session->sourceSequence || session->entry != failedEntry ||
+                failedEntry->embedUrl != embed || target->currentEmbed() != embed) {
                 return;
             }
             const QString line =
@@ -628,108 +650,140 @@ void TitlePage::recoverStream(PlayerSession* session) {
                     : QCoreApplication::translate("TitlePage",
                                                   "Could not refresh the stream link.");
             const QString code = backend::failureCodeLabel(failure);
-            session->dialog->showError(code.isEmpty() ? line
+            session->controller->showError(code.isEmpty() ? line
                                                       : QStringLiteral("%1 · %2").arg(line, code));
         });
 }
 
 void TitlePage::switchPlayerVariant(PlayerSession* session, const QString& embed,
                                     const QString& label) {
-    if (closed_ || !isLiveSession(session) || session->dialog == nullptr) {
+    if (closed_ || !isLiveSession(session) || session->controller == nullptr ||
+        session->entry == nullptr) {
         return;
     }
+    EpisodeEntry* const previousEntry = session->entry;
+    const QString previousEmbed = previousEntry->embedUrl;
     auto* entry = new EpisodeEntry;
-    entry->stateIndex = session->entry != nullptr ? session->entry->stateIndex : -1;
-    entry->number = session->entry != nullptr && !session->entry->number.isEmpty()
-                        ? session->entry->number
-                        : label;
+    entry->stateIndex = previousEntry->stateIndex;
+    entry->number = !previousEntry->number.isEmpty() ? previousEntry->number : label;
     entry->embedUrl = embed;
-    entry->label = session->entry != nullptr && !session->entry->label.isEmpty()
-                       ? session->entry->label
-                       : label;
+    entry->label = !previousEntry->label.isEmpty() ? previousEntry->label : label;
     ownedEntries_.append(entry);
     const QPointer<TitlePage> self(this);
-    const QPointer<mplayer::shell::PlayerDialog> target(session->dialog);
+    const QPointer<mplayer::quick::PlayerController> target(session->controller);
     const int seq = ++session->sourceSequence;
     const quint64 sessionId = session->id;
     ensureQualities(
-        entry, [self, target, sessionId, seq](EpisodeEntry* loaded,
-                                           const QMap<int, QString>& qualities) {
-            if (self.isNull() || self->closed_ || target.isNull()) {
+        entry, [self, target, sessionId, seq, previousEntry, previousEmbed, embed](
+                   EpisodeEntry* loaded, const QMap<int, QString>& qualities) {
+            if (self.isNull() || self->closed_ || target.isNull() ||
+                loaded == nullptr || loaded->embedUrl != embed) {
                 return;
             }
             PlayerSession* session = self->sessionById(sessionId);
-            if (session == nullptr || session->dialog != target.data() ||
-                seq != session->sourceSequence) {
+            if (session == nullptr || session->controller != target.data() ||
+                seq != session->sourceSequence || session->entry != previousEntry ||
+                previousEntry->embedUrl != previousEmbed ||
+                target->currentEmbed() != previousEmbed) {
                 return;
             }
             session->entry = loaded;
-            session->dialog->applyVariant(toQualities(qualities), loaded->label,
-                                          loaded->embedUrl);
+            target->applyVariant(toQualities(qualities), loaded->label, loaded->embedUrl);
             self->requestSkipSegments(session);
         });
 }
 
 void TitlePage::probeTrackQuality(PlayerSession* session, const QString& embed) {
-    // Answer the player's request for one track's best quality, sharing the
-    // per-embed cache so a track already probed costs nothing.
-    if (closed_ || !isLiveSession(session) || session->dialog == nullptr) {
+    // Answer a track's quality request, sharing both the cache and any in-flight
+    // extraction across every player session.
+    if (closed_ || !isLiveSession(session) || session->controller == nullptr ||
+        session->entry == nullptr) {
         return;
     }
     const QMap<int, QString> cached = qualityCache_.qualities(embed);
     if (!cached.isEmpty()) {
-        session->dialog->setTrackQuality(embed, maxQuality(cached));
+        session->controller->setTrackQuality(embed, maxQuality(cached));
         return;
     }
-    if (trackWaiters_[embed].contains(session)) {
+
+    const QString sourceEmbed = session->entry->embedUrl;
+    if (sourceEmbed.isEmpty() || session->controller->currentEmbed() != sourceEmbed) {
         return;
     }
-    trackWaiters_[embed].append(session);
-    const QPointer<TitlePage> self(this);
-    const QPointer<mplayer::shell::PlayerDialog> target(session->dialog);
+    const int sourceSequence = session->sourceSequence;
     const quint64 sessionId = session->id;
+    auto& waiters = trackWaiters_[embed];
+    for (TrackWaiter& waiter : waiters) {
+        if (waiter.sessionId != sessionId) {
+            continue;
+        }
+        if (waiter.sourceSequence == sourceSequence && waiter.entry == session->entry &&
+            waiter.sourceEmbed == sourceEmbed) {
+            return;
+        }
+        waiter.sourceSequence = sourceSequence;
+        waiter.entry = session->entry;
+        waiter.sourceEmbed = sourceEmbed;
+        return;
+    }
+
+    const bool startFetch = !trackProbesInFlight_.contains(embed);
+    waiters.append({sessionId, sourceSequence, session->entry, sourceEmbed});
+    if (!startFetch) {
+        return;
+    }
+    trackProbesInFlight_.insert(embed);
+
+    const QPointer<TitlePage> self(this);
     runner_.runStream(
         [embed] { return QVariant::fromValue(backend::qualityStreams(embed)); },
-        [self, target, sessionId, embed](const QVariant& result) {
-            if (self.isNull() || target.isNull()) {
+        [self, embed](const QVariant& result) {
+            if (self.isNull()) {
                 return;
             }
-            PlayerSession* session = self->sessionById(sessionId);
-            if (session == nullptr || session->dialog != target.data()) {
+            self->trackProbesInFlight_.remove(embed);
+            if (self->closed_) {
+                self->trackWaiters_.remove(embed);
                 return;
             }
-            const auto waiting = self->trackWaiters_.find(embed);
-            if (waiting != self->trackWaiters_.end()) {
-                waiting->removeAll(session);
-                if (waiting->isEmpty()) {
-                    self->trackWaiters_.erase(waiting);
+            const QVector<TrackWaiter> waiters = self->trackWaiters_.take(embed);
+            const QMap<int, QString> qualities = result.value<QMap<int, QString>>();
+            QVector<QPointer<mplayer::quick::PlayerController>> recipients;
+            if (!qualities.isEmpty()) {
+                for (const TrackWaiter& waiter : waiters) {
+                    PlayerSession* session = self->sessionById(waiter.sessionId);
+                    if (session == nullptr || session->controller == nullptr ||
+                        session->sourceSequence != waiter.sourceSequence ||
+                        session->entry != waiter.entry || waiter.entry == nullptr ||
+                        waiter.entry->embedUrl != waiter.sourceEmbed ||
+                        session->controller->currentEmbed() != waiter.sourceEmbed) {
+                        continue;
+                    }
+                    recipients.append(session->controller);
                 }
             }
-            const QMap<int, QString> qualities = result.value<QMap<int, QString>>();
-            if (self->closed_ || qualities.isEmpty()) {
+            if (recipients.isEmpty()) {
                 return;
             }
             self->qualityCache_.remember(embed, qualities);
-            session->dialog->setTrackQuality(embed, maxQuality(qualities));
+            const int height = maxQuality(qualities);
+            for (const QPointer<mplayer::quick::PlayerController>& controller : recipients) {
+                if (!controller.isNull()) {
+                    controller->setTrackQuality(embed, height);
+                }
+            }
         },
-        [self, target, sessionId, embed](const backend::Failure&) {
-            if (self.isNull() || target.isNull()) {
+        [self, embed](const backend::Failure&) {
+            if (self.isNull()) {
                 return;
             }
-            PlayerSession* session = self->sessionById(sessionId);
-            if (session == nullptr || session->dialog != target.data()) {
-                return;
-            }
-            const auto waiting = self->trackWaiters_.find(embed);
-            if (waiting != self->trackWaiters_.end() && waiting->removeAll(session) > 0 &&
-                waiting->isEmpty()) {
-                self->trackWaiters_.erase(waiting);
-            }
+            self->trackProbesInFlight_.remove(embed);
+            self->trackWaiters_.remove(embed);
         });
 }
 
 void TitlePage::playEpisodeFrom(PlayerSession* session, const QVariantMap& item, int index) {
-    if (closed_ || !isLiveSession(session) || session->dialog == nullptr) {
+    if (closed_ || !isLiveSession(session) || session->controller == nullptr) {
         return;
     }
     const QString label = item.value(QStringLiteral("label")).toString();
@@ -750,24 +804,30 @@ void TitlePage::playEpisodeFrom(PlayerSession* session, const QVariantMap& item,
     ownedEntries_.append(entry);
     const QVector<QVariantMap> variants = episodeVariants(number);
     const QPointer<TitlePage> self(this);
-    const QPointer<mplayer::shell::PlayerDialog> target(session->dialog);
+    const QPointer<mplayer::quick::PlayerController> target(session->controller);
+    const EpisodeEntry* const previousEntry = session->entry;
+    const QString previousEmbed = previousEntry != nullptr ? previousEntry->embedUrl : QString();
+    const QString requestedEmbed = entry->embedUrl;
     const int seq = ++session->sourceSequence;
     const quint64 sessionId = session->id;
     ensureQualities(
-        entry, [self, target, sessionId, index, variants, seq](EpisodeEntry* loaded,
+        entry, [self, target, sessionId, index, variants, seq, previousEntry, previousEmbed,
+                requestedEmbed](EpisodeEntry* loaded,
                                                           const QMap<int, QString>& qualities) {
             if (self.isNull() || self->closed_ || target.isNull()) {
                 return;
             }
             PlayerSession* session = self->sessionById(sessionId);
-            if (session == nullptr || session->dialog != target.data() ||
-                seq != session->sourceSequence) {
+            if (session == nullptr || session->controller != target.data() ||
+                seq != session->sourceSequence || session->entry != previousEntry ||
+                loaded == nullptr || loaded->embedUrl != requestedEmbed ||
+                (!previousEmbed.isEmpty() && target->currentEmbed() != previousEmbed)) {
                 return;
             }
             session->entry = loaded;
             // Continue a half-watched episode instead of restarting it.
             target->setEpisodeResumePoint(self->watchHistory_.offset(self->ref_, loaded->number));
-            session->dialog->applyEpisode(loaded->label, loaded->embedUrl, index,
+            session->controller->applyEpisode(loaded->label, loaded->embedUrl, index,
                                           toQualities(qualities), variants);
             self->requestSkipSegments(session);
         });
@@ -779,14 +839,15 @@ bool TitlePage::shutdown(bool forced) {
         return true;
     }
     // Every player acknowledges its own stop before anything is disposed. A
-    // refusal keeps the page, its sessions and its dialogs exactly as they are,
+    // refusal keeps the page, its sessions and their controllers exactly as they are,
     // so the shutdown can be retried; only the destructor, which cannot refuse
     // destruction, disposes a refused session anyway - and even then each
-    // widget's destructor releases what it held only after the core has died.
+    // controller's destructor releases its session only after the core has died.
     // Ids are collected first: disposing a session erases it from the vector.
     QVector<quint64> open;
     open.reserve(sessions_.size());
     for (const auto& held : sessions_) open.append(held->id);
+    bool refused = false;
     for (quint64 sessionId : open) {
         if (sessionById(sessionId) == nullptr) {
             // The player's own playerClosed() already disposed this one while an
@@ -797,16 +858,20 @@ bool TitlePage::shutdown(bool forced) {
             continue;
         }
         if (!forced) {
+            refused = true;
             qWarning().noquote() << "mikai: title shutdown refused (native stop unsettled)";
-            return false;
+            continue;
         }
         // Destruction cannot be refused, so the forced stop is named rather than
-        // probed; each dialog's destructor still releases what it held only after
+        // probed; each controller's destructor still releases what it held only after
         // its core has synchronously died.
         qWarning().noquote()
             << "mikai: forced title teardown (destruction cannot be refused; native claims are "
                "released only after the core is destroyed)";
         disposeSession(sessionId, true);
+    }
+    if (refused) {
+        return false;
     }
     closed_ = true;
     fetchWaiters_.clear();
@@ -818,8 +883,8 @@ bool TitlePage::shutdown(bool forced) {
     // resolution is still queued - is released rather than left owned by a page
     // that is gone, so a later request is not locked out of the one process
     // resolution by a player nobody is watching any more.
-    runtimeSeq_ += 1;
     for (const auto& held : sessions_) {
+        ++held->runtimeSequence;
         held->runtimePending = false;
         releaseSessionResolution(held.get());
     }

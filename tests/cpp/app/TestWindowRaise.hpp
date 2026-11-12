@@ -33,8 +33,10 @@ private slots:
   void installingThePolicyTwiceRaisesOncePerShow();
   void theExemptionIsVisibleBeforeTheWindowIsShown();
   void thePolicyAppliesToADialogShownOnTopOfAWindow();
-  void pipWindowManagerCloseRequestsPlayerTeardown();
-  void processingOverlayStaysHiddenAfterDismissal();
-  void processingOverlayReassertsWindowsTopmostWithoutActivation();
-  void processingOverlayReassertsX11TopmostWithoutActivation();
+  void nativePlayerPipKeepsItsQuickWindowAndForegroundIntent();
+  void fullscreenIntentTracksTheNativeWindowState();
+  void windowActivationWakesFullscreenChrome();
+  void preparationWindowRemainsNonactivatingAndStopsStackingWhenHidden();
+  void preparationWindowReassertsWindowsTopmostWithoutActivation();
+  void preparationWindowReassertsX11TopmostWithoutActivation();
 };

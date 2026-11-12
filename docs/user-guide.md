@@ -2,6 +2,8 @@
 
 Mikai Ja Nai is an unofficial desktop client for the read-only Mikai Public API, with a separate local video player. You can browse the catalogue without downloading processing components, and you can play local files without catalogue access. Mikai is the service and API; **Mikai Ja Nai** is this application.
 
+The player uses a native Qt Quick scene for its video and controls. Picture-in-picture is a compact presentation of that same player session; it does not open a second decoder. Settings and catalogue browsing remain in their existing application windows.
+
 This guide gets you from opening the app to finding a title and choosing an episode. For focused instructions, see the [playback and Compare guide](player-guide.md), [processing and components guide](processing-guide.md), and [settings and privacy guide](settings-guide.md).
 
 ## Install and first launch
@@ -85,7 +87,7 @@ The Home **Recently opened** list, watch history and settings are local applicat
 
 ## Compare and export
 
-For frame comparison and GIF, WebP or MP4 export, see the [playback and Compare guide](player-guide.md#compare-two-processing-results). To make a short clip from original source media, follow [Cut a moment](player-guide.md#cut-a-moment).
+For frame comparison and GIF, WebP or MP4 export, see the [playback and Compare guide](player-guide.md#compare-two-processing-results). The player’s **Copy frame** action copies the presented picture to the clipboard. To make a short clip from original source media, follow [Cut a moment](player-guide.md#cut-a-moment). Compare and Clip open as auxiliary windows; PiP remains in the same player window.
 
 ## Optional video processing and components
 

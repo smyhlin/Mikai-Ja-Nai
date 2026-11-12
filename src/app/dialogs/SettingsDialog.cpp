@@ -44,7 +44,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScreen>
-#include <VideoSurface.hpp>
+#include <VideoSession.hpp>
 
 #include <QSettings>
 #include <QTabBar>
@@ -607,29 +607,28 @@ void SettingsDialog::save() {
     }
     settings.setValue(feeds::settingsKey(), feeds::serialize(chosen));
     // T-101/T-104: the HDR tone-mapping policy and the native-on-HDR override
-    // commit with the rest: the statics are the live truth every engine reads
-    // at creation and every running surface adopts through its own pump, so no
-    // player restart and no per-surface plumbing is needed here.
+    // commit with the rest: VideoSession is the live policy source every engine
+    // reads at creation and running sessions adopt the change without a restart.
     const int committedHdrPolicy = hdrPolicy_->currentData().toInt();
-    settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kHdrToneMappingSettingKey),
+    settings.setValue(QString::fromLatin1(mplayer::VideoSession::kHdrToneMappingSettingKey),
                      committedHdrPolicy);
     settings.setValue(
-        QString::fromLatin1(mplayer::VideoSurface::kAnimeJanaiHdrOverrideSettingKey),
+        QString::fromLatin1(mplayer::VideoSession::kAnimeJanaiHdrOverrideSettingKey),
         nativeHdrOverride_->isChecked());
     // P0-08: the one auto-advance bool, default ON, in the existing playback
     // settings - no new settings page.
-    settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kAutoAdvanceSettingKey),
+    settings.setValue(QString::fromLatin1(mplayer::VideoSession::kAutoAdvanceSettingKey),
                       autoAdvance_->isChecked());
-    using HdrPolicy = mplayer::VideoSurface::HdrToneMappingPolicy;
+    using HdrPolicy = mplayer::VideoSession::HdrToneMappingPolicy;
     switch (committedHdrPolicy) {
-        case 1: mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Stable); break;
-        case 2: mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Vivid); break;
-        default: mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Auto); break;
+        case 1: mplayer::VideoSession::setHdrToneMappingPolicy(HdrPolicy::Stable); break;
+        case 2: mplayer::VideoSession::setHdrToneMappingPolicy(HdrPolicy::Vivid); break;
+        default: mplayer::VideoSession::setHdrToneMappingPolicy(HdrPolicy::Auto); break;
     }
-    mplayer::VideoSurface::setAnimeJanaiHdrOverride(nativeHdrOverride_->isChecked());
+    mplayer::VideoSession::setAnimeJanaiHdrOverride(nativeHdrOverride_->isChecked());
     // Display scaling is the same shape of policy: the four keys are what the
-    // next startup reads, and the static is the live truth every surface
-    // adopts on its own pump, so an open player changes without a restart.
+    // next startup reads, and VideoSession applies the live policy to open
+    // playback without a restart.
     mplayer::VideoScalePolicy scalePolicy;
     const int committedScaleMode = scalingMode_->currentData().toInt();
     if (committedScaleMode >= static_cast<int>(mplayer::VideoScaleMode::Fit) &&
@@ -639,15 +638,15 @@ void SettingsDialog::save() {
     scalePolicy.zoomPercent = scalingZoom_->value();
     scalePolicy.upscale = scalingUpscaler_->currentData().toString();
     scalePolicy.downscale = scalingDownscaler_->currentData().toString();
-    settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kVideoScaleModeSettingKey),
+    settings.setValue(QString::fromLatin1(mplayer::VideoSession::kVideoScaleModeSettingKey),
                       static_cast<int>(scalePolicy.mode));
-    settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kVideoZoomSettingKey),
+    settings.setValue(QString::fromLatin1(mplayer::VideoSession::kVideoZoomSettingKey),
                       scalePolicy.zoomPercent);
-    settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kVideoUpscaleSettingKey),
+    settings.setValue(QString::fromLatin1(mplayer::VideoSession::kVideoUpscaleSettingKey),
                       scalePolicy.upscale);
-    settings.setValue(QString::fromLatin1(mplayer::VideoSurface::kVideoDownscaleSettingKey),
+    settings.setValue(QString::fromLatin1(mplayer::VideoSession::kVideoDownscaleSettingKey),
                       scalePolicy.downscale);
-    mplayer::VideoSurface::setVideoScalePolicy(scalePolicy);
+    mplayer::VideoSession::setVideoScalePolicy(scalePolicy);
     settings.beginGroup(QLatin1String(mplayer::shell::kPresetShortcutSettingsGroup));
     for (const PresetRow& row : presetRows_) {
         if (presets.contains(row.id)) {

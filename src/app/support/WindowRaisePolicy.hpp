@@ -4,6 +4,7 @@
 #include <QPointer>
 
 class QWidget;
+class QWindow;
 
 namespace mikai::app {
 
@@ -45,12 +46,15 @@ class WindowRaisePolicy : public QObject {
 public:
     /// Installs the policy on the application. Idempotent: the app installs it
     /// once in `main()` and a suite that installs it again gets exactly one live
-    /// filter rather than two processing the same Show twice.
+    /// filter rather than two processing the same Show twice. The application
+    /// filter covers both QWidget top-levels and native QWindows, including
+    /// QQuickView, without per-window registration.
     static void install();
 
     /// True when the policy deliberately leaves a window alone, so a window can
     /// ask before showing rather than being surprised afterwards.
     static bool isExempt(const QWidget* window);
+    static bool isExempt(const QWindow* window);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

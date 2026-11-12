@@ -1,6 +1,6 @@
 {
   "name": "volume-slider-mirrors-core",
-  "description": "The volume group's value and mpv's volume stay the same level at all times, in both directions, across the 0..1 / 0..100 scale boundary.",
+  "description": "Two real Quick volume drags keep the visible slider and mpv session synchronized across their 0..1 and 0..100 scales.",
   "category": "state-sync",
   "surface": "player_dialog",
   "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
@@ -13,10 +13,10 @@
       "timeout_ms": 10000
     },
     {
-      "kind": "set_value",
-      "target": "playerVolumeGroup",
-      "name": "volume",
-      "value": 0.2,
+      "kind": "drag",
+      "target": "player.volume.slider",
+      "position": 0.2,
+      "position_end": 0.2,
       "note": "Moved DOWN first. Two steps in opposite directions are what make this a synchronisation check: a single point could agree by coincidence with a volume the player happened to start at."
     },
     {
@@ -24,10 +24,10 @@
       "timeout_ms": 300
     },
     {
-      "kind": "set_value",
-      "target": "playerVolumeGroup",
-      "name": "volume",
-      "value": 0.8
+      "kind": "drag",
+      "target": "player.volume.slider",
+      "position": 0.8,
+      "position_end": 0.8
     },
     {
       "kind": "sleep_ms",
@@ -43,16 +43,16 @@
       "comparison": "approximately",
       "expected": 80.0,
       "tolerance": 1.0,
-      "note": "The final core value, 0.8 scaled to 80 by PlayerDialog.cpp:1177-1180. Read after the last write, so it fails if the core lagged, ignored, or clamped the change."
+      "note": "The final mpv level is the slider's 0.8 input scaled to 80."
     },
     {
       "kind": "qt_property",
-      "target": "playerVolumeGroup",
-      "property": "volume",
+      "target": "player.volume.slider",
+      "property": "value",
       "comparison": "approximately",
       "expected": 0.8,
       "tolerance": 0.01,
-      "note": "The same level in the widget's own 0..1 scale. Asserting both sides in one manifest is the Qt-to-core check: a build that updated only the widget, or only the core, cannot satisfy the pair."
+      "note": "The Quick volume rail's read-only value reports the controller's final 0.8 level."
     },
     {
       "kind": "mpv_property",

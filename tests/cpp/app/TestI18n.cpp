@@ -16,11 +16,10 @@
 #include <native/components/AnimeJanaiRuntime.hpp>
 #include <native/models/NativeSpatialAssets.hpp>
 #include <native/prepare/NativePreparationContext.hpp>
-#include <player/shell/PlayerPopups.hpp>
-#include <player/shell/PlayerShell.hpp>
-#include <VideoSurface.hpp>
+#include "player/quick/PlayerController.hpp"
+#include "player/quick/PlayerWindow.hpp"
+#include "player/core/VideoSession.hpp"
 #include <player/shell/ShellTheme.hpp>
-#include <player/shell/ShellWidgets.hpp>
 #include <widgets/FailureView.hpp>
 #include <widgets/RangePager.hpp>
 #include <widgets/RateLimitLabel.hpp>
@@ -35,11 +34,11 @@
 #include <QtCore/QPoint>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QScopeGuard>
-#include <QtGui/QColor>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QThread>
 #include <QtCore/QTimer>
 #include <QtCore/QLocale>
+#include <QtGui/QColor>
 #include <QtCore/QSettings>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
@@ -54,7 +53,6 @@
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
-#include <QtWidgets/QProgressBar>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QScrollArea>
 #include <QtWidgets/QScrollBar>
@@ -616,37 +614,6 @@ void TestI18n::appearancePreviewCancelRollsBackAndSavePersists() {
            mikai::app::theme::accentColor(mikai::app::currentAppearance()));
 }
 
-void TestI18n::playerOverlayFollowsTheApplicationAccent() {
-  const QColor previous = mplayer::shell::accent();
-  const auto restoreAccent = qScopeGuard(
-      [previous] { mplayer::shell::setAccent(previous); });
-  Q_UNUSED(restoreAccent);
-
-  const QColor chosen(QStringLiteral("#123456"));
-  mplayer::shell::setAccent(chosen);
-  QCOMPARE(mplayer::shell::accent(), chosen);
-
-  QWidget host;
-  auto* flyout = new mplayer::shell::SettingsFlyout(&host);
-  flyout->resize(240, 280);
-  flyout->show();
-  QCoreApplication::processEvents();
-  const QImage shot = flyout->grab().toImage();
-  bool painted = false;
-  for (int y = 4; y < qMin(40, shot.height()) && !painted; ++y) {
-    for (int x = 0; x < shot.width(); ++x) {
-      const QColor pixel = shot.pixelColor(x, y);
-      if (qAbs(pixel.red() - chosen.red()) < 24 &&
-          qAbs(pixel.green() - chosen.green()) < 24 &&
-          qAbs(pixel.blue() - chosen.blue()) < 24) {
-        painted = true;
-        break;
-      }
-    }
-  }
-  QVERIFY2(painted, "the overlay did not paint the application accent");
-}
-
 void TestI18n::settingsPagesFitTheNarrowestAllowedWidth() {
   mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
   mikai::app::Runner runner;
@@ -940,11 +907,6 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   };
   const QVariantMap storedBefore = storedValues();
 
-  mplayer::shell::PlayerShell player;
-  auto* playButton = player.findChild<QPushButton*>(QStringLiteral("playerPlayToggle"));
-  QVERIFY(playButton != nullptr);
-  const QString englishPlayTooltip = playButton->toolTip();
-
   // A language change replaces the decimal separator, not the entered number.
   const auto thresholdValue = [threshold]() {
     for (const QLocale& locale : {QLocale(), QLocale::c()}) {
@@ -975,8 +937,6 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), catalog));
   QCoreApplication::processEvents();
 
-  QVERIFY2(playButton->toolTip() != englishPlayTooltip,
-           "the existing player control was not retranslated");
   QVERIFY2(capture() == before,
            "an unsaved native value, stable id or tab did not survive the retranslation");
   if (scroll != nullptr) QCOMPARE(scroll->verticalScrollBar()->value(), englishScroll);
@@ -998,7 +958,6 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
   QCoreApplication::processEvents();
   QCOMPARE(capture(), before);
-  QCOMPARE(playButton->toolTip(), englishPlayTooltip);
   QVERIFY(manager->currentConfig() == managerBefore);
   QCOMPARE(activate->text(), activateEnglish);
   QCOMPARE(storedValues(), storedBefore);
@@ -1377,7 +1336,7 @@ void TestI18n::cancelChangesNoLanguageAtAll() {
 }
 
 void TestI18n::hdrPlaybackSaveAndCancelRespectDeferredChanges() {
-  using HdrPolicy = mplayer::VideoSurface::HdrToneMappingPolicy;
+  using HdrPolicy = mplayer::VideoSession::HdrToneMappingPolicy;
   QSettings settings;
   settings.sync();
   QVariantMap priorSettings;
@@ -1393,23 +1352,23 @@ void TestI18n::hdrPlaybackSaveAndCancelRespectDeferredChanges() {
   });
   Q_UNUSED(restoreSettings);
 
-  const HdrPolicy priorPolicy = mplayer::VideoSurface::hdrToneMappingPolicy();
-  const bool priorOverride = mplayer::VideoSurface::animeJanaiHdrOverride();
+  const HdrPolicy priorPolicy = mplayer::VideoSession::hdrToneMappingPolicy();
+  const bool priorOverride = mplayer::VideoSession::animeJanaiHdrOverride();
   const auto restoreRuntimePolicy = qScopeGuard([priorPolicy, priorOverride] {
-    mplayer::VideoSurface::setHdrToneMappingPolicy(priorPolicy);
-    mplayer::VideoSurface::setAnimeJanaiHdrOverride(priorOverride);
+    mplayer::VideoSession::setHdrToneMappingPolicy(priorPolicy);
+    mplayer::VideoSession::setAnimeJanaiHdrOverride(priorOverride);
   });
   Q_UNUSED(restoreRuntimePolicy);
 
   const QString policyKey =
-      QString::fromLatin1(mplayer::VideoSurface::kHdrToneMappingSettingKey);
+      QString::fromLatin1(mplayer::VideoSession::kHdrToneMappingSettingKey);
   const QString overrideKey =
-      QString::fromLatin1(mplayer::VideoSurface::kAnimeJanaiHdrOverrideSettingKey);
+      QString::fromLatin1(mplayer::VideoSession::kAnimeJanaiHdrOverrideSettingKey);
   settings.setValue(policyKey, static_cast<int>(HdrPolicy::Stable));
   settings.setValue(overrideKey, false);
   settings.sync();
-  mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Stable);
-  mplayer::VideoSurface::setAnimeJanaiHdrOverride(false);
+  mplayer::VideoSession::setHdrToneMappingPolicy(HdrPolicy::Stable);
+  mplayer::VideoSession::setAnimeJanaiHdrOverride(false);
 
   mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
   mikai::app::Runner runner;
@@ -1425,16 +1384,16 @@ void TestI18n::hdrPlaybackSaveAndCancelRespectDeferredChanges() {
     policy->setCurrentIndex(policy->findData(static_cast<int>(HdrPolicy::Vivid)));
     nativeOverride->setChecked(true);
 
-    QCOMPARE(mplayer::VideoSurface::hdrToneMappingPolicy(), HdrPolicy::Stable);
-    QVERIFY(!mplayer::VideoSurface::animeJanaiHdrOverride());
+    QCOMPARE(mplayer::VideoSession::hdrToneMappingPolicy(), HdrPolicy::Stable);
+    QVERIFY(!mplayer::VideoSession::animeJanaiHdrOverride());
     dialog.reject();
     QCoreApplication::processEvents();
 
     settings.sync();
     QCOMPARE(settings.value(policyKey).toInt(), static_cast<int>(HdrPolicy::Stable));
     QVERIFY(!settings.value(overrideKey).toBool());
-    QCOMPARE(mplayer::VideoSurface::hdrToneMappingPolicy(), HdrPolicy::Stable);
-    QVERIFY(!mplayer::VideoSurface::animeJanaiHdrOverride());
+    QCOMPARE(mplayer::VideoSession::hdrToneMappingPolicy(), HdrPolicy::Stable);
+    QVERIFY(!mplayer::VideoSession::animeJanaiHdrOverride());
   }
 
   {
@@ -1451,8 +1410,8 @@ void TestI18n::hdrPlaybackSaveAndCancelRespectDeferredChanges() {
     policy->setCurrentIndex(policy->findData(static_cast<int>(HdrPolicy::Vivid)));
     nativeOverride->setChecked(true);
 
-    QCOMPARE(mplayer::VideoSurface::hdrToneMappingPolicy(), HdrPolicy::Stable);
-    QVERIFY(!mplayer::VideoSurface::animeJanaiHdrOverride());
+    QCOMPARE(mplayer::VideoSession::hdrToneMappingPolicy(), HdrPolicy::Stable);
+    QVERIFY(!mplayer::VideoSession::animeJanaiHdrOverride());
     save->click();
     QCoreApplication::processEvents();
 
@@ -1461,8 +1420,8 @@ void TestI18n::hdrPlaybackSaveAndCancelRespectDeferredChanges() {
     settings.sync();
     QCOMPARE(settings.value(policyKey).toInt(), static_cast<int>(HdrPolicy::Vivid));
     QVERIFY(settings.value(overrideKey).toBool());
-    QCOMPARE(mplayer::VideoSurface::hdrToneMappingPolicy(), HdrPolicy::Vivid);
-    QVERIFY(mplayer::VideoSurface::animeJanaiHdrOverride());
+    QCOMPARE(mplayer::VideoSession::hdrToneMappingPolicy(), HdrPolicy::Vivid);
+    QVERIFY(mplayer::VideoSession::animeJanaiHdrOverride());
   }
 }
 
@@ -1877,350 +1836,90 @@ void TestI18n::failureViewRephrasesOnlyItsOwnWordsAndKeepsBackendDetail() {
   QCOMPARE(detailRetries.count(), 0);
 }
 
-void TestI18n::processingOverlayKeepsItsRunAcrossLanguageSwitches() {
+void TestI18n::playerQuickRetranslatesWithoutResettingPlayback() {
   QVERIFY2(primeBuiltCatalogForSwitching(),
            qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") + builtCatalogPath()));
 
-  mplayer::shell::ProcessingOverlay overlay;
-  QSignalSpy cancels(&overlay, &mplayer::shell::ProcessingOverlay::cancelRequested);
-  overlay.begin(QStringLiteral("Preparing the engine"));
-  overlay.setStage(2, 5, QStringLiteral("Building engines"), QStringLiteral("first pass"));
-  QCoreApplication::processEvents();
+  const QString fixture = QDir::toNativeSeparators(
+      QStringLiteral(MIKAI_SOURCE_DIR "/resources/benchmarks/1920x1080.mp4"));
+  QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
 
-  auto* progress = overlay.findChild<QProgressBar*>();
-  auto* action =
-      overlay.findChild<QPushButton*>(QStringLiteral("processingOverlayCancel"));
-  QVERIFY2(progress != nullptr && action != nullptr,
-           "the real overlay exposes its bar and its single action");
-  QLabel* title = labelContaining(overlay, QStringLiteral("Preparing the engine"));
-  QLabel* detail = labelContaining(overlay, QStringLiteral("Building engines"));
-  QVERIFY2(title != nullptr && detail != nullptr, "the overlay shows a title and the stage line");
-  // The user-facing position is one-based: internal index 2 is stage 3.
-  QVERIFY2(detail->text().contains(QStringLiteral("Stage 3 of 5")),
-           qPrintable(detail->text()));
+  mplayer::quick::PlayerController controller(QStringLiteral("Translation playback fixture"),
+                                               fixture);
+  controller.showWindow();
+  controller.startPlayer();
+  mplayer::VideoSession* session = controller.session();
+  QVERIFY(session != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(session->duration() > 10.0, 30000);
+  session->setPaused(true);
+  session->seek(3.0);
+  QTRY_VERIFY_WITH_TIMEOUT(qAbs(session->position() - 3.0) < 0.75, 10000);
+  QTRY_VERIFY_WITH_TIMEOUT(session->playbackPauseIntent(), 5000);
 
-  const QString runningTitle = title->text();
-  const QString runningDetail = detail->text();
-  const QString englishCancel = action->text();
-  const QString englishCancelAccessible = action->accessibleName();
-  const QString englishProgressAccessible = progress->accessibleName();
-  QCOMPARE(progress->minimum(), 0);
-  QCOMPARE(progress->maximum(), 5);
-  QCOMPARE(progress->value(), 2);
-  QVERIFY(action->isEnabled());
+  const double duration = session->duration();
+  const double position = session->position();
+  const uint64_t sourceEpoch = session->sourceEpoch();
+  QSignalSpy mediaLoaded(session, &mplayer::VideoSession::mediaLoaded);
+  QSignalSpy sourceEpochChanged(session, &mplayer::VideoSession::sourceEpochChanged);
+  QObject* translatedControl = nullptr;
+  const auto findTranslatedControl = [&translatedControl](QObject* object, const auto& self) -> void {
+    if (object->property("toolTip").toString() == QStringLiteral("Pause (Space)")) {
+      translatedControl = object;
+      return;
+    }
+    for (QObject* child : object->children()) {
+      if (translatedControl != nullptr) return;
+      self(child, self);
+    }
+  };
+  QTRY_VERIFY_WITH_TIMEOUT(controller.window()->rootObject() != nullptr, 15000);
+  findTranslatedControl(controller.window()->rootObject(), findTranslatedControl);
+  QVERIFY2(translatedControl != nullptr, "the Quick player exposes its pause control");
+  const QString englishToolTip = translatedControl->property("toolTip").toString();
 
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
   QCoreApplication::processEvents();
-
-  // The caller's words are re-emitted verbatim; the app-owned "Stage n of m"
-  // wrapper around them is the only part of the line that may change, and the
-  // run's position does not.
-  QCOMPARE(title->text(), runningTitle);
-  QVERIFY2(detail->text() != runningDetail,
-           "the app-owned stage wrapper was not retranslated");
-  QVERIFY2(detail->text().contains(QStringLiteral("Building engines")),
-           "the caller's phase text was replaced instead of re-wrapped");
-  QVERIFY2(detail->text().contains(QStringLiteral("first pass")),
-           "the caller's detail text was replaced instead of re-wrapped");
-  QCOMPARE(progress->minimum(), 0);
-  QCOMPARE(progress->maximum(), 5);
-  QCOMPARE(progress->value(), 2);
-  QVERIFY(action->isEnabled());
-  QVERIFY2(action->text() != englishCancel, "the cancel caption was not retranslated");
-  QVERIFY2(action->accessibleName() != englishCancelAccessible,
-           "the cancel accessible name was not retranslated");
-  QVERIFY2(progress->accessibleName() != englishProgressAccessible,
-           "the progress accessible name was not retranslated");
-  QCOMPARE(cancels.count(), 0);
-
-  overlay.setOperationTitle(QStringLiteral("Rendering the preview"));
-  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
-  QCoreApplication::processEvents();
-  QCOMPARE(title->text(), QStringLiteral("Rendering the preview"));
-  QCOMPARE(detail->text(), runningDetail);
-  QCOMPARE(progress->maximum(), 5);
-  QCOMPARE(progress->value(), 2);
-  QCOMPARE(action->text(), englishCancel);
-  QCOMPARE(action->accessibleName(), englishCancelAccessible);
-  QCOMPARE(progress->accessibleName(), englishProgressAccessible);
-  QCOMPARE(cancels.count(), 0);
-
-  // A cancel already sent is a pending click, not a click the language switch
-  // may hand back to the viewer.
-  action->click();
-  QCOMPARE(cancels.count(), 1);
-  QVERIFY(!action->isEnabled());
-  const QString pendingMark = action->text();
-  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
-  QCoreApplication::processEvents();
-  QVERIFY(!action->isEnabled());
-  QCOMPARE(action->text(), pendingMark);
-  QCOMPARE(cancels.count(), 1);
-  QCOMPARE(title->text(), QStringLiteral("Rendering the preview"));
-  QVERIFY2(detail->text() != runningDetail,
-           "the stage wrapper was not retranslated while a cancel was pending");
-  QVERIFY(detail->text().contains(QStringLiteral("Building engines")));
-  QVERIFY(detail->text().contains(QStringLiteral("first pass")));
-  QCOMPARE(progress->value(), 2);
-
-  // A settled failure stays up and stays settled: switching language rebuilds
-  // its title and action, never the run.
-  overlay.finish(false, QStringLiteral("The builder refused the plan"));
-  QCoreApplication::processEvents();
-  QVERIFY(overlay.isVisible());
-  QCOMPARE(progress->minimum(), 0);
-  QCOMPARE(progress->maximum(), 1);
-  QCOMPARE(progress->value(), 0);
-  QVERIFY(action->isEnabled());
-  QCOMPARE(detail->text(), QStringLiteral("The builder refused the plan"));
-  const QString failedTitle = title->text();
+  QTRY_VERIFY(translatedControl->property("toolTip").toString() != englishToolTip);
+  QCOMPARE(session->duration(), duration);
+  QVERIFY(qAbs(session->position() - position) < 0.75);
+  QVERIFY(session->playbackPauseIntent());
+  QCOMPARE(session->sourceEpoch(), sourceEpoch);
+  QCOMPARE(mediaLoaded.count(), 0);
+  QCOMPARE(sourceEpochChanged.count(), 0);
 
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
   QCoreApplication::processEvents();
-  QVERIFY(overlay.isVisible());
-  QCOMPARE(title->text(),
-           QCoreApplication::translate("mplayer::shell::ProcessingOverlay",
-                                       "Engine build stopped"));
-  QVERIFY2(title->text() != failedTitle, "the failure title stayed in the previous language");
-  QCOMPARE(detail->text(), QStringLiteral("The builder refused the plan"));
-  QCOMPARE(action->text(),
-           QCoreApplication::translate("mplayer::shell::ProcessingOverlay", "Dismiss"));
-  QVERIFY(action->isEnabled());
-  QCOMPARE(progress->maximum(), 1);
-  QCOMPARE(progress->value(), 0);
-  QCOMPARE(cancels.count(), 1);
+  QTRY_COMPARE(translatedControl->property("toolTip").toString(), englishToolTip);
+  QCOMPARE(session->duration(), duration);
+  QVERIFY(qAbs(session->position() - position) < 0.75);
+  QVERIFY(session->playbackPauseIntent());
+  QCOMPARE(session->sourceEpoch(), sourceEpoch);
+  QCOMPARE(mediaLoaded.count(), 0);
+  QCOMPARE(sourceEpochChanged.count(), 0);
 
-  overlay.setSummary(QStringLiteral("Rejected at stage 2"));
-  const QString englishDismiss = action->text();
-  const QString englishDismissAccessible = action->accessibleName();
-  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
-  QCoreApplication::processEvents();
-  QVERIFY(overlay.isVisible());
-  QCOMPARE(detail->text(), QStringLiteral("Rejected at stage 2"));
-  // A settled failure is re-worded by the switch: the caption the viewer just
-  // read is replaced by this language's caption for the same action.
-  QVERIFY2(action->text() != englishDismiss, "the dismiss caption was not retranslated");
-  QCOMPARE(action->text(),
-           QCoreApplication::translate("mplayer::shell::ProcessingOverlay", "Dismiss"));
-  QVERIFY2(action->accessibleName() != englishDismissAccessible,
-           "the dismiss accessible name was not retranslated");
-  QVERIFY(action->isEnabled());
-  QCOMPARE(progress->maximum(), 1);
-  QCOMPARE(progress->value(), 0);
-  QCOMPARE(cancels.count(), 1);
-
-  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
-  QCoreApplication::processEvents();
-}
-
-void TestI18n::settingsFlyoutRetranslatesEverySpeedPresetWithoutReselecting() {
-  QVERIFY2(primeBuiltCatalogForSwitching(),
-           qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") + builtCatalogPath()));
-  // The installed catalog is process state, so English goes back even when an
-  // assertion below ends the test before its last line.
-  const auto restoreLanguage =
-      qScopeGuard([] { mikai::app::applyInterfaceLanguage(QStringLiteral("en")); });
-  Q_UNUSED(restoreLanguage);
-
-  // The popover is reached the way the player reaches it: a child of an overlay
-  // host, so the language change arrives as a child event and not as the
-  // top-level one.
-  QWidget host;
-  auto* hostLayout = new QVBoxLayout(&host);
-  auto* flyout = new mplayer::shell::SettingsFlyout(&host);
-  hostLayout->addWidget(flyout);
-  host.show();
-  QCoreApplication::processEvents();
-
-  // Every preset the production table offers, in its own order. The numeric rate
-  // is what identifies a row without reading the widget's internals, the English
-  // is the source a skipped extraction leaves on screen, and the Ukrainian is
-  // what the real catalogue must deliver for that row.
-  struct Preset {
-    const char* rate;
-    const char* english;
-  };
-  static const Preset kPresets[] = {
-      {"0.5", "Slow"},
-      {"1", "Normal"},
-      {"1.2", "Slightly faster"},
-      {"1.5", "Fast"},
-      {"1.7", "Very fast"},
-      {"2", "Double speed"},
-  };
-  constexpr int kPresetCount = static_cast<int>(sizeof(kPresets) / sizeof(kPresets[0]));
-  const auto at = [](int index) { return QString::fromLatin1(kPresets[index].rate); };
-  // The table's fifth entry, "1.7x", is the rate this test opens the popover at.
-  constexpr int kChecked = 4;
-
-  // A row paints its rate first and its description after it; the checked row
-  // carries a mark in front of that number. Dropping everything before the first
-  // digit is all this test needs to read a row, and it is what keeps the search
-  // below off the checked mark's exact glyph.
-  const auto rowFromRate = [](const QPushButton* row) {
-    QString text = row->text();
-    while (!text.isEmpty() && !text.at(0).isDigit()) {
-      text = text.mid(1);
-    }
-    return text;
-  };
-  // The speed rows are the popover's own buttons; the quality rows are nested in
-  // the quality section. A parent test keeps the two apart without touching any
-  // field the popover keeps to itself.
-  const auto speedRowFor = [flyout, &rowFromRate](const QString& rate) -> QPushButton* {
-    const QString prefix = rate + QStringLiteral("x");
-    for (QPushButton* button : flyout->findChildren<QPushButton*>()) {
-      if (button->parentWidget() != flyout) {
-        continue;
-      }
-      if (rowFromRate(button).startsWith(prefix)) {
-        return button;
-      }
-    }
-    return nullptr;
-  };
-
-  // Set a concrete speed so retranslation must preserve the user's selected rate.
-  flyout->setRate(1.7);
-  flyout->setQuality(QStringLiteral("1080p"));
-  struct QualityFixture {
-    int height;
-    const char* label;
-  };
-  static const QualityFixture kQualities[] = {
-      {1080, "1080p"},
-      {720, "720p"},
-      {480, "480p"},
-  };
-  QVector<mplayer::shell::SettingsFlyout::QualityOption> options;
-  for (const QualityFixture& entry : kQualities) {
-    mplayer::shell::SettingsFlyout::QualityOption option;
-    option.height = entry.height;
-    option.label = QString::fromLatin1(entry.label);
-    option.current = entry.height == 1080;
-    options << option;
-  }
-  flyout->setQualityOptions(options);
-  QCoreApplication::processEvents();
-
-  flyout->popupNear(QPoint(240, 240));
-  QCoreApplication::processEvents();
-  QVERIFY2(flyout->isVisible(), "the popover was not open during the language switch");
-
-  QSignalSpy speedPicks(flyout, &mplayer::shell::SettingsFlyout::speedSelected);
-  QSignalSpy qualityPicks(flyout, &mplayer::shell::SettingsFlyout::qualitySelected);
-
-  // The badge is the popover's only label that is exactly the numeric rate; the
-  // checked row carries a mark before the same number.
-  QLabel* rateBadge = nullptr;
-  for (QLabel* label : flyout->findChildren<QLabel*>()) {
-    if (label->text() == QStringLiteral("1.7x")) {
-      rateBadge = label;
-      break;
-    }
-  }
-  auto* qualityLabel = flyout->findChild<QLabel*>(QStringLiteral("playerQualityLabel"));
-  auto* qualitySection = flyout->findChild<QWidget*>(QStringLiteral("playerQualitySection"));
-  QVERIFY2(rateBadge != nullptr && qualityLabel != nullptr && qualitySection != nullptr,
-           "the popover exposes the numeric rate, the quality label and the quality section");
-  const QString qualityChoice = qualityLabel->text();
-  QCOMPARE(qualityChoice, QStringLiteral("1080p"));
-  const auto qualityRowLabels = [qualitySection]() {
-    QStringList labels;
-    for (QPushButton* button : qualitySection->findChildren<QPushButton*>()) {
-      labels << button->text();
-    }
-    return labels;
-  };
-  const QStringList qualityRows = qualityRowLabels();
-  QCOMPARE(qualityRows.size(), options.size());
-
-  QStringList englishRows;
-  for (int i = 0; i < kPresetCount; ++i) {
-    QPushButton* row = speedRowFor(at(i));
-    QVERIFY2(row != nullptr,
-             qPrintable(QStringLiteral("no speed row for %1x").arg(at(i))));
-    QVERIFY2(row->text().contains(QString::fromUtf8(kPresets[i].english)),
-             qPrintable(QStringLiteral("the English %1x row is not showing its own source: %2")
-                            .arg(at(i))
-                            .arg(row->text())));
-    englishRows << row->text();
-  }
-  // Only the rate the popover opened at is checked, and it is checked while the
-  // popover is still in English.
-  QVERIFY2(englishRows.at(kChecked).startsWith(QStringLiteral("✓")),
-           qPrintable(englishRows.at(kChecked)));
-  for (int i = 0; i < englishRows.size(); ++i) {
-    if (i == kChecked) {
-      continue;
-    }
-    QVERIFY2(!englishRows.at(i).startsWith(QStringLiteral("✓")),
-             qPrintable(englishRows.at(i)));
-  }
+  // A playback failure reaches the live Quick status row and the alert channel
+  // consumed by its accessibility announcer. Rewording must not replay or
+  // re-announce the error.
+  QSignalSpy announced(&controller, &mplayer::quick::PlayerController::alertRequested);
+  controller.showError(QString());
+  QCOMPARE(announced.count(), 1);
+  QCOMPARE(controller.statusMode(), mplayer::quick::PlayerController::StatusMode::Error);
+  QVERIFY(controller.errorActive());
+  QCOMPARE(controller.statusText(), QStringLiteral("Could not play the stream"));
+  QCOMPARE(announced.constFirst().constFirst().toString(), controller.statusText());
 
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
   QCoreApplication::processEvents();
-
-  // Every preset description is restated. A row still carrying its
-  // English source is exactly what a catalogue that missed the const char* table
-  // produced, and it has to fail here rather than read as a translated row.
-  for (int i = 0; i < kPresetCount; ++i) {
-    QPushButton* row = speedRowFor(at(i));
-    QVERIFY2(row != nullptr,
-             qPrintable(QStringLiteral("the %1x row disappeared").arg(at(i))));
-    const QString ukrainian = QCoreApplication::translate(
-        "mplayer::shell::SettingsFlyout", kPresets[i].english);
-    QVERIFY2(!row->text().contains(QString::fromUtf8(kPresets[i].english)),
-             qPrintable(QStringLiteral("the %1x row is still English under Ukrainian: %2")
-                            .arg(at(i))
-                            .arg(row->text())));
-    QVERIFY2(row->text().contains(ukrainian),
-             qPrintable(
-                 QStringLiteral("the %1x row does not carry the catalogue's Ukrainian (%2): %3")
-                     .arg(at(i), ukrainian, row->text())));
-  }
-
-  // The words changed; the checked rate, the numeric rate, the quality choice
-  // and the quality rows' own labels did not, and the restatement never reported
-  // a selection to the owner.
-  QStringList ukrainianRows;
-  for (int i = 0; i < kPresetCount; ++i) {
-    QPushButton* row = speedRowFor(at(i));
-    QVERIFY(row != nullptr);
-    ukrainianRows << row->text();
-    QVERIFY2(rowFromRate(row).startsWith(at(i) + QStringLiteral("x")),
-             qPrintable(row->text()));
-  }
-  QVERIFY2(ukrainianRows.at(kChecked).startsWith(QStringLiteral("✓")),
-           qPrintable(ukrainianRows.at(kChecked)));
-  for (int i = 0; i < ukrainianRows.size(); ++i) {
-    if (i == kChecked) {
-      continue;
-    }
-    QVERIFY2(!ukrainianRows.at(i).startsWith(QStringLiteral("✓")),
-             qPrintable(ukrainianRows.at(i)));
-  }
-  QCOMPARE(rateBadge->text(), QStringLiteral("1.7x"));
-  QCOMPARE(qualityLabel->text(), qualityChoice);
-  QCOMPARE(qualityRowLabels(), qualityRows);
-  QCOMPARE(speedPicks.count(), 0);
-  QCOMPARE(qualityPicks.count(), 0);
-  QVERIFY2(flyout->isVisible(), "the language switch closed the popover");
-
+  QCOMPARE(controller.statusMode(), mplayer::quick::PlayerController::StatusMode::Error);
+  QCOMPARE(controller.statusText(), QStringLiteral("Could not play the stream"));
+  QCOMPARE(announced.count(), 1);
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
   QCoreApplication::processEvents();
-
-  for (int i = 0; i < kPresetCount; ++i) {
-    QPushButton* row = speedRowFor(at(i));
-    QVERIFY(row != nullptr);
-    QCOMPARE(row->text(), englishRows.at(i));
-  }
-  QCOMPARE(rateBadge->text(), QStringLiteral("1.7x"));
-  QCOMPARE(qualityLabel->text(), qualityChoice);
-  QCOMPARE(qualityRowLabels(), qualityRows);
-  QCOMPARE(speedPicks.count(), 0);
-  QCOMPARE(qualityPicks.count(), 0);
-  QVERIFY2(flyout->isVisible(), "the popover did not survive the round trip");
+  QCOMPARE(controller.statusMode(), mplayer::quick::PlayerController::StatusMode::Error);
+  QCOMPARE(announced.count(), 1);
+  QCOMPARE(session->sourceEpoch(), sourceEpoch);
+  QCOMPARE(mediaLoaded.count(), 0);
+  QCOMPARE(sourceEpochChanged.count(), 0);
 }
 
 void TestI18n::rateLimitLabelRetranslatesWithoutMovingTheQuotaOrAsking() {

@@ -14,7 +14,7 @@
     },
     {
       "kind": "click",
-      "target": "playerPlayToggle",
+      "target": "player.playPause",
       "note": "Pause first so the position cannot race past the assertion."
     },
     {
@@ -24,10 +24,10 @@
     },
     {
       "kind": "drag",
-      "target": "playerScrubBar",
+      "target": "player.timeline.scrub",
       "position": 0.0,
       "position_end": 0.75,
-      "note": "Press at the left edge and slide to three quarters. ScrubBar is a self-painting RangeSlider with no child handle, so a drag can only work if its own press/move/release handling runs - which is the path set_value deliberately does not take."
+      "note": "Drag the real Quick timeline rail to three quarters. Its press/move handlers issue session seeks; the runner does not write the playhead directly."
     },
     {
       "kind": "sleep_ms",
@@ -56,11 +56,11 @@
     },
     {
       "kind": "qt_property",
-      "target": "playerScrubBar",
-      "property": "value",
+      "target": "player.timeline.scrub",
+      "property": "positionFraction",
       "comparison": "greater_than",
       "expected": 0.6,
-      "note": "The widget followed the pointer, not just the core. A build that seeked the core without moving the control would pass the time-pos assertion and fail this one."
+      "note": "The timeline's rendered fraction follows the pointer as well as the core playhead."
     }
   ]
 }

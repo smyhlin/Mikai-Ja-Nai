@@ -3,8 +3,19 @@
 #include "native/components/AnimeJanaiBuildLog.hpp"
 #include "native/components/NativePipelineSpec.hpp"
 #include "player/compare/PictureMetrics.hpp"
+#include "player/compare/CompareWindow.hpp"
+#include "player/quick/PlayerController.hpp"
+#include "player/shell/ClipDialog.hpp"
+#include "player/shell/MediaInformationDialog.hpp"
+#include "../QuickPlayerTestSupport.hpp"
 
+#include <QApplication>
+#include <QFileInfo>
 #include <QImage>
+#include <QPointer>
+
+#include <cmath>
+#include <memory>
 
 namespace {
 
@@ -205,4 +216,83 @@ void TestComparePipeline::decoderVerdictRequiresADeviceFramesDecoder() {
     QVERIFY(decoderFeedsNativeBackend(QStringLiteral("d3d11"), Backend::DirectML));
     QVERIFY(!decoderFeedsNativeBackend(QStringLiteral("d3d11va-copy"), Backend::DirectML));
     QVERIFY(!decoderFeedsNativeBackend(QStringLiteral("nvdec"), Backend::DirectML));
+}
+void TestComparePipeline::controllerDestructionClosesAuxiliariesBeforeReleasingSession() {
+    QString error;
+    if (!mikai_test::quick::loadExplicitMpvRuntime(&error)) {
+        QSKIP(qPrintable(error));
+    }
+
+    const QString media = mikai_test::quick::benchmarkVideoPath();
+    QVERIFY2(QFileInfo::exists(media), qPrintable(media));
+    auto controller = std::make_unique<mplayer::quick::PlayerController>(
+        QStringLiteral("Compare teardown test"), media);
+    mplayer::VideoSession* session = controller->session();
+    QVERIFY(session != nullptr);
+    QPointer<mplayer::VideoSession> guardedSession(session);
+    QPointer<mplayer::shell::CompareWindow> compare;
+    QPointer<QWidget> clip;
+    QPointer<QWidget> information;
+    bool compareReleasedBeforeSession = false;
+    bool clipClosedBeforeSession = false;
+    bool informationClosedBeforeSession = false;
+
+    auto* playerWindow = controller->window();
+    QVERIFY(playerWindow != nullptr);
+    playerWindow->showWindowed();
+    controller->startPlayer();
+    QTRY_VERIFY_WITH_TIMEOUT(session->hasVideo(), 15000);
+    QTRY_VERIFY_WITH_TIMEOUT(std::isfinite(session->duration()) && session->duration() > 0.0,
+                             15000);
+
+    controller->openMediaInformation();
+    controller->openClipDialog();
+    controller->openCompare();
+    QTRY_VERIFY_WITH_TIMEOUT([&] {
+        for (QWidget* window : QApplication::topLevelWidgets()) {
+            if (auto* candidate = qobject_cast<mplayer::shell::CompareWindow*>(window)) {
+                compare = candidate;
+            } else if (window->objectName() == QStringLiteral("clipDialog")) {
+                clip = window;
+            } else if (window->objectName() == QStringLiteral("playerMediaInformation")) {
+                information = window;
+            }
+        }
+        return compare != nullptr && clip != nullptr && information != nullptr;
+    }(), 15000);
+    QObject::connect(qobject_cast<QDialog*>(clip.data()), &QDialog::finished, qApp,
+                     [&](int) { clipClosedBeforeSession = guardedSession != nullptr; });
+    QObject::connect(qobject_cast<QDialog*>(information.data()), &QDialog::finished, qApp,
+                     [&](int) { informationClosedBeforeSession = guardedSession != nullptr; });
+
+    QTRY_VERIFY_WITH_TIMEOUT(session->nativePlanLocked(), 5000);
+    compare->close();
+    QTRY_VERIFY_WITH_TIMEOUT(compare == nullptr, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(!session->nativePlanLocked(), 5000);
+
+    controller->openCompare();
+    QTRY_VERIFY_WITH_TIMEOUT([&] {
+        for (QWidget* window : QApplication::topLevelWidgets()) {
+            if (auto* candidate = qobject_cast<mplayer::shell::CompareWindow*>(window)) {
+                compare = candidate;
+                return true;
+            }
+        }
+        return false;
+    }(), 15000);
+    QTRY_VERIFY_WITH_TIMEOUT(session->nativePlanLocked(), 5000);
+    QObject::connect(compare, &QObject::destroyed, qApp, [&] {
+        compareReleasedBeforeSession =
+            guardedSession != nullptr && !guardedSession->nativePlanLocked();
+    });
+
+    controller.reset();
+    QTRY_VERIFY_WITH_TIMEOUT(compare == nullptr, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(clip == nullptr, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(information == nullptr, 5000);
+    QVERIFY2(compareReleasedBeforeSession,
+             "Compare's native plan lock and renderer must be released before the session");
+    QVERIFY(clipClosedBeforeSession);
+    QVERIFY(informationClosedBeforeSession);
+    QTRY_VERIFY_WITH_TIMEOUT(guardedSession == nullptr, 5000);
 }

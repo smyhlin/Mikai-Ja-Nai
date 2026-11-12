@@ -1,7 +1,7 @@
 #include "TestAnimeJanaiRuntime.hpp"
 
-#include "PlayerDialog.hpp"
-#include "VideoSurface.hpp"
+#include "PlayerController.hpp"
+#include "VideoSession.hpp"
 #include "../../fixtures/IdentityOnnxFixture.hpp"
 #include "backend/Cancellation.hpp"
 #include "native/bundle/NativePaths.hpp"
@@ -757,32 +757,36 @@ void TestAnimeJanaiRuntime::storedFailedRequestReprobesAfterDependencyInstall() 
     });
 #endif
 
-    mplayer::shell::PlayerDialog dialog(QStringLiteral("Dependency retry"), QString());
-    auto* surface = dialog.findChild<mplayer::VideoSurface*>();
-    QVERIFY(surface != nullptr);
+    mplayer::quick::PlayerController controller(QStringLiteral("Dependency retry"), QString());
+    mplayer::VideoSession* session = controller.session();
+    QVERIFY(session != nullptr);
 
     // A saved preset is not an instruction to enable processing for a new player.
     // Exercise the retry only after the user explicitly selects that preset.
-    QVERIFY(!surface->animeJanaiPlan().enabled);
-    dialog.applyAnimeJanaiRequest(QStringLiteral("builtin1002"));
-    QTRY_COMPARE(surface->animeJanaiPlan().reasonKey,
+    QVERIFY(!session->animeJanaiPlan().enabled);
+    controller.applyAnimeJanaiRequest(QStringLiteral("builtin1002"));
+    QTRY_COMPARE(session->animeJanaiPlan().reasonKey,
                  QStringLiteral("animejanai.installation.fileInvalid"));
-    QVERIFY(surface->animeJanaiPlan().enabled);
-    QVERIFY(!surface->animeJanaiPlan().available);
-    QVERIFY(surface->animeJanaiPlan().reason.contains(fixtureDependency()));
+    QVERIFY(session->animeJanaiPlan().enabled);
+    QVERIFY(!session->animeJanaiPlan().available);
+    QVERIFY(session->animeJanaiPlan().reason.contains(fixtureDependency()));
 
     QVERIFY(writeFile(dependency, fixtureImage()));
-    dialog.refreshStoredSettings();
+    controller.refreshStoredSettings();
 
     // The fake dispatcher cannot load, but restoring its dependency must expose
     // that next consumer failure instead of retaining the missing-file result.
-    QTRY_COMPARE(surface->animeJanaiPlan().reasonKey,
+    QTRY_COMPARE(session->animeJanaiPlan().reasonKey,
                  QStringLiteral("animejanai.installation.abiInvalid"));
-    QVERIFY(surface->animeJanaiPlan().enabled);
-    QVERIFY(!surface->animeJanaiPlan().available);
-    QCOMPARE(surface->animeJanaiPlan().presetId, QStringLiteral("builtin1002"));
+    QVERIFY(session->animeJanaiPlan().enabled);
+    QVERIFY(!session->animeJanaiPlan().available);
+    QCOMPARE(session->animeJanaiPlan().presetId, QStringLiteral("builtin1002"));
     QCOMPARE(settings.value(presetKey).toString(), QStringLiteral("builtin1002"));
     QCOMPARE(settings.value(backendKey).toString(), backendSetting);
+    QVERIFY(controller.processingActive());
+    QCOMPARE(controller.processingReasonKey(),
+             QStringLiteral("animejanai.installation.abiInvalid"));
+    QVERIFY(!controller.errorActive());
 }
 
 void TestAnimeJanaiRuntime::backendMismatchIsNotReady() {

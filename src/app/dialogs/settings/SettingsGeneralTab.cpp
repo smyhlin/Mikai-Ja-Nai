@@ -2,7 +2,7 @@
 #include "state/AppearanceStore.hpp"
 #include "state/SettingsKeys.hpp"
 
-#include <VideoSurface.hpp>
+#include <VideoSession.hpp>
 
 #include "I18n.hpp"
 #include "dialogs/settings/SettingsHelpers.hpp"
@@ -332,9 +332,8 @@ QWidget* SettingsDialog::buildGeneralTab() {
     hdrPolicy_->addItem(tr("Auto (recommended)"), 0);
     hdrPolicy_->addItem(tr("Stable - no per-frame adaptation"), 1);
     hdrPolicy_->addItem(tr("Vivid - Mobius curve"), 2);
-    QSettings policySettings;
-    const int storedPolicy = policySettings.value(
-        QString::fromLatin1(mplayer::VideoSurface::kHdrToneMappingSettingKey), 0).toInt();
+    const int storedPolicy =
+        static_cast<int>(mplayer::VideoSession::hdrToneMappingPolicy());
     const int policyIndex = hdrPolicy_->findData(storedPolicy);
     hdrPolicy_->setCurrentIndex(policyIndex >= 0 ? policyIndex : 0);
     hdrPolicy_->setAccessibleName(tr("HDR tone mapping"));
@@ -343,9 +342,7 @@ QWidget* SettingsDialog::buildGeneralTab() {
     nativeHdrOverride_ = new QCheckBox(tr("Native enhancement for HDR"), hdrCard);
     nativeHdrOverride_->setObjectName(QStringLiteral("nativeHdrOverrideCheck"));
     polishInteractiveControl(nativeHdrOverride_, theme::kSettingsControlSize);
-    nativeHdrOverride_->setChecked(policySettings.value(
-        QString::fromLatin1(mplayer::VideoSurface::kAnimeJanaiHdrOverrideSettingKey),
-        false).toBool());
+    nativeHdrOverride_->setChecked(mplayer::VideoSession::animeJanaiHdrOverride());
     hdrLayout->addWidget(nativeHdrOverride_);
 
     nativeHdrOverrideHint_ = new QLabel(
@@ -361,8 +358,9 @@ QWidget* SettingsDialog::buildGeneralTab() {
     autoAdvance_ = new QCheckBox(tr("Automatically play the next episode"), hdrCard);
     autoAdvance_->setObjectName(QStringLiteral("autoAdvanceCheck"));
     polishInteractiveControl(autoAdvance_, theme::kSettingsControlSize);
-    autoAdvance_->setChecked(policySettings.value(
-        QString::fromLatin1(mplayer::VideoSurface::kAutoAdvanceSettingKey), true).toBool());
+    QSettings playbackSettings;
+    autoAdvance_->setChecked(playbackSettings.value(
+        QString::fromLatin1(mplayer::VideoSession::kAutoAdvanceSettingKey), true).toBool());
     hdrLayout->addWidget(autoAdvance_);
 
     root->addWidget(hdrCard);
@@ -383,7 +381,8 @@ QWidget* SettingsDialog::buildGeneralTab() {
 
     scalingLayout->addWidget(makeSettingsDivider(scalingCard));
 
-    QSettings scalingSettings;
+    const mplayer::VideoScalePolicy storedScalePolicy =
+        mplayer::VideoSession::videoScalePolicy();
     scalingMode_ = new QComboBox(scalingCard);
     scalingMode_->setObjectName(QStringLiteral("videoScaleModeCombo"));
     polishInteractiveControl(scalingMode_, theme::kSettingsControlSize);
@@ -393,9 +392,8 @@ QWidget* SettingsDialog::buildGeneralTab() {
           mplayer::VideoScaleMode::Aspect4x3, mplayer::VideoScaleMode::Original}) {
         scalingMode_->addItem(mplayer::videoScaleModeLabel(mode), static_cast<int>(mode));
     }
-    const int storedMode = scalingSettings.value(
-        QString::fromLatin1(mplayer::VideoSurface::kVideoScaleModeSettingKey), 0).toInt();
-    const int modeIndex = scalingMode_->findData(storedMode);
+    const int modeIndex =
+        scalingMode_->findData(static_cast<int>(storedScalePolicy.mode));
     scalingMode_->setCurrentIndex(modeIndex >= 0 ? modeIndex : 0);
     scalingMode_->setAccessibleName(tr("Video scaling mode"));
     scalingLayout->addWidget(scalingMode_);
@@ -409,8 +407,7 @@ QWidget* SettingsDialog::buildGeneralTab() {
     scalingZoom_->setRange(-50, 100);
     scalingZoom_->setSingleStep(5);
     scalingZoom_->setSuffix(QStringLiteral(" %"));
-    scalingZoom_->setValue(scalingSettings.value(
-        QString::fromLatin1(mplayer::VideoSurface::kVideoZoomSettingKey), 0).toInt());
+    scalingZoom_->setValue(storedScalePolicy.zoomPercent);
     scalingZoom_->setAccessibleName(tr("Video zoom"));
     polishInteractiveControl(scalingZoom_, theme::kSettingsControlSize);
     scalingLayout->addWidget(scalingZoom_);
@@ -449,9 +446,7 @@ QWidget* SettingsDialog::buildGeneralTab() {
     for (const auto& scaler : scalerChoices) {
         scalingUpscaler_->addItem(scaler.second, scaler.first);
     }
-    const int upscalerIndex = scalingUpscaler_->findData(scalingSettings.value(
-        QString::fromLatin1(mplayer::VideoSurface::kVideoUpscaleSettingKey),
-        QStringLiteral("lanczos")).toString());
+    const int upscalerIndex = scalingUpscaler_->findData(storedScalePolicy.upscale);
     scalingUpscaler_->setCurrentIndex(upscalerIndex >= 0 ? upscalerIndex : 0);
     scalingUpscaler_->setAccessibleName(tr("Upscaler"));
     scalingLayout->addWidget(scalingUpscaler_);
@@ -469,9 +464,8 @@ QWidget* SettingsDialog::buildGeneralTab() {
     for (const auto& scaler : scalerChoices) {
         scalingDownscaler_->addItem(scaler.second, scaler.first);
     }
-    const int downscalerIndex = scalingDownscaler_->findData(scalingSettings.value(
-        QString::fromLatin1(mplayer::VideoSurface::kVideoDownscaleSettingKey),
-        QString()).toString());
+    const int downscalerIndex =
+        scalingDownscaler_->findData(storedScalePolicy.downscale);
     scalingDownscaler_->setCurrentIndex(downscalerIndex >= 0 ? downscalerIndex : 0);
     scalingDownscaler_->setAccessibleName(tr("Downscaler"));
     scalingLayout->addWidget(scalingDownscaler_);

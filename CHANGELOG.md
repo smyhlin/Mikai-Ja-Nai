@@ -24,10 +24,13 @@ Published changes are recorded with their downloads on the [GitHub releases page
   - Obsolete "Refresh" and "Install local runtime..." buttons and manual import paths removed; acquisition "Cancel" appears only while active.
   - Components backend dropdown immediately stores the global engine (`player/animejanai/backend`), which the Benchmark tab toolbar reflects and follows; release inventory scanning latch on executor rebinding.
 - Player and discovery enhancements:
+  - Replace the player presentation with a native Qt Quick window and QML scene backed by a C++ `PlayerController` and the existing `VideoSession`; PiP changes the presentation of that same window/session rather than reopening media or creating another decoder. Playback and renderer lifetime remain in the player core, while Compare, Clip, Media Information, Settings and Components remain Widgets interfaces.
+  - Keep frame composition tied to the live session and its current render target across window changes; stale media/session work is rejected rather than applied to a replacement source.
   - Replace stock `QMessageBox` resume playback prompt with a custom themed dialog matching app design tokens.
   - Remove vertical scrollbar from discovery feed for clean full-width display; vertical scrolling supported via mouse wheel and explicit Alt + mouse wheel.
   - Group processing controls into Restore, Upscale and Interpolation; improve Anime4K shader selection.
   - Refine antialias settings controls, make episode buttons more compact and remove the redundant Episodes button from the title hero.
+  - The player migration's UI proof remains pending the parent integration's targeted Windows smoke; this entry does not claim that validation.
 
 ### Safety, lifetime and playback correctness
 
@@ -45,6 +48,7 @@ Published changes are recorded with their downloads on the [GitHub releases page
 
 ### Interface
 
+- Keep open player menus above the playback controls and switch enhancement submenus immediately on hover.
 - Show the player's centre spinner while a source opens, so the wait for the first frame is a visible state instead of a bare black window.
 - Keep the player's chrome on screen while the viewer reads a tooltip or rests the pointer on it, instead of auto-hiding the chip underneath its own explanation.
 - Keep backend remarks out of the player's status chip: the "RTX builds the engine in-process, so `--skipInference` is not used" detail now lives in the chip's and the engine row's tooltip instead of widening a line read over the picture.

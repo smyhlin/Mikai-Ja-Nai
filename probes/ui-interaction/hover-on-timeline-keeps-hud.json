@@ -14,30 +14,30 @@
     },
     {
       "kind": "mouse_move",
-      "target": "playerScrubBar",
+      "target": "player.timeline.scrub",
       "position": 0.35,
       "note": "The hover path, not a click: the reading under the pointer is what the card shows and what the chrome must survive."
     },
     {
       "kind": "sleep_ms",
-      "value": 3200,
+      "timeout_ms": 3200,
       "note": "Bounded settle over the 2.5 s auto-hide. This is the only sleep in the manifest: it is the timeout under test, not a synchroniser for anything else."
     }
   ],
   "assertions": [
     {
       "kind": "qt_property",
-      "target": "playerHoverPreview",
-      "property": "visible",
+      "target": "playerController",
+      "property": "hoverPreviewVisible",
       "expected": true,
       "note": "The card did not vanish while the pointer rested on the timeline."
     },
     {
       "kind": "qt_property",
-      "target": "playerDock",
-      "property": "visible",
-      "expected": true,
-      "note": "The dock the pointer is on did not auto-hide underneath it."
+      "target": "playerController",
+      "property": "autoHidden",
+      "expected": false,
+      "note": "The controller keeps its actual Quick chrome visible while the pointer rests on the timeline."
     }
   ]
 }

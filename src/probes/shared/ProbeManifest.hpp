@@ -3,9 +3,9 @@
 // afterwards. The runner reads these; nothing here knows about Qt or mpv, so a
 // manifest can be written without reading a line of C++.
 //
-// A manifest names widgets by `objectName` and the core by mpv property name.
-// It never carries coordinates, pixel expectations or sleeps: what it can read
-// is what a user can reach.
+// A manifest names interactive Qt objects by `objectName` and the core by mpv
+// property name. It never carries pixel expectations; timing is limited to
+// explicit, bounded settle steps. What it can read is what a user can reach.
 
 #pragma once
 
@@ -22,10 +22,12 @@
 namespace mikai::probes {
 
 /// Which surface the runner builds before the steps run. The manifest never
-/// constructs a widget itself, so the surface is part of the scenario.
+/// constructs a UI object itself, so the surface is part of the scenario.
 enum class ProbeSurface {
     VideoSurface,  ///< the render surface alone, no chrome
-    PlayerDialog,  ///< the real player: shell, dock, popovers, pip pool
+    /// The canonical Quick player and its controller/session. Serialized
+    /// manifests keep the stable surface name "player_dialog".
+    PlayerWindow,
     /// The real settings dialog, and only it: the dialog is the discovery root
     /// for every step and assertion, so its tabs, combos and fields are reached
     /// by objectName. It opens no stream, so 'media' is refused; width and
@@ -41,12 +43,12 @@ enum class ProbeSurface {
 /// One thing the probe does to the application.
 struct ProbeStep {
     enum class Kind {
-        Click,        ///< press+release the left button on a widget
+        Click,        ///< press+release the left button on an interactive object
         DoubleClick,
         KeyPress,     ///< a key, optionally with Ctrl, Alt or Shift
-        MouseMove,    ///< move the cursor over a widget, no button held
-        Drag,         ///< press at one fraction of the widget's width, slide, release
-        SetValue,     ///< write a widget property (the real setter, so it emits)
+        MouseMove,    ///< move the cursor over an interactive object, no button held
+        Drag,         ///< press at one fraction of the target width, slide, release
+        SetValue,     ///< write a target property (the real setter, so it emits)
         TypeText,     ///< type into a focusable widget
         Focus,
         WaitForSignal,///< block until a named signal arrives
@@ -63,10 +65,10 @@ struct ProbeStep {
     /// Key text for key_press ("Space", "Q", "Escape").
     QString key;
     Qt::KeyboardModifiers modifiers = Qt::NoModifier;
-    /// For mouse_move: where along the widget's own width to point, 0..1
+    /// For mouse_move: where along the target's own width to point, 0..1
     /// (absent means the centre). For drag: where the press starts.
     double position = -1.0;
-    /// For drag only: where along the widget's width the drag ends, 0..1.
+    /// For drag only: where along the target's width the drag ends, 0..1.
     double positionEnd = 1.0;
     int timeoutMs = 5000;
     /// human-readable note, printed when the step fails
@@ -78,7 +80,9 @@ struct ProbeStep {
 enum class ProbeMpvKind { Number, Flag, Text };
 
 /// One thing that must be true. Behaviour only: an assertion that could not
-/// fail on any build is not worth running.
+/// fail on any build is not worth running. SignalEmitted optionally compares
+/// its emission count with `expected`; without it, at least one emission is
+/// required.
 struct ProbeAssertion {
     enum class Kind {
         SignalEmitted,
@@ -89,7 +93,7 @@ struct ProbeAssertion {
         SignalNotEmitted,
     };
     Kind kind = Kind::QtProperty;
-    QString target;   ///< objectName for the widget assertions
+    QString target;   ///< objectName for the UI object assertions
     QString property; ///< Qt property, or mpv property name
     ProbeMpvKind mpvKind = ProbeMpvKind::Number;
     QVariant expected;
@@ -108,15 +112,15 @@ struct ProbeManifest {
     /// Interface language the run installs before any surface is built: "en"
     /// or "uk". Empty is the runner's own default, never a guess the run makes.
     QString language;
-    /// Media the surface opens. Required for PlayerDialog; empty is refused.
+    /// Media the surface opens. Required for PlayerWindow; empty is refused.
     /// Refused outright on SettingsDialog, which opens no stream.
     QString media;
-    /// Episode labels the runner seeds into the player dialog's playlist
+    /// Episode labels the runner seeds into the Quick player's playlist
     /// before it starts, each one pointing at `media`. Only meaningful on
-    /// PlayerDialog; refused everywhere else. Empty means a single stream with
+    /// PlayerWindow; refused everywhere else. Empty means a single stream with
     /// no series drawer.
     QStringList episodes;
-    /// Widget size for the surface under test.
+    /// Window size for the surface under test.
     int width = 640;
     int height = 360;
     QVector<ProbeStep> steps;

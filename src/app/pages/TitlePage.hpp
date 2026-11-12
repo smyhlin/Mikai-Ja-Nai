@@ -48,9 +48,11 @@ class MikaiClient;
 
 namespace mplayer {
 namespace shell {
-class PlayerDialog;
 class PlayerHost;
 }  // namespace shell
+namespace quick {
+class PlayerController;
+}  // namespace quick
 }  // namespace mplayer
 
 namespace mplayer {
@@ -80,7 +82,7 @@ class Runner;
 /// Quality extraction happens once per episode, only when that episode is
 /// opened. The result is cached per embed URL and persisted, so replaying an
 /// episode reuses the store instead of re-extracting. The player is driven
-/// in-process through `mplayer::shell::PlayerDialog`.
+/// in-process through `mplayer::quick::PlayerController`.
 class TitlePage : public QWidget {
     Q_OBJECT
 
@@ -97,8 +99,8 @@ public:
     /// refused its close because native work is still stopping: nothing is
     /// forgotten or deleted and the page stays usable for a retry. Safe to call
     /// twice. `forced` is the destructor path, where destruction cannot be
-    /// refused; it still takes every player through its own close first, so each
-    /// core dies before its widget releases what it held.
+    /// refused; it still takes every player through its own acknowledged close,
+    /// so each core dies before its controller releases it.
     bool shutdown(bool forced = false);
     void escapePage();
 
@@ -111,11 +113,11 @@ Q_SIGNALS:
     /// The quota chip was activated: open Settings on its Access page.
     void accessSettingsRequested();
     /// One of this page's open players raised a processing-failure remedy that needs the
-    /// application's Settings surface. `player` is the dialog that raised it, and the
-    /// owner answers only while that dialog still owns a stream: the page never keeps it
-    /// alive and never reads anything off it itself. Nothing here re-extracts a URL or
-    /// re-probes a quality.
-    void playerProcessingSettingsRequested(mplayer::shell::PlayerDialog* player,
+    /// application's Settings surface. `player` is the controller that raised it, and
+    /// the owner answers only while that controller still owns a stream: the page never
+    /// keeps it alive and never reads anything off it itself. Nothing here re-extracts a
+    /// URL or re-probes a quality.
+    void playerProcessingSettingsRequested(mplayer::quick::PlayerController* player,
                                           mplayer::shell::ProcessingSettingsIntent intent);
     /// One episode player needs the AnimeJaNai component setup surface.
     void playerComponentSetupRequested();
@@ -166,7 +168,7 @@ private:
         bool rendered = false;
     };
 
-    /// The `PlayerHost` bridge answering the dialog's intent signals.
+    /// The `PlayerHost` bridge answering the controller's intent signals.
     /// Declared before PlayerSession: the session owns its host bridge.
     class Host;
 
@@ -180,12 +182,12 @@ private:
     struct PlayerSession {
         ~PlayerSession();
         std::unique_ptr<Host> host;
-        mplayer::shell::PlayerDialog* dialog = nullptr;
+        QPointer<mplayer::quick::PlayerController> controller;
         /// The episode the player is on right now, for stream recovery. A dub/sub
         /// switch replaces it, so recovery must not rewind to the opening episode.
         EpisodeEntry* entry = nullptr;
         /// True from the moment this player asks for a runtime until the wait has
-        /// been answered, so a second request from the same dialog joins the one
+        /// been answered, so a second request from the same controller joins the one
         /// wait instead of starting another resolution.
         bool runtimePending = false;
         /// The resolution this session started, valid only while it is still
@@ -194,6 +196,7 @@ private:
         /// and cannot clear the resolution its replacement is running either.
         mplayer::native::ResolutionLease runtimeResolution;
         bool runtimeResolutionHeld = false;
+        int runtimeSequence = 0;
         int sourceSequence = 0;
         QVector<QVariantMap> playlist;
         /// Stable identity, handed out once at creation and never reused, so a
@@ -610,10 +613,6 @@ protected:
     QString baseStatus_;
     BaseStatus statusKind_ = BaseStatus::Empty;
 
-    /// Bumped by every runtime request, so a completion belonging to a
-    /// superseded attempt is dropped instead of starting a player the user has
-    /// already moved on from.
-    int runtimeSeq_ = 0;
     int releaseProbeSeq_ = 0;
     int activeRelease_ = -1;
     QMap<int, int> releaseQuality_;
@@ -624,15 +623,21 @@ protected:
     QString chosenProvider_;
 
     /// Owned sessions: erasing the unique_ptr destroys the session and its
-    /// host bridge. Nothing outside this vector owns a session; the dialog is
-    /// Qt-owned (WA_DeleteOnClose) and only ever borrowed through QPointer or
-    /// the session's raw dialog pointer while the session is registered.
+    /// host bridge. The controller is a QObject child of the page and is weakly
+    /// held here; all callbacks re-resolve the session by id before using it.
     std::vector<std::unique_ptr<PlayerSession>> sessions_;
     /// Next stable session id; never reused, so a disposed id can never name
     /// a replacement session.
     quint64 nextSessionId_ = 1;
     QMap<QString, QVector<EpisodeEntry*>> fetchWaiters_;
-    QMap<QString, QVector<PlayerSession*>> trackWaiters_;
+    struct TrackWaiter {
+        quint64 sessionId = 0;
+        int sourceSequence = 0;
+        EpisodeEntry* entry = nullptr;
+        QString sourceEmbed;
+    };
+    QMap<QString, QVector<TrackWaiter>> trackWaiters_;
+    QSet<QString> trackProbesInFlight_;
     /// The caller waiting on an in-flight extraction, kept per episode because
     /// the same embed can be awaited by a pill and by an open player at once.
     QMap<EpisodeEntry*,

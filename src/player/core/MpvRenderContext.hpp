@@ -14,6 +14,11 @@
 #include <cstdint>
 #include <functional>
 
+// The GL context mpv's render context was created on. It is compared for
+// identity only (never dereferenced) so a teardown can refuse to free GL
+// objects from a context that is not the one that owns them.
+class QOpenGLContext;
+
 namespace mplayer {
 
 class MpvHandle;
@@ -87,9 +92,15 @@ public:
     // Set once, right after construction, before the first render.
     void setFlipY(bool flip);
 
+    // The context that was current when this render context was created; every
+    // update/render/report_swap/free needs exactly this one current. Compared
+    // by identity, never dereferenced, and only valid while ctx_ is non-null.
+    QOpenGLContext* creatingContext() const noexcept { return creatingContext_; }
+
 private:
     // 1 to flip, 0 not. Always passed per-render; never read back from mpv.
     int flipY_ = 1;
+    QOpenGLContext* creatingContext_ = nullptr;
 
     static void* sGetProc(void* ctx, const char* name);
     static void sUpdate(void* ctx);

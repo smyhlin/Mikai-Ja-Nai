@@ -22,7 +22,6 @@
 #include <QPushButton>
 #include <QMenu>
 #include <QMetaObject>
-#include <QOpenGLWidget>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTest>
@@ -42,10 +41,10 @@
 #include "CompareRenderer.hpp"
 #include "PictureMetrics.hpp"
 #include "CompareWindow.hpp"
-#include "PlayerDialog.hpp"
-#include "PlayerShell.hpp"
+#include "quick/PlayerController.hpp"
+#include "quick/PlayerWindow.hpp"
 #include "ShellTheme.hpp"
-#include "VideoSurface.hpp"
+#include "VideoSession.hpp"
 #include "native/components/AnimeJanaiConfig.hpp"
 #include "ProbeRuntime.hpp"
 #include "ProbePicture.hpp"
@@ -98,7 +97,7 @@ public:
 
 /// Two frames of one still picture, WITHOUT seeking in between. Re-seeking is
 /// what makes the "noise floor" a frame-to-frame difference instead of zero.
-QImage settledFrame(VideoSurface* surface) {
+QImage settledFrame(VideoSession* surface) {
     QImage previous;
     for (int attempt = 0; attempt < 80; ++attempt) {
         QCoreApplication::processEvents();
@@ -118,7 +117,7 @@ struct PlaybackTimestampSample {
     bool completed = false;
 };
 
-bool requestPlaybackTimestamp(VideoSurface* surface, PlaybackTimestampSample* sample,
+bool requestPlaybackTimestamp(VideoSession* surface, PlaybackTimestampSample* sample,
                               int timeoutMs = 5000) {
     if (surface == nullptr || sample == nullptr) return false;
     auto result = std::make_shared<PlaybackTimestampSample>();
@@ -171,14 +170,14 @@ bool requestPlaybackTimestamp(VideoSurface* surface, PlaybackTimestampSample* sa
     return sample->completed && sample->timestamp.has_value();
 }
 
-bool playbackTimestampMatches(VideoSurface* surface, uint64_t sourceEpoch,
+bool playbackTimestampMatches(VideoSession* surface, uint64_t sourceEpoch,
                               const std::optional<double>& expectedTimestamp) {
     PlaybackTimestampSample current;
     return expectedTimestamp.has_value() && requestPlaybackTimestamp(surface, &current) &&
            current.sourceEpoch == sourceEpoch &&
            std::abs(*current.timestamp - *expectedTimestamp) <= 1e-6;
 }
-bool waitForStablePlaybackTimestamp(VideoSurface* surface, uint64_t sourceEpoch,
+bool waitForStablePlaybackTimestamp(VideoSession* surface, uint64_t sourceEpoch,
                                     PlaybackTimestampSample* stable, int timeoutMs = 10000) {
     if (surface == nullptr || stable == nullptr) return false;
     QElapsedTimer elapsed;
@@ -230,7 +229,7 @@ bool waitForStablePlaybackTimestamp(VideoSurface* surface, uint64_t sourceEpoch,
     }
     return false;
 }
-bool waitForPlaybackProgress(VideoSurface* surface, uint64_t sourceEpoch,
+bool waitForPlaybackProgress(VideoSession* surface, uint64_t sourceEpoch,
                              const std::optional<double>& startingTimestamp,
                              PlaybackTimestampSample* progressed, int timeoutMs = 10000) {
     if (surface == nullptr || !startingTimestamp.has_value() || progressed == nullptr) {
@@ -265,8 +264,15 @@ double centerRegionDifference(const QImage& a, const QImage& b) {
     return meanDifference(a.copy(center), b.copy(center));
 }
 
-bool waitForSurfaceFrameSwap(VideoSurface* surface, const std::function<void()>& request,
-                             int timeoutMs = 10000);
+bool waitForSurfaceFrameSwap(mplayer::quick::PlayerWindow* window,
+                             const std::function<void()>& request, int timeoutMs = 10000);
+
+CompareWindow* findCompareWindow() {
+    for (QWidget* widget : QApplication::topLevelWidgets()) {
+        if (auto* compare = qobject_cast<CompareWindow*>(widget)) return compare;
+    }
+    return nullptr;
+}
 
 struct DesktopPlayerCapture {
     QImage desktop;
@@ -275,7 +281,7 @@ struct DesktopPlayerCapture {
     QRect playerRect;
 };
 
-DesktopPlayerCapture grabDesktopPlayer(QScreen* screen, QWidget* player) {
+DesktopPlayerCapture grabDesktopPlayer(QScreen* screen, QWindow* player) {
     DesktopPlayerCapture capture;
     if (screen == nullptr || player == nullptr) return capture;
     const QPixmap desktop = screen->grabWindow(0);
@@ -327,8 +333,9 @@ void logDesktopPlayerCapture(const DesktopPlayerCapture& capture, qint64 elapsed
                  compareConstructed ? 1 : 0);
 }
 
-void finishLoadingOnlyProbe(QApplication* app, PlayerDialog* dialog, VideoSurface* surface,
-                            PlayerShell* shell, const QImage& before,
+void finishLoadingOnlyProbe(QApplication* app, mplayer::quick::PlayerWindow* window,
+                            mplayer::quick::PlayerController* controller, VideoSession* surface,
+                            const QImage& before,
                             const QImage& beforeScreen, const QImage& loading,
                             const DesktopPlayerCapture& loadingCapture) {
     const QImage& loadingScreen = loadingCapture.player;
@@ -369,10 +376,8 @@ void finishLoadingOnlyProbe(QApplication* app, PlayerDialog* dialog, VideoSurfac
         std::fprintf(stderr, "     loading desktop: %s\n", qPrintable(desktopPath));
     }
 
-    const bool duplicateRequested =
-        QMetaObject::invokeMethod(shell, "compareRequested", Qt::DirectConnection);
-    check(duplicateRequested, "duplicate PlayerShell Compare request is invokable");
-    check(dialog->findChildren<CompareWindow*>().isEmpty(),
+    controller->openCompare();
+    check(findCompareWindow() == nullptr,
           "duplicate request during loading does not construct Compare early");
 
     QElapsedTimer completionWait;
@@ -381,14 +386,13 @@ void finishLoadingOnlyProbe(QApplication* app, PlayerDialog* dialog, VideoSurfac
     bool completed = false;
     while (completionWait.elapsed() < 120000) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        const QList<CompareWindow*> windows = dialog->findChildren<CompareWindow*>();
-        compare = windows.isEmpty() ? nullptr : windows.first();
+        compare = findCompareWindow();
         if (compare != nullptr && compare->isVisible() &&
             !compare->comparisonPending()) {
             completed = !compare->frozenFrame().isNull() &&
                         compare->captureError().isEmpty();
             const double restoredCenter =
-                centerRegionDifference(before, surface->grabFramebuffer());
+                centerRegionDifference(before, surface->grabVideoFramebuffer());
             if (restoredCenter >= 0.0 && restoredCenter < 0.01) {
                 break;
             }
@@ -399,20 +403,20 @@ void finishLoadingOnlyProbe(QApplication* app, PlayerDialog* dialog, VideoSurfac
           "Compare opens one real window after the loading frame");
     check(completed, "Compare captures a real frozen frame without native model work");
     const double completedCenterDifference =
-        centerRegionDifference(before, surface->grabFramebuffer());
+        centerRegionDifference(before, surface->grabVideoFramebuffer());
     check(completionWait.elapsed() < 120000 && completedCenterDifference >= 0.0 &&
               completedCenterDifference < 0.01,
           "successful Compare completion clears the loading center control");
 
     bool repeatedSwapped = false;
-    const bool repeatedRequest = waitForSurfaceFrameSwap(surface, [&] {
-        repeatedSwapped =
-            QMetaObject::invokeMethod(shell, "compareRequested", Qt::DirectConnection);
+    const bool repeatedRequest = waitForSurfaceFrameSwap(window, [&] {
+        repeatedSwapped = true;
+        controller->openCompare();
     });
     check(repeatedRequest && repeatedSwapped,
           "repeat request presents a second loading frame");
     const double repeatedCenterDifference =
-        centerRegionDifference(before, surface->grabFramebuffer());
+        centerRegionDifference(before, surface->grabVideoFramebuffer());
     check(repeatedCenterDifference > 0.01,
           "repeat loading frame is visible in the center control region");
     if (compare != nullptr) {
@@ -425,7 +429,7 @@ void finishLoadingOnlyProbe(QApplication* app, PlayerDialog* dialog, VideoSurfac
     while (cancelWait.elapsed() < 5000) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         const double restoredCenter =
-            centerRegionDifference(before, surface->grabFramebuffer());
+            centerRegionDifference(before, surface->grabVideoFramebuffer());
         if (restoredCenter >= 0.0 && restoredCenter < 0.01) {
             cancelled = true;
             break;
@@ -438,16 +442,15 @@ void finishLoadingOnlyProbe(QApplication* app, PlayerDialog* dialog, VideoSurfac
     app->exit(failures == 0 ? 0 : 1);
 }
 
-void waitForLoadingPresentation(QApplication* app, PlayerDialog* dialog,
-                               VideoSurface* surface, PlayerShell* shell,
+void waitForLoadingPresentation(QApplication* app, mplayer::quick::PlayerWindow* window,
+                               mplayer::quick::PlayerController* controller,
+                               VideoSession* surface,
                                const QImage& baseline, const QImage& baselineScreen) {
     const auto loadingSwapped = std::make_shared<bool>(false);
     const QMetaObject::Connection loadingSwap =
-        QObject::connect(surface, &QOpenGLWidget::frameSwapped, app,
+        QObject::connect(window, &mplayer::quick::PlayerWindow::framePresented, app,
                          [loadingSwapped] { *loadingSwapped = true; });
-    const bool requested =
-        QMetaObject::invokeMethod(shell, "compareRequested", Qt::DirectConnection);
-    check(requested, "real PlayerShell Compare request is invokable");
+    controller->openCompare();
 
     auto* presentationPoll = new QTimer(app);
     presentationPoll->setInterval(30);
@@ -456,13 +459,13 @@ void waitForLoadingPresentation(QApplication* app, PlayerDialog* dialog,
     auto* lastCapture = new DesktopPlayerCapture;
     QObject::connect(presentationPoll, &QTimer::timeout, app,
                      [app, presentationPoll, presentationElapsed, lastCapture,
-                      loadingSwap, loadingSwapped, dialog, surface, shell,
+                      loadingSwap, loadingSwapped, window, controller, surface,
                       baseline, baselineScreen] {
-        *lastCapture = grabDesktopPlayer(dialog->screen(), dialog);
+        *lastCapture = grabDesktopPlayer(window->screen(), window);
         const double screenDifference =
             centerRegionDifference(baselineScreen, lastCapture->player);
         const bool compareConstructed =
-            !dialog->findChildren<CompareWindow*>().isEmpty();
+            findCompareWindow() != nullptr;
         const qint64 polledMs = presentationElapsed->elapsed();
         if (compareConstructed || polledMs == 0 || polledMs % 500 < 30) {
             logDesktopPlayerCapture(*lastCapture, polledMs, screenDifference,
@@ -486,8 +489,8 @@ void waitForLoadingPresentation(QApplication* app, PlayerDialog* dialog,
             check(true, "real desktop presents loading before Compare is constructed");
             presentationPoll->stop();
             QObject::disconnect(loadingSwap);
-            const QImage loading = surface->grabFramebuffer();
-            finishLoadingOnlyProbe(app, dialog, surface, shell, baseline,
+            const QImage loading = surface->grabVideoFramebuffer();
+            finishLoadingOnlyProbe(app, window, controller, surface, baseline,
                                    baselineScreen, loading, *lastCapture);
             delete presentationElapsed;
             delete lastCapture;
@@ -506,28 +509,15 @@ void waitForLoadingPresentation(QApplication* app, PlayerDialog* dialog,
             app->exit(1);
         }
     });
-    check(dialog->findChildren<CompareWindow*>().isEmpty(),
+    check(findCompareWindow() == nullptr,
           "loading screenshot is captured before Compare opens");
-    if (!requested) {
-        presentationPoll->stop();
-        QObject::disconnect(loadingSwap);
-        delete presentationElapsed;
-        delete lastCapture;
-        app->exit(1);
-        return;
-    }
     presentationPoll->start();
 }
 
-void beginLoadingOnlyProbe(QApplication* app, PlayerDialog* dialog, VideoSurface* surface) {
-    PlayerShell* shell = dialog->findChild<PlayerShell*>();
-    if (shell == nullptr) {
-        check(false, "--loading-only player shell exists");
-        app->exit(1);
-        return;
-    }
+void beginLoadingOnlyProbe(QApplication* app, mplayer::quick::PlayerWindow* window,
+                           mplayer::quick::PlayerController* controller, VideoSession* surface) {
 
-    const DesktopPlayerCapture frameOneCapture = grabDesktopPlayer(dialog->screen(), dialog);
+    const DesktopPlayerCapture frameOneCapture = grabDesktopPlayer(window->screen(), window);
     logDesktopPlayerCapture(frameOneCapture, 0, 0.0, false);
     if (frameOneCapture.player.isNull()) {
         saveLoadingDiagnosticCapture(frameOneCapture);
@@ -544,13 +534,13 @@ void beginLoadingOnlyProbe(QApplication* app, PlayerDialog* dialog, VideoSurface
     seekElapsed->start();
     auto* latestCapture = new DesktopPlayerCapture;
     QObject::connect(seekPoll, &QTimer::timeout, app,
-                     [app, dialog, surface, shell, frameOneScreen,
+                     [app, window, controller, surface, frameOneScreen,
                       seekPoll, seekElapsed, latestCapture] {
-        *latestCapture = grabDesktopPlayer(dialog->screen(), dialog);
+        *latestCapture = grabDesktopPlayer(window->screen(), window);
         const double difference =
             meanDifference(frameOneScreen, latestCapture->player);
         const bool compareConstructed =
-            !dialog->findChildren<CompareWindow*>().isEmpty();
+            findCompareWindow() != nullptr;
         const qint64 polledMs = seekElapsed->elapsed();
         if (compareConstructed || polledMs == 0 || polledMs % 500 < 30) {
             logDesktopPlayerCapture(*latestCapture, polledMs, difference,
@@ -566,7 +556,7 @@ void beginLoadingOnlyProbe(QApplication* app, PlayerDialog* dialog, VideoSurface
             return;
         }
         if (!latestCapture->player.isNull() && difference > 0.01) {
-            const QImage baseline = surface->grabFramebuffer();
+            const QImage baseline = surface->grabVideoFramebuffer();
             if (baseline.isNull()) {
                 check(false, "framebuffer baseline exists after the desktop presents the seek");
                 seekPoll->stop();
@@ -575,7 +565,7 @@ void beginLoadingOnlyProbe(QApplication* app, PlayerDialog* dialog, VideoSurface
                 app->exit(1);
                 return;
             }
-            waitForLoadingPresentation(app, dialog, surface, shell, baseline,
+            waitForLoadingPresentation(app, window, controller, surface, baseline,
                                        latestCapture->player);
             seekPoll->stop();
             delete seekElapsed;
@@ -603,13 +593,13 @@ void beginLoadingOnlyProbe(QApplication* app, PlayerDialog* dialog, VideoSurface
     seekPoll->start();
 }
 
-bool waitForSurfaceFrameSwap(VideoSurface* surface, const std::function<void()>& request,
-                             int timeoutMs) {
-    if (surface == nullptr) return false;
+bool waitForSurfaceFrameSwap(mplayer::quick::PlayerWindow* window,
+                             const std::function<void()>& request, int timeoutMs) {
+    if (window == nullptr) return false;
     QEventLoop loop;
     bool swapped = false;
     QMetaObject::Connection connection =
-        QObject::connect(surface, &QOpenGLWidget::frameSwapped, &loop, [&] {
+        QObject::connect(window, &mplayer::quick::PlayerWindow::framePresented, &loop, [&] {
             swapped = true;
             loop.quit();
         });
@@ -636,7 +626,7 @@ struct LiveShaderSnapshot {
     std::optional<ProbePropertyValue> coreChain;
 };
 
-LiveShaderSnapshot sampleLiveShaderState(VideoSurface* surface) {
+LiveShaderSnapshot sampleLiveShaderState(VideoSession* surface) {
     LiveShaderSnapshot sample;
     sample.timestampAvailable = requestPlaybackTimestamp(surface, &sample.playback);
     sample.paused = surface->pauseObserved();
@@ -858,8 +848,13 @@ struct PinContinuitySample {
     QImage playerFrame;
 };
 
+bool knownBrightWorkload(const VideoSession* surface) {
+    return surface != nullptr &&
+           surface->sourceUrl().startsWith(QLatin1String("av://lavfi:testsrc2="));
+}
+
 bool visibleSideMatches(CompareWindow* compare, int side, const QString& id,
-                        const QImage& output, VideoSurface* surface) {
+                        const QImage& output, VideoSession* surface) {
     QList<ComparePane*> visible;
     for (ComparePane* pane : compare->findChildren<ComparePane*>()) {
         if (pane->isVisible()) visible.append(pane);
@@ -884,7 +879,8 @@ bool visibleSideMatches(CompareWindow* compare, int side, const QString& id,
     }
     const auto picture = mplayer::probes::measurePicture(
         pane->viewport()->grab().toImage(), surface->videoWidth(), surface->videoHeight());
-    return pane->key() == id && exactPixmap && checkedId && !picture.isMostlyBlack();
+    return pane->key() == id && exactPixmap && checkedId &&
+           (!knownBrightWorkload(surface) || !picture.isMostlyBlack());
 }
 
 bool waitForRenderedSide(CompareWindow* compare, const QString& id, int side,
@@ -952,18 +948,20 @@ QString describePlan(const native::AnimeJanaiPlan& plan) {
 /// is why the pane used to show a recoloured pass-through.
 int runCompareNativeBorrow(const QString& video) {
     static StubHost borrowHost;
-    auto* dialog = new PlayerDialog(QStringLiteral("compare native probe"), video,
-                                    QList<QualityEntry>{{720, video}}, 720, &borrowHost);
-    dialog->startPlayer();
-    dialog->resize(960, 540);
-    dialog->show();
+    auto* controller = new mplayer::quick::PlayerController(
+        QStringLiteral("compare native probe"), video,
+        QList<QualityEntry>{{720, video}}, 720, &borrowHost);
+    auto* window = controller->window();
+    controller->startPlayer();
+    window->resize(960, 540);
+    window->showWindowed();
     QElapsedTimer clock;
     clock.start();
-    auto* surface = dialog->findChild<VideoSurface*>();
+    auto* surface = controller->session();
     while ((surface == nullptr || !surface->hasVideo()) && clock.elapsed() < 120000) {
         QCoreApplication::processEvents();
         QThread::msleep(50);
-        surface = dialog->findChild<VideoSurface*>();
+        surface = controller->session();
     }
     if (surface == nullptr || !surface->hasVideo()) {
         std::fprintf(stderr, "FAIL the player surface never reported video\n");
@@ -1072,18 +1070,20 @@ int runCompareNativeBorrow(const QString& video) {
 /// the pane showed, so this names the key behind it.
 int runComparePlans(const QString& video) {
     static StubHost plansHost;
-    auto* dialog = new PlayerDialog(QStringLiteral("compare plan probe"), video,
-                                    QList<QualityEntry>{{720, video}}, 720, &plansHost);
-    dialog->startPlayer();
-    dialog->resize(960, 540);
-    dialog->show();
+    auto* controller = new mplayer::quick::PlayerController(
+        QStringLiteral("compare plan probe"), video,
+        QList<QualityEntry>{{720, video}}, 720, &plansHost);
+    auto* window = controller->window();
+    controller->startPlayer();
+    window->resize(960, 540);
+    window->showWindowed();
     QElapsedTimer clock;
     clock.start();
-    auto* surface = dialog->findChild<VideoSurface*>();
+    auto* surface = controller->session();
     while ((surface == nullptr || !surface->hasVideo()) && clock.elapsed() < 120000) {
         QCoreApplication::processEvents();
         QThread::msleep(50);
-        surface = dialog->findChild<VideoSurface*>();
+        surface = controller->session();
     }
     if (surface == nullptr || !surface->hasVideo()) {
         std::fprintf(stderr, "FAIL the player surface never reported video\n");
@@ -1278,7 +1278,7 @@ int runCompareRenderOnly(const QString& video) {
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     // Both scopes are redirected into a directory that dies with this process
-    // before the first PlayerDialog, whose constructor reads player/anime4k and
+    // before the first PlayerController reads player/anime4k and
     // player/presetShortcuts. Without it a probe inherits a real session.
     QTemporaryDir settingsDir;
     if (!settingsDir.isValid()) {
@@ -1368,6 +1368,16 @@ int main(int argc, char** argv) {
     const bool pinContinuity = ajiMode || pinContinuityMode;
     static StubHost host;
     const QString url =
+    static StubHost host;
+    {
+        mplayer::quick::PlayerController idleController(
+            QStringLiteral("compare no-video guard"), QString(), {}, 0, &host);
+        idleController.openCompare();
+        check(idleController.statusText() == QStringLiteral("No video to compare") &&
+                  !idleController.compareLoading() && findCompareWindow() == nullptr,
+              "opening Compare without loaded video reports the refusal and creates no window");
+    }
+    const QString url =
         ajiMode ? QString::fromLocal8Bit(argv[2])
                 : (loadingOnly
                        ? (argc == 3
@@ -1382,19 +1392,17 @@ int main(int argc, char** argv) {
                                      : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25"))));
     const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};
 
-    auto* dialog = new PlayerDialog(QStringLiteral("compare probe"), url, qualities, 720, &host);
-    dialog->setVariants({QVariantMap{{"label", QStringLiteral("v")}, {"embed", QStringLiteral("e1")}}},
-                        QStringLiteral("e1"));
-    // Without this the core never loads a file: the dialog builds the
-    // surface, but nothing asks it to open the stream.
-    dialog->startPlayer();
-    // Fullscreen, like the real player opens: a fullscreen owner is a
-    // different stacking case, and a normal window that happens to agree
-    // is not the thing being tested.
-    dialog->showFullScreen();
+    auto* controller = new mplayer::quick::PlayerController(
+        QStringLiteral("compare probe"), url, qualities, 720, &host);
+    auto* window = controller->window();
+    auto* surface = controller->session();
+    controller->setVariants({QVariantMap{{"label", QStringLiteral("v")}, {"embed", QStringLiteral("e1")}}},
+                            QStringLiteral("e1"));
+    controller->startPlayer();
+    window->showFullscreen();
 
     QTimer::singleShot(3000, &app, [&] {
-        auto* surface = dialog->findChild<VideoSurface*>();
+        auto* surface = controller->session();
         // Poll rather than trust a deadline: a cold mpv core can take several
         // seconds to open a file, and a fixed timeout turns a slow machine into
         // a false failure.
@@ -1431,16 +1439,17 @@ int main(int argc, char** argv) {
         surface->setPaused(true);
         if (loadingOnly) {
             surface->seek(1.0);
-            const QPointer<PlayerDialog> dialogGuard(dialog);
-            const QPointer<VideoSurface> surfaceGuard(surface);
-            QTimer::singleShot(1000, &app, [&app, dialogGuard, surfaceGuard] {
-                if (dialogGuard.isNull() || surfaceGuard.isNull() ||
+            const QPointer<mplayer::quick::PlayerController> controllerGuard(controller);
+            const QPointer<mplayer::quick::PlayerWindow> windowGuard(window);
+            const QPointer<VideoSession> surfaceGuard(surface);
+            QTimer::singleShot(1000, &app, [&app, controllerGuard, windowGuard, surfaceGuard] {
+                if (controllerGuard.isNull() || windowGuard.isNull() || surfaceGuard.isNull() ||
                     !surfaceGuard->hasVideo()) {
                     check(false, "paused one-second frame is available for desktop baseline");
                     app.exit(1);
                     return;
                 }
-                beginLoadingOnlyProbe(&app, dialogGuard, surfaceGuard);
+                beginLoadingOnlyProbe(&app, windowGuard, controllerGuard, surfaceGuard);
             });
             return;
         }
@@ -1598,12 +1607,6 @@ int main(int argc, char** argv) {
         }
 
         // ── 4. the window opens, and reads the live surface ──────────
-        auto* shell = dialog->findChild<PlayerShell*>();
-        check(shell != nullptr, "the player has a shell");
-        if (shell == nullptr) {
-            app.exit(failures == 0 ? 0 : 1);
-            return;
-        }
         if (ajiMode) {
             QString originalShaderForOffIntent;
             for (const anime4k::ModeInfo& preset : presets) {
@@ -1626,7 +1629,7 @@ int main(int argc, char** argv) {
             bool baseOff = false;
             for (int waited = 0; waited < 600000; waited += 50) {
                 QCoreApplication::processEvents();
-                surface->update();
+                window->requestRepaint();
                 if (surface->animeJanaiStatus() == QLatin1String("Off")) {
                     baseOff = true;
                     break;
@@ -1662,13 +1665,13 @@ int main(int argc, char** argv) {
                 return;
             }
             QString ajiFailure;
-            QObject::connect(surface, &VideoSurface::animeJanaiFailure, surface,
+            QObject::connect(surface, &VideoSession::animeJanaiFailure, surface,
                              [&ajiFailure](const QString& reason) { ajiFailure = reason; });
             surface->setAnimeJanaiPlan(originalAjiPlan);
             const bool observed = [&] {
                 for (int waited = 0; waited < 600000; waited += 50) {
                     QCoreApplication::processEvents();
-                    surface->update();
+                    window->requestRepaint();
                     if (surface->animeJanaiProcessingObserved()) return true;
                     if (!ajiFailure.isEmpty()) return false;
                     QThread::msleep(50);
@@ -1740,10 +1743,10 @@ int main(int argc, char** argv) {
         PlaybackTimestampSample preCaptureTimestamp;
         const bool preCaptureTimestampAvailable =
             requestPlaybackTimestamp(surface, &preCaptureTimestamp);
-        emit shell->compareRequested();
+        controller->openCompare();
         QTest::qWait(2500);
         const uint64_t pauseGenerationAfterCompare = surface->pauseRequestGeneration();
-        auto* compare = dialog->findChild<CompareWindow*>();
+        auto* compare = findCompareWindow();
         std::fprintf(stderr,
                      "DIAG --aji Compare open pause generation: before=%llu after=%llu, "
                      "playing=%d, pending=%d\n",
@@ -1774,6 +1777,52 @@ int main(int argc, char** argv) {
                   playbackTimestampMatches(surface, comparisonSourceEpoch, frozenTimestamp),
               "Compare freezes the current stable playback timestamp and source epoch");
         const QString comparisonPng = QStringLiteral(".probe-out/compare-window.png");
+        // Reopen requests while the same Compare window is still visible must
+        // run a fresh capture, not merely raise the old frozen picture.
+        const QImage priorFrozenFrame = compare->frozenFrame();
+        const double priorFrozenTimestamp = frozenTimestamp.value_or(-1.0);
+        const double duration = surface->duration();
+        const double recaptureTarget = std::isfinite(duration) && duration > priorFrozenTimestamp + 1.0
+                                           ? std::min(duration - 0.5, priorFrozenTimestamp + 2.0)
+                                           : -1.0;
+        bool visibleRecaptureRequested = false;
+        bool visibleRecaptureSettled = false;
+        PlaybackTimestampSample recapturePosition;
+        if (recaptureTarget > priorFrozenTimestamp &&
+            waitForStablePlaybackTimestamp(surface, comparisonSourceEpoch, &settledAfterCapture)) {
+            surface->seek(recaptureTarget);
+            const bool atNewPosition = waitForStablePlaybackTimestamp(
+                surface, comparisonSourceEpoch, &recapturePosition);
+            if (atNewPosition && recapturePosition.timestamp.has_value() &&
+                std::abs(*recapturePosition.timestamp - priorFrozenTimestamp) > 0.5) {
+                controller->openCompare();
+                visibleRecaptureRequested = true;
+                QElapsedTimer recaptureWait;
+                recaptureWait.start();
+                while (recaptureWait.elapsed() < 120000) {
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+                    const auto capturedAt = compare->frozenPlaybackTimestamp();
+                    if (!compare->comparisonPending() && !compare->captureInProgress() &&
+                        !compare->frozenFrame().isNull() && capturedAt.has_value() &&
+                        std::abs(*capturedAt - *recapturePosition.timestamp) <= 1e-6) {
+                        visibleRecaptureSettled = true;
+                        break;
+                    }
+                    QThread::msleep(20);
+                }
+            }
+        }
+        check(visibleRecaptureRequested && visibleRecaptureSettled &&
+                  compare->isVisible() && !compare->frozenFrame().isNull() &&
+                  compare->frozenPlaybackTimestamp().has_value() &&
+                  std::abs(*compare->frozenPlaybackTimestamp() -
+                           *recapturePosition.timestamp) <= 1e-6,
+              "opening an already-visible Compare captures the current playback position again");
+        if (visibleRecaptureSettled) {
+            frozenTimestamp = compare->frozenPlaybackTimestamp();
+            captureTimestampStable = waitForStablePlaybackTimestamp(
+                surface, comparisonSourceEpoch, &settledAfterCapture);
+        }
         const QImage fullscreenFrozenFrame = compare->frozenFrame();
         const QString fullscreenSelectionA = compare->selectedCandidateId(0);
         const QString fullscreenSelectionB = compare->selectedCandidateId(1);
@@ -1936,12 +1985,16 @@ int main(int argc, char** argv) {
                     paneWorst = std::max(paneWorst, paneDelta);
                     paneStable &= paneDelta >= 0.0 && paneDelta <= 0.01;
                 }
-                paneLit &= sample.paneAlive && !sample.paneImage.isNull() &&
-                           !mplayer::probes::measurePicture(sample.paneImage, surface->videoWidth(),
-                                                            surface->videoHeight()).isMostlyBlack();
-                playerLit &= !sample.playerFrame.isNull() &&
-                             !mplayer::probes::measurePicture(sample.playerFrame, surface->videoWidth(),
-                                                              surface->videoHeight()).isMostlyBlack();
+                if (knownBrightWorkload(surface)) {
+                    paneLit &= sample.paneAlive && !sample.paneImage.isNull() &&
+                               !mplayer::probes::measurePicture(sample.paneImage,
+                                                                surface->videoWidth(),
+                                                                surface->videoHeight()).isMostlyBlack();
+                    playerLit &= !sample.playerFrame.isNull() &&
+                                 !mplayer::probes::measurePicture(sample.playerFrame,
+                                                                  surface->videoWidth(),
+                                                                  surface->videoHeight()).isMostlyBlack();
+                }
             }
             std::fprintf(stderr,
                          "DIAG pin-continuity %s: samples=%d compareWinId=%llu "
@@ -2000,12 +2053,17 @@ int main(int argc, char** argv) {
             check(paneStable,
                   qPrintable(prefix + QStringLiteral(
                                             "the visible comparison pane survives every toggle")));
-            check(paneLit,
-                  qPrintable(prefix + QStringLiteral(
-                                            "the comparison pane never composes black")));
-            check(playerLit,
-                  qPrintable(prefix + QStringLiteral(
-                                            "the player's own framebuffer never composes black")));
+            if (knownBrightWorkload(surface)) {
+                check(paneLit,
+                      qPrintable(prefix + QStringLiteral(
+                                                "the comparison pane never composes black")));
+                check(playerLit,
+                      qPrintable(prefix + QStringLiteral(
+                                                "the player's own framebuffer never composes black")));
+            } else {
+                std::fprintf(stderr, "UNAVAILABLE %s: black-frame verdict requires known-bright testsrc2 input\\n",
+                             qPrintable(prefix));
+            }
             pinSamples.clear();
         };
         const QRect initialNormalGeometry = compare->geometry();
@@ -2128,7 +2186,7 @@ int main(int argc, char** argv) {
             }
             // Reopen so the remaining sections keep the comparison they expect,
             // now holding the newer position the resumed playback reached.
-            emit shell->compareRequested();
+            controller->openCompare();
             QElapsedTimer reopenWait;
             reopenWait.start();
             while (reopenWait.elapsed() < 120000 &&
@@ -2475,7 +2533,8 @@ int main(int argc, char** argv) {
         const bool completed = waitForRenderedSide(compare, testPresetId, 0, &output, &failure);
         const auto picture = mplayer::probes::measurePicture(
             output, surface->videoWidth(), surface->videoHeight());
-        check(completed && !picture.isMostlyBlack() &&
+        check(completed &&
+                  (!knownBrightWorkload(surface) || !picture.isMostlyBlack()) &&
                   visibleSideMatches(compare, 0, testPresetId, output, surface),
               "changing the Anime4K model leaves the correctly labelled actual visible image lit");
         check(compare->renderedSideB() == unchangedSide,
@@ -2488,7 +2547,7 @@ int main(int argc, char** argv) {
         bool menuVisible = false;
         for (QMenu* menu : compare->findChildren<QMenu*>()) menuVisible |= menu->isVisible();
         check(!menuVisible, "the chooser closes before the new output is presented");
-        if (!completed || picture.isMostlyBlack()) {
+        if (!completed || (knownBrightWorkload(surface) && picture.isMostlyBlack())) {
             std::fprintf(stderr, "FAIL shader %s side 0: %s\n",
                          qPrintable(testPresetId), qPrintable(failure));
             app.exit(1);
@@ -2612,8 +2671,9 @@ int main(int argc, char** argv) {
                 QString failure;
                 const bool renderedA = waitForRenderedSide(compare, id, 0, &a, &failure);
                 check(renderedA && !a.isNull() &&
-                          !mplayer::probes::measurePicture(a, surface->videoWidth(),
-                                                          surface->videoHeight()).isMostlyBlack() &&
+                          (!knownBrightWorkload(surface) ||
+                           !mplayer::probes::measurePicture(a, surface->videoWidth(),
+                                                            surface->videoHeight()).isMostlyBlack()) &&
                           visibleSideMatches(compare, 0, id, a, surface),
                       "the selected spatial model produces lit correctly labelled visible side-A output");
                 if (!renderedA || a.isNull()) {
@@ -2909,7 +2969,7 @@ int main(int argc, char** argv) {
 
             const auto reopen = [&] {
                 const quint64 pauseBefore = surface->pauseRequestGeneration();
-                emit shell->compareRequested();
+                controller->openCompare();
                 QCoreApplication::processEvents();
                 std::fprintf(stderr,
                              "     reopen capture readiness: inProgress=%d held=%d "
@@ -3114,7 +3174,7 @@ int main(int argc, char** argv) {
                 }
             }
 
-            dialog->close();
+            controller->hideWindow();
             std::fprintf(stderr, "RESULT: %s\n", failures == 0 ? "PASS" : "FAIL");
             app.exit(failures == 0 ? 0 : 1);
             return;
@@ -3145,7 +3205,7 @@ int main(int argc, char** argv) {
         compare->close();
         surface->seek(firstAt);
         QTest::qWait(1500);
-        emit shell->compareRequested();
+        controller->openCompare();
         QTest::qWait(3000);
         const QImage firstCapture = compare->frozenFrame();
         check(!firstCapture.isNull(), "the first capture froze a frame");
@@ -3198,7 +3258,7 @@ int main(int argc, char** argv) {
         check(surface->anime4KChainId() == single,
               "closing the window leaves the player's chain unchanged");
 
-        emit shell->compareRequested();
+        controller->openCompare();
         QTest::qWait(3000);
         check(compare->isVisible(), "the kept window reopens");
         check(!compare->frozenFrame().isNull(), "the reopened window captured a frame");
@@ -3230,7 +3290,7 @@ int main(int argc, char** argv) {
         QTest::qWait(2500);
         check(compare->captureError().isEmpty(), "the off-prior capture succeeded");
         check(!surface->nativeStatusPolling(), "an off-prior capture leaves polling off");
-        emit shell->compareRequested();
+        controller->openCompare();
         QTest::qWait(3000);
         check(compare->isVisible(), "the off-prior compare reopens");
         check(!surface->nativeStatusPolling(), "an off-prior reopen leaves polling off");
@@ -3244,7 +3304,7 @@ int main(int argc, char** argv) {
         // moment it closes, and a window that cannot hold it names why rather
         // than freezing a plan that is about to move.
         surface->setNativeStatusPolling(true);
-        emit shell->compareRequested();
+        controller->openCompare();
         QTest::qWait(3000);
         check(compare->isVisible(), "the compare window is open for the lock check");
         check(surface->nativePlanLocked() || !compare->lockError().isEmpty() ||
@@ -3420,7 +3480,7 @@ int main(int argc, char** argv) {
         // A second, never-opened surface proves the refusal does not depend on
         // the live player: the window borrows whatever surface it is handed,
         // and one with no file loaded must refuse rather than freeze.
-        VideoSurface idleSurface;
+        VideoSession idleSurface;
         idleSurface.setAnime4KChain(single);
         check(!idleSurface.hasVideo(), "a fresh surface reports no video");
         CompareWindow idleCompare(&idleSurface, idleSurface.anime4KChainId());
@@ -3450,14 +3510,18 @@ int main(int argc, char** argv) {
         // than a read of freed memory. This surface really has video - it is
         // made to freeze a working frame first - and is then deleted from a
         // timer while the NEXT grab is still waiting for it to settle.
-        VideoSurface* borrowed = new VideoSurface();
-        borrowed->resize(320, 240);
-        const bool borrowedOpened = borrowed->open(url);
-        for (int attempt = 0; borrowedOpened && !borrowed->hasVideo() && attempt < 200; ++attempt) {
+        auto* borrowController = new mplayer::quick::PlayerController(
+            QStringLiteral("compare destroyed-session guard"), url,
+            QList<QualityEntry>{{720, url}}, 720, &host);
+        auto* borrowedWindow = borrowController->window();
+        VideoSession* borrowed = borrowController->session();
+        borrowController->startPlayer();
+        borrowedWindow->showWindowed();
+        for (int attempt = 0; !borrowed->hasVideo() && attempt < 200; ++attempt) {
             QCoreApplication::processEvents();
             QThread::msleep(50);
         }
-        if (borrowedOpened && borrowed->hasVideo()) {
+        if (borrowed->hasVideo()) {
             auto* guardWindow = new CompareWindow(borrowed, selectablePresetIds.value(0));
             guardWindow->captureNow();
             check(!guardWindow->captureError().isEmpty() || !guardWindow->frozenFrame().isNull(),
@@ -3494,14 +3558,16 @@ int main(int argc, char** argv) {
             guardKill.setSingleShot(true);
             QObject::connect(&guardKill, &QTimer::timeout, [&] {
                 guardChurn.stop();
-                delete borrowed;
+                delete borrowController;
+                borrowController = nullptr;
                 borrowed = nullptr;
             });
             guardKill.start(150);
             guardWindow->captureNow();
             guardChurn.stop();
-            if (borrowed != nullptr) {
-                delete borrowed;
+            if (borrowController != nullptr) {
+                delete borrowController;
+                borrowController = nullptr;
                 borrowed = nullptr;
             }
             std::fprintf(stderr, "     destroyed-surface refusal: %s\n",
@@ -3514,7 +3580,7 @@ int main(int argc, char** argv) {
         } else {
             std::fprintf(stderr,
                          "SKIP  no second surface for the destroyed-mid-grab guard check\n");
-            delete borrowed;
+            delete borrowController;
         }
 
         std::fprintf(stderr, "RESULT: %s\n", failures == 0 ? "PASS" : "FAIL");

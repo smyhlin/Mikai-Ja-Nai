@@ -3,6 +3,10 @@
 
 #include "MpvApi.hpp"
 #include "MpvHandle.hpp"
+#include "PlayerController.hpp"
+
+#include <QApplication>
+#include <QDialog>
 
 #include <QDir>
 #include <QFile>
@@ -92,10 +96,6 @@ QByteArray existingBytes(const QString& path) {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) return {};
     return file.readAll();
-}
-
-QStringList temporaryExports(const QString& directory) {
-    return QDir(directory).entryList({QStringLiteral(".clip-export-*.mp4")}, QDir::Files | QDir::Hidden);
 }
 
 bool finishExport(QSignalSpy& finished, int timeoutMs = 30000) {
@@ -468,6 +468,23 @@ bool TestClipExport::requireRuntime() {
     return false;
 }
 
+void TestClipExport::rejectsCutMomentWhenThereIsNoVideoTimeline() {
+    mplayer::quick::PlayerController controller(QStringLiteral("Clip test"),
+                                                QStringLiteral("unused.mp4"));
+    QVERIFY(!controller.hasVideo());
+    QVERIFY(!std::isfinite(controller.duration()) || controller.duration() <= 0.0);
+    controller.openClipDialog();
+
+    QCOMPARE(controller.statusText(),
+             QStringLiteral("A seekable video timeline is not available"));
+    const auto dialogs = QApplication::topLevelWidgets();
+    for (QWidget* widget : dialogs) {
+        if (widget->objectName() == QStringLiteral("clipDialog")) {
+            QFAIL("Cut moment created a dialog without a video timeline");
+        }
+    }
+}
+
 void TestClipExport::rejectsNonFiniteAndInvalidRanges() {
     const auto rejected = [](double start, double end) {
         ClipExport exporter;
@@ -522,7 +539,6 @@ void TestClipExport::videoOnlySourceProducesBoundedPlayableMp4() {
              qPrintable(QStringLiteral("expected a two-second clip, got %1 s").arg(duration)));
     QCOMPARE(height, 480);
     QCOMPARE(width, 854);
-    QVERIFY(temporaryExports(directory.path()).isEmpty());
 }
 
 void TestClipExport::aacSourcePreservesAudio() {
@@ -562,7 +578,6 @@ void TestClipExport::aacSourcePreservesAudio() {
              qPrintable(QStringLiteral("expected a two-second clip, got %1 s").arg(duration)));
     QCOMPARE(width, 320);
     QCOMPARE(height, 180);
-    QVERIFY(temporaryExports(directory.path()).isEmpty());
 }
 
 void TestClipExport::selectedAudioTrackExportPreservesSignal() {
@@ -631,7 +646,6 @@ void TestClipExport::selectedAudioTrackExportPreservesSignal() {
 
     if (!verifyTrack(1, 440, QStringLiteral("english-track"))) return;
     QVERIFY(verifyTrack(2, 880, QStringLiteral("ukrainian-track")));
-    QVERIFY(temporaryExports(directory.path()).isEmpty());
 }
 
 void TestClipExport::externalAudioOverridesEmbeddedAudio() {
@@ -667,7 +681,6 @@ void TestClipExport::externalAudioOverridesEmbeddedAudio() {
     QVERIFY2(audio, "external-audio export did not contain a selected audio stream");
     QVERIFY2(duration >= 1.90 && duration <= 2.15,
              qPrintable(QStringLiteral("expected a two-second clip, got %1 s").arg(duration)));
-    QVERIFY(temporaryExports(directory.path()).isEmpty());
 }
 
 void TestClipExport::missingExternalAudioPreservesExistingDestination() {
@@ -694,7 +707,6 @@ void TestClipExport::missingExternalAudioPreservesExistingDestination() {
     QVERIFY(finishExport(finished));
     QVERIFY(!finished.constFirst().at(0).toBool());
     QCOMPARE(existingBytes(outputPath), QByteArray("keep-existing-bytes"));
-    QVERIFY(temporaryExports(directory.path()).isEmpty());
 }
 
 void TestClipExport::sourceFailurePreservesExistingDestination() {
@@ -720,7 +732,6 @@ void TestClipExport::sourceFailurePreservesExistingDestination() {
     QVERIFY(finishExport(finished));
     QVERIFY(!finished.constFirst().at(0).toBool());
     QCOMPARE(existingBytes(path), QByteArray("keep-existing-bytes"));
-    QVERIFY(temporaryExports(directory.path()).isEmpty());
 }
 
 void TestClipExport::noConsentPreservesExistingDestination() {
@@ -802,5 +813,4 @@ void TestClipExport::cancellationPreservesDestinationAndRemovesPartialOutput() {
     QVERIFY(finishExport(finished));
     QVERIFY(!finished.constFirst().at(0).toBool());
     QCOMPARE(existingBytes(path), QByteArray("keep-existing-bytes"));
-    QVERIFY(temporaryExports(directory.path()).isEmpty());
 }

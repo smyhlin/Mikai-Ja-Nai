@@ -9,7 +9,7 @@
 #include "workers/Runner.hpp"
 
 #include <ShellTheme.hpp>
-#include <VideoSurface.hpp>
+#include <VideoSession.hpp>
 #include <MpvHandle.hpp>
 
 #include <backend/MikaiClient.hpp>
@@ -25,6 +25,9 @@
 #include <QIcon>
 #include <QMessageBox>
 #include <QPointer>
+#include <QQuickStyle>
+#include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <QSettings>
 #include <QSurfaceFormat>
 #include <QStringList>
@@ -261,6 +264,14 @@ int main(int argc, char** argv) {
         format.setVersion(3, 3);
         QSurfaceFormat::setDefaultFormat(format);
     }
+    // The Quick player presents through the same mpv OpenGL render context the
+    // surface does. Left to the platform default, the RHI picks D3D11 on Windows
+    // and the render API has no GL context to bind, so the API is fixed here:
+    // process-wide, and read once when the first Quick window initialises.
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    // Only the Basic style is shipped; left to the platform default, a Controls
+    // or Dialog fallback asks for a style module the payload does not contain.
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
     // Application file arguments belong to our parser, not QApplication. In
     // particular, a video named "-platform" must never select a Qt plugin.
     // Normal launch and the autorun command supply no application arguments.
@@ -318,23 +329,23 @@ int main(int argc, char** argv) {
     // applies changes live later; this is only the startup truth.
     {
         QSettings settings;
-        using HdrPolicy = mplayer::VideoSurface::HdrToneMappingPolicy;
+        using HdrPolicy = mplayer::VideoSession::HdrToneMappingPolicy;
         const int storedPolicy = settings.value(
-            QString::fromLatin1(mplayer::VideoSurface::kHdrToneMappingSettingKey),
+            QString::fromLatin1(mplayer::VideoSession::kHdrToneMappingSettingKey),
             static_cast<int>(HdrPolicy::Auto)).toInt();
         switch (storedPolicy) {
-            case 1: mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Stable); break;
-            case 2: mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Vivid); break;
-            default: mplayer::VideoSurface::setHdrToneMappingPolicy(HdrPolicy::Auto); break;
+            case 1: mplayer::VideoSession::setHdrToneMappingPolicy(HdrPolicy::Stable); break;
+            case 2: mplayer::VideoSession::setHdrToneMappingPolicy(HdrPolicy::Vivid); break;
+            default: mplayer::VideoSession::setHdrToneMappingPolicy(HdrPolicy::Auto); break;
         }
-        mplayer::VideoSurface::setAnimeJanaiHdrOverride(
+        mplayer::VideoSession::setAnimeJanaiHdrOverride(
             settings.value(
-                QString::fromLatin1(mplayer::VideoSurface::kAnimeJanaiHdrOverrideSettingKey),
+                QString::fromLatin1(mplayer::VideoSession::kAnimeJanaiHdrOverrideSettingKey),
                 false).toBool());
         // The display scaling is read through the same production reader every
         // other consumer uses: the first engine must be created in the mode the
         // viewer saved, not default to Fit and jump once a surface pumps.
-        mplayer::VideoSurface::setVideoScalePolicy(
+        mplayer::VideoSession::setVideoScalePolicy(
             mplayer::videoScalePolicyFromSettings(settings));
     }
     if (!launch.frameTimingLog.isEmpty()) {
@@ -347,7 +358,7 @@ int main(int argc, char** argv) {
                                     "missing or not writable:"
                                  << parentInfo.absoluteFilePath();
         } else {
-            mplayer::VideoSurface::setFrameTimingLogPath(launch.frameTimingLog);
+            mplayer::VideoSession::setFrameTimingLogPath(launch.frameTimingLog);
             qInfo().noquote() << "mikai: frame timing log:" << launch.frameTimingLog;
         }
     }

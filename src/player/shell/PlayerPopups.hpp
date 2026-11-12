@@ -1,11 +1,7 @@
-// The three panels the shell has no room for: the quality list, the dub/sub
-// picker and the episode drawer.
+// Shared choice popups and engine-preparation UI.
 //
-// The menu popover and the episode drawer stand over the picture, so their
-// pixels belong to the surface's painter like the rest of the chrome: they are
-// ChromePaint widgets whose content is ChromeLabel/ChromeRow rather than
-// stylesheet-driven Qt children. The preparation window is a native tool
-// window and keeps painting itself.
+// MenuPopup is an in-window ChromePaint widget. ProcessingOverlay stays a
+// native tool window so long builds remain visible over modal settings dialogs.
 
 #pragma once
 
@@ -158,32 +154,6 @@ private:
     QVector<ChromeRow*> rows_;
     QVector<MenuEntry> rowEntries_;
     int highlight_ = -1;
-};
-
-class SeriesDrawer : public QFrame, public ChromePaint {
-    Q_OBJECT
-public:
-    explicit SeriesDrawer(QWidget* parent = nullptr);
-
-    void paintChrome(QPainter& painter) override;
-
-    void setEntries(const QStringList& labels, int current);
-    /// Natural height of the whole list, for the dialog to size the drawer.
-    int contentHeight() const;
-
-signals:
-    void picked(int index);
-
-protected:
-    void changeEvent(QEvent* event) override;
-    void paintEvent(QPaintEvent* event) override;
-
-private:
-    void retranslateUi();
-
-    ChromeLabel* caption_ = nullptr;
-    QVBoxLayout* rowsLayout_ = nullptr;
-    QVector<ChromeRow*> rows_;
 };
 
 /// The engine-preparation window: what the player shows while a TensorRT engine

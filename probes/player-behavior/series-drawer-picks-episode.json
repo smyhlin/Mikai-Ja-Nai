@@ -1,6 +1,6 @@
 {
   "name": "series-drawer-picks-episode",
-  "description": "The series button opens the episode drawer, and picking a row applies that episode through the host by reopening it at its start rather than silently reseating the same stream.",
+  "description": "The Quick series shortcut opens the real episode drawer; choosing Episode 2 applies it to the session and resets playback to its start.",
   "category": "player-behavior",
   "surface": "player_dialog",
   "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
@@ -21,7 +21,7 @@
     },
     {
       "kind": "click",
-      "target": "playerPlayToggle",
+      "target": "player.playPause",
       "note": "Paused first: a running clock would make the position assertion measure elapsed time instead of the episode change."
     },
     {
@@ -30,11 +30,11 @@
       "timeout_ms": 5000
     },
     {
-      "kind": "set_value",
-      "target": "playerScrubBar",
-      "name": "value",
-      "value": 0.6,
-      "note": "Parks the current episode at about 7.2 s of the 12 s fixture, through the control's real 0..1 fraction. Where playback resumes after the pick separates a reopened episode from a reseated stream."
+      "kind": "drag",
+      "target": "player.timeline.scrub",
+      "position": 0.6,
+      "position_end": 0.6,
+      "note": "A real midpoint-relative press parks the current episode near 7.2 s before choosing another row."
     },
     {
       "kind": "sleep_ms",
@@ -42,27 +42,27 @@
       "note": "Bounded settle for the seek to reach the core."
     },
     {
-      "kind": "click",
-      "target": "playerSeriesToggle",
-      "note": "Opens the drawer. Only visible because episodes seeded a playlist; a single-stream player keeps it hidden."
+      "kind": "key_press",
+      "key": "S",
+      "note": "The Quick controller's series shortcut opens the same episode drawer used by the scene."
     },
     {
       "kind": "wait_for",
-      "name": "widgetVisible",
-      "target": "playerSeriesDrawer",
+      "name": "objectVisible",
+      "target": "player.episodes.drawer",
       "timeout_ms": 5000
     },
     {
       "kind": "click",
-      "target": "playerSeriesItem",
-      "note": "The first non-current row - index 0 is current, so playerSeriesItem is rows 1 and 2 and the click lands on episode 2. The rows carry the label as their accessible name, so this is the row a viewer reads as 'Episode 2'."
+      "target": "player.episodes.row.episode.1",
+      "note": "The actual EpisodeDrawer delegate for stable row id episode.1 selects the second seeded episode."
     },
     {
       "kind": "wait_for",
-      "name": "widget_hidden",
-      "target": "playerSeriesDrawer",
+      "name": "objectHidden",
+      "target": "player.episodes.drawer",
       "timeout_ms": 5000,
-      "note": "Picking a row means \"this one, now\", so the drawer closes itself (PlayerDialog::goToEpisode with closeList). A click the drawer dropped leaves it open and fails here with that reason rather than passing on a stale frame."
+      "note": "The drawer closes after its real row activation; a dropped pointer event leaves it open and fails here."
     },
     {
       "kind": "sleep_ms",
@@ -72,12 +72,12 @@
   ],
   "assertions": [
     {
-      "kind": "widget_property",
-      "target": "playerEpisodeLabel",
-      "property": "text",
+      "kind": "qt_property",
+      "target": "playerController",
+      "property": "episodeLabel",
       "comparison": "equals",
       "expected": "Episode 2",
-      "note": "The footer names the episode the host applied. The seeded playlist labels are Episode 1/2/3 and row index 1 is the one clicked, so a host that reseated episode 1 or ignored the pick leaves the wrong label here."
+      "note": "The controller's episodeLabel reflects the actual selected playlist row."
     },
     {
       "kind": "mpv_property",
@@ -85,17 +85,17 @@
       "mpv_kind": "number",
       "comparison": "less_than",
       "expected": 2.0,
-      "note": "A picked episode starts at its beginning (openStream with resume=false), so the 7.2 s park must not survive. A host that reseated the same stream keeps playing from 7.2 s and fails here."
+      "note": "Quick episode selection opens the selected embed at its start; the parked playhead must not survive."
     },
     {
       "kind": "signal_emitted",
       "property": "sourceEpochChanged",
-      "note": "PlayerDialog::applyEpisode reopens the stream with resume=false and VideoSurface::startPendingUrl announces the new source epoch. Without this emission the host kept the old stream open and only repainted the chrome."
+      "note": "Selecting the other playlist row replaces the session source, rather than repainting only the scene."
     },
     {
       "kind": "signal_not_emitted",
       "property": "fullscreenChanged",
-      "note": "Picking an episode must not touch window mode; a shell whose pick path re-entered its window state machine fails here."
+      "note": "Episode selection changes the session source and position without changing the window mode."
     }
   ]
 }

@@ -8,7 +8,9 @@ class TestThemeIcons : public QObject {
  private slots:
   void requestedSizeAndDevicePixelRatioAreRendered();
   void defaultGlyphTracksPaletteChanges();
-  void customColorAlphaIsPreservedInCacheKey();
+  void customColorAlphaIsVisible();
+  void quickGlyphUsesThemeTintAndDevicePixelRatio();
+  void quickGlyphRequestTracksTintAndDprChanges();
   void glyphBoxIsPhysicalAtEveryScale();
   void trailingPadStaysOutsideTheGlyph();
   void glyphEdgesStayAntialiasedAtFractionalRatio();
@@ -17,7 +19,5 @@ class TestThemeIcons : public QObject {
   void noTornColumnsInsideGlyphInk();
   void toggleAndSwatchPaintOnceAtEveryRatio();
   void artworkFrameIsAllocatedAtTheDeviceSize();
-  void shellGlyphJoinsAreRound();
-  void shellAtmosBadgeStaysInsideItsBox();
   void nativeWindowPaintStaysAffineAtFractionalDpr();
 };

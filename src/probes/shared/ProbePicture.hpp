@@ -82,11 +82,14 @@ struct PlaybackSample {
 inline PlaybackSample captureSample(VideoSurface& surface) {
     PlaybackSample sample;
     sample.framebuffer = surface.grabVideoFramebuffer();
-    sample.position = surface.position();
-    sample.videoWidth = surface.videoWidth();
-    sample.videoHeight = surface.videoHeight();
+    VideoSession* const session = surface.session();
+    if (session != nullptr) {
+        sample.position = session->position();
+        sample.videoWidth = session->videoWidth();
+        sample.videoHeight = session->videoHeight();
+        sample.hasVideo = session->hasVideo();
+    }
     sample.contextReady = surface.isContextReady();
-    sample.hasVideo = surface.hasVideo();
     sample.surfaceSize = surface.size();
     sample.devicePixelRatio = surface.devicePixelRatioF();
     return sample;
@@ -113,12 +116,14 @@ private:
 inline bool PlaybackSampler::tick() {
     if (complete_) return true;
     if (!surface_.isContextReady()) return false;
-    if (!surface_.hasVideo()) {
+    VideoSession* const session = surface_.session();
+    if (session == nullptr) return false;
+    if (!session->hasVideo()) {
         if (later_.hasPicture() && later_.position > first_.position) complete_ = true;
         return complete_;
     }
-    const double position = surface_.position();
-    const double duration = surface_.duration();
+    const double position = session->position();
+    const double duration = session->duration();
     if (first_.position < 0.0) {
         const double firstAt =
             duration > 0.0 ? std::min(0.5, std::max(0.1, duration * 0.15)) : 0.5;

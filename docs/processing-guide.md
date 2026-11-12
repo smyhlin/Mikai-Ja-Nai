@@ -14,6 +14,8 @@ For the comparison workstation and its controls, see [Compare and GIF export](pl
 
 The player organizes processing by effect: **Restore**, **Upscale** and **Interpolation**. **Restore** includes Anime4K presets; **Upscale** includes spatial Anime4K/AnimeJaNai models, built-in profiles and registered spatial graphs. Standard AnimeJaNai (AJI) is an execution/filter path, not an effect group. **Interpolation** is separate and contains RIFE choices; choose the effect/model first, then choose its available **Backend**. Compare renders original-frame/spatial candidates and excludes temporal/RIFE chains. The **video Benchmark** runs selected models and profiles on clips, including RIFE-only and mixed spatial-plus-RIFE profiles; it is not limited to still-image candidates. A selector, imported graph or installed component does not prove that a model will execute or that inference occurred. See [Native documentation](../native/README.md) for architecture, provenance and store details, and [AnimeJaNai runtime notes](animejanai.md) for Linux runtime failure modes.
 
+The player presents these controls in its native Qt Quick scene. Its **Open enhancements** menu contains the effect/model choices and a **Backend** submenu; the **Q** Settings menu contains speed and scaling choices. **Settings → Processing**, **Components**, **Upscalers** and **Benchmark** remain in the application's Settings window; opening the player menus does not install or verify components.
+
 ## Where processing data is stored
 
 The application resolves its native data root in this order:

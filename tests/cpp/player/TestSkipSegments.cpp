@@ -1,154 +1,219 @@
 #include "TestSkipSegments.hpp"
 
-#include <player/shell/PlayerShell.hpp>
-#include <player/shell/ShellSliders.hpp>
-#include <player/shell/ShellTheme.hpp>
-#include <player/shell/ShellWidgets.hpp>
+#include "../QuickPlayerTestSupport.hpp"
+#include "player/quick/PlayerController.hpp"
+#include "player/quick/PlayerMenuModel.hpp"
+#include "player/quick/PlayerWindow.hpp"
+#include "player/core/VideoSession.hpp"
 
 #include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QStringList>
+#include <QThread>
+#include <QtTest/QTest>
 #include <QVariantMap>
-#include <QtTest/QSignalSpy>
+#include <QVector>
 
-#include <algorithm>
-#include <limits>
+#include <cmath>
 
 namespace {
-using mplayer::shell::PlayerShell;
-using mplayer::shell::ScrubBar;
-using mplayer::shell::SkipButton;
+using mplayer::quick::PlayerController;
+using mplayer::quick::PlayerMenuModel;
+using mplayer::VideoSession;
 
 QVariantMap segment(const char* type, double start, double end) {
     return {{QStringLiteral("type"), QString::fromLatin1(type)},
             {QStringLiteral("start"), start}, {QStringLiteral("end"), end}};
 }
 
-QVector<SkipButton*> visibleOffers(PlayerShell& shell) {
-    QVector<SkipButton*> visible;
-    for (SkipButton* button : shell.findChildren<SkipButton*>()) {
-        if (button->isVisible()) visible.append(button);
+class PlayerFixture final {
+public:
+    PlayerFixture()
+        : controller(QStringLiteral("Skip-segment test"),
+                     mikai_test::quick::benchmarkVideoPath()) {}
+
+    bool open(QString* error) {
+        mplayer::quick::PlayerWindow* window = controller.window();
+        if (window == nullptr) {
+            if (error != nullptr) *error = QStringLiteral("Quick player window is unavailable");
+            return false;
+        }
+        controller.showWindow();
+        if (!QTest::qWaitForWindowExposed(window, 15000)) {
+            if (error != nullptr) *error = QStringLiteral("Quick player window was not exposed");
+            return false;
+        }
+        if (!window->session()->waitForContext(20000)) {
+            if (error != nullptr) *error = QStringLiteral("Quick player render context is unavailable");
+            return false;
+        }
+        controller.startPlayer();
+        QElapsedTimer timer;
+        timer.start();
+        while (timer.elapsed() < 30000 && controller.session()->duration() <= 2.0) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            QThread::msleep(10);
+        }
+        if (controller.session()->duration() <= 2.0) {
+            if (error != nullptr) *error = QStringLiteral("Quick player did not load the benchmark video");
+            return false;
+        }
+        controller.session()->setPaused(true);
+        return true;
     }
-    std::sort(visible.begin(), visible.end(), [](const SkipButton* a, const SkipButton* b) {
-        return a->y() > b->y();
-    });
-    return visible;
+
+    PlayerController controller;
+};
+
+bool seekAndSettle(PlayerController& controller, double seconds) {
+    controller.seekTo(seconds);
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < 8000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        if (std::abs(controller.session()->position() - seconds) < 0.25) return true;
+        QThread::msleep(10);
+    }
+    return false;
 }
 
-QStringList offerLabels(PlayerShell& shell) {
-    QStringList labels;
-    for (const SkipButton* button : visibleOffers(shell)) labels.append(button->label());
-    return labels;
+bool seekExactlyAndSettle(PlayerController& controller, double seconds) {
+    controller.session()->seekExact(seconds);
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < 8000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        if (std::abs(controller.session()->position() - seconds) < 0.10) return true;
+        QThread::msleep(10);
+    }
+    return false;
 }
 
-QString skipLabel(const char* type) {
-    return QCoreApplication::translate("mplayer::shell::PlayerShell", "Skip %1")
-        .arg(ScrubBar::segmentTypeLabel(QString::fromLatin1(type)));
+QVector<PlayerMenuModel::Row> offers(const PlayerController& controller) {
+    const PlayerMenuModel* model = controller.skipOffers();
+    return model != nullptr ? model->rows() : QVector<PlayerMenuModel::Row>{};
 }
 
-void showShell(PlayerShell& shell) {
-    shell.resize(1000, 620);
-    shell.setMedia(QStringLiteral("skip-segments-test.mkv"));
-    shell.show();
-    QCoreApplication::processEvents();
+QStringList offerValues(const PlayerController& controller) {
+    QStringList values;
+    for (const PlayerMenuModel::Row& row : offers(controller)) values.append(row.value);
+    return values;
 }
+
 }  // namespace
 
-void TestSkipSegments::thePositionDecidesWhichOverlappingSegmentsAreOffered() {
-    PlayerShell shell;
-    showShell(shell);
-    shell.setSkipSegments({segment("opening", 10.0, 40.0),
-                           segment("mixed_opening", 20.0, 60.0),
-                           segment("recap", 30.0, 50.0),
-                           segment("ending", 100.0, 120.0)});
-    shell.setPosition(5.0);
-    QVERIFY(visibleOffers(shell).isEmpty());
-    shell.setPosition(15.0);
-    QCOMPARE(offerLabels(shell), QStringList{skipLabel("opening")});
-    shell.setPosition(35.0);
-    QCOMPARE(offerLabels(shell), (QStringList{skipLabel("opening"), skipLabel("mixed_opening"),
-                                               skipLabel("recap")}));
-    shell.setPosition(50.0);
-    QCOMPARE(offerLabels(shell), QStringList{skipLabel("mixed_opening")});
-    shell.setPosition(60.0);
-    QVERIFY(visibleOffers(shell).isEmpty());
-    shell.setPosition(110.0);
-    QCOMPARE(offerLabels(shell), QStringList{skipLabel("ending")});
-    shell.setPosition(35.0);
-    QCOMPARE(visibleOffers(shell).size(), 3);
-    shell.setSkipSegments({});
-    QVERIFY(visibleOffers(shell).isEmpty());
+void TestSkipSegments::initTestCase() {
+    QString error;
+    if (mikai_test::quick::loadExplicitMpvRuntime(&error)) return;
+    runtimeUnavailable_ = qEnvironmentVariableIsEmpty("MIKAI_MPV_MODULE");
+    runtimeError_ = error;
 }
 
-void TestSkipSegments::eachOverlappingOfferIsActionableAndSeeksToItsOwnEnd() {
-    PlayerShell shell;
-    showShell(shell);
-    QSignalSpy seek(&shell, &PlayerShell::seekRequested);
-    shell.setSkipSegments({segment("mixed_opening", 20.0, 60.0),
-                           segment("recap", 30.0, 50.0)});
-    shell.setPosition(35.0);
-    const auto offers = visibleOffers(shell);
-    QCOMPARE(offers.size(), 2);
-    QCOMPARE(offers.at(0)->label(), skipLabel("mixed_opening"));
-    QCOMPARE(offers.at(1)->label(), skipLabel("recap"));
-    QVERIFY(!offers.at(0)->accessibleName().isEmpty());
-    QVERIFY(!offers.at(1)->accessibleName().isEmpty());
-    offers.at(1)->click();
-    QCOMPARE(seek.count(), 1);
-    QCOMPARE(seek.at(0).at(0).toDouble(), 50.0);
-    QCOMPARE(offerLabels(shell), QStringList{skipLabel("mixed_opening")});
-    visibleOffers(shell).at(0)->click();
-    QCOMPARE(seek.count(), 2);
-    QCOMPARE(seek.at(1).at(0).toDouble(), 60.0);
-    QVERIFY(visibleOffers(shell).isEmpty());
+bool TestSkipSegments::requireRuntime() {
+    if (runtimeUnavailable_) {
+        QTest::qSkip("set MIKAI_MPV_MODULE to the real playback runtime to run this", __FILE__,
+                     __LINE__);
+        return false;
+    }
+    if (!runtimeError_.isEmpty()) {
+        QTest::qFail(qPrintable(QStringLiteral("cannot load the explicit playback runtime: %1")
+                                    .arg(runtimeError_)),
+                     __FILE__, __LINE__);
+        return false;
+    }
+    return true;
 }
 
-void TestSkipSegments::aListThatArrivesLateIsOfferedAtTheCurrentPosition() {
-    PlayerShell shell;
-    showShell(shell);
-    QSignalSpy seek(&shell, &PlayerShell::seekRequested);
-    shell.setPosition(35.0);
-    QVERIFY(visibleOffers(shell).isEmpty());
-    shell.setSkipSegments({segment("recap", 30.0, 50.0)});
-    QCOMPARE(offerLabels(shell), QStringList{skipLabel("recap")});
-    visibleOffers(shell).at(0)->click();
-    QCOMPARE(seek.count(), 1);
-    QCOMPARE(seek.at(0).at(0).toDouble(), 50.0);
+void TestSkipSegments::theClockControlsOverlappingSkipOffers() {
+    if (!requireRuntime()) return;
+    PlayerFixture fixture;
+    QString error;
+    QVERIFY2(fixture.open(&error), qPrintable(error));
+    VideoSession* session = fixture.controller.session();
+    QTRY_VERIFY_WITH_TIMEOUT(session->duration() > 2.0, 15000);
+    const double duration = session->duration();
+    const double openingStart = duration * 0.15;
+    const double openingEnd = duration * 0.65;
+    const double mixedStart = duration * 0.30;
+    const double mixedEnd = duration * 0.80;
+    const double recapStart = duration * 0.40;
+    const double recapEnd = duration * 0.60;
+    const double endingStart = duration * 0.85;
+    const double endingEnd = duration * 0.95;
+    fixture.controller.setSkipSegments({segment("opening", openingStart, openingEnd),
+                                        segment("mixed_opening", mixedStart, mixedEnd),
+                                        segment("recap", recapStart, recapEnd),
+                                        segment("ending", endingStart, endingEnd)});
+
+    QVERIFY(seekExactlyAndSettle(fixture.controller, openingStart));
+    QCOMPARE(offerValues(fixture.controller), QStringList{QStringLiteral("0")});
+    QVERIFY(seekAndSettle(fixture.controller, duration * 0.20));
+    QCOMPARE(offerValues(fixture.controller), QStringList{QStringLiteral("0")});
+    QVERIFY(seekAndSettle(fixture.controller, duration * 0.50));
+    QCOMPARE(offerValues(fixture.controller), (QStringList{QStringLiteral("0"),
+                                                           QStringLiteral("1"),
+                                                           QStringLiteral("2")}));
+    const QVector<PlayerMenuModel::Row> overlapping = offers(fixture.controller);
+    QCOMPARE(overlapping.at(0).id, QStringLiteral("skip.0"));
+    QCOMPARE(overlapping.at(0).action, PlayerMenuModel::Action::SkipSegment);
+    QCOMPARE(overlapping.at(0).value, QStringLiteral("0"));
+    QCOMPARE(overlapping.at(1).id, QStringLiteral("skip.1"));
+    QCOMPARE(overlapping.at(1).action, PlayerMenuModel::Action::SkipSegment);
+    QCOMPARE(overlapping.at(2).id, QStringLiteral("skip.2"));
+    QCOMPARE(overlapping.at(2).action, PlayerMenuModel::Action::SkipSegment);
+    QVERIFY(seekExactlyAndSettle(fixture.controller, recapEnd));
+    QCOMPARE(offerValues(fixture.controller),
+             (QStringList{QStringLiteral("0"), QStringLiteral("1")}));
+    QVERIFY(seekAndSettle(fixture.controller, duration * 0.62));
+    QCOMPARE(offerValues(fixture.controller),
+             (QStringList{QStringLiteral("0"), QStringLiteral("1")}));
+    QVERIFY(seekExactlyAndSettle(fixture.controller, openingEnd));
+    QCOMPARE(offerValues(fixture.controller), QStringList{QStringLiteral("1")});
+    QVERIFY(seekAndSettle(fixture.controller, duration * 0.70));
+    QCOMPARE(offerValues(fixture.controller), QStringList{QStringLiteral("1")});
+    QVERIFY(seekAndSettle(fixture.controller, duration * 0.82));
+    QVERIFY(offers(fixture.controller).isEmpty());
+    QVERIFY(seekAndSettle(fixture.controller, duration * 0.90));
+    QCOMPARE(offerValues(fixture.controller), QStringList{QStringLiteral("3")});
+    QVERIFY(seekAndSettle(fixture.controller, duration * 0.97));
+    QVERIFY(offers(fixture.controller).isEmpty());
 }
 
-void TestSkipSegments::offersSurviveAnAutoHiddenHudAndStayAboveTheDock() {
-    PlayerShell shell;
-    showShell(shell);
-    shell.setSkipSegments({segment("opening", 10.0, 40.0),
-                           segment("mixed_opening", 20.0, 60.0)});
-    shell.setPosition(30.0);
-    shell.enterFullscreen();
-    QTRY_VERIFY_WITH_TIMEOUT(shell.state() == PlayerShell::State::FullscreenAutoHidden,
-                             mplayer::shell::kAutohideMs + 500);
-    const auto offers = visibleOffers(shell);
-    QCOMPARE(offers.size(), 2);
-    const int dockWidth = std::min(mplayer::shell::kDockMaxWidth,
-                                   shell.width() - 2 * mplayer::shell::kDockHorizontalInset);
-    const int dockRight = (shell.width() + dockWidth) / 2;
-    const int dockTop = shell.height() - mplayer::shell::kDockBottomInset -
-                        mplayer::shell::kDockHeight;
-    QVERIFY(offers.at(0)->geometry().bottom() < dockTop);
-    QVERIFY(offers.at(0)->geometry().right() <= dockRight);
-    QVERIFY(offers.at(1)->geometry().bottom() < offers.at(0)->geometry().top());
-    QSignalSpy seek(&shell, &PlayerShell::seekRequested);
-    offers.at(0)->click();
-    QCOMPARE(seek.count(), 1);
-    QCOMPARE(seek.at(0).at(0).toDouble(), 40.0);
-    QVERIFY(shell.state() != PlayerShell::State::FullscreenAutoHidden);
+void TestSkipSegments::aLateSkipListUsesTheCurrentPlaybackPosition() {
+    if (!requireRuntime()) return;
+    PlayerFixture fixture;
+    QString error;
+    QVERIFY2(fixture.open(&error), qPrintable(error));
+    VideoSession* session = fixture.controller.session();
+    QTRY_VERIFY_WITH_TIMEOUT(session->duration() > 2.0, 15000);
+    const double duration = session->duration();
+    QVERIFY(seekAndSettle(fixture.controller, duration * 0.50));
+    QVERIFY(offers(fixture.controller).isEmpty());
+
+    fixture.controller.setSkipSegments(
+        {segment("recap", duration * 0.30, duration * 0.70)});
+    const QVector<PlayerMenuModel::Row> current = offers(fixture.controller);
+    QCOMPARE(current.size(), 1);
+    QCOMPARE(current.constFirst().value, QStringLiteral("0"));
 }
 
-void TestSkipSegments::aMalformedSegmentIsNotAnOffer() {
-    PlayerShell shell;
-    showShell(shell);
-    shell.setPosition(35.0);
-    const double nan = std::numeric_limits<double>::quiet_NaN();
-    const double inf = std::numeric_limits<double>::infinity();
-    shell.setSkipSegments({segment("ending", 50.0, 20.0), segment("recap", 30.0, 30.0),
-                           segment("opening", nan, 60.0), segment("mixed_opening", 20.0, inf),
-                           segment("recap", 30.0, 50.0), segment("recap", 30.0, 50.0)});
-    QCOMPARE(offerLabels(shell), QStringList{skipLabel("recap")});
+void TestSkipSegments::activatingAnOfferSeeksTheRealSessionToItsEnd() {
+    if (!requireRuntime()) return;
+    PlayerFixture fixture;
+    QString error;
+    QVERIFY2(fixture.open(&error), qPrintable(error));
+    VideoSession* session = fixture.controller.session();
+    QTRY_VERIFY_WITH_TIMEOUT(session->duration() > 2.0, 15000);
+    const double duration = session->duration();
+    const double firstEnd = duration * 0.70;
+    const double secondEnd = duration * 0.60;
+    fixture.controller.setSkipSegments({segment("mixed_opening", duration * 0.20, firstEnd),
+                                        segment("recap", duration * 0.30, secondEnd)});
+    QVERIFY(seekAndSettle(fixture.controller, duration * 0.40));
+    QCOMPARE(offers(fixture.controller).size(), 2);
+
+    fixture.controller.activateSkipOffer(1);
+    QTRY_VERIFY_WITH_TIMEOUT(std::abs(session->position() - secondEnd) < 0.25, 8000);
+    QVERIFY(std::abs(session->position() - secondEnd) < 0.25);
 }

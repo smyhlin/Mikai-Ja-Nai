@@ -108,6 +108,9 @@ struct CompareRenderer::State {
     QList<QPair<QString, QString>> stillOptions;
     QString buildDetail;
     bool restarted = false;
+    bool sourceLoadActive = false;
+    bool sourceOpenFailed = false;
+    quint64 sourceLoadFrameBaseline = 0;
     bool processingObserved = false;
     bool acceptBuildEvidence = false;
     bool backendSubstituted = false;
@@ -316,6 +319,10 @@ struct CompareRenderer::State {
                 if (event->event_id == MPV_EVENT_PLAYBACK_RESTART) restarted = true;
                 if (event->event_id == MPV_EVENT_END_FILE && event->data != nullptr) {
                     const auto* ended = static_cast<mpv_event_end_file*>(event->data);
+                    if (ended->reason == MPV_END_FILE_REASON_ERROR && sourceLoadActive &&
+                        !restarted && presentedFrames == sourceLoadFrameBaseline) {
+                        sourceOpenFailed = true;
+                    }
                     if (ended->reason == MPV_END_FILE_REASON_ERROR) {
                         const QString tail = diagnosticTail.join(QStringLiteral(" · "));
                         error = QCoreApplication::translate("CompareRenderer", "The comparison source could not be loaded: %1")
@@ -977,6 +984,8 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
     state.sourceTimestamp = timestamp;
     state.buildDetail.clear();
     state.useUpscaleTarget = false;
+    state.sourceLoadActive = false;
+    state.sourceOpenFailed = false;
     try {
         if (!state.initialize(outputSize, timestamp) || cancelled()) return false;
         // The still's demuxer selection is a per-file option now, so it cannot
@@ -986,8 +995,21 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
             !state.waitForCommand(state.command({"set", "glsl-shaders", ""}), cancelled) ||
             !state.waitForCommand(state.command({"set", "start", startTimestamp}), cancelled)) return false;
         state.restarted = false;
-        state.core->loadFile(source.toStdString());
-        QImage settledSource = state.settle(true, cancelled, progress);
+        state.sourceLoadFrameBaseline = state.presentedFrames;
+        state.sourceLoadActive = true;
+        try {
+            state.core->loadFile(source.toStdString());
+        } catch (const MpvError& error) {
+            state.sourceOpenFailed = true;
+            state.error = QCoreApplication::translate(
+                              "CompareRenderer", "The comparison source could not be loaded: %1")
+                              .arg(QString::fromUtf8(error.what()));
+        }
+        QImage settledSource;
+        if (!state.sourceOpenFailed) {
+            settledSource = state.settle(true, cancelled, progress);
+        }
+        state.sourceLoadActive = false;
         if (!settledSource.isNull()) {
             const int nativeWidth = qRound(state.core->getNumber("video-params/w"));
             const int nativeHeight = qRound(state.core->getNumber("video-params/h"));
@@ -1034,15 +1056,19 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
             }
             if (settledSource.isNull()) return false;
             state.sourceFrame = settledSource;
-        } else {
-            // The source refused a second decode; only now is the playing
-            // surface asked for its untouched frame.
+        } else if (state.sourceOpenFailed) {
+            // Only an explicit loadfile / END_FILE source-open failure allows
+            // reuse of the player's untouched frame. A settle timeout or any
+            // later rendering/decode refusal keeps its named error and cannot
+            // silently turn into a different capture path.
             const QImage fallback = fallbackProvider && !cancelled() ? fallbackProvider()
                                                                     : QImage();
             if (fallback.isNull() || cancelled()) return false;
             state.error.clear();
             state.diagnosticTail.clear();
             state.sourceFrame = fallback;
+        } else {
+            return false;
         }
         // The still goes back into the core for the candidate render, and the
         // pinned runtime ships no image codecs: a PNG round-trip through mpv

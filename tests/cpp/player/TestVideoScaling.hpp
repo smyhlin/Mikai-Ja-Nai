@@ -14,6 +14,8 @@ private slots:
     void stretchAndOriginalKeepTheStoredZoomOutOfMpv();
     void zoomFormattingIgnoresTheLocale();
     void autoDownscaleLeavesTheCoreDefaultAlone();
+    void videoScalePolicyIsProcessWide();
+    void videoScalePolicyLoadsPersistedValues();
     void hiddenPlaybackChangesThePicturePerMode_data();
     void hiddenPlaybackChangesThePicturePerMode();
 };

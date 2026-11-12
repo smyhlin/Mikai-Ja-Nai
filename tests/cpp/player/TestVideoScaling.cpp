@@ -2,6 +2,7 @@
 
 #include "player/core/MpvApi.hpp"
 #include "player/core/VideoSurface.hpp"
+#include "player/core/VideoSession.hpp"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -12,6 +13,7 @@
 #include <QImage>
 #include <QLocale>
 #include <QScopeGuard>
+#include <QSettings>
 #include <QTemporaryDir>
 #include <QThread>
 
@@ -172,6 +174,45 @@ void TestVideoScaling::autoDownscaleLeavesTheCoreDefaultAlone() {
     QCOMPARE(valueOf(options, "scale"), QStringLiteral("ewa_lanczossoft"));
 }
 
+void TestVideoScaling::videoScalePolicyIsProcessWide() {
+    const VideoScalePolicy saved = VideoSession::videoScalePolicy();
+    const auto restore = qScopeGuard([&] { VideoSession::setVideoScalePolicy(saved); });
+
+    VideoScalePolicy selected;
+    selected.mode = VideoScaleMode::Aspect4x3;
+    selected.zoomPercent = 50;
+    VideoSession::setVideoScalePolicy(selected);
+
+    const VideoScalePolicy observedByAnotherConsumer = VideoSession::videoScalePolicy();
+    QCOMPARE(observedByAnotherConsumer.mode, VideoScaleMode::Aspect4x3);
+    QCOMPARE(observedByAnotherConsumer.zoomPercent, 50);
+}
+
+void TestVideoScaling::videoScalePolicyLoadsPersistedValues() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = QDir(directory.path()).filePath(QStringLiteral("settings.ini"));
+    {
+        QSettings persisted(path, QSettings::IniFormat);
+        persisted.setValue(QString::fromLatin1(VideoSession::kVideoScaleModeSettingKey),
+                           static_cast<int>(VideoScaleMode::Aspect16x9));
+        persisted.setValue(QString::fromLatin1(VideoSession::kVideoZoomSettingKey), 50);
+        persisted.setValue(QString::fromLatin1(VideoSession::kVideoUpscaleSettingKey),
+                           QStringLiteral("ewa_lanczos"));
+        persisted.setValue(QString::fromLatin1(VideoSession::kVideoDownscaleSettingKey),
+                           QStringLiteral("mitchell"));
+        persisted.sync();
+        QCOMPARE(persisted.status(), QSettings::NoError);
+    }
+
+    QSettings reopened(path, QSettings::IniFormat);
+    const VideoScalePolicy restored = mplayer::videoScalePolicyFromSettings(reopened);
+    QCOMPARE(restored.mode, VideoScaleMode::Aspect16x9);
+    QCOMPARE(restored.zoomPercent, 50);
+    QCOMPARE(restored.upscale, QStringLiteral("ewa_lanczos"));
+    QCOMPARE(restored.downscale, QStringLiteral("mitchell"));
+}
+
 namespace {
 
 double pixelLuma(const QColor& color) {
@@ -264,25 +305,28 @@ void TestVideoScaling::hiddenPlaybackChangesThePicturePerMode() {
     };
     note(QStringLiteral("platform=%1 paused=%2").arg(QGuiApplication::platformName()).arg(paused));
 
-    const mplayer::VideoScalePolicy saved = mplayer::VideoSurface::videoScalePolicy();
-    const auto restore = qScopeGuard([&] { mplayer::VideoSurface::setVideoScalePolicy(saved); });
-    mplayer::VideoSurface::setVideoScalePolicy(mplayer::VideoScalePolicy{});
+    const mplayer::VideoScalePolicy saved = mplayer::VideoSession::videoScalePolicy();
+    const auto restore = qScopeGuard([&] { mplayer::VideoSession::setVideoScalePolicy(saved); });
+    mplayer::VideoSession::setVideoScalePolicy(mplayer::VideoScalePolicy{});
 
-    // Not a PlayerDialog: that show path maps fullscreen and would cover the
-    // desktop. A tool surface that is never shown on screen is the whole window.
+    // Keep this pixel test on the Widgets renderer adapter without opening the
+    // main player's window.
     mplayer::VideoSurface surface;
     surface.setAttribute(Qt::WA_DontShowOnScreen, true);
     surface.setAttribute(Qt::WA_ShowWithoutActivating, true);
     surface.setWindowFlag(Qt::Tool);
     surface.resize(960, 400);
     surface.show();
-    QVERIFY2(surface.open(QDir::toNativeSeparators(fixture)),
+    QVERIFY2(surface.session()->open(QDir::toNativeSeparators(fixture)),
              "the hidden surface could not create an engine");
 
     QImage first;
     const bool framed = pumpUntil(
         [&] {
-            if (surface.videoWidth() != 320 || surface.videoHeight() != 180) return false;
+            if (surface.session()->videoWidth() != 320 ||
+                surface.session()->videoHeight() != 180) {
+                return false;
+            }
             first = surface.grabVideoFramebuffer();
             return !first.isNull() && first.width() > 0 &&
                    meanLuma(first, QRect(first.width() / 2 - 24, first.height() / 2 - 16, 48, 32)) >
@@ -293,25 +337,25 @@ void TestVideoScaling::hiddenPlaybackChangesThePicturePerMode() {
              .arg(framed ? 1 : 0)
              .arg(surface.width())
              .arg(surface.height())
-             .arg(surface.videoWidth())
-             .arg(surface.videoHeight())
+             .arg(surface.session()->videoWidth())
+             .arg(surface.session()->videoHeight())
              .arg(first.width())
              .arg(first.height()));
     QVERIFY2(framed, "the native hidden surface did not render the fixture");
     QVERIFY(surface.width() >= 200 && surface.height() >= 120);
     if (paused) {
-        surface.setPaused(true);
-        QVERIFY(pumpUntil([&] { return !surface.isPlaying(); }, 2000));
+        surface.session()->setPaused(true);
+        QVERIFY(pumpUntil([&] { return !surface.session()->isPlaying(); }, 2000));
     }
     const auto grabSettled = [&] {
         QImage image;
-        const quint64 before = surface.playbackDiagnostics().renderedOutputFrames;
+        const quint64 before = surface.session()->playbackDiagnostics().renderedOutputFrames;
         const bool advanced = pumpUntil(
             [&] {
                 image = surface.grabVideoFramebuffer();
                 const double center = meanLuma(
                     image, QRect(image.width() / 2 - 24, image.height() / 2 - 16, 48, 32));
-                return surface.playbackDiagnostics().renderedOutputFrames > before &&
+                return surface.session()->playbackDiagnostics().renderedOutputFrames > before &&
                        !image.isNull() && center > 20.0;
             },
             3000);
@@ -332,7 +376,7 @@ void TestVideoScaling::hiddenPlaybackChangesThePicturePerMode() {
         mplayer::VideoScalePolicy policy;
         policy.mode = mode;
         policy.zoomPercent = zoom;
-        mplayer::VideoSurface::setVideoScalePolicy(policy);
+        mplayer::VideoSession::setVideoScalePolicy(policy);
         return grabMatching(matches);
     };
 
@@ -394,9 +438,9 @@ void TestVideoScaling::hiddenPlaybackChangesThePicturePerMode() {
 
     const QImage filledAgain = apply(mplayer::VideoScaleMode::Fill, 0, fillsWidth);
     QVERIFY(!filledAgain.isNull());
-    auto lock = surface.acquireVideoScaleFitLock();
+    auto lock = surface.session()->acquireVideoScaleFitLock();
     QVERIFY(lock.has_value());
-    QVERIFY(surface.compareFitHeld());
+    QVERIFY(surface.session()->compareFitHeld());
     const QImage locked = grabMatching(fitsWidth);
     QVERIFY(!locked.isNull());
     const int lockedSpan = litWidth(locked);
@@ -426,6 +470,34 @@ void TestVideoScaling::hiddenPlaybackChangesThePicturePerMode() {
     const QImage restored = grabMatching(fillsWidth);
     QVERIFY2(!restored.isNull(), "closing Compare did not restore the selected Fill mode");
     QVERIFY(restored.save(QDir(outDir).filePath(QStringLiteral("compare-released-fill.png"))));
-    QCOMPARE(surface.isPlaying(), !paused);
+    QCOMPARE(surface.session()->isPlaying(), !paused);
+
+    // A source transition must replace the prior 16:9 geometry: Fit follows
+    // the portrait stream instead of retaining a previous aspect override.
+    mplayer::VideoScalePolicy fitPolicy;
+    VideoSession::setVideoScalePolicy(fitPolicy);
+    const QString portraitFixture = QStringLiteral(
+        MIKAI_SOURCE_DIR "/tests/fixtures/media/portrait_motion_1080x1920_24fps_8bit_hevc.mp4");
+    QVERIFY2(QFileInfo::exists(portraitFixture), qPrintable(portraitFixture));
+    QVERIFY2(surface.session()->open(QDir::toNativeSeparators(portraitFixture)),
+             "the same session could not open the portrait fixture");
+    QImage portrait;
+    const bool portraitFramed = pumpUntil(
+        [&] {
+            if (surface.session()->videoWidth() != 1080 ||
+                surface.session()->videoHeight() != 1920) {
+                return false;
+            }
+            portrait = surface.grabVideoFramebuffer();
+            return !portrait.isNull() &&
+                   meanLuma(portrait, QRect(portrait.width() / 2 - 20,
+                                            portrait.height() / 2 - 20, 40, 40)) > 20.0;
+        },
+        8000);
+    QVERIFY2(portraitFramed, "the portrait stream did not render in the existing session");
+    QVERIFY2(litWidth(portrait) < portrait.width() / 2,
+             qPrintable(QStringLiteral("portrait stream filled width: %1 of %2")
+                            .arg(litWidth(portrait))
+                            .arg(portrait.width())));
     surface.hide();
 }

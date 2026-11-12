@@ -39,6 +39,7 @@
 #include "ProbePicture.hpp"
 #include "ProbeRuntime.hpp"
 #include "VideoSurface.hpp"
+#include "VideoSession.hpp"
 
 namespace {
 
@@ -315,7 +316,7 @@ int runRenderLifecycle(const Options& options) {
     int mediaErrorCount = 0;
     bool expectingSourceFailure = false;
     bool sourceFailureSeen = false;
-    QObject::connect(surface, &mplayer::VideoSurface::errorOccurred, surface,
+    QObject::connect(surface->session(), &mplayer::VideoSession::errorOccurred, surface->session(),
                      [&](const QString& message) {
                          if (expectingSourceFailure) {
                              sourceFailureSeen = true;
@@ -351,37 +352,37 @@ int runRenderLifecycle(const Options& options) {
         LifecycleSurface deferred;
         deferred.setWindowFlag(Qt::WindowStaysOnTopHint, true);
         deferred.resize(320, 180);
-        const bool accepted = deferred.open(source);
-        deferred.setPaused(true);
+        const bool accepted = deferred.session()->open(source);
+        deferred.session()->setPaused(true);
         verdict.require(accepted, QStringLiteral("a pre-show media request was accepted"));
         deferred.show();
         const bool deferredPaused = accepted && waitUntil(
             [&] {
-                return deferred.isContextReady() && deferred.hasVideo() &&
-                       deferred.videoWidth() > 0 && deferred.pauseObserved() &&
-                       !deferred.isPlaying();
+                return deferred.isContextReady() && deferred.session()->hasVideo() &&
+                       deferred.session()->videoWidth() > 0 && deferred.session()->pauseObserved() &&
+                       !deferred.session()->isPlaying();
             },
             8000);
         verdict.require(deferredPaused,
                         QStringLiteral("pre-show open creates video and applies deferred pause"));
         if (deferredPaused) {
-            const double parkedAt = deferred.position();
+            const double parkedAt = deferred.session()->position();
             pumpEvents(350);
-            verdict.require(deferred.pauseObserved() && !deferred.isPlaying() &&
-                                std::abs(deferred.position() - parkedAt) <= 0.12,
+            verdict.require(deferred.session()->pauseObserved() && !deferred.session()->isPlaying() &&
+                                std::abs(deferred.session()->position() - parkedAt) <= 0.12,
                             QStringLiteral("the deferred pre-show pause keeps the core parked"));
         }
     }
 
     host.show();
     const auto renderedFrames = [surface] {
-        return surface->playbackDiagnostics().renderedOutputFrames;
+        return surface->session()->playbackDiagnostics().renderedOutputFrames;
     };
 
     host.show();
     host.raise();
     host.activateWindow();
-    if (!surface->open(source)) {
+    if (!surface->session()->open(source)) {
         verdict.require(false, QStringLiteral("the surface accepted %1").arg(source));
         return verdict.report("mpv_surface_smoke:render-lifecycle");
     }
@@ -402,17 +403,17 @@ int runRenderLifecycle(const Options& options) {
     // ── a live, moving, colourful picture ─────────────────────────────────
     const bool live = waitUntil(
         [&] {
-            return surface->isContextReady() && surface->hasVideo() &&
-                   surface->videoWidth() > 0 && renderedFrames() >= 3;
+            return surface->isContextReady() && surface->session()->hasVideo() &&
+                   surface->session()->videoWidth() > 0 && renderedFrames() >= 3;
         },
         8000);
     verdict.require(surface->isContextReady(), QStringLiteral("GL context ready"));
     verdict.require(live, QStringLiteral("three output frames were rendered within 8 s"));
     if (!live) return verdict.report("mpv_surface_smoke:render-lifecycle");
-    verdict.require(surface->videoWidth() > 0 && surface->videoHeight() > 0,
+    verdict.require(surface->session()->videoWidth() > 0 && surface->session()->videoHeight() > 0,
                     QStringLiteral("source geometry %1x%2")
-                        .arg(surface->videoWidth())
-                        .arg(surface->videoHeight()));
+                        .arg(surface->session()->videoWidth())
+                        .arg(surface->session()->videoHeight()));
 
     // Read once, and from the context itself: this machine has selected llvmpipe
     // without QT_OPENGL=desktop, and every pixel claim below is about whichever
@@ -435,7 +436,7 @@ int runRenderLifecycle(const Options& options) {
         surface->doneCurrent();
     }
 
-    const auto decoder = surface->probeMpvProperty(QStringLiteral("hwdec-current"),
+    const auto decoder = surface->session()->probeMpvProperty(QStringLiteral("hwdec-current"),
                                                    mplayer::ProbePropertyKind::Text);
     const QString decoderName =
         decoder && decoder->kind == mplayer::ProbePropertyValue::Kind::Text
@@ -447,7 +448,7 @@ int runRenderLifecycle(const Options& options) {
     waitUntil([&] { return renderedFrames() >= framesAt + 4; }, 3000);
     const QImage playingLater = surface->grabFramebuffer();
     const PictureStats motion =
-        statsOf(playingLater, playing, surface->videoWidth(), surface->videoHeight(), dpr);
+        statsOf(playingLater, playing, surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
     verdict.require(!playing.isNull() && playing.size() == playingLater.size(),
                     QStringLiteral("two framebuffers at one geometry (%1x%2)")
                         .arg(playingLater.width())
@@ -462,12 +463,12 @@ int runRenderLifecycle(const Options& options) {
                     QStringLiteral("artifact %1_playing.png written").arg(options.outPrefix));
 
     // PNG writes above can leave the published HUD clock stale.
-    const auto positionAt = surface->probeMpvProperty(
+    const auto positionAt = surface->session()->probeMpvProperty(
         QStringLiteral("time-pos"), mplayer::ProbePropertyKind::Number);
     QElapsedTimer wall;
     wall.start();
     pumpEvents(1200);
-    const auto positionAfter = surface->probeMpvProperty(
+    const auto positionAfter = surface->session()->probeMpvProperty(
         QStringLiteral("time-pos"), mplayer::ProbePropertyKind::Number);
     const double elapsed = wall.elapsed() / 1000.0;
     const bool clockReadable = positionAt && positionAt->isNumeric() &&
@@ -484,16 +485,16 @@ int runRenderLifecycle(const Options& options) {
     }
 
     // ── paused repaints with the HUD on screen ────────────────────────────
-    surface->setPaused(true);
+    surface->session()->setPaused(true);
     verdict.require(
-        waitUntil([&] { return surface->pauseObserved() && !surface->isPlaying(); }, 3000),
+        waitUntil([&] { return surface->session()->pauseObserved() && !surface->session()->isPlaying(); }, 3000),
         QStringLiteral("the core observed the pause"));
     pumpEvents(400);
     surface->update();
     pumpEvents(200);
     const QImage parked = surface->grabFramebuffer();
     const PictureStats parkedPicture =
-        statsOf(parked, QImage(), surface->videoWidth(), surface->videoHeight(), dpr);
+        statsOf(parked, QImage(), surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
     verdict.require(parkedPicture.litFraction() >= kMinPictureLitFraction,
                     QStringLiteral("the parked frame keeps a lit picture (%1%)")
                         .arg(100.0 * parkedPicture.litFraction(), 0, 'f', 1));
@@ -552,7 +553,7 @@ int runRenderLifecycle(const Options& options) {
                                    "band differs)")
                         .arg(100.0 * bandChanged(clean, parked), 0, 'f', 1));
     const PictureStats cleanVideo =
-        statsOf(clean, parked, surface->videoWidth(), surface->videoHeight(), dpr);
+        statsOf(clean, parked, surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
     verdict.require(cleanVideo.compared > 0 && cleanVideo.changedFraction() <= 0.02,
                     QStringLiteral("the video-only readback left the parked picture unchanged "
                                    "(%1% changed)")
@@ -577,7 +578,7 @@ int runRenderLifecycle(const Options& options) {
                                    "differs)")
                         .arg(100.0 * restoredBandChange, 0, 'f', 1));
     const PictureStats restoredDrift =
-        statsOf(hudRestored, parked, surface->videoWidth(), surface->videoHeight(), dpr);
+        statsOf(hudRestored, parked, surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
     verdict.require(restoredDrift.compared > 0 && restoredDrift.changedFraction() <= 0.02,
                     QStringLiteral("the parked picture is untouched across the readback and the "
                                    "restoring paint (%1% changed)")
@@ -606,8 +607,8 @@ int runRenderLifecycle(const Options& options) {
                             .arg(repaint)
                             .arg(100.0 * band.fillFraction(), 0, 'f', 1)
                             .arg(band.glyph));
-        const PictureStats drift = statsOf(lastRepaint, parked, surface->videoWidth(),
-                                          surface->videoHeight(), dpr);
+        const PictureStats drift = statsOf(lastRepaint, parked, surface->session()->videoWidth(),
+                                          surface->session()->videoHeight(), dpr);
         verdict.require(drift.compared > 0 && drift.changedFraction() <= 0.02,
                         QStringLiteral("paused repaint %1 kept the parked picture (changed %2%)")
                             .arg(repaint)
@@ -622,71 +623,71 @@ int runRenderLifecycle(const Options& options) {
                     QStringLiteral("artifact %1_paused_hud.png written").arg(options.outPrefix));
 
     // A paused core cannot distinguish a retained snapshot from a cached-frame redraw.
-    surface->setPaused(false);
-    const bool resumedForHold = waitUntil([&] { return !surface->pauseObserved(); }, 4000);
+    surface->session()->setPaused(false);
+    const bool resumedForHold = waitUntil([&] { return !surface->session()->pauseObserved(); }, 4000);
     verdict.require(resumedForHold, QStringLiteral("playback resumed for the hold freeze check"));
     pumpEvents(300);
     const QImage motionStart = surface->grabFramebuffer();
     pumpEvents(400);
     const QImage motionEnd = surface->grabFramebuffer();
     const PictureStats holdMotion =
-        statsOf(motionEnd, motionStart, surface->videoWidth(), surface->videoHeight(), dpr);
+        statsOf(motionEnd, motionStart, surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
     if (resumedForHold && holdMotion.compared > 0 &&
         holdMotion.changedFraction() >= kMinMotionChangedFraction) {
-        const double positionBeforeHold = surface->position();
-        surface->setEngineFrameHold(true);
+        const double positionBeforeHold = surface->session()->position();
+        surface->session()->setEngineFrameHold(true);
         // Acquisition may consume one pending frame; measure stability from the acquired picture.
         const QImage acquiredHold = surface->grabFramebuffer();
         pumpEvents(500);
-        verdict.require(surface->position() >= positionBeforeHold + 0.25,
+        verdict.require(surface->session()->position() >= positionBeforeHold + 0.25,
                         QStringLiteral("the media clock advances while the picture is held"));
         const QImage held = surface->grabFramebuffer();
         const PictureStats frozen =
-            statsOf(held, acquiredHold, surface->videoWidth(), surface->videoHeight(), dpr);
+            statsOf(held, acquiredHold, surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
         const double freezeTolerance = std::min(0.02, holdMotion.changedFraction() / 4.0);
         verdict.require(frozen.compared > 0 && frozen.changedFraction() <= freezeTolerance,
                         QStringLiteral("a transition hold freezes the live picture (%1% changed)")
                             .arg(100.0 * frozen.changedFraction(), 0, 'f', 2));
-        surface->setEngineFrameHold(false);
+        surface->session()->setEngineFrameHold(false);
     } else {
         verdict.inconclusive(
             QStringLiteral("transition-hold freeze needs observable motion (%1% changed)")
                 .arg(100.0 * holdMotion.changedFraction(), 0, 'f', 2));
     }
-    surface->setPaused(true);
-    verdict.require(waitUntil([&] { return surface->pauseObserved(); }, 3000),
+    surface->session()->setPaused(true);
+    verdict.require(waitUntil([&] { return surface->session()->pauseObserved(); }, 3000),
                     QStringLiteral("the player returned to pause before the paused hold check"));
 
     // Exercise the transition hold without requiring a TensorRT runtime: the
     // paused picture must survive HUD-only paints, then a real output frame must
     // replace it after the hold is released.
     const QImage beforeHold = surface->grabFramebuffer();
-    surface->setEngineFrameHold(true);
+    surface->session()->setEngineFrameHold(true);
     surface->update();
     pumpEvents(200);
     const QImage held = surface->grabFramebuffer();
     const PictureStats heldPicture =
-        statsOf(held, beforeHold, surface->videoWidth(), surface->videoHeight(), dpr);
+        statsOf(held, beforeHold, surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
     verdict.require(heldPicture.compared > 0 && heldPicture.changedFraction() <= 0.02,
                     QStringLiteral("a transition hold keeps the paused video unchanged through a "
                                    "HUD repaint (%1% changed)")
                         .arg(100.0 * heldPicture.changedFraction(), 0, 'f', 2));
-    surface->setEngineFrameHold(false);
+    surface->session()->setEngineFrameHold(false);
     surface->update();
     pumpEvents(200);
     const QImage waitingForOutput = surface->grabFramebuffer();
     const PictureStats waitingPicture =
-        statsOf(waitingForOutput, held, surface->videoWidth(), surface->videoHeight(), dpr);
+        statsOf(waitingForOutput, held, surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
     verdict.require(waitingPicture.compared > 0 && waitingPicture.changedFraction() <= 0.02,
                     QStringLiteral("releasing while paused keeps the snapshot until fresh output "
                                    "(%1% changed)")
                         .arg(100.0 * waitingPicture.changedFraction(), 0, 'f', 2));
 
     const quint64 framesBeforeHandoff = renderedFrames();
-    surface->setPaused(false);
+    surface->session()->setPaused(false);
     const bool handedOff = waitUntil(
         [&] {
-            return !surface->pauseObserved() &&
+            return !surface->session()->pauseObserved() &&
                    renderedFrames() >= framesBeforeHandoff + 3;
         },
         4000);
@@ -695,21 +696,21 @@ int runRenderLifecycle(const Options& options) {
     if (handedOff) {
         const QImage fresh = surface->grabFramebuffer();
         const PictureStats replacement =
-            statsOf(fresh, held, surface->videoWidth(), surface->videoHeight(), dpr);
+            statsOf(fresh, held, surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
         verdict.require(replacement.changedFraction() >= kMinMotionChangedFraction,
                         QStringLiteral("fresh output replaces the retained picture (%1% changed)")
                             .arg(100.0 * replacement.changedFraction(), 0, 'f', 2));
     }
-    surface->setPaused(true);
-    verdict.require(waitUntil([&] { return surface->pauseObserved(); }, 3000),
+    surface->session()->setPaused(true);
+    verdict.require(waitUntil([&] { return surface->session()->pauseObserved(); }, 3000),
                     QStringLiteral("the player returned to pause after the hold handoff"));
 
-    const double beforeDoubleToggle = surface->position();
-    surface->togglePause();
-    surface->togglePause();
+    const double beforeDoubleToggle = surface->session()->position();
+    surface->session()->togglePause();
+    surface->session()->togglePause();
     pumpEvents(250);
-    verdict.require(surface->pauseObserved() && !surface->isPlaying() &&
-                        std::abs(surface->position() - beforeDoubleToggle) <= 0.10,
+    verdict.require(surface->session()->pauseObserved() && !surface->session()->isPlaying() &&
+                        std::abs(surface->session()->position() - beforeDoubleToggle) <= 0.10,
                     QStringLiteral("two rapid toggles preserve pause and the parked timestamp"));
 
     // ── an unrelated repaint drives nothing ───────────────────────────────
@@ -754,18 +755,18 @@ int runRenderLifecycle(const Options& options) {
                         .arg(renderedFrames()));
 
     // ── hidden while playing, then restored ───────────────────────────────
-    surface->setPaused(false);
-    verdict.require(waitUntil([&] { return !surface->pauseObserved(); }, 3000),
+    surface->session()->setPaused(false);
+    verdict.require(waitUntil([&] { return !surface->session()->pauseObserved(); }, 3000),
                     QStringLiteral("playback resumed after the pause"));
     verdict.require(waitUntil([&] { return renderedFrames() >= framesBeforeStrip + 4; }, 4000),
                     QStringLiteral("four output frames were rendered after the resume"));
     const QImage beforeHide = surface->grabFramebuffer();
-    const double hiddenPositionAt = surface->position();
+    const double hiddenPositionAt = surface->session()->position();
     const quint64 paintsBeforeHide = surface->paints;
     const quint64 framesBeforeHide = renderedFrames();
     surface->hide();
     pumpEvents(1200);
-    const double hiddenAdvance = surface->position() - hiddenPositionAt;
+    const double hiddenAdvance = surface->session()->position() - hiddenPositionAt;
     verdict.metric(QStringLiteral("while hidden: clock +%1 s, paints +%2, output frames +%3")
                        .arg(hiddenAdvance, 0, 'f', 3)
                        .arg(surface->paints - paintsBeforeHide)
@@ -785,14 +786,14 @@ int runRenderLifecycle(const Options& options) {
     // Progress is required across the whole hidden window, not from the clock the
     // mirror happened to publish while nothing was on screen: a hidden surface
     // that stops the film is what this catches.
-    const double restoredAdvance = surface->position() - hiddenPositionAt;
+    const double restoredAdvance = surface->session()->position() - hiddenPositionAt;
     verdict.require(restoredAdvance >= 0.9,
                     QStringLiteral("the film advanced across the hidden window (+%1 s while it "
                                    "was hidden for 1.2 s)")
                         .arg(restoredAdvance, 0, 'f', 3));
     const QImage afterHide = surface->grabFramebuffer();
     const PictureStats restored =
-        statsOf(afterHide, beforeHide, surface->videoWidth(), surface->videoHeight(), dpr);
+        statsOf(afterHide, beforeHide, surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
     verdict.require(restored.litFraction() >= kMinPictureLitFraction,
                     QStringLiteral("the restored picture is lit (%1%)")
                         .arg(100.0 * restored.litFraction(), 0, 'f', 1));
@@ -814,11 +815,11 @@ int runRenderLifecycle(const Options& options) {
                     QStringLiteral("an opaque sibling covers the still-visible video widget"));
     const quint64 occludedPaints = surface->paints;
     const quint64 occludedFrames = renderedFrames();
-    const double occludedAt = surface->position();
+    const double occludedAt = surface->session()->position();
     QElapsedTimer occludedWall;
     occludedWall.start();
     pumpEvents(1200);
-    const double occludedAdvance = surface->position() - occludedAt;
+    const double occludedAdvance = surface->session()->position() - occludedAt;
     verdict.require(surface->paints == occludedPaints && renderedFrames() == occludedFrames,
                     QStringLiteral("a fully occluded video widget performs no video paints"));
     verdict.require(std::abs(occludedAdvance - occludedWall.elapsed() / 1000.0) <= 0.25,
@@ -828,7 +829,7 @@ int runRenderLifecycle(const Options& options) {
                     QStringLiteral("new video frames resume after removing the opaque sibling"));
     const QImage afterOcclusion = surface->grabFramebuffer();
     const PictureStats occlusionRecovery =
-        statsOf(afterOcclusion, afterHide, surface->videoWidth(), surface->videoHeight(), dpr);
+        statsOf(afterOcclusion, afterHide, surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
     verdict.require(occlusionRecovery.litFraction() >= kMinPictureLitFraction &&
                         occlusionRecovery.changedFraction() >= kMinMotionChangedFraction,
                     QStringLiteral("removing the opaque sibling reveals fresh lit video"));
@@ -839,13 +840,13 @@ int runRenderLifecycle(const Options& options) {
     // ── minimized, then restored ──────────────────────────────────────────
     const quint64 framesBeforeMinimize = renderedFrames();
     const QImage beforeMinimize = surface->grabFramebuffer();
-    const double minimizedPositionAt = surface->position();
+    const double minimizedPositionAt = surface->session()->position();
     host.showMinimized();
     pumpEvents(200);
     const quint64 minimizedPaints = surface->paints;
     const quint64 minimizedFrames = renderedFrames();
     pumpEvents(700);
-    const double minimizedAdvance = surface->position() - minimizedPositionAt;
+    const double minimizedAdvance = surface->session()->position() - minimizedPositionAt;
     verdict.require(host.isMinimized(),
                     QStringLiteral("the platform placed the host in the minimized state"));
     verdict.require(surface->paints == minimizedPaints && renderedFrames() == minimizedFrames,
@@ -859,13 +860,13 @@ int runRenderLifecycle(const Options& options) {
     verdict.require(minimizedRestored,
                     QStringLiteral("the minimized surface rendered new output frames after "
                                    "restore"));
-    verdict.require(surface->position() - minimizedPositionAt >= 0.3,
+    verdict.require(surface->session()->position() - minimizedPositionAt >= 0.3,
                     QStringLiteral("the film advanced across the minimized window (+%1 s)")
-                        .arg(surface->position() - minimizedPositionAt, 0, 'f', 3));
+                        .arg(surface->session()->position() - minimizedPositionAt, 0, 'f', 3));
     if (minimizedRestored) {
         const QImage afterMinimize = surface->grabFramebuffer();
         const PictureStats stats =
-            statsOf(afterMinimize, beforeMinimize, surface->videoWidth(), surface->videoHeight(),
+            statsOf(afterMinimize, beforeMinimize, surface->session()->videoWidth(), surface->session()->videoHeight(),
                     dpr);
         verdict.require(stats.litFraction() >= kMinPictureLitFraction,
                         QStringLiteral("the picture after minimize/restore is lit (%1%)")
@@ -910,7 +911,7 @@ int runRenderLifecycle(const Options& options) {
         // The empty framebuffer from a resize must come back centred, not a
         // logical-sized viewport in one corner.
         const PictureStats stats =
-            statsOf(frame, QImage(), surface->videoWidth(), surface->videoHeight(), dpr);
+            statsOf(frame, QImage(), surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
         verdict.require(stats.litFraction() >= kMinPictureLitFraction,
                         QStringLiteral("%1: the resized framebuffer carries a lit, centred picture "
                                        "(%2%)")
@@ -929,10 +930,10 @@ int runRenderLifecycle(const Options& options) {
                                  smallPlaying),
                     QStringLiteral("artifact %1_fbo_playing.png written").arg(options.outPrefix));
 
-    surface->setPaused(true);
+    surface->session()->setPaused(true);
     // Nothing below is a paused-frame claim until the core itself confirms the
     // pause: the flag is observation-driven, never assumed.
-    verdict.require(waitUntil([&] { return surface->pauseObserved(); }, 3000),
+    verdict.require(waitUntil([&] { return surface->session()->pauseObserved(); }, 3000),
                     QStringLiteral("the core observed the pause before the paused resize"));
     pumpEvents(300);
     const quint64 paintsBeforePausedResize = surface->paints;
@@ -959,7 +960,7 @@ int runRenderLifecycle(const Options& options) {
                         .arg(100.0 * pausedBand.fillFraction(), 0, 'f', 1)
                         .arg(pausedBand.glyph));
     const PictureStats pausedSmallStats =
-        statsOf(pausedSmall, QImage(), surface->videoWidth(), surface->videoHeight(), dpr);
+        statsOf(pausedSmall, QImage(), surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
     verdict.require(pausedSmallStats.litFraction() >= kMinPictureLitFraction,
                     QStringLiteral("the paused resize left a lit, centred picture (%1%)")
                         .arg(100.0 * pausedSmallStats.litFraction(), 0, 'f', 1));
@@ -967,7 +968,7 @@ int runRenderLifecycle(const Options& options) {
                     QStringLiteral("artifact %1_fbo_paused.png written").arg(options.outPrefix));
 
     const quint64 framesAtResume = renderedFrames();
-    surface->setPaused(false);
+    surface->session()->setPaused(false);
     verdict.require(waitUntil([&] { return renderedFrames() >= framesAtResume + 3; }, 4000),
                     QStringLiteral("playback resumed after the paused resize"));
     resizeViewport(QSize(640, 360), QStringLiteral("restore 640x360"));
@@ -977,18 +978,18 @@ int runRenderLifecycle(const Options& options) {
         LifecycleSurface* doomed = new LifecycleSurface;
         doomed->setWindowFlag(Qt::WindowStaysOnTopHint, true);
         doomed->resize(320, 180);
-        QObject::connect(doomed, &mplayer::VideoSurface::errorOccurred, doomed,
+        QObject::connect(doomed->session(), &mplayer::VideoSession::errorOccurred, doomed->session(),
                          [](const QString& message) {
                              std::fprintf(stderr, "second surface error: %s\n",
                                           qPrintable(message));
                          });
         doomed->show();
         const bool doomedLive =
-            doomed->open(source) &&
+            doomed->session()->open(source) &&
             waitUntil(
                 [&] {
-                    return doomed->isContextReady() && doomed->hasVideo() &&
-                           doomed->playbackDiagnostics().renderedOutputFrames >= 3;
+                    return doomed->isContextReady() && doomed->session()->hasVideo() &&
+                           doomed->session()->playbackDiagnostics().renderedOutputFrames >= 3;
                 },
                 6000);
         verdict.require(doomedLive,
@@ -1006,19 +1007,19 @@ int runRenderLifecycle(const Options& options) {
                                    "second one was destroyed"));
     const QImage afterDoomed = surface->grabFramebuffer();
     const PictureStats afterDoomedStats =
-        statsOf(afterDoomed, QImage(), surface->videoWidth(), surface->videoHeight(), dpr);
+        statsOf(afterDoomed, QImage(), surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
     verdict.require(afterDoomedStats.litFraction() >= kMinPictureLitFraction,
                     QStringLiteral("the surviving surface still shows a lit picture (%1%)")
                         .arg(100.0 * afterDoomedStats.litFraction(), 0, 'f', 1));
 
     // ── reparent while paused: a real context recreation restores intent ──
-    surface->setPaused(true);
+    surface->session()->setPaused(true);
     const bool pauseBeforeReparent =
-        waitUntil([&] { return surface->pauseObserved() && !surface->isPlaying(); }, 3000);
+        waitUntil([&] { return surface->session()->pauseObserved() && !surface->session()->isPlaying(); }, 3000);
     verdict.require(pauseBeforeReparent,
                     QStringLiteral("the core observed pause before GL recreation"));
-    const double pausePositionBeforeReparent = surface->position();
-    const quint64 epochBeforeReparent = surface->sourceEpoch();
+    const double pausePositionBeforeReparent = surface->session()->position();
+    const quint64 epochBeforeReparent = surface->session()->sourceEpoch();
     const int initsBeforeReparent = surface->glInits;
     QWidget host2;
     host2.setWindowFlag(Qt::WindowStaysOnTopHint, true);
@@ -1034,7 +1035,7 @@ int runRenderLifecycle(const Options& options) {
     // the render count and the source epoch, so the proof is fresh motion in the
     // new context, not a number that grew.
     const bool reparented =
-        waitUntil([&] { return surface->isContextReady() && surface->hasVideo(); }, 8000);
+        waitUntil([&] { return surface->isContextReady() && surface->session()->hasVideo(); }, 8000);
     verdict.require(reparented,
                     QStringLiteral("the reparented surface reports a ready context and video"));
             verdict.instrumentation(surface->glInits > initsBeforeReparent,
@@ -1053,9 +1054,9 @@ int runRenderLifecycle(const Options& options) {
         restoreClock.start();
         const bool pausedPositionRestored = waitUntil(
             [&] {
-                return surface->isContextReady() && surface->hasVideo() &&
-                       surface->pauseObserved() && !surface->isPlaying() &&
-                       std::abs(surface->position() - pausePositionBeforeReparent) <=
+                return surface->isContextReady() && surface->session()->hasVideo() &&
+                       surface->session()->pauseObserved() && !surface->session()->isPlaying() &&
+                       std::abs(surface->session()->position() - pausePositionBeforeReparent) <=
                            parkedTolerance;
             },
             3000);
@@ -1069,57 +1070,57 @@ int runRenderLifecycle(const Options& options) {
                            "pause observed %5, pause intent %6, playing %7, video %8, "
                            "context %9, source epoch %10 -> %11, output frames %12")
                 .arg(pausePositionBeforeReparent, 0, 'f', 3)
-                .arg(surface->position(), 0, 'f', 3)
+                .arg(surface->session()->position(), 0, 'f', 3)
                 .arg(parkedTolerance, 0, 'f', 2)
                 .arg(restoreWaitMs)
-                .arg(surface->pauseObserved() ? QStringLiteral("true") : QStringLiteral("false"))
-                .arg(surface->playbackPauseIntent() ? QStringLiteral("true")
+                .arg(surface->session()->pauseObserved() ? QStringLiteral("true") : QStringLiteral("false"))
+                .arg(surface->session()->playbackPauseIntent() ? QStringLiteral("true")
                                                     : QStringLiteral("false"))
-                .arg(surface->isPlaying() ? QStringLiteral("true") : QStringLiteral("false"))
-                .arg(surface->hasVideo() ? QStringLiteral("true") : QStringLiteral("false"))
+                .arg(surface->session()->isPlaying() ? QStringLiteral("true") : QStringLiteral("false"))
+                .arg(surface->session()->hasVideo() ? QStringLiteral("true") : QStringLiteral("false"))
                 .arg(surface->isContextReady() ? QStringLiteral("true") : QStringLiteral("false"))
                 .arg(epochBeforeReparent)
-                .arg(surface->sourceEpoch())
-                .arg(surface->playbackDiagnostics().renderedOutputFrames));
+                .arg(surface->session()->sourceEpoch())
+                .arg(surface->session()->playbackDiagnostics().renderedOutputFrames));
         // A changed epoch means the surface reloaded the source instead of
         // reattaching to the core that still held it. That is recorded, not
         // asserted: the next run decides whether it happens at all, and a reload
         // is judged by whether it still keeps the playhead where it was.
         verdict.metric(QStringLiteral("paused recreation path: %1")
-                           .arg(surface->sourceEpoch() != epochBeforeReparent
+                           .arg(surface->session()->sourceEpoch() != epochBeforeReparent
                                     ? QStringLiteral("reloaded the source (epoch %1 -> %2)")
                                           .arg(epochBeforeReparent)
-                                          .arg(surface->sourceEpoch())
+                                          .arg(surface->session()->sourceEpoch())
                                     : QStringLiteral("reattached to the loaded core (epoch %1)")
                                           .arg(epochBeforeReparent)));
-        verdict.require(surface->pauseObserved() && !surface->isPlaying(),
+        verdict.require(surface->session()->pauseObserved() && !surface->session()->isPlaying(),
                         QStringLiteral("GL recreation restores the observed paused state"));
         verdict.require(pausedPositionRestored,
                         QStringLiteral("the paused source remains parked across GL recreation "
                                        "(position %1 -> %2 after %3 ms, tolerance %4)")
                             .arg(pausePositionBeforeReparent, 0, 'f', 3)
-                            .arg(surface->position(), 0, 'f', 3)
+                            .arg(surface->session()->position(), 0, 'f', 3)
                             .arg(restoreWaitMs)
                             .arg(parkedTolerance, 0, 'f', 2));
     if (reparented && pauseBeforeReparent) {
-        surface->setPaused(false);
-        const bool resumed = waitUntil([&] { return !surface->pauseObserved(); }, 3000);
+        surface->session()->setPaused(false);
+        const bool resumed = waitUntil([&] { return !surface->session()->pauseObserved(); }, 3000);
         verdict.require(resumed, QStringLiteral("playback resumes after paused GL recreation"));
     }
     if (reparented) {
         QImage reparentA = surface->grabFramebuffer();
         QImage reparentB = reparentA;
         PictureStats stats;
-        PictureStats litBefore = statsOf(reparentA, QImage(), surface->videoWidth(),
-                                        surface->videoHeight(), dpr);
+        PictureStats litBefore = statsOf(reparentA, QImage(), surface->session()->videoWidth(),
+                                        surface->session()->videoHeight(), dpr);
         bool moved = false;
         for (int attempt = 0; attempt < 16 && !moved; ++attempt) {
             pumpEvents(300);
             reparentB = surface->grabFramebuffer();
-            stats = statsOf(reparentB, reparentA, surface->videoWidth(), surface->videoHeight(),
+            stats = statsOf(reparentB, reparentA, surface->session()->videoWidth(), surface->session()->videoHeight(),
                             dpr);
-            const PictureStats litAfter = statsOf(reparentB, QImage(), surface->videoWidth(),
-                                                 surface->videoHeight(), dpr);
+            const PictureStats litAfter = statsOf(reparentB, QImage(), surface->session()->videoWidth(),
+                                                 surface->session()->videoHeight(), dpr);
             // Both frames have to carry the picture: a blank frame turning
             // coloured is a repaint, not movement.
             moved = litBefore.litFraction() >= kMinPictureLitFraction &&
@@ -1150,9 +1151,9 @@ int runRenderLifecycle(const Options& options) {
     }
 
     // ── close, then reopen a different source ─────────────────────────────
-    surface->close();
+    surface->session()->close();
     pumpEvents(300);
-    const double stoppedAt = surface->position();
+    const double stoppedAt = surface->session()->position();
     const int initsBeforeStoppedReparent = surface->glInits;
     QWidget host3;
     host3.setWindowFlag(Qt::WindowStaysOnTopHint, true);
@@ -1171,20 +1172,20 @@ int runRenderLifecycle(const Options& options) {
     verdict.require(stoppedContextRecreated,
                     QStringLiteral("a closed surface recreates its GL context"));
     pumpEvents(500);
-    verdict.require(!surface->hasVideo() && !surface->isPlaying() &&
-                        std::abs(surface->position() - stoppedAt) <= 0.12,
+    verdict.require(!surface->session()->hasVideo() && !surface->session()->isPlaying() &&
+                        std::abs(surface->session()->position() - stoppedAt) <= 0.12,
                     QStringLiteral("GL recreation after close stays stopped instead of reopening "
                                    "the former source"));
     const QString reopened = QStringLiteral("av://lavfi:testsrc=size=320x180:rate=30");
-    const bool reopenedAccepted = surface->open(reopened);
+    const bool reopenedAccepted = surface->session()->open(reopened);
     verdict.require(reopenedAccepted, QStringLiteral("reopening after close was accepted"));
     if (reopenedAccepted) {
         const quint64 framesAtReopen = renderedFrames();
         const bool reopenedLive =
             waitUntil(
                 [&] {
-                    return surface->isContextReady() && surface->hasVideo() &&
-                           surface->videoWidth() == 320 && surface->videoHeight() == 180 &&
+                    return surface->isContextReady() && surface->session()->hasVideo() &&
+                           surface->session()->videoWidth() == 320 && surface->session()->videoHeight() == 180 &&
                            renderedFrames() >= framesAtReopen + 3;
                 },
                 8000);
@@ -1197,7 +1198,7 @@ int runRenderLifecycle(const Options& options) {
             waitUntil([&] { return renderedFrames() >= framesNow + 4; }, 3000);
             const QImage reopenB = surface->grabFramebuffer();
             const PictureStats stats =
-                statsOf(reopenB, reopenA, surface->videoWidth(), surface->videoHeight(), dpr);
+                statsOf(reopenB, reopenA, surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
             verdict.require(stats.litFraction() >= kMinPictureLitFraction,
                             QStringLiteral("the reopened source shows a lit picture (%1%)")
                                 .arg(100.0 * stats.litFraction(), 0, 'f', 1));
@@ -1217,19 +1218,19 @@ int runRenderLifecycle(const Options& options) {
     if (missingSourceDirectory.isValid()) {
         expectingSourceFailure = true;
         const bool accepted =
-            surface->open(missingSourceDirectory.filePath(QStringLiteral("missing-video.mp4")));
+            surface->session()->open(missingSourceDirectory.filePath(QStringLiteral("missing-video.mp4")));
         verdict.require(accepted, QStringLiteral("the asynchronous missing-source request was accepted"));
         const bool reported = accepted && waitUntil(
-            [&] { return sourceFailureSeen && !surface->hasVideo(); }, 5000);
+            [&] { return sourceFailureSeen && !surface->session()->hasVideo(); }, 5000);
         expectingSourceFailure = false;
         verdict.require(reported,
                         QStringLiteral("a current-source failure notifies the viewer and clears video"));
         verdict.require(surface->isContextReady(),
                         QStringLiteral("a media load failure preserves the rendering context"));
 
-        const bool recovering = surface->open(reopened);
+        const bool recovering = surface->session()->open(reopened);
         const bool recovered = recovering && waitUntil(
-            [&] { return surface->hasVideo() && renderedFrames() >= 3; }, 5000);
+            [&] { return surface->session()->hasVideo() && renderedFrames() >= 3; }, 5000);
         verdict.require(recovered, QStringLiteral("playback recovers after a current-source failure"));
         if (recovered) {
             const quint64 before = renderedFrames();
@@ -1237,9 +1238,9 @@ int runRenderLifecycle(const Options& options) {
             waitUntil([&] { return renderedFrames() >= before + 4; }, 3000);
             const QImage second = surface->grabFramebuffer();
             const PictureStats firstStats =
-                statsOf(first, QImage(), surface->videoWidth(), surface->videoHeight(), dpr);
+                statsOf(first, QImage(), surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
             const PictureStats recoveredStats =
-                statsOf(second, first, surface->videoWidth(), surface->videoHeight(), dpr);
+                statsOf(second, first, surface->session()->videoWidth(), surface->session()->videoHeight(), dpr);
             verdict.require(firstStats.litFraction() >= kMinPictureLitFraction &&
                                 recoveredStats.litFraction() >= kMinPictureLitFraction &&
                                 recoveredStats.changedFraction() >= kMinMotionChangedFraction,
@@ -1286,12 +1287,12 @@ int runSingleClip(QApplication& app, const QString& requested) {
     std::optional<double> streamFps;
     auto streamFpsSource = mplayer::StreamFpsSource::Unknown;
     QString mediaError;
-    QObject::connect(&surface, &mplayer::VideoSurface::errorOccurred,
+    QObject::connect(surface.session(), &mplayer::VideoSession::errorOccurred,
                      [&](const QString& message) {
                          mediaError = message;
                          std::fprintf(stderr, "media error: %s\n", qPrintable(message));
                      });
-    QObject::connect(&surface, &mplayer::VideoSurface::streamStatsChanged,
+    QObject::connect(surface.session(), &mplayer::VideoSession::streamStatsChanged,
                      [&](double, double fps, mplayer::StreamFpsSource source) {
                          streamFps = fps;
                          streamFpsSource = source;
@@ -1301,7 +1302,7 @@ int runSingleClip(QApplication& app, const QString& requested) {
                                ? QStringLiteral("av://lavfi:testsrc=size=640x360:rate=25")
                                : requested;
     std::fprintf(stderr, "target=%s\n", qPrintable(target));
-    if (!surface.open(target)) {
+    if (!surface.session()->open(target)) {
         std::fprintf(stdout, "RESULT: FAIL (open refused)\n");
         return 1;
     }
@@ -1310,8 +1311,8 @@ int runSingleClip(QApplication& app, const QString& requested) {
         FrameSample sample;
         sample.image = surface.grabFramebuffer();
         sample.position = position;
-        sample.videoWidth = surface.videoWidth();
-        sample.videoHeight = surface.videoHeight();
+        sample.videoWidth = surface.session()->videoWidth();
+        sample.videoHeight = surface.session()->videoHeight();
         sample.contextReady = surface.isContextReady();
         sample.clean = mediaError.isEmpty();
         sample.valid = !sample.image.isNull();
@@ -1375,10 +1376,10 @@ int runSingleClip(QApplication& app, const QString& requested) {
         std::fprintf(stderr,
                      "hasVideo=%d playing=%d contextReady=%d video=%dx%d "
                      "position=%.3f earlierPosition=%.3f duration=%.3f\n",
-                     int(surface.hasVideo()), int(surface.isPlaying()),
+                     int(surface.session()->hasVideo()), int(surface.session()->isPlaying()),
                      int(surface.isContextReady()), shown.videoWidth, shown.videoHeight,
-                     surface.position(), early.valid ? early.position : -1.0,
-                     surface.duration());
+                     surface.session()->position(), early.valid ? early.position : -1.0,
+                     surface.session()->duration());
         if (streamFps.has_value()) {
             const char* provenance =
                 streamFpsSource == mplayer::StreamFpsSource::MpvOutput
@@ -1390,7 +1391,7 @@ int runSingleClip(QApplication& app, const QString& requested) {
         } else {
             std::fprintf(stderr, "reported stream FPS=unavailable\n");
         }
-        const mplayer::PlaybackDiagnostics diagnostics = surface.playbackDiagnostics();
+        const mplayer::PlaybackDiagnostics diagnostics = surface.session()->playbackDiagnostics();
         if (diagnostics.estimatedVfFps.has_value()) {
             std::fprintf(stderr, "raw estimated-vf-fps=%.3f\n", *diagnostics.estimatedVfFps);
         } else {
@@ -1411,7 +1412,7 @@ int runSingleClip(QApplication& app, const QString& requested) {
                                  "limitation, not a measured zero)\n");
         }
         const auto hardwareDecoder =
-            surface.probeMpvProperty(QStringLiteral("hwdec-current"),
+            surface.session()->probeMpvProperty(QStringLiteral("hwdec-current"),
                                      mplayer::ProbePropertyKind::Text);
         const QString hardwareDecoderName =
             hardwareDecoder && hardwareDecoder->kind == mplayer::ProbePropertyValue::Kind::Text
@@ -1467,20 +1468,20 @@ int runSingleClip(QApplication& app, const QString& requested) {
         std::fflush(stdout);
 
         surface.hide();
-        surface.close();
+        surface.session()->close();
         app.exit(exitCode);
     };
 
     QObject::connect(&timer, &QTimer::timeout, &surface, [&]() {
         if (done || !surface.isContextReady()) return;
-        if (!surface.hasVideo()) {
+        if (!surface.session()->hasVideo()) {
             // End of file after two live samples is not a failure; a short clip
             // arrives here instead of being read past its end on a fixed clock.
             if (early.valid && lastLive.valid && lastLive.position > early.position) finish();
             return;
         }
-        const double position = surface.position();
-        const double duration = surface.duration();
+        const double position = surface.session()->position();
+        const double duration = surface.session()->duration();
         if (!early.valid) {
             const double earlyAt =
                 duration > 0.0 ? std::min(0.5, std::max(0.1, duration * 0.15)) : 0.5;

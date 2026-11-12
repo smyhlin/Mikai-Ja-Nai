@@ -1,33 +1,36 @@
-// Synthetic status snapshots exercise presentation only, not inference.
-// --framebuffer-capture checks fullscreen GPU chrome, not desktop presentation.
+// The native HUD probe exercises the production typed controller, native Quick
+// scene and its owning VideoSession. It never supplies a status snapshot.
+// --framebuffer-capture reads the Quick scene's rendered framebuffer.
 
 #include <QApplication>
 #include <QColor>
+#include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFileInfo>
-#include <QGuiApplication>
 #include <QImage>
-#include <QLabel>
-#include <QPixmap>
+#include <QQuickWindow>
 #include <QScreen>
+#include <QSGRendererInterface>
 #include <QSettings>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <QThread>
-#include <QWindow>
 
 #include <cstdio>
-#include <optional>
+#include <functional>
 
-#include "PlayerShell.hpp"
+#include "PlayerController.hpp"
+#include "PlayerWindow.hpp"
 #include "ProbeRuntime.hpp"
 #include "ProbeUi.hpp"
-#include "VideoSurface.hpp"
+#include "VideoSession.hpp"
 #include "native/status/NativeMenu.hpp"
-#include "native/status/NativeStatus.hpp"
 #include "native/status/NativeTypes.hpp"
 
 using namespace mplayer;
-using namespace mplayer::shell;
+using namespace mplayer::quick;
 
 namespace {
 
@@ -35,86 +38,18 @@ int failures = 0;
 
 void check(bool ok, const QString& what) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", qPrintable(what));
-    if (!ok) {
-        ++failures;
-    }
+    if (!ok) ++failures;
 }
 
 void note(const QString& what) { std::printf("NOTE %s\n", qPrintable(what)); }
 
-struct ChipReading {
-    bool visible = false;
-    QString text;
+struct StreamStatsReading {
+    double bytesPerSecond = 0.0;
+    double framesPerSecond = 0.0;
+    StreamFpsSource source = StreamFpsSource::Unknown;
+    bool seen = false;
 };
 
-ChipReading readChip(const QLabel* chip) {
-    ChipReading reading;
-    if (chip == nullptr) {
-        return reading;
-    }
-    reading.visible = chip->isVisible();
-    reading.text = chip->text();
-    return reading;
-}
-
-native::StatusSnapshot stateSnapshot(native::NativeState state, const QString& reason) {
-    native::StatusSnapshot snapshot;
-    snapshot.version = native::kNativeStatusProtocol;
-    snapshot.revision = 1;
-    snapshot.epoch = 1;
-    snapshot.state = state;
-    snapshot.reason = state == native::NativeState::Active ? QString() : reason;
-    return snapshot;
-}
-
-native::StatusSnapshot activePlanSnapshot() {
-    using namespace native;
-    StatusSnapshot snapshot = stateSnapshot(NativeState::Active, QString());
-
-    NativeEffectivePlan plan;
-    plan.recipe = QStringLiteral("animejanai_2x");
-    plan.provider = QStringLiteral("TensorRT");
-    plan.model = QStringLiteral("2x_AnimeJaNai_HD_V3");
-    plan.spatialStages = 1;
-    plan.order = QStringLiteral("spatial-first");
-    plan.sourceSize = NativeSize{320, 180};
-    plan.outputSize = NativeSize{640, 360};
-    plan.sourceFps = Rational{24, 1};
-    plan.outputFps = Rational{48, 1};
-    plan.interpolation = NativeInterpolation{Rational{2, 1}, QStringLiteral("rife_v4.14")};
-    plan.decoder = QStringLiteral("nvdec");
-    plan.csp = QStringLiteral("bt709");
-    snapshot.effective = plan;
-
-    NativeCadenceCounters counters;
-    counters.framesIn = 1000000;
-    counters.framesOut = 1999500;
-    counters.dropped = 1234;
-    counters.interpolated = 999500;
-    counters.sceneCuts = 3;
-    snapshot.counters = counters;
-    return snapshot;
-}
-
-void pushNative(PlayerShell* shell, const native::NativePreferences& preferences,
-                const std::optional<native::StatusSnapshot>& snapshot) {
-    native::menu::Inputs inputs = shell->nativeInputs();
-    inputs.preferences = preferences;
-    inputs.status = native::NativeStatusView{};
-    if (snapshot.has_value()) {
-        inputs.status.snapshot = *snapshot;
-        inputs.status.availability = native::statusSnapshotAvailability(*snapshot);
-    } else {
-        inputs.status.availability = native::unavailableAvailability(
-            QStringLiteral("native.statusAbsent"),
-            QStringLiteral("No native status has been read."));
-    }
-    shell->setNativeMenuInputs(inputs);
-    QCoreApplication::processEvents();
-}
-
-/// What a crop carries: the bright pixels the chip's text is drawn with, how many
-/// columns they span, and how much of the crop is the dark composition behind it.
 struct CropReading {
     long total = 0;
     long bright = 0;
@@ -133,8 +68,6 @@ CropReading readCrop(const QImage& crop) {
             const QColor pixel = crop.pixelColor(x, y);
             const int sum = pixel.red() + pixel.green() + pixel.blue();
             ++reading.total;
-            // The chip draws white(255)/white(185)/#ffcf7a/#79dcf2 text on the
-            // 32,34,37 pill: 480 is glyph ink, 150 is that pill over the picture.
             if (sum > 480) {
                 ++reading.bright;
                 columnCarriesText = true;
@@ -147,100 +80,94 @@ CropReading readCrop(const QImage& crop) {
     return reading;
 }
 
-/// The pixels a viewer actually sees over `widget`. The adopted chrome is painted
-/// into the surface's framebuffer, so the widget's own backing store is empty and
-/// widget->grab() would produce a blank image of exactly the right size.
-QImage presentedCrop(QWidget* widget) {
-    if (widget == nullptr) return {};
-    QWidget* window = widget->window();
-    QWindow* handle = window != nullptr ? window->windowHandle() : nullptr;
-    if (handle == nullptr) return {};
-    QScreen* screen = handle->screen();
-    if (screen == nullptr) screen = QGuiApplication::primaryScreen();
-    if (screen == nullptr) return {};
-    QPoint origin = widget->mapToGlobal(QPoint(0, 0));
-#ifdef Q_OS_WIN
-    origin -= screen->geometry().topLeft();
-#endif
-    return screen->grabWindow(0, origin.x(), origin.y(), widget->width(), widget->height())
-        .toImage();
+QImage presentedWindow(PlayerWindow* window) {
+    if (window == nullptr || window->screen() == nullptr) return {};
+    return window->screen()->grabWindow(window->winId()).toImage();
 }
 
-/// Crops the presented pixels over one built widget, writes them out, and proves
-/// the crop carries the HUD's text: a blank or uncomposed crop has the right size
-/// and no glyphs, which is what the old size-only readout could not tell apart.
-void shoot(PlayerShell* shell, QWidget* widget, const QString& name, bool framebufferCapture) {
-    if (widget == nullptr) {
-        check(false, QStringLiteral("there is a widget to screenshot: ") + name);
+/// Saves the actual native scene. Bright-pixel checks apply only to the
+/// explicitly bright lavfi testsrc2 workload; otherwise the image is evidence,
+/// not a black-frame verdict.
+void shoot(PlayerWindow* window, const QString& name, bool framebufferCapture,
+           bool knownBright, bool hudExpected) {
+    if (window == nullptr) {
+        check(false, QStringLiteral("the production Quick window exists for screenshot: ") + name);
         return;
     }
-    QImage crop;
+    QImage image;
     if (framebufferCapture) {
-        VideoSurface* surface = shell->videoSurface();
-        const bool ready = surface != nullptr && surface->waitForContext(5000);
-        check(ready, QStringLiteral("the GPU chrome surface has a render context"));
-        if (!ready) return;
-        const QImage full = surface->grabFramebuffer();
-        const qreal ratio = surface->devicePixelRatioF();
-        const QPoint at = widget->mapTo(shell, QPoint()) - surface->pos();
-        const QRect deviceRect(at * ratio, widget->size() * ratio);
-        std::fprintf(stderr,
-                     "GPU crop: shell %dx%d surface %d,%d %dx%d framebuffer %dx%d chip %d,%d %dx%d dpr=%.2f\n",
-                     shell->width(), shell->height(), surface->x(), surface->y(),
-                     surface->width(), surface->height(), full.width(), full.height(),
-                     deviceRect.x(), deviceRect.y(), deviceRect.width(), deviceRect.height(), ratio);
-        const bool contained = !full.isNull() && full.rect().contains(deviceRect);
-        check(contained, QStringLiteral("the full HUD chip lies inside the fullscreen framebuffer"));
-        if (!contained) return;
-        crop = full.copy(deviceRect);
-        const QString fullPath = QDir::current().filePath(
-            QStringLiteral("build-cmake/native_hud_probe_fbo_full.png"));
-        check(QDir().mkpath(QFileInfo(fullPath).absolutePath()) && full.save(fullPath),
-              QStringLiteral("the fullscreen GPU chrome evidence was saved"));
+        image = window->grabWindow();
     } else {
-        if (QWidget* window = widget->window()) {
-            window->raise();
-            window->activateWindow();
-        }
+        window->raiseWindow();
         QCoreApplication::processEvents();
         QThread::msleep(250);
         QCoreApplication::processEvents();
-        crop = presentedCrop(widget);
+        image = presentedWindow(window);
     }
-    const QPoint origin = widget->mapToGlobal(QPoint(0, 0));
-    std::fprintf(stderr,
-                 "capture %s: widget %dx%d at %d,%d visible=%d crop %dx%d dpr=%.2f\n",
-                 qPrintable(name), widget->width(), widget->height(), origin.x(), origin.y(),
-                 int(widget->isVisible()), crop.width(), crop.height(),
-                 widget->devicePixelRatioF());
+    if (image.isNull()) {
+        check(false, QStringLiteral("the actual Quick scene produced a screenshot: ") + name);
+        return;
+    }
+    if (framebufferCapture) {
+        const QString fullPath = QDir::current().filePath(
+            QStringLiteral("build-cmake/native_hud_probe_fbo_full.png"));
+        check(QDir().mkpath(QFileInfo(fullPath).absolutePath()) && image.save(fullPath),
+              QStringLiteral("the fullscreen Quick framebuffer evidence was saved"));
+    }
 
+    const qreal ratio = window->devicePixelRatio();
+    const int hudWidth = qMin(image.width(), qRound(320 * ratio));
+    const int hudHeight = qMin(image.height(), qRound(150 * ratio));
+    const QImage hudCrop = image.copy(image.width() - hudWidth, 0, hudWidth, hudHeight);
     const QString path = QDir::current().filePath(QStringLiteral("build-cmake/") + name);
-    const bool written =
-        !crop.isNull() && QDir().mkpath(QFileInfo(path).absolutePath()) && crop.save(path);
+    const bool written = QDir().mkpath(QFileInfo(path).absolutePath()) && hudCrop.save(path);
     check(written, QStringLiteral("screenshot written: ") + name);
+    if (!written) return;
+    if (hudExpected) {
+        const CropReading reading = readCrop(hudCrop);
+        check(reading.bright >= 120 && reading.brightColumns >= 40,
+              QStringLiteral("the captured Quick HUD shows rendered text: %1 bright pixels over %2 columns")
+                  .arg(reading.bright)
+                  .arg(reading.brightColumns));
+        check(reading.darkFraction() >= 0.05,
+              QStringLiteral("the captured Quick HUD overlays its native scene (%1% dark pixels)")
+                  .arg(100.0 * reading.darkFraction(), 0, 'f', 1));
+    } else {
+        note(QStringLiteral("native HUD is not rendered for the actual selected runtime/status"));
+    }
+    if (knownBright) {
+        const CropReading reading = readCrop(image);
+        check(reading.total > 0 && reading.bright > 0,
+              QStringLiteral("the known-bright testsrc2 Quick scene contains rendered pixels"));
+    }
+}
 
-    const CropReading reading = readCrop(crop);
-    check(reading.bright >= 120 && reading.brightColumns >= 40,
-          QStringLiteral("the captured HUD shows its text: %1 bright pixels over %2 columns")
-              .arg(reading.bright)
-              .arg(reading.brightColumns));
-    check(reading.darkFraction() >= 0.25,
-          QStringLiteral("the captured HUD sits on the dark composition (%1% of the crop is the "
-                         "pill or darker)")
-              .arg(100.0 * reading.darkFraction(), 0, 'f', 1));
+bool waitFor(const std::function<bool()>& predicate, int timeoutMs) {
+    QElapsedTimer timer;
+    timer.start();
+    while (!predicate() && timer.elapsed() < timeoutMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(10);
+    }
+    return predicate();
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
+    qputenv("QSG_RENDER_LOOP", QByteArrayLiteral("basic"));
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
     QApplication app(argc, argv);
     if (!mikai::probes::initializeUi(app)) return 2;
     app.setQuitOnLastWindowClosed(false);
+
     const bool framebufferCapture =
         app.arguments().contains(QStringLiteral("--framebuffer-capture"));
+    QStringList positionalArguments = app.arguments();
+    positionalArguments.removeFirst();
+    positionalArguments.removeAll(QStringLiteral("--framebuffer-capture"));
     std::fprintf(stderr, "capture mode: %s\n",
-                 framebufferCapture ? "fullscreen GPU framebuffer (not presented screen)"
-                                    : "presented screen");
+                 framebufferCapture ? "fullscreen Quick framebuffer" : "presented Quick window");
 
     QTemporaryDir settingsDir;
     if (!settingsDir.isValid()) {
@@ -249,187 +176,190 @@ int main(int argc, char** argv) {
     }
     QCoreApplication::setOrganizationName(QStringLiteral("MikaiNativeHudProbe"));
     QCoreApplication::setApplicationName(QStringLiteral("NativeHudProbe"));
-    // The user's own player state stays theirs: every read and write below lands
-    // in a temporary directory that dies with the process.
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
-    QSettings settings;
-    settings.clear();
-    settings.sync();
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
 
-    if (!mplayer::probes::selectRuntime()) {
+    if (!mplayer::probes::selectRuntime()) return 2;
+
+    const bool knownBright = positionalArguments.isEmpty();
+    const QString url = knownBright
+                            ? QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25")
+                            : positionalArguments.constFirst();
+    auto* controller = new PlayerController(QStringLiteral("native HUD probe"), url);
+    PlayerWindow* const window = controller->window();
+    VideoSession* const session = controller->session();
+    check(window != nullptr && session != nullptr,
+          QStringLiteral("the HUD belongs to its production PlayerWindow and VideoSession"));
+    if (window == nullptr || session == nullptr) {
+        delete controller;
+        return 2;
+    }
+    StreamStatsReading streamStats;
+    QObject::connect(session, &VideoSession::streamStatsChanged, controller,
+                     [&streamStats](double bytesPerSecond, double framesPerSecond,
+                                    StreamFpsSource source) {
+                         streamStats.bytesPerSecond = bytesPerSecond;
+                         streamStats.framesPerSecond = framesPerSecond;
+                         streamStats.source = source;
+                         streamStats.seen = true;
+                     });
+    window->resize(1280, 760);
+    controller->showWindow();
+    if (framebufferCapture) controller->toggleFullscreen();
+    controller->startPlayer();
+
+    const bool sceneReady = waitFor([&] {
+        return window->rootObject() != nullptr && window->isVisible();
+    }, 10000);
+    check(sceneReady, QStringLiteral("Mikai.App PlayerEntry loaded in the real Quick window"));
+    if (!sceneReady) {
+        delete controller;
         return 2;
     }
 
-    auto* shell = new shell::PlayerShell(nullptr, /*frameless=*/false);
-    shell->resize(1280, 760);
-    if (framebufferCapture) {
-        shell->setFixedSize(1280, 760);
-        shell->enterFullscreen();
-    }
-    shell->show();
-    QCoreApplication::processEvents();
-    shell->wake();
-    QCoreApplication::processEvents();
+    const bool videoReady = waitFor([&] {
+        return session->hasVideo() && window->hasVisibleOutputFrame();
+    }, 12000);
+    check(videoReady,
+          QStringLiteral("the session's own source produced a visible Quick video frame"));
+    check(window->controller() == controller && controller->session() == session,
+          QStringLiteral("controller, scene and source retain one playback owner"));
+    check(streamStats.seen &&
+              qAbs(controller->networkBytesPerSecond() - streamStats.bytesPerSecond) < 0.01 &&
+              qAbs(controller->streamFramesPerSecond() - streamStats.framesPerSecond) < 0.01,
+          QStringLiteral("Quick stream-stat properties consume this session's observed values"));
+    check(streamStats.source == StreamFpsSource::Unknown ||
+              streamStats.source == StreamFpsSource::MpvOutput ||
+              streamStats.source == StreamFpsSource::Container,
+          QStringLiteral("measured FPS retains its source classification"));
 
-    auto* chip = shell->findChild<QLabel*>(QStringLiteral("playerNativeStatus"));
-    auto* stats = shell->findChild<QLabel*>(QStringLiteral("playerNetworkStats"));
-    check(chip != nullptr, "the shell exposes the native status chip");
-    check(stats != nullptr, "the shell exposes the stream-stats label");
-    if (chip == nullptr || stats == nullptr) {
-        std::fprintf(stderr, "FAIL no HUD widget to read\n");
-        return 2;
-    }
-
-    check(!readChip(chip).visible,
-          "a machine with no request and no snapshot shows no native chip");
-
-    native::NativePreferences requested;
-    requested.enabled = true;
-    requested.recipeId = QStringLiteral("animejanai_2x");
-
-    auto inputs = shell->nativeInputs();
-    inputs.runtime.loaded = true;
-    inputs.runtime.kind = native::BundleKind::Standard;
-    shell->setNativeMenuInputs(inputs);
-    pushNative(shell, requested, activePlanSnapshot());
-    check(!readChip(chip).visible,
-          "a Standard runtime hides private Native state even with an Active snapshot");
-
-    inputs = shell->nativeInputs();
-    inputs.runtime.kind = native::BundleKind::Native;
-    shell->setNativeMenuInputs(inputs);
-    pushNative(shell, native::NativePreferences{}, std::nullopt);
-    check(!readChip(chip).visible,
-          "a Native presentation without a request or snapshot shows no chip");
-
-    struct StateCase {
-        native::NativeState state;
-        QString reason;
-    };
-    const QVector<StateCase> stateCases = {
-        {native::NativeState::Off,
-         QStringLiteral("The filter is attached, but native processing is off.")},
-        {native::NativeState::Probe,
-         QStringLiteral("Probe-only passthrough: real decoder device observed; no engine, "
-                        "no inference.")},
-        {native::NativeState::Preparing,
-         QStringLiteral("An engine is being prepared for the requested chain.")},
-        {native::NativeState::NeedsPreparation,
-         QStringLiteral("No prepared artifact matches the requested chain yet.")},
-        {native::NativeState::Failed,
-         QStringLiteral("The filter reported a failure while running the requested chain.")},
-    };
-
-    for (const StateCase& entry : stateCases) {
-        native::StatusSnapshot snapshot = stateSnapshot(entry.state, entry.reason);
+    // The controller's published fields and the native consumer's status lines
+    // are derived from the session's real status and the process's real runtime
+    // selection/preferences; this probe never injects a made-up snapshot.
+    native::menu::Inputs actualInputs;
+    actualInputs.preferences = native::loadNativePreferences();
+    actualInputs.runtime = native::currentSelection();
+    actualInputs.status = session->nativeStatus();
+    const native::menu::StatusLines actualLines = native::menu::statusLines(actualInputs);
+    check(controller->nativeHudVisible() == actualLines.visible,
+          QStringLiteral("typed controller HUD visibility matches actual native status inputs"));
+    check(controller->nativeHudActive() == actualLines.active,
+          QStringLiteral("typed controller active state is owned by the filter report"));
+    check(controller->nativeHudState() == actualLines.state,
+          QStringLiteral("typed Quick HUD state matches the actual producer report"));
+    const native::NativeStatusView status = session->nativeStatus();
+    if (status.snapshot.has_value()) {
+        check(controller->nativeHudHeadline() == actualLines.headline &&
+                  controller->nativeHudProvider() == actualLines.provider &&
+                  controller->nativeHudModel() == actualLines.model &&
+                  controller->nativeHudGeometry() == actualLines.geometry &&
+                  controller->nativeHudFps() == actualLines.fps &&
+                  controller->nativeHudInterpolation() == actualLines.interpolation &&
+                  controller->nativeHudDropped() == actualLines.dropped &&
+                  controller->nativeHudReason() == actualLines.reason,
+              QStringLiteral("typed Quick HUD details match the session's actual producer snapshot"));
         QString key;
-        QString text;
-        check(native::statusSnapshotIsConsistent(snapshot, &key, &text),
-              QStringLiteral("the %1 presentation fixture is a consistent snapshot")
-                  .arg(native::stableName(entry.state)));
-        pushNative(shell, requested, snapshot);
-
-        const native::menu::StatusLines lines =
-            native::menu::statusLines(shell->nativeInputs());
-        const ChipReading seen = readChip(chip);
-        check(seen.visible,
-              QStringLiteral("state %1 with a request shows the chip")
-                  .arg(native::stableName(entry.state)));
-        check(!lines.active,
-              QStringLiteral("state %1 never claims a running chain")
-                  .arg(native::stableName(entry.state)));
+        QString reason;
+        check(native::statusSnapshotIsConsistent(*status.snapshot, &key, &reason),
+              QStringLiteral("the session's published native snapshot is internally consistent"));
+    } else {
+        check(!controller->nativeHudActive(),
+              QStringLiteral("absence of a producer snapshot never claims active processing"));
+        if (controller->nativeHudVisible()) {
+            check(!controller->nativeHudHeadline().isEmpty(),
+                  QStringLiteral("a real persisted request has a nonempty native HUD headline"));
+        }
     }
+    note(QStringLiteral("actual native HUD: visible=%1 active=%2 state=%3")
+             .arg(controller->nativeHudVisible())
+             .arg(controller->nativeHudActive())
+             .arg(controller->nativeHudState()));
 
-    pushNative(shell, requested, std::nullopt);
-    const QString requestedText = readChip(chip).text;
-    {
-        const native::menu::StatusLines lines =
-            native::menu::statusLines(shell->nativeInputs());
-        const ChipReading seen = readChip(chip);
-        check(seen.visible, "a stored request shows the chip without any snapshot");
-        check(!lines.active, "a stored request alone never claims the chain is active");
-    }
-    note(QStringLiteral("requested-only caption: %1").arg(requestedText));
+    const bool hudExpected = controller->nativeHudVisible();
+    shoot(window, framebufferCapture ? QStringLiteral("native_hud_probe_fbo.png")
+                                     : QStringLiteral("native_hud_probe.png"),
+          framebufferCapture, knownBright, hudExpected);
 
-    // A filter that reports a state of its own shows the chip even with nothing
-    // stored: the producer's report is the fact the chip exists to show.
-    {
-        native::NativePreferences none;
-        pushNative(shell, none, activePlanSnapshot());
-        const native::menu::StatusLines lines =
-            native::menu::statusLines(shell->nativeInputs());
-        check(readChip(chip).visible,
-              "the filter's own report shows the chip with no stored request");
-        check(lines.active, "an Active snapshot from the filter reads as active");
-    }
+    // Snapshot observable playback and HUD state around presentation-only mode
+    // changes. The source epoch and URL must not be replaced, and the HUD's
+    // consumer-facing state must not write back into native processing.
+    const uint64_t pipSourceEpoch = session->sourceEpoch();
+    const QString pipSourceUrl = session->sourceUrl();
+    const double pipStartPosition = session->position();
+    const bool pipWasPlaying = controller->playing();
+    const double pipVolume = controller->volume();
+    const bool pipMuted = controller->muted();
+    const double pipRate = controller->rate();
+    const bool pipHudVisible = controller->nativeHudVisible();
+    const bool pipHudActive = controller->nativeHudActive();
+    const QString pipHudState = controller->nativeHudState();
+    const QString pipHudHeadline = controller->nativeHudHeadline();
+    const QString pipHudProvider = controller->nativeHudProvider();
+    const QString pipHudModel = controller->nativeHudModel();
+    const QString pipHudGeometry = controller->nativeHudGeometry();
+    const QString pipHudReason = controller->nativeHudReason();
+    QElapsedTimer pipElapsed;
+    pipElapsed.start();
 
-    // ── the caller's Active snapshot changes the visible caption ────────
-    //
-    // The same stored request, now with a valid Active snapshot behind it: the
-    // caption must change from "requested" to a running chain. This snapshot is
-    // a presentation fixture; it proves the HUD renders a report, not that any
-    // GPU inference ran.
-    {
-        pushNative(shell, requested, activePlanSnapshot());
-        const ChipReading seen = readChip(chip);
-        const native::menu::StatusLines lines =
-            native::menu::statusLines(shell->nativeInputs());
+    // PiP is the same Quick window and session. The production scene suppresses
+    // its main-window-only HUD presentation while compact, without substituting
+    // a second controller, decoder, status or model.
+    controller->togglePip();
+    const bool enteredPip = waitFor([&] {
+        return controller->isPipActive() && window->compactPip();
+    }, 2500);
+    check(enteredPip, QStringLiteral("the actual Quick window enters compact PiP presentation"));
+    check(controller->window() == window && controller->session() == session &&
+              window->controller() == controller,
+          QStringLiteral("PiP retains the exact PlayerWindow, controller and VideoSession"));
+    check(session->sourceEpoch() == pipSourceEpoch && session->sourceUrl() == pipSourceUrl &&
+              controller->mediaPath() == pipSourceUrl,
+          QStringLiteral("PiP changes presentation without replacing the source or epoch"));
+    const double pipExpectedPosition =
+        pipStartPosition + (pipWasPlaying ? pipElapsed.elapsed() / 1000.0 * pipRate : 0.0);
+    check(qAbs(session->position() - pipExpectedPosition) <= 1.0,
+          QStringLiteral("PiP preserves the same session playhead (expected %1, observed %2)")
+              .arg(pipExpectedPosition, 0, 'f', 2)
+              .arg(session->position(), 0, 'f', 2));
+    check(controller->playing() == pipWasPlaying &&
+              qAbs(controller->volume() - pipVolume) < 0.01 &&
+              controller->muted() == pipMuted && qAbs(controller->rate() - pipRate) < 0.001,
+          QStringLiteral("PiP preserves pause intent, volume, mute and rate"));
+    check(controller->nativeHudVisible() == pipHudVisible &&
+              controller->nativeHudActive() == pipHudActive &&
+              controller->nativeHudState() == pipHudState &&
+              controller->nativeHudHeadline() == pipHudHeadline &&
+              controller->nativeHudProvider() == pipHudProvider &&
+              controller->nativeHudModel() == pipHudModel &&
+              controller->nativeHudGeometry() == pipHudGeometry &&
+              controller->nativeHudReason() == pipHudReason,
+          QStringLiteral("PiP hides presentation only; native HUD remains a consumer of unchanged status"));
+    check(window->rootObject()->property("pipMode").toBool(),
+          QStringLiteral("the production scene hides the main HUD in compact PiP mode"));
+    controller->togglePip();
+    const bool restored = waitFor([&] { return !controller->isPipActive() && !window->compactPip(); },
+                                  2500);
+    check(restored, QStringLiteral("the same Quick window restores from PiP"));
 
-        check(seen.visible && lines.active,
-              "the caller's Active snapshot makes the chip read as a running chain");
-        check(seen.text != requestedText,
-              "the caller's Active snapshot changes the visible caption");
-        check(seen.text.contains(QStringLiteral("320x180")) &&
-                  seen.text.contains(QStringLiteral("640x360")),
-              "the chip surfaces the snapshot's source and output geometry");
-        check(seen.text.contains(QStringLiteral("24/1")) &&
-                  seen.text.contains(QStringLiteral("48/1")),
-              "the chip surfaces the snapshot's nominal source-to-output cadence");
-        check(seen.text.contains(QStringLiteral("2/1")),
-              "the chip surfaces the snapshot's interpolation factor");
-        check(seen.text.contains(QStringLiteral("1234")),
-              "the chip surfaces the snapshot's cumulative dropped count");
-        check(!seen.text.contains(QStringLiteral("1999500")) &&
-                  !seen.text.contains(QStringLiteral("999500")),
-              "cumulative counters are never rendered as an instantaneous FPS");
-        note(QStringLiteral("Active caption (presentation fixture, not GPU inference): %1")
-                 .arg(seen.text));
-    }
+    check(controller->window() == window && controller->session() == session &&
+              window->controller() == controller &&
+              session->sourceEpoch() == pipSourceEpoch &&
+              session->sourceUrl() == pipSourceUrl &&
+              qAbs(session->position() -
+                   (pipStartPosition +
+                    (pipWasPlaying ? pipElapsed.elapsed() / 1000.0 * pipRate : 0.0))) <=
+                  1.0 &&
+              controller->playing() == pipWasPlaying,
+          QStringLiteral("restoring full presentation keeps the same session, playhead and pause intent"));
+    check(controller->nativeHudVisible() == pipHudVisible &&
+              controller->nativeHudActive() == pipHudActive &&
+              controller->nativeHudState() == pipHudState,
+          QStringLiteral("returning from PiP does not mutate native processing status"));
 
-    {
-        shell->setStreamStats(1'000'000.0, 25.0, StreamFpsSource::MpvOutput);
-        check(stats->text().contains(QString::number(25.0, 'f', 2)),
-              "an mpv-observed rate is shown as the measured FPS");
-
-        shell->setStreamStats(500'000.0, 15.0, StreamFpsSource::Container);
-        check(stats->text().contains(QString::number(15.0, 'f', 2)),
-              "a container rate is shown as the measured FPS");
-        check(!stats->text().contains(QString::number(48.0, 'f', 2)),
-              "the nominal native cadence is never presented as a measured FPS");
-
-        shell->setStreamStats(12'000'000'000.0, 0.0, StreamFpsSource::Unknown);
-        check(stats->text().contains(
-                  QString::number(12'000'000'000.0 * 8.0 / 1'000'000.0, 'f', 2)),
-              "a huge cumulative byte count is shown as throughput, not as an FPS");
-    }
-
-    {
-        native::NativePreferences none;
-        pushNative(shell, none, std::nullopt);
-        shell->setStreamStats(500'000.0, 15.0, StreamFpsSource::Container);
-        check(!readChip(chip).visible,
-              "a measured FPS never makes the native chip claim a native chain");
-        shell->setStreamStats(0.0, 0.0, StreamFpsSource::Unknown);
-    }
-
-    pushNative(shell, requested, activePlanSnapshot());
-    shell->setStreamStats(500'000.0, 15.0, StreamFpsSource::Container);
-    QCoreApplication::processEvents();
-    shoot(shell, shell->findChild<QWidget*>(QStringLiteral("playerInfoChip")),
-          framebufferCapture ? QStringLiteral("native_hud_probe_fbo.png")
-                             : QStringLiteral("native_hud_probe.png"),
-          framebufferCapture);
+    const bool closed = controller->requestClose();
+    check(closed, QStringLiteral("the Quick controller acknowledges native window close"));
+    delete controller;
 
     if (failures == 0) {
         std::printf("OK native_hud_probe\n");

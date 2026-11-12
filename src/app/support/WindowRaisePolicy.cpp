@@ -9,6 +9,7 @@
 #include <QPointer>
 #include <QTimer>
 #include <QWidget>
+#include <QWindow>
 
 #ifdef Q_OS_WIN
 #include <QtCore/qt_windows.h>
@@ -55,6 +56,46 @@ bool forceForeground(QWidget* window) {
     }
     window->raise();
     window->activateWindow();
+    SetForegroundWindow(target);
+    SetActiveWindow(target);
+    if (attachedTarget) {
+        AttachThreadInput(currentThread, targetThread, FALSE);
+    }
+    AttachThreadInput(currentThread, thisThread, FALSE);
+    return GetForegroundWindow() == target;
+#else
+    Q_UNUSED(window);
+    return false;
+#endif
+}
+bool forceForeground(QWindow* window) {
+#ifdef Q_OS_WIN
+    if (window == nullptr) return false;
+    HWND target = reinterpret_cast<HWND>(window->winId());
+    if (target == nullptr || !IsWindow(target)) return false;
+    HWND current = GetForegroundWindow();
+    if (current == target) return true;
+
+    const DWORD targetThread = GetWindowThreadProcessId(target, nullptr);
+    if (targetThread == 0) return false;
+    const DWORD currentThread = current != nullptr
+                                    ? GetWindowThreadProcessId(current, nullptr)
+                                    : 0;
+    if (currentThread == 0 || currentThread == targetThread) return false;
+
+    const DWORD thisThread = GetCurrentThreadId();
+    mikai::gui::uiprofile::noteThreadInputAttach();
+    if (!AttachThreadInput(currentThread, thisThread, TRUE)) {
+        qDebug() << "mikai: raise: input attach refused for" << window->objectName();
+        return false;
+    }
+    bool attachedTarget = false;
+    if (targetThread != thisThread) {
+        mikai::gui::uiprofile::noteThreadInputAttach();
+        attachedTarget = AttachThreadInput(currentThread, targetThread, TRUE) != FALSE;
+    }
+    window->raise();
+    window->requestActivate();
     SetForegroundWindow(target);
     SetActiveWindow(target);
     if (attachedTarget) {
@@ -141,6 +182,49 @@ void raiseWindow(QWidget* window) {
         requestForeground(held, 0);
     });
 }
+void requestForeground(QPointer<QWindow> window, int attempt) {
+    if (window.isNull()) return;
+    const bool live = window->isVisible() &&
+                      window->visibility() != QWindow::Minimized &&
+                      !QCoreApplication::closingDown() && attempt < kRaiseAttempts;
+    if (!live) return;
+    if (attempt > 0) {
+        const bool anotherApplicationIsForeground =
+            QGuiApplication::applicationState() != Qt::ApplicationActive;
+        const bool ownsThisWindow = QGuiApplication::focusWindow() == window.data();
+        if (anotherApplicationIsForeground || !ownsThisWindow) {
+            mikai::gui::uiprofile::noteRaiseRetryAborted();
+            return;
+        }
+    }
+
+    window->raise();
+    window->requestActivate();
+    if (!window->isActive()) forceForeground(window);
+    if (window->isActive()) return;
+
+    ++attempt;
+    if (attempt >= kRaiseAttempts) return;
+    QPointer<QWindow> held(window);
+    QTimer::singleShot(kRaiseDelayMs, window, [held, attempt] {
+        if (held.isNull()) return;
+        requestForeground(held, attempt);
+    });
+}
+
+void raiseWindow(QWindow* window) {
+    if (window == nullptr || !window->isVisible() ||
+        window->visibility() == QWindow::Minimized) return;
+    window->raise();
+    window->requestActivate();
+    if (window->isActive()) return;
+
+    QPointer<QWindow> held(window);
+    QTimer::singleShot(0, window, [held] {
+        if (held.isNull()) return;
+        requestForeground(held, 0);
+    });
+}
 
 }  // namespace
 
@@ -182,11 +266,29 @@ bool WindowRaisePolicy::isExempt(const QWidget* window) {
     if (window->property("mikaiNoActivateOnShow").toBool()) return true;
     return false;
 }
+bool WindowRaisePolicy::isExempt(const QWindow* window) {
+    if (window == nullptr) return true;
+    if (window->type() == Qt::Popup || window->type() == Qt::ToolTip) return true;
+    if (window->flags().testFlag(Qt::WindowDoesNotAcceptFocus)) return true;
+    if (window->flags().testFlag(Qt::WindowStaysOnTopHint)) return true;
+    if (window->property("mikaiNoActivateOnShow").toBool()) return true;
+    return false;
+}
 
 bool WindowRaisePolicy::eventFilter(QObject* watched, QEvent* event) {
     if (event->type() != QEvent::Show) return false;
     auto* window = qobject_cast<QWidget*>(watched);
-    if (window == nullptr) return false;
+    if (window == nullptr) {
+        auto* nativeWindow = qobject_cast<QWindow*>(watched);
+        if (nativeWindow == nullptr || isExempt(nativeWindow)) return false;
+        if (nativeWindow->visibility() == QWindow::Minimized ||
+            QGuiApplication::platformName().startsWith(
+                QLatin1String("wayland"), Qt::CaseInsensitive)) {
+            return false;
+        }
+        raiseWindow(nativeWindow);
+        return false;
+    }
     // Only top-level windows stack: a child widget becoming visible is a layout
     // fact, not a window one, and raising it would be meaningless work on every
     // frame of a list.

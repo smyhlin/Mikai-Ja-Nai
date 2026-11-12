@@ -21,6 +21,7 @@
 #include "ProbePicture.hpp"
 #include "ProbeRuntime.hpp"
 #include "VideoSurface.hpp"
+#include "VideoSession.hpp"
 
 namespace {
 
@@ -211,15 +212,15 @@ public:
             surface_.setTextureFormat(mplayer::kGlInternalFormatRgb10A2);
         surface_.resize(854, 480);
         surface_.show();
-        mplayer::VideoSurface::setHdrToneMappingPolicy(
-            mplayer::VideoSurface::HdrToneMappingPolicy::Auto);
-        mplayer::VideoSurface::setAnimeJanaiHdrOverride(false);
-        fixesEnabled_ = mplayer::VideoSurface::hdrRenderingFixesEnabled();
-        QObject::connect(&surface_, &mplayer::VideoSurface::errorOccurred, &surface_,
+        mplayer::VideoSession::setHdrToneMappingPolicy(
+            mplayer::VideoSession::HdrToneMappingPolicy::Auto);
+        mplayer::VideoSession::setAnimeJanaiHdrOverride(false);
+        fixesEnabled_ = mplayer::VideoSession::hdrRenderingFixesEnabled();
+        QObject::connect(surface_.session(), &mplayer::VideoSession::errorOccurred, surface_.session(),
                          [this](const QString& message) {
                              verdict_.require(false, QStringLiteral("mpv playback error: %1").arg(message));
                          });
-        QObject::connect(&surface_, &mplayer::VideoSurface::anime4kGated, &surface_,
+        QObject::connect(surface_.session(), &mplayer::VideoSession::anime4kGated, surface_.session(),
                          [this](const QString&) { ++gateNotices_; });
         QObject::connect(&surface_, &QOpenGLWidget::frameSwapped, &surface_, [this]() {
             if (!surface_.context()) return;
@@ -231,11 +232,11 @@ public:
             }
             surface_.doneCurrent();
         });
-        if (!surface_.open(hdr_)) {
+        if (!surface_.session()->open(hdr_)) {
             std::fprintf(stderr, "hdr_playback_probe: cannot open HDR source: %s\n", qPrintable(hdr_));
             return 2;
         }
-        surface_.setMuted(true);
+        surface_.session()->setMuted(true);
         clock_.start();
         timer_.setInterval(100);
         QObject::connect(&timer_, &QTimer::timeout, &surface_, [this]() { tick(); });
@@ -249,7 +250,7 @@ public:
 private:
     enum class Stage { HdrLive, HdrPaused, StableApplied, VividApplied, SdrLive, Finished };
     std::optional<QString> readMpvTextProperty(const QString& name) {
-        const auto value = surface_.probeMpvProperty(
+        const auto value = surface_.session()->probeMpvProperty(
             name, mplayer::ProbePropertyKind::Text);
         if (!value.has_value() || value->kind != mplayer::ProbePropertyValue::Kind::Text) {
             return std::nullopt;
@@ -262,7 +263,7 @@ private:
     }
 
     std::optional<double> readMpvNumberProperty(const QString& name) {
-        const auto value = surface_.probeMpvProperty(
+        const auto value = surface_.session()->probeMpvProperty(
             name, mplayer::ProbePropertyKind::Number);
         if (!value.has_value() || !value->isNumeric() ||
             !std::isfinite(value->asNumber())) {
@@ -296,7 +297,7 @@ private:
                             .arg(fixesEnabled_ ? QStringLiteral("enabled") : QStringLiteral("disabled"))
                             .arg(glErrors_)
                             .arg(gateNotices_));
-        surface_.close();
+        surface_.session()->close();
         surface_.hide();
         app_.exit(verdict_.report("hdr_playback_probe"));
     }
@@ -304,13 +305,13 @@ private:
     void tick() {
         if (finished_) return;
         const qint64 now = clock_.elapsed();
-        const auto profile = surface_.sourceColorProfile();
-        const auto frames = surface_.playbackDiagnostics().renderedOutputFrames;
+        const auto profile = surface_.session()->sourceColorProfile();
+        const auto frames = surface_.session()->playbackDiagnostics().renderedOutputFrames;
         switch (stage_) {
             case Stage::HdrLive: {
                 if (!profile.isHdr() || frames < 3) return;
                 if (startSeconds_.has_value() && !startSeekIssued_) {
-                    surface_.seek(*startSeconds_);
+                    surface_.session()->seek(*startSeconds_);
                     startSeekIssued_ = true;
                     startSeekAt_ = now;
                     return;
@@ -345,10 +346,10 @@ private:
                                         .arg(*position, 0, 'f', 6)
                                         .arg(frames - startPositionFrameBaseline_));
                     startPositionVerified_ = true;
-                    surface_.setPaused(true);
+                    surface_.session()->setPaused(true);
                     return;
                 }
-                if (startPositionVerified_ && !surface_.pauseObserved()) return;
+                if (startPositionVerified_ && !surface_.session()->pauseObserved()) return;
                 verdict_.require(profile.hasTransferMetadata(),
                                  QStringLiteral("HDR source transfer metadata is observed from mpv"));
                 verdict_.require(profile.gamma == QStringLiteral("pq") ||
@@ -395,14 +396,14 @@ private:
                             .arg(bits.blue)
                             .arg(surface_.renderTargetDepthBitsPerChannel()));
                 }
-                surface_.setAnime4KMode(mplayer::anime4k::Mode::FastA);
+                surface_.session()->setAnime4KMode(mplayer::anime4k::Mode::FastA);
                 stage_ = Stage::HdrPaused;
                 stageAt_ = now;
                 break;
             }
             case Stage::HdrPaused:
                 if (fixesEnabled_) {
-                    if (gateNotices_ == 0 || !surface_.effectiveShaderChain().isEmpty()) {
+                    if (gateNotices_ == 0 || !surface_.session()->effectiveShaderChain().isEmpty()) {
                         if (now - stageAt_ > 3000) {
                             failAndFinish(QStringLiteral("Anime4K was not gated on the observed HDR source"));
                         }
@@ -424,13 +425,13 @@ private:
                         return;
                     }
                     if (!rollbackShaderRequested_) {
-                        if (surface_.effectiveShaderChain().isEmpty()) {
+                        if (surface_.session()->effectiveShaderChain().isEmpty()) {
                             if (now - stageAt_ > 3000) {
                                 failAndFinish(QStringLiteral("rollback mode did not restore the requested HDR shader"));
                             }
                             return;
                         }
-                        verdict_.require(surface_.anime4KMode() == mplayer::anime4k::Mode::FastA,
+                        verdict_.require(surface_.session()->anime4KMode() == mplayer::anime4k::Mode::FastA,
                                          QStringLiteral("rollback mode allows the requested HDR shader chain"));
                         const auto shaders = readMpvTextProperty(QStringLiteral("glsl-shaders"));
                         if (!shaders.has_value() || shaders->trimmed().isEmpty()) {
@@ -439,11 +440,11 @@ private:
                             }
                             return;
                         }
-                        surface_.setAnime4KMode(mplayer::anime4k::Mode::Off);
+                        surface_.session()->setAnime4KMode(mplayer::anime4k::Mode::Off);
                         rollbackShaderRequested_ = true;
                         return;
                     }
-                    if (!surface_.effectiveShaderChain().isEmpty()) return;
+                    if (!surface_.session()->effectiveShaderChain().isEmpty()) return;
                     if (!rollbackShaderPropertyRemoved_) {
                         const auto shaders = readMpvTextProperty(QStringLiteral("glsl-shaders"));
                         if (!shaders.has_value() || !shaders->trimmed().isEmpty()) {
@@ -456,15 +457,15 @@ private:
                     }
                 }
                 if (fixesEnabled_) {
-                    verdict_.require(surface_.anime4KMode() == mplayer::anime4k::Mode::FastA,
+                    verdict_.require(surface_.session()->anime4KMode() == mplayer::anime4k::Mode::FastA,
                                      QStringLiteral("the HDR gate retains the requested preset"));
                 } else {
-                    verdict_.require(surface_.anime4KMode() == mplayer::anime4k::Mode::Off &&
-                                         surface_.effectiveShaderChain().isEmpty(),
+                    verdict_.require(surface_.session()->anime4KMode() == mplayer::anime4k::Mode::Off &&
+                                         surface_.session()->effectiveShaderChain().isEmpty(),
                                      QStringLiteral("rollback shader was explicitly removed before policy comparison"));
                 }
-                surface_.setPaused(true);
-                if (!surface_.pauseObserved()) return;
+                surface_.session()->setPaused(true);
+                if (!surface_.session()->pauseObserved()) return;
                 if (!pausedIdentityCaptured_) {
                     const auto sourceTime = readMpvNumberProperty(QStringLiteral("time-pos"));
                     if (!sourceTime.has_value()) {
@@ -481,7 +482,7 @@ private:
                                           .arg(*startSeconds_, 0, 'f', 6));
                         return;
                     }
-                    pausedSourceEpoch_ = surface_.sourceEpoch();
+                    pausedSourceEpoch_ = surface_.session()->sourceEpoch();
                     pausedSourceTime_ = *sourceTime;
                     pausedIdentityCapturedAt_ = now;
                     pausedIdentityCaptured_ = true;
@@ -489,7 +490,7 @@ private:
                 }
                 if (now - pausedIdentityCapturedAt_ < 1000) return;
                 if (!autoCaptured_) {
-                    autoFrame_ = surface_.grabVideoFramebuffer();
+                    autoFrame_ = surface_.session()->grabVideoFramebuffer();
                     saveArtifact(QStringLiteral("auto.png"), autoFrame_);
                     verdict_.require(!autoFrame_.isNull(),
                                      QStringLiteral("Auto policy produced a real paused HDR framebuffer"));
@@ -515,9 +516,9 @@ private:
                                         .arg(*offLattice));
                     precisionLatticeVerified_ = true;
                 }
-                surface_.setHdrToneMappingPolicy(mplayer::VideoSurface::HdrToneMappingPolicy::Stable);
-                if (mplayer::VideoSurface::hdrToneMappingPolicy() !=
-                    mplayer::VideoSurface::HdrToneMappingPolicy::Stable) {
+                mplayer::VideoSession::setHdrToneMappingPolicy(mplayer::VideoSession::HdrToneMappingPolicy::Stable);
+                if (mplayer::VideoSession::hdrToneMappingPolicy() !=
+                    mplayer::VideoSession::HdrToneMappingPolicy::Stable) {
                     failAndFinish(QStringLiteral("Stable tone-mapping policy request was not retained"));
                     return;
                 }
@@ -526,16 +527,16 @@ private:
                 break;
             case Stage::StableApplied:
                 if (now - stageAt_ < 1500) return;
-                stableFrame_ = surface_.grabVideoFramebuffer();
+                stableFrame_ = surface_.session()->grabVideoFramebuffer();
                 saveArtifact(QStringLiteral("stable.png"), stableFrame_);
-                surface_.setHdrToneMappingPolicy(mplayer::VideoSurface::HdrToneMappingPolicy::Vivid);
+                mplayer::VideoSession::setHdrToneMappingPolicy(mplayer::VideoSession::HdrToneMappingPolicy::Vivid);
                 stage_ = Stage::VividApplied;
                 stageAt_ = now;
                 break;
             case Stage::VividApplied: {
                 if (now - stageAt_ < 1500) return;
                 if (!vividCaptured_) {
-                    vividFrame_ = surface_.grabVideoFramebuffer();
+                    vividFrame_ = surface_.session()->grabVideoFramebuffer();
                     saveArtifact(QStringLiteral("vivid.png"), vividFrame_);
                     verdict_.require(!stableFrame_.isNull() && !vividFrame_.isNull(),
                                      QStringLiteral("Stable and Vivid policies produced real HDR framebuffers"));
@@ -557,7 +558,7 @@ private:
                     }
                     vividCaptured_ = true;
                 }
-                if (surface_.sourceEpoch() != pausedSourceEpoch_) {
+                if (surface_.session()->sourceEpoch() != pausedSourceEpoch_) {
                     failAndFinish(QStringLiteral("source epoch changed during paused tone-mapping comparison"));
                     return;
                 }
@@ -572,31 +573,31 @@ private:
                     failAndFinish(QStringLiteral("mpv source position advanced during paused tone-mapping comparison"));
                     return;
                 }
-                verdict_.require(surface_.sourceEpoch() == pausedSourceEpoch_,
+                verdict_.require(surface_.session()->sourceEpoch() == pausedSourceEpoch_,
                                  QStringLiteral("source epoch remained unchanged during paused policy comparison"));
                 verdict_.require(std::abs(*finalSourceTime - pausedSourceTime_) <= 0.01,
                                  QStringLiteral("mpv source position remained stable during paused policy comparison"));
-                surface_.setHdrToneMappingPolicy(mplayer::VideoSurface::HdrToneMappingPolicy::Auto);
-                surface_.setPaused(false);
-                if (!surface_.open(sdr_)) {
+                mplayer::VideoSession::setHdrToneMappingPolicy(mplayer::VideoSession::HdrToneMappingPolicy::Auto);
+                surface_.session()->setPaused(false);
+                if (!surface_.session()->open(sdr_)) {
                     failAndFinish(QStringLiteral("cannot reopen the surface on the SDR source"));
                     return;
                 }
-                sdrSourceEpoch_ = surface_.sourceEpoch();
+                sdrSourceEpoch_ = surface_.session()->sourceEpoch();
                 stage_ = Stage::SdrLive;
                 stageAt_ = now;
                 break;
             }
             case Stage::SdrLive: {
-                if (surface_.sourceEpoch() != sdrSourceEpoch_ || profile.gamma.isEmpty() || frames < 3) return;
+                if (surface_.session()->sourceEpoch() != sdrSourceEpoch_ || profile.gamma.isEmpty() || frames < 3) return;
                 if (profile.isHdr()) {
                     if (now - stageAt_ > 5000) failAndFinish(QStringLiteral("SDR source remained classified as HDR"));
                     return;
                 }
                 verdict_.require(!profile.requiresSdrGate(),
                                  QStringLiteral("known SDR transfer is not gated (%1)").arg(profile.gamma));
-                surface_.setAnime4KMode(mplayer::anime4k::Mode::FastA);
-                if (surface_.effectiveShaderChain().isEmpty()) {
+                surface_.session()->setAnime4KMode(mplayer::anime4k::Mode::FastA);
+                if (surface_.session()->effectiveShaderChain().isEmpty()) {
                     if (now - stageAt_ > 5000) failAndFinish(QStringLiteral("Anime4K did not activate on SDR"));
                     return;
                 }
@@ -607,7 +608,7 @@ private:
                     }
                     return;
                 }
-                verdict_.require(surface_.anime4KMode() == mplayer::anime4k::Mode::FastA,
+                verdict_.require(surface_.session()->anime4KMode() == mplayer::anime4k::Mode::FastA,
                                  QStringLiteral("Anime4K preset remains active on SDR"));
                 saveArtifact(QStringLiteral("sdr.png"), readCurrentFramebuffer(surface_));
                 finish();

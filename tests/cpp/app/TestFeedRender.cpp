@@ -8,6 +8,9 @@
 #include <pages/MainWindow.hpp>
 #include <pages/SearchPage.hpp>
 #include <pages/TitlePage.hpp>
+#include <player/quick/PlayerController.hpp>
+#include <player/quick/PlayerMenuModel.hpp>
+#include <player/quick/PlayerWindow.hpp>
 #include <state/QualityCache.hpp>
 #include <state/WatchHistory.hpp>
 #include <support/I18n.hpp>
@@ -454,12 +457,16 @@ class CannedApi : public QObject {
     }
     if (successfulEmbedResponses_ && rest == QLatin1String("/hls/master.m3u8")) {
       return QStringLiteral("#EXTM3U\n"
+                            "#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\n"
+                            "http://127.0.0.1:%1/hls/1080.m3u8\n"
                             "#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=1280x720\n"
                             "http://127.0.0.1:%1/hls/720.m3u8\n")
           .arg(server_.serverPort())
           .toUtf8();
     }
-    if (successfulEmbedResponses_ && rest == QLatin1String("/hls/720.m3u8")) {
+    if (successfulEmbedResponses_ &&
+        (rest == QLatin1String("/hls/720.m3u8") ||
+         rest == QLatin1String("/hls/1080.m3u8"))) {
       return QByteArrayLiteral("#EXTM3U\n#EXT-X-TARGETDURATION:4\n"
                                "#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:4,\n"
                                "http://127.0.0.1/segment.ts\n#EXT-X-ENDLIST\n");
@@ -3065,12 +3072,30 @@ void TestFeedRender::switchingReleasePreservesAnOpenPlayerQualityRequest() {
   QVERIFY(firstEpisode != nullptr && secondEpisode != nullptr);
   QTest::mouseClick(firstEpisode, Qt::LeftButton);
 
-  QWidget* player = nullptr;
-  QTRY_VERIFY_WITH_TIMEOUT(
-      (player = page.findChild<QWidget*>(QStringLiteral("playerWindow"))) != nullptr, 15000);
-  QLabel* playerEpisode = player->findChild<QLabel*>(QStringLiteral("playerEpisodeLabel"));
-  QVERIFY2(playerEpisode != nullptr, "the open player exposes its episode label");
-  QTRY_VERIFY_WITH_TIMEOUT(playerEpisode->text().contains(QStringLiteral("1")), 15000);
+  mplayer::quick::PlayerController* controller = nullptr;
+  QTRY_VERIFY_WITH_TIMEOUT([&page, &controller] {
+    const auto controllers = page.findChildren<mplayer::quick::PlayerController*>();
+    if (controllers.size() != 1) return false;
+    controller = controllers.constFirst();
+    return controller->window() != nullptr &&
+           controller->window()->objectName() == QStringLiteral("playerWindow");
+  }(), 15000);
+  mplayer::quick::PlayerWindow* player = controller->window();
+  QTRY_VERIFY_WITH_TIMEOUT(controller->episodeLabel().contains(QStringLiteral("1")), 15000);
+  QTRY_COMPARE_WITH_TIMEOUT(controller->currentHeight(), 1080, 15000);
+  QCOMPARE(player->windowTitle(), QStringLiteral("Episode 1 · 1080p"));
+  mplayer::VideoSession* session = controller->session();
+  QVERIFY(session != nullptr);
+  QCOMPARE(page.findChildren<mplayer::quick::PlayerController*>().size(), 1);
+
+  // The master playlist offers two real resolutions. Selecting the lower one
+  // must reopen that quality's stream URL on the same player session.
+  controller->selectQuality(720);
+  QTRY_COMPARE_WITH_TIMEOUT(controller->currentHeight(), 720, 5000);
+  QTRY_VERIFY_WITH_TIMEOUT(controller->mediaPath().endsWith(QStringLiteral("/hls/720.m3u8")),
+                            5000);
+  QCOMPARE(controller->session(), session);
+  QCOMPARE(page.findChildren<mplayer::quick::PlayerController*>().size(), 1);
 
   // Start a release-owned playback and then join that same in-flight extraction
   // from the live player. The release switch must drop only the former callback.
@@ -3078,20 +3103,30 @@ void TestFeedRender::switchingReleasePreservesAnOpenPlayerQualityRequest() {
   const QString delayedPath = QStringLiteral("/embed/ashdi.vip/vod/voice/2");
   QTRY_VERIFY_WITH_TIMEOUT(api.requestedPaths().contains(delayedPath), 10000);
 
-  QPushButton* nextEpisode = nullptr;
-  for (QPushButton* button : player->findChildren<QPushButton*>()) {
-    if (button->accessibleName().contains(QStringLiteral("→"))) {
-      nextEpisode = button;
-      break;
-    }
-  }
-  QVERIFY2(nextEpisode != nullptr && nextEpisode->isEnabled(),
-           "the open player exposes an enabled next-episode action");
-  const QString openingEpisodeText = playerEpisode->text();
-  QVERIFY(openingEpisodeText.contains(QStringLiteral("1")));
-  QTest::mouseClick(nextEpisode, Qt::LeftButton);
+  const QString openingEpisodeLabel = controller->episodeLabel();
+  QVERIFY(openingEpisodeLabel.contains(QStringLiteral("1")));
+  QVERIFY(controller->hasNextEpisode());
+  QCOMPARE(controller->currentEpisodeIndex(), 0);
+  QVERIFY(!controller->hasPreviousEpisode());
+  auto* seriesMenu = controller->seriesMenu();
+  QVERIFY(seriesMenu != nullptr);
+  QCOMPARE(seriesMenu->rowCount(), kEpisodes);
+  QCOMPARE(seriesMenu->rows().at(0).label, QStringLiteral("Episode 1"));
+  QVERIFY(seriesMenu->rows().at(0).selected);
+  QVERIFY(!seriesMenu->rows().at(1).selected);
+
+  // Stepping is a request to the title-page host. Until its stream lookup
+  // completes, the controller must not optimistically select or relabel the
+  // next episode in its drawer/chevrons.
+  controller->goToNextEpisode();
   QCoreApplication::processEvents();
-  QCOMPARE(playerEpisode->text(), openingEpisodeText);
+  QCOMPARE(controller->currentEpisodeIndex(), 0);
+  QCOMPARE(controller->episodeLabel(), openingEpisodeLabel);
+  QVERIFY(!controller->hasPreviousEpisode());
+  QVERIFY(controller->hasNextEpisode());
+  QVERIFY(seriesMenu->rows().at(0).selected);
+  QVERIFY(!seriesMenu->rows().at(1).selected);
+  QCOMPARE(controller->session(), session);
 
   const QList<QPushButton*> chips =
       page.findChildren<QPushButton*>(QStringLiteral("releaseChip"));
@@ -3101,8 +3136,18 @@ void TestFeedRender::switchingReleasePreservesAnOpenPlayerQualityRequest() {
   QTRY_VERIFY_WITH_TIMEOUT(
       tabs->currentWidget() != nullptr && tabs->currentWidget() != openingTab, 10000);
 
-  QTRY_VERIFY_WITH_TIMEOUT(playerEpisode->text().contains(QStringLiteral("2")), 15000);
-  QCOMPARE(page.findChildren<QWidget*>(QStringLiteral("playerWindow")).size(), 1);
+  QTRY_VERIFY_WITH_TIMEOUT(controller->episodeLabel().contains(QStringLiteral("2")), 15000);
+  QCOMPARE(controller->currentEmbed(),
+           api.baseUrl() + QStringLiteral("/embed/ashdi.vip/vod/voice/2"));
+  QCOMPARE(controller->currentEpisodeIndex(), 1);
+  QVERIFY(controller->hasPreviousEpisode());
+  QVERIFY(controller->hasNextEpisode());
+  QCOMPARE(seriesMenu->rows().size(), kEpisodes);
+  QVERIFY(!seriesMenu->rows().at(0).selected);
+  QVERIFY(seriesMenu->rows().at(1).selected);
+  QCOMPARE(controller->session(), session);
+  QCOMPARE(player->controller(), controller);
+  QCOMPARE(page.findChildren<mplayer::quick::PlayerController*>().size(), 1);
 }
 
 void TestFeedRender::episodeMarksPersistAcrossReopenAndViewChanges() {

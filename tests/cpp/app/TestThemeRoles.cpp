@@ -795,11 +795,6 @@ void TestThemeRoles::primaryInkStaysReadableOnEveryAccent() {
         // The player's own token must agree with the application's derived ink.
         const QColor playerInk = mplayer::shell::inkOn(chosen);
         QCOMPARE(playerInk, expectedInkColor);
-        QVERIFY(mplayer::shell::rgbaTriplet(chosen) ==
-                QStringLiteral("%1, %2, %3")
-                    .arg(chosen.red())
-                    .arg(chosen.green())
-                    .arg(chosen.blue()));
     }
 }
 
@@ -962,6 +957,32 @@ void TestThemeRoles::pageGlowFollowsTheGradientSourceWithoutAColourEdit() {
         QVERIFY2(sameRgb(wash, mikai::app::theme::accentColor(appearance)),
                  qPrintable(failure("auto wash", wash,
                                     mikai::app::theme::accentColor(appearance))));
+    }
+
+    counter.paints = 0;
+    Appearance recolored = appearance;
+    recolored.accent = QStringLiteral("#67e4e4");
+    mikai::app::setCurrentAppearance(recolored);
+    QApplication::processEvents(QEventLoop::AllEvents, 50);
+    QVERIFY2(counter.paints > 0,
+             "changing the accent in Auto mode must ask the wash to repaint");
+    {
+        const QColor wash = topPixel();
+        QVERIFY(wash.alpha() > 0);
+        QVERIFY2(sameRgb(wash, mikai::app::theme::accentColor(recolored)),
+                 qPrintable(failure("recolored auto wash", wash,
+                                    mikai::app::theme::accentColor(recolored))));
+    }
+
+    // Restore the original accent before testing the independent Auto/Custom
+    // source switch below.
+    counter.paints = 0;
+    mikai::app::setCurrentAppearance(appearance);
+    QApplication::processEvents(QEventLoop::AllEvents, 50);
+    QVERIFY2(counter.paints > 0, "restoring the Auto accent must repaint the wash");
+    {
+        const QColor wash = topPixel();
+        QVERIFY(sameRgb(wash, mikai::app::theme::accentColor(appearance)));
     }
 
     Appearance custom = appearance;

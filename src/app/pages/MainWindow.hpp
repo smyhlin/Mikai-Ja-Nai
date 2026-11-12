@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QList>
+#include <QMetaObject>
 #include <utility>
 #include <QPointer>
 #include <QString>
@@ -20,8 +21,8 @@ namespace mikai::backend {
 class MikaiClient;
 }
 
-namespace mplayer::shell {
-class PlayerDialog;
+namespace mplayer::quick {
+class PlayerController;
 }
 
 namespace mikai::gui {
@@ -55,10 +56,9 @@ public:
                         QWidget* parent = nullptr);
     ~MainWindow() override;
 
-    /// The standalone video player the page currently owns, or nullptr. The
-    /// media probes address the stream they just opened through this rather
-    /// than guessing it from child order.
-    mplayer::shell::PlayerDialog* currentMediaPlayer() const;
+    /// The standalone native player currently owned by the page, or nullptr.
+    /// Media probes address the stream they just opened through this accessor.
+    mplayer::quick::PlayerController* currentMediaPlayer() const;
 
     /// Opens `source` through the same standalone-player route used by the file
     /// picker and video drops. Keeps the current player if its native stop has
@@ -108,7 +108,7 @@ private:
     /// command once the live context callbacks are installed, Providers only
     /// focuses the existing choice. Opening settings plain starts nothing.
     void openSettingsForIntent(mplayer::shell::ProcessingSettingsIntent intent,
-                               QPointer<mplayer::shell::PlayerDialog> core);
+                               QPointer<mplayer::quick::PlayerController> core);
     /// Offers the AnimeJaNai component setup once while it is recommended, on
     /// the next event-loop turn. The ask runs a nested modal loop and is never
     /// entered from inside a player's or the catalogue tab's own signal
@@ -142,7 +142,7 @@ private:
     /// `showComponentsFirst` lands on the Components tab for the startup
     /// prompt; it changes nothing else about the dialog.
     void openSettingsImpl(std::optional<mplayer::shell::ProcessingSettingsIntent> intent,
-                          QPointer<mplayer::shell::PlayerDialog> preferredCore,
+                          QPointer<mplayer::quick::PlayerController> preferredCore,
                           bool showComponentsFirst = false,
                           bool installAnimeJanaiRecommended = false);
     void chooseMediaFile();
@@ -151,8 +151,8 @@ private:
     /// player refused because native work is still stopping: nothing is deleted
     /// and `mediaPlayer_` is kept so the close can be retried. `forced` is the
     /// destructor path, where destruction cannot be refused; it names the forced
-    /// stop and still takes the player through its own close first, so the core
-    /// dies before the widget releases what it held.
+    /// stop and still takes the player through its acknowledged close first, so
+    /// the session is settled before the native window releases its render item.
     bool closeMedia(bool forced = false);
     void requestMediaRuntime();
     /// False only when the previous page's own shutdown was refused, in which
@@ -211,7 +211,7 @@ private:
     QStackedWidget* stack_ = nullptr;
     SearchPage* search_ = nullptr;
     TitlePage* title_ = nullptr;
-    QPointer<mplayer::shell::PlayerDialog> mediaPlayer_;
+    QPointer<mplayer::quick::PlayerController> mediaPlayer_;
     /// One runtime request at a time for the standalone player. `runtimeSeq_`
     /// is bumped whenever that dialog goes away, so a completion belonging to a
     /// superseded dialog is dropped instead of starting the new one.
@@ -236,17 +236,20 @@ private:
     bool setupPromptOffered_ = false;
     /// The player a component prompt paused, and whether that prompt must turn
     /// AnimeJaNai off when it finishes. Cleared by the matching resume.
-    QPointer<mplayer::shell::PlayerDialog> componentAskPlayer_;
+    QPointer<mplayer::quick::PlayerController> componentAskPlayer_;
+    QString componentAskMediaPath_;
+    quint64 componentAskSourceEpoch_ = 0;
     bool componentAskHeld_ = false;
     bool componentAskPausedPlayback_ = false;
     bool componentAskReleaseAnimeJanai_ = false;
     /// The app-owned engine-build words currently on screen. The overlay
     /// re-emits a caller's words verbatim, so a language switch has to re-send
-    /// them; the dialog it belongs to is the only surface they reach.
+    /// them; the player window it belongs to is the only surface they reach.
     bool enginePreparationStarted_ = false;
     bool enginePreparationSettled_ = false;
     bool enginePreparationOk_ = false;
-    QPointer<mplayer::shell::PlayerDialog> enginePreparationCore_;
+    QMetaObject::Connection enginePreparationVisibilityConnection_;
+    QPointer<mplayer::quick::PlayerController> enginePreparationCore_;
     QString titleRef_;
     QString titlePoster_;
     QList<std::pair<QString, QString>> titleHistory_;

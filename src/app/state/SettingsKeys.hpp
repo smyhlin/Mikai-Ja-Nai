@@ -9,14 +9,8 @@
 // so Latin-1 and UTF-8 agree; fromUtf8 is the conversion Qt documents for
 // a string view).
 //
-// Deliberately NOT migrated to this header, by layering (the player library
-// must not include src/app/ state, and these keys already have a single
-// named home there): player/anime4k, playback/*, player/native/* and
-// player/presetShortcuts/* — owned by VideoSurface.hpp, PlayerDialog.cpp /
-// PlayerDialogProcessing.cpp, NativePrefs.cpp and PresetShortcuts.hpp
-// respectively. player/animejanai/backend IS recorded above because app
-// files read it; the player keeps a file-local constant with the identical
-// value, and the two spellings must stay identical.
+// Player-owned settings stay with their declarations to preserve app/player
+// layering. The AnimeJanai backend key is listed here because app code reads it.
 
 #pragma once
 
@@ -43,9 +37,7 @@ inline constexpr std::string_view kCustomizationGradientColor = "customization/g
 // Content names (Labels.cpp).
 inline constexpr std::string_view kPlaybackPreferredProvider = "playback/preferredProvider";
 
-// OpenSubtitles credential (SettingsGeneralTab / SettingsDialog read it;
-// PlayerDialog keeps a file-local spelling of the same value — the player
-// layer cannot include this header).
+// OpenSubtitles credential.
 inline constexpr std::string_view kOpenSubtitlesApiKey = "access/openSubtitlesApiKey";
 
 // AnimeJanai backend selection (ComponentStoreTab / SettingsBenchmarkTab).

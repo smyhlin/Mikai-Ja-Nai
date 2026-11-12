@@ -14,7 +14,7 @@
     },
     {
       "kind": "click",
-      "target": "playerPlayToggle",
+      "target": "player.playPause",
       "note": "Pause first, so any movement below is caused by the pointer and not by playback."
     },
     {
@@ -24,13 +24,13 @@
     },
     {
       "kind": "mouse_move",
-      "target": "playerScrubBar",
+      "target": "player.timeline.scrub",
       "position": 0.8,
-      "note": "Hover the far end of the timeline with no button held. RangeSlider tracks a hover fraction separately from its value, so this must move nothing."
+      "note": "Move over the Quick timeline with no button held; its preview may change, but the playhead must not."
     },
     {
       "kind": "mouse_move",
-      "target": "playerScrubBar",
+      "target": "player.timeline.scrub",
       "position": 0.2,
       "note": "And hover the near end, so the assertion covers a sweep in both directions rather than one resting position."
     },
@@ -43,8 +43,8 @@
   "assertions": [
     {
       "kind": "qt_property",
-      "target": "playerScrubBar",
-      "property": "value",
+      "target": "player.timeline.scrub",
+      "property": "positionFraction",
       "comparison": "less_than",
       "expected": 0.25,
       "note": "The control did not follow the pointer. A build that commits on hover would sit at 0.8 and fail here."
@@ -55,7 +55,7 @@
       "mpv_kind": "number",
       "comparison": "less_than",
       "expected": 1.0,
-      "note": "And the core did not move either. This is the assertion that matters: a hover that sought would send a viewer to a random point in the film just by moving the pointer across the dock."
+      "note": "The session time remains near the opening position; hover alone is not a seek."
     }
   ]
 }

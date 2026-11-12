@@ -88,8 +88,10 @@ bool knownPredicate(const QString& name) {
         QStringLiteral("positionAdvanced"), QStringLiteral("positionIncreasing"),
         QStringLiteral("positionFrozen"), QStringLiteral("positionStopped"),
         QStringLiteral("mpvPause"),       QStringLiteral("mpvPauseCleared"),
+        QStringLiteral("menuOpen"),
         QStringLiteral("widgetExists"),   QStringLiteral("widgetVisible"),
-        QStringLiteral("widgetHidden"),
+        QStringLiteral("widgetHidden"),    QStringLiteral("objectVisible"),
+        QStringLiteral("objectHidden"),
     };
     const QString key = folded(name);
     for (const QString& candidate : names) {
@@ -105,7 +107,8 @@ bool knownPredicate(const QString& name) {
 bool predicateNeedsTarget(const QString& name) {
     const QString key = folded(name);
     return key == QLatin1String("widgetexists") || key == QLatin1String("widgetvisible")
-           || key == QLatin1String("widgethidden");
+           || key == QLatin1String("widgethidden") || key == QLatin1String("objectvisible")
+           || key == QLatin1String("objecthidden") || key == QLatin1String("menuopen");
 }
 
 std::optional<ProbeStep::Kind> stepKind(const QString& literal) {
@@ -632,9 +635,8 @@ bool parseAssertion(const QJsonValue& entry, int index, ProbeAssertion* out, QSt
         assertion.comparison = canonicalComparison(comparisonValue.toString());
     }
 
-    // `expected` is only read by the three kinds that compare a property value.
-    // The signal assertions decide on an emission count and widget_exists on
-    // presence, so an `expected` there would be a value nothing looks at.
+    // Property assertions need an expected value. SignalEmitted can optionally
+    // compare its count; SignalNotEmitted remains a zero/nonzero assertion.
     const bool needsExpected = assertion.kind == ProbeAssertion::Kind::QtProperty
                                || assertion.kind == ProbeAssertion::Kind::WidgetProperty
                                || assertion.kind == ProbeAssertion::Kind::MpvProperty;
@@ -644,7 +646,20 @@ bool parseAssertion(const QJsonValue& entry, int index, ProbeAssertion* out, QSt
                         .arg(where, assertionKindName(assertion.kind)));
     }
     if (object.contains(QStringLiteral("expected"))) {
-        assertion.expected = object.value(QStringLiteral("expected")).toVariant();
+        const QJsonValue expectedValue = object.value(QStringLiteral("expected"));
+        if (assertion.kind == ProbeAssertion::Kind::SignalEmitted && !expectedValue.isDouble()) {
+            return fail(reason,
+                        QStringLiteral("%1: signal_emitted 'expected' must be a numeric count, "
+                                       "not %2")
+                            .arg(where, jsonTypeName(expectedValue)));
+        }
+        if (assertion.kind == ProbeAssertion::Kind::SignalNotEmitted) {
+            return fail(reason,
+                        QStringLiteral("%1: signal_not_emitted does not accept 'expected'; "
+                                       "it asserts a count of zero")
+                            .arg(where));
+        }
+        assertion.expected = expectedValue.toVariant();
     }
 
     if (object.contains(QStringLiteral("tolerance"))) {
@@ -730,7 +745,7 @@ std::optional<ProbeManifest> parseProbeManifest(const QJsonObject& document, QSt
         if (surface == QLatin1String("videosurface")) {
             manifest.surface = ProbeSurface::VideoSurface;
         } else if (surface == QLatin1String("playerdialog")) {
-            manifest.surface = ProbeSurface::PlayerDialog;
+            manifest.surface = ProbeSurface::PlayerWindow;
         } else if (surface == QLatin1String("settingsdialog")) {
             manifest.surface = ProbeSurface::SettingsDialog;
         } else if (surface == QLatin1String("mainwindow")) {
@@ -811,11 +826,10 @@ std::optional<ProbeManifest> parseProbeManifest(const QJsonObject& document, QSt
                          .arg(manifest.name, manifest.media));
         return std::nullopt;
     }
-    // PlayerDialog starts the stream it is handed, so media is what it opens.
-    // VideoSurface opens it directly too (the runner calls open), so media is
-    // allowed on either surface and only a PlayerDialog without media is
-    // refused: it would be a player with nothing to play.
-    if (manifest.surface == ProbeSurface::PlayerDialog && manifest.media.isEmpty()) {
+    // The Quick player starts the stream it is handed, so media is what it opens.
+    // The bare renderer's VideoSession opens its stream directly too, so media is
+    // allowed on either surface and only a player without media is refused.
+    if (manifest.surface == ProbeSurface::PlayerWindow && manifest.media.isEmpty()) {
         fail(reason, QStringLiteral("manifest '%1': surface 'player_dialog' needs 'media' to "
                                     "open, got none")
                          .arg(manifest.name));
@@ -841,8 +855,8 @@ std::optional<ProbeManifest> parseProbeManifest(const QJsonObject& document, QSt
             }
             manifest.episodes << entry.toString().trimmed();
         }
-        // The drawer needs a list to open: one entry is a player, not a series,
-        // and would leave playerSeriesToggle hidden exactly like no episodes.
+        // The episode chooser needs a list to open: one entry is a player, not
+        // a series, and would leave the picker unavailable.
         if (manifest.episodes.size() == 1) {
             fail(reason, QStringLiteral("manifest '%1': 'episodes' needs at least two labels to "
                                         "open a series drawer, got one")
@@ -850,10 +864,10 @@ std::optional<ProbeManifest> parseProbeManifest(const QJsonObject& document, QSt
             return std::nullopt;
         }
     }
-    // Episodes seed the dialog's playlist, so they are refused wherever there
-    // is no dialog to seed: naming streams on a bare surface or a settings
+    // Episodes seed the Quick player's playlist, so they are refused wherever
+    // there is no player to seed: naming streams on a bare surface or a settings
     // dialog would be a claim the run silently drops.
-    if (!manifest.episodes.isEmpty() && manifest.surface != ProbeSurface::PlayerDialog) {
+    if (!manifest.episodes.isEmpty() && manifest.surface != ProbeSurface::PlayerWindow) {
         fail(reason, QStringLiteral("manifest '%1': 'episodes' needs the player_dialog surface")
                          .arg(manifest.name));
         return std::nullopt;

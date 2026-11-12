@@ -5,6 +5,7 @@
 #include "ShellTheme.hpp"
 #include "ShellWidgets.hpp"
 #include "../core/MediaTracks.hpp"
+#include "../core/VideoSession.hpp"
 #include "../core/VideoSurface.hpp"
 
 #include <QCloseEvent>
@@ -669,7 +670,7 @@ namespace mplayer::shell {
 // declare signals/properties and carry Q_OBJECT first.
 class ClipDialog::Private final : public QObject {
 public:
-    explicit Private(ClipDialog* dialog, VideoSurface* source, const QString& caption)
+    explicit Private(ClipDialog* dialog, VideoSession* source, const QString& caption)
         : QObject(dialog), dialog(dialog), source(source), caption(caption) {
         // Freeze the anchor NOW: the position at pause / at the Cut button
         // is the centre of the +/-2 min window. Do NOT clamp to duration
@@ -690,41 +691,41 @@ public:
                 });
         connect(&thumbnails, &FramePreviewService::frameUnavailable, this,
                 [this](quint64 token, double, const QString&) { finishTile(token); });
-        connect(source, &VideoSurface::mediaInformationInvalidated, this, [this] {
+        connect(source, &VideoSession::mediaInformationInvalidated, this, [this] {
             invalidated = true;
             exportWorker.cancel();
             thumbnails.shutdown();
-            if (preview) preview->close();
+            if (preview && preview->session()) preview->session()->close();
             unavailable(QT_TRANSLATE_NOOP("mplayer::shell::ClipDialog",
                                           "The video changed. Close this window and open Cut moment again."));
         });
-        connect(source, &VideoSurface::sourceEpochChanged, this, [this](uint64_t epoch) {
-            invalidated = true;
-            exportWorker.cancel();
-            thumbnails.setSource(sourceUrl, epoch);
-            if (preview) preview->close();
-            unavailable(QT_TRANSLATE_NOOP("mplayer::shell::ClipDialog",
-                                          "The video changed. Close this window and open Cut moment again."));
-        });
-        connect(source, &VideoSurface::destroyed, this, [this] {
+        connect(source, &VideoSession::sourceEpochChanged, this, [this](uint64_t) {
             invalidated = true;
             exportWorker.cancel();
             thumbnails.shutdown();
-            if (preview) preview->close();
+            if (preview && preview->session()) preview->session()->close();
+            unavailable(QT_TRANSLATE_NOOP("mplayer::shell::ClipDialog",
+                                          "The video changed. Close this window and open Cut moment again."));
+        });
+        connect(source, &QObject::destroyed, this, [this] {
+            invalidated = true;
+            exportWorker.cancel();
+            thumbnails.shutdown();
+            if (preview && preview->session()) preview->session()->close();
             unavailable(QT_TRANSLATE_NOOP("mplayer::shell::ClipDialog", "The video player was closed."));
         });
-        connect(source, &VideoSurface::durationChanged, this, [this](double seconds) {
+        connect(source, &VideoSession::durationChanged, this, [this](double seconds) {
             if (invalidated || exporting || !std::isfinite(seconds) || seconds <= 0.0) return;
             duration = seconds;
             if (!windowInitialized) initializeWindow();
         });
-        connect(source, &VideoSurface::videoSizeChanged, this, [this](int width, int height) {
+        connect(source, &VideoSession::videoSizeChanged, this, [this](int width, int height) {
             if (invalidated || exporting || width <= 0 || height <= 0) return;
             size = QSize(width, height);
             refreshDownload();
         });
-        connect(source, &VideoSurface::mediaTracksChanged, this, [this] { captureTracks(); });
-        connect(source, &VideoSurface::streamStatsChanged, this,
+        connect(source, &VideoSession::mediaTracksChanged, this, [this] { captureTracks(); });
+        connect(source, &VideoSession::streamStatsChanged, this,
                 [this](double bytesPerSecond, double, StreamFpsSource) {
                     if (!std::isfinite(bytesPerSecond) || bytesPerSecond <= 0.0) return;
                     streamBytesPerSecond = bytesPerSecond;
@@ -788,7 +789,7 @@ public:
         if (sourceSize.isValid()) size = sourceSize;
         if (std::isfinite(source->duration()) && source->duration() > 0.0) duration = source->duration();
         initializeWindow();
-        // No preview->open() here on purpose: the dialog opens with a
+        // No preview session open here on purpose: the dialog opens with a
         // still frame; the stream opens lazily on first Play.
         retranslateUi();
     }
@@ -940,8 +941,8 @@ public:
         preview->setFocusPolicy(Qt::StrongFocus);
         // Sound on by default: the preview is a check of the moment's audio
         // too, and a silent first press reads as a broken file.
-        preview->setMuted(previewMuted);
-        preview->setPaused(true);
+        preview->session()->setMuted(previewMuted);
+        preview->session()->setPaused(true);
         stackLayout->addWidget(preview, 0, 0);
 
         previewStill = new QLabel(previewStack);
@@ -1124,25 +1125,25 @@ public:
             dialog->update();
         });
 
-        connect(preview, &VideoSurface::errorOccurred, this, [this](const QString& reason) {
+        connect(preview->session(), &VideoSession::errorOccurred, this, [this](const QString& reason) {
             if (!invalidated) setExternalStatus(ClipTranslation::tr("Preview unavailable: %1").arg(reason));
         });
-        connect(preview, &VideoSurface::durationChanged, this, [this](double seconds) {
+        connect(preview->session(), &VideoSession::durationChanged, this, [this](double seconds) {
             if (!previewOpened) return;
             if (std::isfinite(seconds) && seconds > 0.0) {
-                preview->setPaused(true);
-                preview->seek(std::clamp(selStart_, windowStart, windowEnd));
+                preview->session()->setPaused(true);
+                preview->session()->seek(std::clamp(selStart_, windowStart, windowEnd));
             }
         });
-        connect(preview, &VideoSurface::mediaTracksChanged, this, [this] { syncPreviewAudio(); });
-        connect(preview, &VideoSurface::positionChanged, this, [this](double position) {
+        connect(preview->session(), &VideoSession::mediaTracksChanged, this, [this] { syncPreviewAudio(); });
+        connect(preview->session(), &VideoSession::positionChanged, this, [this](double position) {
             previewPosition = position;
             previewPositionKnown = true;
             if (strip != nullptr) strip->setPlayhead(position);
-            const bool playing = playingState || (preview != nullptr && preview->isPlaying());
+            const bool playing = playingState || (preview != nullptr && preview->session()->isPlaying());
             if (playing && duration > 0.0 && position >= selEnd_ - 0.02) {
-                preview->setPaused(true);
-                preview->seek(selStart_);
+                preview->session()->setPaused(true);
+                preview->session()->seek(selStart_);
                 setPlaying(false);
             }
         });
@@ -1174,7 +1175,7 @@ public:
     void toggleMute() {
         if (invalidated) return;
         previewMuted = !previewMuted;
-        if (preview != nullptr) preview->setMuted(previewMuted);
+        if (preview != nullptr) preview->session()->setMuted(previewMuted);
         updateMuteChrome();
     }
 
@@ -1200,8 +1201,8 @@ public:
         if (previewOpened || !preview || invalidated || sourceUrl.isEmpty()) return;
         previewOpened = true;
         if (previewStill) previewStill->setVisible(false);
-        preview->open(sourceUrl);
-        preview->setPaused(true);
+        preview->session()->open(sourceUrl);
+        preview->session()->setPaused(true);
         syncPreviewAudio();
     }
 
@@ -1209,17 +1210,17 @@ public:
         if (invalidated) return;
         if (!previewOpened) {
             ensurePreviewOpened();
-            preview->seek(std::clamp(selStart_, windowStart, windowEnd));
-            preview->setPaused(false);
+            preview->session()->seek(std::clamp(selStart_, windowStart, windowEnd));
+            preview->session()->setPaused(false);
             setPlaying(true);
             return;
         }
         if (!preview) return;
-        const bool willPlay = !preview->isPlaying();
+        const bool willPlay = !preview->session()->isPlaying();
         if (willPlay && (previewPosition < selStart_ || previewPosition >= selEnd_ - 0.02)) {
-            preview->seek(selStart_);
+            preview->session()->seek(selStart_);
         }
-        preview->setPaused(!willPlay);
+        preview->session()->setPaused(!willPlay);
         setPlaying(willPlay);
     }
 
@@ -1230,8 +1231,8 @@ public:
         previewPositionKnown = true;
         if (strip) strip->setPlayhead(target);
         if (previewOpened && preview) {
-            preview->setPaused(true);
-            preview->seek(target);
+            preview->session()->setPaused(true);
+            preview->session()->seek(target);
             setPlaying(false);
         } else {
             requestStillAt(target);
@@ -1272,8 +1273,8 @@ public:
     void initializeWindow() {
         if (invalidated || exporting || !std::isfinite(duration) || duration <= 0.0) return;
         const double center = std::clamp(anchorSeconds, 0.0, duration);
+        windowStart = std::max(0.0, center - kWindowRadiusSeconds);
         windowEnd = std::min(duration, center + kWindowRadiusSeconds);
-        windowStart = std::max(0.0, windowEnd - 2.0 * kWindowRadiusSeconds);
         if (windowEnd - windowStart < 1.0) {
             windowStart = 0.0;
             windowEnd = duration;
@@ -1292,7 +1293,7 @@ public:
         requestStillAt(a);
         requestTilesSoon();
         setStatus(QT_TRANSLATE_NOOP("mplayer::shell::ClipDialog",
-                                    "Drag the selection, then download. The window follows the moment you paused."));
+                                    "Drag the selection, then download. The window stays fixed around where you paused."));
     }
 
     void requestTilesSoon() {
@@ -1438,31 +1439,92 @@ public:
         audioTrack = selection.audio;
         if (selection.audio.has_value()) {
             for (const MediaTrack& track : source->mediaTracks().tracks) {
-                if (track.type == MediaTrackType::Audio && track.id == *selection.audio && track.external) {
+                if (track.type != MediaTrackType::Audio || track.id != *selection.audio) continue;
+                if (track.external) {
                     externalAudio = track.externalFilename;
+                } else {
+                    embeddedAudioFallback = track.id;
+                }
+                break;
+            }
+        }
+        if (!embeddedAudioFallback.has_value()) {
+            for (const MediaTrack& track : source->mediaTracks().tracks) {
+                if (track.type == MediaTrackType::Audio && !track.external) {
+                    embeddedAudioFallback = track.id;
                     break;
                 }
             }
-        }
-        if (preview && !externalAudio.isEmpty() && !previewExternalAudioAdded) {
-            previewExternalAudioAdded = preview->addExternalTrack(externalAudio, false);
         }
         syncPreviewAudio();
     }
 
     void syncPreviewAudio() {
-        if (!preview || !previewOpened || !preview->mediaTracks().ready || !audioTrack.has_value()) return;
-        if (!externalAudio.isEmpty() && !previewExternalAudioAdded) {
-            previewExternalAudioAdded = preview->addExternalTrack(externalAudio, false);
-            if (previewExternalAudioAdded) return;
-        }
-        const MediaTrackSnapshot& snapshot = preview->mediaTracks();
-        for (const MediaTrack& track : snapshot.tracks) {
-            if (track.type == MediaTrackType::Audio && track.id == *audioTrack) {
-                preview->selectMediaTrack(MediaTrackType::Audio, *audioTrack, snapshot.coreIdentity,
-                                          snapshot.sourceEpoch);
-                return;
+        if (!preview || !preview->session() || !previewOpened ||
+            !preview->session()->mediaTracks().ready || !audioTrack.has_value()) return;
+        VideoSession* previewSession = preview->session();
+        const MediaTrackSnapshot& snapshot = previewSession->mediaTracks();
+        if (!externalAudio.isEmpty() && previewExternalAudioFile != externalAudio) {
+            if (previewSession->addExternalTrack(externalAudio, false)) {
+                previewExternalAudioFile = externalAudio;
             }
+        }
+        if (!externalAudio.isEmpty() && previewExternalAudioFile == externalAudio) {
+            for (const MediaTrack& track : snapshot.tracks) {
+                if (track.type == MediaTrackType::Audio && track.external &&
+                    track.externalFilename == externalAudio) {
+                    previewSession->selectMediaTrack(MediaTrackType::Audio, track.id,
+                                                     snapshot.coreIdentity, snapshot.sourceEpoch);
+                    return;
+                }
+            }
+        }
+
+        const MediaTrack* selectedSourceTrack = nullptr;
+        if (source && source->mediaTracks().ready) {
+            for (const MediaTrack& track : source->mediaTracks().tracks) {
+                if (track.type == MediaTrackType::Audio && track.id == *audioTrack) {
+                    selectedSourceTrack = &track;
+                    break;
+                }
+            }
+        }
+        if (selectedSourceTrack != nullptr && !selectedSourceTrack->external) {
+            for (const MediaTrack& track : snapshot.tracks) {
+                if (track.type == MediaTrackType::Audio && !track.external &&
+                    track.id == selectedSourceTrack->id) {
+                    previewSession->selectMediaTrack(MediaTrackType::Audio, track.id,
+                                                     snapshot.coreIdentity, snapshot.sourceEpoch);
+                    return;
+                }
+            }
+        }
+
+        if (embeddedAudioFallback.has_value()) {
+            for (const MediaTrack& track : snapshot.tracks) {
+                if (track.type == MediaTrackType::Audio && !track.external &&
+                    track.id == *embeddedAudioFallback) {
+                    previewSession->selectMediaTrack(MediaTrackType::Audio, track.id,
+                                                     snapshot.coreIdentity, snapshot.sourceEpoch);
+                    return;
+                }
+            }
+        }
+        const QString language = selectedSourceTrack != nullptr ? selectedSourceTrack->language : QString();
+        const QString title = selectedSourceTrack != nullptr ? selectedSourceTrack->title : QString();
+        const MediaTrack* fallback = nullptr;
+        for (const MediaTrack& track : snapshot.tracks) {
+            if (track.type != MediaTrackType::Audio || track.external) continue;
+            if (fallback == nullptr) fallback = &track;
+            if ((!language.isEmpty() && track.language == language) ||
+                (!title.isEmpty() && track.title == title)) {
+                fallback = &track;
+                break;
+            }
+        }
+        if (fallback != nullptr) {
+            previewSession->selectMediaTrack(MediaTrackType::Audio, fallback->id,
+                                             snapshot.coreIdentity, snapshot.sourceEpoch);
         }
     }
 
@@ -1470,9 +1532,18 @@ public:
         if (duration <= 0.0 || exporting || invalidated || !windowInitialized) return;
         a = std::clamp(a, windowStart, windowEnd);
         b = std::clamp(b, windowStart, windowEnd);
-        if (b <= a) {
-            if (a >= windowEnd) a = std::max(windowStart, windowEnd - kMinClipSeconds);
-            else b = std::min(windowEnd, a + kMinClipSeconds);
+        if (b - a < kMinClipSeconds &&
+            windowEnd - windowStart >= kMinClipSeconds) {
+            if (editedField == 1) {
+                a = std::max(windowStart, b - kMinClipSeconds);
+                if (b - a < kMinClipSeconds) b = std::min(windowEnd, a + kMinClipSeconds);
+            } else if (editedField == 2) {
+                b = std::min(windowEnd, a + kMinClipSeconds);
+                if (b - a < kMinClipSeconds) a = std::max(windowStart, b - kMinClipSeconds);
+            } else {
+                b = std::min(windowEnd, a + kMinClipSeconds);
+                if (b - a < kMinClipSeconds) a = std::max(windowStart, b - kMinClipSeconds);
+            }
         }
         if (b - a > kMaximumClipDuration) {
             if (editedField == 1) b = std::min(windowEnd, a + kMaximumClipDuration);
@@ -1491,7 +1562,9 @@ public:
 
     bool validRange() const {
         if (!windowInitialized || exporting || invalidated || !size.isValid()) return false;
-        return selEnd_ - selStart_ > 0.0 && selEnd_ - selStart_ <= kMaximumClipDuration + 0.001 &&
+        return windowEnd - windowStart >= kMinClipSeconds &&
+               selEnd_ - selStart_ >= kMinClipSeconds - 0.001 &&
+               selEnd_ - selStart_ <= kMaximumClipDuration + 0.001 &&
                selStart_ >= windowStart - 0.001 && selEnd_ <= windowEnd + 0.001;
     }
 
@@ -1499,7 +1572,7 @@ public:
         if (exporting || !validRange() || !source) return;
         QPointer<Private> self(this);
         QPointer<ClipDialog> guardedDialog(dialog);
-        QPointer<VideoSurface> guardedSource(source);
+        QPointer<VideoSession> guardedSource(source);
         const uint64_t sourceEpoch = source->sourceEpoch();
         const QString selectedSource = sourceUrl;
         const double selectedStart = selStart_;
@@ -1515,8 +1588,11 @@ public:
                                                     ClipTranslation::tr("MP4 video (*.mp4)"), nullptr,
                                                     QFileDialog::DontConfirmOverwrite);
         if (!self || !guardedDialog || !guardedSource) return;
-        if (invalidated || guardedSource->sourceEpoch() != sourceEpoch || !validRange() ||
-            sourceUrl != selectedSource) return;
+        if (invalidated || guardedSource->sourceEpoch() != sourceEpoch ||
+            sourceUrl != selectedSource || selStart_ != selectedStart || selEnd_ != selectedEnd ||
+            size != selectedSize || qualityHeight != selectedHeight ||
+            audioTrack != selectedAudioTrack || externalAudio != selectedExternalAudio ||
+            !validRange()) return;
         if (path.isEmpty()) return;
         if (!path.endsWith(QStringLiteral(".mp4"), Qt::CaseInsensitive)) path += QStringLiteral(".mp4");
         bool replaceExisting = false;
@@ -1527,8 +1603,11 @@ public:
                     .arg(QFileInfo(path).fileName()),
                 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
             if (!self || !guardedDialog || !guardedSource) return;
-            if (invalidated || guardedSource->sourceEpoch() != sourceEpoch || !validRange() ||
-                sourceUrl != selectedSource) return;
+            if (invalidated || guardedSource->sourceEpoch() != sourceEpoch ||
+                sourceUrl != selectedSource || selStart_ != selectedStart || selEnd_ != selectedEnd ||
+                size != selectedSize || qualityHeight != selectedHeight ||
+                audioTrack != selectedAudioTrack || externalAudio != selectedExternalAudio ||
+                !validRange()) return;
             if (answer != QMessageBox::Yes) return;
             replaceExisting = true;
         }
@@ -1568,6 +1647,14 @@ public:
         if (strip) strip->setEnabled(false);
         if (playButton) playButton->setEnabled(false);
         if (muteButton) muteButton->setEnabled(false);
+        if (setStartButton) setStartButton->setEnabled(false);
+        if (setEndButton) setEndButton->setEnabled(false);
+        for (QPushButton* button : presetButtons) {
+            if (button) button->setEnabled(false);
+        }
+        for (QPushButton* button : qualityButtons) {
+            if (button) button->setEnabled(false);
+        }
         refreshDownload();
     }
 
@@ -1578,7 +1665,7 @@ public:
     };
 
     ClipDialog* dialog;
-    QPointer<VideoSurface> source;
+    QPointer<VideoSession> source;
     QString caption;
     VideoSurface* preview = nullptr;
     QFrame* previewCard = nullptr;
@@ -1622,6 +1709,7 @@ public:
     QString externalAudio;
     QString completedPath;
     std::optional<qint64> audioTrack;
+    std::optional<qint64> embeddedAudioFallback;
     QSize size;
     double duration = 0.0;
     double anchorSeconds = 0.0;
@@ -1640,12 +1728,12 @@ public:
     bool previewOpened = false;
     bool exporting = false;
     bool windowInitialized = false;
-    bool previewExternalAudioAdded = false;
+    QString previewExternalAudioFile;
     bool invalidated = false;
     bool playingState = false;
 };
 
-ClipDialog::ClipDialog(VideoSurface* source, const QString& caption, QWidget* parent)
+ClipDialog::ClipDialog(VideoSession* source, const QString& caption, QWidget* parent)
     : QDialog(parent), d_(new Private(this, source, caption)) {}
 
 void ClipDialog::changeEvent(QEvent* event) {
@@ -1665,7 +1753,7 @@ ClipDialog::~ClipDialog() = default;
 
 void ClipDialog::closeEvent(QCloseEvent* event) {
     if (d_) {
-        if (d_->preview) d_->preview->setPaused(true);
+        if (d_->preview && d_->preview->session()) d_->preview->session()->setPaused(true);
         if (d_->exporting) {
             d_->exportWorker.cancel();
             d_->setStatus(QT_TRANSLATE_NOOP("mplayer::shell::ClipDialog", "Canceling export…"));

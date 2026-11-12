@@ -1,52 +1,664 @@
-// The verdict reads the surface's own framebuffer, never the dialog grab.
+// The native Quick player probe judges the production scene and its
+// overlay-free video target independently.
 
 #include <QApplication>
+#include <QColor>
+#include <QCoreApplication>
+#include <QDir>
 #include <QElapsedTimer>
+#include <QEventLoop>
+#include <QFileInfo>
 #include <QImage>
-#include <QPixmap>
+#include <QMetaObject>
 #include <QPointer>
+#include <QQmlError>
+#include <QQuickItem>
+#include <QScopedValueRollback>
+#include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <QSettings>
+#include <QStringList>
 #include <QTemporaryDir>
-#include <QTimer>
-#include <QWidget>
+#include <QThread>
+#include <QTest>
 
+#include <algorithm>
 #include <cstdio>
 #include <functional>
-#include <memory>
 
-#include "PlayerDialog.hpp"
-#include "PlayerShell.hpp"
+#include "PlayerController.hpp"
+#include "PlayerMenuModel.hpp"
+#include "MpvVideoItem.hpp"
+#include "PlayerWindow.hpp"
 #include "ProbePicture.hpp"
 #include "ProbeRuntime.hpp"
-#include "VideoSurface.hpp"
+#include "VideoSession.hpp"
 
-using namespace mplayer::shell;
+using namespace mplayer;
+using namespace mplayer::quick;
 
 namespace {
 
-class StubHost : public PlayerHost {
-public:
-    void requestVariant(const QString&, const QString&) override {}
-    void requestEpisode(int) override {}
-    void requestTrackProbe(const QString&) override {}
-    void requestCopyStreamUrl() override {}
-    void playerClosed() override {}
-    void playbackFailed() override {}
+QString evidenceDir() {
+    const QString requested = qEnvironmentVariable("MIKAI_DIALOG_PROBE_OUTPUT_DIR");
+    if (requested.isEmpty()) return QDir::current().absolutePath();
+    if (!QFileInfo(requested).isAbsolute() || !QDir().mkpath(requested)) return {};
+    return QDir(requested).absolutePath();
+}
+
+QString evidencePath(const QString& name) {
+    return QDir(evidenceDir()).filePath(name);
+}
+
+struct PlaybackSample {
+    QImage frame;
+    double position = -1.0;
+    int videoWidth = 0;
+    int videoHeight = 0;
 };
 
-int visibleChildren(const QWidget* root) {
-    int count = 0;
-    for (const QWidget* child : root->findChildren<QWidget*>()) {
-        if (child->isVisible()) ++count;
+PlaybackSample capture(PlayerWindow* window, VideoSession* session) {
+    PlaybackSample sample;
+    if (window == nullptr || session == nullptr) return sample;
+    sample.frame = window->grabVideoFrame();
+    sample.position = session->position();
+    sample.videoWidth = session->videoWidth();
+    sample.videoHeight = session->videoHeight();
+    return sample;
+}
+
+bool sameGeometry(const PlaybackSample& a, const PlaybackSample& b) {
+    return !a.frame.isNull() && a.frame.size() == b.frame.size() &&
+           a.videoWidth == b.videoWidth && a.videoHeight == b.videoHeight;
+}
+
+void requireMovingPicture(mplayer::probes::Verdict& verdict, const PlaybackSample& earlier,
+                          const PlaybackSample& later) {
+    verdict.require(later.videoWidth > 0 && later.videoHeight > 0,
+                    QStringLiteral("production session reports video dimensions (%1x%2)")
+                        .arg(later.videoWidth)
+                        .arg(later.videoHeight));
+    verdict.require(!later.frame.isNull(),
+                    QStringLiteral("native Quick window produced its overlay-free video frame"));
+
+    const mplayer::probes::Picture picture =
+        mplayer::probes::measurePicture(later.frame, later.videoWidth, later.videoHeight);
+    verdict.metric(QStringLiteral("overlay-free video band %1x%2 at %3,%4: lit=%5/%6 (%7%)")
+                       .arg(picture.rect.width())
+                       .arg(picture.rect.height())
+                       .arg(picture.rect.x())
+                       .arg(picture.rect.y())
+                       .arg(picture.lit)
+                       .arg(picture.sampled)
+                       .arg(100.0 * picture.litFraction(), 0, 'f', 1));
+    if (picture.sampled == 0) {
+        verdict.require(false, QStringLiteral("video picture band has pixels to judge"));
+        return;
     }
-    return count;
+    if (picture.isMostlyBlack()) {
+        verdict.inconclusive(
+            QStringLiteral("video band is mostly black: valid black content and failed rendering "
+                           "are indistinguishable"));
+        return;
+    }
+    verdict.require(true, QStringLiteral("video picture is non-black (> 50% lit pixels)"));
+
+    verdict.require(earlier.position >= 0.0 && later.position > earlier.position,
+                    QStringLiteral("source clock advanced (%1 to %2 s)")
+                        .arg(earlier.position, 0, 'f', 2)
+                        .arg(later.position, 0, 'f', 2));
+    if (!sameGeometry(earlier, later)) {
+        verdict.inconclusive(QStringLiteral("video sample geometry changed; motion cannot be "
+                                            "compared"));
+        return;
+    }
+
+    long changed = 0;
+    long compared = 0;
+    for (int y = picture.rect.top(); y <= picture.rect.bottom(); y += 2) {
+        for (int x = picture.rect.left(); x <= picture.rect.right(); x += 2) {
+            ++compared;
+            const QColor before = earlier.frame.pixelColor(x, y);
+            const QColor after = later.frame.pixelColor(x, y);
+            if (qAbs(after.red() - before.red()) + qAbs(after.green() - before.green()) +
+                    qAbs(after.blue() - before.blue()) >
+                mplayer::probes::kMotionPixelDelta) {
+                ++changed;
+            }
+        }
+    }
+    verdict.metric(QStringLiteral("motion band changed=%1/%2 (%3%)")
+                       .arg(changed)
+                       .arg(compared)
+                       .arg(compared > 0 ? 100.0 * double(changed) / double(compared) : 0.0, 0, 'f',
+                            2));
+    if (compared == 0) {
+        verdict.inconclusive(QStringLiteral("no pixels were available for a motion comparison"));
+    } else if (double(changed) >= mplayer::probes::kMinMotionChangedFraction * compared) {
+        verdict.require(true, QStringLiteral("picture moved across source-time samples (>= 1%)"));
+    } else {
+        verdict.inconclusive(QStringLiteral("picture pixels did not move: static media and a "
+                                            "frozen output are indistinguishable"));
+    }
+}
+
+bool waitFor(const std::function<bool()>& predicate, int timeoutMs,
+             const std::function<void()>& sample = {}) {
+    QElapsedTimer timer;
+    timer.start();
+    qint64 nextSampleAt = 0;
+    while (timer.elapsed() < timeoutMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        if (predicate()) return true;
+        if (sample && timer.elapsed() >= nextSampleAt) {
+            sample();
+            nextSampleAt = timer.elapsed() + 100;
+        }
+        QThread::msleep(10);
+    }
+    return predicate();
+}
+
+QQuickItem* findVisualItem(QQuickItem* root,
+                           const std::function<bool(QQuickItem*)>& matches) {
+    if (root == nullptr) return nullptr;
+    if (matches(root)) return root;
+    for (QQuickItem* child : root->childItems()) {
+        if (QQuickItem* match = findVisualItem(child, matches)) return match;
+    }
+    return nullptr;
+}
+
+QQuickItem* menuPanel(QQuickItem* root, const QString& menuId) {
+    if (root == nullptr) return nullptr;
+    return findVisualItem(root, [&menuId](QQuickItem* item) {
+        return item->property("menuId").toString() == menuId &&
+               item->property("menuModel").isValid() && item->isVisible();
+    });
+}
+
+QQuickItem* submenuRow(QQuickItem* root, const QString& menuId, const QString& rowValue) {
+    QQuickItem* panel = menuPanel(root, menuId);
+    if (panel == nullptr) return nullptr;
+    return findVisualItem(panel, [&rowValue](QQuickItem* item) {
+        return item->property("rowSubmenu").toBool() &&
+               item->property("rowValue").toString() == rowValue && item->isVisible();
+    });
+}
+
+bool saveImage(const QImage& image, const QString& name) {
+    if (image.isNull()) return false;
+    return image.save(evidencePath(name), "PNG");
+}
+
+bool exerciseEnhancementCascade(PlayerController* controller, PlayerWindow* window,
+                                mplayer::probes::Verdict& verdict,
+                                const std::function<void()>& sample) {
+    if (controller == nullptr || window == nullptr || window->rootObject() == nullptr) return false;
+
+    // Open through the visible production transport control; menu requests,
+    // cascade delegates, and row input all stay on the real PlayerEntry scene.
+    QQuickItem* enhanceButton = nullptr;
+    for (QQuickItem* item : window->rootObject()->findChildren<QQuickItem*>()) {
+        if (item->property("iconName").toString() == QLatin1String("spark") &&
+            item->isVisible() && item->isEnabled()) {
+            enhanceButton = item;
+            break;
+        }
+    }
+    verdict.require(enhanceButton != nullptr,
+                    QStringLiteral("visible production enhancement button is available"));
+    if (enhanceButton == nullptr) return false;
+    const QPoint enhancePoint =
+        enhanceButton->mapToScene(QPointF(enhanceButton->width() / 2.0,
+                                          enhanceButton->height() / 2.0)).toPoint();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, enhancePoint);
+    const bool rootOpened = waitFor(
+        [&] { return menuPanel(window->rootObject(), QStringLiteral("enhancements")) != nullptr; },
+        1000, sample);
+    verdict.require(rootOpened, QStringLiteral("real enhancement control opened its menu"));
+    if (!rootOpened) return false;
+    PlayerMenuModel* rootModel = controller->menuModel(QStringLiteral("enhancements"));
+    if (rootModel == nullptr || rootModel->rowCount() == 0) {
+        verdict.require(false, QStringLiteral("production enhancement menu model is populated"));
+        return false;
+    }
+
+    QString upscaleLevel;
+    int upscaleRow = -1;
+    for (int row = 0; row < rootModel->rowCount(); ++row) {
+        const PlayerMenuModel::Row entry = rootModel->row(row);
+        if (entry.submenu && entry.value == QLatin1String("processing:upscale")) {
+            upscaleLevel = entry.value;
+            upscaleRow = row;
+            break;
+        }
+    }
+    if (upscaleLevel.isEmpty()) {
+        verdict.require(false, QStringLiteral("production enhancement menu exposes its Upscale "
+                                              "cascade"));
+        return false;
+    }
+
+    QQuickItem* upscale = submenuRow(window->rootObject(), QStringLiteral("enhancements"),
+                                    upscaleLevel);
+    verdict.require(upscale != nullptr,
+                    QStringLiteral("real enhancement menu exposes the Upscale row above controls"));
+    if (upscale == nullptr) return false;
+
+    QElapsedTimer hoverClock;
+    quint64 frameSwaps = 0;
+    quint64 firstVisibleFrame = 0;
+    qint64 firstVisibleFrameMs = -1;
+    QMetaObject::Connection frameConnection = QObject::connect(
+        window, &QQuickWindow::frameSwapped, window, [&] {
+            ++frameSwaps;
+            if (firstVisibleFrame != 0 ||
+                menuPanel(window->rootObject(), upscaleLevel) == nullptr) {
+                return;
+            }
+            firstVisibleFrame = frameSwaps;
+            firstVisibleFrameMs = hoverClock.elapsed();
+        }, Qt::AutoConnection);
+    const QPoint scenePoint = upscale->mapToScene(QPointF(upscale->width() / 2.0,
+                                                           upscale->height() / 2.0)).toPoint();
+    hoverClock.start();
+    QTest::mouseMove(window, scenePoint);
+    const bool expanded = waitFor(
+        [&] { return menuPanel(window->rootObject(), upscaleLevel) != nullptr &&
+                     firstVisibleFrame != 0; },
+        1000, sample);
+    QObject::disconnect(frameConnection);
+
+    verdict.require(expanded, QStringLiteral("real pointer hover expands the production Upscale "
+                                              "submenu"));
+    if (firstVisibleFrame != 0) {
+        const quint64 swapsBeforeVisible = firstVisibleFrame - 1;
+        verdict.metric(QStringLiteral("hover-to-expanded-presentation=%1 ms; frameSwapsBefore=%2")
+                           .arg(firstVisibleFrameMs)
+                           .arg(swapsBeforeVisible));
+        verdict.require(firstVisibleFrame <= 2 && firstVisibleFrameMs <= 250,
+                        QStringLiteral("expanded cascade presented within two Quick frames and "
+                                       "250 ms (frames=%1, time=%2 ms)")
+                            .arg(firstVisibleFrame)
+                            .arg(firstVisibleFrameMs));
+    } else {
+        verdict.require(false, QStringLiteral("no expanded-menu Quick frame arrived within "
+                                              "the bounded 1000 ms observation"));
+    }
+
+    PlayerMenuModel* childModel = controller->submenuModel(QStringLiteral("enhancements"),
+                                                            upscaleRow);
+    verdict.require(childModel != nullptr && childModel->rowCount() > 0,
+                    QStringLiteral("expanded Upscale panel uses its production model"));
+    if (!expanded || childModel == nullptr) return false;
+
+    upscale = submenuRow(window->rootObject(), QStringLiteral("enhancements"), upscaleLevel);
+    if (upscale == nullptr) {
+        verdict.require(false, QStringLiteral("parent Upscale row remains available after expansion"));
+        return false;
+    }
+    const QPoint upscaleClick =
+        upscale->mapToScene(QPointF(upscale->width() / 2.0, upscale->height() / 2.0)).toPoint();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, upscaleClick);
+    const bool rowInputContained = waitFor(
+        [&] { return menuPanel(window->rootObject(), upscaleLevel) != nullptr &&
+                     controller->menuStackVisible(); },
+        500, sample);
+    verdict.require(rowInputContained,
+                    QStringLiteral("clicking the real submenu row stays inside the menu stack"));
+    verdict.require(controller->session()->isPlaying(),
+                    QStringLiteral("submenu-row click did not reach the underlying transport"));
+
+    int anime4kRow = -1;
+    for (int row = 0; row < rootModel->rowCount(); ++row) {
+        const PlayerMenuModel::Row entry = rootModel->row(row);
+        if (entry.submenu && entry.value == QLatin1String("anime4k")) {
+            anime4kRow = row;
+            break;
+        }
+    }
+    QQuickItem* anime4k = submenuRow(window->rootObject(), QStringLiteral("enhancements"),
+                                     QStringLiteral("anime4k"));
+    verdict.require(anime4kRow >= 0 && anime4k != nullptr,
+                    QStringLiteral("production enhancement menu exposes built-in Anime4K"));
+    if (anime4kRow < 0 || anime4k == nullptr) return false;
+
+    const QPoint anime4kPoint =
+        anime4k->mapToScene(QPointF(anime4k->width() / 2.0, anime4k->height() / 2.0)).toPoint();
+    QTest::mouseMove(window, anime4kPoint);
+    const QString anime4kLevel = QStringLiteral("anime4k");
+    const bool anime4kExpanded = waitFor(
+        [&] { return menuPanel(window->rootObject(), anime4kLevel) != nullptr; }, 700, sample);
+    verdict.require(anime4kExpanded,
+                    QStringLiteral("pointer hover opens the actual built-in Anime4K model list"));
+    if (!anime4kExpanded) return false;
+
+    PlayerMenuModel* anime4kModel =
+        controller->submenuModel(QStringLiteral("enhancements"), anime4kRow);
+    int categoryRow = -1;
+    QString categoryLevel;
+    if (anime4kModel != nullptr) {
+        for (int row = 0; row < anime4kModel->rowCount(); ++row) {
+            const PlayerMenuModel::Row entry = anime4kModel->row(row);
+            if (entry.submenu && entry.value.startsWith(QLatin1String("anime4k/"))) {
+                categoryRow = row;
+                categoryLevel = entry.value;
+                break;
+            }
+        }
+    }
+    QQuickItem* category = submenuRow(window->rootObject(), anime4kLevel, categoryLevel);
+    verdict.require(categoryRow >= 0 && category != nullptr,
+                    QStringLiteral("built-in Anime4K list exposes a nested model category"));
+    if (categoryRow < 0 || category == nullptr) return false;
+
+    const QPoint categoryPoint =
+        category->mapToScene(QPointF(category->width() / 2.0, category->height() / 2.0))
+            .toPoint();
+    QTest::mouseMove(window, categoryPoint);
+    const bool nestedExpanded = waitFor(
+        [&] { return menuPanel(window->rootObject(), categoryLevel) != nullptr; }, 700, sample);
+    verdict.require(nestedExpanded,
+                    QStringLiteral("real hover expands a third-level Anime4K cascade"));
+    if (!nestedExpanded) return false;
+
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, categoryPoint);
+    const bool nestedClickContained = controller->menuStackVisible() &&
+                                      menuPanel(window->rootObject(), categoryLevel) != nullptr;
+    verdict.require(nestedClickContained,
+                    QStringLiteral("nested submenu-row click does not dismiss or pass through"));
+    verdict.require(controller->session()->isPlaying(),
+                    QStringLiteral("nested row click did not toggle the underlying transport"));
+
+    QQuickItem* nestedPanel = menuPanel(window->rootObject(), categoryLevel);
+    if (nestedPanel == nullptr) return false;
+    const QPoint paddingPoint =
+        nestedPanel->mapToScene(QPointF(nestedPanel->width() - 3.0,
+                                        nestedPanel->height() / 2.0)).toPoint();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, paddingPoint);
+    const bool paddingClickContained = controller->menuStackVisible() &&
+                                       menuPanel(window->rootObject(), categoryLevel) != nullptr;
+    verdict.require(paddingClickContained,
+                    QStringLiteral("cascade panel padding click remains inside the menu stack"));
+    verdict.require(controller->session()->isPlaying(),
+                    QStringLiteral("panel-padding click did not toggle the underlying transport"));
+    return rowInputContained && anime4kExpanded && nestedExpanded && nestedClickContained &&
+           paddingClickContained && controller->session()->isPlaying();
+}
+
+struct RunResult {
+    bool completed = false;
+    QPointer<PlayerController> controller;
+    QPointer<PlayerWindow> window;
+};
+
+RunResult runPlayer(const QString& url, const QString& videoName, const QString& screenName,
+                    bool exerciseMenus, mplayer::probes::Verdict& verdict) {
+    RunResult result;
+    auto* controller = new PlayerController(QStringLiteral("dialog probe"), url);
+    result.controller = controller;
+    result.window = controller->window();
+
+    QString loadError;
+    const QMetaObject::Connection sceneErrorConnection =
+        QObject::connect(result.window, &PlayerWindow::sceneLoadFailed, controller,
+                         [&loadError](const QString& error) { loadError = error; });
+    const QMetaObject::Connection mediaErrorConnection =
+        QObject::connect(controller->session(), &VideoSession::errorOccurred, controller,
+                         [&loadError](const QString& error) { loadError = error; });
+
+    controller->showWindow();
+    controller->startPlayer();
+
+    const auto closeWindow = [&] {
+        QObject::disconnect(sceneErrorConnection);
+        QObject::disconnect(mediaErrorConnection);
+        if (controller == nullptr) return false;
+        const bool accepted = controller->requestClose();
+        if (accepted) waitFor([&] { return !controller->isWindowVisible(); }, 2500);
+        return accepted;
+    };
+
+    const bool visible = waitFor([&] {
+        return controller->isWindowVisible() && result.window->rootObject() != nullptr;
+    }, 10000);
+    verdict.require(visible, QStringLiteral("actual PlayerWindow loaded PlayerEntry and is visible"));
+    const bool fullscreen =
+        visible && result.window->windowStates().testFlag(Qt::WindowFullScreen) &&
+        controller->fullscreen();
+    verdict.require(fullscreen,
+                    QStringLiteral("production chrome hide/show test is in actual fullscreen"));
+    if (!visible) {
+        QStringList viewErrors;
+        for (const QQmlError& error : result.window->errors()) {
+            viewErrors.append(error.toString());
+        }
+        verdict.metric(
+            QStringLiteral("production window timeout: status=%1 controllerVisible=%2 "
+                           "windowVisible=%3 rootObject=%4 fullscreenState=%5 loadError=%6 "
+                           "QQuickView.errors=%7")
+                .arg(static_cast<int>(result.window->status()))
+                .arg(int(controller->isWindowVisible()))
+                .arg(int(result.window->isVisible()))
+                .arg(int(result.window->rootObject() != nullptr))
+                .arg(int(result.window->windowStates().testFlag(Qt::WindowFullScreen)))
+                .arg(loadError.isEmpty() ? QStringLiteral("(none)") : loadError)
+                .arg(viewErrors.isEmpty() ? QStringLiteral("(none)")
+                                          : viewErrors.join(QLatin1Char('\n'))));
+        closeWindow();
+        return result;
+    }
+
+    VideoSession* session = controller->session();
+    const bool sourceReady = waitFor([&] {
+        return !loadError.isEmpty() ||
+               (session->hasVideo() && result.window->hasVisibleOutputFrame());
+    }, 12000);
+    verdict.require(sourceReady && loadError.isEmpty(),
+                    QStringLiteral("explicit media source reached a video-ready native window%1")
+                        .arg(loadError.isEmpty() ? QString()
+                                                 : QStringLiteral(" (%1)").arg(loadError)));
+    if (!sourceReady || !loadError.isEmpty()) {
+        closeWindow();
+        return result;
+    }
+
+    PlaybackSample earlier;
+    PlaybackSample later;
+    int validSamples = 0;
+    int blackSamples = 0;
+    bool samplingPlayback = false;
+    int backwardJumps = 0;
+    int forwardJumps = 0;
+    double previousPosition = -1.0;
+    qint64 previousSampleMs = -1;
+    QElapsedTimer sampleClock;
+    sampleClock.start();
+    const bool knownBrightFixture =
+        qEnvironmentVariable("MIKAI_DIALOG_PROBE_BRIGHT_FIXTURE") == QLatin1String("1");
+    const double duration = session->duration();
+    const double firstAt = duration > 0.0 ? std::min(0.5, std::max(0.1, duration * 0.15)) : 0.5;
+    const auto samplePlayback = [&] {
+        if (samplingPlayback || !session->isPlaying() ||
+            !result.window->hasVisibleOutputFrame()) {
+            return;
+        }
+        QScopedValueRollback<bool> samplingGuard(samplingPlayback, true);
+        const PlaybackSample sample = capture(result.window, session);
+        if (sample.frame.isNull() || sample.videoWidth <= 0 || sample.videoHeight <= 0 ||
+            sample.position < 0.0) {
+            return;
+        }
+        ++validSamples;
+        if (knownBrightFixture) {
+            const mplayer::probes::Picture picture =
+                mplayer::probes::measurePicture(sample.frame, sample.videoWidth,
+                                                 sample.videoHeight);
+            if (picture.sampled > 0 && picture.isMostlyBlack()) ++blackSamples;
+        }
+        const qint64 sampleMs = sampleClock.elapsed();
+        if (previousPosition >= 0.0) {
+            if (sample.position < previousPosition - 0.35) ++backwardJumps;
+            const double wallDelta = double(sampleMs - previousSampleMs) / 1000.0;
+            if (sample.position - previousPosition > wallDelta + 0.75) ++forwardJumps;
+        }
+        previousPosition = sample.position;
+        previousSampleMs = sampleMs;
+        if (earlier.position < 0.0 && sample.position >= firstAt) earlier = sample;
+        if (earlier.position >= 0.0) later = sample;
+    };
+
+    // PlayerWindow emits this only after a fresh output frame was composited.
+    // The Basic loop keeps this callback on the GUI thread, where readback is legal.
+    const QMetaObject::Connection frameSampleConnection =
+        QObject::connect(result.window, &PlayerWindow::framePresented, result.window,
+                         samplePlayback, Qt::AutoConnection);
+
+    const bool beganPlaying = waitFor([&] { return earlier.position >= 0.0; }, 4000,
+                                      samplePlayback);
+    verdict.require(beganPlaying && session->isPlaying(),
+                    QStringLiteral("production session is playing before UI transitions"));
+    if (knownBrightFixture) {
+        verdict.metric(QStringLiteral("bright-fixture guard=enabled; black samples are failures"));
+    } else {
+        verdict.instrumentation(
+            false, QStringLiteral("black-frame detection requires explicit "
+                                  "MIKAI_DIALOG_PROBE_BRIGHT_FIXTURE=1 for the known-bright FFV1 fixture"));
+    }
+
+    const bool sceneShot = saveImage(result.window->grabWindow(), screenName);
+    verdict.require(sceneShot,
+                    QStringLiteral("actual production QQuickWindow screenshot saved to %1")
+                        .arg(evidencePath(screenName)));
+
+    const int beforeAutoHideSamples = validSamples;
+    QTest::mouseMove(result.window, QPoint(result.window->width() / 2,
+                                           result.window->height() / 2));
+    controller->closeMenus();
+    const bool autoHidden =
+        waitFor([&] { return controller->autoHidden(); }, 5000, samplePlayback);
+    verdict.require(autoHidden, QStringLiteral("playing production chrome auto-hid while frames "
+                                               "continued to be sampled"));
+    QElapsedTimer hiddenPeriod;
+    hiddenPeriod.start();
+    waitFor([&] { return hiddenPeriod.elapsed() >= 350; }, 500, samplePlayback);
+    verdict.require(validSamples > beforeAutoHideSamples,
+                    QStringLiteral("overlay-free output was sampled while chrome was hidden"));
+    const int beforeWakeSamples = validSamples;
+    controller->noteUserActivity();
+    const bool woke =
+        waitFor([&] { return !controller->autoHidden(); }, 1500, samplePlayback);
+    verdict.require(woke, QStringLiteral("real player activity restored the hidden chrome"));
+    QElapsedTimer awakePeriod;
+    awakePeriod.start();
+    waitFor([&] { return awakePeriod.elapsed() >= 350; }, 500, samplePlayback);
+    verdict.require(validSamples > beforeWakeSamples,
+                    QStringLiteral("overlay-free output was sampled while chrome was visible again"));
+
+    const bool playingForMenus = session->isPlaying();
+    verdict.require(playingForMenus, QStringLiteral("session remained playing before menu hover"));
+    const int beforeMenuSamples = validSamples;
+
+    if (exerciseMenus) {
+        const bool menu = exerciseEnhancementCascade(controller, result.window, verdict,
+                                                     samplePlayback);
+        if (menu) {
+            const bool menuShot = saveImage(result.window->grabWindow(),
+                                            QStringLiteral("dialog_probe_enhancements.png"));
+            verdict.require(menuShot, QStringLiteral("actual enhancement cascade screenshot saved"));
+        }
+        controller->closeMenus();
+        QElapsedTimer menuPeriod;
+        menuPeriod.start();
+        waitFor([&] { return menuPeriod.elapsed() >= 300; }, 400, samplePlayback);
+    }
+    verdict.require(session->isPlaying(),
+                    QStringLiteral("production session stayed playing through menu and list changes"));
+    verdict.require(validSamples > beforeMenuSamples,
+                    QStringLiteral("overlay-free frames were sampled during enhancement menu hover"));
+    verdict.require(backwardJumps == 0,
+                    QStringLiteral("source position did not jump backward during UI transitions "
+                                   "(observed %1 jumps)").arg(backwardJumps));
+    verdict.require(forwardJumps == 0,
+                    QStringLiteral("source position did not jump forward during UI transitions "
+                                   "(observed %1 jumps)").arg(forwardJumps));
+    if (knownBrightFixture) {
+        verdict.require(blackSamples == 0,
+                        QStringLiteral("known-bright FFV1 fixture produced no black overlay-free "
+                                       "samples (%1 black of %2)")
+                            .arg(blackSamples)
+                            .arg(validSamples));
+        verdict.metric(QStringLiteral("bright-frame samples=%1, black=%2")
+                           .arg(validSamples)
+                           .arg(blackSamples));
+    }
+    const double requiredAdvance = duration > 0.0
+                                       ? std::min(2.0, std::max(0.3, duration * 0.5))
+                                       : 2.0;
+    const bool paired =
+        waitFor([&] { return earlier.position >= 0.0 &&
+                             later.position >= earlier.position + requiredAdvance; },
+                8000, samplePlayback);
+    verdict.metric(QStringLiteral("session duration=%1 s, position=%2 s, playing=%3, video=%4x%5")
+                       .arg(session->duration(), 0, 'f', 2)
+                       .arg(session->position(), 0, 'f', 2)
+                       .arg(int(session->isPlaying()))
+                       .arg(session->videoWidth())
+                       .arg(session->videoHeight()));
+    verdict.require(loadError.isEmpty(),
+                    QStringLiteral("no playback error reported (%1)")
+                        .arg(loadError.isEmpty() ? QStringLiteral("none") : loadError));
+    verdict.require(paired,
+                    QStringLiteral("paired source-time samples advanced by %1 s during the live "
+                                   "production UI walk")
+                        .arg(requiredAdvance, 0, 'f', 2));
+    if (paired) {
+        const bool videoShot = saveImage(later.frame, videoName);
+        verdict.require(videoShot, QStringLiteral("overlay-free video evidence saved to %1")
+                                       .arg(evidencePath(videoName)));
+        requireMovingPicture(verdict, earlier, later);
+        QQuickItem* videoItem = result.window->videoItem();
+        const QSize expected = videoItem == nullptr
+                                   ? QSize()
+                                   : QSize(qRound(videoItem->width() * result.window->devicePixelRatio()),
+                                           qRound(videoItem->height() * result.window->devicePixelRatio()));
+        const bool ownTarget = !expected.isEmpty() &&
+                               qAbs(later.frame.width() - expected.width()) <= 1 &&
+                               qAbs(later.frame.height() - expected.height()) <= 1;
+        verdict.require(ownTarget,
+                        QStringLiteral("overlay-free capture matches production video item's "
+                                       "device-pixel geometry (%1x%2 vs %3x%4)")
+                            .arg(later.frame.width())
+                            .arg(later.frame.height())
+                            .arg(expected.width())
+                            .arg(expected.height()));
+    }
+    verdict.metric(QStringLiteral("live UI samples=%1, backward jumps=%2, forward jumps=%3")
+                       .arg(validSamples)
+                       .arg(backwardJumps)
+                       .arg(forwardJumps));
+
+    QObject::disconnect(frameSampleConnection);
+    const bool closeAccepted = closeWindow();
+    verdict.require(closeAccepted, QStringLiteral("production requestClose acknowledged teardown"));
+    if (closeAccepted) {
+        result.completed = !controller->isWindowVisible();
+        verdict.require(result.completed, QStringLiteral("acknowledged production window closed"));
+    }
+    return result;
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
+    // Select the production OpenGL surface before QApplication creates the
+    // GUI platform and scene graph. QSG_RENDER_LOOP is intentionally untouched:
+    // the shipping default is tested unless the caller explicitly overrides it.
+    const QByteArray requestedRenderLoop = qgetenv("QSG_RENDER_LOOP");
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+
     QApplication app(argc, argv);
-    // A close must not end the loop before the reopened run is judged.
     app.setQuitOnLastWindowClosed(false);
 
     QTemporaryDir settingsDir;
@@ -59,144 +671,37 @@ int main(int argc, char** argv) {
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
-    if (!mplayer::probes::selectRuntime()) {
+
+    if (evidenceDir().isEmpty()) {
+        std::fprintf(stderr, "FAIL MIKAI_DIALOG_PROBE_OUTPUT_DIR must name an absolute writable directory\n");
         return 2;
     }
+    if (!mplayer::probes::selectRuntime()) return 2;
 
-    static StubHost host;
-    const QString url = argc > 1 ? QString::fromLocal8Bit(argv[1])
-                                 : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25");
-    const QList<QualityEntry> qualities = {{720, url}};
-
-    const QVector<QVariantMap> playlist = [] {
-        QVector<QVariantMap> rows;
-        for (int i = 1; i <= 12; ++i) {
-            rows.append(QVariantMap{{"label", QStringLiteral("Серія %1").arg(i)}});
-        }
-        return rows;
-    }();
-
-    const auto buildDialog = [&] {
-        auto* dialog = new PlayerDialog(QStringLiteral("probe 720p"), url, qualities, 720, &host);
-        dialog->setVariants({QVariantMap{{"label", QStringLiteral("Ashdi 1080p")},
-                                         {"embed", QStringLiteral("e1")},
-                                         {"kind", QStringLiteral("voice")}},
-                             QVariantMap{{"label", QStringLiteral("Цукіхана 720p")},
-                                         {"embed", QStringLiteral("e2")},
-                                         {"kind", QStringLiteral("sub")}}},
-                            QStringLiteral("e1"));
-        dialog->setPlaylist(playlist, 2);
-        dialog->setSeriesExpanded(true);
-        dialog->startPlayer();
-        dialog->show();
-        return dialog;
-    };
-
+    // The first positional argument remains the media URL/path convention.
+    const QString url = argc > 1
+                            ? QString::fromLocal8Bit(argv[1])
+                            : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25");
     mplayer::probes::Verdict verdict;
+    verdict.metric(QStringLiteral("QSG_RENDER_LOOP request: %1")
+                       .arg(requestedRenderLoop.isEmpty()
+                                ? QStringLiteral("unset; Qt production default")
+                                : QString::fromLocal8Bit(requestedRenderLoop)));
 
-    // Evidence on disk only: a painted dialog over a dead surface looks identical.
-    const auto captureChrome = [&](PlayerDialog* dialog) {
-        auto* surface = dialog->findChild<mplayer::VideoSurface*>();
-        const QImage frame = dialog->grab().toImage();
-        frame.save(QStringLiteral("dialog_probe.png"));
-        verdict.metric(QStringLiteral("dialog %1x%2, visible children=%3")
-                           .arg(frame.width())
-                           .arg(frame.height())
-                           .arg(visibleChildren(dialog)));
-        auto* widgetShell = dialog->findChild<PlayerShell*>();
-        if (widgetShell != nullptr && surface != nullptr) {
-            verdict.metric(QStringLiteral("shell %1x%2, surface geometry %3x%4@%5,%6")
-                               .arg(widgetShell->width())
-                               .arg(widgetShell->height())
-                               .arg(surface->width())
-                               .arg(surface->height())
-                               .arg(surface->x())
-                               .arg(surface->y()));
-        }
-    };
+    RunResult first = runPlayer(url, QStringLiteral("dialog_gl.png"),
+                                QStringLiteral("dialog_probe.png"), true, verdict);
+    if (!first.completed) {
+        verdict.require(false, QStringLiteral("first player completed its acknowledged close"));
+        return verdict.report("dialog_probe");
+    }
+    if (first.controller != nullptr) {
+        delete first.controller.data();
+    }
 
-    const std::function<void(PlayerDialog*, const char*, bool, std::function<void()>)>
-        verifyPlayback = [&](PlayerDialog* dialog, const char* pngName, bool wantChrome,
-                             std::function<void()> done) {
-            auto* surface = dialog->findChild<mplayer::VideoSurface*>();
-            if (surface == nullptr) {
-                verdict.require(false, QStringLiteral("dialog exposes a VideoSurface"));
-                QTimer::singleShot(0, &app, [&] { app.exit(verdict.report("dialog_probe")); });
-                return;
-            }
-            auto sampler = std::make_shared<mplayer::probes::PlaybackSampler>(*surface);
-            auto clock = std::make_shared<QElapsedTimer>();
-            clock->start();
-            auto mediaError = std::make_shared<QString>();
-            QObject::connect(surface, &mplayer::VideoSurface::errorOccurred, dialog,
-                             [mediaError](const QString& message) { *mediaError = message; });
-
-            auto* timer = new QTimer(dialog);
-            timer->setInterval(100);
-            auto chromeShot = std::make_shared<bool>(false);
-            QObject::connect(
-                timer, &QTimer::timeout, dialog,
-                [&, dialog, surface, sampler, clock, mediaError, timer, chromeShot, pngName,
-                 wantChrome, done] {
-                    if (wantChrome && !*chromeShot && clock->elapsed() >= 2000) {
-                        *chromeShot = true;
-                        captureChrome(dialog);
-                    }
-                    const bool paired = sampler->tick();
-                    if (!(!mediaError->isEmpty() || (paired && clock->elapsed() >= 4000) ||
-                          clock->elapsed() >= 9000)) {
-                        return;
-                    }
-                    timer->stop();
-
-                    const mplayer::probes::PlaybackSample& sample = sampler->later();
-                    verdict.metric(
-                        QStringLiteral("duration=%1 s, playing=%2, position=%3 s, video=%4x%5")
-                            .arg(surface->duration(), 0, 'f', 2)
-                            .arg(int(surface->isPlaying()))
-                            .arg(sample.position, 0, 'f', 2)
-                            .arg(sample.videoWidth)
-                            .arg(sample.videoHeight));
-                    verdict.metric(QStringLiteral("native status: polling=%1 (native work not "
-                                                  "requested); filter presence/absence not "
-                                                  "proven by this probe")
-                                       .arg(int(surface->nativeStatusPolling())));
-
-                    const bool saved =
-                        sample.hasPicture() && sample.framebuffer.save(QString::fromLatin1(pngName));
-                    verdict.metric(QStringLiteral("framebuffer png %1: %2")
-                                       .arg(QString::fromLatin1(pngName),
-                                            saved ? QStringLiteral("written")
-                                                  : QStringLiteral("FAILED")));
-                    verdict.require(
-                        saved, QStringLiteral("framebuffer PNG written to %1")
-                                   .arg(QString::fromLatin1(pngName)));
-
-                    verdict.require(mediaError->isEmpty(),
-                                    QStringLiteral("no playback error reported (%1)")
-                                        .arg(mediaError->isEmpty() ? QStringLiteral("none")
-                                                                   : *mediaError));
-
-                    mplayer::probes::requirePlayback(verdict, sampler->earlier(), sampler->later());
-
-                    // WA_DeleteOnClose: close() alone deletes it next loop turn.
-                    QPointer<PlayerDialog> guard(dialog);
-                    dialog->close();
-                    QTimer::singleShot(200, &app, [&, guard, done] {
-                        verdict.require(guard.isNull(),
-                                        QStringLiteral("dialog closed and destroyed"));
-                        done();
-                    });
-                });
-            timer->start();
-        };
-
-    auto* dialog = buildDialog();
-    verifyPlayback(dialog, "dialog_gl.png", /*wantChrome=*/true, [&] {
-        auto* reopened = buildDialog();
-        verifyPlayback(reopened, "dialog_gl_reopen.png", /*wantChrome=*/false,
-                       [&] { app.exit(verdict.report("dialog_probe")); });
-    });
-
-    return app.exec();
+    RunResult reopened = runPlayer(url, QStringLiteral("dialog_gl_reopen.png"),
+                                   QStringLiteral("dialog_probe_reopen.png"), true, verdict);
+    if (reopened.controller != nullptr) delete reopened.controller.data();
+    verdict.require(reopened.completed,
+                    QStringLiteral("player closed and reopened with a new production session"));
+    return verdict.report("dialog_probe");
 }

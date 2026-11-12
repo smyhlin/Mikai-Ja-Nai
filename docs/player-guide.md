@@ -2,6 +2,8 @@
 
 This guide covers the player window, catalogue episodes, local videos and URLs. Catalogue playback is resolved through the selected provider; local playback is a separate file-player workflow. For processing and component setup, see the [processing guide](processing-guide.md).
 
+The player window is a native Qt Quick scene: its video, transport controls, menus, timeline previews and shortcut/resume overlays share one scene and controller. Picture-in-picture changes that same window to a compact layout; it does not create a second player or decode session. The separate Compare and Clip tools remain auxiliary windows, as do Settings and its browsing pages.
+
 ## Start playback
 
 ### Catalogue episode
@@ -22,7 +24,7 @@ The player does not move or delete a local source file. Local media can have emb
 
 ![Player window with a paused local colour-pattern video, the dock, timeline and transport controls](images/gallery-2026-11-05/player.png)
 
-*A local file paused mid-playback, original pipeline, no processing preset. The pictured clip is a synthetic project-generated 12-second 320×180 HEVC colour-pattern fixture, not a provider stream or anime footage.*
+*A local file paused mid-playback, original pipeline, no processing preset. The pictured clip is a synthetic project-generated 12-second 320×180 HEVC colour-pattern fixture, not a provider stream or anime footage. This is a November 2026 capture of the prior player layout; it is not a screenshot of the current Quick scene.*
 
 Catalogue variant selection and local track selection are different operations: a catalogue choice selects a provider variant, while a local-file choice selects a track in the active media.
 
@@ -40,7 +42,7 @@ Catalogue variant selection and local track selection are different operations: 
 
 In fullscreen, the dock and its overlays hide after about 2.5 seconds without pointer movement. That idle hide is deferred while the pointer rests on the timeline, the volume control or the dock, while an overlay is open, or during a drag. The next movement brings the chrome back. In windowed mode the dock stays visible.
 
-The **Q** flyout is a card, not a menu. It holds a **SPEED** slider from 0.25x to 2.0x with preset rows (**0.5x Slow**, **1.0x Normal**, **1.2x Slightly faster**, **1.5x Fast**, **1.7x Very fast**, **2.0x Double speed**), a **QUALITY** list when the provider offers resolutions, the **SCALING** quick modes, and **Set as default video player…**. Dragging the slider changes speed while it moves; choosing a speed, quality or scaling row closes the flyout. **Set as default video player…** registers the app as an available video player and opens the platform's default-applications settings so you can choose it; it never changes your defaults itself. If that settings page cannot be opened, a warning says where to pick the app instead.
+The **Q** control opens the in-scene **Settings** menu. It lists the speed presets (**0.5x Slow**, **1.0x Normal**, **1.2x Slightly faster**, **1.5x Fast**, **1.7x Very fast**, **2.0x Double speed**), quick **SCALING** modes, and **Make mikai the default video player**. Speed and scaling choices can be adjusted without leaving the menu. Default-player registration adds Mikai as a candidate and opens the platform's default-applications settings; it does not change your default automatically.
 
 ## Keyboard, mouse and window navigation
 
@@ -59,7 +61,7 @@ The player’s **?** or **/** shortcut overlay lists the available keys:
 | `↑` / `↓` | Volume ±10% |
 | `Esc` | Dismiss the topmost open panel/overlay; when none remain, close the player |
 
-A left-button double-click on the player picture also toggles fullscreen/windowed. **Esc** is a sequence, not an immediate close: open panels are dismissed first. The picture context menu provides **Copy frame**, **Compare quality**, **Copy link**, **Open containing folder** when applicable, **Media information** for local media, **Keyboard shortcuts**, and **Exit**.
+A left-button double-click on the player picture also toggles fullscreen/windowed. **Esc** is a sequence, not an immediate close: open panels are dismissed first. Right-click the picture for an in-scene menu with **Copy frame**, **Compare quality**, **Copy link**, **Open containing folder** and **Media information** when applicable, **Cut moment…**, **Subtitles ›**, **Keyboard shortcuts (?)**, and **Exit (Esc)**. **Copy frame** captures the currently presented picture to the clipboard. Menus are scene overlays rather than separate popup windows; keyboard focus stays in the player.
 
 ## Episode resume and watch state
 
@@ -73,11 +75,9 @@ In a windowed or fullscreen frameless player the top-right corner holds **Minimi
 
 ## Picture-in-picture
 
-Choose the player’s PiP control (**Picture in picture**) to open a frameless, always-on-top floating player; the expand control (**Return to the window**) goes back to the main player window. The float uses its own playback surface for the same stream, while the original surface is paused. PiP carries its own play/pause, volume slider and mute controls, plus its own clock.
+Choose the player’s **Picture in picture** control to compact the same player window and session; playback does not restart, switch surfaces or create a second decode. **Restore full player** returns to the full layout, and **Close player** closes the player. PiP keeps the timeline, position/remaining-time readout, play/pause, −85/+85 seek, volume, audio/subtitle menus and player settings menu available in its compact controls. Compare and the other picture-context actions are not shown in the compact layout.
 
-In PiP, **← / →** seeks backward/forward by 10 seconds, **Space** toggles play/pause and **Esc** closes the float. The seek steps use the float's own playback clock and preserve its paused state.
-
-PiP behavior is window-manager dependent. On Wayland, the compositor controls interactive movement/resizing and may not honor always-on-top. Closing the float closes the player rather than silently leaving hidden playback behind.
+The window manager controls movement, resizing and stacking. On Wayland, the compositor may not honor movement, resize or always-on-top requests. Restoring returns to the full player; closing PiP closes the player session.
 
 ## HDR and media badges
 
@@ -85,11 +85,12 @@ In **Settings → Application → Access → HDR playback**, choose **Auto (reco
 
 The title details sidebar links its format, status, studio, genres and tags to catalogue filters. Its poster opens the cover viewer, its titles can be copied, and **Episodes** jumps to the episode list. Other metadata remains selectable text.
 
-**Video scaling**, on the card below, offers **Native (fit to window)**, **Fill (crop edges)**, **Stretch**, **16:9**, **4:3** and **Original size (1:1)**, followed by a zoom percentage and upscaler/downscaler choices. The **SCALING** section of the player settings flyout repeats the first five modes as quick switches. On the settings card, **Stretch** disables the zoom field because it ignores the percentage. A running player adopts a saved change without a restart, and a paused picture redraws once the writes complete. PiP follows the same policy; Compare holds Fit with no zoom while it owns the picture. **Original size (1:1)** and the scalers remain Settings-only choices.
+**Video scaling**, on the card below, offers **Native (fit to window)**, **Fill (crop edges)**, **Stretch**, **16:9**, **4:3** and **Original size (1:1)**, followed by a zoom percentage and upscaler/downscaler choices. The **SCALING** section of the player’s **Q** Settings menu repeats the first five modes as quick switches. On the settings card, **Stretch** disables the zoom field because it ignores the percentage. A running player adopts a saved change without a restart, and a paused picture redraws once the writes complete. PiP follows the same policy; Compare holds Fit with no zoom while it owns the picture. **Original size (1:1)** and the scalers remain Settings-only choices.
 
-While an engine build holds playback, the player shows **Preparing enhancement — playback paused** instead of an unexplained frozen picture. Closing the player during that build shows **Finishing enhancement…** if the stop takes more than a third of a second, and does not keep the window up for the old eleven-second settle. A source change keeps the last presented picture until the new source produces a frame; that is a visual hold, not proof that playback is still advancing.
+While an engine build holds playback, the player shows **Preparing enhancement — playback paused** instead of an unexplained frozen picture. The preparation progress appears in a separate non-activating status window; closing the player during that build shows **Finishing enhancement…** if the stop takes more than a third of a second, and does not keep the window up for the old eleven-second settle. A source change keeps the last presented picture until the new source produces a frame; that is a visual hold, not proof that playback is still advancing.
 
 The separate **Native enhancement for HDR** checkbox permits processing that is normally skipped on HDR sources. The required stages use 8-bit NV12; enabling the override does not convert the source to SDR and may reduce HDR image quality. Unknown transfer metadata is not proof that a source is SDR, so this override should not be described as enabling processing for unknown sources.
+During an episode resume, the themed **Continue** / **Start over** offer is presented in the player scene after media duration is known, rather than as a nested window during loading. The offer is shown at most once for that media load. **Continue** seeks to the saved position; changing processing or entering PiP does not create another resume offer.
 
 Player badges such as **HDR**, **DV**, **ATMOS**, and the codec name reflect metadata reported by the source. A missing badge means the container did not report that metadata; a badge does not verify the display’s output. Processing chains are not guaranteed to preserve HDR; see the [processing guide](processing-guide.md) for processing limitations.
 
@@ -111,7 +112,7 @@ The subtitle selector ends with a **Subtitle delay** group: **0.1 s earlier**, *
 
 ## Subtitles from OpenSubtitles
 
-Right-click the picture → **Subtitles ›** offers **From disk…** for local or network video and **OpenSubtitles…**. The second opens a search dialog seeded with the current caption and the system language, with the language list selectable. Enter a free API key from opensubtitles.com — it is stored in the app-data folder, protected with Windows DPAPI on Windows and in a file only your user account can read elsewhere, never in the application's settings, and reused — then **Search**, pick a result and **Download and attach**. The file is written to a temporary folder that lives as long as the player and attached with the same `sub-add` path as a disk file, so it appears in the subtitle selector immediately.
+Right-click the picture → **Subtitles ›** offers **From disk…** for local or network video and **OpenSubtitles…**. The second opens a search dialog seeded with the current caption and system language, with the language list selectable. Enter a free API key from opensubtitles.com — it is stored in the app-data folder, protected with Windows DPAPI on Windows and in a file only your user account can read elsewhere, never in the application's settings, and reused — then **Search**, pick a result and **Download and attach**. The file is written to a temporary folder that lives as long as the player and attached with the same `sub-add` path as a disk file, so it appears in the subtitle selector immediately.
 
 The search is a boundary of its own: it needs network access and the key, and it is the only player feature that talks to a service other than Mikai and the catalogue providers. Nothing is uploaded — the query is the title text you see in the dialog and the language code.
 
@@ -119,7 +120,7 @@ The search is a boundary of its own: it needs network access and the key, and it
 
 Subtitle files can be selected from disk or dropped onto either a local video or a network stream. Audio files from disk remain limited to local videos.
 
-- **Right-click the picture** → **Subtitles → From disk…** works with local and network video; **Load audio from disk…** is available for local video.
+- **Right-click the picture** → **Subtitles → From disk…** works with local and network video. For local video, **Select audio from disk…** is in the audio-track menu.
 - **The subtitles selector** on the dock ends with **Select subtitles from disk…**. The audio selector's disk action remains local-only.
 - **Drop the file on the picture**: `.srt`, `.ass`, `.ssa`, `.vtt`, `.sub` and `.sup` attach as subtitles; `.m4a`, `.aac`, `.mp3`, `.opus`, `.flac`, `.wav`, `.ac3`, `.eac3`, `.dts` and `.ogg` attach as audio on local videos. Dropping a video file still opens it as a new source.
 
@@ -139,7 +140,7 @@ With a video active, choose **Compare quality** from the player’s picture cont
 
 For native AnimeJaNai models, Compare renders candidates by replaying the real source through an isolated core configured with the player's hardware decoder (`nvdec`/`d3d11`) and filter string verbatim. The replay pauses the core, loads at pre-roll, awaits engine configuration, seeks exactly to `held − (depth + 1)` frames, and steps frames forward to the held position rather than reloading the stream (which would destroy the configured engine instance and present a pass-through frame). The offscreen renderer draws strictly when `MPV_RENDER_UPDATE_FRAME` is signalled, verifies that output geometry matches the configured engine, and gates results with `PictureMetrics` against an unprocessed same-pipeline baseline. Candidates producing blank output, flat contrast (<24 levels), or lack of scale-normalized detail (<0.5 levels on a 1024 px normalized copy) are refused with an explanation instead of presenting an invalid frame.
 
-Compare is unavailable while Picture-in-picture owns playback, and a missing shaders folder or too few variants is reported in the player instead of opening an empty window. An AnimeJaNai spatial candidate that names a downloaded upscaler builds (or reuses) its engine before it renders; while a required build is pending, the pane reports that it is unavailable. When a source refuses the second decode Compare needs for its own capture — a signed or single-use stream URL, for instance — it can use the frozen original frame from the playing surface with its filters removed for that read. Closing or switching a side while a build is in flight waits for the filter to detach rather than terminating the process. Compare holds playback paused while the comparison is open, then resumes it on close only if it was playing beforehand — and a pause you request during the comparison is kept. Use each side’s selector, the badge under its picture, to choose a candidate; comparison is for inspecting outputs at a captured position, not a live second playback.
+Compare uses the active player session and can be opened from either the full or compact player layout. A missing shaders folder or too few variants is reported in the player instead of opening an empty window. An AnimeJaNai spatial candidate that names a downloaded upscaler builds (or reuses) its engine before it renders; while a required build is pending, the pane reports that it is unavailable. When a source refuses the second decode Compare needs for its own capture — a signed or single-use stream URL, for instance — it can use the frozen original frame from the playing surface with its filters removed for that read. Closing or switching a side while a build is in flight waits for the filter to detach rather than terminating the process. Compare holds playback paused while the comparison is open, then resumes it on close only if it was playing beforehand — and a pause you request during the comparison is kept. Use each side’s selector, the badge under its picture, to choose a candidate; comparison is for inspecting outputs at a captured position, not a live second playback.
 
 Choose a view in the **Mode:** menu; the window opens in **Side-by-side**:
 
@@ -158,7 +159,7 @@ Choose **Bilinear** or **Nearest Neighbor** in the **Filter:** list for scaling.
 
 ## Cut a moment
 
-Use **Cut moment…** in the player’s feature controls to save a short MP4 from an eligible seekable video with a known duration. Unknown-duration or non-seekable sources cannot provide the range timeline. This exports the original source media, not the enhanced picture shown in the player; subtitles are not burned into the clip. It does not require an external FFmpeg installation.
+Choose **Cut moment…** from the picture context menu or the player dock to save a short MP4 from an eligible seekable video with a known duration. Unknown-duration or non-seekable sources cannot provide the range timeline. This exports the original source media, not the enhanced picture shown in the player; subtitles are not burned into the clip. It does not require an external FFmpeg installation.
 
 1. The timeline is the **two minutes before and after** the moment you opened **Cut moment…**, not the whole episode: a long source cannot be dragged to the frame on one rail. The header names the available window, and nothing can be dragged outside it.
 2. Set the clip by dragging either bracket handle, or drag the highlighted span to move it whole. **In** and **Out** move the boundary to the playhead; the `[` and `]` keys do the same. The presets (`5s` … `60s`) set the length, and the headline reads *30.0 s of 60* — the selection against the exporter's limit. A selection cannot be shorter than 0.05 s or longer than 60 s.

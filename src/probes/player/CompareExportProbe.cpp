@@ -1,10 +1,11 @@
 #include "CompareExportDialog.hpp"
 #include "CompareExportComplete.hpp"
 #include "CompareWindow.hpp"
-#include "PlayerDialog.hpp"
+#include "quick/PlayerController.hpp"
+#include "quick/PlayerWindow.hpp"
 #include "ProbeIsolation.hpp"
 #include "ProbeRuntime.hpp"
-#include "VideoSurface.hpp"
+#include "core/VideoSession.hpp"
 
 #include <QApplication>
 #include <QClipboard>
@@ -261,14 +262,25 @@ int main(int argc, char** argv) {
     }
     const QString destination = QDir(output).filePath(QStringLiteral("comparison.gif"));
     PlaybackHost host;
-    QPointer<mplayer::shell::PlayerDialog> player = new mplayer::shell::PlayerDialog(
-        QStringLiteral("Compare export smoke"), media, {{1080, media}}, 1080, &host);
-    auto* surface = player->findChild<mplayer::VideoSurface*>();
+    QPointer<mplayer::quick::PlayerController> player =
+        new mplayer::quick::PlayerController(
+            QStringLiteral("Compare export smoke"), media, {{1080, media}}, 1080, &host);
+    mplayer::quick::PlayerWindow* playerWindow = player->window();
+    auto* surface = player->session();
     player->startPlayer();
-    player->show();
+    playerWindow->showWindowed();
     if (!waitUntil([&] { return surface->hasVideo() && surface->position() > 0.5; }, 15000)) return 1;
-    auto* compare = new mplayer::shell::CompareWindow(surface, QStringLiteral("off"), player);
-    compare->show();
+    player->openCompare();
+    mplayer::shell::CompareWindow* compare = nullptr;
+    if (!waitUntil([&] {
+            for (QWidget* widget : QApplication::topLevelWidgets()) {
+                if (auto* candidate = qobject_cast<mplayer::shell::CompareWindow*>(widget)) {
+                    compare = candidate;
+                    return true;
+                }
+            }
+            return false;
+        }, 15000)) return 1;
     if (!waitUntil([&] {
             return !compare->comparisonPending() && !compare->renderedSideA().isNull() &&
                    !compare->renderedSideB().isNull();
@@ -336,7 +348,7 @@ int main(int argc, char** argv) {
                 auto* picker = qobject_cast<QFileDialog*>(widget);
                 if (picker != nullptr && picker->isVisible()) pickerWasOpen = true;
             }
-            if (player) player->close();
+            if (player) delete player.data();
         });
         browse->click();
     });

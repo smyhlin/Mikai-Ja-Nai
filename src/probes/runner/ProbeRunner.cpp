@@ -1,14 +1,14 @@
-// The manifest runner's mechanics. Every widget it acts on is reached through
-// QObject::findChild(objectName); every wait is an event loop with a deadline,
-// never a bare sleep; every assertion reads observable state (a QObject
-// property, an mpv property, a signal count, a child object) and is printed
-// with what it actually saw against what the manifest expected.
+// The manifest runner's mechanics. Every Qt control it acts on is reached
+// through an objectName or the controller's actual menu model; every wait is
+// an event loop with a deadline; every assertion reads observable state (a
+// QObject property, an mpv property, a signal count, a child object) and is
+// printed with what it actually saw against what the manifest expected.
 //
 // The signal vocabulary is resolved dynamically from the live objects, so the
-// names a manifest may use are exactly the signals the surface, dialog and
-// shell declare (see the runner report). Resolving by name rather than by a
-// compiled signature keeps a reworded or renamed signal a manifest failure that
-// names itself instead of a runner that silently stops observing.
+// names a manifest may use are exactly the signals the window, controller and
+// session declare. Resolving by name rather than by a compiled signature keeps
+// a reworded or renamed signal a manifest failure that names itself instead of
+// a runner that silently stops observing.
 
 #include "ProbeRunner.hpp"
 
@@ -29,6 +29,8 @@
 #include <QVariant>
 #include <QVector>
 #include <QWidget>
+#include <QWindow>
+#include <QQuickItem>
 
 #include <cmath>
 #include <cstdio>
@@ -43,8 +45,10 @@
 #include "pages/MainWindow.hpp"
 #include "workers/Runner.hpp"
 
-#include "PlayerDialog.hpp"
-#include "PlayerShell.hpp"
+#include "PlayerController.hpp"
+#include "PlayerWindow.hpp"
+#include "VideoSession.hpp"
+#include "state/NativePlaybackAssembly.hpp"
 #include "VideoSurface.hpp"
 
 namespace mikai::probes {
@@ -56,9 +60,10 @@ using mikai::app::SettingsDialog;
 using mikai::backend::MikaiClient;
 using mplayer::ProbePropertyKind;
 using mplayer::ProbePropertyValue;
+using mplayer::VideoSession;
 using mplayer::VideoSurface;
-using mplayer::shell::PlayerDialog;
-using mplayer::shell::PlayerShell;
+using mplayer::quick::PlayerController;
+using mplayer::quick::PlayerWindow;
 using mplayer::shell::QualityEntry;
 
 constexpr int kContextTimeoutMs = 20000;
@@ -68,25 +73,22 @@ constexpr double kFrozenEpsilon = 0.05;
 constexpr int kFrozenHoldMs = 400;
 
 /// The host a seeded series answers to. Every row points at the manifest's
-/// own media, so an episode request re-applies what is already open through
-/// the dialog's own applyEpisode path rather than inventing a stream. Anything
-/// the runner cannot answer (tracks, variants, recovery) is a named refusal
-/// on the dialog's status line, never a silent drop.
+/// own media, so selecting one exercises the controller's production episode
+/// path rather than inventing a stream.
 class ProbePlayerHost : public mplayer::shell::PlayerHost {
 public:
-    mplayer::shell::PlayerDialog* dialog = nullptr;
+    PlayerController* controller = nullptr;
     /// The rows and qualities the runner seeded, so an episode request
-    /// re-applies known state rather than reaching into the dialog.
+    /// re-applies known state through the production controller.
     QVector<QVariantMap> rows;
     QList<QualityEntry> qualities;
-    int height = 0;
 
     void requestVariant(const QString&, const QString&) override {}
     void requestEpisode(int index) override {
-        if (dialog == nullptr || index < 0 || index >= rows.size()) return;
+        if (controller == nullptr || index < 0 || index >= rows.size()) return;
         const QString label = rows.at(index).value(QStringLiteral("label")).toString();
         const QString embed = rows.at(index).value(QStringLiteral("embed")).toString();
-        dialog->applyEpisode(label, embed, index, qualities, {});
+        controller->applyEpisode(label, embed, index, qualities, {});
     }
     void requestTrackProbe(const QString&) override {}
     void requestCopyStreamUrl() override {}
@@ -95,15 +97,18 @@ public:
 };
 
 struct Surface {
-    QWidget* root = nullptr;   ///< the shown window steps are found under
-    VideoSurface* video = nullptr;  ///< the mpv screen, for core reads and settles
-    bool dialog = false;
+    QObject* root = nullptr;   ///< the shown window steps are found under
+    VideoSurface* video = nullptr;  ///< optional render view for the bare surface mode
+    VideoSession* session = nullptr;  ///< engine state and commands, for every player mode
+    PlayerController* controller = nullptr;
+    bool settingsDialog = false;
     /// The settings dialog borrows these, so the Surface owns them and is reset
     /// only after the dialog is destroyed; every other surface leaves them null.
     std::unique_ptr<MikaiClient> client;
     std::unique_ptr<Runner> runner;
-    /// The seeded-series host outlives the dialog it answers for.
+    /// The controller borrows this host; member order destroys the controller first.
     std::unique_ptr<ProbePlayerHost> extraHost;
+    std::unique_ptr<PlayerController> player;
 };
 
 void report(bool passed, const QString& line) {
@@ -211,7 +216,7 @@ Verdict compareValues(const QString& comparison, const QVariant& actual, const Q
     return {false, QStringLiteral("unknown comparison '%1'").arg(op)};
 }
 
-QObject* findByName(QWidget* root, const QString& name) {
+QObject* findByName(QObject* root, const QString& name) {
     if (root == nullptr || name.isEmpty()) {
         return nullptr;
     }
@@ -220,13 +225,25 @@ QObject* findByName(QWidget* root, const QString& name) {
     }
     return root->findChild<QObject*>(name);
 }
+QObject* findTarget(const Surface& surface, const QString& name) {
+    if (surface.controller != nullptr && surface.controller->objectName() == name) {
+        return surface.controller;
+    }
+    if (surface.controller != nullptr && name.startsWith(QLatin1String("menu:"))) {
+        return surface.controller->menuModel(name.mid(5));
+    }
+    QObject* root = surface.root;
+    if (root == nullptr || name.isEmpty()) return nullptr;
+    if (root->objectName() == name) return root;
+    return root->findChild<QObject*>(name);
+}
 
 QWidget* widgetTarget(const Surface& surface, const QString& name, QString* reason) {
     if (name.isEmpty()) {
         *reason = QStringLiteral("the step names no widget");
         return nullptr;
     }
-    QObject* object = findByName(surface.root, name);
+    QObject* object = findTarget(surface, name);
     if (object == nullptr) {
         *reason = QStringLiteral("no widget named '%1'").arg(name);
         return nullptr;
@@ -238,20 +255,42 @@ QWidget* widgetTarget(const Surface& surface, const QString& name, QString* reas
     }
     return widget;
 }
+bool objectVisible(QObject* object) {
+    if (object == nullptr) return false;
+    if (auto* widget = qobject_cast<QWidget*>(object)) return widget->isVisible();
+    if (auto* window = qobject_cast<QWindow*>(object)) return window->isVisible();
+    const int visibleIndex = object->metaObject()->indexOfProperty("visible");
+    return visibleIndex >= 0 && object->property("visible").toBool();
+}
 
-/// Who a named signal is looked for on, in order. The dialog is the window, the
-/// shell owns the media controls, the surface owns playback; a manifest names a
-/// signal and the runner finds the object that declares it.
+bool visibleMenuMatches(const Surface& surface, const QString& menuId) {
+    if (surface.root == nullptr || menuId.isEmpty()) return false;
+    const QList<QObject*> objects = surface.root->findChildren<QObject*>();
+    for (QObject* object : objects) {
+        if (object == nullptr) continue;
+        const int menuIdIndex = object->metaObject()->indexOfProperty("menuId");
+        if (menuIdIndex < 0 || object->property("menuId").toString() != menuId) continue;
+        if (objectVisible(object)) return true;
+    }
+    return false;
+}
+
+QPoint windowPoint(const QQuickItem* item, const QPointF& localPoint) {
+    return item->mapToScene(localPoint).toPoint();
+}
+
+/// Signal names are resolved on the actual window, controller and playback
+/// session that implement the selected surface.
 QVector<QObject*> signalCandidates(const Surface& surface) {
     QVector<QObject*> candidates;
-    if (surface.dialog && surface.root != nullptr) {
+    if (surface.root != nullptr) {
         candidates.append(surface.root);
-        if (auto* shell = surface.root->findChild<PlayerShell*>()) {
-            candidates.append(shell);
-        }
     }
-    if (surface.video != nullptr) {
-        candidates.append(surface.video);
+    if (surface.controller != nullptr) {
+        candidates.append(surface.controller);
+    }
+    if (surface.session != nullptr) {
+        candidates.append(surface.session);
     }
     return candidates;
 }
@@ -376,31 +415,37 @@ std::function<bool()> makePredicate(const ProbeStep& step, const Surface& surfac
     key.remove(QLatin1Char('_'));
     const QString target = step.target;
 
+    if (key == QLatin1String("menuopen")) {
+        return [&surface, target] {
+            return surface.controller != nullptr && surface.controller->menuStackVisible() &&
+                   visibleMenuMatches(surface, target);
+        };
+    }
     if (key == QLatin1String("playing") || key == QLatin1String("mpvplaying")) {
-        return [&surface] { return surface.video != nullptr && surface.video->isPlaying(); };
+        return [&surface] { return surface.session != nullptr && surface.session->isPlaying(); };
     }
     if (key == QLatin1String("paused") || key == QLatin1String("mpvpaused")) {
-        return [&surface] { return surface.video != nullptr && !surface.video->isPlaying(); };
+        return [&surface] { return surface.session != nullptr && !surface.session->isPlaying(); };
     }
     if (key == QLatin1String("hasvideo")) {
-        return [&surface] { return surface.video != nullptr && surface.video->hasVideo(); };
+        return [&surface] { return surface.session != nullptr && surface.session->hasVideo(); };
     }
     if (key == QLatin1String("contextready")) {
-        return [&surface] { return surface.video != nullptr && surface.video->isContextReady(); };
+        return [&surface] { return surface.session != nullptr && surface.session->isContextReady(); };
     }
     if (key == QLatin1String("durationknown") || key == QLatin1String("positionknown")) {
-        return [&surface] { return surface.video != nullptr && surface.video->duration() > 0.0; };
+        return [&surface] { return surface.session != nullptr && surface.session->duration() > 0.0; };
     }
     if (key == QLatin1String("positionadvanced")) {
-        return [&surface] { return surface.video != nullptr && surface.video->position() > 0.0; };
+        return [&surface] { return surface.session != nullptr && surface.session->position() > 0.0; };
     }
     if (key == QLatin1String("positionincreasing")) {
         auto baseline = std::make_shared<double>(-1.0);
         return [&surface, baseline] {
-            if (surface.video == nullptr) {
+            if (surface.session == nullptr) {
                 return false;
             }
-            const double position = surface.video->position();
+            const double position = surface.session->position();
             if (*baseline < 0.0) {
                 *baseline = position;
                 return false;
@@ -416,10 +461,10 @@ std::function<bool()> makePredicate(const ProbeStep& step, const Surface& surfac
         };
         auto probe = std::make_shared<FrozenProbe>();
         return [&surface, probe] {
-            if (surface.video == nullptr) {
+            if (surface.session == nullptr) {
                 return false;
             }
-            const double position = surface.video->position();
+            const double position = surface.session->position();
             if (!probe->started) {
                 probe->started = true;
                 probe->last = position;
@@ -437,28 +482,22 @@ std::function<bool()> makePredicate(const ProbeStep& step, const Surface& surfac
     if (key == QLatin1String("mpvpause") || key == QLatin1String("mpvpausecleared")) {
         const bool wantPaused = (key == QLatin1String("mpvpause"));
         return [&surface, wantPaused] {
-            if (surface.video == nullptr) {
+            if (surface.session == nullptr) {
                 return false;
             }
-            const auto value = surface.video->probeMpvProperty(QStringLiteral("pause"),
-                                                               ProbePropertyKind::Flag);
+            const auto value = surface.session->probeMpvProperty(QStringLiteral("pause"),
+                                                                 ProbePropertyKind::Flag);
             return value.has_value() && value->flag == wantPaused;
         };
     }
     if (key == QLatin1String("widgetexists")) {
-        return [&surface, target] { return findByName(surface.root, target) != nullptr; };
+        return [&surface, target] { return findTarget(surface, target) != nullptr; };
     }
-    if (key == QLatin1String("widgetvisible")) {
-        return [&surface, target] {
-            auto* widget = qobject_cast<QWidget*>(findByName(surface.root, target));
-            return widget != nullptr && widget->isVisible();
-        };
+    if (key == QLatin1String("widgetvisible") || key == QLatin1String("objectvisible")) {
+        return [&surface, target] { return objectVisible(findTarget(surface, target)); };
     }
-    if (key == QLatin1String("widgethidden")) {
-        return [&surface, target] {
-            auto* widget = qobject_cast<QWidget*>(findByName(surface.root, target));
-            return widget == nullptr || !widget->isVisible();
-        };
+    if (key == QLatin1String("widgethidden") || key == QLatin1String("objecthidden")) {
+        return [&surface, target] { return !objectVisible(findTarget(surface, target)); };
     }
     return {};
 }
@@ -466,58 +505,101 @@ std::function<bool()> makePredicate(const ProbeStep& step, const Surface& surfac
 bool runStep(const ProbeStep& step, const Surface& surface, QString* reason) {
     switch (step.kind) {
         case ProbeStep::Kind::Click: {
-            QWidget* widget = widgetTarget(surface, step.target, reason);
-            if (widget == nullptr) {
+            QObject* object = findTarget(surface, step.target);
+            if (auto* widget = qobject_cast<QWidget*>(object)) {
+                QCoreApplication::processEvents();
+                QTest::mouseClick(widget, Qt::LeftButton, Qt::NoModifier, widget->rect().center());
+                return true;
+            }
+            auto* item = qobject_cast<QQuickItem*>(object);
+            auto* window = item != nullptr ? item->window() : nullptr;
+            if (item == nullptr || window == nullptr) {
+                *reason = QStringLiteral("no clickable widget or Quick item named '%1'")
+                              .arg(step.target);
                 return false;
             }
             QCoreApplication::processEvents();
-            QTest::mouseClick(widget, Qt::LeftButton, Qt::NoModifier, widget->rect().center());
+            const QPoint point = windowPoint(item, QPointF(item->width() / 2.0, item->height() / 2.0));
+            QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point);
             return true;
         }
         case ProbeStep::Kind::DoubleClick: {
-            QWidget* widget = widgetTarget(surface, step.target, reason);
-            if (widget == nullptr) {
+            QObject* object = findTarget(surface, step.target);
+            if (auto* widget = qobject_cast<QWidget*>(object)) {
+                QCoreApplication::processEvents();
+                QTest::mouseDClick(widget, Qt::LeftButton, Qt::NoModifier, widget->rect().center());
+                return true;
+            }
+            auto* item = qobject_cast<QQuickItem*>(object);
+            auto* window = item != nullptr ? item->window() : nullptr;
+            if (item == nullptr || window == nullptr) {
+                *reason = QStringLiteral("no double-clickable widget or Quick item named '%1'")
+                              .arg(step.target);
                 return false;
             }
             QCoreApplication::processEvents();
-            QTest::mouseDClick(widget, Qt::LeftButton, Qt::NoModifier, widget->rect().center());
+            const QPoint point = windowPoint(item, QPointF(item->width() / 2.0, item->height() / 2.0));
+            QTest::mouseDClick(window, Qt::LeftButton, Qt::NoModifier, point);
             return true;
         }
         case ProbeStep::Kind::MouseMove: {
-            QWidget* widget = widgetTarget(surface, step.target, reason);
-            if (widget == nullptr) {
+            QObject* object = findTarget(surface, step.target);
+            QCoreApplication::processEvents();
+            const double fraction = step.position >= 0.0 ? step.position : 0.5;
+            if (auto* widget = qobject_cast<QWidget*>(object)) {
+                const QPoint point(qRound(widget->width() * fraction), widget->height() / 2);
+                QTest::mouseMove(widget, point);
+                return true;
+            }
+            auto* item = qobject_cast<QQuickItem*>(object);
+            auto* window = item != nullptr ? item->window() : nullptr;
+            if (item == nullptr || window == nullptr) {
+                *reason = QStringLiteral("no hoverable widget or Quick item named '%1'")
+                              .arg(step.target);
                 return false;
             }
-            QCoreApplication::processEvents();
-            // No button is held: this is the hover path a move or enter handler
-            // answers, not a click that happens to land somewhere.
-            const double fraction = step.position >= 0.0 ? step.position : 0.5;
-            const QPoint point(qRound(widget->width() * fraction), widget->height() / 2);
-            QTest::mouseMove(widget, point);
+            const QPoint point =
+                windowPoint(item, QPointF(item->width() * fraction, item->height() / 2.0));
+            QTest::mouseMove(window, point);
             return true;
         }
         case ProbeStep::Kind::Drag: {
-            QWidget* widget = widgetTarget(surface, step.target, reason);
-            if (widget == nullptr) {
+            QObject* object = findTarget(surface, step.target);
+            QCoreApplication::processEvents();
+            if (auto* widget = qobject_cast<QWidget*>(object)) {
+                // Press, move and release through the control's own handlers.
+                const QPoint start(qRound(widget->width() * step.position),
+                                   widget->height() / 2);
+                const QPoint end(qRound(widget->width() * step.positionEnd),
+                                 widget->height() / 2);
+                QTest::mousePress(widget, Qt::LeftButton, Qt::NoModifier, start);
+                QTest::mouseMove(widget, end);
+                QTest::mouseRelease(widget, Qt::LeftButton, Qt::NoModifier, end);
+                return true;
+            }
+            auto* item = qobject_cast<QQuickItem*>(object);
+            auto* window = item != nullptr ? item->window() : nullptr;
+            if (item == nullptr || window == nullptr) {
+                *reason = QStringLiteral("no draggable widget or Quick item named '%1'")
+                              .arg(step.target);
                 return false;
             }
-            QCoreApplication::processEvents();
-            // Press, move and release inside the widget, so the drag reports
-            // through its own press/move/release handlers rather than by a
-            // direct property write. The parser refuses a drag with no start.
-            const QPoint start(qRound(widget->width() * step.position), widget->height() / 2);
-            const QPoint end(qRound(widget->width() * step.positionEnd), widget->height() / 2);
-            QTest::mousePress(widget, Qt::LeftButton, Qt::NoModifier, start);
-            QTest::mouseMove(widget, end);
-            QTest::mouseRelease(widget, Qt::LeftButton, Qt::NoModifier, end);
+            const QPoint start = windowPoint(
+                item, QPointF(item->width() * step.position, item->height() / 2.0));
+            const QPoint end = windowPoint(
+                item, QPointF(item->width() * step.positionEnd, item->height() / 2.0));
+            QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, start);
+            QTest::mouseMove(window, end);
+            QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, end);
             return true;
         }
         case ProbeStep::Kind::KeyPress: {
-            QWidget* target = surface.root != nullptr ? surface.root->focusWidget() : nullptr;
-            if (target == nullptr) {
-                target = surface.root;
+            QWidget* target = nullptr;
+            if (auto* widgetRoot = qobject_cast<QWidget*>(surface.root)) {
+                target = widgetRoot->focusWidget();
+                if (target == nullptr) target = widgetRoot;
             }
-            if (target == nullptr) {
+            if (target == nullptr && surface.root == nullptr) {
                 *reason = QStringLiteral("there is no window to deliver a key to");
                 return false;
             }
@@ -527,11 +609,18 @@ bool runStep(const ProbeStep& step, const Surface& surface, QString* reason) {
                 *reason = QStringLiteral("no key named '%1'").arg(step.key);
                 return false;
             }
-            QTest::keyClick(target, key, modifiers);
+            if (target != nullptr) {
+                QTest::keyClick(target, key, modifiers);
+            } else if (auto* window = qobject_cast<QWindow*>(surface.root)) {
+                QTest::keyClick(window, key, modifiers);
+            } else {
+                *reason = QStringLiteral("the surface root is not a key event target");
+                return false;
+            }
             return true;
         }
         case ProbeStep::Kind::SetValue: {
-            QObject* object = findByName(surface.root, step.target);
+            QObject* object = findTarget(surface, step.target);
             if (object == nullptr) {
                 *reason = QStringLiteral("no widget named '%1'").arg(step.target);
                 return false;
@@ -562,11 +651,18 @@ bool runStep(const ProbeStep& step, const Surface& surface, QString* reason) {
             return true;
         }
         case ProbeStep::Kind::Focus: {
-            QWidget* widget = widgetTarget(surface, step.target, reason);
-            if (widget == nullptr) {
+            QObject* object = findTarget(surface, step.target);
+            if (auto* widget = qobject_cast<QWidget*>(object)) {
+                widget->setFocus(Qt::OtherFocusReason);
+            } else if (auto* item = qobject_cast<QQuickItem*>(object)) {
+                item->forceActiveFocus(Qt::OtherFocusReason);
+            } else if (auto* window = qobject_cast<QWindow*>(object)) {
+                window->requestActivate();
+            } else {
+                *reason = QStringLiteral("no focusable widget, Quick item or window named '%1'")
+                              .arg(step.target);
                 return false;
             }
-            widget->setFocus(Qt::OtherFocusReason);
             QCoreApplication::processEvents();
             return true;
         }
@@ -574,7 +670,7 @@ bool runStep(const ProbeStep& step, const Surface& surface, QString* reason) {
             QObject* emitter = nullptr;
             QMetaMethod method;
             if (!resolveSignal(signalCandidates(surface), step.name, &emitter, &method)) {
-                *reason = QStringLiteral("no signal named '%1' on the surface, dialog or shell")
+                *reason = QStringLiteral("no signal named '%1' on the window, controller or session")
                               .arg(step.name);
                 return false;
             }
@@ -654,35 +750,39 @@ bool buildSurface(const ProbeManifest& manifest, Surface* surface, QString* reas
         surface->runner = std::make_unique<Runner>();
         auto* dialog = new SettingsDialog(*surface->client, *surface->runner, nullptr);
         surface->root = dialog;
-        surface->dialog = true;
+        surface->settingsDialog = true;
         dialog->setWindowTitle(title);
         dialog->resize(manifest.width, manifest.height);
         dialog->show();
         return true;
     }
-    if (manifest.surface == ProbeSurface::PlayerDialog) {
+    if (manifest.surface == ProbeSurface::PlayerWindow) {
         if (manifest.media.isEmpty()) {
             *reason = QStringLiteral(
-                          "the player_dialog surface needs media, and manifest '%1' names none")
+                          "the player_dialog manifest surface needs media, and manifest '%1' names none")
                           .arg(manifest.name);
             return false;
         }
-        // One entry at the manifest height: the dialog then opens exactly the
-        // stream the manifest named, through its own startPlayer path.
+        // Keep the manifest's stream and optional episode rows, but drive them
+        // through the production Quick controller and its app-owned assembly.
         const QList<QualityEntry> qualities{{manifest.height, manifest.media}};
-        // Episodes share the host the runner already owns: each row points at
-        // the manifest's own media, so picking one re-opens what is already
-        // open rather than reaching for a stream that does not exist.
-        auto* host = new ProbePlayerHost();
-        host->dialog = nullptr; // attached below, so applyEpisode cannot run early
-        auto* dialog = new PlayerDialog(
+        surface->runner = std::make_unique<Runner>();
+        surface->extraHost = std::make_unique<ProbePlayerHost>();
+        surface->player = std::make_unique<PlayerController>(
             manifest.name.isEmpty() ? QStringLiteral("probe") : manifest.name, manifest.media,
-            qualities, manifest.height, manifest.episodes.isEmpty() ? nullptr : host);
-        surface->extraHost.reset(host);
-        host->dialog = dialog;
-        surface->root = dialog;
-        surface->dialog = true;
-        dialog->setWindowTitle(title);
+            qualities, manifest.height,
+            manifest.episodes.isEmpty() ? nullptr : surface->extraHost.get());
+        surface->controller = surface->player.get();
+        surface->controller->setObjectName(QStringLiteral("playerController"));
+        surface->session = surface->controller->session();
+        PlayerWindow* window = surface->controller->window();
+        if (window == nullptr || surface->session == nullptr) {
+            *reason = QStringLiteral("the production player exposes no window or VideoSession");
+            return false;
+        }
+        surface->root = window;
+        window->setTitle(title);
+        window->resize(QSize(manifest.width, manifest.height));
         if (!manifest.episodes.isEmpty()) {
             QVector<QVariantMap> playlist;
             for (const QString& label : manifest.episodes) {
@@ -691,32 +791,28 @@ bool buildSurface(const ProbeManifest& manifest, Surface* surface, QString* reas
                 row.insert(QStringLiteral("embed"), manifest.media);
                 playlist.append(row);
             }
-            host->rows = playlist;
-            host->qualities = qualities;
-            host->height = manifest.height;
-            dialog->setPlaylist(playlist, 0);
+            surface->extraHost->rows = playlist;
+            surface->extraHost->qualities = qualities;
+            surface->extraHost->controller = surface->controller;
+            surface->controller->setPlaylist(playlist, 0);
         }
-        dialog->startPlayer();
-        dialog->resize(manifest.width, manifest.height);
-        dialog->show();
-        auto* video = dialog->findChild<VideoSurface*>();
-        if (video == nullptr) {
-            *reason = QStringLiteral("the player dialog exposes no VideoSurface");
+        mikai::app::bindNativePlaybackAssembly(*surface->runner, *surface->controller);
+        surface->controller->showWindow();
+        if (!surface->session->waitForContext(kContextTimeoutMs)) {
+            *reason = QStringLiteral(
+                          "the production player's VideoSession never created a render context");
             return false;
         }
-        surface->video = video;
-        if (!video->waitForContext(kContextTimeoutMs)) {
-            *reason = QStringLiteral("the dialog's VideoSurface never created a render context");
-            return false;
-        }
+        surface->controller->startPlayer();
         return true;
     }
 
     auto* video = new VideoSurface();
     surface->root = video;
     surface->video = video;
+    surface->session = video->session();
     // The standalone surface has no other identity to be found under, so it
-    // carries the name the dialog's own surface uses.
+    // carries the name the standalone surface probe expects.
     video->setObjectName(QStringLiteral("videoSurface"));
     video->setWindowTitle(title);
     video->resize(manifest.width, manifest.height);
@@ -725,7 +821,7 @@ bool buildSurface(const ProbeManifest& manifest, Surface* surface, QString* reas
         *reason = QStringLiteral("the VideoSurface never created a render context");
         return false;
     }
-    if (!manifest.media.isEmpty() && !video->open(manifest.media)) {
+    if (!manifest.media.isEmpty() && !surface->session->open(manifest.media)) {
         *reason = QStringLiteral("the mpv engine refused to open '%1'").arg(manifest.media);
         return false;
     }
@@ -734,25 +830,35 @@ bool buildSurface(const ProbeManifest& manifest, Surface* surface, QString* reas
 
 QString teardown(Surface* surface) {
     QString problem;
-    // Settle the native work while the GL context is still alive, exactly as the
-    // close paths do; then close and destroy so no core outlives the run.
-    if (surface->video != nullptr && !surface->video->settleNativeForTeardown(kTeardownSettleMs)) {
+    // Settle native work while the render context is alive, then use the
+    // production controller's acknowledged close path.
+    if (surface->session != nullptr &&
+        !surface->session->settleNativeForTeardown(kTeardownSettleMs)) {
         problem = QStringLiteral("the surface did not acknowledge its native stop");
     }
-    if (surface->dialog) {
-        QPointer<QWidget> guard(surface->root);
+    if (surface->controller != nullptr) {
+        if (!surface->controller->requestClose() && problem.isEmpty()) {
+            problem = QStringLiteral("the production player refused to close");
+        }
+        surface->player.reset();
+        surface->controller = nullptr;
+        surface->video = nullptr;
+        surface->session = nullptr;
+        surface->root = nullptr;
+    } else if (surface->settingsDialog) {
+        QPointer<QWidget> guard(qobject_cast<QWidget*>(surface->root));
         if (auto* dialog = qobject_cast<QDialog*>(guard.data())) {
             dialog->close();
         }
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         if (!guard.isNull()) {
-            // The dialog refused to close (an unsettled core) or its delete was
-            // deferred past this turn: destroy it here so nothing leaks.
+            // The dialog refused to close or its delete was deferred: destroy
+            // the owned settings dialog so nothing survives the manifest.
             delete guard.data();
         }
     } else if (surface->video != nullptr) {
+        if (surface->session != nullptr) surface->session->close();
         surface->video->hide();
-        surface->video->close();
         delete surface->video;
     }
     *surface = Surface{};
@@ -817,9 +923,13 @@ void evaluateAssertion(const ProbeAssertion& assertion, const Surface& surface, 
                 out->reason = armReason;
                 return;
             }
-            out->actual = QStringLiteral("%1 emission(s)").arg(emissions);
-            out->expected = QStringLiteral(">= 1");
-            out->passed = emissions > 0;
+            if (assertion.expected.isValid()) {
+                finishComparison(assertion, emissions, out);
+            } else {
+                out->actual = QStringLiteral("%1 emission(s)").arg(emissions);
+                out->expected = QStringLiteral(">= 1");
+                out->passed = emissions > 0;
+            }
             return;
         }
         case ProbeAssertion::Kind::SignalNotEmitted: {
@@ -839,7 +949,7 @@ void evaluateAssertion(const ProbeAssertion& assertion, const Surface& surface, 
                 out->reason = QStringLiteral("the assertion names no widget");
                 return;
             }
-            const bool exists = findByName(surface.root, assertion.target) != nullptr;
+            const bool exists = findTarget(surface, assertion.target) != nullptr;
             out->actual = exists ? QStringLiteral("present") : QStringLiteral("absent");
             out->expected = QStringLiteral("present");
             out->passed = exists;
@@ -859,12 +969,19 @@ void evaluateAssertion(const ProbeAssertion& assertion, const Surface& surface, 
                 out->reason = QStringLiteral("the assertion names no widget");
                 return;
             }
-            QObject* object = findByName(surface.root, assertion.target);
+            QObject* object = findTarget(surface, assertion.target);
             if (object == nullptr) {
                 out->reason = QStringLiteral("no widget named '%1'").arg(assertion.target);
                 return;
             }
             const QByteArray name = assertion.property.toUtf8();
+            if (auto* model = qobject_cast<mplayer::quick::PlayerMenuModel*>(object);
+                model != nullptr) {
+                if (assertion.property == QLatin1String("rowCount")) {
+                    finishComparison(assertion, model->rowCount(), out);
+                    return;
+                }
+            }
             if (object->metaObject()->indexOfProperty(name.constData()) < 0) {
                 out->actual = QStringLiteral("<no such property>");
                 out->reason = QStringLiteral("'%1' has no Q_PROPERTY named '%2'")
@@ -876,12 +993,12 @@ void evaluateAssertion(const ProbeAssertion& assertion, const Surface& surface, 
         }
         case ProbeAssertion::Kind::MpvProperty: {
             out->label = QStringLiteral("MpvProperty %1").arg(assertion.property);
-            if (surface.video == nullptr) {
-                out->reason = QStringLiteral("there is no VideoSurface to read mpv from");
+            if (surface.session == nullptr) {
+                out->reason = QStringLiteral("there is no VideoSession to read mpv from");
                 return;
             }
             const std::optional<ProbePropertyValue> value =
-                surface.video->probeMpvProperty(assertion.property, toMpvKind(assertion.mpvKind));
+                surface.session->probeMpvProperty(assertion.property, toMpvKind(assertion.mpvKind));
             if (!value.has_value()) {
                 out->actual = QStringLiteral("<unreadable>");
                 out->reason = QStringLiteral("mpv property '%1' could not be read")
@@ -1017,7 +1134,7 @@ ProbeRunResult ProbeRunner::run(const ProbeManifest& manifest) {
         QMetaMethod method;
         if (!resolveSignal(candidates, assertion.property, &emitter, &method)) {
             armReasons[index] =
-                QStringLiteral("no signal named '%1' on the surface, dialog or shell")
+                QStringLiteral("no signal named '%1' on the window, controller or session")
                     .arg(assertion.property);
             continue;
         }

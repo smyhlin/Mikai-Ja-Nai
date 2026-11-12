@@ -40,12 +40,8 @@ constexpr int kCornerReach = kRadius + 3;
 constexpr int kMaxLayerExtent = 2048;
 
 /// True when `toDevice` maps logical units to device pixels at exactly `ratio`,
-/// without rotation, shear or a second scale: the only case where a layer
-/// tagged with `ratio` lands one texel per device pixel, so the blit may turn
-/// its filter off instead of softening an exact copy. This is the rule the
-/// shell blits its cached chrome by (ShellWidgets.cpp, deviceAlignedTransform);
-/// it is restated here because gui/ is the lower layer of the two and must not
-/// include the player's shell headers.
+/// without rotation, shear or a second scale: a layer tagged with `ratio` then
+/// lands one texel per device pixel, so the blit can avoid filtering an exact copy.
 bool deviceAlignedTransform(const QTransform& toDevice, qreal ratio) {
     return toDevice.isInvertible() && qFuzzyCompare(toDevice.m11(), ratio) &&
            qFuzzyCompare(toDevice.m22(), ratio) && qFuzzyIsNull(toDevice.m12()) &&

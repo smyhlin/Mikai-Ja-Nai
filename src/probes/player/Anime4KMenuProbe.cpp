@@ -1,70 +1,54 @@
-// Anime4K menu probe: the real popovers, every preset leaf, persistence across
-// a reopen, and the pixels mpv actually draws.
+// Anime4K menu probe: production Quick menu activation, live shader chains,
+// rendered picture changes, persistence, Compare isolation and same-window PiP.
 //
-//   - the dock's enhancement button opens a tree of panels standing side by
-//     side, one per level, with no Back row: a category opens the level beside
-//     the one it sits in, the levels above it stay, the levels below it close
-//   - every leaf is only ever reached from a menu opened for it, and each one
-//     has to reach its exact catalogue id AND put that preset's ordered chain
-//     into mpv's glsl-shaders, stage for stage
-//   - the experiment that was picked has to survive a close/reopen: the chain
-//     id, the info chip, the marked menu row, and the rendered picture
-//   - Compare offers every shader preset and public spatial AnimeJaNai model,
-//     excludes RIFE/private/loose candidates, and leaves the player chain untouched
+// Rows are activated through QML's real pointer handlers. The menu model and
+// mpv's shader-property echo are checked as evidence, but neither substitutes
+// for the pixel comparison proving the shader actually rendered.
 //
-// Rows are addressed by the catalogue id the shell hangs on them, never by the
-// label printed on them, so nothing here fails because a menu was reworded or a
-// translation changed.
-//
-// mpv hands glsl-shaders back without validating it, so the echo alone cannot
-// prove a preset runs. The rendered difference against a measured noise floor
-// is the proof, which is why this plays real video instead of reading sources.
-//
-// Run from the repo root, with the shaders deployed beside the exe:
+// Run with the shaders deployed beside the executable:
 //   build-cmake/anime4k_menu_probe.exe
 
 #include <QAction>
 #include <QApplication>
-#include <QHash>
+#include <QCoreApplication>
+#include <QEvent>
 #include <QDir>
-#include <QFileInfo>
 #include <QFile>
+#include <QFileInfo>
+#include <QHash>
 #include <QImage>
-#include <QLabel>
 #include <QMenu>
-#include <QMouseEvent>
-#include <QPixmap>
 #include <QPointer>
-#include <QPushButton>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QSettings>
 #include <QTemporaryDir>
+#include <QTest>
 #include <QThread>
 #include <QToolButton>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
+#include <optional>
 
 #include "Anime4K.hpp"
 #include "CompareWindow.hpp"
-#include "PlayerDialog.hpp"
-#include "PlayerPopups.hpp"
-#include "PlayerShell.hpp"
-#include "ShellTheme.hpp"
-#include "ShellWidgets.hpp"
-#include "VideoSurface.hpp"
+#include "native/components/AnimeJanaiRuntime.hpp"
+#include "PlayerController.hpp"
+#include "PlayerMenuModel.hpp"
+#include "PlayerWindow.hpp"
 #include "ProbeRuntime.hpp"
+#include "VideoSession.hpp"
 
 using namespace mplayer;
-using namespace mplayer::shell;
+using namespace mplayer::quick;
 
 namespace {
 
 constexpr int kSourceWidth = 480;
 constexpr int kSourceHeight = 270;
 constexpr auto kExperiment = "exp_3d_graphics";
-
 int failures = 0;
 
 void check(bool ok, const char* what) {
@@ -73,43 +57,34 @@ void check(bool ok, const char* what) {
 }
 
 void pump(int milliseconds) {
-    for (int waited = 0; waited < milliseconds; waited += 20) {
+    for (int elapsed = 0; elapsed < milliseconds; elapsed += 20) {
         QCoreApplication::processEvents();
         QThread::msleep(20);
     }
     QCoreApplication::processEvents();
 }
 
-template <typename Done>
-bool waitUntil(Done done, int timeoutMs) {
-    for (int waited = 0; waited < timeoutMs; waited += 40) {
+template <typename Predicate>
+bool waitUntil(Predicate predicate, int timeoutMs) {
+    for (int elapsed = 0; elapsed < timeoutMs; elapsed += 40) {
         QCoreApplication::processEvents();
-        if (done()) return true;
+        if (predicate()) return true;
         QThread::msleep(40);
     }
-    return done();
+    return predicate();
 }
 
-// ── the picture, measured rather than assumed ───────────────────────────
-//
-// mpv fits the video to the widget and centres it, so the band the picture
-// occupies follows from the source aspect alone. It is trimmed by an eighth:
-// where a letterbox bar meets the picture two frames differ hugely, and that
-// edge would swamp the signal.
-
 QRect pictureBand(const QImage& frame) {
-    if (frame.isNull() || frame.width() < 64 || frame.height() < 64) return QRect();
+    if (frame.isNull() || frame.width() < 64 || frame.height() < 64) return {};
     const double scale = std::min(double(frame.width()) / kSourceWidth,
                                   double(frame.height()) / kSourceHeight);
     const int width = int(kSourceWidth * scale);
     const int height = int(kSourceHeight * scale);
-    if (width < 64 || height < 64) return QRect();
-    return QRect((frame.width() - width) / 2 + width / 8,
-                 (frame.height() - height) / 2 + height / 8,
-                 width * 3 / 4, height * 3 / 4);
+    if (width < 64 || height < 64) return {};
+    return {(frame.width() - width) / 2 + width / 8,
+            (frame.height() - height) / 2 + height / 8, width * 3 / 4, height * 3 / 4};
 }
 
-/// Mean absolute channel difference over the picture band, 0…255.
 double bandDifference(const QImage& before, const QImage& after) {
     const QRect band = pictureBand(before);
     if (band.isEmpty() || after.isNull() || after.size() != before.size()) return -1.0;
@@ -122,7 +97,8 @@ double bandDifference(const QImage& before, const QImage& after) {
         const uchar* b = right.constScanLine(y);
         for (int x = band.left(); x < band.right(); ++x) {
             const int at = x * 3;
-            sum += std::abs(int(a[at]) - int(b[at])) + std::abs(int(a[at + 1]) - int(b[at + 1])) +
+            sum += std::abs(int(a[at]) - int(b[at])) +
+                   std::abs(int(a[at + 1]) - int(b[at + 1])) +
                    std::abs(int(a[at + 2]) - int(b[at + 2]));
             count += 3;
         }
@@ -130,8 +106,6 @@ double bandDifference(const QImage& before, const QImage& after) {
     return count > 0 ? sum / double(count) : -1.0;
 }
 
-/// Peak-to-peak luma across the band: a blank or uniform framebuffer reads
-/// near zero, a decoded frame of testsrc2 does not.
 int bandRange(const QImage& frame) {
     const QRect band = pictureBand(frame);
     if (band.isEmpty()) return -1;
@@ -150,15 +124,12 @@ int bandRange(const QImage& frame) {
     return high - low;
 }
 
-/// A framebuffer that has stopped changing: three identical grabs, not two,
-/// because the first can still be the picture from before the chain rebuilt.
-QImage settledFrame(VideoSurface* surface, int timeoutMs = 6000) {
+QImage settledFrame(PlayerWindow* window, int timeoutMs = 6000) {
     QImage previous;
     int stable = 0;
-    for (int waited = 0; waited < timeoutMs; waited += 40) {
+    for (int elapsed = 0; elapsed < timeoutMs; elapsed += 40) {
         QCoreApplication::processEvents();
-        QThread::msleep(40);
-        QImage current = surface->grabVideoFramebuffer();
+        QImage current = window->grabVideoFrame();
         if (!current.isNull()) current = current.convertToFormat(QImage::Format_RGB32);
         if (!current.isNull() && current == previous) {
             if (++stable >= 3) return current;
@@ -166,331 +137,248 @@ QImage settledFrame(VideoSurface* surface, int timeoutMs = 6000) {
             stable = 0;
         }
         previous = current;
+        QThread::msleep(40);
     }
-    return QImage();
+    return {};
 }
 
-// ── driving the real popovers ───────────────────────────────────────────
-//
-// Rows are found by the identity the shell hangs on them - a catalogue level or
-// a catalogue preset id - and never by the words printed on them. A menu label
-// is display text: it is translated, it is reworded, and a probe that hunts for
-// a string it once saw calls a working menu broken the moment either happens.
-// The panel itself is found by the level the shell records on it, for the same
-// reason: every level below the root is the same pooled widget under the same
-// name.
-
-int rowFor(MenuPopup* panel, const QString& id);
-
-/// The visible panel showing catalogue `levelId`, waited for up to `timeoutMs`.
-/// A timeout of zero samples once and answers immediately, which is what a
-/// caller asking "is this level still up?" wants - waiting there would only
-/// turn a closed level into a stall.
-MenuPopup* levelPanel(QWidget* host, const QString& levelId, int timeoutMs = 4000) {
-    for (int waited = 0; waited == 0 || waited < timeoutMs; waited += 40) {
-        QCoreApplication::processEvents();
-        for (MenuPopup* panel : host->findChildren<MenuPopup*>()) {
-            if (!panel->isVisible()) continue;
-            // The root records no level, so it is the panel carrying the Anime4K
-            // root row; every level below it records the catalogue level it
-            // shows. Reading both off the panel's own rows and properties keeps a
-            // popover that never had a level assigned out of an empty-level
-            // lookup, without pinning a widget name a cosmetic rename can break.
-            const bool matches =
-                levelId.isEmpty() ? rowFor(panel, QStringLiteral("anime4k")) >= 0
-                                  : panel->property("enhancementLevel").toString() == levelId;
-            if (matches) return panel;
-        }
-        QThread::msleep(40);
+QQuickItem* menuPanel(PlayerWindow* window, const QString& menuId) {
+    if (window == nullptr || window->rootObject() == nullptr) return nullptr;
+    for (QQuickItem* item : window->rootObject()->findChildren<QQuickItem*>()) {
+        if (item->property("menuId").toString() == menuId &&
+            item->property("menuModel").isValid() && item->isVisible()) return item;
     }
     return nullptr;
 }
 
-int rowFor(MenuPopup* panel, const QString& id) {
-    if (panel == nullptr) return -1;
-    for (int spot = 0; spot < panel->rowCount(); ++spot) {
-        const QString payload = panel->entryAt(spot).payload.toString();
-        if (payload == QLatin1String("level|") + id || payload == QLatin1String("preset|") + id) {
-            return spot;
-        }
+QQuickItem* menuRow(PlayerWindow* window, const QString& menuId, const QString& value,
+                    bool submenu = false) {
+    QQuickItem* panel = menuPanel(window, menuId);
+    if (panel == nullptr) return nullptr;
+    for (QQuickItem* item : panel->findChildren<QQuickItem*>()) {
+        if (!item->isVisible() || item->property("rowValue").toString() != value) continue;
+        if (item->property("rowSubmenu").toBool() == submenu) return item;
     }
-    return -1;
+    return nullptr;
 }
 
-QPushButton* rowButton(MenuPopup* panel, const QString& id) {
-    const int spot = rowFor(panel, id);
-    if (spot < 0) return nullptr;
-    return qobject_cast<QPushButton*>(panel->rowWidget(spot));
-}
-
-/// The catalogue ids of every preset row on `panel`, in the order the menu
-/// shows them. Read off the rows' own payloads, so the answer is the menu's and
-/// not a copy of it.
-QStringList presetIdsOn(MenuPopup* panel) {
-    QStringList ids;
-    if (panel == nullptr) return ids;
-    for (int spot = 0; spot < panel->rowCount(); ++spot) {
-        const QString payload = panel->entryAt(spot).payload.toString();
-        if (payload.startsWith(QLatin1String("preset|"))) {
-            ids << payload.mid(7);
-        }
-    }
-    return ids;
-}
-
-QStringList categoryIdsOn(MenuPopup* panel) {
-    QStringList ids;
-    if (panel == nullptr) return ids;
-    for (int spot = 0; spot < panel->rowCount(); ++spot) {
-        const QString payload = panel->entryAt(spot).payload.toString();
-        if (payload.startsWith(QLatin1String("level|"))) ids << payload.mid(6);
-    }
-    return ids;
-}
-
-/// A real press-then-release on a visible row, delivered to the widget itself
-/// rather than injected through the window system: the probe drives the same
-/// Qt controls a viewer clicks, without depending on which window the desktop
-/// happens to have in front.
-void realClick(QWidget* widget) {
-    const QPointF at = widget->rect().center();
-    const QPointF global = widget->mapToGlobal(at.toPoint());
-    QMouseEvent press(QEvent::MouseButtonPress, at, global, Qt::LeftButton, Qt::LeftButton,
-                      Qt::NoModifier);
-    QApplication::sendEvent(widget, &press);
-    QMouseEvent release(QEvent::MouseButtonRelease, at, global, Qt::LeftButton, Qt::NoButton,
-                        Qt::NoModifier);
-    QApplication::sendEvent(widget, &release);
-}
-
-bool clickRow(MenuPopup* panel, const QString& id) {
-    QPushButton* row = rowButton(panel, id);
-    if (row == nullptr || !row->isEnabled()) return false;
-    realClick(row);
+bool clickRow(PlayerWindow* window, const QString& menuId, const QString& value,
+              bool submenu = false) {
+    QQuickItem* row = menuRow(window, menuId, value, submenu);
+    if (row == nullptr) return false;
+    const QPoint point = row->mapToScene(QPointF(row->width() / 2.0, row->height() / 2.0)).toPoint();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point);
     QCoreApplication::processEvents();
     return true;
 }
 
-/// The dock's sparkle button, found by the glyph it paints rather than by a
-/// tooltip string: the tooltip is translated, the glyph is not, and the shell
-/// has exactly one spark button. The chrome auto-hides, and a hidden button is
-/// not one a viewer could press, so the shell is woken first.
-QPushButton* enhanceButton(PlayerShell* shell, QWidget* dialog) {
-    shell->wake();
-    QCoreApplication::processEvents();
-    for (IconButton* button : dialog->findChildren<IconButton*>()) {
-        if (button->isVisible() && button->icon() == &IconPainter::spark) {
-            return button;
+bool openAnimeRoot(PlayerController* controller, PlayerWindow* window) {
+    emit controller->menuOpenRequested(QStringLiteral("enhancements"));
+    return waitUntil([&] { return menuPanel(window, QStringLiteral("enhancements")) != nullptr; }, 3000) &&
+           clickRow(window, QStringLiteral("enhancements"), QStringLiteral("anime4k"), true) &&
+           waitUntil([&] { return menuPanel(window, QStringLiteral("anime4k")) != nullptr; }, 3000);
+}
+
+bool clickLeaf(const QString& category, const QString& id, PlayerController* controller,
+               PlayerWindow* window) {
+    if (!openAnimeRoot(controller, window)) return false;
+    QString parent = QStringLiteral("anime4k");
+    if (!category.isEmpty()) {
+        const QStringList parts = category.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+        for (int i = 1; i < parts.size(); ++i) {
+            const QString child = parent + QLatin1Char('/') + parts.at(i);
+            if (!clickRow(window, parent, child, true) ||
+                !waitUntil([&] { return menuPanel(window, child) != nullptr; }, 3000)) return false;
+            parent = child;
         }
     }
-    return nullptr;
+    return clickRow(window, parent, id, false);
 }
 
-struct Menus {
-    MenuPopup* enhancements = nullptr;
-    MenuPopup* anime = nullptr;
-};
-
-bool openEnhancements(PlayerShell* shell, QWidget* dialog, Menus& menus) {
-    QPushButton* trigger = enhanceButton(shell, dialog);
-    if (trigger == nullptr) return false;
-    realClick(trigger);
-    QCoreApplication::processEvents();
-    menus.enhancements = levelPanel(dialog, QString());
-    return menus.enhancements != nullptr;
-}
-
-bool openAnimeRoot(PlayerShell* shell, QWidget* dialog, Menus& menus) {
-    if (!openEnhancements(shell, dialog, menus)) return false;
-    if (!clickRow(menus.enhancements, QStringLiteral("anime4k"))) return false;
-    menus.anime = levelPanel(dialog, QStringLiteral("anime4k"));
-    return menus.anime != nullptr;
-}
-
-/// Root, then each catalogue level of `path`, then the leaf. A leaf is only
-/// ever reached from a menu opened for it, and every level is reopened from the
-/// top: the tree is pooled, so a level left standing is one the next visit
-/// would inherit.
-bool clickLeaf(const QStringList& path, const QString& presetId, PlayerShell* shell,
-               QWidget* dialog, Menus& menus) {
-    if (!openAnimeRoot(shell, dialog, menus)) return false;
-    for (const QString& levelId : path) {
-        if (!clickRow(menus.anime, levelId)) return false;
-        menus.anime = levelPanel(dialog, levelId);
-        if (menus.anime == nullptr) return false;
-    }
-    return clickRow(menus.anime, presetId);
-}
-
-/// Whether mpv is running exactly the chain the catalogue holds for `id`.
-///
-/// This is the end-to-end wiring: menu row → stable id → glsl-shaders. The
-/// files are looked for in order and the stage count is compared too, so a
-/// preset that gained or lost a step cannot pass. The echo is still mpv's own
-/// word - the pixel checks below are what prove the chain drew anything.
-bool chainMatches(VideoSurface* surface, const QString& id) {
+bool chainMatches(VideoSession* session, const QString& id) {
     const QStringList expected = anime4k::filesForId(id);
-    const QString live = surface->effectiveShaderChain();
-    const int staged = live.isEmpty() ? 0 : live.count(QLatin1String(".glsl"));
+    const QString live = session->effectiveShaderChain();
     int found = -1;
     for (const QString& file : expected) {
         found = live.indexOf(file, found + 1);
         if (found < 0) return false;
     }
-    return staged == expected.size() && anime4k::chainIsComplete(anime4k::candidateForId(id));
+    const int staged = live.isEmpty() ? 0 : live.count(QLatin1String(".glsl"));
+    return staged == expected.size() &&
+           anime4k::chainIsComplete(anime4k::candidateForId(id));
 }
 
-/// mpv acknowledges a glsl-shaders write asynchronously and reports the chain
-/// only from its own observer, so a read taken straight after the menu click
-/// can still be the chain from before it: wait for the real one instead.
-bool chainSettlesTo(VideoSurface* surface, const QString& id, int timeoutMs = 8000) {
-    return waitUntil([surface, id] { return chainMatches(surface, id); }, timeoutMs);
+bool chainSettlesTo(VideoSession* session, const QString& id, int timeoutMs = 8000) {
+    return waitUntil([session, id] { return chainMatches(session, id); }, timeoutMs);
 }
 
-bool chainSettlesOff(VideoSurface* surface, int timeoutMs = 8000) {
-    return waitUntil([surface] { return surface->effectiveShaderChain().isEmpty(); }, timeoutMs);
-}
-
-void shoot(QWidget* widget, const QString& name) {
-    check(widget != nullptr, "there is a widget to screenshot");
-    if (widget == nullptr) return;
-    const QString path = QDir::current().filePath(QStringLiteral("build-cmake/") + name);
-    const bool written =
-        QDir().mkpath(QFileInfo(path).absolutePath()) && widget->grab().save(path);
-    check(written, (QStringLiteral("screenshot written: ") + name).toUtf8().constData());
+bool chainSettlesOff(VideoSession* session, int timeoutMs = 8000) {
+    return waitUntil([session] { return session->effectiveShaderChain().isEmpty(); }, timeoutMs);
 }
 
 void saveFrame(const QImage& frame, const QString& name) {
     const QString path = QDir::current().filePath(QStringLiteral("build-cmake/") + name);
-    const bool written =
-        !frame.isNull() && QDir().mkpath(QFileInfo(path).absolutePath()) && frame.save(path);
-    check(written, (QStringLiteral("framebuffer written: ") + name).toUtf8().constData());
+    check(!frame.isNull() && QDir().mkpath(QFileInfo(path).absolutePath()) && frame.save(path),
+          (QStringLiteral("framebuffer written: ") + name).toUtf8().constData());
 }
-std::optional<QString> textProperty(VideoSurface* surface, const QString& name) {
-    const auto value = surface->probeMpvProperty(name, ProbePropertyKind::Text);
+void shoot(PlayerWindow* window, const QString& name) {
+    const QString path = QDir::current().filePath(QStringLiteral("build-cmake/") + name);
+    const QImage image = window != nullptr ? window->grabWindow() : QImage();
+    check(!image.isNull() && QDir().mkpath(QFileInfo(path).absolutePath()) && image.save(path),
+          (QStringLiteral("screenshot written: ") + name).toUtf8().constData());
+}
+
+std::optional<QString> textProperty(VideoSession* session, const QString& name) {
+    const auto value = session->probeMpvProperty(name, ProbePropertyKind::Text);
     if (!value || value->kind != ProbePropertyValue::Kind::Text) return std::nullopt;
     return value->text;
 }
 
-std::optional<double> numberProperty(VideoSurface* surface, const QString& name) {
-    const auto value = surface->probeMpvProperty(name, ProbePropertyKind::Number);
+std::optional<double> numberProperty(VideoSession* session, const QString& name) {
+    const auto value = session->probeMpvProperty(name, ProbePropertyKind::Number);
     if (!value || !value->isNumeric()) return std::nullopt;
     return value->asNumber();
 }
 
-PlayerDialog* createDialog(const QString& url);
-bool waitForVideo(VideoSurface* surface, int timeoutMs = 15000);
-
-bool savePixelFrame(VideoSurface* surface, const QString& directory, const QString& stem,
-                   QImage* output) {
-    *output = surface->grabVideoFramebuffer();
-    return !output->isNull() &&
-           output->save(QDir(directory).filePath(stem + QStringLiteral(".png")), "PNG");
+PlayerController* createPlayer(const QString& url) {
+    auto* controller = new PlayerController(QStringLiteral("Anime4K menu probe"), url);
+    controller->showWindow();
+    controller->startPlayer();
+    return controller;
 }
 
-bool runMissingStageRefusalSmoke(VideoSurface* surface, const QImage& fastAFrame) {
+bool waitForVideo(PlayerController* controller, int timeoutMs = 15000) {
+    return waitUntil([controller] {
+        return controller != nullptr && controller->session()->hasVideo() &&
+               controller->window()->hasVisibleOutputFrame();
+    }, timeoutMs);
+}
+
+bool closePlayer(QPointer<PlayerController>& controller) {
+    if (controller == nullptr || !controller->requestClose()) return false;
+    if (!waitUntil([&controller] { return controller == nullptr ||
+                                           !controller->isWindowVisible(); }, 2500)) {
+        return false;
+    }
+    controller->deleteLater();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    return waitUntil([&controller] { return controller.isNull(); }, 6000);
+}
+
+QStringList chooserLeafIds(const QList<QAction*>& actions) {
+    QStringList ids;
+    for (QAction* action : actions) {
+        if (action->menu() != nullptr) ids += chooserLeafIds(action->menu()->actions());
+        else ids << action->data().toString();
+    }
+    return ids;
+}
+QAction* chooserAction(QMenu* menu, const QString& id, QMenu** parent) {
+    if (menu == nullptr) return nullptr;
+    for (QAction* action : menu->actions()) {
+        if (action->menu() != nullptr) {
+            if (QAction* found = chooserAction(action->menu(), id, parent)) return found;
+        } else if (action->data().toString() == id) {
+            if (parent != nullptr) *parent = menu;
+            return action;
+        }
+    }
+    return nullptr;
+}
+
+int countActionText(const QList<QAction*>& actions, const QString& text) {
+    int count = 0;
+    for (QAction* action : actions) {
+        if (action->text() == text) ++count;
+        if (action->menu() != nullptr) count += countActionText(action->menu()->actions(), text);
+    }
+    return count;
+}
+QStringList chooserPathFor(const QString& categoryId) {
+    QStringList path;
+    QString parent;
+    for (const QString& component : categoryId.split(QLatin1Char('/'), Qt::SkipEmptyParts)) {
+        if (!parent.isEmpty()) parent += QLatin1Char('/');
+        parent += component;
+        const QString label = anime4k::categoryLabel(parent);
+        if (!label.isEmpty()) path << label;
+    }
+    return path;
+}
+
+bool chooserPlacementsMatch(QMenu* menu, const QStringList& parentPath,
+                            const QHash<QString, QStringList>& expected) {
+    if (menu == nullptr) return false;
+    for (QAction* action : menu->actions()) {
+        if (action->menu() != nullptr) {
+            QStringList nestedPath = parentPath;
+            nestedPath << action->text();
+            if (!chooserPlacementsMatch(action->menu(), nestedPath, expected)) return false;
+        } else if (expected.contains(action->data().toString()) &&
+                   expected.value(action->data().toString()) != parentPath) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool runMissingStageRefusalSmoke(VideoSession* session, PlayerWindow* window,
+                                 const QImage& fastAFrame) {
     const QString appDir = QFileInfo(QCoreApplication::applicationDirPath()).canonicalFilePath();
-    if (appDir.isEmpty()) {
-        std::fprintf(stderr, "FAIL refusal smoke cannot canonicalize applicationDir\n");
+    const QFileInfo marker(QDir(appDir).filePath(QStringLiteral("OWNED-ANIME4K-PIXEL-ROOT")));
+    if (appDir.isEmpty() || !marker.isFile() || marker.isSymLink()) {
+        std::fprintf(stderr, "FAIL refusal smoke requires its owned app-directory marker\n");
         return false;
     }
-    const QString markerPath = QDir(appDir).filePath(QStringLiteral("OWNED-ANIME4K-PIXEL-ROOT"));
-    const QFileInfo marker(markerPath);
-    if (!marker.isFile() || marker.isSymLink()) {
-        std::fprintf(stderr, "FAIL refusal smoke requires a regular nonsymlink OWNED-ANIME4K-PIXEL-ROOT marker in applicationDir\n");
-        return false;
-    }
-
     const QString shaderDir = anime4k::findShadersDir();
-    const QString expectedShaderDir = QDir(appDir).filePath(QStringLiteral("shaders"));
-    const QFileInfo shaderDirectory(expectedShaderDir);
-    if (shaderDir.isEmpty() || shaderDirectory.isSymLink() || !shaderDirectory.isDir() ||
-        QDir::cleanPath(shaderDir) != QDir::cleanPath(expectedShaderDir) ||
-        shaderDirectory.canonicalFilePath() != QDir::cleanPath(expectedShaderDir)) {
-        std::fprintf(stderr, "FAIL refusal smoke requires findShadersDir to resolve to nonsymlink applicationDir/shaders\n");
+    const QString expectedDir = QDir(appDir).filePath(QStringLiteral("shaders"));
+    const QFileInfo directory(expectedDir);
+    if (shaderDir.isEmpty() || directory.isSymLink() || !directory.isDir() ||
+        QDir::cleanPath(shaderDir) != QDir::cleanPath(expectedDir) ||
+        directory.canonicalFilePath() != QDir::cleanPath(expectedDir)) {
+        std::fprintf(stderr, "FAIL refusal smoke requires nonsymlink applicationDir/shaders\n");
         return false;
     }
-
     const QString stageName = QStringLiteral("Anime4K_Clamp_Highlights.glsl");
     const QString stagePath = QDir(shaderDir).filePath(stageName);
     const QFileInfo stage(stagePath);
-    const QString expectedStagePath = QDir(expectedShaderDir).filePath(stageName);
     if (!stage.isFile() || stage.isSymLink() ||
-        stage.canonicalFilePath() != expectedStagePath) {
-        std::fprintf(stderr, "FAIL refusal smoke requires a regular nonsymlink selected stage\n");
+        stage.canonicalFilePath() != QDir::cleanPath(stagePath)) {
+        std::fprintf(stderr, "FAIL refusal smoke requires a regular nonsymlink shader stage\n");
         return false;
     }
-
-    const anime4k::Candidate fastA = anime4k::candidateForId(QStringLiteral("fast_a"), shaderDir);
-    const anime4k::Candidate fastB = anime4k::candidateForId(QStringLiteral("fast_b"), shaderDir);
-    if (!fastA.files.contains(stageName) || !fastB.files.contains(stageName)) {
-        std::fprintf(stderr, "FAIL refusal smoke selected stage is not shared by fast_a and fast_b\n");
+    const auto fastA = anime4k::candidateForId(QStringLiteral("fast_a"), shaderDir);
+    const auto fastB = anime4k::candidateForId(QStringLiteral("fast_b"), shaderDir);
+    if (!fastA.files.contains(stageName) || !fastB.files.contains(stageName) ||
+        session->anime4KChainId() != QLatin1String("fast_a") ||
+        session->anime4KMode() != anime4k::Mode::FastA || fastAFrame.isNull()) {
+        std::fprintf(stderr, "FAIL refusal smoke requires fast_a and its captured active frame\n");
         return false;
     }
-
-    const QString parkedPath = QDir(shaderDir).filePath(
-        QStringLiteral("Anime4K_Clamp_Highlights.glsl.refusal-smoke-parked"));
-    const QFileInfo parked(parkedPath);
-    if (parked.exists() || parked.isSymLink()) {
-        std::fprintf(stderr, "FAIL refusal smoke parked shader path already exists\n");
+    const QString parked = stagePath + QStringLiteral(".refusal-smoke-parked");
+    if (QFileInfo::exists(parked) || QFileInfo(parked).isSymLink() ||
+        !QFile::rename(stagePath, parked)) {
+        std::fprintf(stderr, "FAIL refusal smoke could not safely park the selected shader\n");
         return false;
     }
-    if (surface->anime4KChainId() != QLatin1String("fast_a") ||
-        surface->anime4KMode() != anime4k::Mode::FastA || fastAFrame.isNull()) {
-        std::fprintf(stderr, "FAIL refusal smoke must begin with a captured active fast_a frame\n");
-        return false;
-    }
-
-    struct RestoreStage {
-        QString source;
-        QString parked;
-        bool restored = false;
-        bool restore() {
-            if (restored) return true;
-            if (!QFile::rename(parked, source)) {
-                std::fprintf(stderr, "FAIL refusal smoke could not restore shader stage from %s to %s\n",
-                             qPrintable(parked), qPrintable(source));
-                return false;
-            }
-            restored = true;
-            return true;
-        }
-        ~RestoreStage() {
-            if (!restored) restore();
-        }
-    } restore{stagePath, parkedPath};
-
-    if (!QFile::rename(stagePath, parkedPath)) {
-        std::fprintf(stderr, "FAIL refusal smoke could not park owned shader stage %s\n",
-                     qPrintable(stagePath));
-        return false;
-    }
-
-    QString gateReason;
-    const QMetaObject::Connection gateConnection =
-        QObject::connect(surface, &VideoSurface::anime4kGated, surface,
-                         [&gateReason](const QString& reason) { gateReason = reason; });
-    surface->setAnime4KChain(QStringLiteral("fast_b"));
-    QObject::disconnect(gateConnection);
+    QString reason;
+    const auto connection = QObject::connect(
+        session, &VideoSession::anime4kGated, session,
+        [&reason](const QString& message) { reason = message; });
+    session->setAnime4KChain(QStringLiteral("fast_b"));
+    QObject::disconnect(connection);
     pump(250);
-    const bool refused = !gateReason.trimmed().isEmpty();
-    const bool requestedStatePreserved =
-        surface->anime4KChainId() == QLatin1String("fast_a") &&
-        surface->anime4KMode() == anime4k::Mode::FastA;
-    const QImage actualFrame = settledFrame(surface);
-    const double difference = bandDifference(fastAFrame, actualFrame);
-    const bool actualImagePreserved = difference >= 0.0 && difference <= 0.01;
-
+    const bool refused = !reason.trimmed().isEmpty() &&
+                         session->anime4KChainId() == QLatin1String("fast_a") &&
+                         session->anime4KMode() == anime4k::Mode::FastA;
+    const double difference = bandDifference(fastAFrame, settledFrame(window));
+    const bool restored = QFile::rename(parked, stagePath);
     std::fprintf(stderr,
-                 "refusal smoke refused-fast_b=%s reason=%s state-preserved=%s image-preserved=%s active-chain=%s active-mode=%s framebuffer=%dx%d fast_a-MAE=%.4f\n",
-                 refused ? "yes" : "NO", refused ? qPrintable(gateReason) : "(empty)",
-                 requestedStatePreserved ? "yes" : "NO",
-                 actualImagePreserved ? "yes" : "NO",
-                 qPrintable(surface->anime4KChainId()),
-                 qPrintable(anime4k::modeId(surface->anime4KMode())),
-                 actualFrame.width(), actualFrame.height(), difference);
-    const bool restored = restore.restore();
-    return refused && requestedStatePreserved && actualImagePreserved && restored;
+                 "refusal smoke refused-fast_b=%s state-preserved=%s image-preserved=%s restored=%s\\n",
+                 refused ? "yes" : "NO", refused ? "yes" : "NO",
+                 difference >= 0.0 && difference <= 0.01 ? "yes" : "NO",
+                 restored ? "yes" : "NO");
+    return refused && difference >= 0.0 && difference <= 0.01 && restored;
 }
 
 int runPixelDiagnostic(const QString& directory) {
@@ -499,24 +387,25 @@ int runPixelDiagnostic(const QString& directory) {
         std::fprintf(stderr, "FAIL pixel diagnostic needs MIKAI_ANIME4K_PIXEL_SOURCE and writable output directory\n");
         return 1;
     }
-    auto* dialog = createDialog(source);
-    auto* surface = dialog->findChild<VideoSurface*>();
-    if (!waitForVideo(surface, 15000)) {
-        std::fprintf(stderr, "FAIL pixel diagnostic source did not produce a ready video surface\n");
-        delete dialog;
+    QPointer<PlayerController> controller = createPlayer(source);
+    if (!waitForVideo(controller)) {
+        std::fprintf(stderr, "FAIL pixel diagnostic source did not produce a ready Quick video surface\n");
+        if (controller) controller->requestClose();
         return 1;
     }
-    surface->setPaused(true);
-    const auto pause = surface->probeMpvProperty(QStringLiteral("pause"), ProbePropertyKind::Flag);
+    VideoSession* session = controller->session();
+    PlayerWindow* window = controller->window();
+    session->setPaused(true);
+    const auto pause = session->probeMpvProperty(QStringLiteral("pause"), ProbePropertyKind::Flag);
     if (!pause || pause->kind != ProbePropertyValue::Kind::Flag || !pause->flag) {
         std::fprintf(stderr, "FAIL pixel diagnostic could not confirm paused playback\n");
-        delete dialog;
+        controller->requestClose();
         return 1;
     }
-    const auto time = numberProperty(surface, QStringLiteral("time-pos"));
-    const auto path = textProperty(surface, QStringLiteral("path"));
-    const auto width = numberProperty(surface, QStringLiteral("video-params/w"));
-    const auto height = numberProperty(surface, QStringLiteral("video-params/h"));
+    const auto time = numberProperty(session, QStringLiteral("time-pos"));
+    const auto path = textProperty(session, QStringLiteral("path"));
+    const auto width = numberProperty(session, QStringLiteral("video-params/w"));
+    const auto height = numberProperty(session, QStringLiteral("video-params/h"));
     std::fprintf(stderr, "pixel diagnostic path=%s time-pos=%s source-resolution=%sx%s\n",
                  path ? qPrintable(*path) : "unavailable",
                  time ? qPrintable(QString::number(*time, 'f', 3)) : "unavailable",
@@ -524,167 +413,50 @@ int runPixelDiagnostic(const QString& directory) {
                  height ? qPrintable(QString::number(*height, 'f', 0)) : "unavailable");
     if (!time || !width || !height || *width <= 0 || *height <= 0) {
         std::fprintf(stderr, "FAIL pixel diagnostic source properties unavailable\n");
-        delete dialog;
+        controller->requestClose();
         return 1;
     }
-    const double dpr = std::max(1.0, surface->devicePixelRatioF());
-    QImage off1, fast1, off2, fast2;
-    const auto captureAt = [&](int multiplier, const QString& mode, QImage* image) {
-        surface->setMinimumSize(0, 0);
-        surface->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
-        surface->setFixedSize(qMax(1, qRound(*width * multiplier / dpr)),
-                              qMax(1, qRound(*height * multiplier / dpr)));
-        dialog->adjustSize();
+    const auto capture = [&](int multiplier, const QString& mode, QImage* output) {
+        window->resize(qMax(1, qRound(*width * multiplier)),
+                       qMax(1, qRound(*height * multiplier)));
         pump(500);
-        if (mode == QLatin1String("off")) surface->setAnime4KMode(anime4k::Mode::Off);
-        else surface->setAnime4KMode(anime4k::Mode::FastA);
-        if (mode == QLatin1String("off")) {
-            if (!chainSettlesOff(surface, 6000)) return false;
-        } else if (!chainSettlesTo(surface, QStringLiteral("fast_a"), 6000)) {
-            return false;
-        }
+        if (mode == QLatin1String("off")) session->setAnime4KMode(anime4k::Mode::Off);
+        else session->setAnime4KMode(anime4k::Mode::FastA);
+        const bool applied = mode == QLatin1String("off") ? chainSettlesOff(session, 6000)
+                                                          : chainSettlesTo(session, QStringLiteral("fast_a"), 6000);
+        if (!applied) return false;
         pump(700);
-        const auto now = numberProperty(surface, QStringLiteral("time-pos"));
-        return now && std::abs(*now - *time) <= 0.05 &&
-               savePixelFrame(surface, directory,
-                              mode + QStringLiteral("_%1x").arg(multiplier), image);
+        const auto now = numberProperty(session, QStringLiteral("time-pos"));
+        *output = window->grabVideoFrame();
+        return now && std::abs(*now - *time) <= 0.05 && !output->isNull() &&
+               output->save(QDir(directory).filePath(mode + QStringLiteral("_%1x.png").arg(multiplier)));
     };
-    bool failed = false;
-    const auto capture = [&](int scale, const QString& mode, QImage* image) {
-        if (captureAt(scale, mode, image)) return;
-        std::fprintf(stderr, "FAIL pixel diagnostic capture/refusal mode=%s scale=%dx\n",
-                     qPrintable(mode), scale);
-        failed = true;
-    };
-    capture(1, QStringLiteral("off"), &off1);
-    if (!failed) capture(1, QStringLiteral("fast_a"), &fast1);
-    if (!failed) capture(2, QStringLiteral("off"), &off2);
-    if (!failed) capture(2, QStringLiteral("fast_a"), &fast2);
+    QImage off1, fast1, off2, fast2;
+    bool ok = capture(1, QStringLiteral("off"), &off1) && capture(1, QStringLiteral("fast_a"), &fast1) &&
+              capture(2, QStringLiteral("off"), &off2) && capture(2, QStringLiteral("fast_a"), &fast2);
+    if (!ok) std::fprintf(stderr, "FAIL pixel diagnostic capture/refusal\n");
     const double one = bandDifference(off1, fast1);
     const double two = bandDifference(off2, fast2);
-    std::fprintf(stderr, "pixel diagnostic framebuffer=%dx%d/%dx%d DPR=%.3f off-fast MAE 1x=%.4f 2x=%.4f chain=%s\n",
-                 off1.width(), off1.height(), off2.width(), off2.height(), dpr, one, two,
-                 qPrintable(surface->effectiveShaderChain()));
+    std::fprintf(stderr, "pixel diagnostic framebuffer=%dx%d/%dx%d off-fast MAE 1x=%.4f 2x=%.4f chain=%s\n",
+                 off1.width(), off1.height(), off2.width(), off2.height(), one, two,
+                 qPrintable(session->effectiveShaderChain()));
     if (one < 0 || two < 0 || (one <= 0.05 && two <= 0.05)) {
         std::fprintf(stderr, "FAIL pixel diagnostic found no real fast_a effect on the fixture\n");
-        failed = true;
+        ok = false;
     }
-    if (qgetenv("MIKAI_ANIME4K_REFUSAL_SMOKE") == "1" && !failed) {
-        if (!runMissingStageRefusalSmoke(surface, fast2)) {
-            std::fprintf(stderr, "FAIL pixel diagnostic missing-stage refusal smoke\n");
-            failed = true;
-        }
+    if (qgetenv("MIKAI_ANIME4K_REFUSAL_SMOKE") == "1" && ok &&
+        !runMissingStageRefusalSmoke(session, window, fast2)) {
+        std::fprintf(stderr, "FAIL pixel diagnostic missing-stage refusal smoke\n");
+        ok = false;
     }
-    delete dialog;
-    return failed ? 1 : 0;
+    if (controller) controller->requestClose();
+    return ok ? 0 : 1;
 }
-
-// ── the compare chooser, read as a tree ─────────────────────────────────
-
-void collectLeafIds(const QList<QAction*>& actions, QStringList* ids) {
-    for (QAction* action : actions) {
-        if (QMenu* sub = action->menu(); sub != nullptr) {
-            collectLeafIds(sub->actions(), ids);
-            continue;
-        }
-        ids->append(action->data().toString());
-    }
-}
-
-QStringList chooserPathFor(const QString& categoryId) {
-    QStringList path;
-    QString parent;
-    const QStringList parts = categoryId.split(QLatin1Char(47), Qt::SkipEmptyParts);
-    for (const QString& component : parts) {
-        if (!parent.isEmpty()) parent += QLatin1Char(47);
-        parent += component;
-        const QString label = anime4k::categoryLabel(parent);
-        if (!label.isEmpty()) path.append(label);
-    }
-    return path;
-}
-
-int countActionText(const QList<QAction*>& actions, const QString& text, bool recursive) {
-    int matches = 0;
-    for (QAction* action : actions) {
-        if (action->text() == text) ++matches;
-        if (recursive && action->menu() != nullptr) {
-            matches += countActionText(action->menu()->actions(), text, true);
-        }
-    }
-    return matches;
-}
-
-// ── the dialog ──────────────────────────────────────────────────────────
-
-PlayerDialog* createDialog(const QString& url) {
-    auto* dialog = new PlayerDialog(QStringLiteral("Anime4K menu probe"), url);
-    dialog->startPlayer();
-    dialog->show();
-    return dialog;
-}
-
-bool waitForVideo(VideoSurface* surface, int timeoutMs) {
-    return waitUntil(
-        [surface] {
-            return surface != nullptr && surface->hasVideo() && surface->isContextReady() &&
-                   surface->videoWidth() > 0 && surface->videoHeight() > 0;
-        },
-        timeoutMs);
-}
-
-/// Closes the dialog and waits for WA_DeleteOnClose to actually destroy it -
-/// through a QPointer, because touching a deleted dialog is the bug this is
-/// here to avoid.
-bool closeDialog(QPointer<PlayerDialog> dialog) {
-    if (dialog == nullptr) return false;
-    dialog->close();
-    return waitUntil([&dialog] { return dialog.isNull(); }, 6000);
-}
-
-/// Every preset leaf, with the catalogue levels that lead to it: the category,
-/// then the experiment family when the leaf is nested one deeper. Ids only -
-/// the labels those rows are painted with are the catalogue's business, and a
-/// table of them here would only ever test that nobody reworded a menu.
-struct LeafCheck {
-    const char* id;
-    const char* category;
-    const char* family;
-};
-
-const LeafCheck kLeaves[] = {
-    {"off", "", ""},
-    {"fast_a", "anime4k/speed", ""},
-    {"fast_b", "anime4k/speed", ""},
-    {"fast_c", "anime4k/speed", ""},
-    {"hq_a", "anime4k/quality", ""},
-    {"hq_b", "anime4k/quality", ""},
-    {"hq_c", "anime4k/quality", ""},
-    {"hq_aa", "anime4k/maximum", ""},
-    {"hq_bb", "anime4k/maximum", ""},
-    {"hq_ca", "anime4k/maximum", ""},
-    {"hq_gan", "anime4k/maximum", ""},
-    {"exp_3d_graphics", "anime4k/experimental", ""},
-    {"exp_old_film", "anime4k/experimental", ""},
-    {"exp_deblur_strong", "anime4k/experimental", ""},
-    {"exp_noise_bilateral_mean", "anime4k/experimental", "anime4k/experimental/noise"},
-    {"exp_noise_bilateral_median", "anime4k/experimental", "anime4k/experimental/noise"},
-    {"exp_noise_bilateral_mode", "anime4k/experimental", "anime4k/experimental/noise"},
-    {"exp_thin_veryfast", "anime4k/experimental", "anime4k/experimental/thin"},
-    {"exp_thin_fast", "anime4k/experimental", "anime4k/experimental/thin"},
-    {"exp_thin_hq", "anime4k/experimental", "anime4k/experimental/thin"},
-    {"exp_texture_dtd_x2", "anime4k/experimental", "anime4k/experimental/texture"},
-    {"exp_texture_dog_x2", "anime4k/experimental", "anime4k/experimental/texture"},
-    {"exp_darken_veryfast", "anime4k/experimental", "anime4k/experimental/darken"},
-    {"exp_darken_fast", "anime4k/experimental", "anime4k/experimental/darken"},
-    {"exp_darken_hq", "anime4k/experimental", "anime4k/experimental/darken"},
-};
 
 }  // namespace
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
-    // Closing the dialog is not the end of the probe: the reopen follows.
     app.setQuitOnLastWindowClosed(false);
 
     QTemporaryDir settingsDir;
@@ -694,14 +466,10 @@ int main(int argc, char** argv) {
     }
     QCoreApplication::setOrganizationName(QStringLiteral("MikaiAnime4KProbe"));
     QCoreApplication::setApplicationName(QStringLiteral("Anime4KMenuProbe"));
-    // Whatever the user picked stays theirs: the player's own setting is read
-    // and written inside a temporary directory that dies with the process.
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
-    if (!mplayer::probes::selectRuntime()) {
-        return 2;
-    }
+    if (!mplayer::probes::selectRuntime()) return 2;
     QSettings settings;
     settings.clear();
     settings.sync();
@@ -709,448 +477,284 @@ int main(int argc, char** argv) {
     if (!pixelDirectory.isEmpty()) return runPixelDiagnostic(QString::fromLocal8Bit(pixelDirectory));
 
     const QString url = QStringLiteral("av://lavfi:testsrc2=size=480x270:rate=25");
-    check(!anime4k::findShadersDir().isEmpty(),
-          "the Anime4K shader folder is deployed beside the exe");
-
-    QPointer<PlayerDialog> dialog = createDialog(url);
-    auto* surface = dialog->findChild<VideoSurface*>();
-    auto* shell = dialog->findChild<PlayerShell*>();
-    if (!waitForVideo(surface)) {
-        std::fprintf(stderr,
-                     "FAIL no render context: lavfi testsrc2 did not load or GL never initialised\n");
-        delete dialog.data();
+    check(!anime4k::findShadersDir().isEmpty(), "the Anime4K shader folder is deployed beside the exe");
+    QPointer<PlayerController> controller = createPlayer(url);
+    if (!waitForVideo(controller)) {
+        std::fprintf(stderr, "FAIL no rendered frame from lavfi testsrc2 in production Quick scene\n");
+        if (controller) controller->requestClose();
         return 2;
     }
-    check(shell != nullptr, "the standalone player has a shell");
-    if (shell == nullptr) {
-        delete dialog.data();
-        return 2;
-    }
-    check(surface->videoWidth() == kSourceWidth && surface->videoHeight() == kSourceHeight,
-          "a real 480x270 source is playing through mpv");
+    PlayerWindow* window = controller->window();
+    VideoSession* session = controller->session();
+    check(session->videoWidth() == kSourceWidth && session->videoHeight() == kSourceHeight,
+          "a real 480x270 source is playing through the production session");
 
-    // ── the control picture ─────────────────────────────────────────────
-    // Off explicitly, whatever the settings file held, then one pause and two
-    // settled grabs with nothing between them: that difference is the noise
-    // floor every later comparison has to clear.
-    surface->setAnime4KMode(anime4k::Mode::Off);
-    check(chainSettlesOff(surface),
-          "Disabled leaves mpv with no shader chain at all");
-    surface->setPaused(true);
+    session->setAnime4KMode(anime4k::Mode::Off);
+    check(chainSettlesOff(session), "Disabled leaves mpv with no shader chain at all");
+    session->setPaused(true);
     pump(400);
-    const QImage offA = settledFrame(surface);
-    const QImage offB = settledFrame(surface);
+    const QImage offA = settledFrame(window);
+    const QImage offB = settledFrame(window);
     const double noise = bandDifference(offA, offB);
     std::fprintf(stderr, "     control: two settled Off frames differ by %.4f / 255\n", noise);
-    check(!offA.isNull() && noise >= 0.0, "a real framebuffer is readable with the player paused");
+    check(!offA.isNull() && noise >= 0.0, "a real Quick video framebuffer is readable while paused");
     check(noise <= 0.01, "the paused picture is stable between grabs, so the floor is ~zero");
     saveFrame(offA, QStringLiteral("anime4k-menu-off.png"));
 
-    // ── the menu the viewer actually opens ──────────────────────────────
-    Menus menus;
-    check(openAnimeRoot(shell, dialog, menus),
-          "the enhancement button opens ПОКРАЩЕННЯ and the Anime4K row opens its popover");
-    if (menus.anime == nullptr) {
-        delete dialog.data();
-        return 3;
-    }
-    check(!menus.anime->isWindow() && menus.anime->parentWidget() == dialog,
-          "the Anime4K menu is an in-window overlay, not a native popup");
-    shoot(dialog, QStringLiteral("anime4k-menu-root.png"));
+    emit controller->menuOpenRequested(QStringLiteral("enhancements"));
+    check(waitUntil([&] { return menuPanel(window, QStringLiteral("enhancements")) != nullptr; }, 3000),
+          "the real Quick enhancement menu opens");
+    check(clickRow(window, QStringLiteral("enhancements"), QStringLiteral("anime4k"), true),
+          "the Anime4K submenu is activated by the real QML row");
+    check(waitUntil([&] { return menuPanel(window, QStringLiteral("anime4k")) != nullptr; }, 3000),
+          "Anime4K presets appear in their production cascade");
+    shoot(window, QStringLiteral("anime4k-menu-root.png"));
+    check(clickRow(window, QStringLiteral("anime4k"), QStringLiteral("anime4k/speed"), true),
+          "the speed category opens from the Quick menu");
+    check(session->effectiveShaderChain().isEmpty() &&
+              controller->anime4kChainId() == QLatin1String("off"),
+          "opening a Quick preset category does not apply a shader");
+    check(waitUntil([&] { return menuPanel(window, QStringLiteral("anime4k/speed")) != nullptr; }, 3000),
+          "the speed category presents its child panel");
+    PlayerMenuModel* animeRootModel = controller->menuModel(QStringLiteral("anime4k"));
+    const int speedRow = animeRootModel != nullptr
+                             ? animeRootModel->indexOfId(QStringLiteral("anime4k/speed"))
+                             : -1;
+    PlayerMenuModel* speedModel = speedRow >= 0
+                                      ? controller->submenuModel(QStringLiteral("anime4k"), speedRow)
+                                      : nullptr;
+    check(speedModel != nullptr && speedModel->indexOfId(QStringLiteral("fast_a")) >= 0 &&
+              speedModel->indexOfId(QStringLiteral("fast_c")) >= 0,
+          "the production speed model contains its catalogue leaves");
+    check(clickRow(window, QStringLiteral("anime4k"), QStringLiteral("anime4k/experimental"), true),
+          "the experimental category opens from its real Quick row");
+    check(waitUntil([&] { return menuPanel(window, QStringLiteral("anime4k/experimental")) != nullptr; }, 3000),
+          "the experimental category presents its child panel");
+    shoot(window, QStringLiteral("anime4k-menu-experiments.png"));
+    check(clickRow(window, QStringLiteral("anime4k/experimental"),
+                   QStringLiteral("anime4k/experimental/noise"), true),
+          "the experiment family opens from its real Quick row");
+    check(waitUntil([&] { return menuPanel(window, QStringLiteral("anime4k/experimental/noise")) != nullptr; }, 3000),
+          "the family panel is presented");
+    shoot(window, QStringLiteral("anime4k-menu-family.png"));
 
-    // The root offers supported Anime4K and official AnimeJaNai choices.
-    const QStringList rootBranches = categoryIdsOn(menus.enhancements);
-    check(rootBranches.contains(QStringLiteral("anime4k")),
-          "the enhancements root offers Anime4K");
-    check(rootBranches.contains(QStringLiteral("animejanai")),
-          "the enhancements root offers official AnimeJaNai");
-
-    // A category row opens the level beside it; it must not select anything on
-    // the way.
-    check(clickRow(menus.anime, QStringLiteral("anime4k/speed")),
-          "a category row is clickable");
-    check(menus.anime->isVisible(), "a category keeps the popover open");
-    check(surface->effectiveShaderChain().isEmpty() &&
-              surface->anime4KChainId() == QLatin1String("off"),
-          "opening a category cannot change the applied chain");
-    menus.anime = levelPanel(dialog, QStringLiteral("anime4k/speed"));
-    check(menus.anime != nullptr, "the category opened its own level beside the root");
-    if (menus.anime != nullptr) {
-        const QStringList speedPresets = presetIdsOn(menus.anime);
-        check(speedPresets.contains(QStringLiteral("fast_a")) &&
-                  speedPresets.contains(QStringLiteral("fast_c")),
-              "the speed level lists its own presets");
-    }
-    // No Back row: the tree has no way back because it never left - the root
-    // and the level it opened are both still on screen.
-    check(levelPanel(dialog, QString()) != nullptr,
-          "the root stays on screen beside the level it opened");
-
-    // A row is clicked on the panel of its own level: the Anime4K level is a
-    // panel of its own, so the category that opens the experiments sits there,
-    // not on the speed level the previous click opened. Reading each panel back
-    // off its level id is what keeps the drill-down on the real tree.
-    MenuPopup* animeLevel = levelPanel(dialog, QStringLiteral("anime4k"));
-    check(animeLevel != nullptr, "the Anime4K level stays on screen beside the root");
-    check(clickRow(animeLevel, QStringLiteral("anime4k/experimental")),
-          "the experimental category opens");
-    shoot(dialog, QStringLiteral("anime4k-menu-experiments.png"));
-    MenuPopup* experimentLevel = levelPanel(dialog, QStringLiteral("anime4k/experimental"));
-    check(experimentLevel != nullptr, "the experimental level opens beside the Anime4K level");
-    check(clickRow(experimentLevel, QStringLiteral("anime4k/experimental/noise")),
-          "an experiment family opens as a submenu");
-    shoot(dialog, QStringLiteral("anime4k-menu-family.png"));
-    menus.anime = levelPanel(dialog, QStringLiteral("anime4k/experimental/noise"));
-    if (menus.anime != nullptr) {
-        const QStringList noisePresets = presetIdsOn(menus.anime);
-        check(noisePresets.contains(QStringLiteral("exp_noise_bilateral_mean")) &&
-                  noisePresets.contains(QStringLiteral("exp_noise_bilateral_mode")),
-              "the family lists its own leaves");
-    }
-
-    // ── the rendered proof ─────────────────────────────────────────────
-    check(clickLeaf({QStringLiteral("anime4k/experimental")}, QLatin1String(kExperiment), shell,
-                    dialog, menus),
-          "the experiment is selected through the real menu");
-    check(surface->anime4KChainId() == QLatin1String(kExperiment),
-          "the experiment is the applied candidate id");
-    check(chainSettlesTo(surface, QLatin1String(kExperiment)),
-          "mpv is running the experiment's ordered chain, stage for stage");
-    check(levelPanel(dialog, QStringLiteral("anime4k/experimental")) == nullptr,
-          "choosing a preset takes the level it was reached through off the screen");
-    auto* chip = dialog->findChild<QLabel*>(QStringLiteral("playerEnhancementStatus"));
-    // The chip names the running preset by the catalogue's own label for it,
-    // read from the catalogue rather than typed in here.
+    const auto choose = [&](const QString& id) {
+        QString category;
+        for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
+            if (info.id == id) { category = info.category; break; }
+        }
+        return clickLeaf(category, id, controller, window);
+    };
+    check(choose(QLatin1String(kExperiment)), "the experimental preset is picked through Quick menus");
+    check(waitUntil([&] { return controller->anime4kChainId() == QLatin1String(kExperiment); }, 4000),
+          "the chosen menu action changes the controller's active preset id");
+    check(chainSettlesTo(session, QLatin1String(kExperiment)),
+          "mpv runs the experiment's ordered shader chain, stage for stage");
+    settings.sync();
+    check(settings.value(QStringLiteral("player/anime4k")).toString() == QLatin1String(kExperiment),
+          "the selected experiment persists under its stable id");
     QString experimentLabel;
     for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
         if (info.id == QLatin1String(kExperiment)) experimentLabel = info.label;
     }
-    check(chip != nullptr && !chip->isHidden() && !experimentLabel.isEmpty() &&
-              chip->text().contains(experimentLabel),
-          "the info chip names the running experiment");
-    settings.sync();
-    check(settings.value(QStringLiteral("player/anime4k")).toString() ==
-              QLatin1String(kExperiment),
-          "the chosen experiment is persisted by its stable id");
-
-    pump(500);
-    const QImage on = settledFrame(surface);
+    check(!experimentLabel.isEmpty() &&
+              controller->enhancementChipText().contains(experimentLabel),
+          "the production enhancement chip names the selected catalogue preset");
+    const QImage on = settledFrame(window);
     const double effect = bandDifference(offA, on);
     const double threshold = std::max(0.05, noise * 5.0);
-    std::fprintf(stderr,
-                 "     experiment vs Off over the picture band: %.3f / 255 "
-                 "(floor %.4f, threshold %.4f)\n",
+    std::fprintf(stderr, "     experiment vs Off over the picture band: %.3f / 255 (floor %.4f, threshold %.4f)\n",
                  effect, noise, threshold);
-    check(effect > threshold,
-          "the experiment changes the rendered picture beyond the measured noise floor");
+    check(effect > threshold, "the shader changes actual rendered pixels beyond measured noise");
     saveFrame(on, QStringLiteral("anime4k-menu-experiment.png"));
 
-    // ── every leaf, each reached from a menu opened for it ─────────────
-    for (const LeafCheck& leaf : kLeaves) {
-        QStringList path;
-        if (*leaf.category) path << QString::fromLatin1(leaf.category);
-        if (*leaf.family) path << QString::fromLatin1(leaf.family);
-        const QString id = QString::fromLatin1(leaf.id);
-        if (!clickLeaf(path, id, shell, dialog, menus)) {
-            check(false, (QStringLiteral("leaf is clickable: ") + id).toUtf8().constData());
+    for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
+        if (!choose(info.id)) {
+            check(false, (QStringLiteral("Quick menu leaf is clickable: ") + info.id).toUtf8().constData());
             continue;
         }
-        check(surface->anime4KChainId() == id,
-              (QStringLiteral("leaf applies its exact id: ") + id).toUtf8().constData());
-        check(chainSettlesTo(surface, id),
-              (QStringLiteral("mpv runs that preset's ordered chain: ") + id).toUtf8().constData());
+        check(waitUntil([&] { return controller->anime4kChainId() == info.id; }, 4000),
+              (QStringLiteral("menu applies exact preset id: ") + info.id).toUtf8().constData());
+        check(session->anime4KChainId() == info.id &&
+                  session->anime4KMode() == anime4k::modeForId(info.id),
+              (QStringLiteral("one selected preset id maps to its matching mode: ") + info.id)
+                  .toUtf8().constData());
+        check(chainSettlesTo(session, info.id),
+              (QStringLiteral("mpv runs ordered preset chain: ") + info.id).toUtf8().constData());
+Need tool write commentary. 
     }
 
-    // ── compare ─────────────────────────────────────────────────────────
-    check(clickLeaf({QStringLiteral("anime4k/experimental")}, QLatin1String(kExperiment), shell,
-                    dialog, menus),
-          "the experiment is selected again for the compare and PiP checks");
-    check(chainSettlesTo(surface, QLatin1String(kExperiment)),
-          "the compare baseline chain settles to the experiment before it is read");
-    const QString chainBeforeCompare = surface->effectiveShaderChain();
-    const QString idBeforeCompare = surface->anime4KChainId();
-    shell->openPictureMenu(QPoint(dialog->width() / 2, dialog->height() / 2));
-    QWidget* pictureMenu = dialog->findChild<QWidget*>(QStringLiteral("playerPictureMenu"));
-    // Found by what the row does rather than by what it says: the picture menu
-    // entry that opens Compare is the one whose payload names it.
-    bool compareClicked = false;
-    if (auto* menu = qobject_cast<MenuPopup*>(pictureMenu);
-        menu != nullptr && menu->isVisible()) {
-        for (int spot = 0; spot < menu->rowCount() && !compareClicked; ++spot) {
-            if (menu->entryAt(spot).payload.toString() != QLatin1String("compare")) continue;
-            if (auto* row = qobject_cast<QPushButton*>(menu->rowWidget(spot))) {
-                realClick(row);
-                compareClicked = true;
-            }
-        }
-    }
-    check(compareClicked, "the picture's own menu opens the comparison");
-    pump(200);
-    auto* compare = dialog->findChild<CompareWindow*>();
-    check(compare != nullptr && compare->isVisible(), "the Compare window opened on that action");
+    check(choose(QLatin1String(kExperiment)) && chainSettlesTo(session, QLatin1String(kExperiment)),
+          "the experiment is selected again before Compare and PiP");
+    const QString chainBeforeCompare = session->effectiveShaderChain();
+    const QString idBeforeCompare = controller->anime4kChainId();
+    controller->openCompare();
+    pump(300);
+    CompareWindow* compare = controller->findChild<CompareWindow*>();
+    check(compare != nullptr && compare->isVisible(), "the controller opens the legitimate Compare window");
     if (compare != nullptr) {
+        const QString compareShot = QDir::current().filePath(
+            QStringLiteral("build-cmake/anime4k-menu-compare.png"));
+        check(QDir().mkpath(QFileInfo(compareShot).absolutePath()) &&
+                  compare->grab().save(compareShot),
+              "screenshot written: anime4k-menu-compare.png");
         const QImage frozen = compare->frozenFrame();
-        std::fprintf(stderr, "     compare froze %dx%d from a %dx%d surface\n", frozen.width(),
-                     frozen.height(), surface->width(), surface->height());
-        check(!frozen.isNull(), "Compare froze a real framebuffer");
-        check(bandRange(frozen) > 32, "the frozen frame carries a decoded picture, not a blank");
-        check(frozen.width() >= surface->width() && frozen.height() >= surface->height(),
-              "the frozen frame is the live surface's own framebuffer");
-        shoot(compare, QStringLiteral("anime4k-menu-compare.png"));
-
+        check(!frozen.isNull(), "Compare froze a real player frame");
+        check(bandRange(frozen) > 32, "the frozen frame contains a decoded nonuniform picture");
         QToolButton* badge = nullptr;
         for (QToolButton* button : compare->findChildren<QToolButton*>()) {
-            if (button->menu() != nullptr) {
-                badge = button;
-                break;
-            }
+            if (button->menu() != nullptr) { badge = button; break; }
         }
-        check(badge != nullptr, "the compare badges carry the candidate chooser");
+        check(badge != nullptr, "Compare's real candidate chooser is available");
         if (badge != nullptr) {
-            QMenu* chooser = badge->menu();
-            QStringList offered;
-            collectLeafIds(chooser->actions(), &offered);
-
-            QStringList catalogueIds;
-            QHash<QString, QStringList> expectedPath;
+            const QStringList offered = chooserLeafIds(badge->menu()->actions());
+            QStringList expected;
+            QHash<QString, QStringList> expectedPaths;
+            const QString restoreLabel =
+                QCoreApplication::translate("QObject", "Restore (Anime4K)");
             for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
-                catalogueIds << info.id;
-                expectedPath.insert(info.id, chooserPathFor(info.category));
+                expected << info.id;
+                QStringList path{restoreLabel};
+                QStringList categoryPath = chooserPathFor(info.category);
+                if (categoryPath.isEmpty()) categoryPath << QCoreApplication::translate(
+                    "CompareWindow", "Presets");
+                path.append(categoryPath);
+                expectedPaths.insert(info.id, path);
             }
-            const QStringList spatialPath{QStringLiteral("AnimeJaNai"),
-                                          QStringLiteral("Spatial models")};
-            const QVector<native::AnimeJanaiPreset> publicModels = native::animeJanaiPresets();
-            for (const native::AnimeJanaiPreset& preset : publicModels) {
-                if (preset.rife || !preset.id.startsWith(QLatin1String("spatial:"))) continue;
-                catalogueIds << preset.id;
-                expectedPath.insert(preset.id, spatialPath);
-            }
-            QStringList sortedOffered = offered;
-            QStringList sortedCatalogue = catalogueIds;
-            sortedOffered.sort();
-            sortedCatalogue.sort();
-            const bool catalogueUnique =
-                std::adjacent_find(sortedCatalogue.cbegin(), sortedCatalogue.cend()) ==
-                sortedCatalogue.cend();
-            const bool offeredUnique =
-                std::adjacent_find(sortedOffered.cbegin(), sortedOffered.cend()) ==
-                sortedOffered.cend();
-            check(catalogueUnique && offeredUnique && !offered.isEmpty() &&
-                      sortedOffered == sortedCatalogue,
-                  "the chooser offers all shader presets and public spatial models only");
-
-            // Each preset has to sit where the catalogue says it sits, at the
-            // depth its own category implies: the one preset that hangs directly
-            // off the top level is a leaf of the outermost submenu, and the rest
-            // are leaves of a category inside it. Reading the expected path out
-            // of the catalogue is what keeps this from pinning a nesting shape.
-            const auto placedCorrectly = [&expectedPath](const QStringList& walked,
-                                                          const QString& presetId) {
-                const QStringList want = expectedPath.value(presetId);
-                return !want.isEmpty() && walked == want;
-            };
-            bool everyPresetPlaced = !offered.isEmpty();
-            for (QAction* action : chooser->actions()) {
-                QMenu* level = action->menu();
-                if (level == nullptr) continue;
-                const QStringList outer{action->text()};
-                for (QAction* nested : level->actions()) {
-                    QMenu* deepest = nested->menu();
-                    if (deepest == nullptr) {
-                        if (!placedCorrectly(outer, nested->data().toString())) {
-                            everyPresetPlaced = false;
-                        }
-                        continue;
-                    }
-                    const QStringList inner{action->text(), nested->text()};
-                    for (QAction* leaf : deepest->actions()) {
-                        if (leaf->menu() != nullptr) continue;
-                        if (!placedCorrectly(inner, leaf->data().toString())) {
-                            everyPresetPlaced = false;
-                        }
-                    }
+            for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
+                if (!preset.rife && preset.id.startsWith(QLatin1String("spatial:"))) {
+                    expected << preset.id;
+                    expectedPaths.insert(preset.id,
+                                         {QStringLiteral("AnimeJaNai"),
+                                          QStringLiteral("Spatial models")});
                 }
             }
-            check(everyPresetPlaced,
-                  "each preset is nested under the categories the catalogue gives it");
-            check(countActionText(chooser->actions(), QStringLiteral("AutoDownscalePre"), true) == 0,
-                  "chain-internal AutoDownscalePre steps are never offered");
-            bool offeredNonPublicModel = false;
-            for (const native::AnimeJanaiPreset& preset : publicModels) {
-                if (!preset.rife && preset.id.startsWith(QLatin1String("spatial:"))) continue;
-                offeredNonPublicModel |= offered.contains(preset.id);
+            QStringList a = offered, b = expected;
+            a.sort(); b.sort();
+            const bool unique = std::adjacent_find(a.cbegin(), a.cend()) == a.cend() &&
+                                std::adjacent_find(b.cbegin(), b.cend()) == b.cend();
+            check(unique && a == b,
+                  "Compare offers every shader preset and public spatial model only, once each");
+            bool nonPublic = false;
+            for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
+                if (preset.rife || !preset.id.startsWith(QLatin1String("spatial:"))) {
+                    nonPublic |= offered.contains(preset.id);
+                }
             }
-            check(!offeredNonPublicModel,
-                  "RIFE and non-public AnimeJaNai entries are never offered");
-
-            // The badge menu is the only chooser, so a preset is picked the way
-            // a viewer's click reaches it: through its own QAction. The action
-            // pointer is held across the pick on purpose - the refill runs from
-            // the action's own handler, and a rebuild instead of a check-mark
-            // move would have deleted it.
-            QAction* pick = nullptr;
+            check(!nonPublic, "Compare excludes RIFE and non-public AnimeJaNai entries");
+            check(chooserPlacementsMatch(badge->menu(), {}, expectedPaths),
+                  "Compare nests every preset under its catalogue category");
+            check(countActionText(badge->menu()->actions(),
+                                  QStringLiteral("AutoDownscalePre")) == 0,
+                  "Compare never offers chain-internal AutoDownscalePre stages");
             QMenu* pickLevel = nullptr;
-            for (QAction* action : chooser->actions()) {
-                QMenu* level = action->menu();
-                if (level == nullptr) continue;
-                for (QAction* nested : level->actions()) {
-                    QMenu* deepest = nested->menu();
-                    if (deepest == nullptr) continue;
-                    for (QAction* leaf : deepest->actions()) {
-                        if (leaf->data().toString() == QLatin1String("hq_a")) {
-                            pick = leaf;
-                            pickLevel = deepest;
-                        }
-                    }
-                }
-            }
-            check(pick != nullptr, "the preset the probe picks is in the chooser");
-            if (pick != nullptr) {
-                const QList<QAction*> before = pickLevel->actions();
-                pick->trigger();
+            QAction* hqA = chooserAction(badge->menu(), QStringLiteral("hq_a"), &pickLevel);
+            check(hqA != nullptr && pickLevel != nullptr,
+                  "Compare's chooser includes a real preset action");
+            if (hqA != nullptr && pickLevel != nullptr) {
+                const QList<QAction*> actionsBefore = pickLevel->actions();
+                hqA->trigger();
                 QCoreApplication::processEvents();
-                check(pickLevel->actions() == before,
-                      "the chooser's cached action tree survives the pick");
-                check(pick->isChecked(), "the picked preset is marked as side A's candidate");
-                check(surface->anime4KChainId() == idBeforeCompare &&
-                          surface->effectiveShaderChain() == chainBeforeCompare,
-                      "Compare's own pick never rewrites the player's running chain");
+                check(pickLevel->actions() == actionsBefore,
+                      "Compare reuses its cached chooser tree after a selection");
+                check(hqA->isChecked(), "Compare marks the chosen preset in its real menu");
             }
+            check(session->anime4KChainId() == idBeforeCompare &&
+                      session->effectiveShaderChain() == chainBeforeCompare,
+                  "Compare selection does not rewrite the player's active chain");
         }
         compare->close();
-        pump(100);
-        check(!compare->isVisible(), "the Compare window closes without touching the player");
     }
-    check(surface->anime4KChainId() == idBeforeCompare,
-          "the running chain is the experiment at the end of the compare run");
 
-    // ── picture in picture ──────────────────────────────────────────────
-    // The float decodes in its own core, so it needs the chain separately: the
-    // mode alone would drop an experiment the compare window had put in place.
-    dialog->togglePip();
-    QCoreApplication::processEvents();
-    check(dialog->isPipActive(), "PiP opened through the player's own control");
-    PipFloat* floating = nullptr;
-    for (QWidget* widget : QApplication::topLevelWidgets()) {
-        if (PipFloat* pip = qobject_cast<PipFloat*>(widget); pip != nullptr && pip->isVisible()) {
-            floating = pip;
-        }
-    }
-    check(floating != nullptr, "the float is a real top-level window");
-    if (floating != nullptr) {
-        check(floating->videoSurface()->anime4KChainId() == QLatin1String(kExperiment),
-              "the float carries the experiment's chain, not just the mode");
-        check(waitForVideo(floating->videoSurface(), 12000),
-              "the float decoded the same stream in its own core");
-        check(chainSettlesTo(floating->videoSurface(), QLatin1String(kExperiment)),
-              "the float runs that chain stage for stage");
-    }
-    dialog->togglePip();
+    controller->togglePip();
+    check(waitUntil([&] { return controller->isPipActive(); }, 2000),
+          "PiP activates through the player's real control path");
+    check(controller->window() == window && window->compactPip() && controller->session() == session,
+          "PiP is the same Quick window and VideoSession, not another decoder");
+    check(session->anime4KChainId() == QLatin1String(kExperiment) &&
+              chainSettlesTo(session, QLatin1String(kExperiment)),
+          "the active experiment remains applied in compact PiP");
+    controller->togglePip();
+    check(waitUntil([&] { return !controller->isPipActive(); }, 2000), "PiP exits through the same control");
+
+    const QSize minimum = window->minimumSize();
+    window->resize(minimum);
     pump(300);
-    check(!dialog->isPipActive(), "PiP closed through the same control");
-    check(dialog->isVisible(), "the player window is back after PiP");
+    check(window->width() <= minimum.width() + 8 && window->height() <= minimum.height() + 8,
+          "the production window fits its minimum size");
+    emit controller->menuOpenRequested(QStringLiteral("enhancements"));
+    check(clickRow(window, QStringLiteral("enhancements"), QStringLiteral("anime4k"), true),
+          "Anime4K opens at minimum size");
+    check(waitUntil([&] { return menuPanel(window, QStringLiteral("anime4k")) != nullptr; }, 2000),
+          "the minimum-size Anime4K menu is visible");
+    check(clickRow(window, QStringLiteral("anime4k"),
+                   QStringLiteral("anime4k/experimental"), true),
+          "the minimum-size experimental category opens");
+    check(waitUntil([&] {
+              return menuPanel(window, QStringLiteral("anime4k/experimental")) != nullptr;
+          }, 2000), "the minimum-size experimental panel is visible");
+    check(clickRow(window, QStringLiteral("anime4k/experimental"),
+                   QStringLiteral("anime4k/experimental/noise"), true),
+          "the minimum-size deepest family opens");
+    QQuickItem* deepest = menuPanel(window, QStringLiteral("anime4k/experimental/noise"));
+    const QRectF deepestRect = deepest != nullptr
+                                   ? deepest->mapRectToScene(QRectF(0, 0, deepest->width(),
+                                                                    deepest->height()))
+                                   : QRectF();
+    check(deepest != nullptr && QRectF(0, 0, window->width(), window->height())
+                                        .contains(deepestRect),
+          "the deepest Quick menu level fits inside the minimum-sized window");
 
-    // ── the smallest window the player allows ───────────────────────────
-    // The menus are clamped to the window, so the fit that matters is at the
-    // minimum size: a level that overflows it would be unreachable.
-    shell->windowModeToggled();
-    pump(400);
-    check(!dialog->isFullScreen(), "the player left full screen for the fit check");
-    dialog->resize(dialog->minimumSize());
-    pump(400);
-    const QSize minimum = dialog->minimumSize();
-    check(dialog->width() <= minimum.width() + 8 && dialog->height() <= minimum.height() + 8,
-          "the player window is at its minimum size");
-    check(openAnimeRoot(shell, dialog, menus), "the menu opens in the smallest window");
-    check(clickRow(menus.anime, QStringLiteral("anime4k/experimental")),
-          "the deepest category opens in the smallest window");
-    menus.anime = levelPanel(dialog, QStringLiteral("anime4k/experimental"), 0);
-    check(clickRow(menus.anime, QStringLiteral("anime4k/experimental/noise")),
-          "the deepest family opens in the smallest window");
-    MenuPopup* deepestPanel =
-        levelPanel(dialog, QStringLiteral("anime4k/experimental/noise"), 0);
-    check(deepestPanel != nullptr && dialog->rect().contains(deepestPanel->geometry()),
-          "the drilled-down menu fits inside the smallest window");
-    // The deepest leaf of the deepest level, taken from the panel rather than
-    // from a string: if it is on screen at minimum size, every shallower leaf is.
-    const QStringList deepestPresets = presetIdsOn(deepestPanel);
-    check(deepestPanel != nullptr && !deepestPresets.isEmpty() &&
-              rowButton(deepestPanel, deepestPresets.last()) != nullptr,
-          "the last leaf of the deepest level is still on screen");
-
-    // ── the reopen ──────────────────────────────────────────────────────
-    check(settings.value(QStringLiteral("player/anime4k")).toString() ==
-              QLatin1String(kExperiment),
-          "the experiment is still the stored setting before the reopen");
-    check(closeDialog(dialog), "the WA_DeleteOnClose dialog is destroyed before the reopen");
-
-    dialog = createDialog(url);
-    surface = dialog->findChild<VideoSurface*>();
-    shell = dialog->findChild<PlayerShell*>();
-    if (!waitForVideo(surface) || shell == nullptr || surface == nullptr) {
-        std::fprintf(stderr, "FAIL the reopened player never rendered\n");
-        delete dialog.data();
+    check(settings.value(QStringLiteral("player/anime4k")).toString() == QLatin1String(kExperiment),
+          "the experiment remains stored before reopening the player");
+    check(closePlayer(controller), "the acknowledged player close completes before reopen");
+    controller = createPlayer(url);
+    if (!waitForVideo(controller)) {
+        std::fprintf(stderr, "FAIL reopened production player did not render\n");
+        if (controller) controller->requestClose();
         return 4;
     }
-    check(surface->anime4KChainId() == QLatin1String(kExperiment),
-          "the reopened player restored the experiment's chain by id");
-    check(anime4k::modeId(surface->anime4KMode()) == QLatin1String(kExperiment),
-          "the reopened player's mode is the restored experiment");
-    check(chainSettlesTo(surface, QLatin1String(kExperiment)),
-          "the reopened player applies the experiment's ordered chain");
-    chip = dialog->findChild<QLabel*>(QStringLiteral("playerEnhancementStatus"));
-    check(chip != nullptr && !chip->isHidden() && chip->text().contains(experimentLabel),
-          "the reopened info chip names the restored experiment");
-
-    surface->setPaused(true);
-    pump(500);
-    const QImage restoredOn = settledFrame(surface);
-    const QImage restoredOnAgain = settledFrame(surface);
-    const double restoredNoise = bandDifference(restoredOn, restoredOnAgain);
+    window = controller->window();
+    session = controller->session();
+    check(controller->anime4kChainId() == QLatin1String(kExperiment),
+          "the reopened player restores the experiment's chain by id");
+    check(chainSettlesTo(session, QLatin1String(kExperiment)),
+          "the reopened player applies the persisted ordered chain");
+    check(anime4k::modeId(session->anime4KMode()) == QLatin1String(kExperiment),
+          "the reopened player restores the persisted mode as well as the chain id");
+    session->setPaused(true);
+    const QImage restoredOn = settledFrame(window);
+    emit controller->menuOpenRequested(QStringLiteral("enhancements"));
+    check(clickRow(window, QStringLiteral("enhancements"), QStringLiteral("anime4k"), true),
+          "the reopened enhancement menu opens its Anime4K level");
+    check(clickRow(window, QStringLiteral("anime4k"),
+                   QStringLiteral("anime4k/experimental"), true),
+          "the reopened experimental level opens");
+    PlayerMenuModel* animeModel = controller->menuModel(QStringLiteral("anime4k"));
+    const int experimentalRow = animeModel != nullptr
+                                    ? animeModel->indexOfId(QStringLiteral("anime4k/experimental"))
+                                    : -1;
+    PlayerMenuModel* experimentModel = experimentalRow >= 0
+                                           ? controller->submenuModel(QStringLiteral("anime4k"),
+                                                                      experimentalRow)
+                                           : nullptr;
+    check(experimentModel != nullptr &&
+              experimentModel->selectedId() == QLatin1String(kExperiment),
+          "the reopened Quick menu marks the restored experiment as selected");
+    const QImage restoredAgain = settledFrame(window);
+    const double restoredNoise = bandDifference(restoredOn, restoredAgain);
     check(!restoredOn.isNull() && restoredNoise >= 0.0 && restoredNoise <= 0.01,
           "the reopened player holds a stable frame with the restored chain");
-
-    // The restored chain is marked where the viewer would look for it. The
-    // comparison is against a sibling that shares its level, taken from the
-    // catalogue: a level with nothing beside the current one would make any
-    // marking vacuous.
-    check(openAnimeRoot(shell, dialog, menus), "the reopened menu opens at the Anime4K root");
-    check(clickRow(menus.anime, QStringLiteral("anime4k/experimental")),
-          "the reopened experimental category opens");
-    MenuPopup* experimentPanel = levelPanel(dialog, QStringLiteral("anime4k/experimental"), 0);
-    QStringList siblings;
-    for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
-        if (info.category == QLatin1String("anime4k/experimental") &&
-            info.id != QLatin1String(kExperiment)) {
-            siblings << info.id;
-        }
-    }
-    QPushButton* marked = rowButton(experimentPanel, QLatin1String(kExperiment));
-    QPushButton* sibling =
-        siblings.isEmpty() ? nullptr : rowButton(experimentPanel, siblings.first());
-    check(marked != nullptr && sibling != nullptr && siblings.size() > 1,
-          "the reopened experiment level lists the restored preset beside its siblings");
-    check(marked != nullptr && sibling != nullptr && marked->styleSheet() != sibling->styleSheet(),
-          "the restored preset is the one marked as current in its menu");
-
-    // The restored chain has to be drawing, and Off has to take it away - both
-    // from the same paused position, so the two frames share one decode.
-    check(clickLeaf({}, QStringLiteral("off"), shell, dialog, menus),
-          "Disabled is selected through the reopened menu");
-    check(chainSettlesOff(surface),
-          "Disabled clears every active shader path");
-    pump(500);
-    const QImage restoredOff = settledFrame(surface);
+    check(choose(QStringLiteral("off")), "Disabled is selected through the reopened Quick menu");
+    check(chainSettlesOff(session), "Disabled clears every active shader path");
+    const QImage restoredOff = settledFrame(window);
     const double restoredEffect = bandDifference(restoredOn, restoredOff);
     const double restoredThreshold = std::max(0.05, restoredNoise * 5.0);
-    std::fprintf(stderr,
-                 "     restored experiment vs Off: %.3f / 255 "
-                 "(floor %.4f, threshold %.4f)\n",
+    std::fprintf(stderr, "     restored experiment vs Off: %.3f / 255 (floor %.4f, threshold %.4f)\n",
                  restoredEffect, restoredNoise, restoredThreshold);
-    check(restoredEffect > restoredThreshold,
-          "the restored experiment was really rendering, not just recorded");
+    check(restoredEffect > restoredThreshold, "the restored experiment was really rendering");
 
-    check(closeDialog(dialog), "the reopened dialog closes cleanly");
+    check(closePlayer(controller), "the reopened player closes cleanly");
     settings.clear();
     settings.sync();
     std::fprintf(stderr, "RESULT: %s (%d failures)\n", failures == 0 ? "PASS" : "FAIL", failures);

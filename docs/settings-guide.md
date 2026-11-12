@@ -1,5 +1,7 @@
 # Settings guide
 
+Settings, Components and the processing/configuration pages remain in the existing Widgets application window. The player itself uses a native Qt Quick scene. Component/model ownership, backend selection and the deferred **Save** behavior described below are unchanged by the player presentation.
+
 Open **Settings** from the main window. The settings window has these pages:
 
 | Group | Page | Use it for |
@@ -102,7 +104,7 @@ These settings are separate: HDR tone mapping describes how HDR video is mapped 
 - **Native (fit to window)** is the default and preserves the video's display aspect ratio, including in fullscreen. Existing scaling-mode preferences are reset once to Native; a later explicit choice is saved. **Fill (crop edges)** crops to fill the picture area. **Stretch** distorts to fill it and ignores the stored zoom while it is selected. **16:9** and **4:3** force that aspect. **Original size (1:1)** shows physical pixels, centered and cropped when they do not fit.
 - **Zoom** runs from −50% to +100%. It is a viewing preference and is not reset when the source changes. Stretch and original size keep the stored percentage but do not apply it.
 - **Upscaler** and **Downscaler** choose the display resample. Downscaler **Auto (recommended)** restores the running core's own default after the player has initialized; it does not send the literal `auto`, which this runtime rejects. If that default cannot be read, the player says so and the previous downscaler stays until you choose one or reopen the player.
-- The player settings flyout has the same mode list, without the zoom and scaler rows. Compare always uses Fit while a comparison owns the picture, so the panes stay comparable. Picture-in-picture follows the saved setting.
+- The player’s **Q** Settings menu has the same mode list, without the zoom and scaler rows. Compare always uses Fit while a comparison owns the picture, so the panes stay comparable. Picture-in-picture follows the saved setting.
 
 Saved changes reach a running player on the next event pump. A paused picture redraws after the asynchronous option writes complete without resuming playback. Changing mode rewrites keep-aspect, panscan, aspect override, unscaled, zoom, scale and downscale together, so an old crop or override cannot survive the switch.
 
@@ -154,7 +156,7 @@ Neither platform option forces file associations. On Linux, the desktop decides 
 
 Before moving a portable application folder, disable its startup and Open With integrations, move it, then enable them again from the new location so registered paths can be updated. If the move happened first, a stale Windows startup entry may need to be removed from Windows before enabling startup at the new location. If saving an integration fails, Settings stays open with the edits. The integration writer attempts rollback; the app reports if rollback itself could not restore the previous state. On platforms other than Windows and Linux these controls are unavailable.
 
-The player also has a **Set as default video player…** action in its **Quality and speed** flyout. It registers Mikai Ja Nai as a per-user candidate and opens the Windows or desktop Default Apps settings; it does not change defaults automatically, so choose Mikai Ja Nai and the video file types there. Registration refuses conflicting entries it does not own, and if a registration write fails it attempts to restore the prior values. Candidate registration can succeed even if opening the OS settings fails. In that case, the error gives the manual route; the registration remains and can be used when choosing a default later.
+The player’s **Q** Settings menu includes **Make mikai the default video player**. It registers Mikai Ja Nai as a per-user candidate and opens the Windows or desktop Default Apps settings; it does not change defaults automatically, so choose Mikai Ja Nai and the video file types there. Registration refuses conflicting entries it does not own, and if a registration write fails it attempts to restore the prior values. Candidate registration can succeed even if opening the OS settings fails. In that case, the error gives the manual route; the registration remains and can be used when choosing a default later.
 
 ## Save, Cancel and work that starts immediately
 

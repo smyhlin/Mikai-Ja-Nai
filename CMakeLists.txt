@@ -32,7 +32,8 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/MinGWRuntime.cmake)
 # cmake/MikaiLinux.cmake requires patchelf when Qt deployment is requested.
 set(QT_DEPLOY_USE_PATCHELF ON)
 
-find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Network LinguistTools)
+find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Network LinguistTools
+  Qml Quick QuickControls2)
 # P2-06: the Qt prefix is computed once, here; MikaiTests.cmake and the
 # translation deployment below both read MIKAI_QT_PREFIX.
 get_filename_component(MIKAI_QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
@@ -235,8 +236,10 @@ set(PLAYER_SOURCES
   src/gui/SystemDefaultPlayerLaunch.cpp
   src/gui/XdgDesktopIntegration.cpp
   src/gui/Win32Support.cpp
-  # OpenGL render bridge & video surface
+  # Playback session, OpenGL render bridge & widget adapter
   src/player/core/MpvRenderContext.cpp
+  src/player/core/VideoRenderBridge.cpp
+  src/player/core/VideoSession.cpp
   src/player/core/VideoSurface.cpp
   src/player/core/VideoSurfaceAnimeJanai.cpp
   src/player/core/VideoSurfaceNative.cpp
@@ -250,18 +253,14 @@ set(PLAYER_SOURCES
   src/player/shell/HoverPreview.cpp
   src/player/shell/OpenSubtitlesClient.cpp
   src/player/shell/OpenSubtitlesClient.hpp
-  src/player/shell/PipFloat.cpp
-  src/player/shell/PlayerDialog.cpp
   src/player/shell/ClipExport.cpp
   src/player/shell/ClipDialog.cpp
-  src/player/shell/PlayerDialogProcessing.cpp
   src/player/shell/MediaInformationDialog.cpp
   src/player/shell/MediaInformationPresentation.cpp
   src/player/shell/MediaInformationTree.cpp
   src/player/shell/MediaInformationOverview.cpp
   src/player/shell/OpeningOverlay.cpp
   src/player/shell/PlayerPopups.cpp
-  src/player/shell/PlayerShell.cpp
   src/player/shell/ShellSliders.cpp
   src/player/shell/ShellTheme.cpp
   src/player/shell/ShellWidgets.cpp
@@ -288,6 +287,9 @@ set(PLAYER_HEADERS
   src/gui/XdgDesktopIntegration.hpp
   src/gui/Win32Support.hpp
   src/player/core/MpvRenderContext.hpp
+  src/player/core/VideoPresenter.hpp
+  src/player/core/VideoRenderBridge.hpp
+  src/player/core/VideoSession.hpp
   src/player/core/VideoSurface.hpp
   src/player/core/MediaInformation.hpp
   src/player/shaders/Anime4K.hpp
@@ -295,17 +297,14 @@ set(PLAYER_HEADERS
   src/player/shell/EpisodeNavButton.hpp
   src/player/shell/FramePreviewService.hpp
   src/player/shell/HoverPreview.hpp
-  src/player/shell/PipFloat.hpp
   src/player/shell/ClipExport.hpp
   src/player/shell/ClipDialog.hpp
-  src/player/shell/PlayerDialog.hpp
   src/player/shell/MediaInformationDialog.hpp
   src/player/shell/MediaInformationPresentation.hpp
   src/player/shell/MediaInformationTree.hpp
   src/player/shell/MediaInformationOverview.hpp
   src/player/shell/OpeningOverlay.hpp
   src/player/shell/PlayerPopups.hpp
-  src/player/shell/PlayerShell.hpp
   src/player/shell/ProcessingSettingsIntent.hpp
   src/player/shell/ShellSliders.hpp
   src/player/shell/ShellTheme.hpp
@@ -367,6 +366,154 @@ target_link_libraries(mikai_player PUBLIC
 if(WIN32)
   target_link_libraries(mikai_player PRIVATE crypt32)
 endif()
+
+# MpvVideoItem exposes mplayer::VideoSession to QML through a QML_FOREIGN gadget
+# with no QML annotations in the core header, so qmltyperegistrar needs this
+# library's metatypes JSON. Extraction also creates the moc --collect-json rule
+# and the INTERFACE_QT_META_TYPES_BUILD_FILE property read below.
+qt_extract_metatypes(mikai_player)
+
+# ---------------------------------------------------------------------------
+# 3c. mikai_player_quick — the Mikai.Player QML module
+# ---------------------------------------------------------------------------
+# Static so the module's plugin is the static registration route on this shared
+# Qt build; hosts link the plugin and import its generated class name.
+# AUTOMOC must already be on when the module target is created: Qt extracts the
+# metatypes during qt_add_qml_module, not at target finalization. block() keeps
+# every other target in this directory on its own explicit AUTOMOC setting.
+set(MIKAI_PLAYER_QML_FILES
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/PlayerView.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/PlayerControls.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/Timeline.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/VolumeControl.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/PipControls.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/OverlayRoot.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/CascadingMenu.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/PlayerPanel.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/PlayerButton.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/PlayerIcon.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/TrackPanels.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/EpisodeDrawer.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/PlayerSettings.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/ShortcutSheet.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/HoverPreview.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/PlayerDialogs.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/PreparationView.qml"
+)
+foreach(_mikai_player_qml IN LISTS MIKAI_PLAYER_QML_FILES)
+  get_filename_component(_mikai_player_qml_alias "${_mikai_player_qml}" NAME)
+  set_source_files_properties("${_mikai_player_qml}" PROPERTIES
+    QT_RESOURCE_ALIAS "${_mikai_player_qml_alias}")
+endforeach()
+unset(_mikai_player_qml)
+unset(_mikai_player_qml_alias)
+
+block()
+  set(CMAKE_AUTOMOC ON)
+  qt_add_qml_module(mikai_player_quick
+    URI Mikai.Player
+    VERSION 1.0
+    RESOURCE_PREFIX /qt/qml
+    OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/qml/Mikai/Player
+    STATIC
+    SOURCES
+      src/player/quick/MpvVideoItem.cpp
+      src/player/quick/MpvVideoItem.hpp
+      src/player/quick/PlayerMenuModel.cpp
+      src/player/quick/PlayerMenuModel.hpp
+      src/player/quick/PlayerIconProvider.cpp
+      src/player/quick/PlayerIconProvider.hpp
+      src/player/quick/PlayerController.hpp
+      src/player/quick/PlayerController.cpp
+      src/player/quick/PlayerControllerMedia.cpp
+      src/player/quick/PlayerControllerProcessing.cpp
+      src/player/quick/PlayerControllerMenus.cpp
+      src/player/quick/PlayerWindow.hpp
+      src/player/quick/PlayerWindow.cpp
+      src/player/quick/PreparationWindow.hpp
+      src/player/quick/PreparationWindow.cpp
+    QML_FILES ${MIKAI_PLAYER_QML_FILES}
+    IMPORTS QtQuick
+  )
+endblock()
+set_target_properties(mikai_player_quick PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+)
+# qmltyperegistrar only reads foreign types from the module target's own sources
+# that end in metatypes.json, so the core library's file must be one of them.
+get_target_property(_mikai_core_metatypes mikai_player INTERFACE_QT_META_TYPES_BUILD_FILE)
+if(NOT _mikai_core_metatypes)
+  message(FATAL_ERROR
+    "mikai_player exposes no metatypes.json; the Mikai.Player module cannot resolve VideoSession")
+endif()
+target_sources(mikai_player_quick PRIVATE "${_mikai_core_metatypes}")
+target_include_directories(mikai_player_quick PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick
+)
+target_link_libraries(mikai_player_quick PUBLIC
+  mikai_player
+  Qt6::Qml
+  Qt6::Quick
+  Qt6::QuickControls2
+)
+
+# ---------------------------------------------------------------------------
+# 3b. QML player root modules
+# ---------------------------------------------------------------------------
+# The reusable player scene is Mikai.Player; only an executable can be the
+# target of Qt's QML deployment scan, so every executable hosting the Quick
+# player carries its own Mikai.App root module. That module is built from the
+# one real entry file the window loads, not a scanner-only scene, and each host
+# writes its generated module into its own directory so two executables never
+# share a generated qmldir or type registration.
+set(MIKAI_PLAYER_ENTRY_QML
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/PlayerEntry.qml")
+
+function(mikai_add_player_app_module target)
+  if(NOT TARGET mikai_player_quick OR NOT TARGET mikai_player_quickplugin)
+    message(FATAL_ERROR
+      "mikai_add_player_app_module(${target}) needs the mikai_player_quick QML module")
+  endif()
+  if(NOT EXISTS "${MIKAI_PLAYER_ENTRY_QML}")
+    message(FATAL_ERROR "the Quick player entry is missing: ${MIKAI_PLAYER_ENTRY_QML}")
+  endif()
+  # Function scope: Qt appends the module's URI path below this directory, so
+  # the generated qmldir for this host lands in its own tree.
+  set_target_properties(${target} PROPERTIES AUTOMOC ON)
+  set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml-${target}")
+  set_source_files_properties("${MIKAI_PLAYER_ENTRY_QML}"
+    TARGET_DIRECTORY ${target}
+    PROPERTIES QT_RESOURCE_ALIAS "PlayerEntry.qml")
+  qt_add_qml_module(${target}
+    URI Mikai.App
+    VERSION 1.0
+    RESOURCE_PREFIX /qt/qml
+    QML_FILES "${MIKAI_PLAYER_ENTRY_QML}"
+    IMPORTS Mikai.Player
+  )
+  # The Mikai.Player plugin is a static plugin on a shared Qt build, so nothing
+  # references it and its types would never register. Import the plugin class
+  # Qt generated for the module rather than a hard-coded module name.
+  get_target_property(plugin_class mikai_player_quickplugin QT_PLUGIN_CLASS_NAME)
+  if(NOT plugin_class)
+    message(FATAL_ERROR
+      "mikai_player_quickplugin has no generated plugin class name")
+  endif()
+  set(plugin_import "${CMAKE_CURRENT_BINARY_DIR}/mikai-${target}-qml-import.cpp")
+  file(GENERATE OUTPUT "${plugin_import}" CONTENT
+"// Generated by mikai_add_player_app_module(): registers the static Mikai.Player plugin.
+#include <QtQml/qqmlextensionplugin.h>
+Q_IMPORT_QML_PLUGIN(${plugin_class})
+")
+  set_source_files_properties("${plugin_import}" PROPERTIES GENERATED TRUE)
+  target_sources(${target} PRIVATE "${plugin_import}")
+  target_link_libraries(${target} PRIVATE
+    mikai_player_quick
+    mikai_player_quickplugin
+    Qt6::Qml
+    Qt6::Quick
+  )
+endfunction()
 
 # ---------------------------------------------------------------------------
 # 4. mikai_app & mikai — Desktop Client Pages, Dialogs, State & Workers
@@ -489,7 +636,7 @@ target_include_directories(mikai_app PUBLIC
 )
 target_link_libraries(mikai_app PUBLIC
   mikai_backend
-  mikai_player
+  mikai_player_quick
   Qt6::Core
   Qt6::Gui
   Qt6::Widgets
@@ -506,7 +653,11 @@ if(MIKAI_WITH_MODEL_INSPECTION)
 endif()
 
 qt_add_executable(mikai src/app/main.cpp)
-target_link_libraries(mikai PRIVATE mikai_app)
+# main.cpp fixes the Quick scene graph's graphics API and the shipped Controls
+# style before the first window, so the executable needs those Qt modules itself
+# (mikai_app stays Widgets-only for the shell).
+target_link_libraries(mikai PRIVATE mikai_app Qt6::Quick Qt6::QuickControls2)
+mikai_add_player_app_module(mikai)
 
 # Every build has to be tellable apart from the last one, or "the update did not
 # apply" cannot be answered. The revision is the build's identity: a release tag
@@ -566,7 +717,8 @@ if(WIN32)
                               PROPERTIES GENERATED TRUE)
 endif()
 
-set(MIKAI_TRANSLATION_TARGETS mikai mikai_app mikai_backend mikai_player mikai_native_support)
+set(MIKAI_TRANSLATION_TARGETS mikai mikai_app mikai_backend mikai_player mikai_player_quick
+  mikai_native_support)
 if(TARGET mikai_model_inspection)
   list(APPEND MIKAI_TRANSLATION_TARGETS mikai_model_inspection)
 endif()
@@ -698,7 +850,8 @@ endif()
 
 mikai_deploy_mingw_runtime_targets()
 
-set(MIKAI_TUNED_TARGETS mikai_native_support mikai_player mikai_backend mikai_app mikai)
+set(MIKAI_TUNED_TARGETS mikai_native_support mikai_player mikai_player_quick mikai_backend
+  mikai_app mikai)
 foreach(t IN LISTS MIKAI_TUNED_TARGETS)
   if(TARGET ${t})
     if(MIKAI_IPO)

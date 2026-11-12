@@ -1,8 +1,8 @@
 # Standalone GUI, headless, media, and native QA probe executables.
 # Included when MIKAI_BUILD_PROBES=ON.
 #
-# Deliberate split: 46 probe targets are defined here (41 on a default Linux
-# build, 42 on a default Windows build — native_dml_interop_probe is
+# Deliberate split: 47 probe targets are defined here (42 on a default Linux
+# build, 43 on a default Windows build — native_dml_interop_probe is
 # Windows-only and four more need MIKAI_WITH_MODEL_INSPECTION), and only 2 of
 # them run under CTest — HoverPlaybackCanary (fullscreen_stability_probe) and
 # VideoScalingPersistence (native_settings_probe), both registered in
@@ -47,7 +47,8 @@ mikai_add_probe(mpv_loader_probe src/probes/native/MpvLoaderProbe.cpp
 mikai_add_probe(runtime_selection_probe src/probes/native/RuntimeSelectionProbe.cpp
   LINKS mikai_native_support mikai_player)
 mikai_add_probe(runtime_recovery_probe src/probes/native/RuntimeRecoveryProbe.cpp
-  LINKS mikai_player mikai_backend)
+  LINKS mikai_player_quick mikai_backend)
+mikai_add_player_app_module(runtime_recovery_probe)
 mikai_add_probe(native_status_probe src/probes/native/NativeStatusProbe.cpp
   LINKS mikai_player)
 mikai_add_probe(native_component_probe src/probes/native/NativeComponentProbe.cpp
@@ -72,10 +73,17 @@ endif()
 
 # --- Player & surface probes ---
 mikai_add_probe(engine_popup_probe src/probes/player/EnginePopupProbe.cpp
-  LINKS mikai_player Qt6::Widgets)
+  LINKS mikai_player_quick Qt6::Widgets)
+mikai_add_player_app_module(engine_popup_probe)
 mikai_add_probe(mpv_surface_smoke src/probes/player/mpv_surface_smoke.cpp
   LINKS mikai_player Qt6::Widgets
   GUI_EXECUTABLE DEPLOY_SHADERS)
+# Native Quick video+overlay proof. It registers the item under Mikai.Probe and
+# loads its scene in memory, so it needs neither the Mikai.App entry module nor
+# a desktop CTest registration; the launcher supplies the staged mpv runtime.
+mikai_add_probe(quick_video_probe tests/probes/quick_video_probe.cpp
+  LINKS mikai_player_quick mikai_player Qt6::Widgets Qt6::Quick Qt6::Qml
+  GUI_EXECUTABLE)
 # T-401/T-210: the long-soak frame-order/pacing canary. EXCLUDE_FROM_ALL like
 # every probe above: the default CI build must stay unchanged, and only the
 # nightly soak lane names this target explicitly.
@@ -86,9 +94,10 @@ mikai_add_probe(hdr_playback_probe src/probes/player/HdrPlaybackProbe.cpp
   LINKS mikai_player Qt6::Widgets
   GUI_EXECUTABLE DEPLOY_SHADERS)
 mikai_add_probe(animejanai_probe src/probes/player/AnimeJanaiProbe.cpp
-  LINKS mikai_player Qt6::Widgets Qt6::Test
+  LINKS mikai_player_quick Qt6::Widgets Qt6::Test
   EXTRA_SOURCES src/probes/shared/ForegroundPeer.cpp
   DEPLOY_SHADERS)
+mikai_add_player_app_module(animejanai_probe)
 if(TARGET mikai_app)
   # --focus-during-build measures the shipping raise policy's AttachThreadInput
   # calls during the real engine build, exactly as fullscreen_stability_probe
@@ -100,18 +109,22 @@ mikai_add_probe(headless_pixel_probe src/probes/player/HeadlessPixelProbe.cpp
   LINKS mikai_player Qt6::Core Qt6::Gui Qt6::OpenGL
   DEPLOY_SHADERS)
 mikai_add_probe(widget_pixel_probe src/probes/player/WidgetPixelProbe.cpp
-  LINKS mikai_player Qt6::Widgets
+  LINKS mikai_player_quick Qt6::Widgets
   GUI_EXECUTABLE DEPLOY_SHADERS)
+mikai_add_player_app_module(widget_pixel_probe)
 mikai_add_probe(shell_probe src/probes/player/ShellProbe.cpp
-  LINKS mikai_player Qt6::Widgets
+  LINKS mikai_player_quick Qt6::Widgets
   DEPLOY_SHADERS)
+mikai_add_player_app_module(shell_probe)
 mikai_add_probe(dialog_probe src/probes/player/DialogProbe.cpp
-  LINKS mikai_player Qt6::Widgets
+  LINKS mikai_player_quick Qt6::Widgets Qt6::Quick Qt6::Qml Qt6::Test
   DEPLOY_SHADERS)
+mikai_add_player_app_module(dialog_probe)
 mikai_add_probe(fullscreen_stability_probe src/probes/player/FullscreenStabilityProbe.cpp
-  LINKS mikai_player Qt6::Widgets Qt6::Test
+  LINKS mikai_player_quick Qt6::Widgets Qt6::Test
   EXTRA_SOURCES src/probes/shared/ForegroundPeer.cpp
   DEPLOY_SHADERS)
+mikai_add_player_app_module(fullscreen_stability_probe)
 if(TARGET mikai_app)
   # The focus-switch mode installs the real WindowRaisePolicy so its
   # AttachThreadInput counter measures the shipping policy, not a copy.
@@ -124,50 +137,62 @@ endif()
 # Qt6::Network is for the hover/loading case's loopback origin: a probe may not
 # depend on the public internet to produce a slow source.
 mikai_add_probe(interaction_probe src/probes/player/InteractionProbe.cpp
-  LINKS mikai_player Qt6::Widgets Qt6::Test Qt6::Network
+  LINKS mikai_player_quick Qt6::Widgets Qt6::Test Qt6::Network
   DEPLOY_SHADERS)
+mikai_add_player_app_module(interaction_probe)
 # GOAL-E/T-E1: the measured before for the load transition. It reuses the same
 # loopback origin as the hover/loading case, so the "slow source" a viewer waits
 # on is one fixture, not two conventions.
 mikai_add_probe(load_transition_probe src/probes/player/LoadTransitionProbe.cpp
-  LINKS mikai_player Qt6::Widgets Qt6::Network
+  LINKS mikai_player_quick Qt6::Widgets Qt6::Network
   DEPLOY_SHADERS)
+mikai_add_player_app_module(load_transition_probe)
 mikai_add_probe(compare_shot_probe src/probes/player/CompareShotProbe.cpp
-  LINKS mikai_player Qt6::Widgets Qt6::Test
+  LINKS mikai_player_quick Qt6::Widgets Qt6::Test
   DEPLOY_SHADERS)
+mikai_add_player_app_module(compare_shot_probe)
 mikai_add_probe(compare_probe src/probes/player/CompareProbe.cpp
-  LINKS mikai_player Qt6::Widgets Qt6::Test
+  LINKS mikai_player_quick Qt6::Widgets Qt6::Test
   DEPLOY_SHADERS)
+mikai_add_player_app_module(compare_probe)
 mikai_add_probe(compare_export_probe src/probes/player/CompareExportProbe.cpp
-  LINKS mikai_player Qt6::Widgets Qt6::Test
+  LINKS mikai_player_quick Qt6::Widgets Qt6::Test
   DEPLOY_SHADERS)
+mikai_add_player_app_module(compare_export_probe)
 mikai_add_probe(anime4k_menu_probe src/probes/player/Anime4KMenuProbe.cpp
-  LINKS mikai_player Qt6::Widgets Qt6::Test
+  LINKS mikai_player_quick mikai_app Qt6::Widgets Qt6::Test
   DEPLOY_SHADERS)
+mikai_add_player_app_module(anime4k_menu_probe)
 
 # --- App-linked probes ---
 if(TARGET mikai_app)
   mikai_add_probe(native_menu_probe src/probes/native/NativeMenuProbe.cpp
-    LINKS mikai_app Qt6::Test)
+    LINKS mikai_app mikai_player_quick Qt6::Test)
+  mikai_add_player_app_module(native_menu_probe)
   mikai_add_probe(native_hud_probe src/probes/native/NativeHudProbe.cpp
-    LINKS mikai_app Qt6::Widgets)
+    LINKS mikai_app mikai_player_quick Qt6::Widgets Qt6::Quick Qt6::Qml)
+  mikai_add_player_app_module(native_hud_probe)
   mikai_add_probe(native_settings_probe src/probes/native/NativeSettingsProbe.cpp
     EXTRA_SOURCES
       tests/fixtures/IdentityOnnxFixture.hpp
       src/probes/native/VideoScalingLiveProbe.cpp
       src/probes/native/VideoScalingLiveProbe.hpp
-    LINKS mikai_app Qt6::Test)
+    LINKS mikai_app mikai_player_quick Qt6::Test)
+  mikai_add_player_app_module(native_settings_probe)
   mikai_add_probe(crash_probe src/probes/player/CrashProbe.cpp
     LINKS mikai_app Qt6::Core)
   mikai_add_probe(title_page_probe src/probes/player/TitlePageProbe.cpp
     LINKS mikai_app mikai_backend Qt6::Widgets Qt6::Test
     DEPLOY_SHADERS)
+  mikai_add_player_app_module(title_page_probe)
   mikai_add_probe(external_media_probe src/probes/media/ExternalMediaProbe.cpp
     LINKS mikai_app Qt6::Test
     DEPLOY_SHADERS)
+  mikai_add_player_app_module(external_media_probe)
   mikai_add_probe(hls_recovery_probe src/probes/media/HlsRecoveryProbe.cpp
     LINKS mikai_app Qt6::Test
     DEPLOY_SHADERS)
+  mikai_add_player_app_module(hls_recovery_probe)
   mikai_add_probe(probe_runner src/probes/runner/main.cpp
     EXTRA_SOURCES
       src/probes/runner/ProbeRunner.cpp
@@ -176,14 +201,18 @@ if(TARGET mikai_app)
       src/probes/shared/ProbeManifest.hpp
     LINKS mikai_app Qt6::Test
     DEPLOY_SHADERS)
+  mikai_add_player_app_module(probe_runner)
   mikai_add_probe(rife_settings_probe src/probes/native/RifeSettingsProbe.cpp
     LINKS mikai_app Qt6::Test)
   mikai_add_probe(native_playback_assembly_probe src/probes/native/NativePlaybackAssemblyProbe.cpp
-    LINKS mikai_app Qt6::Test)
+    LINKS mikai_app mikai_player_quick Qt6::Test)
+  mikai_add_player_app_module(native_playback_assembly_probe)
   mikai_add_probe(native_framebuffer_probe src/probes/native/NativeFramebufferProbe.cpp
-    LINKS mikai_app)
+    LINKS mikai_app mikai_player_quick)
+  mikai_add_player_app_module(native_framebuffer_probe)
   mikai_add_probe(native_geometry_probe src/probes/native/NativeGeometryProbe.cpp
-    LINKS mikai_app Qt6::Test)
+    LINKS mikai_app mikai_player_quick Qt6::Test)
+  mikai_add_player_app_module(native_geometry_probe)
   mikai_add_probe(benchmark_probe src/probes/player/BenchmarkProbe.cpp
     LINKS mikai_app Qt6::Test
     DEPLOY_SHADERS)
@@ -191,9 +220,11 @@ if(TARGET mikai_app)
     LINKS mikai_app Qt6::Widgets)
   mikai_add_probe(startup_recovery_probe src/probes/player/StartupRecoveryProbe.cpp
     LINKS mikai_app Qt6::Widgets)
+  mikai_add_player_app_module(startup_recovery_probe)
   mikai_add_probe(release_gallery_probe src/probes/app/ReleaseGalleryProbe.cpp
-    LINKS mikai_app Qt6::Widgets Qt6::Test
+    LINKS mikai_app mikai_player_quick Qt6::Widgets Qt6::Test
     DEPLOY_SHADERS)
+  mikai_add_player_app_module(release_gallery_probe)
 
   if(MIKAI_WITH_MODEL_INSPECTION)
     mikai_add_probe(native_assets_probe src/probes/native/NativeAssetsProbe.cpp

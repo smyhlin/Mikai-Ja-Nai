@@ -8,6 +8,7 @@ class TestHdrRenderContracts : public QObject {
 private slots:
     void unknownTransferRequiresSdrGate();
     void pqAndHlgRequireSdrGate();
+    void smpte2084RequiresSdrGate();
     void knownSdrTransferDoesNotRequireSdrGate();
     void primariesDoNotMisclassifySdrAsHdr();
     void pacingConvertsRawRenderNanosecondsToMpvClock();

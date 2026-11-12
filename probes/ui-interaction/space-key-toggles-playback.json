@@ -15,12 +15,12 @@
     {
       "kind": "focus",
       "target": "playerWindow",
-      "note": "Give the window the keyboard focus, the way clicking the title bar or arriving from the page would. The key is delivered to whatever holds focus, so this is the real precondition for the shortcut rather than a formality."
+      "note": "Give the actual Quick window focus before dispatching keys."
     },
     {
       "kind": "key_press",
       "key": "Space",
-      "note": "PlayerDialog::onShellKey maps Space to the play/pause request (PlayerDialog.cpp:910)."
+      "note": "The Quick controller handles Space as its play/pause command."
     },
     {
       "kind": "wait_for",
@@ -57,10 +57,10 @@
     },
     {
       "kind": "qt_property",
-      "target": "playerPlayToggle",
-      "property": "checked",
-      "expected": true,
-      "note": "The control followed the keyboard, so the shortcut and the button cannot disagree about what the player is doing."
+      "target": "player.playPause",
+      "property": "toolTip",
+      "expected": "Pause (Space)",
+      "note": "The real Quick button's tooltip is bound to the resulting playing state."
     }
   ]
 }

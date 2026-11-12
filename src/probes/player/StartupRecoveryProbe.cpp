@@ -4,8 +4,8 @@
 #include <QEventLoop>
 #include <QElapsedTimer>
 #include <QFileInfo>
-#include <QOpenGLWidget>
 #include <QSettings>
+#include <QPointer>
 #include <QTemporaryDir>
 #include <QThread>
 
@@ -13,10 +13,10 @@
 #include <optional>
 
 #include "ProbeIsolation.hpp"
-#include "VideoSurface.hpp"
 #include "backend/MikaiClient.hpp"
 #include "pages/MainWindow.hpp"
-#include "player/shell/PlayerDialog.hpp"
+#include "player/core/VideoSession.hpp"
+#include "player/quick/PlayerController.hpp"
 
 namespace {
 
@@ -80,52 +80,87 @@ int main(int argc, char** argv) {
     QElapsedTimer elapsed;
     elapsed.start();
     const bool accepted = window.openMedia(media);
-    mplayer::shell::PlayerDialog* dialog = window.currentMediaPlayer();
-    auto* surface = dialog != nullptr ? dialog->findChild<mplayer::VideoSurface*>() : nullptr;
-    if (!accepted || dialog == nullptr || surface == nullptr) {
-        std::fprintf(stderr, "FAIL: MainWindow did not retain the requested media player\n");
+    QPointer<mplayer::quick::PlayerController> controller = window.currentMediaPlayer();
+    mplayer::VideoSession* session = controller != nullptr ? controller->session() : nullptr;
+    QPointer<mplayer::VideoSession> guardedSession(session);
+    if (!accepted || controller == nullptr || session == nullptr) {
+        std::fprintf(stderr, "FAIL: MainWindow did not retain the requested media controller\n");
         return 1;
     }
 
     QString playbackError;
-    QObject::connect(surface, &mplayer::VideoSurface::errorOccurred, &app,
-                     [&playbackError](const QString& error) { playbackError = error; });
+    const auto errorConnection =
+        QObject::connect(session, &mplayer::VideoSession::errorOccurred, &app,
+                         [&playbackError](const QString& error) { playbackError = error; });
+    const QString expected = QDir::cleanPath(media);
+    const uint64_t initialEpoch = session->sourceEpoch();
+    const auto stillOwnsRequestedSource = [&] {
+        return controller != nullptr && guardedSession != nullptr &&
+               window.currentMediaPlayer() == controller &&
+               controller->session() == guardedSession &&
+               QDir::cleanPath(guardedSession->sourceUrl()) == expected;
+    };
     const bool ready = waitUntil(
         [&] {
-            return surface->isContextReady() && surface->hasVideo() &&
-                   surface->videoWidth() > 0 && surface->videoHeight() > 0 &&
-                   surface->playbackDiagnostics().renderedOutputFrames >= 3;
-        }, timeoutSeconds * 1000);
-    const auto path = ready ? surface->probeMpvProperty(
-                                  QStringLiteral("path"),
-                                  mplayer::ProbePropertyKind::Text)
-                             : std::nullopt;
-    const auto mpvVersion = ready ? surface->probeMpvProperty(
-                                        QStringLiteral("mpv-version"),
-                                        mplayer::ProbePropertyKind::Text)
+            if (!stillOwnsRequestedSource() || controller->window() == nullptr ||
+                !controller->isWindowVisible()) {
+                return false;
+            }
+            return guardedSession->isContextReady() && guardedSession->hasVideo() &&
+                   guardedSession->videoWidth() > 0 && guardedSession->videoHeight() > 0 &&
+                   guardedSession->playbackDiagnostics().renderedOutputFrames >= 3 &&
+                   controller->window()->hasVisibleOutputFrame();
+        },
+        timeoutSeconds * 1000);
+    const uint64_t readyEpoch = guardedSession != nullptr ? guardedSession->sourceEpoch() : 0;
+    const auto path = ready && stillOwnsRequestedSource()
+                          ? guardedSession->probeMpvProperty(
+                                QStringLiteral("path"), mplayer::ProbePropertyKind::Text)
+                          : std::nullopt;
+    const auto mpvVersion = ready && stillOwnsRequestedSource()
+                                ? guardedSession->probeMpvProperty(
+                                      QStringLiteral("mpv-version"),
+                                      mplayer::ProbePropertyKind::Text)
+                                : std::nullopt;
+    const auto ffmpegVersion = ready && stillOwnsRequestedSource()
+                                   ? guardedSession->probeMpvProperty(
+                                         QStringLiteral("ffmpeg-version"),
+                                         mplayer::ProbePropertyKind::Text)
                                    : std::nullopt;
-    const auto ffmpegVersion = ready ? surface->probeMpvProperty(
-                                           QStringLiteral("ffmpeg-version"),
-                                           mplayer::ProbePropertyKind::Text)
-                                      : std::nullopt;
     std::fprintf(stderr, "runtime versions mpv=%s ffmpeg=%s\n",
                  mpvVersion ? qPrintable(mpvVersion->text) : "unavailable",
                  ffmpegVersion ? qPrintable(ffmpegVersion->text) : "unavailable");
-    const QString expected = QDir::cleanPath(media);
-    const QString actual = path && path->kind == mplayer::ProbePropertyValue::Kind::Text
-                               ? QDir::cleanPath(path->text)
-                               : QString();
-    const bool passed = ready && playbackError.isEmpty() && path.has_value() &&
+    const QString actual =
+        path && path->kind == mplayer::ProbePropertyValue::Kind::Text
+            ? QDir::cleanPath(path->text)
+            : QString();
+    const auto renderedFrames =
+        guardedSession != nullptr
+            ? guardedSession->playbackDiagnostics().renderedOutputFrames
+            : uint64_t{0};
+    const bool sourceStable = stillOwnsRequestedSource() && readyEpoch != 0 &&
+                              guardedSession->sourceEpoch() == readyEpoch;
+    const bool windowPresented = controller != nullptr && controller->window() != nullptr &&
+                                 controller->isWindowVisible() &&
+                                 controller->window()->hasVisibleOutputFrame();
+    const bool passed = ready && windowPresented && sourceStable && playbackError.isEmpty() &&
+                        path.has_value() &&
                         actual.compare(expected, Qt::CaseInsensitive) == 0 &&
-                        surface->isPlaying();
+                        guardedSession->isPlaying();
+    QObject::disconnect(errorConnection);
     std::fprintf(stderr,
                  "startup recovery %s elapsed=%lldms context=%d video=%d frames=%llu "
-                 "path=%s expected=%s playing=%d error=%s\n",
+                 "epoch=%llu->%llu path=%s expected=%s playing=%d window-presented=%d "
+                 "source-stable=%d error=%s\n",
                  passed ? "PASS" : "FAIL", static_cast<long long>(elapsed.elapsed()),
-                 int(surface->isContextReady()), int(surface->hasVideo()),
-                 static_cast<unsigned long long>(surface->playbackDiagnostics().renderedOutputFrames),
-                 qPrintable(actual), qPrintable(expected), int(surface->isPlaying()),
-                 qPrintable(playbackError));
+                 int(guardedSession != nullptr && guardedSession->isContextReady()),
+                 int(guardedSession != nullptr && guardedSession->hasVideo()),
+                 static_cast<unsigned long long>(renderedFrames),
+                 static_cast<unsigned long long>(initialEpoch),
+                 static_cast<unsigned long long>(readyEpoch), qPrintable(actual),
+                 qPrintable(expected),
+                 int(guardedSession != nullptr && guardedSession->isPlaying()),
+                 windowPresented, sourceStable, qPrintable(playbackError));
     window.close();
     return passed ? 0 : 1;
 }

@@ -1,6 +1,7 @@
 // The app-owned assembly probe: it drives the real `assembleNativeAdmission`
 // worker and the real `bindNativePlaybackAssembly` delivery against this
-// machine's own app-owned model store, artifact cache and a real PlayerDialog.
+// machine's own app-owned model store, artifact cache and a real PlayerController,
+// PlayerWindow and VideoSession.
 //
 // Two modes, because the two things it proves need different environments.
 //
@@ -36,11 +37,13 @@
 #include <QtCore/QPointer>
 #include <QtCore/QSize>
 #include <QtCore/QStringList>
+#include <QtGui/QGuiApplication>
+#include <QtGui/QWindow>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QLabel>
 
-#include <PlayerDialog.hpp>
-#include <VideoSurface.hpp>
+#include <quick/PlayerController.hpp>
+#include <quick/PlayerWindow.hpp>
+#include <quick/PreparationWindow.hpp>
 #include <native/prepare/NativeArtifactStore.hpp>
 #include <native/bundle/NativeManifest.hpp>
 #include <native/models/NativeModelInspect.hpp>
@@ -82,6 +85,7 @@ using mikai::app::Runner;
 using mikai::app::assembleNativeAdmission;
 using mikai::app::bindNativePlaybackAssembly;
 using mikai::app::observeNativePreparationToolchain;
+using mplayer::quick::PlayerController;
 
 namespace {
 
@@ -137,104 +141,129 @@ void settle(Runner& runner) {
     }
 }
 
-void invokeRequest(mplayer::shell::PlayerDialog& dialog, const SelectionState& selection,
+void invokeRequest(PlayerController& controller, const SelectionState& selection,
                    const NativePreparationContext& context) {
     const bool invoked = QMetaObject::invokeMethod(
-        &dialog,
-        [&dialog, selection, context]() {
-            Q_EMIT dialog.nativeAdmissionRequested(selection, context);
+        &controller,
+        [&controller, selection, context]() {
+            Q_EMIT controller.nativeAdmissionRequested(selection, context);
         },
         Qt::DirectConnection);
-    check(invoked, QStringLiteral("the dialog's request signal is invocable"));
+    check(invoked, QStringLiteral("the controller's request signal is invocable"));
 }
 
-void invokeCancelled(mplayer::shell::PlayerDialog& dialog) {
+void invokeCancelled(PlayerController& controller) {
     const bool invoked = QMetaObject::invokeMethod(
-        &dialog,
-        [&dialog]() {
-            Q_EMIT dialog.nativeAdmissionCancelled();
+        &controller,
+        [&controller]() {
+            Q_EMIT controller.nativeAdmissionCancelled();
         },
         Qt::DirectConnection);
-    check(invoked, QStringLiteral("the dialog's cancellation signal is invocable"));
+    check(invoked, QStringLiteral("the controller's cancellation signal is invocable"));
 }
 
-/// The binding's own delivery behaviour, against a real dialog. A refusal for an
-/// empty selection is deterministic, so the two cases differ only by whether the
-/// run was superseded in flight.
+/// The binding's own delivery behaviour, against a real Quick controller and
+/// its one PlayerWindow/session. A refusal for an empty selection is
+/// deterministic, so the two cases differ only by whether the run was superseded.
 void runBinderChecks(Runner& runner) {
-    auto* dialog = new mplayer::shell::PlayerDialog(QStringLiteral("Assembly probe"),
-                                                    QStringLiteral("file:///probe/absent"),
-                                                    nullptr);
-    QPointer<mplayer::shell::PlayerDialog> dialogGuard(dialog);
-    QLabel* status = dialog->findChild<QLabel*>(QStringLiteral("playerStatusText"));
-    check(status != nullptr, QStringLiteral("the player exposes its own status label"));
-    QObject* const parentBeforeBind = dialog->parent();
-    bindNativePlaybackAssembly(runner, *dialog);
-    check(dialog->parent() == parentBeforeBind,
+    auto* controller = new PlayerController(QStringLiteral("Assembly probe"),
+                                            QStringLiteral("file:///probe/absent"));
+    QPointer<PlayerController> controllerGuard(controller);
+    QObject* const parentBeforeBind = controller->parent();
+    bindNativePlaybackAssembly(runner, *controller);
+    check(controller->parent() == parentBeforeBind,
           QStringLiteral("binding the assembly creates no QObject parent chain"));
+    const auto* const originalSession = controller->session();
+    auto* const originalWindow = controller->window();
+    QQuickItem* const originalVideoItem =
+        originalWindow == nullptr ? nullptr : originalWindow->videoItem();
+    check(originalSession != nullptr && originalWindow != nullptr && originalVideoItem != nullptr,
+          QStringLiteral("the controller host resolves one session, window, and Quick video item"));
+    if (originalWindow != nullptr) controller->window()->showWindowed();
+    controller->togglePip();
+    check(controller->isPipActive() && controller->window() == originalWindow &&
+              originalWindow != nullptr && originalWindow->compactPip() &&
+              controller->session() == originalSession &&
+              originalWindow->session() == originalSession &&
+              originalWindow->videoItem() == originalVideoItem,
+          QStringLiteral("PiP retains the controller's one window, session, and Quick video item"));
+    controller->togglePip();
+    check(!controller->isPipActive() && controller->window() == originalWindow &&
+              controller->session() == originalSession &&
+              originalWindow != nullptr && originalWindow->videoItem() == originalVideoItem,
+          QStringLiteral("restoring PiP keeps the same Quick playback host"));
 
-    SelectionState refusedSelection;  // no recipe: a deterministic named refusal
+    controller->beginEnginePreparation(QStringLiteral("Assembly probe preparation"));
+    bool preparationWindowVisible = false;
+    for (QWindow* window : QGuiApplication::allWindows()) {
+        auto* preparation = qobject_cast<mplayer::quick::PreparationWindow*>(window);
+        preparationWindowVisible = preparationWindowVisible ||
+                                   (preparation != nullptr && preparation->isVisible());
+    }
+    check(controller->enginePreparationVisible() && preparationWindowVisible,
+          QStringLiteral("native preparation shows its controller-owned Quick window"));
+    controller->endEnginePreparation(false, QStringLiteral("probe complete"));
+    check(!controller->enginePreparationVisible(),
+          QStringLiteral("the controller completes its preparation hold"));
+
+    QString referenceFailure;
+    QObject::connect(controller, &PlayerController::nativeReferenceFrameFailed,
+                     controller, [&referenceFailure](const QString& key, const QString&, int) {
+                         referenceFailure = key;
+                     });
+    controller->requestNativeReferenceFrame(0);
+    check(!referenceFailure.isEmpty(),
+          QStringLiteral("a real reference-frame request reaches the same session's refusal"));
+
+    SelectionState refusedSelection;
     NativePreparationContext context;
     context.source = observedSource(QSize(640, 360), Rational{24, 1});
     context.device = observedDevice(QStringLiteral("GPU-probe"), 12, 0);
     context.modulePath = QStringLiteral("probe-module");
 
-    const QString beforeDelivery = status != nullptr ? status->text() : QString();
-    invokeRequest(*dialog, refusedSelection, context);
+    const QString beforeDelivery = controller->statusText();
+    invokeRequest(*controller, refusedSelection, context);
     settle(runner);
-    const QString afterDelivery = status != nullptr ? status->text() : QString();
-    check(status != nullptr && afterDelivery != beforeDelivery,
-          QStringLiteral("a current run's refusal is delivered to the real player"));
+    const QString afterDelivery = controller->statusText();
+    check(afterDelivery != beforeDelivery,
+          QStringLiteral("a current run's refusal is delivered to the real controller"));
 
-    const QString beforeStale = status != nullptr ? status->text() : QString();
-    invokeRequest(*dialog, refusedSelection, context);
-    invokeCancelled(*dialog);
+    const QString beforeStale = controller->statusText();
+    invokeRequest(*controller, refusedSelection, context);
+    invokeCancelled(*controller);
     settle(runner);
-    check(status != nullptr && status->text() == beforeStale,
+    check(controller->statusText() == beforeStale,
           QStringLiteral("a superseded run is discarded instead of being delivered"));
 
-    // A second, independent binding must not share state with the first.
-    auto* second = new mplayer::shell::PlayerDialog(QStringLiteral("Assembly probe 2"),
-                                                    QStringLiteral("file:///probe/absent"),
-                                                    nullptr);
-    QPointer<mplayer::shell::PlayerDialog> secondGuard(second);
-    QLabel* secondStatus = second->findChild<QLabel*>(QStringLiteral("playerStatusText"));
+    auto* second = new PlayerController(QStringLiteral("Assembly probe 2"),
+                                        QStringLiteral("file:///probe/absent"));
+    QPointer<PlayerController> secondGuard(second);
     bindNativePlaybackAssembly(runner, *second);
-    if (secondStatus != nullptr) {
-        const QString beforeSecond = secondStatus->text();
-        invokeRequest(*second, refusedSelection, context);
-        settle(runner);
-        check(secondStatus->text() != beforeSecond,
-              QStringLiteral("a second binding delivers on its own dialog"));
-    }
+    const QString beforeSecond = second->statusText();
+    invokeRequest(*second, refusedSelection, context);
+    settle(runner);
+    check(second->statusText() != beforeSecond,
+          QStringLiteral("a second binding delivers on its own controller and session"));
     if (!secondGuard.isNull()) secondGuard->deleteLater();
 
-    // A dialog destroyed while a run is still in flight must never be delivered
-    // to afterwards: the binding holds only a QPointer and the run's generation,
-    // so the late completion is dropped rather than applied to a dead widget.
-    auto* closing = new mplayer::shell::PlayerDialog(
-        QStringLiteral("Assembly probe 3"), QStringLiteral("file:///probe/absent"), nullptr);
+    auto* closing = new PlayerController(QStringLiteral("Assembly probe 3"),
+                                         QStringLiteral("file:///probe/absent"));
     bindNativePlaybackAssembly(runner, *closing);
     invokeRequest(*closing, refusedSelection, context);
     delete closing;
     settle(runner);
 
-    // Reopening a fresh dialog after the destroyed one still binds, delivers on
-    // its own surface and shares no state with the dead one.
-    auto* reopened = new mplayer::shell::PlayerDialog(
-        QStringLiteral("Assembly probe 4"), QStringLiteral("file:///probe/absent"), nullptr);
-    QPointer<mplayer::shell::PlayerDialog> reopenGuard(reopened);
-    QLabel* reopenStatus = reopened->findChild<QLabel*>(QStringLiteral("playerStatusText"));
+    auto* reopened = new PlayerController(QStringLiteral("Assembly probe 4"),
+                                          QStringLiteral("file:///probe/absent"));
+    QPointer<PlayerController> reopenGuard(reopened);
     bindNativePlaybackAssembly(runner, *reopened);
-    if (reopenStatus != nullptr) {
-        const QString beforeReopen = reopenStatus->text();
-        invokeRequest(*reopened, refusedSelection, context);
-        settle(runner);
-        check(reopenStatus->text() != beforeReopen,
-              QStringLiteral("a reopened dialog binds and delivers on its own surface"));
-    }
+    const QString beforeReopen = reopened->statusText();
+    invokeRequest(*reopened, refusedSelection, context);
+    settle(runner);
+    check(reopened->statusText() != beforeReopen,
+          QStringLiteral("a reopened controller binds and delivers on its own session"));
     if (!reopenGuard.isNull()) reopenGuard->deleteLater();
-    if (!dialogGuard.isNull()) dialogGuard->deleteLater();
+    if (!controllerGuard.isNull()) controllerGuard->deleteLater();
 }
 
 /// The isolated mode: a genuine owned row, a real stored recipe, the exact

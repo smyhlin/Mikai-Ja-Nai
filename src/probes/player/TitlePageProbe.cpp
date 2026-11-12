@@ -23,8 +23,6 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QProcess>
-#include <QPixmap>
-#include <QPainter>
 #include <QPoint>
 #include <QPushButton>
 #include <QRect>
@@ -38,18 +36,17 @@
 #include <QWindow>
 
 #include <cstdio>
-#include <functional>
 #ifdef Q_OS_WIN
 #include <QtCore/qt_windows.h>
 #endif
 
 #include "backend/MikaiClient.hpp"
 #include "pages/TitlePage.hpp"
-#include "player/shell/PlayerDialog.hpp"
-#include "player/shell/PlayerPopups.hpp"
-#include "player/shell/PlayerShell.hpp"
+#include "player/quick/PlayerController.hpp"
+#include "player/core/VideoSession.hpp"
+#include "player/quick/PlayerMenuModel.hpp"
+#include "player/quick/PlayerWindow.hpp"
 #include "ProbeRuntime.hpp"
-#include "VideoSurface.hpp"
 #include "gui/UiProfile.hpp"
 #include "state/AppearanceStore.hpp"
 #include "state/QualityCache.hpp"
@@ -64,10 +61,6 @@ using mikai::app::TitlePage;
 using mikai::backend::MikaiClient;
 
 namespace {
-
-QPushButton* playerSeriesToggle(QWidget* root) {
-    return root->findChild<QPushButton*>(QStringLiteral("playerSeriesToggle"));
-}
 
 QObject* accessibleAlertTarget = nullptr;
 bool accessibleAlertObserved = false;
@@ -108,109 +101,14 @@ public:
 private:
     bool wasActive_;
 };
-
-struct WarningOutcome {
-    bool shown = false;
-    bool parentedToPlayer = false;
-    bool captured = false;
-    bool accessible = false;
-    bool alert = false;
-    bool namedFailure = false;
-    bool timedOut = false;
-};
-
-bool accessibleContains(QAccessibleInterface* accessibleInterface, const QString& text, int depth = 0) {
-    if (accessibleInterface == nullptr || depth > 8 ||
-        accessibleInterface->state().invisible) return false;
-    if (accessibleInterface->text(QAccessible::Name).contains(text) ||
-        accessibleInterface->text(QAccessible::Description).contains(text)) return true;
-    for (int child = 0; child < accessibleInterface->childCount(); ++child) {
-        if (accessibleContains(accessibleInterface->child(child), text, depth + 1)) return true;
+bool accessibleContains(QAccessibleInterface* interface, const QString& text, int depth = 0) {
+    if (interface == nullptr || depth > 8 || interface->state().invisible) return false;
+    if (interface->text(QAccessible::Name).contains(text) ||
+        interface->text(QAccessible::Description).contains(text)) {
+        return true;
     }
-    return false;
-}
-
-WarningOutcome dismissPlayerWarning(QWidget* player, const std::function<void()>& action,
-                                    const QString& screenshot, const QString& expectedFailure) {
-    const QPointer<QWidget> guardedPlayer(player);
-    AccessibleAlertCapture alert(nullptr);
-    WarningOutcome outcome;
-    int elapsed = 0;
-    QTimer poller;
-    poller.setInterval(20);
-    QObject::connect(&poller, &QTimer::timeout, &poller, [&] {
-        elapsed += poller.interval();
-        for (QWidget* widget : QApplication::topLevelWidgets()) {
-            QPointer<QMessageBox> warning = qobject_cast<QMessageBox*>(widget);
-            if (!warning || !warning->isVisible()) continue;
-            poller.stop();
-            outcome.shown = !warning->visibleRegion().isEmpty();
-            outcome.parentedToPlayer = guardedPlayer &&
-                guardedPlayer->isVisible() && warning->parentWidget() == guardedPlayer &&
-                warning->windowModality() != Qt::NonModal &&
-                QApplication::activeModalWidget() == warning &&
-                warning->windowHandle() && guardedPlayer->windowHandle() &&
-                warning->windowHandle()->transientParent() == guardedPlayer->windowHandle() &&
-                warning->frameGeometry().intersects(guardedPlayer->frameGeometry());
-            outcome.namedFailure = warning->text() == expectedFailure;
-            outcome.accessible = !warning->text().isEmpty() &&
-                accessibleContains(QAccessible::queryAccessibleInterface(warning), warning->text());
-            const QPixmap warningImage = warning->grab();
-            QPixmap playerImage = guardedPlayer ? guardedPlayer->grab() : QPixmap();
-            if (!playerImage.isNull() && !warningImage.isNull()) {
-                QPainter painter(&playerImage);
-                painter.drawPixmap(warning->mapToGlobal(QPoint()) -
-                                   guardedPlayer->mapToGlobal(QPoint()), warningImage);
-                painter.end();
-                outcome.captured = playerImage.save(screenshot) &&
-                    warningImage.save(screenshot + QStringLiteral(".warning.png"));
-            }
-            std::fprintf(stderr,
-                         "TITLE-PROBE: player warning parent=%d visible=%d accessible=%d "
-                         "screenshot=%d text=%s\n",
-                         outcome.parentedToPlayer, outcome.shown, outcome.accessible,
-                         outcome.captured, warning->text().toUtf8().constData());
-            if (auto* ok = warning->button(QMessageBox::Ok); ok != nullptr) ok->click();
-            else warning->accept();
-            return;
-        }
-        if (elapsed >= 5000 || !guardedPlayer) {
-            outcome.timedOut = true;
-            poller.stop();
-            // End the nested exec even if an unexpected modal was raised.
-            if (auto* modal = qobject_cast<QDialog*>(QApplication::activeModalWidget())) {
-                modal->reject();
-            }
-        }
-    });
-    poller.start();
-    action();
-    poller.stop();
-    outcome.alert = alert.observed();
-    return outcome;
-}
-
-bool clickPlayerCopyAction(mplayer::shell::PlayerDialog* player) {
-    const QPointer<mplayer::shell::PlayerDialog> guardedPlayer(player);
-    auto* shell = player->findChild<mplayer::shell::PlayerShell*>();
-    if (shell == nullptr) return false;
-    auto* surface = shell->videoSurface();
-    if (surface == nullptr) return false;
-    shell->wake();
-    QTest::mouseClick(surface, Qt::RightButton, Qt::NoModifier, QPoint(60, 60));
-    for (int elapsed = 0; elapsed < 3000 && guardedPlayer; elapsed += 20) {
-        for (auto* menu : guardedPlayer->findChildren<mplayer::shell::MenuPopup*>()) {
-            if (menu == nullptr || !menu->isVisible()) continue;
-            for (int row = 0; row < menu->rowCount(); ++row) {
-                if (menu->entryAt(row).payload.toString() != QLatin1String("copy")) continue;
-                if (auto* button = qobject_cast<QPushButton*>(menu->rowWidget(row));
-                    button != nullptr && button->isVisible() && button->isEnabled()) {
-                    button->click();
-                    return true;
-                }
-            }
-        }
-        QTest::qWait(20);
+    for (int child = 0; child < interface->childCount(); ++child) {
+        if (accessibleContains(interface->child(child), text, depth + 1)) return true;
     }
     return false;
 }
@@ -416,18 +314,25 @@ private:
 };
 #endif
 
-bool hostedSessionReady(mplayer::shell::PlayerDialog* player) {
-    if (player == nullptr || !player->isVisible() || !player->hasActiveSource()) {
-        return false;
+bool hostedSessionReady(mplayer::quick::PlayerController* controller,
+                        mplayer::quick::PlayerWindow* window) {
+    return controller != nullptr && window != nullptr && window->isVisible() &&
+           controller->hasActiveSource() && !controller->currentEmbed().isEmpty() &&
+           controller->session() != nullptr;
+}
+
+bool activateCopyLink(mplayer::quick::PlayerController* controller) {
+    if (controller == nullptr || controller->pictureMenu() == nullptr) return false;
+    const auto& rows = controller->pictureMenu()->rows();
+    for (int row = 0; row < rows.size(); ++row) {
+        if (rows.at(row).action != mplayer::quick::PlayerMenuModel::Action::CopyMediaLink) {
+            continue;
+        }
+        if (!rows.at(row).enabled) return false;
+        controller->activateMenuRow(QStringLiteral("picture"), row);
+        return true;
     }
-    if (player->currentEmbed().isEmpty()) {
-        // The track popup's current embed is what the host answers for: a
-        // standalone dialog never has one, so this is what separates a hosted
-        // session from a file/URL player without guessing from the caption.
-        return false;
-    }
-    auto* shell = player->findChild<mplayer::shell::PlayerShell*>();
-    return shell != nullptr && shell->videoSurface() != nullptr;
+    return false;
 }
 
 bool hostCopyRefusalProbe(TitlePage* page) {
@@ -452,47 +357,51 @@ bool hostCopyRefusalProbe(TitlePage* page) {
         return false;
     }
     episode->click();
-    // Clipboard refusal needs a decoded source so the attempted write could
-    // have succeeded without the separate process holding the clipboard.
-    QPointer<mplayer::shell::PlayerDialog> player;
+    QPointer<mplayer::quick::PlayerController> controller;
+    QPointer<mplayer::quick::PlayerWindow> playerWindow;
     for (int elapsed = 0; elapsed < 60000 && guardedPage; elapsed += 50) {
-        for (QWidget* widget : QApplication::topLevelWidgets()) {
-            if (auto* candidate = qobject_cast<mplayer::shell::PlayerDialog*>(widget);
-                candidate != nullptr && candidate->isVisible() &&
-                hostedSessionReady(candidate)) {
-                player = candidate;
-                break;
-            }
+        for (QWindow* candidateWindow : QGuiApplication::topLevelWindows()) {
+            auto* candidate = qobject_cast<mplayer::quick::PlayerWindow*>(candidateWindow);
+            if (candidate == nullptr || !candidate->isVisible()) continue;
+            auto* candidateController = candidate->controller();
+            if (!hostedSessionReady(candidateController, candidate)) continue;
+            controller = candidateController;
+            playerWindow = candidate;
+            break;
         }
-        if (player) break;
+        if (controller && playerWindow) break;
         QTest::qWait(50);
     }
-    if (!player) {
+    if (!controller || !playerWindow) {
         std::fprintf(stderr,
-                     "TITLE-PROBE: FAIL real title7428 opened no hosted player session\n");
+                     "TITLE-PROBE: FAIL real title7428 opened no hosted Quick player session\n");
         return false;
     }
-    auto* shell = player->findChild<mplayer::shell::PlayerShell*>();
-    auto* surface = shell != nullptr ? shell->videoSurface() : nullptr;
-    if (shell == nullptr || surface == nullptr) {
-        std::fprintf(stderr, "TITLE-PROBE: FAIL hosted session has no shell or video surface\n");
-        return false;
-    }
-    if (!player->hasActiveSource()) {
+    if (!controller->hasActiveSource()) {
         std::fprintf(stderr, "TITLE-PROBE: FAIL copy session has no decoded source frame\n");
         return false;
     }
-    surface->setPaused(true);
-    shell->wake();
+    const bool wasPlaying = controller->playing();
+    if (wasPlaying) controller->pauseIfPlaying();
+    const auto resumePlayback = qScopeGuard([&controller, wasPlaying] {
+        if (wasPlaying && controller) controller->resumePlayback();
+    });
     QTest::qWait(100);
-    if (!player) return false;
-    QPointer<QLabel> status = player->findChild<QLabel*>(QStringLiteral("playerStatusText"));
-    if (!status) return false;
-    const QString statusBefore = status->text();
-    WarningOutcome warning;
+    if (!controller || !playerWindow) return false;
+    const auto sourceEpoch = controller->session()->sourceEpoch();
     bool action = false;
     bool clipboardPreserved = true;
     bool lockReleased = true;
+    QString alert;
+    const auto alertConnection =
+        QObject::connect(controller, &mplayer::quick::PlayerController::alertRequested,
+                         page, [&alert](const QString& text) { alert = text; });
+    const auto disconnectAlert = qScopeGuard(
+        [alertConnection] { QObject::disconnect(alertConnection); });
+    AccessibleAlertCapture alertCapture(playerWindow);
+    const QString notificationBefore = controller->notificationText();
+    bool notificationFailure = false;
+    bool screenshot = false;
 #ifdef Q_OS_WIN
     const ClipboardSnapshot clipboardBefore = ClipboardSnapshot::capture();
     if (!clipboardBefore.valid) {
@@ -504,31 +413,37 @@ bool hostCopyRefusalProbe(TitlePage* page) {
         std::fprintf(stderr, "TITLE-PROBE: FAIL separate Win32 clipboard lock unavailable\n");
         return false;
     }
-    warning = dismissPlayerWarning(player, [&] {
-        if (player) action = clickPlayerCopyAction(player);
-    }, QStringLiteral("title-host-copy-refusal.png"),
-    QCoreApplication::translate("TitlePage", "Failed to copy link"));
+    action = activateCopyLink(controller);
+    QTest::qWait(100);
+    notificationFailure = controller && controller->notificationVisible() &&
+                          controller->notificationFailure() &&
+                          controller->notificationText() != notificationBefore;
+    screenshot = playerWindow && playerWindow->grabWindow().save(
+                                     QStringLiteral("title-host-copy-refusal.png"));
     const bool sequencePreserved = GetClipboardSequenceNumber() == clipboardBefore.sequence;
     lockReleased = lock.release();
     clipboardPreserved = sequencePreserved && clipboardBefore.unchanged();
 #else
     return false;
 #endif
-    QTest::qWait(100);
-    const bool sessionIntact = hostedSessionReady(player);
-    const bool noFalseSuccess = status && status->text() == statusBefore;
-    const bool passed = action && warning.shown && warning.parentedToPlayer &&
-        warning.captured && warning.accessible && warning.alert && warning.namedFailure &&
-        !warning.timedOut &&
-        lockReleased && clipboardPreserved && sessionIntact && noFalseSuccess;
+    const bool sessionIntact = hostedSessionReady(controller, playerWindow) &&
+                               controller->session()->sourceEpoch() == sourceEpoch;
+    const bool accessible = !alert.isEmpty() &&
+                            accessibleContains(QAccessible::queryAccessibleInterface(playerWindow),
+                                               alert);
+    const bool alertObserved = alertCapture.observed();
+    const bool noFalseSuccess = notificationFailure &&
+                                controller->notificationText() != notificationBefore;
+    const bool passed = action && !alert.isEmpty() && notificationFailure && accessible &&
+                        alertObserved && screenshot && lockReleased && clipboardPreserved &&
+                        sessionIntact && noFalseSuccess;
     std::fprintf(stderr,
-                 "TITLE-PROBE: hosted copy refusal action=%d visible=%d parent=%d accessible=%d "
-                 "Alert=%d screenshots=%d timeout=%d clipboard-preserved=%d released=%d "
-                 "no-false-success=%d session-intact=%d RESULT %s\n",
-                 action, warning.shown,
-                 warning.parentedToPlayer, warning.accessible, warning.alert, warning.captured,
-                 warning.timedOut, clipboardPreserved, lockReleased, noFalseSuccess,
-                 sessionIntact, passed ? "PASS" : "FAIL");
+                 "TITLE-PROBE: hosted copy refusal action=%d visible=%d accessible=%d Alert=%d "
+                 "screenshot=%d clipboard-preserved=%d released=%d no-false-success=%d "
+                 "session-intact=%d RESULT %s\n",
+                 action, notificationFailure, accessible, alertObserved, screenshot,
+                 clipboardPreserved, lockReleased, noFalseSuccess, sessionIntact,
+                 passed ? "PASS" : "FAIL");
     return passed;
 }
 
@@ -1205,79 +1120,62 @@ int main(int argc, char** argv) {
         pill->click();
     });
 
-    // Stage 3: the player (if any) and its series drawer.
+    // Stage 3: the native Quick player and its controller-owned episode drawer.
     QTimer::singleShot(20000, [&] {
-        QWidget* dialog = nullptr;
-        for (QWidget* w : QApplication::topLevelWidgets()) {
-            if (QString::fromLatin1(w->metaObject()->className())
-                    .contains(QStringLiteral("PlayerDialog"))) {
-                dialog = w;
+        QPointer<mplayer::quick::PlayerWindow> player;
+        for (QWindow* candidate : QGuiApplication::topLevelWindows()) {
+            if (auto* quickPlayer = qobject_cast<mplayer::quick::PlayerWindow*>(candidate);
+                quickPlayer != nullptr && quickPlayer->isVisible() &&
+                quickPlayer->controller() != nullptr) {
+                player = quickPlayer;
                 break;
             }
         }
-        if (dialog == nullptr) {
-            std::fprintf(stderr, "TITLE-PROBE: NO PlayerDialog opened after clicking a pill\n");
+        if (!player) {
+            std::fprintf(stderr, "TITLE-PROBE: NO Quick player opened after clicking a pill\n");
             std::fprintf(stderr, "TITLE-PROBE: RESULT INCONCLUSIVE\n");
             return;
         }
-        QPushButton* toggle = playerSeriesToggle(dialog);
-        std::fprintf(stderr, "TITLE-PROBE: PlayerDialog exists; series toggle %s\n",
-                     toggle == nullptr ? "MISSING"
-                                       : (toggle->isVisible() ? "visible" : "PRESENT BUT HIDDEN"));
-        if (toggle != nullptr) {
-            // Distinguish an empty playlist from chrome auto-hide.
-            std::fprintf(stderr, "TITLE-PROBE:   toggle->isHidden()=%d  visibleToParent=%d\n",
-                         toggle->isHidden() ? 1 : 0,
-                         toggle->isVisibleTo(toggle->parentWidget()) ? 1 : 0);
-            for (QWidget* w = toggle->parentWidget(); w != nullptr; w = w->parentWidget()) {
-                std::fprintf(stderr, "TITLE-PROBE:   ancestor %-24s visible=%d hidden=%d\n",
-                             qPrintable(w->objectName().isEmpty() ? w->metaObject()->className()
-                                                                  : w->objectName()),
-                             w->isVisible() ? 1 : 0, w->isHidden() ? 1 : 0);
-            }
-        }
-        // Opening the drawer must hold chrome beyond the idle deadline.
-        for (QWidget* w : dialog->findChildren<QWidget*>()) {
-            if (QString::fromLatin1(w->metaObject()->className())
-                    .contains(QStringLiteral("VideoSurface"))) {
-                for (const QPointF& at : {QPointF(40, 40), QPointF(60, 60)}) {
-                    QMouseEvent move(QEvent::MouseMove, at, w->mapToGlobal(at), Qt::NoButton,
-                                     Qt::NoButton, Qt::NoModifier);
-                    QCoreApplication::sendEvent(w, &move);
-                }
-            }
-        }
-        QApplication::processEvents();
-        std::fprintf(stderr, "TITLE-PROBE: after waking, toggle visible=%d strip visible=%d\n",
-                     toggle != nullptr && toggle->isVisible() ? 1 : 0,
-                     toggle != nullptr && toggle->parentWidget() != nullptr &&
-                             toggle->parentWidget()->isVisible()
-                         ? 1
+        QPointer<mplayer::quick::PlayerController> controller = player->controller();
+        QPointer<mplayer::VideoSession> session =
+            controller != nullptr ? controller->session() : nullptr;
+        const quint64 mediaEpoch = session != nullptr ? session->sourceEpoch() : 0;
+        const bool hasPlaylist = controller != nullptr && controller->seriesMenu() != nullptr &&
+                                 controller->seriesMenu()->rowCount() > 0;
+        std::fprintf(stderr, "TITLE-PROBE: Quick player exists; episode model rows=%d\n",
+                     controller->seriesMenu() != nullptr
+                         ? controller->seriesMenu()->rowCount()
                          : 0);
-        if (toggle != nullptr && toggle->isVisible()) {
-            toggle->click();
-            QApplication::processEvents();
-            auto* drawer = dialog->findChild<QWidget*>(QStringLiteral("playerSeriesDrawer"));
-            const int rows =
-                drawer == nullptr
-                    ? 0
-                    : drawer->findChildren<QPushButton*>(QStringLiteral("playerSeriesItem")).size() +
-                          drawer->findChildren<QPushButton*>(
-                              QStringLiteral("playerSeriesItemCurrent")).size();
-            std::fprintf(stderr, "TITLE-PROBE: drawer %s, rows=%d\n",
-                         drawer == nullptr ? "MISSING" : "present", rows);
-            // Now stop touching anything and let the idle timer run past its
-            // 2.5s hold. A user reading the episode list is not idle.
+        if (hasPlaylist) {
+            controller->toggleSeries();
+            QCoreApplication::processEvents();
+            const bool opened = controller->seriesExpanded();
+            // The controller's interaction hold keeps an open drawer alive
+            // beyond the fullscreen chrome's 2.5s idle dwell.
             QTest::qWait(3500);
-            QApplication::processEvents();
+            QCoreApplication::processEvents();
+            const bool sourceStable =
+                controller && session && mediaEpoch != 0 && controller->session() == session &&
+                session->sourceEpoch() == mediaEpoch;
+            const int rows =
+                controller && controller->seriesMenu() != nullptr
+                    ? controller->seriesMenu()->rowCount()
+                    : 0;
+            const bool remainedOpen =
+                sourceStable && player && player->isVisible() && controller->seriesExpanded() &&
+                rows > 0;
             std::fprintf(stderr,
-                         "TITLE-PROBE: 3.5s after opening, drawer visible=%d rows=%d\n",
-                         drawer->isVisible() ? 1 : 0,
-                         static_cast<int>(
-                             drawer->findChildren<QPushButton*>(
-                                 QStringLiteral("playerSeriesItem")).size() +
-                             drawer->findChildren<QPushButton*>(
-                                 QStringLiteral("playerSeriesItemCurrent")).size()));
+                         "TITLE-PROBE: episode drawer opened=%d after-3.5s=%d rows=%d "
+                         "source-stable=%d\n",
+                         opened, remainedOpen, rows, sourceStable);
+            if (!opened || !remainedOpen) {
+                std::fprintf(stderr, "TITLE-PROBE: RESULT FAIL\n");
+                return;
+            }
+        } else {
+            std::fprintf(stderr, "TITLE-PROBE: hosted playlist is empty\n");
+            std::fprintf(stderr, "TITLE-PROBE: RESULT FAIL\n");
+            return;
         }
         std::fprintf(stderr, "TITLE-PROBE: RESULT OK\n");
     });

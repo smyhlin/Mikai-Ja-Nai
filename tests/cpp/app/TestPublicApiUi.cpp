@@ -14,6 +14,9 @@
 #include <pages/MainWindow.hpp>
 #include <pages/SearchPage.hpp>
 #include <pages/TitlePage.hpp>
+#include <player/quick/PlayerController.hpp>
+#include <player/shell/PlayerHost.hpp>
+#include <player/core/VideoSession.hpp>
 #include <state/QualityCache.hpp>
 #include <state/WatchHistory.hpp>
 #include <support/I18n.hpp>
@@ -80,6 +83,16 @@
 namespace {
 
 const QString kFixtureKey = QStringLiteral("mk_public_api_ui_fixture");
+class QuickPlayerHost final : public mplayer::shell::PlayerHost {
+ public:
+  void requestVariant(const QString&, const QString&) override {}
+  void requestEpisode(int) override {}
+  void requestTrackProbe(const QString&) override {}
+  void requestCopyStreamUrl() override {}
+  void playerClosed() override {}
+  void playbackFailed() override {}
+};
+
 
 class BrowserUrlCapture final : public QObject {
   Q_OBJECT
@@ -2702,6 +2715,96 @@ void TestPublicApiUi::managerActionRowsShareOneWidth() {
     }
   }
 }
+
+void TestPublicApiUi::quickResumeIsOfferedOncePerEpisodeToken() {
+  const QString fixture = QDir::toNativeSeparators(
+      QStringLiteral(MIKAI_SOURCE_DIR "/resources/benchmarks/1920x1080.mp4"));
+  QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
+
+  QuickPlayerHost host;
+  mplayer::quick::PlayerController controller(
+      QStringLiteral("Resume fixture"), fixture, {}, 0, &host);
+  controller.setPlaylist({QVariantMap{{QStringLiteral("label"), QStringLiteral("Episode 1")}}});
+  controller.setEpisodeResumePoint(3.0);
+  controller.showWindow();
+  bool insideOpen = false;
+  bool resumeRaisedInsideOpen = false;
+  connect(&controller, &mplayer::quick::PlayerController::resumeSheetChanged, &controller,
+          [&controller, &insideOpen, &resumeRaisedInsideOpen] {
+            if (insideOpen && controller.resumeSheetVisible()) resumeRaisedInsideOpen = true;
+          });
+  mplayer::VideoSession* session = controller.session();
+  QVERIFY(session != nullptr);
+  QSignalSpy loaded(session, &mplayer::VideoSession::mediaLoaded);
+  insideOpen = true;
+  controller.startPlayer();
+  insideOpen = false;
+  QVERIFY2(!resumeRaisedInsideOpen, "the resume prompt was raised synchronously inside open()");
+  QTRY_COMPARE_WITH_TIMEOUT(loaded.count(), 1, 30000);
+  QTRY_VERIFY_WITH_TIMEOUT(session->duration() > 10.0, 30000);
+  QTRY_VERIFY_WITH_TIMEOUT(controller.resumeSheetVisible(), 10000);
+  const quint64 generation = controller.resumeSheetGeneration();
+  const uint64_t firstEpoch = session->sourceEpoch();
+  const quint64 mediaToken = loaded.constFirst().constFirst().toULongLong();
+
+  controller.answerResume(generation, mplayer::quick::PlayerController::ResumeChoice::StartOver);
+  QVERIFY(!controller.resumeSheetVisible());
+  controller.setEpisodeResumePoint(3.0);
+  controller.startPlayer();
+  QTRY_VERIFY_WITH_TIMEOUT(session->sourceEpoch() != firstEpoch, 10000);
+  QTRY_COMPARE_WITH_TIMEOUT(loaded.count(), 2, 30000);
+  QCOMPARE(loaded.constLast().constFirst().toULongLong(), mediaToken);
+  QTRY_VERIFY_WITH_TIMEOUT(session->duration() > 10.0, 30000);
+  QTest::qWait(300);
+  QVERIFY2(!controller.resumeSheetVisible(),
+           "the same episode token raised another resume sheet after reopening");
+  QCOMPARE(controller.resumeSheetGeneration(), generation);
+}
+
+void TestPublicApiUi::staleQuickResumeAnswerCannotAffectTheNextEpisode() {
+  const QString fixture = QDir::toNativeSeparators(
+      QStringLiteral(MIKAI_SOURCE_DIR "/resources/benchmarks/1920x1080.mp4"));
+  QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
+
+  QuickPlayerHost host;
+  mplayer::quick::PlayerController controller(
+      QStringLiteral("Resume fixture"), fixture, {}, 0, &host);
+  const QVector<QVariantMap> playlist{
+      QVariantMap{{QStringLiteral("label"), QStringLiteral("Episode 1")}},
+      QVariantMap{{QStringLiteral("label"), QStringLiteral("Episode 2")}}};
+  controller.setPlaylist(playlist);
+  controller.setEpisodeResumePoint(3.0);
+  controller.showWindow();
+  mplayer::VideoSession* session = controller.session();
+  QVERIFY(session != nullptr);
+  QSignalSpy loaded(session, &mplayer::VideoSession::mediaLoaded);
+  controller.startPlayer();
+  QTRY_VERIFY_WITH_TIMEOUT(controller.resumeSheetVisible(), 30000);
+  QCOMPARE(loaded.count(), 1);
+  const quint64 oldGeneration = controller.resumeSheetGeneration();
+  const quint64 firstToken = loaded.constFirst().constFirst().toULongLong();
+
+  controller.applyEpisode(QStringLiteral("Episode 2"), fixture, 1,
+                          {mplayer::shell::QualityEntry{0, fixture}}, {});
+  QTRY_COMPARE_WITH_TIMEOUT(loaded.count(), 2, 30000);
+  const quint64 nextToken = loaded.constLast().constFirst().toULongLong();
+  QVERIFY2(firstToken != 0 && nextToken != 0 && firstToken != nextToken,
+           "different episode loads must carry different media identity tokens");
+  QTRY_VERIFY_WITH_TIMEOUT(session->duration() > 10.0, 10000);
+  session->setPaused(true);
+  session->seek(8.0);
+  QTRY_VERIFY_WITH_TIMEOUT(qAbs(session->position() - 8.0) < 0.75, 10000);
+  const double nextPosition = session->position();
+  const bool nextPauseIntent = session->playbackPauseIntent();
+
+  controller.answerResume(oldGeneration, mplayer::quick::PlayerController::ResumeChoice::Continue);
+  QCoreApplication::processEvents();
+  QVERIFY(!controller.resumeSheetVisible());
+  QVERIFY2(qAbs(session->position() - nextPosition) < 0.75,
+           "the prior episode's answer sought the newly loaded episode");
+  QCOMPARE(session->playbackPauseIntent(), nextPauseIntent);
+}
+
 
 void TestPublicApiUi::openSubtitlesApiKeyMigratesOutOfQSettings() {
 #ifndef Q_OS_WIN

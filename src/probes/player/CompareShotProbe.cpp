@@ -22,10 +22,10 @@
 
 #include "CompareCanvas.hpp"
 #include "CompareWindow.hpp"
-#include "PlayerDialog.hpp"
-#include "PlayerShell.hpp"
+#include "quick/PlayerController.hpp"
+#include "quick/PlayerWindow.hpp"
 #include "ProbeRuntime.hpp"
-#include "VideoSurface.hpp"
+#include "core/VideoSession.hpp"
 
 #ifdef Q_OS_WIN
 #include <QtCore/qt_windows.h>
@@ -346,7 +346,7 @@ int runDirectDiagnostic(const QString& url) {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
-    // Before the first PlayerDialog reads player/anime4k and
+    // Before the first PlayerController reads player/anime4k and
     // player/presetShortcuts, or the probe inherits a real session.
     QTemporaryDir settingsDir;
     if (!settingsDir.isValid()) {
@@ -371,21 +371,23 @@ int main(int argc, char** argv) {
     static Host host;
     const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};
 
-    auto* dialog = new PlayerDialog(QStringLiteral("shot"), url, qualities, 720, &host);
-    dialog->setVariants({QVariantMap{{"label", QStringLiteral("v")},
-                                    {"embed", QStringLiteral("e1")}}},
-                        QStringLiteral("e1"));
-    dialog->startPlayer();
-    dialog->showFullScreen();
+    auto* controller = new mplayer::quick::PlayerController(
+        QStringLiteral("shot"), url, qualities, 720, &host);
+    auto* window = controller->window();
+    controller->setVariants(
+        {QVariantMap{{"label", QStringLiteral("v")}, {"embed", QStringLiteral("e1")}}},
+        QStringLiteral("e1"));
+    controller->startPlayer();
+    window->showFullscreen();
 
     // Optional: bind an AnimeJaNai chain to the playing surface first, so the
     // comparison pane preloads a closure the player already holds.
     if (!qEnvironmentVariableIsEmpty("MIKAI_COMPARE_PROBE_PLAYER_AJI")) {
         QTimer::singleShot(1500, &app, [&] {
-            dialog->applyAnimeJanaiRequest(qEnvironmentVariable("MIKAI_COMPARE_PROBE_PLAYER_AJI"));
+            controller->applyAnimeJanaiRequest(qEnvironmentVariable("MIKAI_COMPARE_PROBE_PLAYER_AJI"));
         });
         QTimer::singleShot(4500, &app, [&] {
-            VideoSurface* surface = dialog->findChild<VideoSurface*>();
+            VideoSession* surface = controller->session();
             const auto generation = surface != nullptr ? surface->renderContextGeneration() : 0;
             std::fprintf(stderr, "     player aji surface generation=%llu\n",
                          static_cast<unsigned long long>(generation));
@@ -393,14 +395,17 @@ int main(int argc, char** argv) {
     }
 
     QTimer::singleShot(5000, &app, [&] {
-        auto* shell = dialog->findChild<PlayerShell*>();
-        if (shell != nullptr) {
-            emit shell->compareRequested();
-        }
+        controller->openCompare();
     });
 
     QTimer::singleShot(11000, &app, [&] {
-        auto* compare = dialog->findChild<CompareWindow*>();
+        CompareWindow* compare = nullptr;
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (auto* candidate = qobject_cast<CompareWindow*>(widget)) {
+                compare = candidate;
+                break;
+            }
+        }
         check(compare != nullptr, "the compare row opened a window");
         if (compare == nullptr) {
             app.exit(1);
@@ -502,7 +507,7 @@ int main(int argc, char** argv) {
 
         // WM_SYSCOMMAND/SC_CLOSE, what the native title bar sends.
         QPointer<CompareWindow> compareGuard(compare);
-        VideoSurface* surface = dialog->findChild<VideoSurface*>();
+        VideoSession* surface = controller->session();
         const QImage frozenBefore = compare->frozenFrame();
         std::fprintf(stderr,
                      "     before close: visible=%d frozen=%dx%d playing=%d planLocked=%d\n",

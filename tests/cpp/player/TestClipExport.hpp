@@ -12,6 +12,7 @@ private:
 private slots:
     void initTestCase();
     void rejectsNonFiniteAndInvalidRanges();
+    void rejectsCutMomentWhenThereIsNoVideoTimeline();
     void videoOnlySourceProducesBoundedPlayableMp4();
     void aacSourcePreservesAudio();
     void selectedAudioTrackExportPreservesSignal();

@@ -1,4 +1,4 @@
-// Release-only driver for real Widgets surfaces. This is not a product CLI.
+// Release-only driver for real application surfaces. This is not a product CLI.
 #include <QAbstractButton>
 #include <QApplication>
 #include <QComboBox>
@@ -9,6 +9,7 @@
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QFile>
+#include <QWindow>
 #include <QFileInfo>
 #include <QFontMetrics>
 #include <QIcon>
@@ -26,6 +27,7 @@
 #include <QPalette>
 #include <QPixmap>
 #include <QPointer>
+#include <QQuickItem>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QTranslator>
@@ -34,7 +36,6 @@
 #include <QScreen>
 #include <QSlider>
 #include <QSettings>
-#include <QStyle>
 #include <QTest>
 #include <QTimer>
 #include <QtMath>
@@ -63,23 +64,21 @@
 #include "workers/Runner.hpp"
 #include "CompareWindow.hpp"
 #include "MediaInformationDialog.hpp"
-#include "PipFloat.hpp"
-#include "PlayerDialog.hpp"
-#include "PlayerPopups.hpp"
-#include "PlayerShell.hpp"
-#include "ShellSliders.hpp"
+#include "PlayerController.hpp"
+#include "PlayerMenuModel.hpp"
+#include "PlayerWindow.hpp"
+#include "PreparationWindow.hpp"
 #include "ShellTheme.hpp"
-#include "VideoSurface.hpp"
+#include "VideoSession.hpp"
 
 namespace {
 using mikai::app::MainWindow;
 using mikai::app::theme::Appearance;
 using mplayer::shell::CompareWindow;
 using mplayer::shell::MediaInformationDialog;
-using mplayer::shell::PipFloat;
-using mplayer::shell::PlayerDialog;
-using mplayer::shell::PlayerShell;
-using mplayer::shell::ProcessingOverlay;
+using mplayer::quick::PlayerController;
+using mplayer::quick::PlayerMenuModel;
+using mplayer::quick::PlayerWindow;
 
 constexpr int kWidth = 1280;
 constexpr int kHeight = 800;
@@ -240,6 +239,15 @@ private:
         }
     }
 
+    void fit(QWindow* window) {
+        window->resize(kWidth, kHeight);
+        if (QScreen* screen = window->screen()) {
+            const QRect available = screen->availableGeometry();
+            window->setPosition(available.center() - QPoint(window->width() / 2,
+                                                            window->height() / 2));
+        }
+    }
+
     QJsonObject playbackState() const {
         if (surface_ == nullptr) return {};
         const auto& selection = mplayer::native::currentSelection();
@@ -295,18 +303,51 @@ private:
         return true;
     }
 
+    bool capture(QWindow* window, const QString& name, QJsonObject state) {
+        if (window == nullptr || !window->isVisible() || window->screen() == nullptr) {
+            error(QStringLiteral("%1: the real Quick window is not visible.").arg(name));
+            return false;
+        }
+        const QPixmap pixmap = window->screen()->grabWindow(window->winId());
+        const QString path = QDir(arguments_.output).filePath(name + QStringLiteral(".png"));
+        if (pixmap.isNull() || pixmap.width() <= 0 || pixmap.height() <= 0 ||
+            !pixmap.save(path, "PNG")) {
+            error(QStringLiteral("%1: saving the real Quick window screenshot failed.").arg(name));
+            return false;
+        }
+        const QString digest = sha256(path);
+        if (digest.isEmpty()) {
+            error(QStringLiteral("%1: the saved Quick window screenshot could not be hashed.").arg(name));
+            return false;
+        }
+        state.insert(QStringLiteral("file"), name + QStringLiteral(".png"));
+        state.insert(QStringLiteral("sha256"), digest);
+        state.insert(QStringLiteral("windowClass"),
+                     QString::fromLatin1(window->metaObject()->className()));
+        state.insert(QStringLiteral("windowTitle"), window->title());
+        state.insert(QStringLiteral("logicalSize"), QJsonArray{window->width(), window->height()});
+        state.insert(QStringLiteral("pixelSize"), QJsonArray{pixmap.width(), pixmap.height()});
+        state.insert(QStringLiteral("devicePixelRatio"), pixmap.devicePixelRatio());
+        state.insert(QStringLiteral("capturedUtc"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+        shots_.append(state);
+        diagnostic(QStringLiteral("Captured %1").arg(path));
+        return true;
+    }
+
     bool pictureAction(const QString& payload) {
-        if (shell_ == nullptr || player_ == nullptr) return false;
-        shell_->openPictureMenu(shell_->rect().center());
-        auto* menu = player_->findChild<mplayer::shell::MenuPopup*>(QStringLiteral("playerPictureMenu"));
-        if (menu == nullptr || !menu->isVisible()) return false;
-        for (int index = 0; index < menu->rowCount(); ++index) {
-            if (menu->entryAt(index).payload.toString() != payload) continue;
-            auto* button = qobject_cast<QPushButton*>(menu->rowWidget(index));
-            if (button == nullptr || !button->isEnabled() || !button->isVisible()) return false;
-            // Activate the real menu row, not the host's signal or a private slot.
-            button->click();
-            return true;
+        if (player_ == nullptr) return false;
+        const PlayerMenuModel::Action action =
+            payload == QLatin1String("compare")
+                ? PlayerMenuModel::Action::OpenCompare
+                : PlayerMenuModel::Action::OpenMediaInformation;
+        PlayerMenuModel* model = player_->menuModel(QStringLiteral("picture"));
+        if (model == nullptr) return false;
+        const auto& rows = model->rows();
+        for (int index = 0; index < rows.size(); ++index) {
+            if (rows[index].enabled && rows[index].action == action) {
+                player_->activateMenuRow(QStringLiteral("picture"), index);
+                return true;
+            }
         }
         return false;
     }
@@ -317,18 +358,18 @@ private:
             return;
         }
         player_ = window_->currentMediaPlayer();
-        if (player_ == nullptr) {
-            stop(QStringLiteral("openMedia created no player."));
+        if (player_ == nullptr || player_->window() == nullptr) {
+            stop(QStringLiteral("openMedia created no Quick player window."));
             return;
         }
-        fit(player_);
-        shell_ = player_->findChild<PlayerShell*>();
-        surface_ = player_->findChild<mplayer::VideoSurface*>();
-        if (shell_ == nullptr || surface_ == nullptr) {
-            stop(QStringLiteral("The real player is missing its shell or video surface."));
+        fit(player_->window());
+        player_->window()->showFullscreen();
+        surface_ = player_->session();
+        if (surface_ == nullptr) {
+            stop(QStringLiteral("The Quick player has no VideoSession."));
             return;
         }
-        QObject::connect(surface_, &mplayer::VideoSurface::errorOccurred, this,
+        QObject::connect(surface_, &mplayer::VideoSession::errorOccurred, this,
                          [this](const QString& reason) { playbackError_ = privateSafe(reason); });
         next(Stage::Playback);
     }
@@ -383,8 +424,9 @@ private:
             break;
         case Stage::Pause:
             if (surface_->position() > firstPosition_ + 0.35) {
-                const auto picture = mplayer::probes::measurePicture(surface_->grabVideoFramebuffer(),
-                    surface_->videoWidth(), surface_->videoHeight());
+                const QImage frame = surface_->grabVideoFramebuffer();
+                const auto picture = mplayer::probes::measurePicture(
+                    frame, surface_->videoWidth(), surface_->videoHeight());
                 if (picture.isMostlyBlack()) {
                     stop(QStringLiteral("The original demo rendered a mostly black video framebuffer; refusing a misleading player screenshot."));
                     break;
@@ -394,13 +436,8 @@ private:
                     {QStringLiteral("fromSeconds"), firstPosition_},
                     {QStringLiteral("toSeconds"), surface_->position()},
                     {QStringLiteral("pictureLitFraction"), picture.litFraction()}});
-                auto* pause = player_->findChild<QPushButton*>(QStringLiteral("playerPlayToggle"));
-                if (pause == nullptr || !pause->isVisible() || !pause->isEnabled()) {
-                    stop(QStringLiteral("The real pause control is unavailable."));
-                    break;
-                }
-                pause->click();
-                shell_->wake();
+                player_->togglePlayPause();
+                player_->noteUserActivity();
                 next(Stage::PlayerShot);
             } else if (stageClock_.elapsed() > 10000) {
                 stop(QStringLiteral("The demo clock did not advance while playing."));
@@ -408,8 +445,8 @@ private:
             break;
         case Stage::PlayerShot:
             if (surface_->pauseObserved() && !surface_->isPlaying() && stageClock_.elapsed() >= 700) {
-                shell_->wake();
-                capture(player_, QStringLiteral("player"), playbackState());
+                player_->noteUserActivity();
+                capture(player_->window(), QStringLiteral("player"), playbackState());
                 next(Stage::CompareOpen);
             } else if (stageClock_.elapsed() > 6000) {
                 stop(QStringLiteral("The real pause action did not settle."));
@@ -417,10 +454,14 @@ private:
             break;
         case Stage::CompareOpen:
             next(Stage::CompareReady);
-            if (!pictureAction(QStringLiteral("compare"))) stop(QStringLiteral("The real Compare quality menu row could not be activated."));
+            if (!pictureAction(QStringLiteral("compare"))) stop(QStringLiteral("The real Quick picture menu Compare row could not be activated."));
             break;
         case Stage::CompareReady: {
-            compare_ = player_->findChild<CompareWindow*>();
+            compare_ = nullptr;
+            for (QWidget* top : QApplication::topLevelWidgets()) {
+                if (auto* candidate = qobject_cast<CompareWindow*>(top);
+                    candidate != nullptr) compare_ = candidate;
+            }
             if (compare_ == nullptr || !compare_->isVisible()) {
                 if (stageClock_.elapsed() > 5000) stop(QStringLiteral("The Compare quality action opened no comparison window (check deployed shaders)."));
                 break;
@@ -464,10 +505,14 @@ private:
             break;
         case Stage::InformationOpen:
             next(Stage::InformationRead);
-            if (!pictureAction(QStringLiteral("information"))) stop(QStringLiteral("The real Media information menu row could not be activated."));
+            if (!pictureAction(QStringLiteral("information"))) stop(QStringLiteral("The real Quick picture menu Media information row could not be activated."));
             break;
         case Stage::InformationRead: {
-            information_ = player_->findChild<MediaInformationDialog*>();
+            information_ = nullptr;
+            for (QWidget* top : QApplication::topLevelWidgets()) {
+                if (auto* candidate = qobject_cast<MediaInformationDialog*>(top);
+                    candidate != nullptr) information_ = candidate;
+            }
             if (information_ == nullptr || !information_->isVisible()) {
                 if (stageClock_.elapsed() > 5000) stop(QStringLiteral("The real Media information action opened no dialog."));
                 break;
@@ -506,7 +551,7 @@ private:
                 state.insert(QStringLiteral("observedPlainText"), informationText_);
                 capture(information_, QStringLiteral("media-info"), state);
                 information_->close();
-                player_->hide();
+                player_->hideWindow();
                 window_->show();
                 window_->raise();
                 window_->activateWindow();
@@ -715,9 +760,8 @@ private:
     QString demo_;
     mikai::backend::MikaiClient client_;
     std::unique_ptr<MainWindow> window_;
-    QPointer<PlayerDialog> player_;
-    QPointer<PlayerShell> shell_;
-    QPointer<mplayer::VideoSurface> surface_;
+    QPointer<PlayerController> player_;
+    QPointer<mplayer::VideoSession> surface_;
     QPointer<CompareWindow> compare_;
     QPointer<MediaInformationDialog> information_;
     QTimer timer_;
@@ -867,18 +911,6 @@ private:
                                 qBound(0, qRound(y * scale), image.height() - 1));
     }
 
-    /// The dialog's host side, serving nothing but the project's own clip: the
-    /// fixture playlist names two episodes of it, which is what makes the
-    /// feature strip - and the chip in it - genuinely visible.
-    struct FixtureHost final : mplayer::shell::PlayerHost {
-        void requestVariant(const QString&, const QString&) override {}
-        void requestEpisode(int) override {}
-        void requestTrackProbe(const QString&) override {}
-        void requestCopyStreamUrl() override {}
-        void playerClosed() override {}
-        void playbackFailed() override {}
-    };
-
     struct TimelineSample {
         QColor pixel;
         int longestRun = -1;
@@ -895,81 +927,81 @@ private:
         bool visible = false;
     };
 
-    /// The played run along the bar's own row, read from whichever device paints
-    /// it: the surface's framebuffer where the bar overlaps the picture, the
-    /// shell's raster where it does not. The bar is not a child of the surface,
-    /// so its position goes through the screen rather than mapTo().
+    QQuickItem* timelineItem(QQuickItem* item) const {
+        if (item == nullptr) return nullptr;
+        if (QString::fromLatin1(item->metaObject()->className()).contains(
+                QLatin1String("Timeline"))) return item;
+        for (QQuickItem* child : item->childItems()) {
+            if (QQuickItem* found = timelineItem(child)) return found;
+        }
+        return nullptr;
+    }
+
+    /// Sample the QML Timeline's played accent from the actual Quick window
+    /// screenshot; the mpv framebuffer intentionally contains no chrome.
     TimelineSample sampleTimeline(const QColor& expected) {
         TimelineSample sample;
-        if (scrub_ == nullptr || shell_ == nullptr || surface_ == nullptr) {
-            sample.note = QStringLiteral("no scrub bar, shell or surface");
+        if (player_ == nullptr || player_->window() == nullptr || surface_ == nullptr) {
+            sample.note = QStringLiteral("no Quick player window or VideoSession");
             return sample;
         }
-        shell_->wake();  // the HUD auto-hides on its own timer
-        QTest::qWait(60);
-        sample.visible = scrub_->isVisible();
-        if (!sample.visible) {
-            sample.note = QStringLiteral("the timeline is hidden after wake()");
+        player_->noteUserActivity();
+        const double duration = surface_->duration();
+        if (duration <= 0.0) {
+            sample.note = QStringLiteral("no seekable timeline duration");
             return sample;
         }
-        scrub_->setValueSilent(0.5);
-        sample.fraction = scrub_->value();
-        sample.barInShell = QRect(scrub_->mapTo(shell_.data(), QPoint(0, 0)), scrub_->size());
-        sample.barInSurface =
-            QRect(surface_->mapFromGlobal(scrub_->mapToGlobal(QPoint(0, 0))), scrub_->size());
-        sample.surfaceRect = surface_->rect();
-        sample.dpr = surface_->devicePixelRatioF();
-
-        constexpr int kGapTolerance = 2;  // thumb edge, antialiasing
-        const auto scan = [&](const QImage& frame, const QRect& row, qreal scale) {
-            if (frame.isNull() || row.width() <= 4) return;
-            const int y = qRound((row.y() + row.height() / 2.0) * scale);
-            const int from = qRound(row.x() * scale);
-            const int to = qRound((row.x() + row.width()) * scale) - 1;
-            if (y < 0 || y >= frame.height() || from < 0 || to >= frame.width() || to <= from) {
-                return;
-            }
-            sample.span = to - from + 1;
-            int run = 0;
-            int runStart = -1;
-            int sinceMatch = 0;
-            for (int x = from; x <= to; ++x) {
-                const QColor pixel = frame.pixelColor(x, y);
-                if (nearColor(pixel, expected, 10)) {
-                    if (run == 0) runStart = x;
-                    run += sinceMatch + 1;
-                    sinceMatch = 0;
-                    if (run > sample.longestRun) {
-                        sample.longestRun = run;
-                        sample.startOffset = runStart - from;
-                        sample.pixel = pixel;
-                    }
-                    continue;
+        player_->seekTo(duration * 0.5);
+        sample.fraction = 0.5;
+        QTest::qWait(100);
+        QQuickItem* timeline = timelineItem(player_->window()->contentItem());
+        if (timeline == nullptr || !timeline->isVisible() ||
+            player_->window()->screen() == nullptr) {
+            sample.note = QStringLiteral("the QML Timeline item is not visible");
+            return sample;
+        }
+        sample.visible = true;
+        const QPointF origin = timeline->mapToScene(QPointF(0, 0));
+        sample.barInSurface = QRect(qRound(origin.x()), qRound(origin.y()),
+                                    qRound(timeline->width()), qRound(timeline->height()));
+        sample.barInShell = sample.barInSurface;
+        sample.surfaceRect = QRect(0, 0, player_->window()->width(),
+                                   player_->window()->height());
+        const QPixmap screenshot =
+            player_->window()->screen()->grabWindow(player_->window()->winId());
+        const QImage frame = screenshot.toImage();
+        sample.frameSize = frame.size();
+        sample.dpr = screenshot.devicePixelRatio();
+        sample.device = QStringLiteral("Quick window");
+        if (frame.isNull() || sample.dpr <= 0.0) {
+            sample.note = QStringLiteral("the Quick window produced no screenshot");
+            return sample;
+        }
+        const int y = qRound((origin.y() + timeline->height() / 2.0) * sample.dpr);
+        const int from = qRound(origin.x() * sample.dpr);
+        const int to = qRound((origin.x() + timeline->width()) * sample.dpr) - 1;
+        if (y < 0 || y >= frame.height() || from < 0 || to >= frame.width() || to <= from) {
+            sample.note = QStringLiteral("the QML Timeline bounds fall outside its real screenshot");
+            return sample;
+        }
+        sample.span = to - from + 1;
+        int run = 0;
+        int runStart = -1;
+        for (int x = from; x <= to; ++x) {
+            const QColor pixel = frame.pixelColor(x, y);
+            if (nearColor(pixel, expected, 10)) {
+                if (run == 0) runStart = x;
+                ++run;
+                if (run > sample.longestRun) {
+                    sample.longestRun = run;
+                    sample.startOffset = runStart - from;
+                    sample.pixel = pixel;
                 }
-                ++sinceMatch;
-                if (sinceMatch > kGapTolerance) {
-                    run = 0;
-                    runStart = -1;
-                    sinceMatch = 0;
-                }
+            } else {
+                run = 0;
+                runStart = -1;
             }
-        };
-
-        if (sample.barInSurface.width() > 8 && surface_->rect().contains(sample.barInSurface)) {
-            sample.device = QStringLiteral("surface");
-            const QImage frame = surface_->grabFramebuffer();
-            sample.frameSize = frame.size();
-            if (!frame.isNull()) {
-                scan(frame, sample.barInSurface,
-                     static_cast<qreal>(frame.width()) / qMax(1, surface_->width()));
-            }
-            return sample;
         }
-
-        sample.device = QStringLiteral("shell");
-        const Pixels shellPixels = pixelsOf(shell_.data());
-        sample.frameSize = shellPixels.image.size();
-        scan(shellPixels.image, sample.barInShell, shellPixels.scale);
         return sample;
     }
 
@@ -1087,7 +1119,7 @@ private:
         for (QWidget* window : QApplication::topLevelWidgets()) {
             auto* dialog = qobject_cast<QDialog*>(window);
             if (dialog == nullptr || !dialog->isVisible() || !dialog->isModal()) continue;
-            if (dialog == compare_.get()) continue;
+            if (dialog == compare_.data()) continue;
             if (dialog == settings_.get()) continue;
             diagnostic(QStringLiteral("Rejecting a startup modal that is not part of the sweep: %1")
                            .arg(dialog->objectName()));
@@ -1330,39 +1362,24 @@ private:
             return false;
         }
 
-        overlay_ = std::make_unique<ProcessingOverlay>(nullptr);
-        overlay_->begin(QStringLiteral("Engine preparation (presentation only)"));
-        overlay_->setStage(2, 4, QStringLiteral("Stage 3 of 4"),
-                           QStringLiteral("No builder process is started; this window only proves the accent."));
-        QTest::qWait(120);
-        overlayProgress_ = overlay_->findChild<QProgressBar*>();
-        if (!waitFor([this] { return overlayProgress_ != nullptr && overlayProgress_->isVisible(); },
-                     5000, QStringLiteral("preparation-overlay-real"))) {
-            return false;
-        }
-
         if (!window_->openMedia(demo_)) {
             check(QStringLiteral("player-open-real"), false,
                   QStringLiteral("the application refused the supplied demo"));
             return false;
         }
         player_ = window_->currentMediaPlayer();
-        if (!waitFor([this] { return player_ != nullptr; }, 8000,
-                     QStringLiteral("player-dialog-real"))) {
+        if (!waitFor([this] { return player_ != nullptr && player_->window() != nullptr; },
+                     8000, QStringLiteral("quick-player-real"))) {
             return false;
         }
-        place(player_.get(), kWidth, kHeight);
-        // Windowed, the aspect-fitted canvas leaves the dock outside the
-        // surface, where the shell's own raster paints it. The real fullscreen
-        // presentation is where the surface owns the whole HUD, so the sweep
-        // stages that state through the public call and records it.
-        player_->showFullScreen();
+        fit(player_->window());
+        player_->window()->showFullscreen();
         QTest::qWait(250);
-        evidence_.insert(QStringLiteral("playerFullscreen"), player_->isFullScreen());
-        shell_ = player_->findChild<PlayerShell*>();
-        surface_ = player_->findChild<mplayer::VideoSurface*>();
-        if (!waitFor([this] { return surface_ != nullptr && shell_ != nullptr; }, 5000,
-                     QStringLiteral("player-surface-real"))) {
+        evidence_.insert(QStringLiteral("playerFullscreen"), player_->fullscreen());
+        surface_ = player_->session();
+        if (surface_ == nullptr) {
+            check(QStringLiteral("player-session-real"), false,
+                  QStringLiteral("the Quick controller has no VideoSession"));
             return false;
         }
         if (!waitFor([this] { return surface_->hasVisibleOutputFrame() &&
@@ -1370,41 +1387,114 @@ private:
                      35000, QStringLiteral("player-frame-real"))) {
             return false;
         }
-        auto* pause = player_->findChild<QPushButton*>(QStringLiteral("playerPlayToggle"));
-        if (pause == nullptr) {
-            check(QStringLiteral("player-pause-real"), false,
-                  QStringLiteral("the real pause control is missing"));
-            return false;
-        }
-        pause->click();
+        player_->togglePlayPause();
         if (!waitFor([this] { return surface_->pauseObserved() && !surface_->isPlaying(); }, 8000,
                      QStringLiteral("player-paused-real"))) {
             return false;
         }
-        shell_->wake();
-        QTest::qWait(250);
-        scrub_ = player_->findChild<mplayer::shell::ScrubBar*>();
-        if (scrub_ != nullptr) {
-            scrub_->setValue(0.5);
-            QTest::qWait(80);
+        player_->beginEnginePreparation(QStringLiteral("Engine preparation (presentation only)"));
+        player_->updateEnginePreparation(
+            2, 4, QStringLiteral("Stage 3 of 4"),
+            QStringLiteral("No builder process is started; this samples the real Quick status window."));
+        overlay_ = nullptr;
+        if (!waitFor([this] {
+                for (QWindow* top : QGuiApplication::allWindows()) {
+                    if (auto* candidate = qobject_cast<mplayer::quick::PreparationWindow*>(top);
+                        candidate != nullptr && candidate->isVisible()) {
+                        overlay_ = candidate;
+                        return true;
+                    }
+                }
+                return false;
+            }, 5000, QStringLiteral("preparation-window-real"))) {
+            return false;
         }
-        check(QStringLiteral("timeline-real"), scrub_ != nullptr && scrub_->isVisible(),
-              QStringLiteral("the player exposes its scrub bar"));
+        player_->noteUserActivity();
+        QTest::qWait(250);
+        check(QStringLiteral("timeline-real"),
+              timelineItem(player_->window()->contentItem()) != nullptr,
+              QStringLiteral("the QML player scene contains its real Timeline component"));
 
-        // The chrome chips read the accent token through their own stylesheet.
-        // The chip exists for every source; whether the strip that carries it is
-        // on screen is the shell's business, so presence is what is gated here
-        // and the measured row records the visibility it had.
-        chip_ = player_->findChild<QPushButton*>(QStringLiteral("playerSeriesToggle"));
-        check(QStringLiteral("player-chip-present"), chip_ != nullptr,
-              chip_ != nullptr ? QStringLiteral("the player exposes its episode chip, visible %1")
-                                     .arg(chip_->isVisible())
-                               : QStringLiteral("the player exposes no episode chip"));
-
-        // The media inspector is opened for the whole sweep: its selected-row
-        // palette has to follow the token while the window stays open.
-        mediaInfo_ = new MediaInformationDialog(surface_.data(), player_.data());
-        mediaInfo_->show();
+        // The direct-media player has no episode strip by contract.
+        check(QStringLiteral("player-no-episode-controls"),
+              player_->isDirectMedia() && !player_->hasPreviousEpisode() &&
+                  !player_->hasNextEpisode(),
+              QStringLiteral("direct local media exposes no episode navigation"));
+        const auto hasAction = [](const PlayerMenuModel* model,
+                                  PlayerMenuModel::Action action,
+                                  const QString& value = QString()) {
+            if (model == nullptr) return false;
+            for (const PlayerMenuModel::Row& row : model->rows()) {
+                if (row.action == action && (value.isEmpty() || row.value == value)) return true;
+            }
+            return false;
+        };
+        const auto actionRows = [](const PlayerMenuModel* model,
+                                   PlayerMenuModel::Action action) {
+            int count = 0;
+            if (model != nullptr) {
+                for (const PlayerMenuModel::Row& row : model->rows()) {
+                    if (row.action == action) ++count;
+                }
+            }
+            return count;
+        };
+        const auto& tracks = surface_->mediaTracks();
+        int audioTracks = 0;
+        int subtitleTracks = 0;
+        for (const mplayer::MediaTrack& track : tracks.tracks) {
+            if (track.type == mplayer::MediaTrackType::Audio) ++audioTracks;
+            else ++subtitleTracks;
+        }
+        PlayerMenuModel* const audioMenu = player_->menuModel(QStringLiteral("audio"));
+        PlayerMenuModel* const subtitlesMenu = player_->menuModel(QStringLiteral("subtitles"));
+        PlayerMenuModel* const pictureSubtitles =
+            player_->menuModel(QStringLiteral("picture.subtitles"));
+        check(QStringLiteral("direct-track-rows"),
+              tracks.ready && player_->audioTracksAvailable() == (audioTracks > 0) &&
+                  player_->subtitleTracksAvailable() == (subtitleTracks > 0) &&
+                  actionRows(audioMenu, PlayerMenuModel::Action::SelectTrack) == audioTracks &&
+                  actionRows(subtitlesMenu, PlayerMenuModel::Action::SelectTrack) ==
+                      subtitleTracks + (subtitleTracks > 0 ? 1 : 0),
+              QStringLiteral("direct-media audio/subtitle rows match the loaded session track snapshot"));
+        check(QStringLiteral("direct-track-pickers"),
+              hasAction(audioMenu, PlayerMenuModel::Action::LoadExternalTrack,
+                        QStringLiteral("audio")) &&
+                  hasAction(subtitlesMenu, PlayerMenuModel::Action::LoadExternalTrack,
+                            QStringLiteral("sub")) &&
+                  hasAction(pictureSubtitles, PlayerMenuModel::Action::LoadExternalTrack,
+                            QStringLiteral("sub")) &&
+                  hasAction(pictureSubtitles, PlayerMenuModel::Action::OpenSubtitleSearch),
+              QStringLiteral("local media exposes audio, subtitle-file and OpenSubtitles actions"));
+        const double originalSubtitleDelay = player_->subtitleDelay();
+        player_->adjustSubtitleDelay(0.1);
+        const bool delayChanged = qFuzzyCompare(player_->subtitleDelay() + 1.0,
+                                                originalSubtitleDelay + 1.1);
+        bool delayRowsUpdated = false;
+        if (subtitlesMenu != nullptr) {
+            for (const PlayerMenuModel::Row& row : subtitlesMenu->rows()) {
+                if (row.id == QLatin1String("delay.heading") &&
+                    row.label.contains(QStringLiteral("0.1"))) {
+                    delayRowsUpdated = true;
+                    break;
+                }
+            }
+        }
+        player_->resetSubtitleDelay();
+        check(QStringLiteral("subtitle-delay"),
+              delayChanged && delayRowsUpdated &&
+                  qFuzzyIsNull(player_->subtitleDelay()),
+              QStringLiteral("subtitle delay updates the active controller and menu then resets"));
+        player_->openMediaInformation();
+        waitFor([this] {
+            for (QWidget* top : QApplication::topLevelWidgets()) {
+                if (auto* dialog = qobject_cast<MediaInformationDialog*>(top)) {
+                    mediaInfo_ = dialog;
+                    return dialog->isVisible();
+                }
+            }
+            return false;
+        }, 6000, QStringLiteral("media-information-real"));
         if (!waitFor([this] { return mediaInfo_ != nullptr && mediaInfo_->isVisible(); }, 6000,
                      QStringLiteral("media-information-real"))) {
             return false;
@@ -1413,8 +1503,23 @@ private:
         // The real Compare window. It renders only the built-in shader
         // candidates; if the catalogue's selection would be an AI model, the
         // window is never shown and no engine is touched.
-        compare_ = std::make_unique<CompareWindow>(surface_.data(), QString(), nullptr);
-        place(compare_.get(), kWidth, kHeight);
+        player_->openCompare();
+        const bool compareOpened = waitFor([this] {
+            for (QWidget* top : QApplication::topLevelWidgets()) {
+                if (auto* candidate = qobject_cast<CompareWindow*>(top);
+                    candidate != nullptr && candidate->isVisible()) {
+                    compare_ = candidate;
+                    return true;
+                }
+            }
+            return false;
+        }, 6000, QStringLiteral("compare-open-real"));
+        if (!compareOpened) {
+            check(QStringLiteral("compare-open-real"), false,
+                  QStringLiteral("the Quick picture action opened no real Compare window"));
+            return false;
+        }
+        place(compare_, kWidth, kHeight);
         const QString sideA = compare_->selectedCandidateId(0);
         const QString sideB = compare_->selectedCandidateId(1);
         const bool aiSelected = sideA.startsWith(QLatin1String("spatial:")) ||
@@ -1424,7 +1529,8 @@ private:
         check(QStringLiteral("compare-no-ai-selection"), !aiSelected,
               QStringLiteral("A=%1 B=%2").arg(sideA, sideB));
         if (aiSelected) {
-            compare_.reset();
+            compare_->close();
+            compare_.clear();
             check(QStringLiteral("compare-open-real"), false,
                   QStringLiteral("refused to open Compare because an AI candidate would be selected"));
         } else {
@@ -1520,16 +1626,13 @@ private:
         // inferred from the absence of a restart.
         {
             const QColor initial = mplayer::shell::accent();
-            QColor overlayPixel;
-            if (overlayProgress_ != nullptr) {
-                overlayPixel = pixelsOf(overlayProgress_)
-                                   .at(overlayProgress_->width() / 8,
-                                       overlayProgress_->height() / 2);
-            }
-            check(QStringLiteral("initial/preparation-overlay"), nearColor(overlayPixel, initial, 8),
-                  QStringLiteral("painted %1, opened with %2")
-                      .arg(nameColor(overlayPixel), nameColor(initial)));
-            capture(overlay_.get(), QStringLiteral("accent-initial-overlay"),
+            const QImage overlayImage = overlay_ != nullptr && overlay_->screen() != nullptr
+                ? overlay_->screen()->grabWindow(overlay_->winId()).toImage() : QImage();
+            const int overlayAccentPixels = countNear(overlayImage, initial, 12);
+            check(QStringLiteral("initial/preparation-overlay"), overlayAccentPixels > 0,
+                  QStringLiteral("the real PreparationWindow paints %1 accent pixels")
+                      .arg(overlayAccentPixels));
+            capture(overlay_.data(), QStringLiteral("accent-initial-overlay"),
                     QJsonObject{{QStringLiteral("surface"), QStringLiteral("engine preparation overlay")},
                                 {QStringLiteral("accent"), nameColor(initial)},
                                 {QStringLiteral("presentationOnly"), true},
@@ -1542,7 +1645,7 @@ private:
                 const int initialPixels = countNear(before, initial);
                 check(QStringLiteral("initial/compare-live-accent"), initialPixels > 0,
                       QStringLiteral("%1 accent pixels before the first switch").arg(initialPixels));
-                capture(compare_.get(), QStringLiteral("accent-initial-compare"),
+                capture(compare_.data(), QStringLiteral("accent-initial-compare"),
                         QJsonObject{{QStringLiteral("surface"), QStringLiteral("live Compare window")},
                                     {QStringLiteral("accent"), nameColor(initial)},
                                     {QStringLiteral("presentationOnly"), false},
@@ -1565,10 +1668,10 @@ private:
                 appearance.gradientIntensity = 30;
                 appearance.gradientHeight = 100;
                 applyLook(appearance);
-                // The timeline reads the token at paint time; the shell's own
-                // wake is the production path that repaints its chrome.
-                if (shell_ != nullptr) {
-                    shell_->wake();
+                // The QML timeline reads the live accent token; wake through the
+                // controller's actual activity path.
+                if (player_ != nullptr) {
+                    player_->noteUserActivity();
                     QTest::qWait(60);
                 }
 
@@ -1648,15 +1751,15 @@ private:
 
                 // The preparation window stays open across the whole sweep; its
                 // chunk must follow this variant without a restart.
-                const QColor overlayPixel = overlayProgress_ != nullptr
-                    ? pixelsOf(overlayProgress_)
-                          .at(overlayProgress_->width() / 8, overlayProgress_->height() / 2)
-                    : QColor();
-                row.insert(QStringLiteral("overlayChunk"), nameColor(overlayPixel));
+                const QImage overlayImage = overlay_ != nullptr && overlay_->screen() != nullptr
+                    ? overlay_->screen()->grabWindow(overlay_->winId()).toImage() : QImage();
+                const int overlayAccentPixels = countNear(overlayImage, expected, 12);
+                row.insert(QStringLiteral("overlayChunk"), nameColor(expected));
+                row.insert(QStringLiteral("overlayAccentPixels"), overlayAccentPixels);
                 check(QStringLiteral("%1/preparation-overlay-live").arg(variant),
-                      nearColor(overlayPixel, expected, 8),
-                      QStringLiteral("painted %1, chosen %2 (window stayed open)")
-                          .arg(nameColor(overlayPixel), nameColor(expected)));
+                      overlayAccentPixels > 0 && overlay_ != nullptr && overlay_->isVisible(),
+                      QStringLiteral("real PreparationWindow paints %1 pixels of chosen %2")
+                          .arg(overlayAccentPixels).arg(nameColor(expected)));
 
                 // The media inspector has been open since before the first
                 // switch; its selection palette is the accent token.
@@ -1676,20 +1779,13 @@ private:
                 // "painted at all" floor is asserted. The strip that carries the
                 // chip only exists for a source with a playlist, so a direct file
                 // hides it by design: the rendered chip is measured either way.
-                if (shell_ != nullptr) shell_->wake();
-                if (chip_ != nullptr) {
-                    // A forced under-mouse flag does not survive an event turn
-                    // here, so the state goes to the widget's own style.
-                    const QColor border = pixelOfState(*chip_, true, chip_->width() / 2, 0);
-                    row.insert(QStringLiteral("playerChipHover"), nameColor(border));
-                    row.insert(QStringLiteral("playerChipHoverAlpha"), border.alpha());
-                    row.insert(QStringLiteral("playerChipVisible"), chip_->isVisible());
+                if (player_ != nullptr) {
+                    player_->noteUserActivity();
+                    row.insert(QStringLiteral("playerChipVisible"), false);
                     check(QStringLiteral("%1/player-chip-live").arg(variant),
-                          border.alpha() >= 24 && nearColor(border, expected, 8),
-                          QStringLiteral("hover boundary %1 a%2, chosen %3")
-                              .arg(nameColor(border))
-                              .arg(border.alpha())
-                              .arg(nameColor(expected)));
+                          player_->isDirectMedia() && !player_->hasPreviousEpisode() &&
+                              !player_->hasNextEpisode(),
+                          QStringLiteral("direct-media Quick scene correctly omits episode navigation"));
                 }
 
                 // The played segment: the longest continuous run of the chosen
@@ -1757,7 +1853,7 @@ private:
                           QStringLiteral("%1 seat-B pixels of %2")
                               .arg(seatBPixels)
                               .arg(nameColor(seatB)));
-                    capture(compare_.get(), QStringLiteral("accent-%1-compare").arg(variant),
+                    capture(compare_.data(), QStringLiteral("accent-%1-compare").arg(variant),
                             QJsonObject{{QStringLiteral("surface"), QStringLiteral("live Compare window")},
                                         {QStringLiteral("accent"), nameColor(expected)},
                                         {QStringLiteral("presentationOnly"), false},
@@ -1783,15 +1879,15 @@ private:
                                     {QStringLiteral("presentationOnly"), true},
                                     {QStringLiteral("syntheticState"), QStringLiteral("running state and value shown for presentation; no benchmark was started")},
                                     {QStringLiteral("inferenceProven"), false}});
-                capture(overlay_.get(), QStringLiteral("accent-%1-overlay").arg(variant),
+                capture(overlay_.data(), QStringLiteral("accent-%1-overlay").arg(variant),
                         QJsonObject{{QStringLiteral("surface"), QStringLiteral("engine preparation overlay")},
                                     {QStringLiteral("accent"), nameColor(expected)},
                                     {QStringLiteral("presentationOnly"), true},
                                     {QStringLiteral("syntheticState"), QStringLiteral("stage data only; no builder process, no engine")},
                                     {QStringLiteral("inferenceProven"), false}});
-                if (shell_ != nullptr) shell_->wake();
+                if (player_ != nullptr) player_->noteUserActivity();
                 QTest::qWait(40);
-                capture(player_.get(), QStringLiteral("accent-%1-player").arg(variant),
+                capture(player_->window(), QStringLiteral("accent-%1-player").arg(variant),
                         QJsonObject{{QStringLiteral("surface"), QStringLiteral("player window and timeline")},
                                     {QStringLiteral("accent"), nameColor(expected)},
                                     {QStringLiteral("inferenceProven"), false}});
@@ -1809,7 +1905,7 @@ private:
         evidence_.insert(QStringLiteral("openAcrossSweep"), QJsonObject{
             {QStringLiteral("compare"), compare_ != nullptr && compare_->isVisible()},
             {QStringLiteral("preparationOverlay"), overlay_ != nullptr && overlay_->isVisible()},
-            {QStringLiteral("player"), player_ != nullptr && player_->isVisible()}});
+            {QStringLiteral("player"), player_ != nullptr && player_->isWindowVisible()}});
         return true;
     }
 
@@ -1898,17 +1994,16 @@ private:
         report(QStringLiteral("auto-again"), mikai::app::theme::accentColor(autoLook));
     }
 
-    /// A bare float, kept open across two accents: no stream, no second mpv core,
-    /// only the chrome it paints (presentation only).
+    /// PiP is the same Quick window and VideoSession in a compact presentation.
     bool sweepPip() {
         // This teardown is the one that crashed last time, so the measurements
         // go to disk before it starts.
         writeEvidence(QStringLiteral("pip-teardown-pending"), false);
-        // Both windows release surface locks in their destructors, so they close
-        // while the surface is alive; the player follows, then the float.
+        // Auxiliary Widgets close first; the player remains open to enter compact
+        // PiP through its native Quick window and the same session.
         if (compare_ != nullptr) {
             compare_->close();
-            compare_.reset();
+            compare_.clear();
             QTest::qWait(200);
         }
         if (mediaInfo_ != nullptr) {
@@ -1918,141 +2013,110 @@ private:
             mediaInfo_ = nullptr;
             QTest::qWait(100);
         }
-        if (player_ != nullptr) {
-            player_->close();
-            player_ = nullptr;
-            QTest::qWait(300);
-        }
-        auto float_ = std::make_unique<PipFloat>();
-        place(float_.get(), 520, 300);
-        float_->show();
-        QTest::qWait(220);
-        auto* scrub = float_->findChild<QSlider*>(QStringLiteral("pipScrub"));
-        if (scrub == nullptr) {
-            check(QStringLiteral("pip-timeline"), false,
-                  QStringLiteral("the float exposes no timeline slider"));
+        if (player_ == nullptr || player_->window() == nullptr || surface_ == nullptr) {
+            check(QStringLiteral("pip-player-ready"), false,
+                  QStringLiteral("the Quick player session is unavailable"));
             return false;
         }
-        scrub->setRange(0, 100);
-        scrub->setValue(50);
-        float_->setTime(50.0, 100.0);
-        QTest::qWait(140);
+        PlayerWindow* const originalWindow = player_->window();
+        mplayer::VideoSession* const originalSession = player_->session();
+        const uint64_t originalEpoch = surface_->sourceEpoch();
+        player_->togglePip();
+        if (!waitFor([this] { return player_->isPipActive() && player_->window()->compactPip(); },
+                     5000, QStringLiteral("same-window-pip"))) {
+            check(QStringLiteral("pip-same-window-session"), false,
+                  QStringLiteral("the player did not enter compact PiP"));
+            return false;
+        }
+        check(QStringLiteral("pip-same-window-session"),
+              player_->window() == originalWindow && player_->session() == originalSession &&
+                  surface_->sourceEpoch() == originalEpoch,
+              QStringLiteral("PiP preserves the exact Quick window, VideoSession and source epoch"));
 
-        // The played run starts at the groove's left edge and ends at the
-        // handle; at 50 percent its midpoint is a quarter of the span in.
-        const QRect groove = scrub->geometry();
-        const double span = std::max(1.0, static_cast<double>(groove.width()) - 12.0);
-        const double playedMid = groove.x() + (6.0 + 0.5 * span) / 2.0;
-        const int sampleY = groove.y() + groove.height() / 2;
-
-        struct Variant {
-            const char* stage;
-            const char* accent;
-        };
+        struct Variant { const char* stage; const char* accent; };
         const QVector<Variant> variants = {{"default", "#bdacff"}, {"warm", "#f27bb0"}};
         for (const Variant& variant : variants) {
             Appearance appearance;
             appearance.accent = QString::fromLatin1(variant.accent);
             applyLook(appearance);
-            // The float repaints from accentNotifier(); the pointer move is the
-            // production reveal path for the chrome, not the colour source.
-            QTest::mouseMove(float_.get(), QPoint(float_->width() / 2, float_->height() / 2));
+            player_->noteUserActivity();
             QTest::qWait(140);
-            const QImage frame = float_->videoSurface()->grabFramebuffer();
-            // Derive the ratio from the pixels themselves: the returned image's
-            // devicePixelRatio tells the same thing only when the platform sets
-            // it, and the framebuffer is always in device pixels.
-            const int surfaceWidth = float_->videoSurface()->width();
-            const qreal ratio =
-                surfaceWidth > 0 && frame.width() > 0
-                    ? static_cast<qreal>(frame.width()) / static_cast<qreal>(surfaceWidth)
-                    : 1.0;
-            const QPoint local = float_->videoSurface()->mapFrom(
-                float_.get(), QPoint(qRound(playedMid), sampleY));
-            const QColor pixel =
-                frame.pixelColor(qRound(local.x() * ratio), qRound(local.y() * ratio));
             const QColor expected = mikai::app::theme::accentColor(appearance);
+            const QPixmap screenshot = originalWindow->screen()->grabWindow(originalWindow->winId());
+            const int accentPixels = countNear(screenshot.toImage(), expected, 12);
             evidence_.insert(QStringLiteral("pipTimeline/") + QString::fromLatin1(variant.stage),
-                             QJsonObject{{QStringLiteral("playedPixel"), nameColor(pixel)},
-                                         {QStringLiteral("accent"), nameColor(expected)}});
+                             QJsonObject{{QStringLiteral("accentPixels"), accentPixels},
+                                         {QStringLiteral("accent"), nameColor(expected)},
+                                         {QStringLiteral("sameSession"), player_->session() == originalSession}});
             check(QStringLiteral("pip-timeline-live/%1").arg(QString::fromLatin1(variant.stage)),
-                  !frame.isNull() && nearColor(pixel, expected, 8),
-                  QStringLiteral("played pixel %1, chosen %2 (the float stayed open)")
-                      .arg(nameColor(pixel), nameColor(expected)));
-            capture(float_.get(),
+                  !screenshot.isNull() && accentPixels > 0,
+                  QStringLiteral("Quick PiP paints the live accent (%1 matching pixels)")
+                      .arg(accentPixels));
+            capture(originalWindow,
                     QStringLiteral("accent-pip-%1").arg(QString::fromLatin1(variant.stage)),
-                    QJsonObject{
-                        {QStringLiteral("surface"),
-                         QStringLiteral("picture-in-picture float chrome")},
-                        {QStringLiteral("accent"), nameColor(expected)},
-                        {QStringLiteral("presentationOnly"), true},
-                        {QStringLiteral("syntheticState"),
-                         QStringLiteral("bare float: no stream and no second mpv core; only the painted timeline is measured")},
-                        {QStringLiteral("inferenceProven"), false}});
+                    QJsonObject{{QStringLiteral("surface"), QStringLiteral("same Quick player in compact PiP")},
+                                {QStringLiteral("accent"), nameColor(expected)},
+                                {QStringLiteral("sameSession"), player_->session() == originalSession},
+                                {QStringLiteral("inferenceProven"), false}});
         }
-        float_->hide();
-        float_.reset();
-        // The strip that carries the chip only exists for a source with a
-        // playlist, and a direct file has none. Two labels over the project's own
-        // clip are a fixture, not a catalogue claim: the real visibility contract
-        // is then exercised instead of a hidden widget's sheet.
-        FixtureHost fixtureHost;
-        {
-            // Owned here, not by close(): WA_DeleteOnClose only reacts to
-            // close(), and the host below must outlive the dialog.
-            auto* chipPlayer = new PlayerDialog(
-                QStringLiteral("Episode fixture"), QUrl::fromLocalFile(demo_).toString(), {}, 0,
-                &fixtureHost, nullptr);
-            chipPlayer->setPlaylist(
-                {QVariantMap{{QStringLiteral("label"), QStringLiteral("Episode 1")}},
-                 QVariantMap{{QStringLiteral("label"), QStringLiteral("Episode 2")}}},
-                0);
-            chipPlayer->show();
-            QTest::qWait(400);
-            auto* chipShell = chipPlayer->findChild<PlayerShell*>();
-            auto* chip = chipPlayer->findChild<QPushButton*>(QStringLiteral("playerSeriesToggle"));
-            const QVector<QPair<QString, QString>> looks = {
-                {QStringLiteral("dark"), QStringLiteral("#bdacff")},
-                {QStringLiteral("light"), QStringLiteral("#f0a35e")}};
-            for (const auto& look : looks) {
-                Appearance appearance;
-                appearance.accent = look.second;
-                appearance.siteTheme = look.first == QStringLiteral("light")
-                                           ? mikai::app::theme::SiteTheme::Light
-                                           : mikai::app::theme::SiteTheme::Dark;
-                applyLook(appearance);
-                if (chipShell != nullptr) chipShell->wake();
-                QTest::qWait(120);
-                const QColor expected = mikai::app::theme::accentColor(appearance);
-                const bool visible = chip != nullptr && chip->isVisible();
-                const QColor hover = chip != nullptr
-                                         ? pixelOfState(*chip, true, chip->width() / 2, 0)
-                                         : QColor();
-                evidence_.insert(QStringLiteral("visibleChip/") + look.first,
-                                 QJsonObject{{QStringLiteral("visible"), visible},
-                                             {QStringLiteral("hoverBoundary"), nameColor(hover)},
-                                             {QStringLiteral("accent"), nameColor(expected)}});
-                check(QStringLiteral("visible-chip/%1").arg(look.first),
-                      visible && hover.alpha() >= 24 && nearColor(hover, expected, 8),
-                      QStringLiteral("visible %1, hover boundary %2 a%3, chosen %4")
-                          .arg(visible)
-                          .arg(nameColor(hover))
-                          .arg(hover.alpha())
-                          .arg(nameColor(expected)));
-                if (chip != nullptr) {
-                    capture(chip, QStringLiteral("visible-chip-%1").arg(look.first),
-                            QJsonObject{
-                                {QStringLiteral("surface"),
-                                 QStringLiteral("feature strip chip, playlist fixture")},
+        player_->togglePip();
+        check(player_->window() == originalWindow && player_->session() == originalSession &&
+                  !player_->isPipActive(),
+              "leaving PiP restores the same player window and session");
+        check(player_->requestClose(), "Quick player acknowledges PiP sweep teardown");
+        player_ = nullptr;
+        surface_ = nullptr;
+
+        struct EpisodeFixtureHost final : mplayer::shell::PlayerHost {
+            void requestVariant(const QString&, const QString&) override {}
+            void requestEpisode(int) override {}
+            void requestTrackProbe(const QString&) override {}
+            void requestCopyStreamUrl() override {}
+            void playerClosed() override {}
+            void playbackFailed() override {}
+        } fixtureHost;
+        auto chipPlayer = std::make_unique<PlayerController>(
+            QStringLiteral("Episode fixture"), QUrl::fromLocalFile(demo_).toString(),
+            QList<mplayer::shell::QualityEntry>{}, 0, &fixtureHost);
+        chipPlayer->setPlaylist(
+            {QVariantMap{{QStringLiteral("label"), QStringLiteral("Episode 1")}},
+             QVariantMap{{QStringLiteral("label"), QStringLiteral("Episode 2")}}}, 0);
+        chipPlayer->showWindow();
+        chipPlayer->startPlayer();
+        const QVector<QPair<QString, QString>> looks = {
+            {QStringLiteral("dark"), QStringLiteral("#bdacff")},
+            {QStringLiteral("light"), QStringLiteral("#f0a35e")}};
+        for (const auto& look : looks) {
+            Appearance appearance;
+            appearance.accent = look.second;
+            appearance.siteTheme = look.first == QStringLiteral("light")
+                                       ? mikai::app::theme::SiteTheme::Light
+                                       : mikai::app::theme::SiteTheme::Dark;
+            applyLook(appearance);
+            chipPlayer->noteUserActivity();
+            QTest::qWait(120);
+            const bool visible = chipPlayer->hasNextEpisode() && chipPlayer->window()->isVisible();
+            const QColor expected = mikai::app::theme::accentColor(appearance);
+            const QPixmap screenshot = chipPlayer->window()->screen()->grabWindow(
+                chipPlayer->window()->winId());
+            const int accentPixels = countNear(screenshot.toImage(), expected, 12);
+            evidence_.insert(QStringLiteral("visibleChip/") + look.first,
+                             QJsonObject{{QStringLiteral("visible"), visible},
+                                         {QStringLiteral("accentPixels"), accentPixels},
+                                         {QStringLiteral("accent"), nameColor(expected)}});
+            check(QStringLiteral("visible-chip/%1").arg(look.first),
+                  visible && !screenshot.isNull() && accentPixels > 0,
+                  QStringLiteral("Quick episode navigation is visible in %1 appearance")
+                      .arg(look.first));
+            capture(chipPlayer->window(),
+                    QStringLiteral("visible-chip-%1").arg(look.first),
+                    QJsonObject{{QStringLiteral("surface"), QStringLiteral("Quick episode navigation fixture")},
                                 {QStringLiteral("accent"), nameColor(expected)},
                                 {QStringLiteral("presentationOnly"), true},
-                                {QStringLiteral("syntheticState"),
-                                 QStringLiteral("two-episode fixture over the project-owned clip; no catalogue, service or inference")},
+                                {QStringLiteral("syntheticState"), QStringLiteral("two-episode fixture over the supplied demo")},
                                 {QStringLiteral("inferenceProven"), false}});
-                }
-            }
-            delete chipPlayer;
         }
+        chipPlayer->requestClose();
         // Leave the geometry pass on the shipped appearance.
         applyLook(Appearance{});
         return true;
@@ -2107,7 +2171,14 @@ private:
                     {QStringLiteral("searchAction"), widgetMetrics(searchAction_)},
                     {QStringLiteral("titleWatch"), widgetMetrics(titleWatch_)},
                     {QStringLiteral("benchmarkProgress"), widgetMetrics(benchmarkProgress_)},
-                    {QStringLiteral("timeline"), widgetMetrics(scrub_)}};
+                    {QStringLiteral("timeline"), timelineItem(player_ && player_->window()
+                        ? player_->window()->contentItem() : nullptr) != nullptr
+                        ? QJsonObject{{QStringLiteral("visible"), true},
+                                      {QStringLiteral("width"), timelineItem(
+                                          player_->window()->contentItem())->width()},
+                                      {QStringLiteral("height"), timelineItem(
+                                          player_->window()->contentItem())->height()}}
+                        : QJsonObject{{QStringLiteral("visible"), false}}}};
                 geometry.append(row);
                 check(QStringLiteral("geometry/%1/%2/search-action").arg(code).arg(width),
                       searchAction_ != nullptr && searchAction_->width() > 0 &&
@@ -2200,20 +2271,20 @@ private:
 
     int finish(bool ok) {
         writeEvidence(QStringLiteral("teardown-pending"), false);
-        // Surface-holding widgets release their locks in their destructors, so
-        // they go while the surface is alive.
-        overlayProgress_ = nullptr;
-        overlay_.reset();
+        // Surface-holding windows release their locks before the player session.
+        if (player_ != nullptr) {
+            player_->endEnginePreparation(true, QStringLiteral("Presentation-only release sweep complete"));
+        }
+        overlay_.clear();
         if (compare_ != nullptr) {
             compare_->close();
-            compare_.reset();
+            compare_.clear();
             QTest::qWait(200);
         }
         if (mediaInfo_ != nullptr) {
             mediaInfo_->close();
             mediaInfo_ = nullptr;
         }
-        chip_ = nullptr;
         titleWatch_ = nullptr;
         titlePage_.reset();
         settings_.reset();
@@ -2221,11 +2292,9 @@ private:
         searchAction_ = nullptr;
         glow_ = nullptr;
         searchPage_ = nullptr;
-        scrub_ = nullptr;
-        shell_ = nullptr;
         surface_ = nullptr;
         if (player_ != nullptr) {
-            player_->close();
+            player_->requestClose();
             player_ = nullptr;
             QTest::qWait(250);
         }
@@ -2274,15 +2343,11 @@ private:
     QPointer<QPushButton> titleWatch_;
     std::unique_ptr<mikai::app::SettingsDialog> settings_;
     QPointer<QProgressBar> benchmarkProgress_;
-    std::unique_ptr<ProcessingOverlay> overlay_;
-    QPointer<QProgressBar> overlayProgress_;
-    QPointer<PlayerDialog> player_;
-    QPointer<PlayerShell> shell_;
-    QPointer<mplayer::VideoSurface> surface_;
-    QPointer<mplayer::shell::ScrubBar> scrub_;
-    QPointer<QPushButton> chip_;
+    QPointer<mplayer::quick::PreparationWindow> overlay_;
+    QPointer<PlayerController> player_;
+    QPointer<mplayer::VideoSession> surface_;
     QPointer<MediaInformationDialog> mediaInfo_;
-    std::unique_ptr<CompareWindow> compare_;
+    QPointer<CompareWindow> compare_;
     QJsonObject evidence_;
     QJsonArray checks_;
     QJsonArray shots_;

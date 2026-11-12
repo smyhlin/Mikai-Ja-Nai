@@ -1,11 +1,11 @@
 #include "TestHdrRenderContracts.hpp"
 
-#include "player/core/VideoSurface.hpp"
+#include "player/core/VideoSession.hpp"
 
-using mplayer::VideoSurface;
+using mplayer::VideoSession;
 
 void TestHdrRenderContracts::unknownTransferRequiresSdrGate() {
-    VideoSurface::SourceColorProfile profile;
+    VideoSession::SourceColorProfile profile;
     QVERIFY(!profile.hasTransferMetadata());
     QVERIFY(profile.requiresSdrGate());
     QVERIFY(!profile.isHdr());
@@ -16,7 +16,7 @@ void TestHdrRenderContracts::unknownTransferRequiresSdrGate() {
 }
 
 void TestHdrRenderContracts::pqAndHlgRequireSdrGate() {
-    VideoSurface::SourceColorProfile profile;
+    VideoSession::SourceColorProfile profile;
     profile.gamma = QStringLiteral("pq");
     QVERIFY(profile.hasTransferMetadata());
     QVERIFY(profile.isHdr());
@@ -26,8 +26,16 @@ void TestHdrRenderContracts::pqAndHlgRequireSdrGate() {
     QVERIFY(profile.requiresSdrGate());
 }
 
+void TestHdrRenderContracts::smpte2084RequiresSdrGate() {
+    VideoSession::SourceColorProfile profile;
+    profile.gamma = QStringLiteral("smpte2084");
+    QVERIFY(profile.hasTransferMetadata());
+    QVERIFY(profile.isHdr());
+    QVERIFY(profile.requiresSdrGate());
+}
+
 void TestHdrRenderContracts::knownSdrTransferDoesNotRequireSdrGate() {
-    VideoSurface::SourceColorProfile profile;
+    VideoSession::SourceColorProfile profile;
     profile.gamma = QStringLiteral("bt.1886");
     QVERIFY(profile.hasTransferMetadata());
     QVERIFY(!profile.isHdr());
@@ -35,7 +43,7 @@ void TestHdrRenderContracts::knownSdrTransferDoesNotRequireSdrGate() {
 }
 
 void TestHdrRenderContracts::primariesDoNotMisclassifySdrAsHdr() {
-    VideoSurface::SourceColorProfile profile;
+    VideoSession::SourceColorProfile profile;
     profile.gamma = QStringLiteral("bt.1886");
     profile.primaries = QStringLiteral("bt.2020");
     QVERIFY(!profile.isHdr());

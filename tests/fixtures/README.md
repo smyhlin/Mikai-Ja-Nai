@@ -87,14 +87,16 @@ The lavfi frames carry explicit `setparams` color tags before encoding. Output `
 
 ### Windows manager smoke
 
-The Standard AnimeJaNai manager smoke runs the real Settings, player, Compare
-and Benchmark surfaces through `native_settings_probe` with no flags. It needs
-a desktop session, the built Standard mpv runtime module and the built
-Ukrainian catalog; it imports a generated Identity ONNX graph and a test-only
-dispatcher, and runs no inference, TensorRT compilation or RIFE benchmark. The
-probe's isolation launcher copies the executable into owned scratch with an
-empty native store, so it must not be run beside a populated application
-`native` store. Evidence lands in the working directory the probe runs from.
+The Standard AnimeJaNai manager smoke uses `native_settings_probe` with no
+flags. It exercises the real Widgets Settings pages and the production Quick
+player (`PlayerController`, `PlayerWindow` and its `VideoSession`), alongside
+the Compare and Benchmark surfaces. It needs a desktop session, the built
+Standard mpv runtime module and the built Ukrainian catalog; it imports a
+generated Identity ONNX graph and a test-only dispatcher, and runs no
+inference, TensorRT compilation or RIFE benchmark. The probe's isolation
+launcher copies the executable into owned scratch with an empty native store,
+so it must not be run beside a populated application `native` store. Evidence
+lands in the working directory the probe runs from.
 
 ```powershell
 cmake --build build/release --target native_settings_probe --parallel 4
@@ -233,25 +235,29 @@ cmake --build (Join-Path $repo 'build/release') --preset tests
 ctest --test-dir (Join-Path $repo 'build/release') --output-on-failure -R '^VideoScalingPersistence$'
 ```
 
-What it does **not** claim: no player, mpv core or surface is created, so the
-application player-startup path is not exercised, and the dialogs are never
-shown, so this is not visible layout/typography or flyout/PiP/Compare evidence.
+What it does **not** claim: this settings-only mode creates no
+`PlayerController`, `PlayerWindow`, `VideoSession` or mpv core, so production
+Quick-player startup is not exercised. The dialogs are never shown, so this is
+not visible layout/typography or player-menu/PiP/Compare evidence.
 
 ### Visible video scaling live smoke (Windows)
 
-`native_settings_probe --video-scaling-live-smoke` opens a real `PlayerDialog` on
-a real media file and drives the ordinary windowed path: the Settings dialog's
-real Save changed the mode while playing; the real Cancel changed nothing; the
-player flyout's mode rows changed the mode, box and rendered picture; a paused
-surface adopted a change without resuming or seeking; PiP's float rendered the
-current policy; and a fresh process read the final Saved policy through the
-production reader. It records, per state, the shell size, the surface widget
-rectangle, the rendered framebuffer span and luminance, plus screenshots, and it
-measures the new Settings card at 860, 1000 and 1280 px.
+`native_settings_probe --video-scaling-live-smoke` constructs the production
+`PlayerController` and `PlayerWindow` with their `VideoSession`, then exercises
+the windowed player against a real media file. Its checks cover the Widgets
+Settings dialog's Save/Cancel behavior, scaling rows in the player's in-scene
+Q Settings menu, paused-session adoption without resume or seek, same-window
+PiP retaining the same controller/window/session/video item, and a fresh
+process reading the final saved policy through the production reader. Evidence
+records the Quick window size, in-scene video-item rectangle, rendered
+framebuffer span and luminance per state, plus screenshots; it separately
+measures the Widgets Settings card at 860, 1000 and 1280 px.
 
-It only shows this process's own windows. It never moves the pointer, activates
-another process or sends global input. The dialogs and flyout are driven through
-real widget actions (`QAbstractButton::click`, `QComboBox::setCurrentIndex`).
+The probe shows only its own windows. It does not move the pointer, activate
+another process or send global input. Settings controls use real widget actions
+(`QAbstractButton::click`, `QComboBox::setCurrentIndex`); the player menu is
+opened in the Quick scene and its row is activated through the typed
+`PlayerMenuModel` action.
 
 Requirements and conventions (existing probe conventions, no new ones):
 
@@ -271,10 +277,10 @@ Requirements and conventions (existing probe conventions, no new ones):
   card only in the language it installed and says so in the evidence; the other
   language needs its own run. The mode never claims translated layout it did not
   render.
-- `--video-scaling-hold-ms <ms>` optionally leaves the finished player visible
-  (with its scaling flyout open) and prints `LIVE-SMOKE-HOLD-READY` so a person
-  or a read-only desktop capture can observe it; it prints
-  `LIVE-SMOKE-HOLD-DONE` before exiting.
+- `--video-scaling-hold-ms <ms>` optionally leaves the finished Quick player
+  visible (with its in-scene Q Settings menu open) and prints
+  `LIVE-SMOKE-HOLD-READY` so a person or a read-only desktop capture can observe
+  it; it prints `LIVE-SMOKE-HOLD-DONE` before exiting.
 
 ```powershell
 $repo = (Resolve-Path .).Path
@@ -300,7 +306,7 @@ Exit code 0 requires every check, the fresh-process read and the evidence write
 to succeed. The JSON records `observations` (per state), `settingsCard` (per
 width), `artifacts` (each screen grab's size and `windowExposed`), the language
 and the device pixel ratio. The rendered framebuffer capture is the authoritative
-picture; the window grab is this process's own composition, its flyout is
+picture; the window grab is this process's own composition, its in-scene menu is
 dismissed first, and a grab whose window is not exposed is flagged so it cannot
 read as visible evidence.
 
@@ -439,7 +445,7 @@ enabled, unchanged policy output under rollback, and no OpenGL errors. With
 `--fbo10`, it requests `RGB10_A2` before showing the widget and verifies the
 actual attachment's RGB channel bits and mpv render depth, plus paused-PQ
 samples off the 8-bit lattice. This verifies the probe's requested target,
-not the normal player widget or physical HDR output. Run on a real visible
+not the production Quick player or physical HDR output. Run on a real visible
 OpenGL surface, not `QT_QPA_PLATFORM=offscreen`. `MIKAI_HDR_FIXES=0` rolls
 back the HDR policy changes and processing gates; it does not disable truthful
 FBO-format probing.
@@ -631,11 +637,36 @@ supplies the required shaders, mpv DLL, Qt runtime/plugins and disposable
 scratch parent. See the [safe PowerShell invocation](../../AGENTS.md#running-individual-test-suites). Test startup refuses an existing populated or unsafe adjacent
 native tree; isolation does not make arbitrary manually launched binaries safe.
 
+### Test runtime and scratch configuration
+
+`MIKAI_TEST_RUNTIME_BIN_DIR` selects the Windows MinGW runtime directory staged
+by CTest's launcher. Its default is the compiler's directory. If that directory
+does not contain the runtime DLLs, explicitly select the matching Qt kit's
+`bin` directory; configuration refuses an incomplete DLL trio.
+
+```bash
+cmake --preset release -DMIKAI_TEST_RUNTIME_BIN_DIR=C:/path/to/Qt/bin
+```
+
+`MIKAI_TEST_SCRATCH_ROOT` changes the launcher's scratch parent (default:
+`<build>/_test-runs`), not the application's native store. It must be absolute.
+For a WSL checkout on `/mnt/<drive>`, place scratch on native Linux storage:
+DrvFS without metadata does not preserve executable permissions, and its
+inotify watches may not deliver model-catalogue changes.
+
+```bash
+cmake --preset linux-release -DMIKAI_TEST_SCRATCH_ROOT=/tmp/mikai-tests
+```
+
+The launcher still creates and removes only its own disposable child directory.
+Do not use an installed application directory as scratch.
+
 ## Close during a real engine build (Windows)
 
-`animejanai_probe --close-during-build` answers GOAL-F's teardown bound: a close that arrives
-while the player is waiting on a real AnimeJaNai engine build must return control in <= 2.2 s, say
-what it is doing, and then really destroy the dialog.
+`animejanai_probe --close-during-build` checks GOAL-F's teardown bound: a close request that
+arrives while the Quick player is waiting on a real AnimeJaNai engine build must return control
+in <= 2.2 s, show its finishing status, and then destroy the `PlayerController`, `PlayerWindow`
+and `VideoSession`.
 
 It is opt-in and cannot run on its own:
 
@@ -656,34 +687,38 @@ resolves paths from its own location.
 What the mode does, exactly:
 
 1. Prepares the plan on a worker (`prepareAnimeJanaiPlan`) and submits it through
-   `VideoSurface::setAnimeJanaiPlan` - the call the dialog itself makes. There is no menu walk, no
-   `SetCursorPos`, no foreground activation, and no synthetic `animeJanaiEngineBuildChanged`.
-2. Waits for a build the fork reports: `animeJanaiEngineBuildChanged(true)`,
-   `animeJanaiEngineBuildActive()`, the dialog's own preparation window, and a non-empty backend
-   detail. A cached engine starts no build, so the run fails after 120 s instead of timing a wait.
-   A `*.engine.build.log` newer than the request is recorded as corroboration.
-3. Runs the dialog's real `closeEvent` and samples the overlay while that settle spins the dialog's
-   own event loop, so the `Finishing enhancement…` notice is observed, not injected.
-4. Measures the close request to the dialog's destruction (the deferred delete `WA_DeleteOnClose`
-   schedules) and writes `animejanai-close-during-build.json` under the owned native root.
+   `PlayerController::applyAnimeJanaiRequest`. There is no menu walk, no `SetCursorPos`, no
+   foreground activation, and no synthetic `animeJanaiEngineBuildChanged`.
+2. Waits for a build the fork reports through the player's `VideoSession`:
+   `animeJanaiEngineBuildChanged(true)`, `animeJanaiEngineBuildActive()`, the controller-owned
+   `PreparationWindow`, and a non-empty backend detail. A cached engine starts no build, so the
+   run fails after 120 s instead of timing a wait. A `*.engine.build.log` newer than the request
+   is recorded as corroboration.
+3. Requests close through `PlayerController::requestClose()` and samples the separate
+   `PreparationWindow` while teardown settles, so the **Finishing enhancement…** notice is
+   observed, not injected.
+4. Measures from the close request through explicit controller destruction, verifying that the
+   controller, window and session are gone. It writes
+   `animejanai-close-during-build.json` under the owned native root.
 
 Read these keys from that JSON: `buildStarted`, `buildActiveAtClose`, `buildStartMs`,
 `buildDetail`, `overlayVisibleAtClose`, `buildLogs`, `finishingNoticeObserved`, `closeReturnMs`,
-`dialogDestroyedMs`, `budgetMs`, `settleAbandoned`, `abandonedLogged`, `closeRefused`,
-`statusAfterClose`, `passes`. The stderr lines `[close-build] summary …` and
-`PASS close-during-build: …` carry the same numbers for the run log.
+`dialogDestroyedMs` (the retained JSON field name for player destruction), `budgetMs`,
+`settleAbandoned`, `abandonedLogged`, `closeRefused`, `statusAfterClose`, `passes`. The stderr
+lines `[close-build] summary …` and `PASS close-during-build: …` carry the same numbers for the
+run log.
 
 The verdict is contemporaneous with the close, not with the wait before it: after the corroboration
-wait the probe re-checks both guards and re-reads `animeJanaiEngineBuildActive()`, the backend
-detail and the preparation window, so `buildActiveAtClose=0` is a FAIL even when a build did start
-earlier. The destruction time is the moment a flush targeted at that dialog
-(`sendPostedEvents(dialog, DeferredDelete)`) returns - child destruction included, unrelated queued
-events drained afterwards - so it is request-to-destruction with nothing else billed to it.
+wait the probe re-checks the controller/session guards and re-reads
+`animeJanaiEngineBuildActive()`, the backend detail and the controller-owned preparation window,
+so `buildActiveAtClose=0` is a FAIL even when a build did start earlier. Destruction timing starts
+at the close request and ends after explicit controller deletion, with the `PlayerController`,
+`PlayerWindow` and `VideoSession` guards checked for destruction.
 
 `finishingNoticeObserved` can only be observed on a settle longer than 300 ms when the shipping
-close path keeps the notice armed across both of its waits. Before that fix a run without a PiP
-float showed `closeReturnMs >= 300` with `finishing-notice=0`; that is the reproduction to take
-against an unfixed build, not a probe defect.
+close path keeps the notice armed across both of its waits. Before that fix a run without PiP active
+showed `closeReturnMs >= 300` with `finishing-notice=0`; that is the reproduction to take against
+an unfixed build, not a probe defect.
 
 Scope, stated rather than implied: this proves teardown during a build, not that the build
 completed, and it is not native inference or throughput evidence. It needs a store where the
@@ -695,10 +730,10 @@ for a stop the native side named - so read `closeRefused` and `settleAbandoned` 
 ## Hover-playback pacing canary
 
 GOAL-F/T-F4's regression net is a CTest entry, `HoverPlaybackCanary`. It runs the real
-`fullscreen_stability_probe --hover-canary` mode: the embedded mpv core plays
-`media/motion_320x180_24fps_8bit_hevc.mp4` for a 30 s window while pointer gestures sweep the real
-player chrome, and the verdict comes from the surface's frame-timing log plus the pacing and
-chrome-paint counters.
+`fullscreen_stability_probe --hover-canary` mode with the production Quick
+`PlayerController` and `PlayerWindow`: the `VideoSession` plays
+`media/motion_320x180_24fps_8bit_hevc.mp4` for a 30 s window while pointer gestures sweep the
+player scene. The verdict uses the session's frame-timing log plus pacing and chrome counters.
 
 ```bat
 cmake --build build/release --target fullscreen_stability_probe --parallel 4
@@ -709,7 +744,7 @@ What it gates, and nothing more:
 
 - the window really was playback: the core's `pause` is false and at least one paint per second
   presented a new frame (`newframe=1`);
-- chrome interaction reached the shell (`chromeDirtyRequests` grew);
+- chrome interaction reached the Quick player scene (`chromeDirtyRequests` grew);
 - no *chrome-only* repaint took an armed pacing slot: the log's cumulative `disarm=` field is
   differenced per paint line and attributed to the pass that disarmed, so a forced or seek-driven
   paint that legitimately stops a timer is recorded as `frameOwningDisarms` instead of failing the
@@ -725,9 +760,9 @@ What it gates, and nothing more:
   conservative ceiling for a delay measured from timer arm to paint, not a new budget.
 
 It does **not** observe desktop composition, take the foreground, raise the player or move the
-system cursor: gestures are delivered to the widgets themselves, and the player runs windowed. The
-tracked fixture is 12 s, so the 30 s window continues by seeking back inside the same source (no
-reload); `loopSeeks` records how many. A run whose platform is `offscreen`/`minimal`, or that has no
+system cursor: gestures are delivered to the `QQuickWindow` scene, and the player runs windowed.
+The tracked fixture is 12 s, so the 30 s window continues by seeking back inside the same source
+(no reload); `loopSeeks` records how many. A run whose platform is `offscreen`/`minimal`, or that has no
 GL context, refuses with exit 77 and the CTest entry declares `SKIP_RETURN_CODE 77`, so a missing
 display prerequisite shows as a skip, never as green. The Windows entry sets
 `QT_QPA_PLATFORM=windows` explicitly, because the launcher's empty default resolves to `offscreen`

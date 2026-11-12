@@ -1,4 +1,3 @@
-#include "GlTextureCapture.hpp"
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QCoreApplication>
@@ -13,30 +12,23 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QKeyEvent>
 #include <QKeySequence>
-#include <QLabel>
-#include <QOpenGLContext>
-#include <QOpenGLFunctions>
-#include <QOpenGLWidget>
+#include <QQuickWindow>
+#include <QQuickStyle>
+#include <QSGRendererInterface>
 #include <QSettings>
+#include <QSize>
 #include <QStandardPaths>
 #include <QThread>
 #include <QUrl>
-#include <QVBoxLayout>
-#include <QWidget>
 #include <QVector>
 #include <QDirIterator>
 #include <QCryptographicHash>
-#include <QCursor>
 #include <QPointer>
-#include <QPushButton>
-#include <QProgressBar>
 #include <QTimer>
 #include <QTest>
 #include <QRegularExpression>
 #include <QScreen>
-#include <QDialog>
 #include <QMap>
 #include <QMutex>
 #include <QMutexLocker>
@@ -55,13 +47,14 @@
 #include <optional>
 #include <thread>
 #include <utility>
+#include <vector>
 
-#include "VideoSurface.hpp"
-#include "PlayerDialog.hpp"
-#include "PlayerPopups.hpp"
-#include "PlayerShell.hpp"
-#include "ShellTheme.hpp"
-#include "ShellWidgets.hpp"
+#include "quick/PlayerController.hpp"
+#include "quick/PlayerWindow.hpp"
+#include "quick/MpvVideoItem.hpp"
+#include "quick/PreparationWindow.hpp"
+#include "core/RenderDiagnostics.hpp"
+#include "core/VideoSession.hpp"
 #include "native/bundle/NativePrefs.hpp"
 #include "native/bundle/NativeRuntimeSelection.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
@@ -77,7 +70,6 @@
 #endif
 
 using namespace mplayer;
-using mplayer::shell::PlayerDialog;
 
 namespace {
 
@@ -114,27 +106,7 @@ bool waitUntil(const std::function<bool()>& predicate, int timeoutMs) {
     return predicate();
 }
 
-QWidget* deepestChildAt(QWidget* root, const QPoint& global) {
-    QWidget* child = root;
-    for (;;) {
-        QWidget* next = child->childAt(child->mapFromGlobal(global));
-        if (next == nullptr) return child == root ? nullptr : child;
-        child = next;
-    }
-}
-
 #ifdef Q_OS_WIN
-bool nativeCursorPosition(QPoint* position) {
-    POINT point{};
-    SetLastError(ERROR_SUCCESS);
-    if (!GetCursorPos(&point)) {
-        std::fprintf(stderr, "FAIL native GetCursorPos denied: lastError=%lu\n", GetLastError());
-        return false;
-    }
-    *position = QPoint(point.x, point.y);
-    return true;
-}
-
 // What may be published about a foreground holder: its process, thread, class
 // name and visibility. A window title can name the user's own content, so it is
 // never read here.
@@ -157,7 +129,7 @@ NativeWindowFacts nativeWindowFacts(HWND hwnd) {
     return facts;
 }
 
-// A transient native window this process owns and shows over the dialog - the
+// A transient native window this process owns and shows over the player window - the
 // engine popover is one - keeps the input stream with us while the pointer
 // traverses, so it counts as owning the foreground. Any window from another
 // process does not.
@@ -171,15 +143,15 @@ bool nativeOwnedVisibleMenuForeground(HWND host, HWND foreground) {
 }
 
 // Ownership of the input stream, as the traversal and every click must see it.
-bool nativeForegroundAllowsInput(QWidget* host) {
+bool nativeForegroundAllowsInput(QWindow* host) {
     if (host == nullptr) return false;
     const HWND hwnd = reinterpret_cast<HWND>(host->winId());
     const HWND foreground = GetForegroundWindow();
-    if (foreground == hwnd && !host->isActiveWindow()) return false;
+    if (foreground == hwnd && !host->isActive()) return false;
     return foreground == hwnd || nativeOwnedVisibleMenuForeground(hwnd, foreground);
 }
 
-bool nativeForegroundOwned(QWidget* host) {
+bool nativeForegroundOwned(QWindow* host) {
     if (host != nullptr && nativeForegroundAllowsInput(host)) return true;
     const HWND hwnd = host != nullptr ? reinterpret_cast<HWND>(host->winId()) : nullptr;
     const HWND foreground = GetForegroundWindow();
@@ -189,7 +161,7 @@ bool nativeForegroundOwned(QWidget* host) {
                  "active=%d foreground=%p dialog=%p (pointer left untouched)\n"
                  "     foreground pid=%lu thread=%lu class=%s sameProcess=%d visible=%d "
                  "ownedByDialog=%d\n",
-                 host != nullptr && host->isActiveWindow() ? 1 : 0,
+                 host != nullptr && host->isActive() ? 1 : 0,
                  static_cast<void*>(foreground), static_cast<void*>(hwnd),
                  static_cast<unsigned long>(facts.pid),
                  static_cast<unsigned long>(facts.threadId),
@@ -239,7 +211,7 @@ private:
 // holder's input queue. Every call's result and last error is checked. Nothing
 // is synthesized and no permission is invented: a refusal is reported with the
 // holder's process, thread and class name, and the caller fails.
-bool nativeActivateForeground(QWidget* host, int waitMs) {
+bool nativeActivateForeground(QWindow* host, int waitMs) {
     if (host == nullptr) return false;
     const HWND hwnd = reinterpret_cast<HWND>(host->winId());
     if (IsIconic(hwnd)) {
@@ -277,7 +249,7 @@ bool nativeActivateForeground(QWidget* host, int waitMs) {
     }
     const bool owned = waitUntil([&] { return nativeForegroundAllowsInput(host); }, waitMs);
     if (owned) {
-        std::fprintf(stderr, "[AnimeJanaiProbe] foreground-owned dialog=%p route=%s\n",
+        std::fprintf(stderr, "[AnimeJanaiProbe] foreground-owned player-window=%p route=%s\n",
                      static_cast<void*>(hwnd),
                      borrowed ? "thread-input-borrow" : (accepted ? "direct" : "deferred"));
         return true;
@@ -289,7 +261,7 @@ bool nativeActivateForeground(QWidget* host, int waitMs) {
                  "     foreground pid=%lu thread=%lu class=%s sameProcess=%d visible=%d "
                  "ownedByDialog=%d\n",
                  accepted ? 1 : 0, borrowed ? 1 : 0, activationError, attachError, detachError,
-                 host->isActiveWindow() ? 1 : 0,
+                 host->isActive() ? 1 : 0,
                  static_cast<void*>(GetForegroundWindow()), static_cast<void*>(hwnd),
                  static_cast<unsigned long>(holderFacts.pid),
                  static_cast<unsigned long>(holderFacts.threadId),
@@ -301,679 +273,18 @@ bool nativeActivateForeground(QWidget* host, int waitMs) {
     return false;
 }
 
-bool nativeClientGeometry(QWidget* host, QPoint* screenOrigin, QSize* clientSize) {
-    if (host == nullptr || screenOrigin == nullptr || clientSize == nullptr) return false;
-    const HWND hwnd = reinterpret_cast<HWND>(host->winId());
-    RECT client{};
-    POINT origin{0, 0};
-    SetLastError(ERROR_SUCCESS);
-    if (!GetClientRect(hwnd, &client)) {
-        std::fprintf(stderr, "FAIL native GetClientRect denied: dialog=%p lastError=%lu\n",
-                     static_cast<void*>(hwnd), GetLastError());
-        return false;
-    }
-    SetLastError(ERROR_SUCCESS);
-    if (!ClientToScreen(hwnd, &origin)) {
-        std::fprintf(stderr, "FAIL native ClientToScreen denied: dialog=%p lastError=%lu\n",
-                     static_cast<void*>(hwnd), GetLastError());
-        return false;
-    }
-    *screenOrigin = QPoint(origin.x, origin.y);
-    *clientSize = QSize(client.right - client.left, client.bottom - client.top);
-    if (clientSize->width() > 0 && clientSize->height() > 0 &&
-        host->width() > 0 && host->height() > 0)
-        return true;
-    std::fprintf(stderr,
-                 "FAIL native client geometry unavailable: clientPhysical=%dx%d qtClient=%dx%d\n",
-                 clientSize->width(), clientSize->height(), host->width(), host->height());
-    return false;
-}
+#endif
 
-bool nativeScreenPoint(QWidget* host, const QPoint& qtGlobal, QPoint* nativeScreen) {
-    QPoint clientOrigin;
-    QSize clientSize;
-    if (!nativeClientGeometry(host, &clientOrigin, &clientSize)) return false;
-    const QPoint qtLocal = host->mapFromGlobal(qtGlobal);
-    *nativeScreen = clientOrigin +
-        QPoint(qRound(qtLocal.x() * clientSize.width() / qreal(host->width())),
-               qRound(qtLocal.y() * clientSize.height() / qreal(host->height())));
+bool selectAnimeJanaiBackend(quick::PlayerController* controller, const QString& backend) {
+    if (controller == nullptr) return false;
+    controller->applyAnimeJanaiBackend(backend);
     return true;
 }
 
-bool qtGlobalPoint(QWidget* host, const QPoint& nativeScreen, QPoint* qtGlobal) {
-    QPoint clientOrigin;
-    QSize clientSize;
-    if (!nativeClientGeometry(host, &clientOrigin, &clientSize)) return false;
-    const QPoint nativeLocal = nativeScreen - clientOrigin;
-    const QPoint qtLocal(qRound(nativeLocal.x() * host->width() / qreal(clientSize.width())),
-                         qRound(nativeLocal.y() * host->height() / qreal(clientSize.height())));
-    *qtGlobal = host->mapToGlobal(qtLocal);
+bool submitAnimeJanaiRequest(quick::PlayerController* controller, const QString& presetId) {
+    if (controller == nullptr) return false;
+    controller->applyAnimeJanaiRequest(presetId);
     return true;
-}
-
-HWND nativeWindowAt(const QPoint& nativeScreen) {
-    return WindowFromPoint(POINT{nativeScreen.x(), nativeScreen.y()});
-}
-
-bool sendNativeClick(QWidget* host, QWidget* target) {
-    if (!nativeForegroundOwned(host)) return false;
-    if (target == nullptr || !target->isVisible() || !target->isEnabled()) {
-        std::fprintf(stderr, "FAIL native click target disappeared before input\n");
-        return false;
-    }
-    QPoint cursor;
-    QPoint qtGlobal;
-    QPoint expected;
-    if (!nativeCursorPosition(&cursor) || !qtGlobalPoint(host, cursor, &qtGlobal) ||
-        !nativeScreenPoint(host, target->mapToGlobal(target->rect().center()), &expected))
-        return false;
-    const HWND hwnd = reinterpret_cast<HWND>(host->winId());
-    const HWND nativeHit = nativeWindowAt(cursor);
-    QWidget* childHit = deepestChildAt(host, qtGlobal);
-    if (!target->rect().contains(target->mapFromGlobal(qtGlobal)) ||
-        (childHit != target && (childHit == nullptr || !target->isAncestorOf(childHit))) ||
-        (nativeHit != hwnd && !IsChild(hwnd, nativeHit))) {
-        std::fprintf(stderr,
-                     "FAIL native click target proof changed before input: "
-                     "target=%s cursorPhysical=(%d,%d) expectedPhysical=(%d,%d) "
-                     "childAt=%s nativeHit=%p dialog=%p (no pointer restoration)\n",
-                     qPrintable(target->objectName()), cursor.x(), cursor.y(),
-                     expected.x(), expected.y(),
-                     childHit != nullptr ? qPrintable(childHit->objectName()) : "<none>",
-                     static_cast<void*>(nativeHit), static_cast<void*>(hwnd));
-        return false;
-    }
-    INPUT input[2]{};
-    input[0].type = INPUT_MOUSE;
-    input[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-    input[1].type = INPUT_MOUSE;
-    input[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
-    SetLastError(ERROR_SUCCESS);
-    const UINT inserted = SendInput(2, input, sizeof(INPUT));
-    if (inserted == 2) return true;
-    std::fprintf(stderr,
-                 "FAIL native SendInput denied/partial: inserted=%u/2 lastError=%lu "
-                 "(Windows does not identify UIPI denial)\n",
-                 inserted, GetLastError());
-    return false;
-}
-#endif
-
-bool movePointerTo(QWidget* target, const QPoint& localPosition, QWidget* coordinateHost,
-                   bool* targetChanged = nullptr) {
-    if (targetChanged != nullptr) *targetChanged = false;
-    if (target == nullptr || coordinateHost == nullptr) return false;
-    const QPointer<QWidget> guard(target);
-    // Every step pumps the player's own event queue on a 4K surface, so the step
-    // count is the only bound on how long a traversal takes. The legs below
-    // therefore spend a fixed number of steps, never a distance-derived one,
-    // which is what makes a cross-desktop move affordable; each leg's final
-    // point is the destination exactly, and a leg rebases from wherever the
-    // pointer actually stands, so integer residue can never strand it.
-    constexpr int kLegSteps = 8;
-    constexpr int kMaxLegs = 3;
-#ifdef Q_OS_WIN
-    const QPoint centerOffset = localPosition - target->rect().center();
-    if (!nativeForegroundOwned(coordinateHost)) return false;
-    QPoint current;
-    if (!nativeCursorPosition(&current)) return false;
-    QPoint destination;
-    if (!nativeScreenPoint(coordinateHost, target->mapToGlobal(localPosition), &destination))
-        return false;
-    const QPoint initialDestination = destination;
-    const QPoint origin = current;
-    QElapsedTimer deadline;
-    QElapsedTimer settled;
-    deadline.start();
-    settled.start();
-    int geometryChanges = 0;
-    int legs = 0;
-    int legStep = -1;
-    QPoint legOrigin;
-    bool moving = false;
-    QRect targetGlobal(target->mapToGlobal(QPoint()), target->size());
-    QRect hostGlobal(coordinateHost->mapToGlobal(QPoint()), coordinateHost->size());
-    while (deadline.elapsed() < 3000) {
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-        if (!nativeForegroundOwned(coordinateHost)) return false;
-        QPoint observed;
-        if (!nativeCursorPosition(&observed)) return false;
-        if (observed != current) {
-            std::fprintf(stderr,
-                         "FAIL native pointer changed outside probe traversal: "
-                         "lastRequested=(%d,%d) observed=(%d,%d) "
-                         "initialTarget=(%d,%d) currentTarget=(%d,%d) "
-                         "geometryChanges=%d (no pointer restoration)\n",
-                         current.x(), current.y(), observed.x(), observed.y(),
-                         initialDestination.x(), initialDestination.y(),
-                         destination.x(), destination.y(), geometryChanges);
-            return false;
-        }
-        if (guard.isNull() || !guard->isVisible() || !guard->isEnabled()) {
-            if (targetChanged != nullptr) *targetChanged = true;
-            else std::fprintf(stderr, "FAIL native pointer target disappeared during traversal\n");
-            return false;
-        }
-        QPoint freshDestination;
-        if (!nativeScreenPoint(coordinateHost,
-                               guard->mapToGlobal(guard->rect().center() + centerOffset),
-                               &freshDestination))
-            return false;
-        const QRect freshTarget(guard->mapToGlobal(QPoint()), guard->size());
-        const QRect freshHost(coordinateHost->mapToGlobal(QPoint()), coordinateHost->size());
-        // Input events call layoutChrome; never continue towards a pre-event target.
-        if (freshDestination != destination || freshTarget != targetGlobal || freshHost != hostGlobal) {
-            std::fprintf(stderr,
-                         "[AnimeJanaiProbe] native-pointer-layout-change "
-                         "oldPhysical=(%d,%d) newPhysical=(%d,%d) "
-                         "targetQt=(%d,%d %dx%d) hostQt=(%d,%d %dx%d)\n",
-                         destination.x(), destination.y(), freshDestination.x(), freshDestination.y(),
-                         freshTarget.x(), freshTarget.y(), freshTarget.width(), freshTarget.height(),
-                         freshHost.x(), freshHost.y(), freshHost.width(), freshHost.height());
-            destination = freshDestination;
-            targetGlobal = freshTarget;
-            hostGlobal = freshHost;
-            ++geometryChanges;
-            moving = false;
-            legStep = -1;
-            settled.restart();
-        }
-        if (legStep < 0) {
-            // A leg that follows a layout change, and an arrival, each have to
-            // persist for a settle window before the next thing happens.
-            if (!moving && settled.elapsed() < 80) {
-                QThread::msleep(10);
-                continue;
-            }
-            if (current == destination) {
-                if (settled.elapsed() < 80) {
-                    QThread::msleep(10);
-                    continue;
-                }
-                std::fprintf(stderr,
-                             "[AnimeJanaiProbe] native-pointer-reached origin=(%d,%d) "
-                             "initialTarget=(%d,%d) finalTarget=(%d,%d) "
-                             "cursorPhysical=(%d,%d) geometryChanges=%d legs=%d\n",
-                             origin.x(), origin.y(), initialDestination.x(), initialDestination.y(),
-                             destination.x(), destination.y(), current.x(), current.y(),
-                             geometryChanges, legs);
-                return true;
-            }
-            if (legs >= kMaxLegs) {
-                std::fprintf(stderr,
-                             "FAIL native pointer traversal exhausted its leg budget: "
-                             "legs=%d cursorPhysical=(%d,%d) initialTarget=(%d,%d) "
-                             "finalTarget=(%d,%d) geometryChanges=%d\n",
-                             legs, current.x(), current.y(), initialDestination.x(),
-                             initialDestination.y(), destination.x(), destination.y(),
-                             geometryChanges);
-                return false;
-            }
-            legOrigin = current;
-            legStep = 0;
-            ++legs;
-            moving = true;
-        }
-        const int stepIndex = legStep + 1;
-        const QPoint next = stepIndex >= kLegSteps
-            ? destination
-            : QPoint(legOrigin.x() + qRound(qreal(destination.x() - legOrigin.x()) * stepIndex / kLegSteps),
-                     legOrigin.y() + qRound(qreal(destination.y() - legOrigin.y()) * stepIndex / kLegSteps));
-        legStep = stepIndex;
-        if (!nativeForegroundOwned(coordinateHost)) return false;
-        SetLastError(ERROR_SUCCESS);
-        if (!SetCursorPos(next.x(), next.y())) {
-            std::fprintf(stderr,
-                         "FAIL native SetCursorPos denied: requested=(%d,%d) "
-                         "lastError=%lu (no pointer restoration)\n",
-                         next.x(), next.y(), GetLastError());
-            return false;
-        }
-        if (!nativeCursorPosition(&observed)) return false;
-        if (observed != next) {
-            RECT clip{};
-            const BOOL clipKnown = GetClipCursor(&clip);
-            std::fprintf(stderr,
-                         "FAIL native SetCursorPos readback mismatch: requested=(%d,%d) "
-                         "observed=(%d,%d) clipKnown=%d clip=(%ld,%ld %ldx%ld) "
-                         "(no pointer restoration)\n",
-                         next.x(), next.y(), observed.x(), observed.y(), clipKnown ? 1 : 0,
-                         clip.left, clip.top, clip.right - clip.left, clip.bottom - clip.top);
-            return false;
-        }
-        current = observed;
-        if (legStep >= kLegSteps) {
-            // The leg is spent; whether the arrival held is decided next round.
-            legStep = -1;
-            settled.restart();
-        }
-    }
-    std::fprintf(stderr,
-                 "FAIL native pointer target did not settle: initialTarget=(%d,%d) "
-                 "finalTarget=(%d,%d) cursorPhysical=(%d,%d) geometryChanges=%d legs=%d\n",
-                 initialDestination.x(), initialDestination.y(), destination.x(), destination.y(),
-                 current.x(), current.y(), geometryChanges, legs);
-    return false;
-#else
-    Q_UNUSED(coordinateHost);
-    const QPoint destination = target->mapToGlobal(localPosition);
-    const QPoint origin = QCursor::pos();
-    for (int step = 1; step <= kLegSteps; ++step) {
-        const QPoint point = step >= kLegSteps
-            ? destination
-            : QPoint(origin.x() + qRound(qreal(destination.x() - origin.x()) * step / kLegSteps),
-                     origin.y() + qRound(qreal(destination.y() - origin.y()) * step / kLegSteps));
-        QCursor::setPos(point);
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-        if (guard.isNull()) return false;
-    }
-    return true;
-#endif
-}
-
-bool chooseEnhancementMenu(PlayerDialog* dialog, const QStringList& path,
-                          const QString& selectorImage = {}) {
-    std::fprintf(stderr, "[AnimeJanaiProbe] menu-begin path=%s\n",
-                 qPrintable(path.join(QStringLiteral(" -> "))));
-    auto* playerShell = dialog->findChild<shell::PlayerShell*>();
-    if (playerShell == nullptr) return false;
-    playerShell->wake();
-    dialog->raise();
-    dialog->activateWindow();
-    QCoreApplication::processEvents();
-    auto* trigger = playerShell->findChild<shell::IconButton*>(
-        QStringLiteral("playerEnhanceButton"));
-    if (trigger == nullptr || !trigger->isVisible() || !trigger->isEnabled() ||
-        trigger->icon() != &shell::IconPainter::spark) {
-        std::fprintf(stderr, "FAIL visible enabled playerEnhanceButton IconButton unavailable\n");
-        return false;
-    }
-#ifdef Q_OS_WIN
-    const HWND dialogHwnd = reinterpret_cast<HWND>(dialog->winId());
-    if (!nativeActivateForeground(dialog, 1000)) return false;
-    if (GetForegroundWindow() != dialogHwnd && dialog->isActiveWindow()) {
-        // A transient we own still holds the physical foreground; the pointer
-        // proof below and WindowFromPoint at the cursor decide the click.
-        std::fprintf(stderr,
-                     "[AnimeJanaiProbe] foreground-on-owned-transient active=%d dialog=%p\n",
-                     dialog->isActiveWindow() ? 1 : 0, static_cast<void*>(dialogHwnd));
-    }
-    if (!movePointerTo(trigger, trigger->rect().center(), dialog)) return false;
-    const QPoint triggerCenter = trigger->mapToGlobal(trigger->rect().center());
-    QPoint expectedNative;
-    QPoint actualNative;
-    QPoint actualQtGlobal;
-    if (!nativeScreenPoint(dialog, triggerCenter, &expectedNative) ||
-        !nativeCursorPosition(&actualNative) ||
-        !qtGlobalPoint(dialog, actualNative, &actualQtGlobal))
-        return false;
-    const QPoint actualDialogLocal = dialog->mapFromGlobal(actualQtGlobal);
-    const QRect triggerLocal(trigger->mapTo(dialog, QPoint(0, 0)), trigger->size());
-    const HWND triggerHit = nativeWindowAt(actualNative);
-    const NativeWindowFacts triggerHitFacts = nativeWindowFacts(triggerHit);
-    QWidget* triggerChildHit = deepestChildAt(dialog, actualQtGlobal);
-    const bool cursorOnTrigger = triggerLocal.contains(actualDialogLocal);
-    const bool qtTriggerExposed = triggerChildHit == trigger ||
-        (triggerChildHit != nullptr && trigger->isAncestorOf(triggerChildHit));
-    // This is a Qt-targeted button event, not a SendInput/WindowFromPoint test.
-    // A native HWND lookup does not identify the non-native Qt button. Record
-    // that lookup without mistaking it for evidence that clicked() was refused.
-    std::fprintf(stderr,
-                 "[AnimeJanaiProbe] menu-root-input delivery=QTest target=%s "
-                 "qtHit=%s/%s qtExposed=%d nativeHit=%p nativeHitPid=%lu "
-                 "nativeHitClass=%s nativeHitRoot=%p nativeHitOwner=%p\n",
-                 qPrintable(trigger->objectName()),
-                 triggerChildHit != nullptr ? triggerChildHit->metaObject()->className() : "<none>",
-                 triggerChildHit != nullptr ? qPrintable(triggerChildHit->objectName()) : "<none>",
-                 qtTriggerExposed ? 1 : 0, static_cast<void*>(triggerHit),
-                 static_cast<unsigned long>(triggerHitFacts.pid),
-                 triggerHitFacts.className.isEmpty() ? "<unavailable>"
-                                                     : qPrintable(triggerHitFacts.className),
-                 static_cast<void*>(GetAncestor(triggerHit, GA_ROOT)),
-                 static_cast<void*>(GetWindow(triggerHit, GW_OWNER)));
-    if (!cursorOnTrigger || !qtTriggerExposed || !nativeForegroundOwned(dialog)) {
-        RECT client{};
-        GetClientRect(dialogHwnd, &client);
-        std::fprintf(stderr,
-                     "FAIL Qt-targeted click proof missed enhancement trigger: "
-                     "active=%d foreground=%p dialog=%p triggerQt=(%d,%d %dx%d) "
-                     "cursorPhysical=(%d,%d) expectedPhysical=(%d,%d) "
-                     "cursorDialogQt=(%d,%d) clientPhysical=%ldx%ld qtClient=%dx%d "
-                     "cursorOnTrigger=%d hit=%p\n",
-                     dialog->isActiveWindow() ? 1 : 0,
-                     static_cast<void*>(GetForegroundWindow()), static_cast<void*>(dialogHwnd),
-                     triggerLocal.x(), triggerLocal.y(), triggerLocal.width(), triggerLocal.height(),
-                     actualNative.x(), actualNative.y(), expectedNative.x(), expectedNative.y(),
-                     actualDialogLocal.x(), actualDialogLocal.y(),
-                     client.right - client.left, client.bottom - client.top,
-                     dialog->width(), dialog->height(), cursorOnTrigger ? 1 : 0,
-                     static_cast<void*>(triggerHit));
-        dialog->grab().save(QDir::current().filePath(QStringLiteral("trigger-hit-failure.png")));
-        return false;
-    }
-#else
-    if (!movePointerTo(trigger, trigger->rect().center(), dialog)) return false;
-#endif
-    // Deliver the real press/release to the production enhancement QPushButton;
-    // its clicked -> openEnhancements connection must create the visible menu.
-    QTest::mouseClick(trigger, Qt::LeftButton, Qt::NoModifier, trigger->rect().center());
-    QCoreApplication::processEvents();
-    std::fprintf(stderr, "[AnimeJanaiProbe] menu-root-click-delivered\n");
-    for (const QString& payload : path) {
-        std::fprintf(stderr, "[AnimeJanaiProbe] menu-row-begin payload=%s\n",
-                     qPrintable(payload));
-        QPointer<QWidget> row;
-        QPointer<shell::MenuPopup> ownerPanel;
-        QString ownerLevel;
-        QString submenuLevel;
-        const bool found = waitUntil([&] {
-            for (auto* panel : dialog->findChildren<shell::MenuPopup*>()) {
-                if (!panel->isVisible()) continue;
-                for (int index = 0; index < panel->rowCount(); ++index) {
-                    const shell::MenuEntry entry = panel->entryAt(index);
-                    QWidget* candidate = panel->rowWidget(index);
-                    if (entry.payload.toString() == payload && !entry.disabled &&
-                        candidate != nullptr && candidate->isVisible() && candidate->isEnabled()) {
-                        row = candidate;
-                        ownerPanel = panel;
-                        ownerLevel = panel->property("enhancementLevel").toString();
-                        submenuLevel = entry.submenu
-                            ? entry.payload.toString().mid(QStringLiteral("level|").size())
-                            : QString();
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }, 2000);
-        if (!found || row.isNull()) {
-            std::fprintf(stderr, "FAIL visible enhancement menu choice unavailable: %s\n",
-                         qPrintable(payload));
-#ifdef Q_OS_WIN
-            QPoint physical;
-            QPoint qtGlobal;
-            if (!nativeCursorPosition(&physical) || !qtGlobalPoint(dialog, physical, &qtGlobal))
-                return false;
-            const QPoint dialogLocal = dialog->mapFromGlobal(qtGlobal);
-            const HWND hwnd = reinterpret_cast<HWND>(dialog->winId());
-            RECT client{};
-            GetClientRect(hwnd, &client);
-            int visiblePanels = 0;
-            for (shell::MenuPopup* panel : dialog->findChildren<shell::MenuPopup*>()) {
-                if (panel->isVisible()) ++visiblePanels;
-            }
-            std::fprintf(stderr,
-                         "     root-click diagnostics physical=(%d,%d) qtGlobal=(%d,%d) "
-                         "dialogLocal=(%d,%d) dialogQt=%dx%d clientPhysical=%ldx%ld "
-                         "visiblePanels=%d active=%d foreground=%p dialog=%p nativeHit=%p\n",
-                         physical.x(), physical.y(), qtGlobal.x(), qtGlobal.y(),
-                         dialogLocal.x(), dialogLocal.y(), dialog->width(), dialog->height(),
-                         client.right - client.left, client.bottom - client.top,
-                         visiblePanels, dialog->isActiveWindow() ? 1 : 0,
-                         static_cast<void*>(GetForegroundWindow()), static_cast<void*>(hwnd),
-                         static_cast<void*>(nativeWindowAt(physical)));
-#endif
-            dialog->grab().save(QDir::current().filePath(QStringLiteral("menu-row-unavailable.png")));
-            return false;
-        }
-        QRect rowGlobal(row->mapToGlobal(QPoint(0, 0)), row->size());
-        const QRect hostGlobal(dialog->mapToGlobal(QPoint(0, 0)), dialog->size());
-        const QScreen* screen = dialog->screen();
-        const QRect available = screen != nullptr ? screen->availableGeometry() : QRect();
-        QPoint center = rowGlobal.center();
-        QWidget* underPointer = QApplication::widgetAt(center);
-        QWidget* childHit = deepestChildAt(dialog, center);
-        const bool qtChildExposed =
-            childHit == row || (childHit != nullptr && row->isAncestorOf(childHit));
-#ifdef Q_OS_WIN
-        QPoint nativeCenter;
-        if (!nativeForegroundOwned(dialog) || !nativeScreenPoint(dialog, center, &nativeCenter))
-            return false;
-        const HWND nativeHit = nativeWindowAt(nativeCenter);
-        const bool nativeWindowExposed = nativeHit == dialogHwnd || IsChild(dialogHwnd, nativeHit);
-#else
-        const bool nativeWindowExposed = true;
-#endif
-        // Qt child geometry plus the native HWND hit distinguishes DPI lookup errors from occlusion.
-        const bool exposed = qtChildExposed && nativeWindowExposed;
-        const bool reachable = rowGlobal.width() > 0 && rowGlobal.height() > 0 &&
-            hostGlobal.contains(rowGlobal) && available.contains(rowGlobal) && exposed;
-        if (!reachable) {
-            std::fprintf(stderr,
-                         "FAIL enhancement row is not fully reachable on screen: %s "
-                         "row=(%d,%d %dx%d) host=(%d,%d %dx%d) screen=(%d,%d %dx%d) exposed=%d\n",
-                         qPrintable(payload), rowGlobal.x(), rowGlobal.y(), rowGlobal.width(),
-                         rowGlobal.height(), hostGlobal.x(), hostGlobal.y(), hostGlobal.width(),
-                         hostGlobal.height(), available.x(), available.y(), available.width(),
-                         available.height(), exposed ? 1 : 0);
-            std::fprintf(stderr,
-                         "     Qt hit=%s/%s childAt=%s/%s pointer=(%d,%d) "
-                         "active-window=%s dialog-active=%d native-window-exposed=%d\n",
-                         underPointer != nullptr ? underPointer->metaObject()->className() : "<none>",
-                         underPointer != nullptr ? qPrintable(underPointer->objectName()) : "<none>",
-                         childHit != nullptr ? childHit->metaObject()->className() : "<none>",
-                         childHit != nullptr ? qPrintable(childHit->objectName()) : "<none>",
-                         QCursor::pos().x(), QCursor::pos().y(),
-                         QApplication::activeWindow() != nullptr
-                             ? QApplication::activeWindow()->objectName().toUtf8().constData()
-                             : "<none>",
-                         dialog->isActiveWindow() ? 1 : 0, nativeWindowExposed ? 1 : 0);
-#ifdef Q_OS_WIN
-            POINT cursor{};
-            GetCursorPos(&cursor);
-            const HWND foreground = GetForegroundWindow();
-            const HWND own = reinterpret_cast<HWND>(dialog->winId());
-            const UINT dpi = GetDpiForWindow(own);
-            QPoint nativeCenter;
-            if (!nativeScreenPoint(dialog, center, &nativeCenter)) return false;
-            const HWND nativeCenterHit = nativeWindowAt(nativeCenter);
-            const NativeWindowFacts centerHitFacts = nativeWindowFacts(nativeCenterHit);
-            std::fprintf(stderr,
-                         "     scaled-row-hit pid=%lu class=%s root=%p owner=%p "
-                         "sameProcess=%d visible=%d childOfDialog=%d\n",
-                         static_cast<unsigned long>(centerHitFacts.pid),
-                         centerHitFacts.className.isEmpty() ? "<unavailable>"
-                                                           : qPrintable(centerHitFacts.className),
-                         static_cast<void*>(GetAncestor(nativeCenterHit, GA_ROOT)),
-                         static_cast<void*>(GetWindow(nativeCenterHit, GW_OWNER)),
-                         centerHitFacts.pid == GetCurrentProcessId() ? 1 : 0,
-                         nativeCenterHit != nullptr && IsWindowVisible(nativeCenterHit) ? 1 : 0,
-                         IsChild(own, nativeCenterHit) ? 1 : 0);
-            const HWND rawCenterHit = WindowFromPoint(POINT{center.x(), center.y()});
-            RECT windowRect{};
-            GetWindowRect(own, &windowRect);
-            std::fprintf(stderr,
-                         "     Win32 foreground=%p own=%p cursor=(%ld,%ld) "
-                         "Qt-center=(%d,%d) raw-hit=%p native-center=(%d,%d) "
-                         "scaled-hit=%p dialog-rect=(%ld,%ld %ldx%ld) dpi=%u qt-dpr=%.2f\n",
-                         static_cast<void*>(foreground), static_cast<void*>(own),
-                         cursor.x, cursor.y, center.x(), center.y(),
-                         static_cast<void*>(rawCenterHit), nativeCenter.x(), nativeCenter.y(),
-                         static_cast<void*>(nativeCenterHit), windowRect.left, windowRect.top,
-                         windowRect.right - windowRect.left, windowRect.bottom - windowRect.top,
-                         dpi, screen != nullptr ? screen->devicePixelRatio() : 1.0);
-#endif
-            dialog->grab().save(QDir::current().filePath(QStringLiteral("menu-reachability-failure.png")));
-            return false;
-        }
-        std::fprintf(stderr, "[AnimeJanaiProbe] menu-row-hover payload=%s\n",
-                     qPrintable(payload));
-        bool targetChanged = false;
-        if (!movePointerTo(row.data(), row->rect().center(), dialog, &targetChanged) &&
-            !targetChanged)
-            return false;
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 25);
-        bool rowReplaced = false;
-        if (row.isNull() || !row->isVisible()) {
-            if (!ownerPanel.isNull() && ownerPanel->isVisible() &&
-                ownerPanel->property("enhancementLevel").toString() == ownerLevel) {
-                for (int index = 0; index < ownerPanel->rowCount(); ++index) {
-                    const shell::MenuEntry entry = ownerPanel->entryAt(index);
-                    QWidget* candidate = ownerPanel->rowWidget(index);
-                    if (entry.payload.toString() == payload && !entry.disabled &&
-                        candidate != nullptr && candidate->isVisible() && candidate->isEnabled()) {
-                        row = candidate;
-                        rowReplaced = true;
-                        break;
-                    }
-                }
-            }
-            if (row.isNull() || !row->isVisible()) {
-                std::fprintf(stderr,
-                             "FAIL enhancement menu row disappeared during pointer hover: %s\n",
-                             qPrintable(payload));
-                return false;
-            }
-            std::fprintf(stderr,
-                         "[AnimeJanaiProbe] re-resolved visible menu row after hover refresh "
-                         "payload=%s level=%s\n",
-                         qPrintable(payload), qPrintable(ownerLevel));
-        }
-        if (rowReplaced) {
-            if (!movePointerTo(row.data(), row->rect().center() + QPoint(1, 0), dialog) ||
-                row.isNull() ||
-                !movePointerTo(row.data(), row->rect().center(), dialog))
-                return false;
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 25);
-            if (row.isNull() || !row->isVisible()) {
-                std::fprintf(stderr,
-                             "FAIL re-resolved enhancement row disappeared on continuous hover: %s\n",
-                             qPrintable(payload));
-                return false;
-            }
-        }
-        rowGlobal = QRect(row->mapToGlobal(QPoint(0, 0)), row->size());
-        center = rowGlobal.center();
-        const QRect currentAvailable = screen != nullptr ? screen->availableGeometry() : QRect();
-        QWidget* currentChildHit = deepestChildAt(dialog, center);
-        const bool currentChildExposed =
-            currentChildHit == row || (currentChildHit != nullptr && row->isAncestorOf(currentChildHit));
-#ifdef Q_OS_WIN
-        QPoint currentNativeCenter;
-        if (!nativeScreenPoint(dialog, center, &currentNativeCenter)) return false;
-        const HWND currentNativeHit = nativeWindowAt(currentNativeCenter);
-        const bool currentNativeExposed =
-            currentNativeHit == dialogHwnd || IsChild(dialogHwnd, currentNativeHit);
-#else
-        const bool currentNativeExposed = true;
-#endif
-        if (rowGlobal.width() <= 0 || rowGlobal.height() <= 0 ||
-            !hostGlobal.contains(rowGlobal) || !currentAvailable.contains(rowGlobal) ||
-            !currentChildExposed || !currentNativeExposed) {
-            std::fprintf(stderr,
-                         "FAIL re-resolved enhancement row is not fully reachable: %s "
-                         "row=(%d,%d %dx%d) host=(%d,%d %dx%d) child=%s native=%d\n",
-                         qPrintable(payload), rowGlobal.x(), rowGlobal.y(),
-                         rowGlobal.width(), rowGlobal.height(), hostGlobal.x(), hostGlobal.y(),
-                         hostGlobal.width(), hostGlobal.height(),
-                         currentChildHit != nullptr ? qPrintable(currentChildHit->objectName()) : "<none>",
-                         currentNativeExposed ? 1 : 0);
-            return false;
-        }
-#ifdef Q_OS_WIN
-        QPoint pointerNative;
-        QPoint pointer;
-        if (!nativeForegroundOwned(dialog) || !nativeCursorPosition(&pointerNative) ||
-            !qtGlobalPoint(dialog, pointerNative, &pointer))
-            return false;
-        QWidget* pointerWidget = QApplication::widgetAt(pointer);
-        QWidget* pointerChild = deepestChildAt(dialog, pointer);
-        const HWND pointerHit = nativeWindowAt(pointerNative);
-        if ((pointerChild != row && (pointerChild == nullptr || !row->isAncestorOf(pointerChild))) ||
-            (pointerHit != dialogHwnd && !IsChild(dialogHwnd, pointerHit))) {
-            std::fprintf(stderr,
-                         "FAIL native pointer traversal missed menu row %s: "
-                         "physical=(%d,%d) qtGlobal=(%d,%d) widgetAt=%s/%s childAt=%s "
-                         "native-hit=%p dialog=%p\n",
-                         qPrintable(payload), pointerNative.x(), pointerNative.y(),
-                         pointer.x(), pointer.y(),
-                         pointerWidget != nullptr ? pointerWidget->metaObject()->className() : "<none>",
-                         pointerWidget != nullptr ? qPrintable(pointerWidget->objectName()) : "<none>",
-                         pointerChild != nullptr ? qPrintable(pointerChild->objectName()) : "<none>",
-                         static_cast<void*>(pointerHit), static_cast<void*>(dialogHwnd));
-            return false;
-        }
-#endif
-        if (!submenuLevel.isEmpty()) {
-            const bool openedByHover = waitUntil([&] {
-                for (auto* panel : dialog->findChildren<shell::MenuPopup*>()) {
-                    if (panel->isVisible() &&
-                        panel->property("enhancementLevel").toString() == submenuLevel)
-                        return true;
-                }
-                return false;
-            }, 2000);
-            std::fprintf(stderr,
-                         "[AnimeJanaiProbe] menu-hover-result payload=%s opened=%d\n",
-                         qPrintable(payload), openedByHover ? 1 : 0);
-            if (!openedByHover) {
-                std::fprintf(stderr,
-                             "FAIL enhancement submenu did not open from real row hover: %s\n",
-                             qPrintable(payload));
-                return false;
-            }
-        }
-        if (!selectorImage.isEmpty() && payload.startsWith(QStringLiteral("ajipreset|rife:"))) {
-            for (shell::MenuPopup* panel : dialog->findChildren<shell::MenuPopup*>()) {
-                if (!panel->isVisible()) continue;
-                const QRect panelGlobal(panel->mapToGlobal(QPoint(0, 0)), panel->size());
-                if (!hostGlobal.contains(panelGlobal) || !available.contains(panelGlobal)) {
-                    std::fprintf(stderr,
-                                 "FAIL visible RIFE selector panel is clipped: level=%s "
-                                 "panel=(%d,%d %dx%d) host=(%d,%d %dx%d) screen=(%d,%d %dx%d)\\n",
-                                 qPrintable(panel->property("enhancementLevel").toString()),
-                                 panelGlobal.x(), panelGlobal.y(), panelGlobal.width(),
-                                 panelGlobal.height(), hostGlobal.x(), hostGlobal.y(),
-                                 hostGlobal.width(), hostGlobal.height(), available.x(),
-                                 available.y(), available.width(), available.height());
-                    return false;
-                }
-            }
-            const bool saved = dialog->grab().save(selectorImage, "PNG");
-            std::fprintf(stderr,
-                         "[AnimeJanaiProbe] visible RIFE selector image=%s saved=%d "
-                         "row=(%d,%d %dx%d) host=(%d,%d %dx%d) screen=(%d,%d %dx%d) dpr=%.2f\n",
-                         qPrintable(selectorImage), saved ? 1 : 0, rowGlobal.x(), rowGlobal.y(),
-                         rowGlobal.width(), rowGlobal.height(), hostGlobal.x(), hostGlobal.y(),
-                         hostGlobal.width(), hostGlobal.height(), available.x(), available.y(),
-                         available.width(), available.height(), row->devicePixelRatioF());
-            if (!saved) return false;
-        }
-#ifdef Q_OS_WIN
-        if (!sendNativeClick(dialog, row.data())) {
-            std::fprintf(stderr, "FAIL native mouse click could not reach menu row: %s\n",
-                         qPrintable(payload));
-            return false;
-        }
-#else
-        QTest::mouseClick(row.data(), Qt::LeftButton);
-#endif
-        std::fprintf(stderr, "[AnimeJanaiProbe] menu-row-clicked payload=%s\n",
-                     qPrintable(payload));
-        QCoreApplication::processEvents();
-    }
-    std::fprintf(stderr, "[AnimeJanaiProbe] menu-complete\n");
-    return true;
-}
-
-bool chooseAnimeJanaiPreset(PlayerDialog* dialog, const QString& presetId,
-                            const QString& selectorImage = {}) {
-    QStringList path{QStringLiteral("level|animejanai")};
-    if (presetId.startsWith(QStringLiteral("spatial:"))) {
-        path.append(QStringLiteral("level|animejanai:spatial"));
-    } else if (presetId.startsWith(QStringLiteral("rife:"))) {
-        const QString version = QFileInfo(presetId.mid(5)).completeBaseName()
-                                    .section(QLatin1Char('_'), 0, 1)
-                                    .remove(QStringLiteral("rife_v"));
-        bool valid = false;
-        const int minor = version.section(QLatin1Char('.'), 1, 1).toInt(&valid);
-        if (!valid || minor < 7) return false;
-        path.append(QStringLiteral("level|animejanai:rife"));
-        path.append(QStringLiteral("level|animejanai:rife:range:%1").arg((minor - 7) / 5));
-        path.append(QStringLiteral("level|animejanai:rife:version:") + version);
-    }
-    path.append(QStringLiteral("ajipreset|") + presetId);
-    return chooseEnhancementMenu(dialog, path, selectorImage);
 }
 
 native::AnimeJanaiPlan prepareOnWorker(const QString& presetId, native::Backend backend) {
@@ -1208,13 +519,13 @@ QStringList selectedBuildLogEvidence(const QString& modelDir,
     return evidence;
 }
 
-std::optional<double> numericProperty(VideoSurface* surface, const QString& name) {
+std::optional<double> numericProperty(VideoSession* surface, const QString& name) {
     const auto value = surface->probeMpvProperty(name, ProbePropertyKind::Number);
     if (!value || !value->isNumeric()) return std::nullopt;
     return value->asNumber();
 }
 
-std::optional<QString> textProperty(VideoSurface* surface, const QString& name) {
+std::optional<QString> textProperty(VideoSession* surface, const QString& name) {
     const auto value = surface->probeMpvProperty(name, ProbePropertyKind::Text);
     if (!value || value->kind != ProbePropertyValue::Kind::Text) return std::nullopt;
     return value->text;
@@ -1224,8 +535,84 @@ void result(bool ok, const char* description) {
     std::fprintf(stderr, "%s %s\n", ok ? "PASS" : "FAIL", description);
 }
 
+bool saveQuickGlTextures(const std::vector<RenderDiagnosticsTexture>& textures,
+                         int liveTextureCount, QSize outputSize, const QString& folder) {
+    const auto fail = [](const QString& reason) {
+        std::fprintf(stderr, "[gl-textures] FAIL %s\n", qPrintable(reason));
+        return false;
+    };
+    if (outputSize.isEmpty()) return fail(QStringLiteral("invalid capture size"));
+    const QDir directory(folder);
+    if (!directory.exists() && !directory.mkpath(QStringLiteral(".")))
+        return fail(QStringLiteral("cannot create capture directory"));
+    const auto saveBytes = [&](const QString& name, const QByteArray& bytes) {
+        QFile file(directory.filePath(name));
+        return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size() &&
+               file.flush() && file.error() == QFile::NoError;
+    };
+    int lumaCount = 0;
+    int chromaCount = 0;
+    bool activePlanesFinite = true;
+    QByteArray luma;
+    QByteArray chroma;
+    for (const RenderDiagnosticsTexture& texture : textures) {
+        const bool color = texture.plane == RenderDiagnosticsTexture::Plane::Color;
+        const bool isLuma = texture.plane == RenderDiagnosticsTexture::Plane::Luma;
+        const bool isChroma = texture.plane == RenderDiagnosticsTexture::Plane::Chroma;
+        const QString stem = QStringLiteral("%1-t%2-%3x%4")
+                                 .arg(color ? QStringLiteral("rgba-f32")
+                                            : isLuma ? QStringLiteral("nv12-luma")
+                                                     : QStringLiteral("nv12-chroma"))
+                                 .arg(texture.textureName).arg(texture.width).arg(texture.height);
+        std::fprintf(stderr, "[gl-textures] id=%u format=0x%x size=%dx%d\n",
+                     texture.textureName, texture.internalFormat, texture.width, texture.height);
+        if (!saveBytes(stem + QStringLiteral(".bin"), texture.bytes))
+            return fail(QStringLiteral("cannot save %1").arg(stem));
+        if (!texture.preview.isNull() &&
+            !texture.preview.save(directory.filePath(stem + QStringLiteral(".png")), "PNG"))
+            return fail(QStringLiteral("cannot save %1 preview").arg(stem));
+        if (color) {
+            std::fprintf(stderr,
+                         "[gl-textures] id=%u nonfinite=%llu/%llu/%llu/%llu file=%s\n",
+                         texture.textureName,
+                         static_cast<unsigned long long>(texture.nonFiniteCounts[0]),
+                         static_cast<unsigned long long>(texture.nonFiniteCounts[1]),
+                         static_cast<unsigned long long>(texture.nonFiniteCounts[2]),
+                         static_cast<unsigned long long>(texture.nonFiniteCounts[3]),
+                         qPrintable(stem));
+            if (texture.height == outputSize.height() &&
+                (texture.width == outputSize.width() ||
+                 texture.width == (outputSize.width() + 1) / 2)) {
+                for (quint64 count : texture.nonFiniteCounts)
+                    activePlanesFinite = activePlanesFinite && count == 0;
+            }
+        } else if (isLuma) {
+            ++lumaCount;
+            luma = texture.bytes;
+        } else if (isChroma) {
+            ++chromaCount;
+            chroma = texture.bytes;
+        }
+    }
+    std::fprintf(stderr, "[gl-textures] ids=1..512 live=%d luma=%d chroma=%d; bounded scan only\n",
+                 liveTextureCount, lumaCount, chromaCount);
+    if (lumaCount != 1 || chromaCount != 1)
+        return fail(QStringLiteral("no unambiguous NV12 texture pair"));
+    QFile combined(directory.filePath(QStringLiteral("nv12-combined-%1x%2.bin")
+                                          .arg(outputSize.width()).arg(outputSize.height())));
+    if (!combined.open(QIODevice::WriteOnly) || combined.write(luma) != luma.size() ||
+        combined.write(chroma) != chroma.size() || !combined.flush() ||
+        combined.error() != QFile::NoError)
+        return fail(QStringLiteral("cannot save combined NV12 planes"));
+    std::fprintf(stderr, "[gl-textures] combined=%s\n", qPrintable(combined.fileName()));
+    if (!activePlanesFinite)
+        return fail(QStringLiteral("non-finite values in active output-sized color/chroma planes"));
+    return true;
+}
+
 struct ProcessedRawCapture {
-    VideoSurface* surface = nullptr;
+    VideoSession* surface = nullptr;
+    quick::PlayerWindow* window = nullptr;
     QString nativeRoot;
     native::AnimeJanaiPlan plan;
     std::optional<double> requestedAt;
@@ -1233,8 +620,10 @@ struct ProcessedRawCapture {
     bool captureGlTextures = false;
 
     bool run() {
-        QPointer<VideoSurface> owner(surface);
-        if (!owner) return false;
+        QPointer<VideoSession> owner(surface);
+        QPointer<quick::PlayerWindow> player(window);
+        if (!owner || !player || player->videoItem() == nullptr) return false;
+        quick::MpvVideoItem* videoItem = player->videoItem();
         const auto pause = owner->probeMpvProperty(QStringLiteral("pause"), ProbePropertyKind::Flag);
         if (!pause || pause->kind != ProbePropertyValue::Kind::Flag) {
             std::fprintf(stderr, "FAIL processed-raw: pause state unavailable\n");
@@ -1243,15 +632,17 @@ struct ProcessedRawCapture {
         const bool wasPaused = pause->flag;
         owner->setPaused(true);
         const auto settlePaint = [&]() {
-            if (!owner) return false;
+            if (!owner || !player) return false;
             QObject receiver;
             int swaps = 0;
-            QObject::connect(owner, &QOpenGLWidget::frameSwapped, &receiver, [&]() {
-                ++swaps;
-                if (owner && swaps < 2) owner->update();
-            });
-            owner->update();
-            return waitUntil([&] { return !owner || swaps >= 2; }, 5000) && owner;
+            QObject::connect(player, &QQuickWindow::frameSwapped, &receiver,
+                             [&] { ++swaps; });
+            player->requestRepaint();
+            return waitUntil([&] {
+                if (!player) return true;
+                if (swaps < 2) player->requestRepaint();
+                return swaps >= 2;
+            }, 5000) && player;
         };
         const bool captured = [&]() {
             if (!waitUntil([&] { return !owner || owner->pauseObserved(); }, 5000) || !owner)
@@ -1294,7 +685,7 @@ struct ProcessedRawCapture {
                          static_cast<unsigned long long>(epoch), *position,
                          inputW.value_or(-1), inputH.value_or(-1),
                          outputW.value_or(-1), outputH.value_or(-1), qPrintable(*hwdec),
-                         owner->width(), owner->height(), owner->devicePixelRatioF(),
+                         player->width(), player->height(), player->devicePixelRatio(),
                          qPrintable(*vf), qPrintable(*shaders));
             const QDir folder(nativeRoot);
             const QString beforePath =
@@ -1303,33 +694,54 @@ struct ProcessedRawCapture {
                 folder.filePath(QStringLiteral("animejanai-probe-processed-raw-raw-postvf.png"));
             const QString afterPath =
                 folder.filePath(QStringLiteral("animejanai-probe-processed-raw-fbo-after.png"));
-            owner->makeCurrent();
-            QOpenGLFunctions* gl = owner->context()->functions();
-            GLint unpackBuffer = -1, unpackAlignment = -1, unpackRows = -1;
-            GLboolean colorMask[4]{};
-            gl->glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &unpackBuffer);
-            gl->glGetIntegerv(GL_UNPACK_ALIGNMENT, &unpackAlignment);
-            gl->glGetIntegerv(GL_UNPACK_ROW_LENGTH, &unpackRows);
-            gl->glGetBooleanv(GL_COLOR_WRITEMASK, colorMask);
+            std::optional<RenderDiagnosticsResult> beforeDiagnostics;
+            const auto requestDiagnostics = [&](bool textures) {
+                struct CompletionState {
+                    bool answered = false;
+                    std::optional<RenderDiagnosticsResult> result;
+                };
+                const auto completed = std::make_shared<CompletionState>();
+                RenderDiagnosticsRequest request;
+                request.captureGlTextures = textures;
+                request.contextGeneration = videoItem->renderContextGeneration();
+                request.sourceEpoch = epoch;
+                request.position = *position;
+                player->requestRenderDiagnostics(
+                    request, [completed](RenderDiagnosticsResult value) {
+                        completed->result = std::move(value);
+                        completed->answered = true;
+                    });
+                if (!waitUntil([&] { return completed->answered || !player; }, 10000) ||
+                    !completed->answered || !player)
+                    return std::optional<RenderDiagnosticsResult>{};
+                return std::move(completed->result);
+            };
+            beforeDiagnostics = requestDiagnostics(captureGlTextures);
+            if (!beforeDiagnostics || !beforeDiagnostics->success ||
+                beforeDiagnostics->sourceEpoch != epoch ||
+                beforeDiagnostics->contextGeneration != videoItem->renderContextGeneration() ||
+                std::abs(beforeDiagnostics->position - *position) > 0.01) {
+                std::fprintf(stderr, "FAIL processed-raw: stale or failed Quick render diagnostic: %s\n",
+                             beforeDiagnostics ? qPrintable(beforeDiagnostics->error)
+                                               : "request timed out");
+                return false;
+            }
+            const auto& gl = beforeDiagnostics->glState;
             std::fprintf(stderr,
                          "[processed-raw] GL stencil=%d depth=%d blend=%d scissor=%d "
                          "dither=%d color-mask=%d%d%d%d unpack-buffer=%d alignment=%d rows=%d\n",
-                         gl->glIsEnabled(GL_STENCIL_TEST), gl->glIsEnabled(GL_DEPTH_TEST),
-                         gl->glIsEnabled(GL_BLEND), gl->glIsEnabled(GL_SCISSOR_TEST),
-                         gl->glIsEnabled(GL_DITHER), colorMask[0], colorMask[1],
-                         colorMask[2], colorMask[3], unpackBuffer, unpackAlignment, unpackRows);
-            owner->doneCurrent();
-            const QImage before = owner->grabVideoFramebuffer();
+                         gl.stencilTest, gl.depthTest, gl.blend, gl.scissorTest, gl.dither,
+                         gl.colorWriteMask[0], gl.colorWriteMask[1], gl.colorWriteMask[2],
+                         gl.colorWriteMask[3], gl.pixelUnpackBufferBinding,
+                         gl.unpackAlignment, gl.unpackRowLength);
+            const QImage before = beforeDiagnostics->framebuffer;
             const bool beforeSaved = !before.isNull() && before.save(beforePath, "PNG");
-            bool texturesSaved = true;
-            if (captureGlTextures) {
-                owner->makeCurrent();
-                texturesSaved = outputW && outputH &&
-                    savePlayerGlTextures(owner, QSize(static_cast<int>(*outputW),
-                                                      static_cast<int>(*outputH)),
-                                         folder.filePath(QStringLiteral("gl-texture-readback")));
-                owner->doneCurrent();
-            }
+            const bool texturesSaved = !captureGlTextures ||
+                (outputW && outputH &&
+                 saveQuickGlTextures(beforeDiagnostics->textures,
+                                     beforeDiagnostics->liveTextureCount,
+                                     QSize(static_cast<int>(*outputW), static_cast<int>(*outputH)),
+                                     folder.filePath(QStringLiteral("gl-texture-readback"))));
 
             // Destroying this receiver also cancels queued replies after a timeout.
             QObject receiver;
@@ -1339,7 +751,7 @@ struct ProcessedRawCapture {
             QSize rawSize;
             QString failure;
             QObject::connect(
-                owner, &VideoSurface::nativeReferenceFrameReady, &receiver,
+                owner, &VideoSession::nativeReferenceFrameReady, &receiver,
                 [&](const native::FrameFixture& frame, quint64 frameEpoch,
                     double framePosition, int frameIndex, std::optional<native::Rational>) {
                     if (answered) return;
@@ -1360,7 +772,7 @@ struct ProcessedRawCapture {
                     rawSaved = !image.isNull() && image.save(rawPath, "PNG");
                 });
             QObject::connect(
-                owner, &VideoSurface::nativeReferenceFrameFailed, &receiver,
+                owner, &VideoSession::nativeReferenceFrameFailed, &receiver,
                 [&](const QString& key, const QString& reason, int) {
                     if (answered) return;
                     answered = true;
@@ -1370,8 +782,16 @@ struct ProcessedRawCapture {
             const bool received =
                 waitUntil([&] { return answered || !owner; }, 10000);
             if (!owner) return false;
-            // Software download can repair a race: keep both surrounding FBO observations.
-            const QImage after = owner->grabVideoFramebuffer();
+            // Keep the same source, plan generation and position around native postfilter readback.
+            const auto afterDiagnostics = requestDiagnostics(false);
+            if (!afterDiagnostics || !afterDiagnostics->success ||
+                afterDiagnostics->sourceEpoch != epoch ||
+                afterDiagnostics->contextGeneration != beforeDiagnostics->contextGeneration ||
+                std::abs(afterDiagnostics->position - *position) > 0.01) {
+                std::fprintf(stderr, "FAIL processed-raw: postfilter Quick framebuffer identity changed\n");
+                return false;
+            }
+            const QImage after = afterDiagnostics->framebuffer;
             const bool afterSaved = !after.isNull() && after.save(afterPath, "PNG");
             bool subtitleCaptured = !isolateSubtitles;
             if (isolateSubtitles) {
@@ -1395,12 +815,12 @@ struct ProcessedRawCapture {
                 const QString disabledPath = folder.filePath(
                     QStringLiteral("animejanai-probe-processed-raw-subtitles-off.png"));
                 const bool disabledSaved = disabled && owner &&
-                    owner->grabVideoFramebuffer().save(disabledPath, "PNG");
+                    player->grabVideoFrame().save(disabledPath, "PNG");
                 const bool restored = originalSid && cycleTo(*originalSid) && settlePaint();
                 const QString restoredPath = folder.filePath(
                     QStringLiteral("animejanai-probe-processed-raw-subtitles-restored.png"));
                 const bool restoredSaved = restored && owner &&
-                    owner->grabVideoFramebuffer().save(restoredPath, "PNG");
+                    player->grabVideoFrame().save(restoredPath, "PNG");
                 subtitleCaptured = disabledSaved && restoredSaved;
                 std::fprintf(stderr,
                              "[processed-raw] subtitle-isolation original=%s off=%d restored=%d "
@@ -1465,7 +885,7 @@ struct EngineBuildPlaybackEvidence {
     QImage heldFramebuffer;
     bool heldImageSaved = false;
 
-    void arm(VideoSurface* surface, bool baselineAdvanced) {
+    void arm(VideoSession* surface, bool baselineAdvanced) {
         armed = true;
         const auto pause = surface->probeMpvProperty(QStringLiteral("pause"), ProbePropertyKind::Flag);
         const auto path = surface->probeMpvProperty(QStringLiteral("path"), ProbePropertyKind::Text);
@@ -1485,7 +905,7 @@ struct EngineBuildPlaybackEvidence {
         clock.start();
     }
 
-    void sample(VideoSurface* surface, const QString& nativeRoot) {
+    void sample(VideoSession* surface, const QString& nativeRoot) {
         if (!armed || !started || completed) return;
         const qint64 elapsed = clock.elapsed();
         const auto pause = surface->probeMpvProperty(QStringLiteral("pause"), ProbePropertyKind::Flag);
@@ -1640,7 +1060,7 @@ struct EngineBuildPlaybackEvidence {
     }
 };
 
-void reportPlaybackMetrics(VideoSurface* surface, const char* phase) {
+void reportPlaybackMetrics(VideoSession* surface, const char* phase) {
     const PlaybackDiagnostics metrics = surface->playbackDiagnostics();
     std::fprintf(stderr, "[AnimeJanaiProbe] %s estimated-vf-fps=", phase);
     if (metrics.estimatedVfFps) std::fprintf(stderr, "%.3f\n", *metrics.estimatedVfFps);
@@ -1653,7 +1073,7 @@ void reportPlaybackMetrics(VideoSurface* surface, const char* phase) {
     else std::fprintf(stderr, "unavailable\n");
 }
 
-uint64_t observedRenderedOutputFrames(VideoSurface* surface, int durationMs) {
+uint64_t observedRenderedOutputFrames(VideoSession* surface, int durationMs) {
     const uint64_t before = surface->playbackDiagnostics().renderedOutputFrames;
     QElapsedTimer clock;
     clock.start();
@@ -1665,7 +1085,7 @@ uint64_t observedRenderedOutputFrames(VideoSurface* surface, int durationMs) {
     return after >= before ? after - before : 0;
 }
 
-int observedPtsChanges(VideoSurface* surface, int durationMs) {
+int observedPtsChanges(VideoSession* surface, int durationMs) {
     QElapsedTimer clock;
     clock.start();
     std::optional<double> previous;
@@ -1682,7 +1102,7 @@ int observedPtsChanges(VideoSurface* surface, int durationMs) {
     return changes;
 }
 
-void exerciseTrack(VideoSurface* surface, const QString& property,
+void exerciseTrack(VideoSession* surface, const QString& property,
                    const std::optional<ProbePropertyValue>& selected, const char* label,
                    int* failures) {
     if (!selected || !selected->isNumeric()) {
@@ -1813,7 +1233,7 @@ QStringList selectedRifeGraphEvidence(const native::AnimeJanaiPlan& plan) {
                 .arg(configuredModelCode)};
 }
 
-int observedFrameChanges(VideoSurface* surface, int durationMs) {
+int observedFrameChanges(VideoSession* surface, int durationMs) {
     QImage previous;
     int changes = 0;
     QElapsedTimer clock;
@@ -2018,7 +1438,8 @@ double focusPercentileMs(QVector<qint64> values, double percentile) {
 /// ran out of time stays in the p95 as its deadline lower bound.
 class FocusDuringBuildRunner : public QObject {
 public:
-    FocusDuringBuildRunner(shell::PlayerDialog* dialog, VideoSurface* surface,
+    FocusDuringBuildRunner(quick::PlayerWindow* dialog, VideoSession* surface,
+                           quick::PreparationWindow* preparation,
                            FocusDuringBuildEvidence& evidence,
                            std::function<bool()> buildActive,
                            std::function<bool()> frameHeld,
@@ -2026,6 +1447,8 @@ public:
         : QObject(dialog), dialog_(dialog), surface_(surface), evidence_(evidence),
           buildActive_(std::move(buildActive)), frameHeld_(std::move(frameHeld)),
           samplingSettled_(std::move(samplingSettled)) {
+        videoItem_ = dialog_ != nullptr ? dialog_->videoItem() : nullptr;
+        preparation_ = preparation;
         timer_.setInterval(5);
         QObject::connect(&timer_, &QTimer::timeout, this, [this] { step(); });
     }
@@ -2076,8 +1499,10 @@ private:
     }
     void readGpuIdentity();
 
-    shell::PlayerDialog* dialog_ = nullptr;
-    VideoSurface* surface_ = nullptr;
+    quick::PlayerWindow* dialog_ = nullptr;
+    VideoSession* surface_ = nullptr;
+    quick::MpvVideoItem* videoItem_ = nullptr;
+    quick::PreparationWindow* preparation_ = nullptr;
     FocusDuringBuildEvidence& evidence_;
     std::function<bool()> buildActive_;
     std::function<bool()> frameHeld_;
@@ -2085,7 +1510,6 @@ private:
     QTimer timer_;
     mikai::probes::ForegroundPeer peer_;
     QScreen* screen_ = nullptr;
-    shell::ProcessingOverlay* overlay_ = nullptr;
     QRect overlayRect_;
     Phase phase_ = Phase::Calibrate;
     QElapsedTimer phaseClock_;
@@ -2122,26 +1546,37 @@ private:
 };
 
 void FocusDuringBuildRunner::readGpuIdentity() {
-    if (surface_ == nullptr || surface_->context() == nullptr) return;
-    QOpenGLContext* const previous = QOpenGLContext::currentContext();
-    QSurface* const previousSurface = previous != nullptr ? previous->surface() : nullptr;
-    surface_->makeCurrent();
-    if (QOpenGLContext* context = surface_->context(); context != nullptr) {
-        if (QOpenGLFunctions* gl = context->functions(); gl != nullptr) {
-            const auto read = [gl](GLenum which) {
-                const GLubyte* bytes = gl->glGetString(which);
-                return bytes != nullptr
-                           ? QString::fromLatin1(reinterpret_cast<const char*>(bytes))
-                           : QString();
-            };
-            if (!read(GL_RENDERER).isEmpty()) evidence_.gpuRenderer = read(GL_RENDERER);
-            if (!read(GL_VENDOR).isEmpty()) evidence_.gpuVendor = read(GL_VENDOR);
-        }
+    if (dialog_ == nullptr || videoItem_ == nullptr || surface_ == nullptr) {
+        evidence_.gpuRenderer = QStringLiteral("unavailable: render target detached");
+        evidence_.gpuVendor = evidence_.gpuRenderer;
+        return;
     }
-    if (previous != nullptr && previousSurface != nullptr)
-        previous->makeCurrent(previousSurface);
-    else
-        surface_->doneCurrent();
+    RenderDiagnosticsRequest request;
+    request.contextGeneration = videoItem_->renderContextGeneration();
+    request.sourceEpoch = surface_->sourceEpoch();
+    request.position = surface_->position();
+    const QPointer<FocusDuringBuildRunner> guard(this);
+    const quint64 expectedContextGeneration = request.contextGeneration;
+    const uint64_t expectedSourceEpoch = request.sourceEpoch;
+    const double expectedPosition = request.position;
+    dialog_->requestRenderDiagnostics(
+        request, [guard, expectedContextGeneration, expectedSourceEpoch,
+                  expectedPosition](RenderDiagnosticsResult result) {
+            if (!guard) return;
+            if (!result.success || result.contextGeneration != expectedContextGeneration ||
+                result.sourceEpoch != expectedSourceEpoch ||
+                std::abs(result.position - expectedPosition) > 0.01 ||
+                result.glRenderer.isEmpty() || result.glVendor.isEmpty()) {
+                const QString reason = result.error.isEmpty()
+                    ? QStringLiteral("OpenGL renderer identity unavailable")
+                    : result.error;
+                guard->evidence_.gpuRenderer = QStringLiteral("unavailable: ") + reason;
+                guard->evidence_.gpuVendor = guard->evidence_.gpuRenderer;
+                return;
+            }
+            guard->evidence_.gpuRenderer = result.glRenderer;
+            guard->evidence_.gpuVendor = result.glVendor;
+        });
 }
 
 void FocusDuringBuildRunner::calibrate() {
@@ -2159,19 +1594,18 @@ void FocusDuringBuildRunner::calibrate() {
         }
         return;
     }
-    overlay_ = dialog_->findChild<shell::ProcessingOverlay*>();
-    if (overlay_ == nullptr || !overlay_->isVisible()) {
-        fail(QStringLiteral("the real engine-preparation overlay was not visible when the build became active"));
+    if (preparation_ == nullptr || !preparation_->isVisible()) {
+        fail(QStringLiteral("the real Quick engine-preparation window was not visible when the build became active"));
         return;
     }
-    screen_ = surface_->screen() != nullptr ? surface_->screen() : dialog_->screen();
+    screen_ = dialog_->screen();
     if (screen_ == nullptr) {
         fail(QStringLiteral("the player has no screen to sample"));
         return;
     }
     readGpuIdentity();
-    overlayRect_ = QRect(overlay_->mapToGlobal(QPoint(0, 0)), overlay_->size());
-    const QRect surfaceGlobal(surface_->mapToGlobal(QPoint(0, 0)), surface_->size());
+    overlayRect_ = QRect(preparation_->position(), preparation_->size());
+    const QRect surfaceGlobal(dialog_->mapToGlobal(QPoint(0, 0)), dialog_->size());
     if (surfaceGlobal.width() < 160 || surfaceGlobal.height() < 120) {
         fail(QStringLiteral("the player surface is too small for an off-centre fixture band (%1x%2)")
                  .arg(surfaceGlobal.width())
@@ -2245,7 +1679,8 @@ void FocusDuringBuildRunner::startCycle() {
     ++evidence_.attempts;
     const mikai::gui::uiprofile::Snapshot countersBefore = mikai::gui::uiprofile::snapshot();
     stopsBeforeAway_ = countersBefore.awayStackingStops;
-    const auto profileBefore = surface_->uiProfileCounters();
+    const auto profileBefore = videoItem_ != nullptr ? videoItem_->uiProfileCounters()
+                                                     : UiProfileCounters{};
     generationBefore_ = profileBefore.contextGeneration;
     glBefore_ = profileBefore.initializeGlCalls;
     cycleBaseline_ = focusMeanLuma(focusDesktopCrop(screen_, evidence_.crop));
@@ -2272,7 +1707,7 @@ void FocusDuringBuildRunner::startBack() {
     paintSeen_ = false;
     paintAtNs_ = 0;
     swapConnection_ = QObject::connect(
-        surface_, &QOpenGLWidget::frameSwapped, surface_,
+        dialog_, &QQuickWindow::frameSwapped, dialog_,
         [this] {
             if (paintSeen_) return;
             paintSeen_ = true;
@@ -2282,8 +1717,8 @@ void FocusDuringBuildRunner::startBack() {
     activationAttempts_ = 1;
     peer_.sendToBack();
     dialog_->raise();
-    dialog_->activateWindow();
-    surface_->update();
+    dialog_->requestActivate();
+    dialog_->requestRepaint();
     backClock_.start();
     if (!nativeForegroundAllowsInput(dialog_))
         nativeActivateForeground(dialog_, 0);
@@ -2341,7 +1776,8 @@ void FocusDuringBuildRunner::recordSample() {
                 }
             }
         }
-        const auto profileAfter = surface_->uiProfileCounters();
+        const auto profileAfter = videoItem_ != nullptr ? videoItem_->uiProfileCounters()
+                                                        : UiProfileCounters{};
         evidence_.contextGenerationChanges +=
             profileAfter.contextGeneration - generationBefore_;
         evidence_.initializeGlCalls += profileAfter.initializeGlCalls - glBefore_;
@@ -2427,7 +1863,7 @@ void FocusDuringBuildRunner::step() {
                 restoreAttempt_ = 0;
                 peer_.sendToBack();
                 dialog_->raise();
-                dialog_->activateWindow();
+                dialog_->requestActivate();
                 if (!nativeForegroundAllowsInput(dialog_))
                     nativeActivateForeground(dialog_, 0);
                 enter(Phase::Restore);
@@ -2515,7 +1951,7 @@ void FocusDuringBuildRunner::step() {
             finish();
             return;
         }
-        pollActiveForeground_ = overlay_ != nullptr && overlay_->stackingPollActive();
+        pollActiveForeground_ = preparation_ != nullptr && preparation_->stackingPollActive();
         if (pollActiveForeground_) {
             startCycle();
             return;
@@ -2537,7 +1973,7 @@ void FocusDuringBuildRunner::step() {
         awayLuma_ = focusMeanLuma(focusDesktopCrop(screen_, evidence_.crop));
         occluded_ = stillAway_ && cycleBaseline_ >= kFocusBrightBandLuma &&
             awayLuma_ >= 0.0 && awayLuma_ < cycleBaseline_ * 0.5;
-        pollActiveAway_ = overlay_ != nullptr && overlay_->stackingPollActive();
+        pollActiveAway_ = preparation_ != nullptr && preparation_->stackingPollActive();
         attachAfterAway_ = mikai::gui::uiprofile::snapshot().threadInputAttaches;
         stopsAfterAway_ = mikai::gui::uiprofile::snapshot().awayStackingStops;
         if (awayOwned_ && stillAway_) {
@@ -2573,7 +2009,7 @@ void FocusDuringBuildRunner::step() {
         if (phaseClock_.elapsed() >= 150 && activationAttempts_ < 4) {
             peer_.sendToBack();
             dialog_->raise();
-            dialog_->activateWindow();
+            dialog_->requestActivate();
             if (!nativeForegroundAllowsInput(dialog_))
                 nativeActivateForeground(dialog_, 0);
             ++activationAttempts_;
@@ -2648,7 +2084,7 @@ void FocusDuringBuildRunner::finish() {
     // settle. Nothing measured after this point depends on the peer.
     peer_.sendToBack();
     dialog_->raise();
-    dialog_->activateWindow();
+    dialog_->requestActivate();
     if (!nativeForegroundAllowsInput(dialog_))
         nativeActivateForeground(dialog_, 0);
     std::fprintf(stderr,
@@ -2680,10 +2116,9 @@ void FocusDuringBuildRunner::completeTeardown() {
 //
 // The bound this measures is GOAL-F's: a close request that arrives while the
 // player is waiting on an AnimeJaNai engine build must return control in <= 2.2 s,
-// showing what it is doing, and then really tear the dialog down. Nothing here is
-// synthesised - the build is the fork's own, the plan is submitted through the API
-// the dialog uses, the close is the dialog's own closeEvent, and the destruction
-// is the deferred delete that WA_DeleteOnClose schedules.
+// showing what it is doing, and then really tear the Quick window and controller down.
+// Nothing here is synthesised - the build is the fork's own, the plan is submitted
+// through the typed controller API, and the close is acknowledged by that controller.
 
 /// Engine build logs the fork wrote at or after `sinceUtc`. The backend redirects
 /// trtexec's own output into `<engine>.build.log` beside the graph it builds, so a
@@ -2705,156 +2140,144 @@ QStringList freshEngineBuildLogs(const QString& modelDirectory, const QDateTime&
 /// Runs the opt-in close-during-build scenario and returns the process exit code.
 ///
 /// The caller has already submitted `plan`; this waits for the fork to report a
-/// build, samples the dialog's own finishing notice while its close event runs,
-/// and measures from the close request to the dialog's destruction.
-int runCloseDuringBuild(PlayerDialog* dialog, VideoSurface* surface,
-                        const native::AnimeJanaiPlan& plan, const QString& modelDirectory,
-                        const QMap<QString, QString>& enginesBefore,
-                        const QDateTime& requestedAtUtc, const QString& buildRequestTimeUtc,
-                        const QString& nativeRoot, const bool& buildActive) {
+/// build, samples its real preparation status before close, and measures from the
+/// close request to destruction of the controller-owned Quick window and session.
+int runQuickCloseDuringBuild(quick::PlayerController* controller,
+                             const native::AnimeJanaiPlan& plan,
+                             const QString& modelDirectory,
+                             const QMap<QString, QString>& enginesBefore,
+                             const QDateTime& requestedAtUtc,
+                             const QString& buildRequestTimeUtc,
+                             const QString& nativeRoot,
+                             quint64 priorPlanGeneration) {
     constexpr int kCloseBudgetMs = 2200;
-    QPointer<PlayerDialog> dialogGuard(dialog);
-    QPointer<VideoSurface> surfaceGuard(surface);
+    QPointer<quick::PlayerController> controllerGuard(controller);
+    QPointer<quick::PlayerWindow> windowGuard(controller->window());
+    QPointer<VideoSession> sessionGuard(controller->session());
     int failures = 0;
+    const auto backendName = plan.backend == native::Backend::TensorRT ? "tensorrt" : "directml";
     std::fprintf(stderr,
-                 "[close-build] mode=on preset=%s backend=%s submission=setAnimeJanaiPlan "
-                 "activation=none plan-source=prepareAnimeJanaiPlan store=%s\n",
-                 qPrintable(plan.presetId),
-                 plan.backend == native::Backend::TensorRT ? "tensorrt" : "directml",
-                 qPrintable(nativeRoot));
+                 "[close-build] mode=on preset=%s backend=%s submission=PlayerController::applyAnimeJanaiRequest "
+                 "activation=none plan-source=typed-controller store=%s\n",
+                 qPrintable(plan.presetId), backendName, qPrintable(nativeRoot));
 
-    // 1. The build has to be genuinely running: the fork's own started event, the
-    //    surface's own active flag and the dialog's own preparation window. A
-    //    cached engine produces none of them.
+    QStringList buildLogs;
     QElapsedTimer buildClock;
     buildClock.start();
     int lastBuildNotice = -10000;
     const bool buildStarted = waitUntil([&] {
-        if (surfaceGuard.isNull() || dialogGuard.isNull()) return true;
+        if (controllerGuard.isNull() || sessionGuard.isNull()) return true;
         if (buildClock.elapsed() - lastBuildNotice >= 10000) {
             lastBuildNotice = static_cast<int>(buildClock.elapsed());
-            std::fprintf(stderr,
-                         "[close-build] waiting for a fork-reported engine build (%lld s): status=%s\n",
+            std::fprintf(stderr, "[close-build] waiting for a fork-reported engine build (%lld s): status=%s\n",
                          static_cast<long long>(buildClock.elapsed() / 1000),
-                         qPrintable(surfaceGuard->animeJanaiStatus()));
+                         qPrintable(controllerGuard->animeJanaiStatus()));
         }
-        return buildActive && surfaceGuard->animeJanaiEngineBuildActive();
+        const native::AnimeJanaiPlan livePlan = sessionGuard->animeJanaiPlan();
+        const bool requestedPlanObserved =
+            controllerGuard->animeJanaiPlanGeneration() > priorPlanGeneration &&
+            livePlan.enabled && livePlan.presetId == plan.presetId &&
+            livePlan.backend == plan.backend && livePlan.slot == plan.slot;
+        return requestedPlanObserved && sessionGuard->animeJanaiEngineBuildActive();
     }, 120000);
     const qint64 buildStartMs = buildClock.elapsed();
     if (!buildStarted) {
         std::fprintf(stderr,
                      "[close-build] no fork-reported engine build within %lld s: a cached engine "
-                     "for this graph and resolution produces no build at all, so this store cannot "
-                     "carry the scenario; use an owned store without that engine, or a graph whose "
-                     "engine has not been built\n",
+                     "for this graph and resolution produces no build at all; use an owned store "
+                     "without that engine, or a graph whose engine has not been built\n",
                      static_cast<long long>(buildStartMs / 1000));
     }
-    if (surfaceGuard.isNull() || dialogGuard.isNull()) {
-        std::fprintf(stderr,
-                     "FAIL [close-build] the player went away before any build state was observed\n");
+    if (controllerGuard.isNull() || sessionGuard.isNull() || windowGuard.isNull()) {
+        std::fprintf(stderr, "FAIL [close-build] the Quick player went away before build state was observed\n");
         return 1;
     }
-    // The trtexec log beside the graph is corroboration rather than a gate: a
-    // shell redirect creates it at a moment this process cannot pin, and a missing
-    // file here would say nothing about whether a build is running.
-    QStringList buildLogs;
     const bool buildLogSeen = waitUntil([&] {
         buildLogs = freshEngineBuildLogs(modelDirectory, requestedAtUtc);
         return !buildLogs.isEmpty();
     }, 10000);
     for (const QString& log : buildLogs)
         std::fprintf(stderr, "[close-build] build-log=%s\n", qPrintable(log));
-    // That wait spun the event loop for up to ten seconds, so both guards and every
-    // fact the verdict and the close depend on are read again here. A guard that was
-    // valid before it is not evidence that it still is, and a build that ended
-    // during it must not be reported as the build this close happened during.
-    if (surfaceGuard.isNull() || dialogGuard.isNull()) {
+    if (controllerGuard.isNull() || sessionGuard.isNull() || windowGuard.isNull()) {
         std::fprintf(stderr,
-                     "FAIL [close-build] the player went away while waiting for the build log; "
+                     "FAIL [close-build] the Quick player went away while waiting for the build log; "
                      "no close was requested and nothing is claimed\n");
         return 1;
     }
-    const QString buildDetail = surfaceGuard->animeJanaiEngineBuildDetail();
-    const QString buildStatus = surfaceGuard->animeJanaiStatus();
-    auto* overlay = dialogGuard->findChild<shell::ProcessingOverlay*>();
-    const bool overlayVisible = overlay != nullptr && overlay->isVisible();
-    // Contemporaneous with the close below: the fork's started event, the live
-    // active flag, the dialog's visible preparation window and the backend detail.
-    const bool buildActiveAtClose = buildActive && surfaceGuard->animeJanaiEngineBuildActive();
-    const bool buildProved =
-        buildStarted && buildActiveAtClose && !buildDetail.isEmpty() && overlayVisible;
-    if (buildStarted && !buildActiveAtClose) {
+
+    const native::AnimeJanaiPlan livePlanAtClose = sessionGuard->animeJanaiPlan();
+    const bool requestPlanIdentity =
+        controllerGuard->animeJanaiPlanGeneration() > priorPlanGeneration &&
+        livePlanAtClose.enabled && livePlanAtClose.presetId == plan.presetId &&
+        livePlanAtClose.backend == plan.backend && livePlanAtClose.slot == plan.slot;
+    const QString buildDetail = sessionGuard->animeJanaiEngineBuildDetail();
+    const QString buildStatus = sessionGuard->animeJanaiStatus();
+    quick::PreparationWindow* preparation = nullptr;
+    for (QWindow* candidate : QGuiApplication::allWindows()) {
+        auto* typed = qobject_cast<quick::PreparationWindow*>(candidate);
+        if (typed != nullptr && typed->controller() == controllerGuard.data()) {
+            preparation = typed;
+            break;
+        }
+    }
+    const bool preparationVisible = preparation != nullptr && preparation->isVisible() &&
+                                    controllerGuard->enginePreparationVisible();
+    const bool buildActiveAtClose = sessionGuard->animeJanaiEngineBuildActive();
+    const bool buildProved = buildStarted && requestPlanIdentity && buildActiveAtClose &&
+                             !buildDetail.isEmpty() && preparationVisible &&
+                             preparation->property("running").toBool();
+    result(buildProved,
+           "a fork-reported TensorRT engine build was still running when the close was requested "
+           "(session active, typed preparation window visible, backend detail present)");
+    if (!buildProved) ++failures;
+    if (buildStarted && !buildActiveAtClose)
         std::fprintf(stderr,
                      "[close-build] the fork-reported build ended before the close was requested; "
-                     "the timing below describes an ordinary close and is not close-during-build "
-                     "evidence\n");
-    }
-    {
-        result(buildProved,
-               "a fork-reported TensorRT engine build was still running when the close was "
-               "requested (surface active, preparation window visible, backend detail present)");
-        if (!buildProved) ++failures;
-    }
+                     "the timing below is not close-during-build evidence\n");
 
-    // 2. The close itself. The notice is conditioned on the settle exceeding
-    //    300 ms by the shipping close path, so the sampler watches the dialog's own
-    //    overlay while that settle spins the event loop; nothing is injected.
     const QString finishingText = QCoreApplication::translate(
-        "mplayer::shell::PlayerDialog", "Finishing enhancement…");
+        "mplayer::quick::PlayerController", "Finishing enhancement…");
     bool finishingNoticeObserved = false;
     QStringList finishingNoticeTexts;
+    // Observe the notice produced by acknowledged close; do not write it into
+    // the preparation window here, or this probe would manufacture its own proof.
     QTimer noticeTimer;
     noticeTimer.setInterval(16);
-    QObject::connect(&noticeTimer, &QTimer::timeout, dialogGuard.data(), [&] {
-        PlayerDialog* live = dialogGuard.data();
-        if (live == nullptr) return;
-        auto* liveOverlay = live->findChild<shell::ProcessingOverlay*>();
-        if (liveOverlay == nullptr || !liveOverlay->isVisible()) return;
-        for (QLabel* label : liveOverlay->findChildren<QLabel*>()) {
-            if (!label->isVisible() || label->text().isEmpty()) continue;
-            // The overlay composes its phase and its detail into one line, so the
-            // notice is the detail's words inside that line, not the whole text.
-            if (!label->text().contains(finishingText, Qt::CaseInsensitive)) continue;
+    QObject::connect(&noticeTimer, &QTimer::timeout, controllerGuard.data(), [&] {
+        if (controllerGuard.isNull()) return;
+        for (QWindow* candidate : QGuiApplication::allWindows()) {
+            auto* typed = qobject_cast<quick::PreparationWindow*>(candidate);
+            if (typed == nullptr || typed->controller() != controllerGuard.data() ||
+                !typed->isVisible()) continue;
+            const QString displayed = controllerGuard->preparationDetail();
+            if (!displayed.contains(finishingText, Qt::CaseInsensitive)) continue;
             finishingNoticeObserved = true;
-            if (!finishingNoticeTexts.contains(label->text()))
-                finishingNoticeTexts.append(label->text());
+            if (!finishingNoticeTexts.contains(displayed)) finishingNoticeTexts.append(displayed);
         }
     });
     const int closeLogStart = capturedLogs().size();
     QElapsedTimer closeClock;
     closeClock.start();
     noticeTimer.start();
-    // The real close event: synchronous by contract, so the returning call is the
-    // moment control is back with the viewer.
-    const bool acceptedClose = dialogGuard->close();
+    const bool acceptedClose = controllerGuard->requestClose();
     const qint64 closeReturnMs = closeClock.elapsed();
     noticeTimer.stop();
-    const bool refusedVisible = !dialogGuard.isNull() && dialogGuard->isVisible();
+    const bool refusedVisible = !windowGuard.isNull() && windowGuard->isVisible();
     const bool settleAbandoned =
-        !surfaceGuard.isNull() && surfaceGuard->nativeTeardownSettleAbandoned();
+        !sessionGuard.isNull() && sessionGuard->nativeTeardownSettleAbandoned();
     const QString statusAfterClose =
-        surfaceGuard.isNull() ? QString() : surfaceGuard->animeJanaiStatus();
+        sessionGuard.isNull() ? QString() : sessionGuard->animeJanaiStatus();
+    const quint64 finalPlanGeneration = controllerGuard->animeJanaiPlanGeneration();
     bool abandonedLogged = false;
     bool refusalLogged = false;
     for (const QString& line : capturedLogsSince(closeLogStart)) {
-        abandonedLogged |=
-            line.contains(QStringLiteral("teardownSettleAbandoned")) ||
-            line.contains(QStringLiteral("teardown settle abandoned"));
+        abandonedLogged |= line.contains(QStringLiteral("teardownSettleAbandoned")) ||
+                           line.contains(QStringLiteral("teardown settle abandoned"));
         refusalLogged |= line.contains(QStringLiteral("close refused"));
     }
-    // The dialog is owned by WA_DeleteOnClose: its destruction is the deferred
-    // delete the close event scheduled. The flush is targeted at that dialog and the
-    // clock is read the moment it returns - the dialog's own children are destroyed
-    // inside that call, so their teardown is included, and nothing queued for other
-    // receivers is billed to the close. The close request starts this span, so the
-    // number is request-to-destruction with no post-destruction work inside it.
-    if (!dialogGuard.isNull()) {
-        QCoreApplication::sendPostedEvents(dialogGuard.data(), QEvent::DeferredDelete);
-    }
+    delete controllerGuard.data();
     const qint64 destroyedMs = closeClock.elapsed();
-    const bool destroyed = dialogGuard.isNull() && surfaceGuard.isNull();
-    // Outside the measured span: whatever else was queued (timers, fork log events)
-    // runs now, so the process leaves the way any other run would.
+    const bool destroyed = controllerGuard.isNull() && windowGuard.isNull() && sessionGuard.isNull();
     QCoreApplication::processEvents();
 
     std::fprintf(stderr,
@@ -2864,21 +2287,19 @@ int runCloseDuringBuild(PlayerDialog* dialog, VideoSurface* surface,
                  "settle-abandoned=%d abandoned-logged=%d refused=%d budget-ms=%d "
                  "notice-text=%s status=%s\n",
                  buildStarted ? 1 : 0, buildActiveAtClose ? 1 : 0,
-                 static_cast<long long>(buildStartMs),
-                 buildLogSeen ? 1 : 0, overlayVisible ? 1 : 0, acceptedClose ? 1 : 0,
-                 static_cast<long long>(closeReturnMs),
-                 static_cast<long long>(destroyedMs), destroyed ? 1 : 0,
-                 finishingNoticeObserved ? 1 : 0, settleAbandoned ? 1 : 0,
-                 abandonedLogged ? 1 : 0, (refusedVisible || refusalLogged) ? 1 : 0,
-                 kCloseBudgetMs, qPrintable(finishingText), qPrintable(statusAfterClose));
+                 static_cast<long long>(buildStartMs), buildLogSeen ? 1 : 0,
+                 preparationVisible ? 1 : 0, acceptedClose ? 1 : 0,
+                 static_cast<long long>(closeReturnMs), static_cast<long long>(destroyedMs),
+                 destroyed ? 1 : 0, finishingNoticeObserved ? 1 : 0,
+                 settleAbandoned ? 1 : 0, abandonedLogged ? 1 : 0,
+                 (refusedVisible || refusalLogged) ? 1 : 0, kCloseBudgetMs,
+                 qPrintable(finishingText), qPrintable(statusAfterClose));
     result(acceptedClose && destroyed && !refusedVisible && !refusalLogged,
-           "the real PlayerDialog accepted its own close event during the build and was destroyed");
+           "the real typed Quick controller accepted its close during the build and was destroyed");
     if (!(acceptedClose && destroyed && !refusedVisible && !refusalLogged)) ++failures;
     result(destroyedMs <= kCloseBudgetMs,
            "close during an active engine build returned control within the 2.2 s budget");
     if (destroyedMs > kCloseBudgetMs) ++failures;
-    // The shipping close path shows the notice only once the settle passes 300 ms;
-    // a faster settle owes no notice, so the criterion follows the same threshold.
     const bool noticeRequired = closeReturnMs >= 300;
     const bool noticeProved = !noticeRequired || finishingNoticeObserved;
     result(noticeProved,
@@ -2889,18 +2310,15 @@ int runCloseDuringBuild(PlayerDialog* dialog, VideoSurface* surface,
     result(!settleAbandoned || abandonedLogged,
            settleAbandoned
                ? "the abandoned teardown settle named itself in the log"
-               : "the teardown settle completed without abandonment, so no abandonment line was "
-                 "required");
+               : "the teardown settle completed without abandonment, so no abandonment line was required");
     if (settleAbandoned && !abandonedLogged) ++failures;
 
     const QJsonObject evidence{
-        {"scope",
-         QStringLiteral("real PlayerDialog with a request-bound TensorRT engine build in an "
-                        "owned store; plan submitted through VideoSurface::setAnimeJanaiPlan "
-                        "after prepareAnimeJanaiPlan; no native activation, no synthetic "
-                        "engine notification, no cursor movement")},
+        {"scope", QStringLiteral("real PlayerController, PlayerWindow and VideoSession with a "
+                                 "request-bound TensorRT engine build; preset submitted through "
+                                 "typed controller API; no native activation or synthetic build")},
         {"presetId", plan.presetId},
-        {"backend", plan.backend == native::Backend::TensorRT ? "tensorrt" : "directml"},
+        {"backend", backendName},
         {"buildRequestedUtc", buildRequestTimeUtc},
         {"enginesBefore", static_cast<qint64>(enginesBefore.size())},
         {"modelDirectory", modelDirectory},
@@ -2908,8 +2326,10 @@ int runCloseDuringBuild(PlayerDialog* dialog, VideoSurface* surface,
         {"buildStartMs", static_cast<qint64>(buildStartMs)},
         {"buildDetail", buildDetail},
         {"buildStatusAtClose", buildStatus},
+        {"controllerPlanGeneration", static_cast<qint64>(finalPlanGeneration)},
+        {"requestPlanIdentity", requestPlanIdentity},
         {"buildActiveAtClose", buildActiveAtClose},
-        {"overlayVisibleAtClose", overlayVisible},
+        {"overlayVisibleAtClose", preparationVisible},
         {"buildLogs", QJsonArray::fromStringList(buildLogs)},
         {"finishingNoticeText", finishingText},
         {"finishingNoticeRequired", noticeRequired},
@@ -2937,14 +2357,12 @@ int runCloseDuringBuild(PlayerDialog* dialog, VideoSurface* surface,
         ++failures;
     }
     if (failures != 0) {
-        std::fprintf(stderr,
-                     "FAIL [close-build] the close-during-build scenario did not pass (%d "
-                     "criterion/criteria)\n",
+        std::fprintf(stderr, "FAIL [close-build] the close-during-build scenario did not pass (%d criterion/criteria)\n",
                      failures);
         return 1;
     }
     std::fprintf(stderr,
-                 "PASS close-during-build: a real TensorRT build was running and the player "
+                 "PASS close-during-build: a real TensorRT build was running and the Quick player "
                  "returned control in %lld ms\n",
                  static_cast<long long>(destroyedMs));
     return 0;
@@ -2953,6 +2371,9 @@ int runCloseDuringBuild(PlayerDialog* dialog, VideoSurface* surface,
 }  // namespace
 
 int main(int argc, char** argv) {
+    QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
     QApplication app(argc, argv);
     // The separate-process peer runs this executable with its own positional
     // geometry arguments, so it must be dispatched before any option parsing.
@@ -2984,7 +2405,7 @@ int main(int argc, char** argv) {
                                      QStringLiteral("Isolated Qt application name used for probe storage"),
                                      QStringLiteral("name"), QStringLiteral("AnimeJanaiProbe"));
     QCommandLineOption naturalOption(QStringLiteral("natural-player"),
-                                     QStringLiteral("Exercise the actual hostless PlayerDialog"));
+                                     QStringLiteral("Exercise the real player presentation and session"));
     QCommandLineOption requireBuildOption(QStringLiteral("require-engine-build"),
                                           QStringLiteral("Require a fresh request-bound TensorRT engine build; "
                                                          "builtin selected-engine identity proof is unsupported"));
@@ -3024,12 +2445,11 @@ int main(int argc, char** argv) {
     QCommandLineOption closeDuringBuildOption(
         QStringLiteral("close-during-build"),
         QStringLiteral("With --natural-player --backend tensorrt --require-engine-build and a "
-                       "preset, submit the prepared plan through the production "
-                       "VideoSurface::setAnimeJanaiPlan route (no menu, no activation), wait for "
-                       "the fork's own active engine build, then run the dialog's real close "
-                       "event and require request-to-dialog-destroyed control return within "
-                       "2200 ms. Reports the observed finishing notice, the settle-abandonment "
-                       "diagnostic and a clean exit in "
+                       "preset, submit it through PlayerController::applyAnimeJanaiRequest "
+                       "(no menu or activation), wait for the fork's own active engine build, "
+                       "then request acknowledged close on the real Quick controller and require "
+                       "request-to-destruction control return within 2200 ms. Reports the observed "
+                       "finishing notice, settle-abandonment diagnostic and a clean exit in "
                        "<native-root>/animejanai-close-during-build.json. This mode proves "
                        "teardown, not build completion."));
     parser.addOption(presetOption);
@@ -3268,8 +2688,8 @@ int main(int argc, char** argv) {
             std::fprintf(stderr,
                          "FAIL --close-during-build requires --natural-player, "
                          "--require-engine-build, --backend tensorrt, and a preset: the scenario "
-                         "needs a real PlayerDialog, a request-bound fresh build, and a graph "
-                         "identity it can require\n");
+                         "needs the real typed Quick player, a request-bound fresh build, and a "
+                         "graph identity it can require\n");
             return 1;
         }
         if (focusDuringBuild) {
@@ -3286,10 +2706,6 @@ int main(int argc, char** argv) {
                          "close removes\n");
             return 1;
         }
-        std::fprintf(stderr,
-                     "[close-build] mode=requested submission=setAnimeJanaiPlan activation=none "
-                     "budget-ms=2200 (the run proves teardown during a real build, not build "
-                     "completion)\n");
     }
     const auto progress = [](const native::ComponentProvisionProgress& item) {
         std::fprintf(stderr, "[AnimeJanaiProbe] component=%s received=%lld total=%lld\n",
@@ -3350,44 +2766,96 @@ int main(int argc, char** argv) {
                          qPrintable(published.graphPath));
         }
     }
-    if (validatePlansOnly) return validateRifePlans(backend) ? 0 : 1;
-
-    QPointer<PlayerDialog> naturalDialog;
-    QPointer<VideoSurface> naturalSurface;
-    QWidget window;
-    VideoSurface* surface = nullptr;
-    if (parser.isSet(naturalOption)) {
-        naturalDialog = new PlayerDialog(QStringLiteral("AnimeJaNai natural-player probe"),
-                                         mediaSource);
-        // This is the diagnostic's own assembly flag, not product behaviour. In the
-        // focus mode an always-on-top player would sit above the peer's black window
-        // and make verified occlusion impossible, so only that flag is omitted.
-        if (!focusDuringBuild)
-            naturalDialog->setWindowFlag(Qt::WindowStaysOnTopHint, true);
-        else
+    if (closeDuringBuild) {
+        std::fprintf(stderr,
+                     "[close-build] mode=requested submission=PlayerController::applyAnimeJanaiRequest "
+                     "activation=none budget-ms=2200 (the run proves teardown during a real build, "
+                     "not build completion)\n");
+        const native::AnimeJanaiPlan prepared = prepareOnWorker(presetId, backend);
+        if (!prepared.enabled || !prepared.available ||
+            !native::isAnimeJanaiForkRuntime(selection)) {
             std::fprintf(stderr,
-                         "[focus-build] diagnostic always-on-top flag omitted: "
-                         "dialog-topmost=%d\n",
-                         naturalDialog->windowFlags().testFlag(Qt::WindowStaysOnTopHint) ? 1 : 0);
-        naturalDialog->resize(800, 450);
-        naturalDialog->show();
-        surface = naturalDialog->findChild<VideoSurface*>(QStringLiteral("videoSurface"));
-        naturalSurface = surface;
-        if (surface == nullptr) {
-            std::fprintf(stderr, "SKIP missing prerequisite: PlayerDialog has no main VideoSurface\n");
-            naturalDialog->close();
+                         "SKIP missing close-build prerequisite [%s]: %s\n",
+                         qPrintable(prepared.reasonKey),
+                         qPrintable(prepared.reason.isEmpty()
+                                        ? QStringLiteral("the AnimeJaNai fork/runtime is unavailable")
+                                        : prepared.reason));
             return 77;
         }
-    } else {
-        window.setWindowTitle(QStringLiteral("AnimeJaNai embedded-core probe"));
-        surface = new VideoSurface(&window);
-        surface->setObjectName(QStringLiteral("animeJanaiProbeSurface"));
-        auto* layout = new QVBoxLayout(&window);
-        layout->setContentsMargins(0, 0, 0, 0);
-        layout->addWidget(surface);
-        window.resize(960, 540);
-        window.show();
+        const QString modelDirectory = QDir(actualNativeRoot).filePath(
+            QStringLiteral("animejanai/models/") +
+            (presetId.startsWith(QStringLiteral("rife:"))
+                 ? QStringLiteral("rife") : QStringLiteral("spatial")));
+        const QMap<QString, QString> enginesBefore = engineSnapshot(modelDirectory);
+        const QDateTime requestedAtUtc = QDateTime::currentDateTimeUtc();
+        const QString buildRequestTimeUtc = requestedAtUtc.toString(Qt::ISODateWithMs);
+        std::fprintf(stderr,
+                     "[AnimeJanaiProbe] fresh-build-request utc=%s root=%s model-directory=%s "
+                     "selected-preset=%s\n",
+                     qPrintable(buildRequestTimeUtc), qPrintable(actualNativeRoot),
+                     qPrintable(modelDirectory), qPrintable(presetId));
+
+        auto* controller = new quick::PlayerController(
+            QStringLiteral("AnimeJaNai natural-player probe"), mediaSource);
+        QString sceneError;
+        QObject::connect(controller->window(), &quick::PlayerWindow::sceneLoadFailed,
+                         controller, [&sceneError](const QString& error) {
+                             sceneError = error;
+                         });
+        controller->toggleFullscreen();
+        controller->window()->resize(800, 450);
+        controller->showWindow();
+        if (!waitUntil([&] {
+                return !sceneError.isEmpty() ||
+                       (controller->window()->isVisible() && controller->session() != nullptr);
+            }, 5000) || !sceneError.isEmpty()) {
+            std::fprintf(stderr, "FAIL Quick player scene did not load: %s\n",
+                         sceneError.isEmpty() ? "window did not become visible"
+                                              : qPrintable(sceneError));
+            delete controller;
+            return 1;
+        }
+        controller->startPlayer();
+        VideoSession* const session = controller->session();
+        if (!waitUntil([session] { return session != nullptr && session->hasVideo(); }, 30000)) {
+            std::fprintf(stderr,
+                         "FAIL the Quick player's real VideoSession did not load the source\n");
+            delete controller;
+            return 1;
+        }
+        controller->applyAnimeJanaiBackend(QStringLiteral("tensorrt"));
+        const quint64 priorPlanGeneration = controller->animeJanaiPlanGeneration();
+        controller->applyAnimeJanaiRequest(presetId);
+        return runQuickCloseDuringBuild(controller, prepared, modelDirectory,
+                                        enginesBefore, requestedAtUtc,
+                                        buildRequestTimeUtc, actualNativeRoot,
+                                        priorPlanGeneration);
     }
+
+    if (validatePlansOnly) return validateRifePlans(backend) ? 0 : 1;
+
+    auto* playerController = new quick::PlayerController(
+        QStringLiteral("AnimeJaNai player probe"), mediaSource);
+    QPointer<quick::PlayerController> controllerGuard(playerController);
+    QPointer<quick::PlayerWindow> playerWindow(playerController->window());
+    VideoSession* surface = playerController->session();
+    if (playerController == nullptr || playerWindow == nullptr || surface == nullptr) {
+        std::fprintf(stderr, "FAIL the typed Quick player could not create its window and session\n");
+        delete playerController;
+        return 1;
+    }
+    if (!parser.isSet(naturalOption) && playerController->fullscreen())
+        playerController->toggleFullscreen();
+    playerWindow->resize(parser.isSet(naturalOption) ? QSize(800, 450) : QSize(960, 540));
+    playerController->showWindow();
+    const auto preparationWindowForPlayer = [controllerGuard]() -> quick::PreparationWindow* {
+        if (controllerGuard.isNull()) return nullptr;
+        for (QWindow* candidate : QGuiApplication::allWindows()) {
+            auto* typed = qobject_cast<quick::PreparationWindow*>(candidate);
+            if (typed != nullptr && typed->controller() == controllerGuard.data()) return typed;
+        }
+        return nullptr;
+    };
     int failures = 0;
     int captureTripletFailures = 0;
     bool ajiInconclusive = false;
@@ -3411,49 +2879,42 @@ int main(int argc, char** argv) {
     bool buildFailureTimerStopped = false;
     QTimer buildWindowSampler;
     buildWindowSampler.setInterval(250);
-    QObject::connect(&buildWindowSampler, &QTimer::timeout, &window, [&] {
-        if (!buildActive || naturalDialog == nullptr) return;
+    QObject::connect(&buildWindowSampler, &QTimer::timeout, playerController, [&] {
+        if (!buildActive || controllerGuard.isNull() || surface == nullptr) return;
         buildPlayback.sample(surface, actualNativeRoot);
-        auto* overlay = naturalDialog->findChild<shell::ProcessingOverlay*>();
-        if (overlay == nullptr || !overlay->isVisible()) return;
-        for (QLabel* label : overlay->findChildren<QLabel*>()) {
-            if (!label->text().contains(QRegularExpression(QStringLiteral("\\d\\d:\\d\\d:\\d\\d"))))
-                continue;
-            if (firstElapsedText.isEmpty()) firstElapsedText = label->text();
-            else buildElapsedAdvanced |= label->text() != firstElapsedText;
-        }
+        quick::PreparationWindow* const preparation = preparationWindowForPlayer();
+        if (preparation == nullptr || !preparation->isVisible()) return;
+        const QString elapsedText = QStringLiteral("Elapsed: %1")
+                                        .arg(preparation->property("elapsedSeconds").toInt());
+        if (firstElapsedText.isEmpty()) firstElapsedText = elapsedText;
+        else buildElapsedAdvanced |= elapsedText != firstElapsedText;
     });
-    QObject::connect(surface, &VideoSurface::animeJanaiEngineBuildChanged, &window,
+    QObject::connect(surface, &VideoSession::animeJanaiEngineBuildChanged, playerController,
                      [&](bool active, bool succeeded, const QString& detail) {
         buildActive = active;
-        if (naturalDialog == nullptr) return;
-        auto* overlay = naturalDialog->findChild<shell::ProcessingOverlay*>();
+        quick::PreparationWindow* preparation = preparationWindowForPlayer();
         if (active) {
             buildPlayback.begin();
             buildPlayback.sample(surface, actualNativeRoot);
-            buildWindowVisible |= naturalDialog->enginePreparationVisible();
-            QProgressBar* bar = overlay != nullptr ? overlay->findChild<QProgressBar*>() : nullptr;
-            buildIndeterminate |= bar != nullptr && bar->isVisible() && bar->minimum() == 0 && bar->maximum() == 0;
-            buildWindowAbovePlayer |= overlay != nullptr && overlay->isWindow() &&
-                overlay->windowFlags().testFlag(Qt::WindowStaysOnTopHint);
-            if (overlay != nullptr && !buildScreenshot)
-                buildScreenshot = overlay->grab().save(
+            const bool visible = preparation != nullptr && preparation->isVisible() &&
+                                 playerController->enginePreparationVisible();
+            buildWindowVisible |= visible;
+            buildIndeterminate |= visible && preparation->property("running").toBool() &&
+                                  playerController->preparationStageCount() <= 0;
+            buildWindowAbovePlayer |= visible &&
+                preparation->windowFlags().testFlag(Qt::WindowStaysOnTopHint);
+            if (visible && !buildScreenshot)
+                buildScreenshot = preparation->grabWindow().save(
                     QDir(actualNativeRoot).filePath(QStringLiteral("animejanai-probe-build-progress.png")));
             buildWindowSampler.start();
             if (focusDuringBuild && !focusRunStarted) {
                 focusRunStarted = true;
 #ifdef Q_OS_WIN
-                // The runner advances from timer ticks, so the probe's own
-                // engine-pause observer keeps sampling while the cycles run.
                 focusRunner = new FocusDuringBuildRunner(
-                    naturalDialog, surface, focusBuild,
+                    playerWindow, surface, preparationWindowForPlayer(), focusBuild,
                     [&] { return buildActive; },
                     [&] { return buildPlayback.held && buildPlayback.framebufferAt >= 0; },
                     [&] {
-                        // The fields that make the engine-pause proof pass, as far
-                        // as they exist before completion: a cleared hold or a late
-                        // acknowledgement must not let the blocking peer start land
-                        // inside a measurement that cannot pass.
                         return buildPlayback.originallyPlaying && buildPlayback.started &&
                                buildPlayback.held && buildPlayback.acknowledgedAt >= 0 &&
                                buildPlayback.acknowledgedAt <= 2000 &&
@@ -3476,112 +2937,57 @@ int main(int argc, char** argv) {
                 buildPlayback.completionObservedProcessing =
                     succeeded && surface->animeJanaiProcessingObserved();
             }
-            if (succeeded && overlay != nullptr && overlay->isVisible() && !detail.isEmpty()) {
-                for (QLabel* label : overlay->findChildren<QLabel*>())
-                    buildCompletionVisible |= label->isVisible() && label->text().contains(detail);
-            } else if (!succeeded && buildPlayback.armed && buildPlayback.started &&
-                       !buildPlayback.succeeded && !buildFailureObserved) {
+            const bool visible = preparation != nullptr && preparation->isVisible();
+            if (succeeded && visible && !detail.isEmpty())
+                buildCompletionVisible =
+                    playerController->preparationSummary().contains(detail);
+            else if (!succeeded && buildPlayback.armed && buildPlayback.started &&
+                     !buildPlayback.succeeded && !buildFailureObserved) {
                 buildFailureObserved = true;
-                QPointer<shell::ProcessingOverlay> failedOverlay = overlay;
-                QString elapsedAtFailure;
-                if (overlay != nullptr) {
-                    for (QLabel* label : overlay->findChildren<QLabel*>())
-                        if (label->text().contains(QRegularExpression(QStringLiteral("\\d\\d:\\d\\d:\\d\\d"))))
-                            elapsedAtFailure = label->text();
-                }
-                QTimer::singleShot(1200, &window, [&, failedOverlay, elapsedAtFailure, detail] {
+                QPointer<quick::PreparationWindow> failedPreparation(preparation);
+                const int elapsedAtFailure =
+                    preparation != nullptr ? preparation->property("elapsedSeconds").toInt() : -1;
+                QTimer::singleShot(1200, playerController,
+                                   [&, failedPreparation, elapsedAtFailure, detail] {
                     buildFailureTimerSampled = true;
-                    if (failedOverlay == nullptr || !failedOverlay->isVisible() ||
-                        elapsedAtFailure.isEmpty()) return;
-                    QProgressBar* bar = failedOverlay->findChild<QProgressBar*>();
-                    bool elapsedUnchanged = false;
-                    bool failureReasonVisible = false;
-                    for (QLabel* label : failedOverlay->findChildren<QLabel*>()) {
-                        elapsedUnchanged |= label->isVisible() && label->text() == elapsedAtFailure;
-                        failureReasonVisible |= !detail.isEmpty() && label->isVisible() &&
-                            label->text().contains(detail);
-                    }
-                    buildFailureTimerStopped = elapsedUnchanged && failureReasonVisible &&
-                        bar != nullptr && bar->isVisible() && bar->minimum() == 0 &&
-                        bar->maximum() == 1 && bar->value() == 0;
+                    if (failedPreparation.isNull() || !failedPreparation->isVisible() ||
+                        elapsedAtFailure < 0) return;
+                    buildFailureTimerStopped =
+                        failedPreparation->property("failed").toBool() &&
+                        !failedPreparation->property("running").toBool() &&
+                        failedPreparation->property("elapsedSeconds").toInt() == elapsedAtFailure &&
+                        playerController->preparationSummary().contains(detail) &&
+                        playerController->preparationStageCount() == 0;
                 });
             }
         }
+        const bool visible = preparation != nullptr && preparation->isVisible() &&
+                             playerController->enginePreparationVisible();
         std::fprintf(stderr, "[engine-operation] active=%d succeeded=%d visible=%d indeterminate=%d detail=%s\n",
-                     active, succeeded, naturalDialog->enginePreparationVisible(), buildIndeterminate,
-                     qPrintable(detail));
+                     active, succeeded, visible, buildIndeterminate, qPrintable(detail));
     });
     QStringList animeJanaiFailures;
-    QObject::connect(surface, &VideoSurface::animeJanaiFailure, &window,
+    QObject::connect(surface, &VideoSession::animeJanaiFailure, playerController,
                      [&animeJanaiFailures](const QString& reason) {
                          animeJanaiFailures.append(reason);
                          std::fprintf(stderr, "[AnimeJaNai processing failure] %s\n",
                                       qPrintable(reason));
                      });
     QStringList mediaErrors;
-    QObject::connect(surface, &VideoSurface::errorOccurred, &window,
+    QObject::connect(surface, &VideoSession::errorOccurred, playerController,
                      [&mediaErrors](const QString& message) { mediaErrors.append(message); });
     QStringList privateNativeFailures;
-    QObject::connect(surface, &VideoSurface::nativeProcessingFailure, &window,
+    QObject::connect(surface, &VideoSession::nativeProcessingFailure, playerController,
                      [&privateNativeFailures](const QString& key, const QString& reason) {
                          privateNativeFailures.append(key + QStringLiteral(": ") + reason);
                      });
-    if (parser.isSet(naturalOption)) {
-        // Match the application's normal host flow: show the dialog, then ask
-        // PlayerDialog to open its source. The hostless constructor only stores
-        // the URL; it does not start playback on its own.
-        naturalDialog->startPlayer();
-        if (!waitUntil([&] { return naturalDialog->isVisible() &&
-                                    naturalDialog->isFullScreen(); }, 5000)) {
-            std::fprintf(stderr,
-                         "FAIL natural PlayerDialog did not complete deferred fullscreen startup\n");
-            naturalDialog->close();
-            return 1;
-        }
-        auto* playerShell = naturalDialog->findChild<shell::PlayerShell*>();
-        if (playerShell == nullptr) {
-            std::fprintf(stderr, "FAIL natural PlayerDialog has no PlayerShell\n");
-            naturalDialog->close();
-            return 1;
-        }
-        // Exercise the same user-intent path as the window-mode button only
-        // after showEvent has applied the constructor's deferred fullscreen.
-        playerShell->windowModeToggled();
-        const QSize narrowSize = QSize(800, 450).expandedTo(naturalDialog->minimumSize());
-        naturalDialog->resize(narrowSize);
-        const bool narrowWindowReady = waitUntil([&] {
-            return naturalDialog->isVisible() && !naturalDialog->isFullScreen() &&
-                   naturalDialog->size() == narrowSize;
-        }, 5000);
-        const QRect actualHost(naturalDialog->mapToGlobal(QPoint(0, 0)),
-                               naturalDialog->size());
-        std::fprintf(stderr,
-                     "[AnimeJanaiProbe] narrow-window mode=%s actual-host=%dx%d "
-                     "global=(%d,%d) requested=800x450 dpr=%.2f\n",
-                     naturalDialog->isFullScreen() ? "fullscreen" : "windowed",
-                     naturalDialog->width(), naturalDialog->height(), actualHost.x(),
-                     actualHost.y(), naturalDialog->devicePixelRatioF());
-        result(narrowWindowReady,
-               "natural PlayerDialog entered its actual minimum-supported windowed size after startup");
-        if (!narrowWindowReady) {
-            naturalDialog->close();
-            return 1;
-        }
-    }
-    if (!parser.isSet(naturalOption) &&
-        !surface->open(mediaSource)) {
-        std::fprintf(stderr, "FAIL embedded libmpv rejected the source before dispatch: %s\n",
-                     qPrintable(mediaErrors.isEmpty() ? QStringLiteral("no surface error reported")
-                                                      : mediaErrors.constLast()));
-        surface->close();
-        return 1;
-    }
+    playerController->startPlayer();
     if (!surface->waitForContext(10000)) {
-        std::fprintf(stderr, "FAIL Qt OpenGL render context unavailable after source dispatch; "
+        std::fprintf(stderr, "FAIL Quick player OpenGL render context unavailable after source dispatch; "
                              "contextReady=%d source=%s\n",
-                     surface->isContextReady() ? 1 : 0,
-                     qPrintable(mediaSource));
-        surface->close();
+                     surface->isContextReady() ? 1 : 0, qPrintable(mediaSource));
+        playerController->requestClose();
+        delete playerController;
         return 1;
     }
     if (!waitUntil([&] { return surface->hasVideo(); }, 30000)) {
@@ -3597,11 +3003,37 @@ int main(int argc, char** argv) {
         const int first = qMax(0, logs.size() - 30);
         for (const QString& line : logs.mid(first))
             std::fprintf(stderr, "[AnimeJanaiProbe] decode-context: %s\n", qPrintable(line));
-        surface->close();
+        playerController->requestClose();
+        delete playerController;
         return 1;
     }
+    if (parser.isSet(naturalOption)) {
+        const bool startedFullscreen = playerWindow->isFullScreen();
+        if (startedFullscreen) playerController->toggleFullscreen();
+        const QSize narrowSize = QSize(800, 450).expandedTo(playerWindow->minimumSize());
+        playerWindow->resize(narrowSize);
+        const bool narrowWindowReady = waitUntil([&] {
+            return playerWindow->isVisible() && !playerWindow->isFullScreen() &&
+                   playerWindow->size() == narrowSize;
+        }, 5000);
+        const QRect actualHost(playerWindow->mapToGlobal(QPoint(0, 0)),
+                               playerWindow->size());
+        std::fprintf(stderr,
+                     "[AnimeJanaiProbe] narrow-window mode=%s actual-host=%dx%d "
+                     "global=(%d,%d) requested=800x450 dpr=%.2f\n",
+                     playerWindow->isFullScreen() ? "fullscreen" : "windowed",
+                     playerWindow->width(), playerWindow->height(), actualHost.x(),
+                     actualHost.y(), playerWindow->devicePixelRatio());
+        result(startedFullscreen && narrowWindowReady,
+               "natural Quick player entered fullscreen at startup and its actual minimum-supported windowed size");
+        if (!startedFullscreen || !narrowWindowReady) {
+            playerController->requestClose();
+            delete playerController;
+            return 1;
+        }
+    }
     result(surface->isContextReady() && surface->videoWidth() > 0 && surface->videoHeight() > 0,
-           "VideoSurface decoded a real video frame through vo=libmpv");
+           "Quick MpvVideoItem decoded a real video frame through the shared vo=libmpv session");
     if (!surface->isContextReady() || surface->videoWidth() <= 0 || surface->videoHeight() <= 0)
         ++failures;
     const auto actualCoreVersion =
@@ -3615,32 +3047,17 @@ int main(int argc, char** argv) {
 
     bool seekObserved = false;
     if (parser.isSet(naturalOption)) {
-        const auto sendDialogKey = [&](int key) -> bool {
-            // Real keys reach the shell through the focus widget's own propagation; the
-            // dialog's T-410 guard drops a dialog-injected key when focus is inside it.
-            QWidget* const focus = QApplication::focusWidget();
-            QWidget* const start = focus != nullptr &&
-                    (focus == naturalDialog || naturalDialog->isAncestorOf(focus))
-                ? focus
-                : static_cast<QWidget*>(naturalDialog.data());
-            QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
-            const bool delivered = QCoreApplication::sendEvent(start, &press);
-            const bool accepted = press.isAccepted();
-            QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
-            QCoreApplication::sendEvent(start, &release);
+        const auto sendPlayerKey = [&](int key) -> bool {
+            if (playerWindow.isNull()) return false;
+            playerWindow->requestActivate();
+            QCoreApplication::processEvents();
+            QTest::keyClick(playerWindow.data(), key);
+            QCoreApplication::processEvents();
             std::fprintf(stderr,
-                         "[AnimeJanaiProbe] key-delivery key=%s delivery-start=%s/%s focus=%s/%s focus-chain=%d active-window=%d delivered=%d accepted=%d\n",
+                         "[AnimeJanaiProbe] quick-key-delivery key=%s active-window=%d delivered=1\n",
                          qPrintable(QKeySequence(key).toString(QKeySequence::NativeText)),
-                         start->metaObject()->className(),
-                         start->objectName().isEmpty() ? "-" : qPrintable(start->objectName()),
-                         focus != nullptr ? focus->metaObject()->className() : "none",
-                         focus != nullptr && !focus->objectName().isEmpty()
-                             ? qPrintable(focus->objectName())
-                             : "-",
-                         focus != nullptr && naturalDialog->isAncestorOf(focus) ? 1 : 0,
-                         naturalDialog->isActiveWindow() ? 1 : 0, delivered ? 1 : 0,
-                         accepted ? 1 : 0);
-            return accepted;
+                         playerWindow->isActive() ? 1 : 0);
+            return playerWindow->isActive();
         };
         surface->setPaused(false);
         // The key has to act on a source the viewer is watching. The request is
@@ -3652,7 +3069,7 @@ int main(int argc, char** argv) {
         }, 5000);
         std::fprintf(stderr, "[AnimeJanaiProbe] keyboard-precondition observed-playing=%d\n",
                      playingBeforePauseKey ? 1 : 0);
-        const bool spaceAccepted = sendDialogKey(Qt::Key_Space);
+        const bool spaceAccepted = sendPlayerKey(Qt::Key_Space);
         const bool keyboardPauseObserved = waitUntil([&] {
             const auto paused = surface->probeMpvProperty(QStringLiteral("pause"),
                                                           ProbePropertyKind::Flag);
@@ -3663,7 +3080,7 @@ int main(int argc, char** argv) {
                          "[AnimeJanaiProbe] Space key delivery was accepted=%d; the shell pauses only when the key it receives ends up with it\n",
                          spaceAccepted ? 1 : 0);
         result(playingBeforePauseKey && keyboardPauseObserved,
-               "PlayerDialog Space key paused the embedded source");
+               "Quick player Space key paused the embedded source");
         if (!(playingBeforePauseKey && keyboardPauseObserved)) ++failures;
         // A playing source advances its own playhead, so the step is measured from a
         // parked one and has to survive while parked: only a key-handled seek does.
@@ -3679,7 +3096,7 @@ int main(int argc, char** argv) {
             return false;
         }, 3000);
         const double beforeSeek = surface->position();
-        sendDialogKey(Qt::Key_Right);
+        sendPlayerKey(Qt::Key_Right);
         seekObserved = parkedForSeek && waitUntil([&] {
             const auto paused = surface->probeMpvProperty(QStringLiteral("pause"),
                                                           ProbePropertyKind::Flag);
@@ -3696,7 +3113,7 @@ int main(int argc, char** argv) {
         seekObserved = waitUntil([&] { return surface->position() > beforeSeek + 0.25; }, 5000);
     }
     result(seekObserved, parser.isSet(naturalOption)
-        ? "PlayerDialog Right key sought the observed source position"
+        ? "Quick player Right key sought the observed source position"
         : "pause and seek changed the observed source position");
     if (!seekObserved) ++failures;
     surface->setVolume(37.0);
@@ -3778,10 +3195,10 @@ int main(int argc, char** argv) {
                  baselineDiagnostics.estimatedVfFps
                      ? QByteArray::number(*baselineDiagnostics.estimatedVfFps, 'f', 3).constData()
                      : "unavailable");
-    if (naturalDialog) {
-        naturalDialog->activateWindow();
+    if (playerController != nullptr) {
+        playerWindow->requestActivate();
         QCoreApplication::processEvents();
-        QTest::keyClick(naturalDialog.data(), Qt::Key_J, Qt::ControlModifier | Qt::ShiftModifier);
+        QTest::keyClick(playerWindow.data(), Qt::Key_J, Qt::ControlModifier | Qt::ShiftModifier);
         QCoreApplication::processEvents();
         const bool ignoredLegacyKey = native::loadNativePreferences().enabled &&
                                       !surface->animeJanaiPlan().enabled;
@@ -3871,38 +3288,29 @@ int main(int argc, char** argv) {
                              qPrintable(buildRequestTimeUtc), qPrintable(artifactSnapshotTimeUtc),
                              qPrintable(actualNativeRoot), qPrintable(artifactModelDir),
                              qPrintable(presetId));
-            const quint64 priorPlanGeneration = naturalDialog
-                ? naturalDialog->animeJanaiPlanGeneration() : 0;
+            const quint64 priorPlanGeneration = playerController
+                ? playerController->animeJanaiPlanGeneration() : 0;
             if (parser.isSet(naturalOption) && !closeDuringBuild) {
-                const bool backendChosen = chooseEnhancementMenu(
-                    naturalDialog.data(),
-                    {QStringLiteral("level|animejanai"), QStringLiteral("level|animejanai:backend"),
-                     QStringLiteral("ajbackend|") + backendArg});
-                const QString selectorImage = QDir(actualNativeRoot).filePath(
-                    QStringLiteral("animejanai-probe-rife-selector.png"));
+                const bool backendChosen = selectAnimeJanaiBackend(playerController, backendArg);
                 if (parser.isSet(requireBuildOption))
                     buildPlayback.arm(surface, baselinePtsChanges >= 3 && moving);
                 const bool presetChosen = backendChosen &&
-                    chooseAnimeJanaiPreset(naturalDialog.data(), presetId, selectorImage);
-                result(presetChosen, "visible AnimeJaNai menu selection submitted the preset without an activation hotkey");
+                    submitAnimeJanaiRequest(playerController, presetId);
+                result(presetChosen, "typed Quick controller selection submitted the preset without an activation hotkey");
                 if (!presetChosen) {
-                    naturalDialog->close();
+                    playerController->requestClose();
                     return 1;
                 }
             } else {
                 // The production submission route, with no menu to walk and no
                 // activation to request: the close-during-build scenario needs a
-                // real build behind a real PlayerDialog, not a foreground takeover.
-                surface->setAnimeJanaiPlan(plan);
-            }
-            if (closeDuringBuild) {
-                return runCloseDuringBuild(naturalDialog.data(), surface, plan, artifactModelDir,
-                                           engineFilesBefore, buildRequestedAtUtc,
-                                           buildRequestTimeUtc, actualNativeRoot, buildActive);
+                // real build behind the typed Quick controller, not a foreground takeover.
+                playerController->applyAnimeJanaiBackend(backendArg);
+                playerController->applyAnimeJanaiRequest(presetId);
             }
             const auto requestedPlanMatches = [&] {
-                if (naturalDialog &&
-                    naturalDialog->animeJanaiPlanGeneration() <= priorPlanGeneration)
+                if (playerController &&
+                    playerController->animeJanaiPlanGeneration() <= priorPlanGeneration)
                     return false;
                 const native::AnimeJanaiPlan live = surface->animeJanaiPlan();
                 return live.enabled && live.presetId == plan.presetId &&
@@ -4105,6 +3513,7 @@ int main(int argc, char** argv) {
                 if (parser.isSet(captureProcessedRawOption)) {
                     ProcessedRawCapture capture;
                     capture.surface = surface;
+                    capture.window = playerWindow;
                     capture.nativeRoot = actualNativeRoot;
                     capture.plan = surface->animeJanaiPlan();
                     capture.requestedAt = captureAtSeconds;
@@ -4114,21 +3523,14 @@ int main(int argc, char** argv) {
                 }
                 QString guiImagePath;
                 bool guiImageSaved = false;
-                if (parser.isSet(naturalOption) && naturalDialog) {
+                if (parser.isSet(naturalOption) && playerController) {
                     const bool observedProcessing =
                         waitUntil([&] { return surface->animeJanaiProcessingObserved(); }, 5000);
                     result(observedProcessing,
                            "the HUD reports backend-observed processing for the selected plan");
                     if (!observedProcessing) ++failures;
-                    auto* playerShell = naturalDialog->findChild<shell::PlayerShell*>();
-                    if (playerShell != nullptr) playerShell->wake();
                     QCoreApplication::processEvents();
-                    bool privateHudVisible = false;
-                    for (auto* label : naturalDialog->findChildren<QLabel*>()) {
-                        if (label->isVisible() &&
-                            label->accessibleName().startsWith(QStringLiteral("Native")))
-                            privateHudVisible = true;
-                    }
+                    const bool privateHudVisible = playerController->nativeHudVisible();
                     result(!privateHudVisible,
                            "the Standard Janai HUD contains no unrelated private Native status");
                     if (privateHudVisible) ++failures;
@@ -4136,7 +3538,7 @@ int main(int argc, char** argv) {
                                  qPrintable(surface->animeJanaiStatus()));
                     guiImagePath = QDir(actualNativeRoot).filePath(
                         QStringLiteral("animejanai-probe-player-dialog.png"));
-                    guiImageSaved = naturalDialog->grab().save(guiImagePath, "PNG");
+                    guiImageSaved = playerWindow->grabWindow().save(guiImagePath, "PNG");
                 }
                 const QString guiImageSha256 = guiImageSaved ? fileSha256(guiImagePath) : QString();
                 const QString statsSha256 = fileSha256(livePlan.statsPath);
@@ -4320,27 +3722,27 @@ int main(int argc, char** argv) {
                     if (!alternate.available) continue;
                     slotSwitchTested = true;
                     const int priorAlternateFailureCount = animeJanaiFailures.size();
-                    const quint64 priorAlternateGeneration = naturalDialog
-                        ? naturalDialog->animeJanaiPlanGeneration() : 0;
+                    const quint64 priorAlternateGeneration = playerController
+                        ? playerController->animeJanaiPlanGeneration() : 0;
                     if (parser.isSet(naturalOption)) {
                         std::fprintf(stderr,
-                                     "[AnimeJanaiProbe] builtin slot menu starting id=%s\n",
+                                     "[AnimeJanaiProbe] builtin slot request starting id=%s\n",
                                      qPrintable(candidate.id));
                         const bool selectedBuiltin =
-                            chooseAnimeJanaiPreset(naturalDialog.data(), candidate.id);
+                            submitAnimeJanaiRequest(playerController, candidate.id);
                         std::fprintf(stderr,
-                                     "[AnimeJanaiProbe] builtin slot menu returned id=%s selected=%d\n",
+                                     "[AnimeJanaiProbe] builtin slot controller returned id=%s selected=%d\n",
                                      qPrintable(candidate.id), selectedBuiltin ? 1 : 0);
                         if (!selectedBuiltin) {
-                            naturalDialog->close();
+                            playerController->requestClose();
                             return 1;
                         }
                     } else {
-                        surface->setAnimeJanaiPlan(alternate);
+                        playerController->applyAnimeJanaiRequest(candidate.id);
                     }
                     const auto alternateRequestMatches = [&] {
-                        if (naturalDialog &&
-                            naturalDialog->animeJanaiPlanGeneration() <= priorAlternateGeneration)
+                        if (playerController &&
+                            playerController->animeJanaiPlanGeneration() <= priorAlternateGeneration)
                             return false;
                         const native::AnimeJanaiPlan live = surface->animeJanaiPlan();
                         return live.enabled && live.presetId == candidate.id &&
@@ -4382,18 +3784,18 @@ int main(int argc, char** argv) {
                             : "SKIP builtin slot switch: no other supported installed spatial preset is available\n");
                 }
                 if (parser.isSet(naturalOption)) {
-                    std::fprintf(stderr, "[AnimeJanaiProbe] post-effect checkpoint before Off selection\n");
-                    const bool selectedOff = chooseAnimeJanaiPreset(naturalDialog.data(), QString());
+                    std::fprintf(stderr, "[AnimeJanaiProbe] post-effect checkpoint before typed Off request\n");
+                    const bool selectedOff = submitAnimeJanaiRequest(playerController, QString());
                     std::fprintf(stderr,
-                                 "[AnimeJanaiProbe] post-effect checkpoint after Off selection selected=%d\n",
+                                 "[AnimeJanaiProbe] post-effect checkpoint after typed Off request selected=%d\n",
                                  selectedOff ? 1 : 0);
                     if (!selectedOff) {
-                        naturalDialog->close();
+                        playerController->requestClose();
                         return 1;
                     }
                 } else {
                     native::AnimeJanaiPlan off;
-                    surface->setAnimeJanaiPlan(off);
+                    playerController->applyAnimeJanaiRequest(QString());
                 }
                 const bool removed = waitUntil([&] {
                     const auto chain = surface->probeMpvProperty(QStringLiteral("vf"),
@@ -4504,7 +3906,7 @@ int main(int argc, char** argv) {
                      "owned activation (GetForegroundWindow is this dialog) to the first desktop "
                      "screen-crop sample whose brightness matches the pre-switch picture after a "
                      "verified occluding peer; composited pixels, not scanout",
-                     "QOpenGLWidget::frameSwapped after the same activation; swap completion, "
+                     "QQuickWindow::frameSwapped after the same activation; swap completion, "
                      "not physical present");
         if (focusBuild.unavailable) {
             std::fprintf(stderr, "FAIL [focus-build] unavailable: %s\n",
@@ -4569,37 +3971,34 @@ int main(int argc, char** argv) {
         if (!stoppedOnFailure) ++failures;
     }
 
-    if (naturalDialog && selection.kind == native::BundleKind::Standard) {
+    if (playerController && selection.kind == native::BundleKind::Standard) {
         for (const QString& failure : privateNativeFailures)
             std::fprintf(stderr, "[private-native processing failure] %s\n", qPrintable(failure));
         result(privateNativeFailures.isEmpty(),
-               "stale private-native settings caused no processing error during Standard-runtime menu playback");
+               "stale private-native settings caused no processing error during Standard-runtime Quick playback");
         if (!privateNativeFailures.isEmpty()) ++failures;
     }
 
-    surface->close();
-    surface->open(mediaSource);
-    const bool changedSource = waitUntil([&] { return surface->hasVideo(); }, 15000);
+    const uint64_t sourceEpochBeforeRetry = surface->sourceEpoch();
+    playerController->retryPlayback();
+    const bool changedSource = waitUntil([&] {
+        return surface->sourceEpoch() != sourceEpochBeforeRetry && surface->hasVideo();
+    }, 15000);
     result(changedSource, "source change reopened the same real media source without an external player or IPC");
     if (!changedSource) ++failures;
     result(!surface->animeJanaiProcessingObserved(),
            "a reopened Original source does not inherit the prior processing observation");
     if (surface->animeJanaiProcessingObserved()) ++failures;
-    if (naturalDialog) {
-        const bool acceptedClose = naturalDialog->close();
-        const bool hiddenAfterClose = naturalDialog.isNull() || !naturalDialog->isVisible();
-        const bool sourceStopped = naturalSurface.isNull() || !naturalSurface->hasVideo();
-        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-        QCoreApplication::processEvents();
-        const bool shutdownCompleted = naturalDialog.isNull() && naturalSurface.isNull();
-        result(acceptedClose && hiddenAfterClose && sourceStopped && shutdownCompleted,
-               "PlayerDialog accepted shutdown, stopped playback, and destroyed its embedded surface");
-        if (!acceptedClose || !hiddenAfterClose || !sourceStopped || !shutdownCompleted) ++failures;
-    } else {
-        surface->close();
-        result(!surface->hasVideo(), "explicit close stopped the embedded source");
-        window.close();
-    }
+    const bool acceptedClose = playerController->requestClose();
+    const bool hiddenAfterClose = !playerController->isWindowVisible();
+    const bool sourceStopped = !surface->hasVideo();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QCoreApplication::processEvents();
+    delete playerController;
+    const bool shutdownCompleted = controllerGuard.isNull() && playerWindow.isNull();
+    result(acceptedClose && hiddenAfterClose && sourceStopped && shutdownCompleted,
+           "PlayerController accepted shutdown, stopped playback, and destroyed its Quick window and session");
+    if (!acceptedClose || !hiddenAfterClose || !sourceStopped || !shutdownCompleted) ++failures;
     QCoreApplication::processEvents();
 
     if (parser.isSet(captureProcessedRawOption) && captureTripletFailures == 0 && !hasPreset) {

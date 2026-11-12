@@ -10,7 +10,7 @@
 #include "CompareRenderer.hpp"
 #include "PictureMetrics.hpp"
 #include "ShellTheme.hpp"
-#include "VideoSurface.hpp"
+#include "VideoSession.hpp"
 #include "native/components/AnimeJanaiCatalogWatcher.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
 #include "native/models/NativeSpatialAssets.hpp"
@@ -67,7 +67,7 @@
 namespace mplayer {
 namespace shell {
 
-using mplayer::VideoSurface;
+using mplayer::VideoSession;
 
 namespace {
 
@@ -318,9 +318,9 @@ struct PlaybackTimestampResult {
     std::optional<double> timestamp;
 };
 
-CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandidateId,
+CompareWindow::CompareWindow(VideoSession* session, const QString& currentCandidateId,
                              QWidget* parent, native::Backend ajiBackend)
-    : QDialog(parent), surface_(surface), currentCandidateId_(currentCandidateId),
+    : QDialog(parent), session_(session), currentCandidateId_(currentCandidateId),
       ajiBackend_(preferredInstalledBackend(ajiBackend)) {
     setWindowTitle(tr("Quality Comparison"));
     setModal(false);
@@ -331,8 +331,8 @@ CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandid
     // repaint its controls instead of waiting for the window to be reopened.
     connect(&accentNotifier(), &AccentNotifier::changed, this,
             [this] { setStyleSheet(windowStyleSheet()); });
-    if (surface_ != nullptr) {
-        const native::AnimeJanaiPlan activePlan = surface_->animeJanaiPlan();
+    if (session_ != nullptr) {
+        const native::AnimeJanaiPlan activePlan = session_->animeJanaiPlan();
         if (activePlan.enabled && !activePlan.presetId.isEmpty()) {
             const QVector<native::AnimeJanaiPreset> publicPresets = native::animeJanaiPresets();
             const auto active = std::find_if(
@@ -371,12 +371,12 @@ CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandid
             &CompareWindow::onCatalogChanged);
     catalogWatcher_->refresh();
     // Capture after mapping; position updates prevent accepting a late seek's old frame.
-    if (surface_ != nullptr) {
-        connect(surface_, &VideoSurface::playingChanged, this,
+    if (session_ != nullptr) {
+        connect(session_, &VideoSession::playingChanged, this,
                 &CompareWindow::onPlaybackStateChanged);
-        connect(surface_, &VideoSurface::sourceEpochChanged, this, [this](uint64_t epoch) {
+        connect(session_, &VideoSession::sourceEpochChanged, this, [this](uint64_t epoch) {
             QTimer::singleShot(0, this, [this, epoch] {
-                if (surface_ == nullptr || surface_->sourceEpoch() != epoch) {
+                if (session_ == nullptr || session_->sourceEpoch() != epoch) {
                     return;
                 }
                 if (playbackHoldActive_ && epoch != playbackHoldSourceEpoch_) {
@@ -386,20 +386,33 @@ CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandid
                 }
             });
         });
-        connect(surface_, &VideoSurface::positionChanged, this,
+        connect(session_, &VideoSession::positionChanged, this,
                 [this](double) { ++positionEpoch_; });
-        connect(surface_, &VideoSurface::seekRequested, this,
+        connect(session_, &VideoSession::seekRequested, this,
                 [this]() { ++seekEpoch_; });
         // Carries the queue depth and the end of a settling transition, so the
         // armed retry never freezes a stale epoch.
-        connect(surface_, &VideoSurface::nativePlaybackStatusChanged, this,
+        connect(session_, &VideoSession::nativePlaybackStatusChanged, this,
                 &CompareWindow::onNativeStatusSettled);
-        connect(surface_, &QObject::destroyed, this, [this] {
+        connect(session_, &QObject::destroyed, this, [this] {
+            frame_ = QImage();
+            isolatedOriginal_ = QImage();
+            renderedA_ = QImage();
+            renderedB_ = QImage();
+            renderedAId_.clear();
+            renderedBId_.clear();
+            frozenSourceEpoch_ = 0;
+            frozenPlaybackTimestamp_.reset();
+            captureError_ = tr("The playback surface was destroyed");
             playbackHoldActive_ = false;
             playbackHoldOriginalPlaying_ = false;
             playbackReleasePending_ = true;
             deferredPlanLockRelease_ = true;
-            if (!rendering_) {
+            if (isolatedRenderer_) isolatedRenderer_->stop();
+            if (rendering_) {
+                renderQueued_ = true;
+            } else {
+                render();
                 finishDeferredPlaybackHoldRelease();
             }
         });
@@ -431,7 +444,7 @@ void CompareWindow::showEvent(QShowEvent* event) {
         return;
     }
     // Reusing the window always captures the current position again.
-    if (surface_ != nullptr && surface_->hasVideo()) {
+    if (session_ != nullptr && session_->hasVideo()) {
         captureNow();
     }
 }
@@ -770,7 +783,7 @@ void CompareWindow::captureNow() {
     acquirePlaybackHold();
     maintainPlaybackHold();
     // Every capture path holds the plan lock, so no freeze is ever taken outside it.
-    if (surface_ != nullptr && !ensurePlanLock()) {
+    if (session_ != nullptr && !ensurePlanLock()) {
         frame_ = QImage();
         captureError_.clear();
         render();
@@ -797,19 +810,19 @@ bool CompareWindow::ensurePlanLock() {
     if (nativeLock_.has_value() && *nativeLock_) {
         return true;
     }
-    if (surface_ == nullptr) {
+    if (session_ == nullptr) {
         return true;
     }
     QString reasonKey;
     QString reason;
-    std::optional<VideoSurface::NativePlanLock> lock =
-        surface_->acquireNativePlanLock(&reasonKey, &reason);
+    std::optional<VideoSession::NativePlanLock> lock =
+        session_->acquireNativePlanLock(&reasonKey, &reason);
     if (lock.has_value()) {
         nativeLock_ = std::move(lock);
         // Fit for as long as the capture owns the picture: a Fill crop or a
         // Stretch distortion would make two panes of the same frame differ for
         // a reason the comparison is not about.
-        scaleFitLock_ = surface_->acquireVideoScaleFitLock();
+        scaleFitLock_ = session_->acquireVideoScaleFitLock();
         lockError_.clear();
         lockRetryArmed_ = false;
         return true;
@@ -839,14 +852,14 @@ void CompareWindow::releasePlanLock() {
 }
 
 void CompareWindow::onNativeStatusSettled() {
-    if (surface_ == nullptr) {
+    if (session_ == nullptr) {
         return;
     }
     updateInfo();
     if (!lockRetryArmed_) {
         return;
     }
-    const native::NativePlaybackController::Status& status = surface_->nativePlaybackStatus();
+    const native::NativePlaybackController::Status& status = session_->nativePlaybackStatus();
     const bool settled =
         status.pendingRequestId.isEmpty() &&
         status.state != native::NativePlaybackController::State::Admitting &&
@@ -1169,7 +1182,7 @@ void CompareWindow::rebuildCandidates() {
     const QVector<native::AnimeJanaiSlot> defaultProfiles =
         native::AnimeJanaiConfigStore::defaultProfiles(managerConfig);
     const native::AnimeJanaiSourceContext source =
-        surface_ != nullptr ? surface_->animeJanaiSourceContext()
+        session_ != nullptr ? session_->animeJanaiSourceContext()
                             : native::AnimeJanaiSourceContext{};
     const QVector<native::StoredSpatialAsset> storedSpatial = native::storedSpatialAssets();
     const QVector<native::UpscalerModel> upscalers = native::upscalerCatalog();
@@ -1467,7 +1480,7 @@ void CompareWindow::invalidateAjiCatalogueCache() {
 }
 
 void CompareWindow::acquirePlaybackHold() {
-    if (surface_ == nullptr) {
+    if (session_ == nullptr) {
         return;
     }
     if (playbackHoldActive_ && playbackHoldOwned()) {
@@ -1475,20 +1488,20 @@ void CompareWindow::acquirePlaybackHold() {
         return;
     }
     playbackHoldActive_ = false;
-    playbackHoldOriginalPlaying_ = surface_->isPlaying();
-    playbackHoldSourceEpoch_ = surface_->sourceEpoch();
-    const quint64 generationBeforePause = surface_->pauseRequestGeneration();
+    playbackHoldOriginalPlaying_ = session_->isPlaying();
+    playbackHoldSourceEpoch_ = session_->sourceEpoch();
+    const quint64 generationBeforePause = session_->pauseRequestGeneration();
     playbackHoldMutation_ = true;
     if (playbackHoldOriginalPlaying_) {
-        surface_->setPaused(true);
+        session_->setPaused(true);
     }
     playbackHoldMutation_ = false;
-    playbackHoldGeneration_ = surface_->pauseRequestGeneration();
+    playbackHoldGeneration_ = session_->pauseRequestGeneration();
     if (playbackHoldOriginalPlaying_ &&
         playbackHoldGeneration_ != generationBeforePause + 1) {
         playbackHoldOriginalPlaying_ = false;
     }
-    playbackHoldActive_ = surface_->sourceEpoch() == playbackHoldSourceEpoch_;
+    playbackHoldActive_ = session_->sourceEpoch() == playbackHoldSourceEpoch_;
     playbackReleasePending_ = false;
     playbackHoldFailed_ = false;
     playbackNeedsRecapture_ = false;
@@ -1497,9 +1510,9 @@ void CompareWindow::acquirePlaybackHold() {
 }
 
 bool CompareWindow::playbackHoldOwned() const {
-    return playbackHoldActive_ && surface_ != nullptr &&
-           surface_->sourceEpoch() == playbackHoldSourceEpoch_ &&
-           !surface_->isPlaying() && surface_->pauseObserved();
+    return playbackHoldActive_ && session_ != nullptr &&
+           session_->sourceEpoch() == playbackHoldSourceEpoch_ &&
+           !session_->isPlaying() && session_->pauseObserved();
 }
 
 void CompareWindow::requestPlaybackHoldRelease() {
@@ -1521,16 +1534,16 @@ void CompareWindow::finishDeferredPlaybackHoldRelease() {
         deferredPlanLockRelease_ = true;
         return;
     }
-    if (surface_ != nullptr && surface_->pauseRequestGeneration() != playbackHoldGeneration_) {
+    if (session_ != nullptr && session_->pauseRequestGeneration() != playbackHoldGeneration_) {
         // An explicit pause request arrived after Compare took its hold, so
         // closing Compare must preserve the newer pause rather than resuming.
         playbackHoldOriginalPlaying_ = false;
-        playbackHoldGeneration_ = surface_->pauseRequestGeneration();
+        playbackHoldGeneration_ = session_->pauseRequestGeneration();
     }
     if (playbackReleasePending_ && playbackHoldOwned() &&
         playbackHoldOriginalPlaying_ && !playbackHoldFailed_) {
         playbackHoldMutation_ = true;
-        surface_->setPaused(false);
+        session_->setPaused(false);
         playbackHoldMutation_ = false;
     }
     playbackHoldActive_ = false;
@@ -1556,24 +1569,24 @@ void CompareWindow::finishDeferredPlaybackHoldRelease() {
 }
 
 void CompareWindow::onPlaybackStateChanged(bool playing) {
-    if (!playbackHoldActive_ || playbackHoldMutation_ || surface_ == nullptr) {
+    if (!playbackHoldActive_ || playbackHoldMutation_ || session_ == nullptr) {
         return;
     }
-    if (surface_->sourceEpoch() != playbackHoldSourceEpoch_) {
+    if (session_->sourceEpoch() != playbackHoldSourceEpoch_) {
         invalidateFrozenPlayback(tr("The source changed during comparison."));
         return;
     }
     if (!playing) {
-        if (surface_->pauseRequestGeneration() != playbackHoldGeneration_) {
+        if (session_->pauseRequestGeneration() != playbackHoldGeneration_) {
             playbackHoldOriginalPlaying_ = false;
-            playbackHoldGeneration_ = surface_->pauseRequestGeneration();
+            playbackHoldGeneration_ = session_->pauseRequestGeneration();
         }
         if (playbackNeedsRecapture_) {
             QTimer::singleShot(0, this, [this] { tryRecaptureAfterPause(); });
         }
         return;
     }
-    if (surface_->pauseRequestGeneration() != playbackHoldGeneration_) {
+    if (session_->pauseRequestGeneration() != playbackHoldGeneration_) {
         invalidateFrozenPlayback(tr("Playback resumed during comparison."));
         return;
     }
@@ -1597,22 +1610,22 @@ void CompareWindow::onPlaybackStateChanged(bool playing) {
     canvas_->setSideImages(QImage(), QImage(), QImage());
     clearGridPanes();
     updateInfo();
-    surface_->reassertPaused();
+    session_->reassertPaused();
     maintainPlaybackHold();
     render();
 }
 
 void CompareWindow::maintainPlaybackHold() {
-    if (!playbackHoldActive_ || surface_ == nullptr) {
+    if (!playbackHoldActive_ || session_ == nullptr) {
         return;
     }
-    if (surface_->sourceEpoch() != playbackHoldSourceEpoch_) {
+    if (session_->sourceEpoch() != playbackHoldSourceEpoch_) {
         invalidateFrozenPlayback(tr("The source changed during comparison."));
         return;
     }
-    const quint64 requestGeneration = surface_->pauseRequestGeneration();
+    const quint64 requestGeneration = session_->pauseRequestGeneration();
     if (requestGeneration != playbackHoldGeneration_) {
-        if (surface_->pauseObserved() && !surface_->isPlaying()) {
+        if (session_->pauseObserved() && !session_->isPlaying()) {
             playbackHoldOriginalPlaying_ = false;
             playbackHoldGeneration_ = requestGeneration;
         } else {
@@ -1620,9 +1633,9 @@ void CompareWindow::maintainPlaybackHold() {
             return;
         }
     }
-    if (!surface_->pauseObserved() || surface_->isPlaying()) {
+    if (!session_->pauseObserved() || session_->isPlaying()) {
         if (playbackHoldRetryCount_ >= kMaxPauseReassertions) {
-            surface_->reassertPaused();
+            session_->reassertPaused();
             playbackHoldActive_ = false;
             playbackHoldOriginalPlaying_ = false;
             playbackNeedsRecapture_ = false;
@@ -1633,7 +1646,7 @@ void CompareWindow::maintainPlaybackHold() {
             return;
         }
         ++playbackHoldRetryCount_;
-        surface_->reassertPaused();
+        session_->reassertPaused();
         if (!playbackHoldRetryScheduled_) {
             playbackHoldRetryScheduled_ = true;
             QTimer::singleShot(kPollIntervalMs, this, [this] {
@@ -1704,8 +1717,8 @@ void CompareWindow::setAjiBackend(native::Backend backend) {
 
 void CompareWindow::setCurrentCandidateId(const QString& candidateId) {
     QString resolved = candidateId;
-    if (surface_ != nullptr) {
-        const native::AnimeJanaiPlan activePlan = surface_->animeJanaiPlan();
+    if (session_ != nullptr) {
+        const native::AnimeJanaiPlan activePlan = session_->animeJanaiPlan();
         if (activePlan.enabled && !activePlan.presetId.isEmpty()) {
             const QVector<native::AnimeJanaiPreset> publicPresets = native::animeJanaiPresets();
             const auto active = std::find_if(
@@ -1757,7 +1770,7 @@ QString CompareWindow::candidateError(const QString& id) const {
 
 QImage CompareWindow::grabSettledFrame() {
     QPointer<CompareWindow> self(this);
-    if (surface_ == nullptr) {
+    if (session_ == nullptr) {
         return QImage();
     }
     // Require both a quiet position pump and identical pixels after any seek.
@@ -1777,11 +1790,11 @@ QImage CompareWindow::grabSettledFrame() {
         // The event loop above can deliver a close that destroys the borrowed
         // surface; the QPointer turns that into a refusal here instead of a
         // read of freed memory.
-        if (surface_ == nullptr) {
+        if (session_ == nullptr) {
             return QImage();
         }
-        const QImage probe = surface_->grabVideoFramebuffer();
-        const double now = surface_->position();
+        const QImage probe = session_->grabVideoFramebuffer();
+        const double now = session_->position();
         if (positionEpoch_ != epoch) {
             epoch = positionEpoch_;
             quietEpochRounds = 0;
@@ -1813,7 +1826,7 @@ QImage CompareWindow::grabSettledFrame() {
 
 std::optional<double> CompareWindow::readPlaybackTimestamp() {
     QPointer<CompareWindow> self(this);
-    QPointer<VideoSurface> source = surface_;
+    QPointer<VideoSession> source = session_;
     if (source == nullptr) {
         return std::nullopt;
     }
@@ -1866,34 +1879,35 @@ void CompareWindow::captureFrame() {
     renderedAId_.clear();
     renderedBId_.clear();
     captureError_.clear();
-    if (surface_ == nullptr) {
+    if (session_ == nullptr) {
         captureError_ = tr("No playback surface");
         return;
     }
-    if (!surface_->hasVideo()) {
+    if (!session_->hasVideo() || session_->presenter() == nullptr ||
+        !session_->presenter()->hasRetainedPicture()) {
         captureError_ = tr("No video to compare");
         return;
     }
-    const uint64_t sourceEpoch = surface_->sourceEpoch();
+    const uint64_t sourceEpoch = session_->sourceEpoch();
     const quint64 captureGeneration = selectionGeneration_;
     const quint64 expectedSeekEpoch = seekEpoch_;
     for (int waited = 0; waited < kSettleTimeoutMs &&
-                         (!surface_->pauseObserved() || surface_->isPlaying());
+                         (!session_->pauseObserved() || session_->isPlaying());
          waited += kPollIntervalMs) {
         QCoreApplication::processEvents();
         if (self.isNull()) {
             return;
         }
-        if (surface_ == nullptr || surface_->sourceEpoch() != sourceEpoch ||
+        if (session_ == nullptr || session_->sourceEpoch() != sourceEpoch ||
             selectionGeneration_ != captureGeneration) {
             if (!self.isNull() && captureError_.isEmpty()) {
                 captureError_ = tr("Playback changed during frame capture");
             }
             return;
         }
-        const quint64 requestGeneration = surface_->pauseRequestGeneration();
+        const quint64 requestGeneration = session_->pauseRequestGeneration();
         if (requestGeneration != playbackHoldGeneration_ &&
-            surface_->pauseObserved() && !surface_->isPlaying()) {
+            session_->pauseObserved() && !session_->isPlaying()) {
             playbackHoldOriginalPlaying_ = false;
             playbackHoldGeneration_ = requestGeneration;
         }
@@ -1905,50 +1919,47 @@ void CompareWindow::captureFrame() {
         }
         return;
     }
-    std::optional<double> timestampBefore;
-    std::optional<double> playbackTimestamp;
-    QImage grabbed;
-    for (int attempt = 0; attempt < 3; ++attempt) {
-        timestampBefore = readPlaybackTimestamp();
-        if (self.isNull()) {
-            return;
-        }
-        if (!timestampBefore.has_value()) {
-            captureError_ = tr("Could not capture the playback timestamp");
-            return;
-        }
-        grabbed = grabSettledFrame();
-        if (self.isNull()) {
-            return;
-        }
-        if (grabbed.isNull() || surface_ == nullptr ||
-            surface_->sourceEpoch() != sourceEpoch) {
-            captureError_ = surface_ == nullptr || surface_->sourceEpoch() != sourceEpoch
-                                ? tr("The source changed during frame capture")
-                                : tr("Could not capture a new frame");
-            return;
-        }
-        playbackTimestamp = readPlaybackTimestamp();
-        if (self.isNull()) {
-            return;
-        }
-        if (playbackTimestamp.has_value() &&
-            std::abs(*playbackTimestamp - *timestampBefore) <= 1e-6) {
-            break;
-        }
+    const std::optional<double> timestampBefore = readPlaybackTimestamp();
+    if (self.isNull()) {
+        return;
+    }
+    if (!timestampBefore.has_value()) {
+        captureError_ = tr("Could not capture the playback timestamp");
+        return;
+    }
+    const QImage grabbed = grabSettledFrame();
+    if (self.isNull()) {
+        return;
+    }
+    if (grabbed.isNull() || session_ == nullptr ||
+        session_->sourceEpoch() != sourceEpoch) {
+        captureError_ = session_ == nullptr || session_->sourceEpoch() != sourceEpoch
+                            ? tr("The source changed during frame capture")
+                            : tr("Could not capture a new frame");
+        return;
+    }
+    const std::optional<double> playbackTimestamp = readPlaybackTimestamp();
+    if (self.isNull()) {
+        return;
+    }
+    if (!playbackTimestamp.has_value()) {
+        captureError_ = tr("Could not capture the playback timestamp");
+        return;
     }
     if (seekEpoch_ != expectedSeekEpoch) {
         captureError_ = tr("Playback changed during frame capture");
         return;
     }
-    if (!playbackTimestamp.has_value() || !playbackHoldOwned() ||
-        std::abs(*playbackTimestamp - *timestampBefore) > 1e-6 || surface_ == nullptr ||
-        surface_->sourceEpoch() != sourceEpoch) {
-        captureError_ = surface_ == nullptr || surface_->sourceEpoch() != sourceEpoch
-                            ? tr("The source changed during frame capture")
-                            : (!playbackTimestamp.has_value()
-                                   ? tr("Could not capture the playback timestamp")
-                                   : tr("The playback timestamp changed while capturing the frame"));
+    if (session_ == nullptr || session_->sourceEpoch() != sourceEpoch) {
+        captureError_ = tr("The source changed during frame capture");
+        return;
+    }
+    if (!playbackHoldOwned()) {
+        captureError_ = tr("Playback changed during frame capture");
+        return;
+    }
+    if (std::abs(*playbackTimestamp - *timestampBefore) > 1e-6) {
+        captureError_ = tr("The playback timestamp changed while capturing the frame");
         return;
     }
     frame_ = grabbed;
@@ -1965,8 +1976,8 @@ QImage CompareWindow::renderIsolated(const QString& id) {
     const auto cancelled = [self, generation] {
         return self == nullptr || !self->isVisible() ||
                generation != self->selectionGeneration_ ||
-               !self->playbackHoldOwned() || self->surface_ == nullptr ||
-               self->surface_->sourceEpoch() != self->frozenSourceEpoch_;
+               !self->playbackHoldOwned() || self->session_ == nullptr ||
+               self->session_->sourceEpoch() != self->frozenSourceEpoch_;
     };
     const auto progress = [self](const QString& detail) {
         if (self == nullptr || self->buildOperationActive_) return;
@@ -1987,19 +1998,19 @@ QImage CompareWindow::renderIsolated(const QString& id) {
         // on the path that already works.
         const QPointer<CompareWindow> lazySelf(this);
         const std::function<QImage()> fallbackProvider = [lazySelf] {
-            if (lazySelf == nullptr || lazySelf->surface_ == nullptr ||
-                !lazySelf->surface_->hasVideo()) {
+            if (lazySelf == nullptr || lazySelf->session_ == nullptr ||
+                !lazySelf->session_->hasVideo()) {
                 return QImage();
             }
             QString reason;
-            const QImage frame = lazySelf->surface_->grabUnfilteredFrame(&reason);
+            const QImage frame = lazySelf->session_->grabUnfilteredFrame(&reason);
             if (frame.isNull() && !reason.isEmpty()) {
                 qWarning("CompareWindow: the unfiltered source frame is unavailable: %s",
                          qPrintable(reason));
             }
             return frame;
         };
-        const bool captured = renderer->capture(surface_->sourceUrl(), *frozenPlaybackTimestamp_,
+        const bool captured = renderer->capture(session_->sourceUrl(), *frozenPlaybackTimestamp_,
                                                 frame_.size(), cancelled, progress,
                                                 fallbackProvider);
         if (self == nullptr) return {};
@@ -2030,7 +2041,7 @@ QImage CompareWindow::renderIsolated(const QString& id) {
         pendingAjiId_ = id;
         pendingAjiPreparation_ = true;
         updateInfo();
-        const native::AnimeJanaiSourceContext source = surface_->animeJanaiSourceContext();
+        const native::AnimeJanaiSourceContext source = session_->animeJanaiSourceContext();
         QThreadPool::globalInstance()->start(QRunnable::create([task, id, backend, source] {
             const native::Anime4KShaderProgramResolver shaderResolver =
                 [](const QString& presetId, QString* reason) {
@@ -2218,10 +2229,10 @@ void CompareWindow::render() {
 
 void CompareWindow::renderOnce() {
     QPointer<CompareWindow> self(this);
-    if (!frame_.isNull() && surface_ == nullptr) {
+    if (!frame_.isNull() && session_ == nullptr) {
         frame_ = QImage();
         captureError_ = tr("The playback surface was destroyed");
-    } else if (!frame_.isNull() && surface_->sourceEpoch() != frozenSourceEpoch_) {
+    } else if (!frame_.isNull() && session_->sourceEpoch() != frozenSourceEpoch_) {
         frame_ = QImage();
         captureError_ = tr("The source changed after the frame was captured");
     }
@@ -2262,11 +2273,11 @@ void CompareWindow::renderOnce() {
     if (self.isNull()) {
         return;
     }
-    if (surface_ == nullptr || surface_->sourceEpoch() != frozenSourceEpoch_) {
+    if (session_ == nullptr || session_->sourceEpoch() != frozenSourceEpoch_) {
         frame_ = QImage();
         renderedA_ = QImage();
         renderedB_ = QImage();
-        captureError_ = surface_ == nullptr ? tr("The playback surface was destroyed")
+        captureError_ = session_ == nullptr ? tr("The playback surface was destroyed")
                                             : tr("The source changed during comparison rendering");
         canvas_->clear(captureError_);
         canvas_->setSideImages(QImage(), QImage(), QImage());

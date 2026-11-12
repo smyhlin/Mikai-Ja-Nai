@@ -32,7 +32,6 @@
 #include "TestDiagnostics.hpp"
 #include "TestApiClient.hpp"
 #include "TestFeedRender.hpp"
-#include "TestChromeCache.hpp"
 #include "TestRunner.hpp"
 #include "TestStreams.hpp"
 #include "TestMpvAsync.hpp"
@@ -68,6 +67,8 @@
 #include "TestPacingContract.hpp"
 #include "TestVideoScaling.hpp"
 #include "TestHoverPreview.hpp"
+#include "TestQuickMenuModel.hpp"
+#include "TestQuickIconProvider.hpp"
 #include "TestNativeTypes.hpp"
 #include "TestRuntimeSelection.hpp"
 #include "native/bundle/NativePaths.hpp"
@@ -87,6 +88,9 @@
 #include <QtCore/QStringList>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QTemporaryFile>
+#include <QtQuick/QSGRendererInterface>
+#include <QtQuickControls2/QQuickStyle>
+#include <QtQuick/QQuickWindow>
 #include <QtTest/QTest>
 #include <QtWidgets/QApplication>
 
@@ -113,6 +117,7 @@ constexpr const char* kSuites[] = {
     "TestPlaybackDiagnostics", "TestPlaybackControls", "TestSkipSegments", "TestTimelineMarks",
     "TestMediaInformation",
     "TestHdrRenderContracts", "TestPacingContract", "TestVideoScaling", "TestHoverPreview",
+    "TestQuickMenuModel", "TestQuickIconProvider",
     "TestNativePrefs",
     "TestNativeMenu", "TestNativeUserRecipes", "TestNativeAssets", "TestMpvAsync", "TestCompareGif",
     "TestCompareClip", "TestClipExport", "TestCompareLoading", "TestComparePipeline",
@@ -125,7 +130,7 @@ constexpr const char* kSuites[] = {
     "TestThemeRoles",
     "TestStreams", "TestPagers",
     "TestQualityCache", "TestRateLimiter", "TestWatchHistory", "TestDownloads", "TestDiagnostics",
-    "TestApiClient", "TestFeedRender", "TestChromeCache", "TestUpdateFeed", "TestPublicApiUi",
+    "TestApiClient", "TestFeedRender", "TestUpdateFeed", "TestPublicApiUi",
     "TestRunner",
     "TestLayering", "TestWindowRaise", "TestSystemIntegration", "TestCrashLog", "TestClipboard", "TestLiveOracle",
 #ifdef Q_OS_WIN
@@ -226,6 +231,10 @@ int main(int argc, char** argv) {
   if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
   }
+  // Every Quick window in this process draws through desktop OpenGL; it has to
+  // be chosen before the application exists, as Qt refuses it afterwards.
+  QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+  QQuickStyle::setStyle(QStringLiteral("Basic"));
   QApplication app(argc, argv);
   // Application names, settings paths and cwd do not change nativeRoot().
   // Refuse before constructing any suite or creating/writing any fixture.
@@ -279,6 +288,8 @@ int main(int argc, char** argv) {
   TestPacingContract pacingContract;
   TestVideoScaling videoScaling;
   TestHoverPreview hoverPreview;
+  TestQuickMenuModel quickMenuModel;
+  TestQuickIconProvider quickIconProvider;
   TestNativePrefs nativePrefs;
   TestNativeMenu nativeMenu;
   TestNativeUserRecipes nativeUserRecipes;
@@ -301,7 +312,6 @@ int main(int argc, char** argv) {
   TestI18n i18n;
   TestThemeIcons themeIcons;
   TestThemeRoles themeRoles;
-  TestChromeCache chromeCache;
   TestStreams streams;
   TestPagers pagers;
   TestQualityCache qualityCache;
@@ -345,9 +355,32 @@ int main(int argc, char** argv) {
   int failures = 0;
   // `admitted` carries a suite's own gate: false means the suite is about to
   // skip itself, and the verdict has to say so rather than claim a pass.
-  QSet<QString> executed;
+  QSet<QString> registered;
+  QSet<QString> dispatched;
+  for (const char* suite : kSuites) {
+    const QString name = QString::fromLatin1(suite);
+    if (registered.contains(name)) {
+      std::fprintf(stderr, "[mikai_tests] %s: duplicate suite registration\n", suite);
+      failures |= 1;
+    } else {
+      registered.insert(name);
+    }
+  }
+  const auto recordDispatch = [&](const char* name) {
+    const QString suite = QString::fromLatin1(name);
+    if (!registered.contains(suite)) {
+      std::fprintf(stderr, "[mikai_tests] %s: dispatched but not registered\n", name);
+      failures |= 1;
+    }
+    if (dispatched.contains(suite)) {
+      std::fprintf(stderr, "[mikai_tests] %s: dispatched more than once\n", name);
+      failures |= 1;
+    } else {
+      dispatched.insert(suite);
+    }
+  };
   const auto run = [&](const char* name, QObject* suite, bool admitted) {
-    executed.insert(QString::fromLatin1(name));
+    recordDispatch(name);
     if (!filtered || selected == QString::fromLatin1(name)) {
       failures |= runOne(name, suite, qtestArgs, admitted);
     }
@@ -369,7 +402,7 @@ int main(int argc, char** argv) {
   // silently: a pass is indistinguishable from a suite that never executed, which
   // is what hid TestFeedRender's results.
   const auto runWrapper = [&](const char* name, int (*wrapper)(int, char**)) {
-    executed.insert(QString::fromLatin1(name));
+    recordDispatch(name);
     if (!filtered || selected == QString::fromLatin1(name)) {
       const int rc = wrapper(static_cast<int>(qtestArgs.size()), wrapperArgv.data());
       failures |= rc;
@@ -404,6 +437,8 @@ int main(int argc, char** argv) {
   run("TestPacingContract", &pacingContract, true);
   run("TestVideoScaling", &videoScaling, true);
   run("TestHoverPreview", &hoverPreview, true);
+  run("TestQuickMenuModel", &quickMenuModel, true);
+  run("TestQuickIconProvider", &quickIconProvider, true);
   run("TestNativePrefs", &nativePrefs, true);
   run("TestNativeMenu", &nativeMenu, true);
   run("TestNativeUserRecipes", &nativeUserRecipes, true);
@@ -438,7 +473,6 @@ int main(int argc, char** argv) {
   run("TestI18n", &i18n, true);
   run("TestThemeIcons", &themeIcons, true);
   run("TestThemeRoles", &themeRoles, true);
-  run("TestChromeCache", &chromeCache, true);
   run("TestStreams", &streams, true);
   run("TestPagers", &pagers, true);
   run("TestQualityCache", &qualityCache, true);
@@ -455,17 +489,15 @@ int main(int argc, char** argv) {
   // quota, and a hermetic run must not be recorded as having exercised either.
   run("TestLiveOracle", &liveOracle, liveOracleAdmitted());
 
-  // Every name the filter knows must have been handed a suite. A name in
-  // `kSuites` with no `run()` call is invisible - it is stripped from QTest's
-  // arguments and then never executed - which is how a whole suite can stop
-  // running without a single failing line. Reported as a failure rather than a
-  // warning, because a suite nobody runs is a suite nobody can trust.
-  if (!filtered) {
-    for (const char* suite : kSuites) {
-      if (executed.contains(QString::fromLatin1(suite))) continue;
-      std::fprintf(stderr, "[mikai_tests] %s: registered but never executed\n", suite);
-      failures |= 1;
-    }
+  // Every registered suite must have exactly one dispatch entry, and every
+  // dispatch entry must be registered. Check on filtered runs too: dispatches
+  // are recorded before the selected suite is invoked, so suite-only ctest
+  // entries still continuously validate the whole executable registry.
+  for (const QString& suite : registered) {
+    if (dispatched.contains(suite)) continue;
+    std::fprintf(stderr, "[mikai_tests] %s: registered but never dispatched\n",
+                 qPrintable(suite));
+    failures |= 1;
   }
   return failures;
 }

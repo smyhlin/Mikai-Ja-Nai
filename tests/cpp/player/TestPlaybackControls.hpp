@@ -1,10 +1,5 @@
-// Pointer and keyboard control of the shell sliders, the PiP float and the
-// main player window.
-//
-// The slider cases need a real QWidget receiving a real mouse event. The native
-// cases need a real mpv core, because they cover steps that must be resolved by
-// the core rather than by a position the UI sampled a pump interval ago. They
-// select a runtime only from MIKAI_MPV_MODULE and skip without one.
+// Consumer-visible transport and source-transition regressions for the native
+// Qt Quick player. Runtime cases use the explicitly selected real libmpv module.
 
 #pragma once
 
@@ -17,41 +12,21 @@ class TestPlaybackControls : public QObject {
 private slots:
     void initTestCase();
 
-    void finalValueFollowsTheReleasePosition_data();
-    void finalValueFollowsTheReleasePosition();
-
-    void anUnrelatedButtonReleaseKeepsTheLeftDragAlive_data();
-    void anUnrelatedButtonReleaseKeepsTheLeftDragAlive();
-
-    void aLostReleaseEndsTheDragWithoutCommittingTheHover_data();
-    void aLostReleaseEndsTheDragWithoutCommittingTheHover();
-
-    void volumeWheelAdjustsTheTrackAndSpeaker();
-    void volumeWheelFollowsPlaybackIntoPip();
-    void aNewPlayerStartsAtTheShownVolume();
-    void closingSubtitleSearchBeforeItsReplyKeepsThePlayerUsable();
-    void aPipKeepsItsVolumeAndMuteBeforeOpening();
-
-    void aPiPArrowStepIsResolvedByTheCoreWhenThePumpIsSuspended_data();
-    void aPiPArrowStepIsResolvedByTheCoreWhenThePumpIsSuspended();
-
-    void aSkipForwardAtTheEndDoesNotRestartTheSource();
-
-    // P0-08: EOF on a playlist episode emits episodePlaybackFinished once
-    // (dedupe) and the dialog itself never steps - advancing is the host's job.
-    void anEofEmitsFinishedOnceAndDoesNotStepItself();
-
-    // P1-01(a): the async unfiltered capture returns without blocking the GUI
-    // thread and the frame arrives through the completion callback.
-    void anUnfilteredCaptureReturnsAtOnceAndArrivesByCallback();
-
-    void aPlayerDialogArrowStepIgnoresALateStaleProgressReport_data();
-    void aPlayerDialogArrowStepIgnoresALateStaleProgressReport();
+    void transportActionsUpdateTypedControllerAndSessionState();
+    void nestedEnhancementMenuActivatesTheSelectedPreset();
+    void keyboardStepsAreResolvedByTheSessionCore();
+    void enginePauseHoldRetainsExplicitPauseIntent();
+    void compactPipKeepsTheSameWindowAndSession();
+    void quickTimelinePointerSeeksAndTimeLabelsFormat();
+    void variantTransitionPreservesPositionPauseRateAndFirstReport();
+    void episodeRestartRetainsExplicitPauseIntent();
+    void refreshedStreamStartsAtBeginningWithoutResuming();
+    void skipForwardUsesEightyFiveSecondsWhenReachable();
+    void skipAtEndDoesNotRestartTheSource();
+    void eofEmitsFinishedOnceWithoutSteppingTheHost();
+    void asynchronousUnfilteredCaptureUsesTheSessionCallback();
 
 private:
-    // True when a runtime is selected. Without a module it skips; a selection
-    // that failed in initTestCase fails here with the loader's own reason.
     bool requireRuntime();
-
     QString selectionError_;
 };

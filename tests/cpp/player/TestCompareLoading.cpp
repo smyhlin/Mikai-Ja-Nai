@@ -1,130 +1,126 @@
 #include "TestCompareLoading.hpp"
 
-#include <player/compare/CompareCanvas.hpp>
-#include <player/compare/ComparePane.hpp>
-#include <player/shell/PlayerShell.hpp>
-#include <player/shell/ShellTheme.hpp>
-#include <player/shell/ShellWidgets.hpp>
+#include <player/core/VideoSession.hpp>
+#include <player/quick/PlayerController.hpp>
+#include <player/quick/PlayerWindow.hpp>
 
-#include <QCoreApplication>
-#include <QImage>
-#include <QPainter>
-#include <QToolButton>
-#include <QWidget>
+#include <QFileInfo>
+#include <QSignalSpy>
+#include <QStringList>
 
-namespace {
+void TestCompareLoading::openingIndicatorEndsOnPresentedFrame() {
+    const QString media =
+        QFileInfo(QStringLiteral("resources/benchmarks/1920x1080.mp4")).absoluteFilePath();
+    QVERIFY2(QFileInfo(media).isFile(), qPrintable(media));
 
-QImage renderCenterGlyph(mplayer::shell::CenterGlyph& center) {
-    QImage image(center.size(), QImage::Format_ARGB32_Premultiplied);
-    image.fill(Qt::transparent);
-    QPainter painter(&image);
-    center.paintChrome(painter);
-    return image;
+    mplayer::quick::PlayerController controller(QStringLiteral("Loading test"), media);
+    auto* window = controller.window();
+    QVERIFY(window != nullptr);
+
+    QSignalSpy presented(window, &mplayer::quick::PlayerWindow::framePresented);
+    QSignalSpy loadingChanged(&controller, &mplayer::quick::PlayerController::openingChanged);
+    QStringList eventOrder;
+    connect(&controller, &mplayer::quick::PlayerController::openingChanged, &controller,
+            [&] {
+                if (controller.openingLoading()) eventOrder.append(QStringLiteral("opening"));
+            });
+    connect(window, &mplayer::quick::PlayerWindow::framePresented, &controller,
+            [&] { eventOrder.append(QStringLiteral("frame")); });
+    window->showWindowed();
+    controller.startPlayer();
+
+    QVERIFY(controller.openingLoading());
+    QCOMPARE(controller.openingHeadline(), QStringLiteral("Opening stream…"));
+    QTRY_VERIFY_WITH_TIMEOUT(!presented.isEmpty(), 15000);
+    QTRY_VERIFY_WITH_TIMEOUT(!controller.openingLoading(), 1000);
+    QVERIFY(loadingChanged.size() >= 2);
+    QCOMPARE(controller.session()->sourceUrl(), media);
+    QVERIFY(controller.session()->hasVideo());
+    QVERIFY(eventOrder.indexOf(QStringLiteral("opening")) >= 0);
+    QVERIFY(eventOrder.indexOf(QStringLiteral("frame")) >
+            eventOrder.indexOf(QStringLiteral("opening")));
+}
+void TestCompareLoading::openingIndicatorTracksSourceReplacement() {
+    const QString first =
+        QFileInfo(QStringLiteral("resources/benchmarks/1920x1080.mp4")).absoluteFilePath();
+    const QString replacement =
+        QFileInfo(QStringLiteral("resources/benchmarks/1280x720.mp4")).absoluteFilePath();
+    QVERIFY(QFileInfo(first).isFile());
+    QVERIFY(QFileInfo(replacement).isFile());
+
+    mplayer::quick::PlayerController controller(QStringLiteral("Loading test"), first);
+    auto* window = controller.window();
+    QVERIFY(window != nullptr);
+    QSignalSpy presented(window, &mplayer::quick::PlayerWindow::framePresented);
+    QSignalSpy loadingChanged(&controller, &mplayer::quick::PlayerController::openingChanged);
+    window->showWindowed();
+    controller.startPlayer();
+    QTRY_VERIFY_WITH_TIMEOUT(!presented.isEmpty(), 15000);
+    QTRY_VERIFY_WITH_TIMEOUT(!controller.openingLoading(), 1000);
+
+    presented.clear();
+    loadingChanged.clear();
+    const uint64_t previousEpoch = controller.session()->sourceEpoch();
+    QVERIFY(controller.session()->open(replacement));
+    QTRY_VERIFY_WITH_TIMEOUT(controller.session()->sourceEpoch() != previousEpoch, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(!presented.isEmpty(), 15000);
+    QTRY_VERIFY_WITH_TIMEOUT(!controller.openingLoading(), 1000);
+    QVERIFY(loadingChanged.size() >= 2);
 }
 
-}  // namespace
+void TestCompareLoading::durationPositionAndPlayingFanOut() {
+    const QString media =
+        QFileInfo(QStringLiteral("resources/benchmarks/1920x1080.mp4")).absoluteFilePath();
+    QVERIFY(QFileInfo(media).isFile());
 
-void TestCompareLoading::centeredIndicatorRendersAndIsAccessible() {
-    mplayer::shell::PlayerShell player;
-    player.resize(900, 560);
-    player.setMedia(QStringLiteral("comparison-loading-test.mkv"));
-    player.setPlaying(false);
-    player.show();
-    QCoreApplication::processEvents();
+    mplayer::quick::PlayerController controller(QStringLiteral("Loading test"), media);
+    auto* window = controller.window();
+    QVERIFY(window != nullptr);
+    QSignalSpy durationChanged(&controller, &mplayer::quick::PlayerController::durationChanged);
+    QSignalSpy positionChanged(&controller, &mplayer::quick::PlayerController::positionChanged);
+    QSignalSpy playingChanged(&controller, &mplayer::quick::PlayerController::playingChanged);
+    window->showWindowed();
+    controller.startPlayer();
 
-    auto* center = player.findChild<mplayer::shell::CenterGlyph*>();
-    QVERIFY(center != nullptr);
-    QVERIFY(center->isVisible());
-    const QImage pausedGlyph = renderCenterGlyph(*center);
-
-    player.setCompareLoading(true);
-    QVERIFY(center->isVisible());
-    QVERIFY(center->testAttribute(Qt::WA_TransparentForMouseEvents));
-    QVERIFY(!center->accessibleName().isEmpty());
-    QTRY_VERIFY_WITH_TIMEOUT(renderCenterGlyph(*center) != pausedGlyph, 1000);
-
-    player.setPlaying(false);
-    player.setCompareLoading(false);
-    QVERIFY(center->isVisible());
-    QVERIFY(center->accessibleName().isEmpty());
-    QVERIFY(renderCenterGlyph(*center) == pausedGlyph);
+    QTRY_VERIFY_WITH_TIMEOUT(controller.duration() > 0.0, 15000);
+    QTRY_VERIFY_WITH_TIMEOUT(controller.position() > 0.0, 15000);
+    QTRY_VERIFY_WITH_TIMEOUT(controller.playing(), 15000);
+    QVERIFY(durationChanged.size() >= 1);
+    QVERIFY(positionChanged.size() >= 1);
+    QVERIFY(playingChanged.size() >= 1);
+    QCOMPARE(controller.duration(), controller.session()->duration());
+    QVERIFY(qAbs(controller.position() - controller.session()->position()) < 0.5);
+    QCOMPARE(controller.playing(), controller.session()->isPlaying());
 }
 
-void TestCompareLoading::loadingSurvivesHudPlaybackAndMediaChangesThenRestoresLatestGlyph() {
-    mplayer::shell::PlayerShell player;
-    player.resize(900, 560);
-    player.setMedia(QStringLiteral("comparison-loading-test.mkv"));
-    player.setPlaying(false);
-    player.show();
-    QCoreApplication::processEvents();
+void TestCompareLoading::failedOpenIsNamedOnceAndRecovered() {
+    const QString missing =
+        QFileInfo(QStringLiteral("resources/benchmarks/missing-loading-test.mp4"))
+            .absoluteFilePath();
+    const QString valid =
+        QFileInfo(QStringLiteral("resources/benchmarks/1920x1080.mp4")).absoluteFilePath();
+    mplayer::quick::PlayerController controller(QStringLiteral("Loading test"), missing);
+    auto* window = controller.window();
+    QVERIFY(window != nullptr);
+    QSignalSpy alerts(&controller, &mplayer::quick::PlayerController::alertRequested);
+    QSignalSpy presented(window, &mplayer::quick::PlayerWindow::framePresented);
+    QSignalSpy loaded(controller.session(), &mplayer::VideoSession::mediaLoaded);
+    window->showWindowed();
+    controller.startPlayer();
 
-    auto* center = player.findChild<mplayer::shell::CenterGlyph*>();
-    QVERIFY(center != nullptr);
-    const QImage pausedGlyph = renderCenterGlyph(*center);
-    player.setCompareLoading(true);
-    QTRY_VERIFY_WITH_TIMEOUT(renderCenterGlyph(*center) != pausedGlyph, 1000);
-    const QImage initialSpinner = renderCenterGlyph(*center);
+    QTRY_VERIFY_WITH_TIMEOUT(controller.errorActive(), 15000);
+    QTRY_VERIFY_WITH_TIMEOUT(!controller.openingLoading(), 1000);
+    QCOMPARE(alerts.size(), 1);
+    QVERIFY(controller.retryVisible());
+    QVERIFY(!controller.statusText().isEmpty());
 
-    player.setPlaying(true);
-    QVERIFY(center->isVisible());
-    player.setMedia(QStringLiteral("replacement-loading-test.mkv"));
-    QVERIFY(center->isVisible());
-    QTRY_VERIFY_WITH_TIMEOUT(renderCenterGlyph(*center) != initialSpinner, 1000);
-
-    player.enterFullscreen();
-    QTRY_VERIFY_WITH_TIMEOUT(
-        player.state() == mplayer::shell::PlayerShell::State::FullscreenAutoHidden,
-        mplayer::shell::kAutohideMs + 500);
-    QVERIFY(center->isVisible());
-    const QImage hiddenHudSpinner = renderCenterGlyph(*center);
-    QTRY_VERIFY_WITH_TIMEOUT(renderCenterGlyph(*center) != hiddenHudSpinner, 1000);
-
-    player.setCompareLoading(false);
-    QVERIFY(!center->isVisible());
-    player.setPlaying(false);
-    QVERIFY(!center->isVisible());
-    player.wake();
-    QVERIFY(center->isVisible());
-}
-
-void TestCompareLoading::selectorLabelRefitsAfterBadgeResize() {
-    mplayer::shell::ComparePane pane;
-    pane.resize(70, 160);
-    pane.setContent(QStringLiteral("test"), QImage(1, 1, QImage::Format_ARGB32), QStringLiteral("Short"));
-    pane.show();
-    QCoreApplication::processEvents();
-
-    auto* badge = pane.findChild<QToolButton*>();
-    QVERIFY(badge != nullptr);
-    const QString fullLabel = QStringLiteral("A · Short  ▾");
-    QVERIFY(badge->width() <= pane.width());
-    QVERIFY(badge->fontMetrics().horizontalAdvance(badge->text()) <= badge->width());
-    QVERIFY(badge->text() != fullLabel);
-
-    pane.resize(500, 160);
-    QCoreApplication::processEvents();
-
-    QVERIFY(badge->width() > 70);
-    QCOMPARE(badge->text(), fullLabel);
-}
-
-void TestCompareLoading::unshownCanvasBadgeKeepsFullName() {
-    // X-M23: names set before the canvas is shown or laid out used to elide
-    // against Qt's default 100 px unshown width ("B · A (…  ▾"). The full
-    // name must survive until the row has its real slot, and still be there
-    // once the canvas is shown at full width.
-    mplayer::shell::CompareCanvas canvas;
-    canvas.setSideNames(QStringLiteral("Original"), QStringLiteral("A (Fast)"));
-    QCoreApplication::processEvents();
-
-    auto* badgeB = canvas.findChild<QToolButton*>(QStringLiteral("compareBadgeB"));
-    QVERIFY(badgeB != nullptr);
-    QVERIFY(badgeB->text().contains(QStringLiteral("Fast")));
-
-    canvas.resize(900, 560);
-    canvas.setSideImages(QImage(64, 64, QImage::Format_ARGB32),
-                         QImage(64, 64, QImage::Format_ARGB32), QImage());
-    canvas.show();
-    QCoreApplication::processEvents();
-    QVERIFY(badgeB->text().contains(QStringLiteral("Fast")));
+    presented.clear();
+    QVERIFY(controller.session()->open(valid));
+    QTRY_VERIFY_WITH_TIMEOUT(!presented.isEmpty(), 15000);
+    QTRY_VERIFY_WITH_TIMEOUT(!controller.errorActive(), 1000);
+    QVERIFY(!controller.retryVisible());
+    QCOMPARE(alerts.size(), 1);
+    QCOMPARE(loaded.size(), 1);
+    QCOMPARE(controller.session()->sourceUrl(), valid);
+    QVERIFY(controller.session()->hasVideo());
 }

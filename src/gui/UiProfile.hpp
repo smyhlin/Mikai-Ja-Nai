@@ -92,52 +92,14 @@ inline std::atomic<quint64> g_chromeDirtyApplied{0};
 inline std::atomic<quint64> g_setMaskApplications{0};
 inline std::atomic<quint64> g_layoutGeometryWrites{0};
 inline std::atomic<quint64> g_threadInputAttaches{0};
-inline std::atomic<quint64> g_chromePaintCalls{0};
-inline std::atomic<quint64> g_chromePaintEntries{0};
-/// Controls served from the cached raster layer instead of being rasterised
-/// again. The difference between the entry count and this one is the work a
-/// painted video frame still pays for chrome.
-inline std::atomic<quint64> g_chromePaintCached{0};
-inline std::atomic<qint64> g_chromePaintLastMicros{-1};
-inline std::atomic<quint64> g_chromePaintMicrosTotal{0};
-inline std::atomic<qint64> g_chromePaintMicrosMax{-1};
 inline std::atomic<qint64> g_lastActivationToPaintMs{-1};
 /// GOAL-E counters. Each answers one criterion that would otherwise be a claim:
-/// the render-target probe budget across a resize storm, the chrome raster
-/// cache's renders and held bytes, the stacking poll's stops while another
-/// application is foreground, aborted raise retries, teardown pictures kept,
-/// the player background's rebuilds, and how many widgets one TitlePage
-/// repolish pass touched.
+/// the render-target probe budget across a resize storm, the stacking poll's
+/// stops while another application is foreground, aborted raise retries,
+/// teardown pictures kept, the player background's rebuilds, and how many
+/// widgets one TitlePage repolish pass touched.
 inline std::atomic<quint64> g_renderTargetProbes{0};
 inline std::atomic<quint64> g_renderTargetFormatResets{0};
-inline std::atomic<quint64> g_chromeCacheRenders{0};
-/// Where the chrome pass spends its time, and why a control was rasterised again.
-/// A cache meant to replace rasterisation has to prove which half of the cost it
-/// moved: blitting a cached pixmap and rasterising a control are different
-/// symptoms, and a miss has a reason.
-inline std::atomic<quint64> g_chromeBlitMicros{0};
-inline std::atomic<quint64> g_chromeRasterMicros{0};
-inline std::atomic<quint64> g_chromeCacheMissDirty{0};
-inline std::atomic<quint64> g_chromeCacheMissGeometry{0};
-inline std::atomic<quint64> g_chromeCacheMissRatio{0};
-inline std::atomic<quint64> g_chromeCacheMissGeneration{0};
-inline std::atomic<quint64> g_chromeCacheMissBudget{0};
-/// A paintGL pass is one number in the paint-pass ring, but it is three different
-/// costs: mpv's render into the target, the held-picture or teardown-picture
-/// blit, and the chrome overlay. Blaming one of them for a class p95 without
-/// splitting them is how a cache gets accused of a copy. Phases are
-/// kPaintPhaseEngine, kPaintPhaseRetention, kPaintPhaseOverlay.
-inline std::atomic<quint64> g_paintPhaseEngineMicros{0};
-inline std::atomic<quint64> g_paintPhaseRetentionMicros{0};
-inline std::atomic<quint64> g_paintPhaseOverlayMicros{0};
-inline std::atomic<quint64> g_paintPhaseMargins{0};
-/// Occupancy of the ChromeList that published LAST, not a process total. Each
-/// list has its own 8 MiB budget, and the shipping player plus the pooled float
-/// can both hold a cache at once (up to 16 MiB), so this is one list's number and
-/// a historical sample: resetCounters() zeroes it without dropping any cache, so
-/// a reset only means something when a cache event follows it. A destroyed list
-/// never publishes, which leaves its last sample standing.
-inline std::atomic<quint64> g_chromeCacheBytes{0};
 inline std::atomic<quint64> g_awayStackingStops{0};
 inline std::atomic<quint64> g_raiseRetriesAborted{0};
 inline std::atomic<quint64> g_teardownPicturesCaptured{0};
@@ -174,47 +136,6 @@ inline void noteRenderTargetFormatReset() {
     g_renderTargetFormatResets.fetch_add(1, std::memory_order_relaxed);
 }
 
-/// One control was rasterised into its cache. A render is not a hit: the hit
-/// count is `chromePaintCached`, and the two only add up if they are kept apart.
-inline void noteChromeCacheRender() {
-    if (!countersEnabled()) return;
-    g_chromeCacheRenders.fetch_add(1, std::memory_order_relaxed);
-}
-
-inline void noteChromeCacheBlit(qint64 micros) {
-    if (!countersEnabled()) return;
-    g_chromeBlitMicros.fetch_add(static_cast<quint64>(std::max<qint64>(micros, 0)),
-                                 std::memory_order_relaxed);
-}
-
-inline void noteChromeCacheRaster(qint64 micros) {
-    if (!countersEnabled()) return;
-    g_chromeRasterMicros.fetch_add(static_cast<quint64>(std::max<qint64>(micros, 0)),
-                                   std::memory_order_relaxed);
-}
-
-/// Why a control could not be served from cache: 1 geometry, 2 ratio,
-/// 3 generation, 4 budget, anything else an explicit invalidation.
-inline void noteChromeCacheMiss(int reason) {
-    if (!countersEnabled()) return;
-    std::atomic<quint64>* counter = &g_chromeCacheMissDirty;
-    if (reason == 1) counter = &g_chromeCacheMissGeometry;
-    else if (reason == 2) counter = &g_chromeCacheMissRatio;
-    else if (reason == 3) counter = &g_chromeCacheMissGeneration;
-    else if (reason == 4) counter = &g_chromeCacheMissBudget;
-    counter->fetch_add(1, std::memory_order_relaxed);
-}
-
-/// That list's occupancy in device pixels after an add, drop or adopt - not the
-/// size of the control just rendered, and not a sum over lists. Called only by
-/// ChromeList, which is the only place that knows its own total; per-list 8 MiB
-/// is the budget, so do not read this as a process-wide ceiling.
-inline void noteChromeCacheHeld(qint64 bytes) {
-    if (!countersEnabled()) return;
-    g_chromeCacheBytes.store(bytes > 0 ? static_cast<quint64>(bytes) : 0,
-                             std::memory_order_relaxed);
-}
-
 inline void noteAwayStackingStop() {
     if (!countersEnabled()) return;
     g_awayStackingStops.fetch_add(1, std::memory_order_relaxed);
@@ -246,21 +167,6 @@ inline void noteTitleRepolishWidgets(int widgets) {
 inline void noteThreadInputAttach() {
     if (!countersEnabled()) return;
     g_threadInputAttaches.fetch_add(1, std::memory_order_relaxed);
-}
-
-inline void noteChromePaint(quint64 entries, quint64 cached, qint64 micros) {
-    if (!countersEnabled()) return;
-    g_chromePaintCalls.fetch_add(1, std::memory_order_relaxed);
-    g_chromePaintEntries.fetch_add(entries, std::memory_order_relaxed);
-    g_chromePaintCached.fetch_add(cached, std::memory_order_relaxed);
-    g_chromePaintMicrosTotal.fetch_add(static_cast<quint64>(std::max<qint64>(micros, 0)),
-                                       std::memory_order_relaxed);
-    g_chromePaintLastMicros.store(micros, std::memory_order_relaxed);
-    qint64 current = g_chromePaintMicrosMax.load(std::memory_order_relaxed);
-    while (micros > current &&
-           !g_chromePaintMicrosMax.compare_exchange_weak(current, micros,
-                                                         std::memory_order_relaxed)) {
-    }
 }
 
 inline void noteActivationToPaint(qint64 ms) {
@@ -344,6 +250,10 @@ struct PaintPhaseTotals {
     std::atomic<quint64> passes{0};
 };
 
+inline std::atomic<quint64> g_paintPhaseEngineMicros{0};
+inline std::atomic<quint64> g_paintPhaseRetentionMicros{0};
+inline std::atomic<quint64> g_paintPhaseOverlayMicros{0};
+inline std::atomic<quint64> g_paintPhaseMargins{0};
 inline std::array<PaintPhaseTotals, kPaintPassCount> g_paintPhaseByPass{};
 
 /// Records one phase of one classified pass. The global totals keep exactly the
@@ -396,21 +306,8 @@ struct Snapshot {
     quint64 setMaskApplications = 0;
     quint64 layoutGeometryWrites = 0;
     quint64 threadInputAttaches = 0;
-    quint64 chromePaintCalls = 0;
-    quint64 chromePaintEntries = 0;
-    quint64 chromePaintCached = 0;
-    quint64 chromePaintMicrosTotal = 0;
     quint64 renderTargetProbes = 0;
     quint64 renderTargetFormatResets = 0;
-    quint64 chromeCacheRenders = 0;
-    quint64 chromeCacheBytes = 0;
-    quint64 chromeBlitMicros = 0;
-    quint64 chromeRasterMicros = 0;
-    quint64 chromeCacheMissDirty = 0;
-    quint64 chromeCacheMissGeometry = 0;
-    quint64 chromeCacheMissRatio = 0;
-    quint64 chromeCacheMissGeneration = 0;
-    quint64 chromeCacheMissBudget = 0;
     quint64 paintPhaseEngineMicros = 0;
     quint64 paintPhaseRetentionMicros = 0;
     quint64 paintPhaseOverlayMicros = 0;
@@ -423,8 +320,6 @@ struct Snapshot {
     quint64 teardownPicturesCaptured = 0;
     quint64 backgroundRenders = 0;
     quint64 titleRepolishWidgets = 0;
-    qint64 chromePaintMicrosMax = -1;
-    qint64 chromePaintLastMicros = -1;
     qint64 lastActivationToPaintMs = -1;
 };
 
@@ -436,21 +331,8 @@ inline Snapshot snapshot() {
     out.setMaskApplications = g_setMaskApplications.load(std::memory_order_relaxed);
     out.layoutGeometryWrites = g_layoutGeometryWrites.load(std::memory_order_relaxed);
     out.threadInputAttaches = g_threadInputAttaches.load(std::memory_order_relaxed);
-    out.chromePaintCalls = g_chromePaintCalls.load(std::memory_order_relaxed);
-    out.chromePaintEntries = g_chromePaintEntries.load(std::memory_order_relaxed);
-    out.chromePaintCached = g_chromePaintCached.load(std::memory_order_relaxed);
-    out.chromePaintMicrosTotal = g_chromePaintMicrosTotal.load(std::memory_order_relaxed);
     out.renderTargetProbes = g_renderTargetProbes.load(std::memory_order_relaxed);
     out.renderTargetFormatResets = g_renderTargetFormatResets.load(std::memory_order_relaxed);
-    out.chromeCacheRenders = g_chromeCacheRenders.load(std::memory_order_relaxed);
-    out.chromeCacheBytes = g_chromeCacheBytes.load(std::memory_order_relaxed);
-    out.chromeBlitMicros = g_chromeBlitMicros.load(std::memory_order_relaxed);
-    out.chromeRasterMicros = g_chromeRasterMicros.load(std::memory_order_relaxed);
-    out.chromeCacheMissDirty = g_chromeCacheMissDirty.load(std::memory_order_relaxed);
-    out.chromeCacheMissGeometry = g_chromeCacheMissGeometry.load(std::memory_order_relaxed);
-    out.chromeCacheMissRatio = g_chromeCacheMissRatio.load(std::memory_order_relaxed);
-    out.chromeCacheMissGeneration = g_chromeCacheMissGeneration.load(std::memory_order_relaxed);
-    out.chromeCacheMissBudget = g_chromeCacheMissBudget.load(std::memory_order_relaxed);
     out.paintPhaseEngineMicros = g_paintPhaseEngineMicros.load(std::memory_order_relaxed);
     out.paintPhaseRetentionMicros = g_paintPhaseRetentionMicros.load(std::memory_order_relaxed);
     out.paintPhaseOverlayMicros = g_paintPhaseOverlayMicros.load(std::memory_order_relaxed);
@@ -469,8 +351,6 @@ inline Snapshot snapshot() {
     out.teardownPicturesCaptured = g_teardownPicturesCaptured.load(std::memory_order_relaxed);
     out.backgroundRenders = g_backgroundRenders.load(std::memory_order_relaxed);
     out.titleRepolishWidgets = g_titleRepolishWidgets.load(std::memory_order_relaxed);
-    out.chromePaintMicrosMax = g_chromePaintMicrosMax.load(std::memory_order_relaxed);
-    out.chromePaintLastMicros = g_chromePaintLastMicros.load(std::memory_order_relaxed);
     out.lastActivationToPaintMs = g_lastActivationToPaintMs.load(std::memory_order_relaxed);
     return out;
 }
@@ -481,21 +361,8 @@ inline void resetCounters() {
     g_setMaskApplications.store(0, std::memory_order_relaxed);
     g_layoutGeometryWrites.store(0, std::memory_order_relaxed);
     g_threadInputAttaches.store(0, std::memory_order_relaxed);
-    g_chromePaintCalls.store(0, std::memory_order_relaxed);
-    g_chromePaintEntries.store(0, std::memory_order_relaxed);
-    g_chromePaintCached.store(0, std::memory_order_relaxed);
-    g_chromePaintMicrosTotal.store(0, std::memory_order_relaxed);
     g_renderTargetProbes.store(0, std::memory_order_relaxed);
     g_renderTargetFormatResets.store(0, std::memory_order_relaxed);
-    g_chromeCacheRenders.store(0, std::memory_order_relaxed);
-    g_chromeCacheBytes.store(0, std::memory_order_relaxed);
-    g_chromeBlitMicros.store(0, std::memory_order_relaxed);
-    g_chromeRasterMicros.store(0, std::memory_order_relaxed);
-    g_chromeCacheMissDirty.store(0, std::memory_order_relaxed);
-    g_chromeCacheMissGeometry.store(0, std::memory_order_relaxed);
-    g_chromeCacheMissRatio.store(0, std::memory_order_relaxed);
-    g_chromeCacheMissGeneration.store(0, std::memory_order_relaxed);
-    g_chromeCacheMissBudget.store(0, std::memory_order_relaxed);
     g_paintPhaseEngineMicros.store(0, std::memory_order_relaxed);
     g_paintPhaseRetentionMicros.store(0, std::memory_order_relaxed);
     g_paintPhaseOverlayMicros.store(0, std::memory_order_relaxed);
@@ -512,8 +379,6 @@ inline void resetCounters() {
     g_teardownPicturesCaptured.store(0, std::memory_order_relaxed);
     g_backgroundRenders.store(0, std::memory_order_relaxed);
     g_titleRepolishWidgets.store(0, std::memory_order_relaxed);
-    g_chromePaintMicrosMax.store(-1, std::memory_order_relaxed);
-    g_chromePaintLastMicros.store(-1, std::memory_order_relaxed);
     g_lastActivationToPaintMs.store(-1, std::memory_order_relaxed);
 }
 

@@ -3,7 +3,7 @@
 #include "MediaInformationOverview.hpp"
 #include "MediaInformationTree.hpp"
 #include "ShellTheme.hpp"
-#include "VideoSurface.hpp"
+#include "VideoSession.hpp"
 
 #include <QCloseEvent>
 #include <QComboBox>
@@ -27,9 +27,9 @@
 
 namespace mplayer::shell {
 
-MediaInformationDialog::MediaInformationDialog(VideoSurface* surface, QWidget* parent)
-    : QDialog(parent), surface_(surface), tracks_(surface->mediaTracks()),
-      sourceUrl_(surface->sourceUrl()) {
+MediaInformationDialog::MediaInformationDialog(VideoSession* session, QWidget* parent)
+    : QDialog(parent), session_(session), tracks_(session->mediaTracks()),
+      sourceUrl_(session->sourceUrl()) {
     setObjectName(QStringLiteral("playerMediaInformation"));
     setAttribute(Qt::WA_DeleteOnClose);
     setWindowModality(Qt::NonModal);
@@ -69,14 +69,14 @@ MediaInformationDialog::MediaInformationDialog(VideoSurface* surface, QWidget* p
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::close);
     layout->addWidget(buttons);
     information_.coreIdentity = tracks_.coreIdentity;
-    information_.sourceEpoch = surface->sourceEpoch();
+    information_.sourceEpoch = session->sourceEpoch();
     timeout_ = new QTimer(this);
     timeout_->setSingleShot(true);
     timeout_->setInterval(8000);
     connect(this, &QDialog::finished, this, [this] {
         cancelRequest();
         timeout_->stop();
-        if (surface_ != nullptr) disconnect(surface_, nullptr, this, nullptr);
+        if (session_ != nullptr) disconnect(session_, nullptr, this, nullptr);
     });
     connect(timeout_, &QTimer::timeout, this, [this] {
         cancelRequest();
@@ -84,17 +84,17 @@ MediaInformationDialog::MediaInformationDialog(VideoSurface* surface, QWidget* p
         information_.loading = false;
         renderInformation();
     });
-    connect(surface, &VideoSurface::sourceEpochChanged, this, [this] {
+    connect(session, &VideoSession::sourceEpochChanged, this, [this] {
         if (!sourceIsCurrent()) close();
     });
-    connect(surface, &QObject::destroyed, this, &QDialog::close);
-    connect(surface, &VideoSurface::mediaInformationInvalidated, this, &QDialog::close);
-    connect(surface, &VideoSurface::mediaTracksChanged, this, [this] {
+    connect(session, &QObject::destroyed, this, &QDialog::close);
+    connect(session, &VideoSession::mediaInformationInvalidated, this, &QDialog::close);
+    connect(session, &VideoSession::mediaTracksChanged, this, [this] {
         if (!sourceIsCurrent()) {
             close();
             return;
         }
-        tracks_ = surface_->mediaTracks();
+        tracks_ = session_->mediaTracks();
         if (tracks_.ready) trackError_.clear();
         if (tracks_.ready && !requestActive_ && information_.loading && !timedOut_ &&
             playbackError_.isEmpty()) {
@@ -103,15 +103,15 @@ MediaInformationDialog::MediaInformationDialog(VideoSurface* surface, QWidget* p
         }
         renderInformation();
     });
-    connect(surface, &VideoSurface::mediaTracksError, this, [this](const QString& error) {
+    connect(session, &VideoSession::mediaTracksError, this, [this](const QString& error) {
         if (!sourceIsCurrent()) return;
         trackError_ = error;
         renderInformation();
     });
-    connect(surface, &VideoSurface::mediaLoaded, this, [this] {
+    connect(session, &VideoSession::mediaLoaded, this, [this](quint64) {
         if (sourceIsCurrent() && !requestActive_) requestInformation();
     });
-    connect(surface, &VideoSurface::errorOccurred, this, [this](const QString& error) {
+    connect(session, &VideoSession::errorOccurred, this, [this](const QString& error) {
         if (!sourceIsCurrent()) return;
         cancelRequest();
         timeout_->stop();
@@ -128,9 +128,9 @@ MediaInformationDialog::~MediaInformationDialog() {
 }
 
 bool MediaInformationDialog::sourceIsCurrent() const {
-    return surface_ != nullptr && sourceUrl_ == surface_->sourceUrl() &&
-        information_.sourceEpoch == surface_->sourceEpoch() &&
-        information_.coreIdentity == surface_->mediaTracks().coreIdentity;
+    return session_ != nullptr && sourceUrl_ == session_->sourceUrl() &&
+        information_.sourceEpoch == session_->sourceEpoch() &&
+        information_.coreIdentity == session_->mediaTracks().coreIdentity;
 }
 
 void MediaInformationDialog::applyShellPalette() {
@@ -149,7 +149,7 @@ void MediaInformationDialog::applyShellPalette() {
 }
 
 void MediaInformationDialog::cancelRequest() {
-    if (requestActive_ && surface_ != nullptr) surface_->cancelMediaInformation();
+    if (requestActive_ && session_ != nullptr) session_->cancelMediaInformation();
     requestActive_ = false;
 }
 
@@ -164,7 +164,7 @@ void MediaInformationDialog::requestInformation() {
     information_.loading = true;
     timeout_->start();
     const QPointer<MediaInformationDialog> guard(this);
-    requestActive_ = surface_->requestMediaInformation([guard](const MediaInformation& information) {
+    requestActive_ = session_->requestMediaInformation([guard](const MediaInformation& information) {
         if (guard == nullptr || !guard->sourceIsCurrent() || !guard->isVisible()) return;
         if (information.coreIdentity != guard->information_.coreIdentity ||
             information.sourceEpoch != guard->information_.sourceEpoch) return;

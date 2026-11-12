@@ -35,8 +35,11 @@
 #include <QCoreApplication>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QKeySequenceEdit>
 #include <QLabel>
+#include <QGuiApplication>
+#include <QScreen>
 #include <QLayout>
 #include <QLineEdit>
 #include <QPushButton>
@@ -45,11 +48,15 @@
 #include <QSettings>
 #include <QStackedWidget>
 #include <QSize>
+#include <QThread>
 #include <QTemporaryDir>
 #include <QToolButton>
 #include <QWidget>
 
 #include "ProbeUi.hpp"
+#include "PlayerController.hpp"
+#include "PlayerWindow.hpp"
+#include "VideoSession.hpp"
 #include "backend/MikaiClient.hpp"
 #include "dialogs/NativeAssetsPanel.hpp"
 #include "dialogs/SettingsDialog.hpp"
@@ -363,6 +370,74 @@ void reportWidthFloor(QWidget* page, QScrollArea* scroll) {
     }
 }
 
+void auditPlayerHostGeometry() {
+    mplayer::quick::PlayerController controller(QStringLiteral("Native geometry host"),
+                                                QString());
+    mplayer::quick::PlayerWindow* window = controller.window();
+    mplayer::VideoSession* session = controller.session();
+    QString sceneError;
+    QObject::connect(window, &mplayer::quick::PlayerWindow::sceneLoadFailed, &controller,
+                     [&sceneError](const QString& error) { sceneError = error; });
+    window->setFullscreenIntent(false);
+    controller.showWindow();
+    QElapsedTimer sceneWait;
+    sceneWait.start();
+    while (window->rootObject() == nullptr && sceneError.isEmpty() &&
+           sceneWait.elapsed() < 10000) {
+        QApplication::processEvents();
+        QThread::msleep(10);
+    }
+
+    check(window->rootObject() != nullptr,
+          QStringLiteral("the canonical PlayerWindow loads its production Quick scene (%1)")
+              .arg(sceneError));
+    check(window->size().width() > 0 && window->size().height() > 0,
+          QStringLiteral("the player host has non-empty window geometry"));
+
+    QScreen* screen = QGuiApplication::primaryScreen();
+    check(screen != nullptr, QStringLiteral("the player geometry has a target screen"));
+    if (screen != nullptr) {
+        const QRect available = screen->availableGeometry();
+        const QRect requested(available.topLeft() - QPoint(1000, 1000), QSize(640, 360));
+        const QRect clamped = window->clampedGeometry(requested, screen);
+        check(clamped.isValid() && available.contains(clamped),
+              QStringLiteral("the production host clamps restored geometry into the screen"));
+    }
+
+    const QRect windowed = window->geometry();
+    window->setRememberedGeometry(windowed);
+    window->setCompactGeometry(QRect(windowed.topLeft(),
+                                     mplayer::quick::PlayerWindow::kCompactSize));
+    controller.togglePip();
+    QApplication::processEvents();
+    check(window->compactPip() && controller.window() == window &&
+              controller.session() == session,
+          QStringLiteral("PiP keeps the same canonical window and playback session"));
+    const QRect expectedCompact = screen != nullptr
+                                      ? window->clampedGeometry(
+                                            QRect(windowed.topLeft(),
+                                                  mplayer::quick::PlayerWindow::kCompactSize),
+                                            screen)
+                                      : QRect(windowed.topLeft(),
+                                              mplayer::quick::PlayerWindow::kCompactSize);
+    check(window->topmostIntent(),
+          QStringLiteral("the compact presentation retains topmost intent"));
+    check(window->size() == expectedCompact.size(),
+          QStringLiteral("the compact presentation applies its bounded geometry (%1x%2, expected "
+                         "%3x%4)")
+              .arg(window->width())
+              .arg(window->height())
+              .arg(expectedCompact.width())
+              .arg(expectedCompact.height()));
+    controller.leavePip();
+    QApplication::processEvents();
+    check(!window->compactPip() && window->rememberedGeometry() == windowed,
+          QStringLiteral("leaving PiP restores the remembered windowed geometry"));
+    check(!window->topmostIntent(),
+          QStringLiteral("leaving PiP releases compact topmost intent"));
+    controller.requestClose();
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -406,6 +481,8 @@ int main(int argc, char** argv) {
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+
+    auditPlayerHostGeometry();
 
     mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
     Runner runner;

@@ -1,109 +1,43 @@
 #include "TestPlaybackControls.hpp"
 
-#include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFileInfo>
 #include <QGuiApplication>
-#include <QKeyEvent>
-#include <QLineEdit>
-#include <QNetworkProxy>
+#include <QImage>
 #include <QScopeGuard>
+#include <QSettings>
 #include <QSignalSpy>
-#include <QTcpServer>
-#include <QTcpSocket>
-#include <QThreadPool>
-#include <QTimer>
-#include <QMouseEvent>
-#include <QPushButton>
 #include <QThread>
-#include <QWheelEvent>
-#include <QWidget>
+#include <QQuickItem>
+#include <QQuickWindow>
 
 #include <cmath>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <QVariantMap>
+#include <QVector>
 
 #include "MpvApi.hpp"
-#include "PipFloat.hpp"
-#include "PlayerDialog.hpp"
-#include "PlayerPopups.hpp"
-#include "PlayerShell.hpp"
-#include "ShellSliders.hpp"
-#include "ShellWidgets.hpp"
-#include "VideoSurface.hpp"
+#include "PlayerController.hpp"
+#include "PlayerMenuModel.hpp"
+#include "PlayerWindow.hpp"
+#include "VideoSession.hpp"
 
 using mplayer::MpvApi;
 using mplayer::MpvBundle;
+using mplayer::VideoSession;
+using mplayer::quick::PlayerController;
+using mplayer::quick::PlayerWindow;
 
 namespace {
 
-constexpr int kControlWidth = 220;
-constexpr int kControlHeight = 24;
-
-std::unique_ptr<QWidget> makeControl(int kind) {
-    std::unique_ptr<QWidget> control = kind == 0
-                                          ? std::unique_ptr<QWidget>(new mplayer::shell::RangeSlider())
-                                          : std::unique_ptr<QWidget>(new mplayer::shell::VolumeTrack());
-    control->resize(kControlWidth, kControlHeight);
-    return control;
-}
-
-double valueOf(QWidget* control) {
-    if (auto* range = qobject_cast<mplayer::shell::RangeSlider*>(control)) return range->value();
-    if (auto* track = qobject_cast<mplayer::shell::VolumeTrack*>(control)) return track->value();
-    return std::numeric_limits<double>::quiet_NaN();
-}
-
-bool draggingOf(QWidget* control) {
-    if (auto* range = qobject_cast<mplayer::shell::RangeSlider*>(control)) return range->isDragging();
-    if (auto* track = qobject_cast<mplayer::shell::VolumeTrack*>(control)) return track->isDragging();
-    return false;
-}
-
-// The mapping belongs to the widget: a fresh control pressed at `x` answers
-// with its own fraction, so no test restates the margin or knob inset.
-double valueAtOnAFreshControl(int kind, qreal x) {
-    const std::unique_ptr<QWidget> probe = makeControl(kind);
-    const QPointF local(x, kControlHeight / 2.0);
-    QMouseEvent press(QEvent::MouseButtonPress, local,
-                      QPointF(probe->mapToGlobal(local.toPoint())), Qt::LeftButton,
-                      Qt::LeftButton, Qt::NoModifier);
-    QCoreApplication::sendEvent(probe.get(), &press);
-    return valueOf(probe.get());
-}
-
-void sendPointer(QWidget* control, QEvent::Type type, qreal x, Qt::MouseButton button,
-                 Qt::MouseButtons held) {
-    const QPointF local(x, kControlHeight / 2.0);
-    QMouseEvent event(type, local, QPointF(control->mapToGlobal(local.toPoint())), button, held,
-                      Qt::NoModifier);
-    QCoreApplication::sendEvent(control, &event);
-}
-
-bool sendWheel(QWidget* target, const QPoint& angle, const QPoint& pixels = {}) {
-    const QPointF local = target->rect().center();
-    QWheelEvent event(local, target->mapToGlobal(local.toPoint()), pixels, angle,
-                      Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
-    event.ignore();
-    QCoreApplication::sendEvent(target, &event);
-    return event.isAccepted();
-}
-
-void sendKey(QWidget* target, int key) {
-    QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
-    QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
-    QCoreApplication::sendEvent(target, &press);
-    QCoreApplication::sendEvent(target, &release);
-}
-
-// An explicit path, never a search: the tests must not provision a runtime.
 MpvBundle envBundle() {
     const QString module = qEnvironmentVariable("MIKAI_MPV_MODULE");
-    if (module.isEmpty()) return MpvBundle{};
+    if (module.isEmpty()) return {};
     const QFileInfo info(module);
     MpvBundle bundle;
     bundle.root = info.absolutePath();
@@ -113,9 +47,9 @@ MpvBundle envBundle() {
     return bundle;
 }
 
-QString fixtureClip() {
-    return QDir::toNativeSeparators(
-        QStringLiteral(MIKAI_SOURCE_DIR "/tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4"));
+QString fixtureClip(const char* name = "motion_320x180_24fps_8bit_hevc.mp4") {
+    return QDir::toNativeSeparators(QStringLiteral(MIKAI_SOURCE_DIR "/tests/fixtures/media/") +
+                                    QString::fromLatin1(name));
 }
 
 bool nativePlatformAvailable() {
@@ -123,15 +57,26 @@ bool nativePlatformAvailable() {
     return platform != QStringLiteral("offscreen") && platform != QStringLiteral("minimal");
 }
 
-std::optional<double> coreNumber(mplayer::VideoSurface* surface, const char* name) {
-    const auto value =
-        surface->probeMpvProperty(QString::fromLatin1(name), mplayer::ProbePropertyKind::Number);
+std::optional<double> coreNumber(VideoSession* session, const char* name) {
+    const auto value = session->probeMpvProperty(QString::fromLatin1(name),
+                                                 mplayer::ProbePropertyKind::Number);
     if (!value || !value->isNumeric()) return std::nullopt;
     return value->asNumber();
 }
 
-// The surface's own 50 ms pump drains the core, so processEvents is what
-// advances anything here.
+std::optional<QString> coreText(VideoSession* session, const char* name) {
+    const auto value = session->probeMpvProperty(QString::fromLatin1(name),
+                                                 mplayer::ProbePropertyKind::Text);
+    if (!value || value->text.isEmpty()) return std::nullopt;
+    return value->text;
+}
+
+bool coreIsPaused(VideoSession* session) {
+    const auto paused = session->probeMpvProperty(QStringLiteral("pause"),
+                                                  mplayer::ProbePropertyKind::Flag);
+    return paused.has_value() && paused->flag;
+}
+
 template <typename Predicate>
 bool settleUntil(Predicate predicate, int timeoutMs) {
     QElapsedTimer clock;
@@ -143,9 +88,7 @@ bool settleUntil(Predicate predicate, int timeoutMs) {
     return predicate();
 }
 
-// Only a reading that stopped changing counts: a value read before the seeks
-// ran would otherwise pass for a result.
-double settledCorePosition(mplayer::VideoSurface* surface, int timeoutMs) {
+double settledCorePosition(VideoSession* session, int timeoutMs) {
     QElapsedTimer clock;
     clock.start();
     QElapsedTimer stable;
@@ -154,7 +97,7 @@ double settledCorePosition(mplayer::VideoSurface* surface, int timeoutMs) {
     while (clock.elapsed() < timeoutMs) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
         QThread::msleep(15);
-        const std::optional<double> now = coreNumber(surface, "time-pos");
+        const auto now = coreNumber(session, "time-pos");
         if (!now) continue;
         if (!std::isfinite(previous) || std::abs(*now - previous) > 0.01) {
             previous = *now;
@@ -166,17 +109,55 @@ double settledCorePosition(mplayer::VideoSurface* surface, int timeoutMs) {
     return -1.0;
 }
 
-std::optional<QString> coreText(mplayer::VideoSurface* surface, const char* name) {
-    const auto value =
-        surface->probeMpvProperty(QString::fromLatin1(name), mplayer::ProbePropertyKind::Text);
-    if (!value || value->text.isEmpty()) return std::nullopt;
-    return value->text;
+bool openPlayer(PlayerController* controller) {
+    PlayerWindow* window = controller->window();
+    if (window == nullptr) return false;
+    controller->showWindow();
+    if (!QTest::qWaitForWindowExposed(window, 15000)) return false;
+    if (!window->session()->waitForContext(20000)) return false;
+    controller->startPlayer();
+    return settleUntil([controller] { return controller->duration() > 10.0; }, 30000);
+}
+bool startPlaying(PlayerController* controller) {
+    if (!controller->playing()) controller->togglePlayPause();
+    return settleUntil([controller] { return controller->playing(); }, 10000);
 }
 
-bool coreIsPaused(mplayer::VideoSurface* surface) {
-    const auto paused =
-        surface->probeMpvProperty(QStringLiteral("pause"), mplayer::ProbePropertyKind::Flag);
-    return paused.has_value() && paused->flag;
+class RecordingHost : public mplayer::shell::PlayerHost {
+public:
+    void requestVariant(const QString&, const QString&) override {}
+    void requestEpisode(int index) override { requestedEpisodes.append(index); }
+    void requestTrackProbe(const QString&) override {}
+    void requestCopyStreamUrl() override {}
+    void playerClosed() override {}
+    void playbackFailed() override {}
+
+    QList<int> requestedEpisodes;
+};
+
+QVector<QVariantMap> threeEpisodePlaylist() {
+    QVector<QVariantMap> playlist;
+    for (int episode = 1; episode <= 3; ++episode) {
+        QVariantMap item;
+        item.insert(QStringLiteral("label"), QStringLiteral("Episode %1").arg(episode));
+        item.insert(QStringLiteral("number"), QString::number(episode));
+        item.insert(QStringLiteral("embed"), QStringLiteral("https://example.invalid/ep%1").arg(episode));
+        playlist.append(item);
+    }
+    return playlist;
+}
+
+QQuickItem* timelineItem(QQuickItem* item) {
+    if (item == nullptr) return nullptr;
+    if (item->objectName() == QStringLiteral("player.timeline.scrub")) return item;
+    for (QQuickItem* child : item->childItems()) {
+        if (QQuickItem* match = timelineItem(child)) return match;
+    }
+    return nullptr;
+}
+
+QPoint windowPoint(QQuickItem* item, qreal fraction) {
+    return item->mapToScene(QPointF(item->width() * fraction, item->height() / 2.0)).toPoint();
 }
 
 }  // namespace
@@ -202,783 +183,450 @@ bool TestPlaybackControls::requireRuntime() {
     return false;
 }
 
-void TestPlaybackControls::finalValueFollowsTheReleasePosition_data() {
-    QTest::addColumn<int>("kind");
-    QTest::addColumn<qreal>("pressAt");
-    QTest::addColumn<qreal>("moveAt");
-    QTest::addColumn<qreal>("releaseAt");
-
-    // The two positions differ by design, so a control that keeps the last
-    // move's value cannot answer with the release point by accident.
-    QTest::newRow("range/last-move-left-of-release") << 0 << qreal(0.20) << qreal(0.20) << qreal(0.80);
-    QTest::newRow("range/last-move-right-of-release") << 0 << qreal(0.10) << qreal(0.60) << qreal(0.25);
-    QTest::newRow("range/release-clamped-left") << 0 << qreal(0.40) << qreal(0.50) << qreal(-0.5);
-    QTest::newRow("range/release-clamped-right") << 0 << qreal(0.40) << qreal(0.30) << qreal(1.5);
-    QTest::newRow("volume/last-move-left-of-release") << 1 << qreal(0.20) << qreal(0.20) << qreal(0.80);
-    QTest::newRow("volume/last-move-right-of-release") << 1 << qreal(0.10) << qreal(0.60) << qreal(0.25);
-    QTest::newRow("volume/release-clamped-left") << 1 << qreal(0.40) << qreal(0.50) << qreal(-0.5);
-    QTest::newRow("volume/release-clamped-right") << 1 << qreal(0.40) << qreal(0.30) << qreal(1.5);
-}
-
-void TestPlaybackControls::finalValueFollowsTheReleasePosition() {
-    QFETCH(int, kind);
-    QFETCH(qreal, pressAt);
-    QFETCH(qreal, moveAt);
-    QFETCH(qreal, releaseAt);
-
-    const std::unique_ptr<QWidget> control = makeControl(kind);
-    const qreal width = control->width();
-    const double expected = valueAtOnAFreshControl(kind, releaseAt * width);
-
-    sendPointer(control.get(), QEvent::MouseButtonPress, pressAt * width, Qt::LeftButton,
-                Qt::LeftButton);
-    sendPointer(control.get(), QEvent::MouseMove, moveAt * width, Qt::NoButton, Qt::LeftButton);
-    const double afterMove = valueOf(control.get());
-    QVERIFY2(std::isfinite(afterMove), "the drag never took the press point");
-    QVERIFY2(std::abs(afterMove - expected) > 0.05,
-             "the row must release somewhere other than its last move");
-
-    sendPointer(control.get(), QEvent::MouseButtonRelease, releaseAt * width, Qt::LeftButton,
-                Qt::NoButton);
-
-    QVERIFY2(std::abs(valueOf(control.get()) - expected) < 1e-3,
-             qPrintable(QStringLiteral("the release point maps to %1, visible %2")
-                            .arg(expected)
-                            .arg(valueOf(control.get()))));
-    QVERIFY2(!draggingOf(control.get()), "a left release ends the left drag");
-}
-
-void TestPlaybackControls::anUnrelatedButtonReleaseKeepsTheLeftDragAlive_data() {
-    QTest::addColumn<int>("kind");
-    QTest::newRow("range") << 0;
-    QTest::newRow("volume") << 1;
-}
-
-void TestPlaybackControls::anUnrelatedButtonReleaseKeepsTheLeftDragAlive() {
-    QFETCH(int, kind);
-
-    const std::unique_ptr<QWidget> control = makeControl(kind);
-    const qreal width = control->width();
-    const double heldTarget = valueAtOnAFreshControl(kind, 0.75 * width);
-
-    sendPointer(control.get(), QEvent::MouseButtonPress, 0.25 * width, Qt::LeftButton,
-                Qt::LeftButton);
-    sendPointer(control.get(), QEvent::MouseMove, 0.35 * width, Qt::NoButton, Qt::LeftButton);
-    QVERIFY2(draggingOf(control.get()), "the left press started a drag");
-
-    // A button this drag never owned, released elsewhere while left is held.
-    sendPointer(control.get(), QEvent::MouseButtonRelease, 0.50 * width, Qt::RightButton,
-                Qt::LeftButton);
-    QVERIFY2(draggingOf(control.get()), "an unrelated release must not end the left drag");
-    QVERIFY2(std::abs(valueOf(control.get()) - heldTarget) > 0.05,
-             "the unrelated release must not move the control to its own position");
-
-    sendPointer(control.get(), QEvent::MouseMove, 0.75 * width, Qt::NoButton, Qt::LeftButton);
-    QVERIFY2(std::abs(valueOf(control.get()) - heldTarget) < 1e-3,
-             qPrintable(QStringLiteral("the held pointer must still drive the value: expected %1, "
-                                       "visible %2")
-                            .arg(heldTarget)
-                            .arg(valueOf(control.get()))));
-
-    sendPointer(control.get(), QEvent::MouseButtonRelease, 0.75 * width, Qt::LeftButton,
-                Qt::NoButton);
-    QVERIFY2(!draggingOf(control.get()), "the left release ends the drag");
-}
-
-void TestPlaybackControls::aLostReleaseEndsTheDragWithoutCommittingTheHover_data() {
-    QTest::addColumn<int>("kind");
-    QTest::newRow("range") << 0;
-    QTest::newRow("volume") << 1;
-}
-
-void TestPlaybackControls::aLostReleaseEndsTheDragWithoutCommittingTheHover() {
-    QFETCH(int, kind);
-
-    const std::unique_ptr<QWidget> control = makeControl(kind);
-    const qreal width = control->width();
-    const double heldValue = valueAtOnAFreshControl(kind, 0.30 * width);
-
-    sendPointer(control.get(), QEvent::MouseButtonPress, 0.20 * width, Qt::LeftButton,
-                Qt::LeftButton);
-    sendPointer(control.get(), QEvent::MouseMove, 0.30 * width, Qt::NoButton, Qt::LeftButton);
-    QVERIFY2(draggingOf(control.get()), "the left press started a drag");
-    QVERIFY2(std::abs(valueOf(control.get()) - heldValue) < 1e-3,
-             "the held move drives the visible value");
-
-    // The release was lost: the pointer keeps moving with no button held, which
-    // is not a position the drag may commit and not a drag either.
-    sendPointer(control.get(), QEvent::MouseMove, 0.80 * width, Qt::NoButton, Qt::NoButton);
-    QVERIFY2(!draggingOf(control.get()), "a move with no button held ends the drag");
-    QVERIFY2(std::abs(valueOf(control.get()) - heldValue) < 1e-3,
-             qPrintable(QStringLiteral("the lost release must keep the held value %1, visible %2")
-                            .arg(heldValue)
-                            .arg(valueOf(control.get()))));
-
-    sendPointer(control.get(), QEvent::MouseMove, 0.60 * width, Qt::NoButton, Qt::NoButton);
-    QVERIFY2(!draggingOf(control.get()), "hovering must not restart the drag");
-    QVERIFY2(std::abs(valueOf(control.get()) - heldValue) < 1e-3,
-             "hovering must not move the value");
-}
-
-void TestPlaybackControls::aPiPArrowStepIsResolvedByTheCoreWhenThePumpIsSuspended_data() {
-    QTest::addColumn<int>("firstKey");
-    QTest::addColumn<int>("secondKey");
-    QTest::addColumn<double>("expected");
-
-    // From 1.0 s the cached position cannot answer either row: +10 then -10
-    // returns to 1 s, and a lone -10 clamps at the start. An absolute step
-    // computed from the stale 1.0 s would resolve -9 against the media end.
-    QTest::newRow("right-then-left/returns-to-1s")
-        << static_cast<int>(Qt::Key_Right) << static_cast<int>(Qt::Key_Left) << 1.0;
-    QTest::newRow("left/lands-on-zero") << static_cast<int>(Qt::Key_Left) << -1 << 0.0;
-}
-
-void TestPlaybackControls::aPiPArrowStepIsResolvedByTheCoreWhenThePumpIsSuspended() {
-    QFETCH(int, firstKey);
-    QFETCH(int, secondKey);
-    QFETCH(double, expected);
-
-    if (!nativePlatformAvailable()) {
-        QSKIP("the PiP float needs a native window and a real GL context");
-    }
-    if (!requireRuntime()) return;
-
-    const QString fixture = fixtureClip();
-    QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
-
-    mplayer::shell::PipFloat pip;
-    pip.resize(480, 270);
-    pip.show();
-    mplayer::VideoSurface* surface = pip.videoSurface();
-    QVERIFY2(surface != nullptr, "the float owns a surface");
-    // A surface that was never painted never gets a render context.
-    if (!QTest::qWaitForWindowExposed(&pip, 15000)) {
-        QSKIP("the float's window was never exposed on this platform");
-    }
-    if (!surface->waitForContext(20000)) {
-        QSKIP("no OpenGL context for the float's surface");
-    }
-
-    pip.openStream(fixture, 1.0, true, 1);
-    QVERIFY2(settleUntil([surface] { return surface->duration() > 10.0 && surface->position() > 0.5; },
-                         30000),
-             qPrintable(QStringLiteral("the float never loaded %1 (duration %2, position %3)")
-                            .arg(fixture)
-                            .arg(surface->duration())
-                            .arg(surface->position())));
-    // The deferred seek lands after the load; the steps below need a known start.
-    QVERIFY2(settleUntil([surface] { return std::abs(surface->position() - 1.0) < 0.25; }, 15000),
-             qPrintable(QStringLiteral("the float never reached 1.0 s (position %1)")
-                            .arg(surface->position())));
-
-    // Parked pump: the observed position stays cached while the core moves.
-    surface->setPumpSuspended(true);
-    QThread::msleep(150);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-    const double frozen = surface->position();
-    QVERIFY2(std::abs(frozen - 1.0) < 0.25,
-             qPrintable(QStringLiteral("the observed position must stay cached at 1.0 s, is %1")
-                            .arg(frozen)));
-
-    sendKey(&pip, firstKey);
-    if (secondKey >= 0) sendKey(&pip, secondKey);
-
-    surface->setPumpSuspended(false);
-
-    const double settled = settledCorePosition(surface, 15000);
-    QVERIFY2(settled >= 0.0, "the core never reported a stable time-pos after the steps");
-    QVERIFY2(std::abs(settled - expected) < 0.4,
-             qPrintable(QStringLiteral("a step the core resolves must land on %1 s; it reports %2")
-                            .arg(expected)
-                            .arg(settled)));
-    QVERIFY2(coreIsPaused(surface), "seeking must not unpause the float");
-}
-
-void TestPlaybackControls::closingSubtitleSearchBeforeItsReplyKeepsThePlayerUsable() {
-    if (!requireRuntime()) return;
-
-    QTcpServer server;
-    QVERIFY(server.listen(QHostAddress::LocalHost));
-    const QNetworkProxy previousProxy = QNetworkProxy::applicationProxy();
-    const auto restoreProxy = qScopeGuard([previousProxy] {
-        QNetworkProxy::setApplicationProxy(previousProxy);
-    });
-    QNetworkProxy::setApplicationProxy(
-        QNetworkProxy(QNetworkProxy::HttpProxy, QStringLiteral("127.0.0.1"), server.serverPort()));
-
-    const std::unique_ptr<mplayer::shell::PlayerDialog> player(
-        new mplayer::shell::PlayerDialog(QStringLiteral("subtitle search"), fixtureClip()));
-    auto* shell = player->findChild<mplayer::shell::PlayerShell*>();
-    QVERIFY(shell != nullptr);
-    player->show();
-
-    bool requested = false;
-    bool replied = false;
-    QByteArray request;
-    connect(&server, &QTcpServer::newConnection, &server, [&] {
-        QTcpSocket* socket = server.nextPendingConnection();
-        connect(socket, &QTcpSocket::readyRead, socket, [&, socket] {
-            request += socket->readAll();
-            if (requested || !request.contains("\r\n\r\n")) return;
-            requested = true;
-            if (auto* modal = qobject_cast<QDialog*>(QApplication::activeModalWidget())) {
-                modal->reject();
-            }
-            QTimer::singleShot(50, socket, [&, socket] {
-                socket->write("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n");
-                socket->flush();
-                socket->disconnectFromHost();
-                replied = true;
-            });
-        });
-    });
-    QTimer::singleShot(0, player.get(), [&] {
-        auto* dialog = player->findChild<QDialog*>(QStringLiteral("subtitlesSearchDialog"));
-        if (dialog == nullptr) return;
-        for (QLineEdit* field : dialog->findChildren<QLineEdit*>()) {
-            if (field->echoMode() == QLineEdit::Password) field->setText(QStringLiteral("fixture"));
+void TestPlaybackControls::nestedEnhancementMenuActivatesTheSelectedPreset() {
+    QSettings settings;
+    const QString settingKey = QStringLiteral("player/anime4k");
+    const bool hadStoredPreset = settings.contains(settingKey);
+    const QVariant storedPreset = settings.value(settingKey);
+    const auto restoreSetting = qScopeGuard([&settings, settingKey, hadStoredPreset, storedPreset] {
+        if (hadStoredPreset) {
+            settings.setValue(settingKey, storedPreset);
+        } else {
+            settings.remove(settingKey);
         }
-        for (QPushButton* button : dialog->findChildren<QPushButton*>()) {
-            if (button->text() == mplayer::shell::PlayerDialog::tr("Search")) {
-                button->click();
-                break;
-            }
+        settings.sync();
+    });
+    settings.setValue(settingKey, QStringLiteral("off"));
+    settings.sync();
+
+    PlayerController controller(QStringLiteral("enhancement menu"), QString());
+    const auto findValue = [](mplayer::quick::PlayerMenuModel* model, const QString& value) {
+        if (model == nullptr) return -1;
+        for (int row = 0; row < model->rowCount(); ++row) {
+            if (model->row(row).value == value) return row;
         }
-    });
-    QTimer::singleShot(10000, player.get(), [&] {
-        if (auto* modal = qobject_cast<QDialog*>(QApplication::activeModalWidget())) modal->reject();
-    });
+        return -1;
+    };
 
-    QVERIFY(QMetaObject::invokeMethod(shell, "openSubtitlesRequested", Qt::DirectConnection));
-    QVERIFY2(requested, "the subtitle search did not reach the local proxy");
-    QTRY_VERIFY_WITH_TIMEOUT(replied, 5000);
-    QTRY_VERIFY_WITH_TIMEOUT(QThreadPool::globalInstance()->activeThreadCount() == 0, 10000);
-    QCoreApplication::processEvents();
-    QVERIFY(player->isVisible());
+    auto* root = controller.menuModel(QStringLiteral("enhancements"));
+    QVERIFY(root != nullptr);
+    const int restoreRow = findValue(root, QStringLiteral("processing:restore"));
+    QVERIFY(restoreRow >= 0);
+    QCOMPARE(root->row(restoreRow).action, mplayer::quick::PlayerMenuModel::Action::OpenMenu);
+
+    auto* restore = controller.submenuModel(QStringLiteral("enhancements"), restoreRow);
+    QVERIFY(restore != nullptr);
+    const int anime4kRow = findValue(restore, QStringLiteral("anime4k"));
+    QVERIFY(anime4kRow >= 0);
+    auto* anime4k = controller.submenuModel(QStringLiteral("processing:restore"), anime4kRow);
+    QVERIFY(anime4k != nullptr);
+    const int qualityRow = findValue(anime4k, QStringLiteral("anime4k/quality"));
+    QVERIFY(qualityRow >= 0);
+    auto* quality = controller.submenuModel(QStringLiteral("anime4k"), qualityRow);
+    QVERIFY(quality != nullptr);
+
+    const int hqARow = quality->indexOfId(QStringLiteral("hq_a"));
+    QVERIFY(hqARow >= 0);
+    const auto preset = quality->row(hqARow);
+    QCOMPARE(preset.action, mplayer::quick::PlayerMenuModel::Action::SetEnhancement);
+    QCOMPARE(preset.value, QStringLiteral("anime4k|hq_a"));
+
+    controller.activateMenuRow(QStringLiteral("anime4k/quality"), hqARow);
+    QCOMPARE(controller.anime4kChainId(), QStringLiteral("hq_a"));
+    QCOMPARE(controller.session()->anime4KChainId(), QStringLiteral("hq_a"));
+    QVERIFY(quality->row(hqARow).selected);
 }
 
-void TestPlaybackControls::volumeWheelAdjustsTheTrackAndSpeaker() {
-    mplayer::shell::VolumeGroup volume;
-    volume.setVolume(0.5);
-    auto* track = volume.findChild<mplayer::shell::VolumeTrack*>();
-    QVERIFY(track != nullptr);
-
-    QVERIFY(sendWheel(track, QPoint(0, 120)));
-    QVERIFY(std::abs(volume.effective() - 0.55) < 0.0001);
-    QVERIFY(sendWheel(&volume, QPoint(0, -240)));
-    QVERIFY(std::abs(volume.effective() - 0.45) < 0.0001);
-    QVERIFY(sendWheel(track, QPoint(0, 30)));
-    QVERIFY(std::abs(volume.effective() - 0.4625) < 0.0001);
-    QVERIFY(sendWheel(track, QPoint(), QPoint(0, 20)));
-    QVERIFY(std::abs(volume.effective() - 0.4875) < 0.0001);
-
-    const double beforeHorizontal = volume.effective();
-    sendWheel(track, QPoint(120, 0));
-    QVERIFY(std::abs(volume.effective() - beforeHorizontal) < 0.0001);
-    volume.setVolume(0.99);
-    QVERIFY(sendWheel(track, QPoint(0, 120)));
-    QCOMPARE(volume.effective(), 1.0);
-    volume.setVolume(0.01);
-    QVERIFY(sendWheel(&volume, QPoint(0, -120)));
-    QCOMPARE(volume.effective(), 0.0);
-}
-
-void TestPlaybackControls::volumeWheelFollowsPlaybackIntoPip() {
-    if (!nativePlatformAvailable()) {
-        QSKIP("the player needs a native window and a real GL context");
-    }
+void TestPlaybackControls::transportActionsUpdateTypedControllerAndSessionState() {
+    if (!nativePlatformAvailable()) QSKIP("the Quick player needs a native window and GL context");
     if (!requireRuntime()) return;
-
     const QString fixture = fixtureClip();
     QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
-    const std::unique_ptr<mplayer::shell::PlayerDialog> dialog(
-        new mplayer::shell::PlayerDialog(QStringLiteral("volume wheel"), fixture));
-    auto* shell = dialog->findChild<mplayer::shell::PlayerShell*>();
-    QVERIFY(shell != nullptr);
-    auto* surface = shell->findChild<mplayer::VideoSurface*>();
-    auto* volume = shell->findChild<mplayer::shell::VolumeGroup*>();
-    QVERIFY(surface != nullptr);
-    QVERIFY(volume != nullptr);
-    auto* track = volume->findChild<mplayer::shell::VolumeTrack*>();
-    QVERIFY(track != nullptr);
 
-    dialog->show();
-    if (!QTest::qWaitForWindowExposed(dialog.get(), 15000)) {
-        QSKIP("the player window was never exposed on this platform");
-    }
-    if (!surface->waitForContext(20000)) {
-        QSKIP("no OpenGL context for the player surface");
-    }
-    dialog->startPlayer();
-    QVERIFY2(settleUntil([surface] { return surface->duration() > 10.0; }, 30000),
-             "the player did not load the fixture");
-
-    shell->wake();
-    QTRY_VERIFY(track->isVisible());
-    const double initial = volume->effective();
-    QTest::mouseMove(track, track->rect().center());
-    QVERIFY(sendWheel(track, QPoint(0, -120)));
-    const double lowered = volume->effective();
-    QVERIFY(std::abs(lowered - (initial - 0.05)) < 0.001);
-    auto* toast = shell->findChild<mplayer::shell::Toast*>();
-    QVERIFY(toast != nullptr);
-    auto* label = toast->findChild<QLabel*>();
-    QVERIFY(label != nullptr);
-    QVERIFY(label->text().contains(QString::number(qRound(lowered * 100.0))));
-    QVERIFY2(settleUntil([surface, lowered] {
-                 const auto actual = coreNumber(surface, "volume");
-                 return actual && std::abs(*actual - lowered * 100.0) < 0.1;
-             }, 10000), "the wheel did not change the playing core");
-
-    sendPointer(volume, QEvent::MouseButtonPress, 10.0, Qt::LeftButton, Qt::LeftButton);
-    QVERIFY(volume->isMuted());
-    QVERIFY2(settleUntil([surface] {
-                 const auto muted = surface->probeMpvProperty(QStringLiteral("mute"),
-                                                               mplayer::ProbePropertyKind::Flag);
-                 return muted && muted->flag;
-             }, 10000), "the main core did not mute");
-    QVERIFY(sendWheel(track, QPoint(0, 120)));
-    QVERIFY(!volume->isMuted());
-    QVERIFY2(settleUntil([surface, volume] {
-                 const auto actual = coreNumber(surface, "volume");
-                 const auto muted = surface->probeMpvProperty(QStringLiteral("mute"),
-                                                               mplayer::ProbePropertyKind::Flag);
-                 return actual && muted && !muted->flag &&
-                        std::abs(*actual - volume->effective() * 100.0) < 0.1;
-             }, 10000), "scrolling the muted control did not unmute the main core");
-
-    QVERIFY(QMetaObject::invokeMethod(shell, "pipRequested", Qt::DirectConnection));
-    mplayer::shell::PipFloat* pip = nullptr;
-    QVERIFY2(settleUntil([&pip] {
-                 for (QWidget* window : QApplication::topLevelWidgets()) {
-                     if (auto* candidate = qobject_cast<mplayer::shell::PipFloat*>(window);
-                         candidate != nullptr && candidate->isVisible()) {
-                         pip = candidate;
-                         return true;
-                     }
-                 }
-                 return false;
-             }, 15000), "PiP did not open");
-    auto* pipSurface = pip->videoSurface();
-    auto* pipTrack = pip->findChild<mplayer::shell::VolumeTrack*>(QStringLiteral("pipVolume"));
-    auto* pipMute = pip->findChild<QPushButton*>(QStringLiteral("pipMute"));
-    QVERIFY(pipSurface != nullptr);
-    QVERIFY(pipTrack != nullptr);
-    QVERIFY(pipMute != nullptr);
-    QVERIFY2(settleUntil([pipSurface] { return pipSurface->duration() > 10.0; }, 30000),
-             "PiP did not load the fixture");
-
-    pipMute->click();
-    QVERIFY2(settleUntil([pipSurface] {
-                 const auto muted = pipSurface->probeMpvProperty(QStringLiteral("mute"),
-                                                                  mplayer::ProbePropertyKind::Flag);
-                 return muted && muted->flag;
-             }, 10000), "the PiP core did not mute");
-    QVERIFY(sendWheel(pipMute, QPoint(0, 120)));
-    const double pipLevel = pipTrack->value();
-    QVERIFY2(settleUntil([pipSurface, surface, volume, pipLevel] {
-                 const auto pipVolume = coreNumber(pipSurface, "volume");
-                 const auto mainVolume = coreNumber(surface, "volume");
-                 const auto pipMuted = pipSurface->probeMpvProperty(QStringLiteral("mute"),
-                                                                    mplayer::ProbePropertyKind::Flag);
-                 const auto mainMuted = surface->probeMpvProperty(QStringLiteral("mute"),
-                                                                  mplayer::ProbePropertyKind::Flag);
-                 return pipVolume && mainVolume && pipMuted && mainMuted &&
-                        !pipMuted->flag && !mainMuted->flag &&
-                        std::abs(*pipVolume - pipLevel * 100.0) < 0.1 &&
-                        std::abs(*mainVolume - pipLevel * 100.0) < 0.1 &&
-                        std::abs(volume->effective() - pipLevel) < 0.001;
-             }, 15000), "the PiP wheel did not synchronize volume and mute with the main player");
-    QVERIFY(QMetaObject::invokeMethod(pip, "restoreRequested", Qt::DirectConnection));
-    QVERIFY2(settleUntil([surface, volume, pipLevel] {
-                 const auto actual = coreNumber(surface, "volume");
-                 return actual && std::abs(*actual - pipLevel * 100.0) < 0.1 &&
-                        std::abs(volume->effective() - pipLevel) < 0.001;
-             }, 15000), "restoring the player lost the PiP volume");
-}
-
-void TestPlaybackControls::aNewPlayerStartsAtTheShownVolume() {
-    if (!nativePlatformAvailable()) {
-        QSKIP("the main player needs a native window and a real GL context");
-    }
-    if (!requireRuntime()) return;
-
-    const QString fixture = fixtureClip();
-    QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
-    const std::unique_ptr<mplayer::shell::PlayerDialog> dialog(
-        new mplayer::shell::PlayerDialog(QStringLiteral("volume"), fixture));
-    auto* shell = dialog->findChild<mplayer::shell::PlayerShell*>();
-    QVERIFY(shell != nullptr);
-    auto* surface = shell->findChild<mplayer::VideoSurface*>();
-    auto* volume = shell->findChild<mplayer::shell::VolumeGroup*>();
-    QVERIFY(surface != nullptr);
-    QVERIFY(volume != nullptr);
-
-    dialog->show();
-    if (!QTest::qWaitForWindowExposed(dialog.get(), 15000)) {
-        QSKIP("the player window was never exposed on this platform");
-    }
-    if (!surface->waitForContext(20000)) {
-        QSKIP("no OpenGL context for the player surface");
-    }
-    dialog->startPlayer();
-    QVERIFY2(settleUntil([surface] { return surface->duration() > 10.0; }, 30000),
-             "the player did not load the fixture");
-    const auto initialVolume = coreNumber(surface, "volume");
-    QVERIFY(initialVolume.has_value());
-    QVERIFY2(std::abs(*initialVolume - volume->effective() * 100.0) < 0.1,
-             qPrintable(QStringLiteral("mpv volume %1 differs from displayed %2")
-                            .arg(*initialVolume)
-                            .arg(volume->effective() * 100.0)));
-
-    volume->setVolume(0.25);
-    QVERIFY2(settleUntil([surface, volume] {
-                 const auto actual = coreNumber(surface, "volume");
-                 return actual && std::abs(*actual - volume->effective() * 100.0) < 0.1;
-             }, 10000),
-             "the changed slider level did not reach mpv");
-}
-
-void TestPlaybackControls::aPipKeepsItsVolumeAndMuteBeforeOpening() {
-    if (!nativePlatformAvailable()) {
-        QSKIP("the PiP player needs a native window and a real GL context");
-    }
-    if (!requireRuntime()) return;
-
-    const QString fixture = fixtureClip();
-    QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
-    mplayer::shell::PipFloat pip;
-    pip.setVolume(0.31);
-    pip.setMuted(true);
-    pip.resize(480, 270);
-    pip.show();
-    if (!QTest::qWaitForWindowExposed(&pip, 15000)) {
-        QSKIP("the float's window was never exposed on this platform");
-    }
-    auto* surface = pip.videoSurface();
-    QVERIFY(surface != nullptr);
-    if (!surface->waitForContext(20000)) {
-        QSKIP("no OpenGL context for the float's surface");
-    }
-    pip.openStream(fixture, 0.0, true, 1);
-    QVERIFY2(settleUntil([surface] { return surface->duration() > 10.0; }, 30000),
-             "the float did not load the fixture");
-
-    const auto volume = coreNumber(surface, "volume");
-    const auto muted = surface->probeMpvProperty(QStringLiteral("mute"),
-                                                 mplayer::ProbePropertyKind::Flag);
-    QVERIFY(volume.has_value());
-    QVERIFY(std::abs(*volume - 31.0) < 0.1);
-    QVERIFY(muted.has_value());
-    QVERIFY(muted->flag);
-
-    pip.setMuted(false);
-    QVERIFY2(settleUntil([surface] {
-                 const auto state = surface->probeMpvProperty(QStringLiteral("mute"),
+    PlayerController controller(QStringLiteral("transport"), fixture);
+    QVERIFY(openPlayer(&controller));
+    VideoSession* const session = controller.session();
+    QVERIFY(session != nullptr);
+    QVERIFY(startPlaying(&controller));
+ 
+    controller.setVolume(0.37);
+    controller.setRate(1.25);
+    controller.toggleMute();
+    QVERIFY2(settleUntil([&] {
+                 const auto volume = coreNumber(session, "volume");
+                 const auto speed = coreNumber(session, "speed");
+                 const auto muted = session->probeMpvProperty(QStringLiteral("mute"),
                                                               mplayer::ProbePropertyKind::Flag);
-                 return state && !state->flag;
-             }, 10000),
-             "the float did not unmute");
-    const auto unmutedVolume = coreNumber(surface, "volume");
-    QVERIFY(unmutedVolume.has_value());
-    QVERIFY(std::abs(*unmutedVolume - 31.0) < 0.1);
+                 return volume && speed && muted && std::abs(*volume - 37.0) < 0.1 &&
+                        std::abs(*speed - 1.25) < 0.01 && muted->flag;
+             }, 10000), "typed Quick transport actions did not reach the session core");
+    QCOMPARE(controller.volume(), 0.37);
+    QCOMPARE(controller.rate(), 1.25);
+    QVERIFY(controller.muted());
+
+    controller.seekTo(1.0);
+    QVERIFY(settleUntil([&] { return std::abs(controller.position() - 1.0) < 0.25; }, 10000));
+    controller.togglePlayPause();
+    QVERIFY(settleUntil([&] { return !controller.playing() && coreIsPaused(session); }, 10000));
+    QVERIFY(std::abs(controller.position() - session->position()) < 0.25);
 }
 
-void TestPlaybackControls::aPlayerDialogArrowStepIgnoresALateStaleProgressReport_data() {
-    QTest::addColumn<int>("secondKey");
-    QTest::addColumn<double>("stalePosition");
-    QTest::addColumn<double>("expected");
-
-    // Both rows start at 1.0 s and take one Right step to 6 s. The second step
-    // must be resolved by the core, so a stale UI position cannot shorten,
-    // invert or drop it: with 0 s cached a clamped delta would emit nothing.
-    QTest::newRow("right/after-stale-1s") << static_cast<int>(Qt::Key_Right) << 1.0 << 11.0;
-    QTest::newRow("left/after-stale-0s") << static_cast<int>(Qt::Key_Left) << 0.0 << 1.0;
-}
-
-void TestPlaybackControls::aPlayerDialogArrowStepIgnoresALateStaleProgressReport() {
-    QFETCH(int, secondKey);
-    QFETCH(double, stalePosition);
-    QFETCH(double, expected);
-
-    if (!nativePlatformAvailable()) {
-        QSKIP("the main player needs a native window and a real GL context");
-    }
+void TestPlaybackControls::keyboardStepsAreResolvedByTheSessionCore() {
+    if (!nativePlatformAvailable()) QSKIP("the Quick player needs a native window and GL context");
     if (!requireRuntime()) return;
-
     const QString fixture = fixtureClip();
     QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
 
-    // The dialog deletes itself on close, so it is owned here and never closed.
-    const std::unique_ptr<mplayer::shell::PlayerDialog> dialog(
-        new mplayer::shell::PlayerDialog(QStringLiteral("controls"), fixture));
-    dialog->show();
-    if (!QTest::qWaitForWindowExposed(dialog.get(), 15000)) {
-        QSKIP("the player window was never exposed on this platform");
-    }
-    auto* shell = dialog->findChild<mplayer::shell::PlayerShell*>();
-    QVERIFY2(shell != nullptr, "the dialog hosts a shell");
-    auto* surface = shell->findChild<mplayer::VideoSurface*>();
-    QVERIFY2(surface != nullptr, "the shell hosts a surface");
-    if (!surface->waitForContext(20000)) {
-        QSKIP("no OpenGL context for the player surface");
-    }
+    PlayerController controller(QStringLiteral("transport"), fixture);
+    QVERIFY(openPlayer(&controller));
+    VideoSession* const session = controller.session();
+    session->setPaused(true);
+    session->seek(1.0);
+    QVERIFY(settleUntil([&] { return std::abs(session->position() - 1.0) < 0.25; }, 10000));
 
-    dialog->startPlayer();
-    QVERIFY2(settleUntil([surface] { return surface->duration() > 10.0; }, 30000),
-             qPrintable(QStringLiteral("the player never loaded %1 (duration %2)")
-                            .arg(fixture)
-                            .arg(surface->duration())));
-    surface->setPaused(true);
-    surface->seek(1.0);
-    QVERIFY2(settleUntil([surface] { return std::abs(surface->position() - 1.0) < 0.25; }, 15000),
-             qPrintable(QStringLiteral("the player never reached 1.0 s (position %1)")
-                            .arg(surface->position())));
-
-    // Parked pump: the dialog's position feed and the shell's cached position
-    // stop moving, so only the core can say where playback actually is.
-    surface->setPumpSuspended(true);
+    session->setPumpSuspended(true);
     QThread::msleep(150);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-    QVERIFY2(std::abs(surface->position() - 1.0) < 0.25,
-             qPrintable(QStringLiteral("the observed position must stay cached at 1.0 s, is %1")
-                            .arg(surface->position())));
+    QVERIFY(std::abs(controller.position() - 1.0) < 0.25);
+    QVERIFY(controller.handleKey(Qt::Key_Right, 0));
+    QVERIFY(settleUntil([&] {
+                 const auto now = coreNumber(session, "time-pos");
+                 return now && std::abs(*now - 6.0) < 0.6;
+             }, 10000));
+    QVERIFY(controller.handleKey(Qt::Key_Left, 0));
+    session->setPumpSuspended(false);
 
-    // First arrow: 1.0 s in the core, so an honest step lands on 6 s. Waiting
-    // for the core to arrive is what makes the second step unambiguous.
-    sendKey(shell, Qt::Key_Right);
-    QVERIFY2(settleUntil(
-                 [surface] {
-                     const std::optional<double> now = coreNumber(surface, "time-pos");
-                     return now && std::abs(*now - 6.0) < 0.6;
-                 },
-                 10000),
-             "the first arrow step never reached the core");
-
-    // A late progress report for an older playhead.
-    shell->setPosition(stalePosition);
-    sendKey(shell, secondKey);
-    surface->setPumpSuspended(false);
-
-    const double settled = settledCorePosition(surface, 15000);
-    QVERIFY2(settled >= 0.0, "the core never reported a stable time-pos after the steps");
-    QVERIFY2(std::abs(settled - expected) < 0.5,
-             qPrintable(QStringLiteral("a step resolved from the core must land on %1 s, not on "
-                                       "the stale %2 s; the core reports %3")
-                            .arg(expected)
-                            .arg(stalePosition)
+    const double settled = settledCorePosition(session, 15000);
+    QVERIFY2(settled >= 0.0, "the session core did not settle after typed key actions");
+    QVERIFY2(std::abs(settled - 1.0) < 0.5,
+             qPrintable(QStringLiteral("two core-relative steps should return to 1 s; got %1")
                             .arg(settled)));
-    QVERIFY2(coreIsPaused(surface), "seeking must not unpause the player");
+    QVERIFY(coreIsPaused(session));
 }
 
-void TestPlaybackControls::aSkipForwardAtTheEndDoesNotRestartTheSource() {
-    if (!nativePlatformAvailable()) {
-        QSKIP("the main player needs a native window and a real GL context");
-    }
+void TestPlaybackControls::enginePauseHoldRetainsExplicitPauseIntent() {
+    if (!nativePlatformAvailable()) QSKIP("the Quick player needs a native window and GL context");
     if (!requireRuntime()) return;
-
     const QString fixture = fixtureClip();
     QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
 
-    const std::unique_ptr<mplayer::shell::PlayerDialog> dialog(
-        new mplayer::shell::PlayerDialog(QStringLiteral("controls"), fixture));
-    dialog->show();
-    if (!QTest::qWaitForWindowExposed(dialog.get(), 15000)) {
-        QSKIP("the player window was never exposed on this platform");
-    }
-    auto* shell = dialog->findChild<mplayer::shell::PlayerShell*>();
-    QVERIFY2(shell != nullptr, "the dialog hosts a shell");
-    auto* surface = shell->findChild<mplayer::VideoSurface*>();
-    QVERIFY2(surface != nullptr, "the shell hosts a surface");
-    if (!surface->waitForContext(20000)) {
-        QSKIP("no OpenGL context for the player surface");
-    }
-
-    dialog->startPlayer();
-    QVERIFY2(settleUntil([surface] { return surface->duration() > 10.0; }, 30000),
-             qPrintable(QStringLiteral("the player never loaded %1 (duration %2)")
-                            .arg(fixture)
-                            .arg(surface->duration())));
-    surface->setPaused(true);
-    surface->seek(1.0);
-    QVERIFY2(settleUntil([surface] { return std::abs(surface->position() - 1.0) < 0.25; }, 15000),
-             qPrintable(QStringLiteral("the player never reached 1.0 s (position %1)")
-                            .arg(surface->position())));
-
-    auto* skip = shell->findChild<QPushButton*>(QStringLiteral("playerSkipForward85"));
-    QVERIFY2(skip != nullptr, "the shell exposes its 85 s skip action");
-
-    const std::optional<double> duration = coreNumber(surface, "duration");
-    const std::optional<QString> sourceBefore = coreText(surface, "filename");
-    QVERIFY2(duration.has_value() && *duration > 10.0, "the core reports the loaded length");
-    QVERIFY2(sourceBefore.has_value(), "the core names its loaded source");
-
-    // 1 s + 85 s lands on the media end, where only the core may clamp.
-    skip->click();
-    const double firstEnd = settledCorePosition(surface, 15000);
-    QVERIFY2(firstEnd >= 0.0, "the core never settled after the skip");
-    QVERIFY2(firstEnd > *duration - 2.5,
-             qPrintable(QStringLiteral("the skip must reach the end %1, core reports %2")
-                            .arg(*duration)
-                            .arg(firstEnd)));
-
-    // A second skip at the end must be a no-op, not a reload or a rewind.
-    skip->click();
-    const double secondEnd = settledCorePosition(surface, 15000);
-    QVERIFY2(secondEnd >= 0.0, "the core never settled after the second skip");
-    QVERIFY2(secondEnd > *duration - 2.5,
-             qPrintable(QStringLiteral("a skip at the end must stay at the end %1, core reports %2")
-                            .arg(*duration)
-                            .arg(secondEnd)));
-    QVERIFY2(secondEnd >= firstEnd - 0.5,
-             qPrintable(QStringLiteral("a skip at the end must not move backwards: %1 then %2")
-                            .arg(firstEnd)
-                            .arg(secondEnd)));
-    QVERIFY2(coreIsPaused(surface), "the skip at the end must not unpause");
-
-    const std::optional<double> durationAfter = coreNumber(surface, "duration");
-    const std::optional<QString> sourceAfter = coreText(surface, "filename");
-    QVERIFY2(sourceAfter.has_value() && *sourceAfter == *sourceBefore,
-             "the skip at the end must not change the loaded source");
-    QVERIFY2(durationAfter.has_value() && std::abs(*durationAfter - *duration) < 0.01,
-             "the loaded source keeps its length");
+    PlayerController controller(QStringLiteral("transport"), fixture);
+    QVERIFY(openPlayer(&controller));
+    VideoSession* const session = controller.session();
+    QVERIFY(startPlaying(&controller));
+    QVERIFY(!session->playbackPauseIntent());
+ 
+    controller.beginEnginePreparation(QStringLiteral("Preparing"));
+    QVERIFY(controller.enginePauseHold());
+    QVERIFY(settleUntil([&] { return coreIsPaused(session); }, 10000));
+    controller.togglePlayPause();
+    QVERIFY(session->playbackPauseIntent());
+    controller.endEnginePreparation(true, QStringLiteral("Ready"));
+    QVERIFY(settleUntil([&] {
+                 return !controller.enginePauseHold() && !controller.playing() && coreIsPaused(session);
+             }, 10000));
+ 
+    controller.togglePlayPause();
+    QVERIFY(settleUntil([&] {
+                 return controller.playing() && !session->playbackPauseIntent() && !coreIsPaused(session);
+             }, 10000));
 }
 
-namespace {
+void TestPlaybackControls::compactPipKeepsTheSameWindowAndSession() {
+    if (!nativePlatformAvailable()) QSKIP("the Quick player needs a native window and GL context");
+    if (!requireRuntime()) return;
+    const QString fixture = fixtureClip();
+    QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
 
-// P0-08: records what the dialog asks its host to do. The dialog must never
-// ask for an episode on its own: EOF only emits episodePlaybackFinished and
-// the host decides whether to step.
-class StubPlayerHost : public mplayer::shell::PlayerHost {
-public:
-    void requestVariant(const QString&, const QString&) override {}
-    void requestEpisode(int index) override { requestedEpisodes.append(index); }
-    void requestTrackProbe(const QString&) override {}
-    void requestCopyStreamUrl() override {}
-    void playerClosed() override {}
-    void playbackFailed() override {}
-
-    QList<int> requestedEpisodes;
-};
-
-QVector<QVariantMap> threeEpisodePlaylist() {
-    QVector<QVariantMap> playlist;
-    for (int episode = 1; episode <= 3; ++episode) {
-        QVariantMap item;
-        item.insert(QStringLiteral("label"), QStringLiteral("Episode %1").arg(episode));
-        item.insert(QStringLiteral("number"), QString::number(episode));
-        item.insert(QStringLiteral("embed"), QStringLiteral("https://example.invalid/ep%1").arg(episode));
-        playlist.append(item);
-    }
-    return playlist;
+    PlayerController controller(QStringLiteral("transport"), fixture);
+    QVERIFY(openPlayer(&controller));
+    PlayerWindow* const window = controller.window();
+    VideoSession* const session = controller.session();
+    const uint64_t epoch = session->sourceEpoch();
+    const QString source = session->sourceUrl();
+    controller.togglePip();
+    QVERIFY(window->compactPip());
+    QCOMPARE(controller.window(), window);
+    QCOMPARE(controller.session(), session);
+    QCOMPARE(session->sourceEpoch(), epoch);
+    QCOMPARE(session->sourceUrl(), source);
+    QVERIFY(controller.isPipActive());
+    controller.togglePip();
+    QVERIFY(!window->compactPip());
+    QCOMPARE(session->sourceEpoch(), epoch);
 }
 
-}  // namespace
+void TestPlaybackControls::quickTimelinePointerSeeksAndTimeLabelsFormat() {
+    if (!nativePlatformAvailable()) QSKIP("the Quick player needs a native window and GL context");
+    if (!requireRuntime()) return;
+    const QString fixture = fixtureClip();
+    QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
 
-void TestPlaybackControls::anEofEmitsFinishedOnceAndDoesNotStepItself() {
-    // No core is needed: the EOF is simulated by emitting the surface's
-    // mediaEnded signal with the token of episode 2 (tokens are index + 1),
-    // exactly as VideoSurface does on MPV_EVENT_END_FILE / EOF.
-    StubPlayerHost host;
+    PlayerController controller(QStringLiteral("timeline"), fixture);
+    QVERIFY(openPlayer(&controller));
+    controller.session()->setPaused(true);
+    auto* window = controller.window();
+    QVERIFY(window != nullptr);
+    auto* timeline = timelineItem(window->contentItem());
+    QVERIFY2(timeline != nullptr, "the visible Quick scene must expose its actual timeline item");
+    QVERIFY(timeline->width() > 0.0);
+    QVERIFY(timeline->height() > 0.0);
+    const double target = controller.duration() * 0.5;
+
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, windowPoint(timeline, 0.5));
+    QVERIFY2(settleUntil([&] { return std::abs(controller.position() - target) < 0.75; }, 10000),
+             "clicking the Quick timeline did not seek the session");
+    QTest::keyClick(window, Qt::Key_Right);
+    QVERIFY2(settleUntil([&] { return std::abs(controller.position() - (target + 5.0)) < 0.75; },
+                         10000),
+             "the focused Quick timeline did not handle its relative keyboard seek");
+    QVERIFY(coreIsPaused(controller.session()));
+    QTest::keyClick(window, Qt::Key_Space);
+    QVERIFY(settleUntil([&] { return controller.playing(); }, 10000));
+    QTest::keyClick(window, Qt::Key_Space);
+    QVERIFY(settleUntil([&] { return !controller.playing() && coreIsPaused(controller.session()); },
+                        10000));
+
+    QCOMPARE(controller.formatTime(3661.9), QStringLiteral("1:01:01"));
+    QCOMPARE(controller.formatRemaining(0.0),
+             QStringLiteral("-%1").arg(controller.formatTime(controller.duration())));
+    QCOMPARE(controller.formatRemaining(controller.position()),
+             QStringLiteral("-%1").arg(controller.formatTime(controller.duration() -
+                                                              controller.position())));
+}
+
+void TestPlaybackControls::variantTransitionPreservesPositionPauseRateAndFirstReport() {
+    if (!nativePlatformAvailable()) QSKIP("the Quick player needs a native window and GL context");
+    if (!requireRuntime()) return;
+    const QString first = fixtureClip();
+    const QString second = fixtureClip("motion_320x180_23976fps_8bit_hevc.mp4");
+    QVERIFY2(QFileInfo::exists(first), qPrintable(first));
+    QVERIFY2(QFileInfo::exists(second), qPrintable(second));
+
+    RecordingHost host;
+    const QList<mplayer::shell::QualityEntry> qualities{
+        mplayer::shell::QualityEntry{720, first}};
+    PlayerController controller(QStringLiteral("Episode · 720p"), first, qualities, 720, &host);
+    QVERIFY(openPlayer(&controller));
+    VideoSession* const session = controller.session();
+    controller.setRate(1.25);
+    session->setPaused(true);
+    session->seek(2.0);
+    QVERIFY(settleUntil([&] { return std::abs(session->position() - 2.0) < 0.25; }, 10000));
+    const uint64_t oldEpoch = session->sourceEpoch();
+    QList<double> reportedPositions;
+    connect(&controller, &PlayerController::positionChanged, &controller,
+            [&] { reportedPositions.append(controller.position()); });
+
+    controller.applyVariant({mplayer::shell::QualityEntry{480, second}},
+                            QStringLiteral("Episode · 480p"), second);
+    QVERIFY2(settleUntil([&] {
+                 return session->sourceEpoch() != oldEpoch &&
+                        session->sourceUrl().contains(QStringLiteral("23976fps")) &&
+                        session->duration() > 10.0;
+             }, 30000), "the Quick quality transition did not load the selected source");
+    QVERIFY2(settleUntil([&] { return std::abs(session->position() - 2.0) < 0.35; }, 15000),
+             qPrintable(QStringLiteral("variant swap lost the playhead: %1")
+                            .arg(session->position())));
+    QVERIFY(coreIsPaused(session));
+    QVERIFY2(settleUntil([&] {
+                 const auto speed = coreNumber(session, "speed");
+                 return speed && std::abs(*speed - 1.25) < 0.01;
+             }, 10000), "variant swap lost the playback rate");
+    QVERIFY(!reportedPositions.isEmpty());
+    QVERIFY2(reportedPositions.first() >= 1.5,
+             qPrintable(QStringLiteral("controller reported the new timeline before restoring "
+                                       "the carried playhead: %1")
+                            .arg(reportedPositions.first())));
+
+    QVERIFY(startPlaying(&controller));
+    QVERIFY(settleUntil([&] { return session->position() > 2.2; }, 5000));
+    const double playingPosition = session->position();
+    const uint64_t pausedSwapEpoch = session->sourceEpoch();
+    controller.applyVariant({mplayer::shell::QualityEntry{720, first}},
+                            QStringLiteral("Episode · 720p"), first);
+    QVERIFY2(settleUntil([&] {
+                 return session->sourceEpoch() != pausedSwapEpoch &&
+                        session->sourceUrl().contains(QStringLiteral("24fps")) &&
+                        session->duration() > 10.0 &&
+                        std::abs(session->position() - playingPosition) < 0.5;
+             }, 30000), "playing variant swap did not restore its current position");
+    QVERIFY2(settleUntil([&] { return controller.playing() && !coreIsPaused(session); }, 10000),
+             "variant swap failed to continue playback");
+}
+
+void TestPlaybackControls::episodeRestartRetainsExplicitPauseIntent() {
+    if (!nativePlatformAvailable()) QSKIP("the Quick player needs a native window and GL context");
+    if (!requireRuntime()) return;
+    const QString first = fixtureClip();
+    const QString second = fixtureClip("motion_320x180_23976fps_8bit_hevc.mp4");
+    QVERIFY2(QFileInfo::exists(first), qPrintable(first));
+    QVERIFY2(QFileInfo::exists(second), qPrintable(second));
+
+    RecordingHost host;
+    PlayerController controller(QStringLiteral("Episode 1 · 720p"), first,
+                                {mplayer::shell::QualityEntry{720, first}}, 720, &host);
+    QVERIFY(openPlayer(&controller));
+    VideoSession* const session = controller.session();
+    session->setPaused(true);
+    session->seek(2.0);
+    QVERIFY(settleUntil([&] { return std::abs(session->position() - 2.0) < 0.25; }, 10000));
+    const uint64_t oldEpoch = session->sourceEpoch();
+
+    controller.applyEpisode(QStringLiteral("Episode 2"), QStringLiteral("episode-2"), 1,
+                            {mplayer::shell::QualityEntry{480, second}}, {});
+    QVERIFY2(settleUntil([&] {
+                 return session->sourceEpoch() != oldEpoch &&
+                        session->sourceUrl().contains(QStringLiteral("23976fps")) &&
+                        session->duration() > 10.0;
+             }, 30000), "episode restart did not load the selected source");
+    QVERIFY2(settleUntil([&] { return coreIsPaused(session); }, 10000),
+             "episode restart discarded the viewer's explicit pause intent");
+    QVERIFY2(settleUntil([&] { return session->position() < 0.5; }, 10000),
+             "a new episode must start from the beginning, not the prior playhead");
+}
+
+void TestPlaybackControls::refreshedStreamStartsAtBeginningWithoutResuming() {
+    if (!nativePlatformAvailable()) QSKIP("the Quick player needs a native window and GL context");
+    if (!requireRuntime()) return;
+    const QString first = fixtureClip();
+    const QString refreshed = fixtureClip("motion_320x180_23976fps_8bit_hevc.mp4");
+    QVERIFY2(QFileInfo::exists(first), qPrintable(first));
+    QVERIFY2(QFileInfo::exists(refreshed), qPrintable(refreshed));
+
+    RecordingHost host;
+    PlayerController controller(QStringLiteral("Episode · 720p"), first,
+                                {mplayer::shell::QualityEntry{720, first}}, 720, &host);
+    QVERIFY(openPlayer(&controller));
+    VideoSession* const session = controller.session();
+    session->setPaused(true);
+    session->seek(3.0);
+    QVERIFY(settleUntil([&] { return std::abs(session->position() - 3.0) < 0.25; }, 10000));
+    const uint64_t oldEpoch = session->sourceEpoch();
+
+    controller.applyRefreshedStreams({mplayer::shell::QualityEntry{720, refreshed}}, 720);
+    QVERIFY2(settleUntil([&] {
+                 return session->sourceEpoch() != oldEpoch &&
+                        session->sourceUrl().contains(QStringLiteral("23976fps")) &&
+                        session->duration() > 10.0;
+             }, 30000), "refreshed stream did not load");
+    QVERIFY2(settleUntil([&] { return session->position() < 0.5; }, 10000),
+             qPrintable(QStringLiteral("refreshed stream incorrectly resumed at %1")
+                            .arg(session->position())));
+    QVERIFY(coreIsPaused(session));
+}
+
+void TestPlaybackControls::skipForwardUsesEightyFiveSecondsWhenReachable() {
+    if (!nativePlatformAvailable()) QSKIP("the Quick player needs a native window and GL context");
+    if (!requireRuntime()) return;
+    const QString fixture = QDir::toNativeSeparators(
+        QStringLiteral(MIKAI_SOURCE_DIR "/resources/benchmarks/1920x1080.mp4"));
+    QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
+
+    PlayerController controller(QStringLiteral("skip forward"), fixture);
+    QVERIFY(openPlayer(&controller));
+    VideoSession* const session = controller.session();
+    const auto duration = coreNumber(session, "duration");
+    QVERIFY(duration && *duration > 10.0);
+    if (*duration <= 86.0) QSKIP("the selected real benchmark cannot reach the 85-second target");
+    session->setPaused(true);
+    session->seek(1.0);
+    QVERIFY(settleUntil([&] { return std::abs(session->position() - 1.0) < 0.25; }, 10000));
+
+    controller.skipForward();
+    QVERIFY2(settleUntil([&] { return std::abs(session->position() - 86.0) < 0.75; }, 10000),
+             qPrintable(QStringLiteral("skip-forward did not seek 85 seconds: %1")
+                            .arg(session->position())));
+    QVERIFY(coreIsPaused(session));
+}
+
+void TestPlaybackControls::skipAtEndDoesNotRestartTheSource() {
+    if (!nativePlatformAvailable()) QSKIP("the Quick player needs a native window and GL context");
+    if (!requireRuntime()) return;
+    const QString fixture = fixtureClip();
+    QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
+
+    PlayerController controller(QStringLiteral("transport"), fixture);
+    QVERIFY(openPlayer(&controller));
+    VideoSession* const session = controller.session();
+    session->setPaused(true);
+    session->seek(1.0);
+    QVERIFY(settleUntil([&] { return std::abs(session->position() - 1.0) < 0.25; }, 10000));
+    const auto duration = coreNumber(session, "duration");
+    const auto sourceBefore = coreText(session, "filename");
+    QVERIFY(duration && *duration > 10.0);
+    QVERIFY(sourceBefore);
+
+    controller.skipForward();
+    const double firstEnd = settledCorePosition(session, 15000);
+    QVERIFY(firstEnd >= *duration - 2.5);
+    controller.skipForward();
+    const double secondEnd = settledCorePosition(session, 15000);
+    QVERIFY(secondEnd >= *duration - 2.5);
+    QVERIFY(secondEnd >= firstEnd - 0.5);
+    QVERIFY(coreIsPaused(session));
+    QCOMPARE(coreText(session, "filename"), sourceBefore);
+    const auto durationAfter = coreNumber(session, "duration");
+    QVERIFY(durationAfter && std::abs(*durationAfter - *duration) < 0.01);
+}
+
+void TestPlaybackControls::eofEmitsFinishedOnceWithoutSteppingTheHost() {
+    RecordingHost host;
     const QList<mplayer::shell::QualityEntry> qualities{
         mplayer::shell::QualityEntry{720, fixtureClip()}};
-    const std::unique_ptr<mplayer::shell::PlayerDialog> dialog(
-        new mplayer::shell::PlayerDialog(QStringLiteral("Episode 2 · 720p"), fixtureClip(),
-                                         qualities, 720, &host));
-    auto* shell = dialog->findChild<mplayer::shell::PlayerShell*>();
-    QVERIFY2(shell != nullptr, "the dialog hosts a shell");
-    auto* surface = shell->findChild<mplayer::VideoSurface*>();
-    QVERIFY2(surface != nullptr, "the shell hosts a surface");
-    dialog->setPlaylist(threeEpisodePlaylist(), 1);
-    QCOMPARE(dialog->currentEpisodeIndex(), 1);
-
-    QSignalSpy finished(dialog.get(),
-                        &mplayer::shell::PlayerDialog::episodePlaybackFinished);
-    QVERIFY(QMetaObject::invokeMethod(surface, "mediaEnded", Q_ARG(quint64, 2)));
+    PlayerController controller(QStringLiteral("Episode 2 · 720p"), fixtureClip(), qualities, 720,
+                                &host);
+    controller.setPlaylist(threeEpisodePlaylist(), 1);
+    QCOMPARE(controller.currentEpisodeIndex(), 1);
+    QSignalSpy finished(&controller, &PlayerController::episodePlaybackFinished);
+    QVERIFY(QMetaObject::invokeMethod(controller.session(), "mediaEnded", Q_ARG(quint64, 2)));
     QCOMPARE(finished.count(), 1);
     QCOMPARE(finished.at(0).at(0).toInt(), 1);
-    QVERIFY2(host.requestedEpisodes.isEmpty(),
-             "EOF must not make the dialog step on its own");
+    QVERIFY(host.requestedEpisodes.isEmpty());
 
-    // A second end for the same episode is deduped by lastFinishedEpisodeIndex_.
-    QVERIFY(QMetaObject::invokeMethod(surface, "mediaEnded", Q_ARG(quint64, 2)));
+    QVERIFY(QMetaObject::invokeMethod(controller.session(), "mediaEnded", Q_ARG(quint64, 2)));
     QCOMPARE(finished.count(), 1);
-    QVERIFY2(host.requestedEpisodes.isEmpty(),
-             "a duplicate EOF must not make the dialog step either");
-
-    // The last episode still emits, and still does not step by itself.
-    dialog->setPlaylist(threeEpisodePlaylist(), 2);
-    QVERIFY(QMetaObject::invokeMethod(surface, "mediaEnded", Q_ARG(quint64, 3)));
+    QVERIFY(host.requestedEpisodes.isEmpty());
+    controller.setPlaylist(threeEpisodePlaylist(), 2);
+    QVERIFY(QMetaObject::invokeMethod(controller.session(), "mediaEnded", Q_ARG(quint64, 3)));
     QCOMPARE(finished.count(), 2);
     QCOMPARE(finished.at(1).at(0).toInt(), 2);
-    QVERIFY2(host.requestedEpisodes.isEmpty(),
-             "the last episode's EOF must not step anywhere");
+    QVERIFY(host.requestedEpisodes.isEmpty());
 }
 
-void TestPlaybackControls::anUnfilteredCaptureReturnsAtOnceAndArrivesByCallback() {
-    if (!nativePlatformAvailable()) {
-        QSKIP("the player needs a native window and a real GL context");
-    }
+void TestPlaybackControls::asynchronousUnfilteredCaptureUsesTheSessionCallback() {
+    if (!nativePlatformAvailable()) QSKIP("the Quick player needs a native window and GL context");
     if (!requireRuntime()) return;
-
     const QString fixture = fixtureClip();
     QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
 
-    const std::unique_ptr<mplayer::shell::PlayerDialog> dialog(
-        new mplayer::shell::PlayerDialog(QStringLiteral("controls"), fixture));
-    dialog->show();
-    if (!QTest::qWaitForWindowExposed(dialog.get(), 15000)) {
-        QSKIP("the player window was never exposed on this platform");
-    }
-    auto* shell = dialog->findChild<mplayer::shell::PlayerShell*>();
-    QVERIFY2(shell != nullptr, "the dialog hosts a shell");
-    auto* surface = shell->findChild<mplayer::VideoSurface*>();
-    QVERIFY2(surface != nullptr, "the shell hosts a surface");
-    if (!surface->waitForContext(20000)) {
-        QSKIP("no OpenGL context for the player surface");
-    }
+    PlayerController controller(QStringLiteral("transport"), fixture);
+    QVERIFY(openPlayer(&controller));
+    VideoSession* const session = controller.session();
+    session->setPaused(true);
+    session->seek(1.0);
+    QVERIFY(settleUntil([&] { return std::abs(session->position() - 1.0) < 0.25; }, 10000));
+    const auto filtersBefore = coreText(session, "vf");
+    const auto shadersBefore = coreText(session, "glsl-shaders");
 
-    dialog->startPlayer();
-    QVERIFY2(settleUntil([surface] { return surface->duration() > 10.0; }, 30000),
-             qPrintable(QStringLiteral("the player never loaded %1 (duration %2)")
-                            .arg(fixture)
-                            .arg(surface->duration())));
-    surface->setPaused(true);
-    surface->seek(1.0);
-    QVERIFY2(settleUntil([surface] { return std::abs(surface->position() - 1.0) < 0.25; }, 15000),
-             qPrintable(QStringLiteral("the player never reached 1.0 s (position %1)")
-                            .arg(surface->position())));
-
-    const std::optional<QString> filtersBefore = coreText(surface, "vf");
-    const std::optional<QString> shadersBefore = coreText(surface, "glsl-shaders");
-
-    // The call itself must not block the GUI thread: the frame arrives later,
-    // through the completion callback.
     QElapsedTimer callClock;
     callClock.start();
     bool completed = false;
     QImage captured;
     QString captureReason;
-    surface->grabUnfilteredFrameAsync([&](QImage image, QString reason) {
+    session->grabUnfilteredFrameAsync([&](QImage image, QString reason) {
         captured = std::move(image);
         captureReason = std::move(reason);
         completed = true;
     });
     QVERIFY2(callClock.elapsed() < 100,
-             qPrintable(QStringLiteral("the async capture call blocked the GUI thread for %1 ms")
-                            .arg(callClock.elapsed())));
+             qPrintable(QStringLiteral("async capture blocked for %1 ms").arg(callClock.elapsed())));
     QTRY_VERIFY_WITH_TIMEOUT(completed, 15000);
-    QVERIFY2(captureReason.isEmpty(),
-             qPrintable(QStringLiteral("the capture failed: %1").arg(captureReason)));
-    QVERIFY2(!captured.isNull(), "the capture must deliver a frame");
+    QVERIFY2(captureReason.isEmpty(), qPrintable(captureReason));
+    QVERIFY(!captured.isNull());
     QCOMPARE(captured.size(), QSize(320, 180));
-
-    // The playhead returns to where it was: the second seek lands back on 1 s.
-    QVERIFY2(settleUntil([surface] { return std::abs(surface->position() - 1.0) < 0.25; }, 10000),
-             qPrintable(QStringLiteral("the capture left the playhead at %1 s")
-                            .arg(surface->position())));
-    // The filter chain the capture cleared is restored afterwards.
-    QCOMPARE(coreText(surface, "vf"), filtersBefore);
-    QCOMPARE(coreText(surface, "glsl-shaders"), shadersBefore);
-    QVERIFY2(coreIsPaused(surface), "the capture must not unpause the player");
+    QVERIFY(settleUntil([&] { return std::abs(session->position() - 1.0) < 0.25; }, 10000));
+    QCOMPARE(coreText(session, "vf"), filtersBefore);
+    QCOMPARE(coreText(session, "glsl-shaders"), shadersBefore);
+    QVERIFY(coreIsPaused(session));
 }

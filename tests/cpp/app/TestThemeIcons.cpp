@@ -8,8 +8,7 @@
 #include "widgets/TitleCard.hpp"
 #include "widgets/ToggleSwitch.hpp"
 
-#include <player/shell/ShellTheme.hpp>
-#include <player/shell/ShellWidgets.hpp>
+#include <player/quick/PlayerIconProvider.hpp>
 
 #include <QApplication>
 #include <QColor>
@@ -105,33 +104,6 @@ QImage renderAt(QWidget& widget, qreal ratio) {
   widget.render(&painter, QPoint(), QRegion(), QWidget::DrawChildren);
   painter.end();
   return image;
-}
-
-/// Shortest distance from `at` to a list of segments given as consecutively
-/// paired points.
-qreal distanceToSegments(const QPointF& at, const QList<QPointF>& pairs) {
-  qreal nearest = std::numeric_limits<qreal>::max();
-  for (int i = 0; i + 1 < pairs.size(); i += 2) {
-    const QPointF a = pairs.at(i);
-    const QPointF ab = pairs.at(i + 1) - a;
-    const qreal lengthSquared = ab.x() * ab.x() + ab.y() * ab.y();
-    qreal t = lengthSquared > 0.0
-                  ? ((at.x() - a.x()) * ab.x() + (at.y() - a.y()) * ab.y()) / lengthSquared
-                  : 0.0;
-    t = qBound(0.0, t, 1.0);
-    nearest = qMin(nearest, std::hypot(at.x() - (a.x() + ab.x() * t),
-                                       at.y() - (a.y() + ab.y() * t)));
-  }
-  return nearest;
-}
-
-/// The same pair list with every point scaled by `k`, for a glyph drawn through
-/// a `size / 24` painter transform.
-QList<QPointF> scaledPoints(const QList<QPointF>& pairs, qreal k) {
-  QList<QPointF> scaled;
-  scaled.reserve(pairs.size());
-  for (const QPointF& point : pairs) scaled.append(point * k);
-  return scaled;
 }
 
 /// The mean x of the pixels that are exactly `color`: where a shape was drawn.
@@ -324,7 +296,7 @@ void TestThemeIcons::requestedSizeAndDevicePixelRatioAreRendered() {
   QCOMPARE(large.actualSize(QSize(37, 37)), QSize(37, 37));
 }
 
-void TestThemeIcons::customColorAlphaIsPreservedInCacheKey() {
+void TestThemeIcons::customColorAlphaIsVisible() {
   const QColor lowAlpha(37, 89, 143, 72);
   const QColor highAlpha(37, 89, 143, 196);
   const QPixmap low = mikai::app::theme::gearIcon(25, lowAlpha.name(QColor::HexArgb))
@@ -615,123 +587,63 @@ void TestThemeIcons::artworkFrameIsAllocatedAtTheDeviceSize() {
   }
 }
 
-void TestThemeIcons::shellGlyphJoinsAreRound() {
-  // IconPainter::contract() paints an L whose vertex at (14,10) in its 24-unit
-  // grid is a real join. Its shipped 2.25 px stroke leaves the join style
-  // sub-pixel, so the whole public glyph is painted through a magnified painter
-  // instead and the corner is checked analytically: a round join is the only
-  // style that both stays inside the stroke's half-width (a miter reaches past
-  // it) and fills the corner's arc (QPen's default bevel join cuts the pixels
-  // past its chord clear).
-  const qreal magnify = 8.0;
-  const QSize box(int(24 * magnify), int(24 * magnify));
-  QPixmap pixmap(box);
-  pixmap.fill(Qt::transparent);
-  {
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.scale(magnify, magnify);
-    mplayer::shell::IconPainter::contract(painter, 0, 0, 24, QColor(Qt::white));
-  }
-  const QImage image = pixmap.toImage();
-  // contract()'s corner at (14,10) opens towards down-left, and no other stroke
-  // reaches that quadrant: the diagonal that starts at the same vertex runs
-  // up-right (away from it) and the other diagonal ends four grid units off. A
-  // corner another stroke capped over would hide the join style completely.
-  const QPointF vertex(14 * magnify, 10 * magnify);
-  const qreal half = 2.25 * magnify / 2.0;
-  const QList<QPointF> segments = {
-      QPointF(4, 14),  QPointF(10, 14),   // open L, horizontal arm
-      QPointF(10, 14), QPointF(10, 20),   // open L, vertical arm
-      QPointF(20, 10), QPointF(14, 10),   // probed L, horizontal arm
-      QPointF(14, 10), QPointF(14, 4),    // probed L, vertical arm
-      QPointF(14, 10), QPointF(21, 3),    // diagonal
-      QPointF(3, 21),  QPointF(10, 14),   // diagonal
-  };
-  const QList<QPointF> geometry = scaledPoints(segments, magnify);
+void TestThemeIcons::quickGlyphUsesThemeTintAndDevicePixelRatio() {
+  mplayer::quick::PlayerIconProvider provider;
+  const QColor tint(37, 89, 143, 196);
+  const QString request =
+      QStringLiteral("play?size=24&dpr=1.5&color=") +
+      QString::fromLatin1(tint.name(QColor::HexArgb).toUtf8().toPercentEncoding());
+  QSize reported;
+  const QImage image = provider.requestImage(request, &reported, QSize());
 
-  int solid = 0;
+  QVERIFY(!image.isNull());
+  QCOMPARE(image.size(), QSize(36, 36));
+  QCOMPARE(reported, image.size());
+  QCOMPARE(image.devicePixelRatio(), 1.5);
+  bool visibleTint = false;
   for (int y = 0; y < image.height(); ++y) {
     for (int x = 0; x < image.width(); ++x) {
-      if (image.pixelColor(x, y).alpha() < 250) continue;
-      ++solid;
-      // A miter join draws solid ink beyond the round envelope.
-      const qreal nearest = distanceToSegments(QPointF(x + 0.5, y + 0.5), geometry);
-      QVERIFY2(nearest <= half + 0.5,
-               qPrintable(QStringLiteral("solid ink %1 px from a stroke with a %2 px corner")
-                              .arg(nearest)
-                              .arg(2.25 * magnify)));
-    }
-  }
-  QVERIFY2(solid > 100, "the glyph did not paint");
-
-  // Every pixel the arc of the round join fully covers must be solid; a bevel
-  // join leaves the ones past its chord clear.
-  int arc = 0;
-  for (int y = 0; y < image.height(); ++y) {
-    for (int x = 0; x < image.width(); ++x) {
-      const QPointF centre(x + 0.5, y + 0.5);
-      if (centre.x() > vertex.x() || centre.y() < vertex.y()) continue;
-      if (std::hypot(centre.x() - vertex.x(), centre.y() - vertex.y()) > half - 1.0) continue;
-      ++arc;
-      QVERIFY2(image.pixelColor(x, y).alpha() >= 250,
-               qPrintable(QStringLiteral("the join is cut at %1,%2").arg(x).arg(y)));
-    }
-  }
-  QVERIFY2(arc > 20, "the join left no arc pixels to measure");
-
-  // The shipped sizes still paint their own ink, which is what a clipped or
-  // unresampled glyph loses first.
-  for (const int side : {24, 30}) {
-    QPixmap small(side, side);
-    small.fill(Qt::transparent);
-    {
-      QPainter painter(&small);
-      painter.setRenderHint(QPainter::Antialiasing, true);
-      mplayer::shell::IconPainter::contract(painter, 0, 0, side, QColor(Qt::white));
-    }
-    const QImage shipped = small.toImage();
-    const QList<QPointF> shippedGeometry = scaledPoints(segments, side / 24.0);
-    int inked = 0;
-    for (int y = 0; y < shipped.height(); ++y) {
-      for (int x = 0; x < shipped.width(); ++x) {
-        if (shipped.pixelColor(x, y).alpha() == 0) continue;
-        ++inked;
-        const qreal nearest = distanceToSegments(QPointF(x + 0.5, y + 0.5), shippedGeometry);
-        QVERIFY2(nearest <= 2.25 / 2.0 + 1.0,
-                 qPrintable(QStringLiteral("ink %1 px from a stroke at %2 px")
-                                .arg(nearest)
-                                .arg(side)));
+      const QColor pixel = image.pixelColor(x, y);
+      if (pixel.red() == tint.red() && pixel.green() == tint.green() &&
+          pixel.blue() == tint.blue() && pixel.alpha() == tint.alpha()) {
+        visibleTint = true;
+        break;
       }
     }
-    QVERIFY2(inked > 40, "the glyph did not paint");
+    if (visibleTint) break;
   }
+  QVERIFY2(visibleTint, "the Quick glyph must visibly use the requested theme tint");
 }
+void TestThemeIcons::quickGlyphRequestTracksTintAndDprChanges() {
+  mplayer::quick::PlayerIconProvider provider;
+  const QColor firstTint(29, 67, 223, 196);
+  const QColor secondTint(211, 31, 47, 112);
+  const auto request = [](const QColor& tint, qreal dpr) {
+    return QStringLiteral("play?size=24&dpr=%1&color=%2")
+        .arg(QString::number(dpr, 'f', 3),
+             QString::fromLatin1(tint.name(QColor::HexArgb).toUtf8().toPercentEncoding()));
+  };
 
-void TestThemeIcons::shellAtmosBadgeStaysInsideItsBox() {
-  for (const int side : {24, 48}) {
-    QPixmap pixmap(side, side);
-    pixmap.fill(Qt::transparent);
-    {
-      QPainter painter(&pixmap);
-      painter.setRenderHint(QPainter::Antialiasing, true);
-      mplayer::shell::IconPainter::dolbyAtmos(painter, 0, 0, side);
-    }
-    const QImage image = pixmap.toImage();
-    for (int i = 0; i < side; ++i) {
-      QVERIFY2(alphaAt(image, 0, i) == 0,
-               qPrintable(QStringLiteral("badge ink on the left edge at %1").arg(side)));
-      QVERIFY2(alphaAt(image, side - 1, i) == 0,
-               qPrintable(QStringLiteral("badge ink on the right edge at %1").arg(side)));
-      QVERIFY2(alphaAt(image, i, 0) == 0,
-               qPrintable(QStringLiteral("badge ink on the top edge at %1").arg(side)));
-      QVERIFY2(alphaAt(image, i, side - 1) == 0,
-               qPrintable(QStringLiteral("badge ink on the bottom edge at %1").arg(side)));
-    }
-    QVERIFY2(inkBounds(image).isValid(), "the badge did not paint");
-  }
+  QSize firstSize;
+  const QImage first = provider.requestImage(request(firstTint, 1.0), &firstSize, QSize());
+  QVERIFY(!first.isNull());
+  QCOMPARE(first.size(), QSize(24, 24));
+  QCOMPARE(firstSize, first.size());
+  QCOMPARE(first.devicePixelRatio(), 1.0);
+  QVERIFY(containsColorAtAlpha(QPixmap::fromImage(first), firstTint));
+
+  // This is the URL change PlayerIcon.qml makes when its bound theme tint or
+  // Window.devicePixelRatio changes. A fresh provider request must not reuse
+  // the prior themed raster.
+  QSize changedSize;
+  const QImage changed = provider.requestImage(request(secondTint, 1.5), &changedSize, QSize());
+  QVERIFY(!changed.isNull());
+  QCOMPARE(changed.size(), QSize(36, 36));
+  QCOMPARE(changedSize, changed.size());
+  QCOMPARE(changed.devicePixelRatio(), 1.5);
+  QVERIFY(containsColorAtAlpha(QPixmap::fromImage(changed), secondTint));
+  QVERIFY(!containsColorAtAlpha(QPixmap::fromImage(changed), firstTint));
 }
-
 void TestThemeIcons::defaultGlyphTracksPaletteChanges() {
   const PaletteRestore restore;
   QPalette palette = restore.original;
@@ -762,15 +674,11 @@ void TestThemeIcons::nativeWindowPaintStaysAffineAtFractionalDpr() {
   swatch.setFixedSize(mikai::app::theme::kSettingsSwatchSize,
                       mikai::app::theme::kSettingsSwatchSize);
   swatch.show();
-  mplayer::shell::Panel panel(mplayer::shell::dock(), 10.0, mplayer::shell::w15());
-  panel.resize(160, 48);
-  panel.show();
   QCoreApplication::processEvents();
 
   const QVector<QPair<QString, QWidget*>> targets = {
       {QStringLiteral("ToggleSwitch"), &toggle},
       {QStringLiteral("SwatchButton"), &swatch},
-      {QStringLiteral("Panel"), &panel},
   };
 
   QWindow* handle = toggle.windowHandle();

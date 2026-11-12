@@ -19,7 +19,6 @@ class TestI18n : public QObject {
   void appearanceSaveAndCancelKeepTheLatestBatchedStyle();
   void unparsableAppearanceFallsBackToDefaults();
   void appearancePreviewCancelRollsBackAndSavePersists();
-  void playerOverlayFollowsTheApplicationAccent();
   void settingsPagesFitTheNarrowestAllowedWidth();
   void titleNamesFollowTheirOwnLanguageAndFallBack();
   void nativePlanErrorsFollowTheActiveLanguage();
@@ -60,16 +59,10 @@ class TestI18n : public QObject {
   /// words describe - the page, the run, the failure - exactly where it was.
   void rangePagerRetranslatesWithoutMovingThePageOrAsking();
   void failureViewRephrasesOnlyItsOwnWordsAndKeepsBackendDetail();
-  void processingOverlayKeepsItsRunAcrossLanguageSwitches();
 
-  /// The popover's speed presets are one `const char*` table, so the only thing
-  /// that makes them translatable is the context-carrying extraction the
-  /// catalogue is built from. A catalogue that skipped that table left every row
-  /// English while the numbers beside them were already Ukrainian. An open
-  /// popover, at a rate that is not the default, must restate all six
-  /// descriptions en -> uk -> en and keep the checked rate and the quality
-  /// choice where they were, without reporting either as a fresh selection.
-  void settingsFlyoutRetranslatesEverySpeedPresetWithoutReselecting();
+  /// The canonical Quick player restates its live controls en -> uk -> en while
+  /// the real VideoSession remains paused at the same position and duration.
+  void playerQuickRetranslatesWithoutResettingPlayback();
 
   /// The quota chip is fed by a real rate-limit answer over loopback and a
   /// genuinely parked request. An open label must restate its tooltip and

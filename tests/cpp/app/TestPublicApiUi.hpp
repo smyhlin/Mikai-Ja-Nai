@@ -40,6 +40,8 @@ class TestPublicApiUi : public QObject {
   // plaintext QSettings.
   void openSubtitlesApiKeyMigratesOutOfQSettings();
   void managerActionRowsShareOneWidth();
+  void quickResumeIsOfferedOncePerEpisodeToken();
+  void staleQuickResumeAnswerCannotAffectTheNextEpisode();
 };
 
 int runTestPublicApiUi(int argc, char** argv);

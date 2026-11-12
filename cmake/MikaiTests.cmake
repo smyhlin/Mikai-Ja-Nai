@@ -10,6 +10,53 @@ if(NOT IS_DIRECTORY "${MIKAI_TEST_QT_PLUGIN_DIR}/platforms" AND NOT WIN32)
   endif()
 endif()
 
+# Test runtime and scratch selection.
+#
+# Windows test children are MinGW binaries and must load the runtime of the
+# compiler that built them: other GCC installations on PATH ship identically
+# named DLLs, and a child importing an entry point the wrong build lacks dies
+# with 0xc0000139 before main. The launcher stages the runtime trio from
+# --toolchain-bin-dir next to the staged executable, where the loader looks
+# first. The historical default is the compiler's own directory. This
+# workstation's compiler directory is not a complete runtime (its
+# libstdc++-6.dll lives in the Qt SDK bin that the passing runs use), so the
+# provider is an explicit, validated cache value instead of a PATH guess:
+#
+#   cmake --preset release -DMIKAI_TEST_RUNTIME_BIN_DIR=C:/qt/6.12.0/mingw_64/bin
+#
+# Every provider (named or derived) must contain the whole trio; a partial one
+# refuses configuration rather than dying in the first test. Nothing is copied
+# into the toolchain and no system runtime is substituted for it.
+# One quoted docstring per cache set: set(... CACHE PATH "a" "b") appends the
+# extra arguments to the value instead of joining them into the help text.
+string(CONCAT _mikai_test_runtime_bin_dir_doc
+  "Windows MinGW runtime directory staged for test children "
+  "(libstdc++-6.dll, libgcc_s_seh-1.dll, libwinpthread-1.dll). Empty derives it "
+  "from the compiler that builds the tests.")
+set(MIKAI_TEST_RUNTIME_BIN_DIR "" CACHE PATH "${_mikai_test_runtime_bin_dir_doc}")
+unset(_mikai_test_runtime_bin_dir_doc)
+
+# The test launcher creates one owned QTemporaryDir beneath this parent per run
+# and removes only that directory. The default stays under the build tree, so
+# ordinary hosts need no configuration. Linux verification on a filesystem that
+# cannot honour the chmod/ownership/inotify assumptions of the runtime suites
+# (WSL /mnt/* DrvFS) points it at a native filesystem directory instead:
+#
+#   cmake --preset linux-release -DMIKAI_TEST_SCRATCH_ROOT=/tmp/mikai-tests
+string(CONCAT _mikai_test_scratch_root_doc
+  "Parent directory for the test launcher's owned scratch runs. Must be an "
+  "absolute path on a filesystem that honours POSIX chmod/inotify (on WSL, "
+  "e.g. /tmp, never /mnt/<drive>).")
+set(MIKAI_TEST_SCRATCH_ROOT "${CMAKE_BINARY_DIR}/_test-runs" CACHE PATH
+  "${_mikai_test_scratch_root_doc}")
+unset(_mikai_test_scratch_root_doc)
+if(NOT IS_ABSOLUTE "${MIKAI_TEST_SCRATCH_ROOT}")
+  message(FATAL_ERROR
+    "MIKAI_TEST_SCRATCH_ROOT must be an absolute path (got "
+    "${MIKAI_TEST_SCRATCH_ROOT}); the launcher creates its owned run directory "
+    "beneath it and ctest's working directory must not decide the location.")
+endif()
+
 add_executable(mikai_test_launcher cmake/MikaiTestLauncher.cpp)
 target_link_libraries(mikai_test_launcher PRIVATE Qt6::Core)
 add_dependencies(mikai_test_launcher mikai_launcher_child)
@@ -200,6 +247,11 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/player/TestVideoScaling.cpp
     tests/cpp/player/TestHoverPreview.hpp
     tests/cpp/player/TestHoverPreview.cpp
+    # Native Quick player module suites
+    tests/cpp/player/TestQuickMenuModel.hpp
+    tests/cpp/player/TestQuickMenuModel.cpp
+    tests/cpp/player/TestQuickIconProvider.hpp
+    tests/cpp/player/TestQuickIconProvider.cpp
     # Native bundle, component, model, preparation & status suites
     tests/cpp/native/TestAnimeJanaiRuntime.hpp
     tests/cpp/native/TestAnimeJanaiRuntime.cpp
@@ -250,8 +302,6 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/app/TestBenchmarkReport.cpp
     tests/cpp/app/TestFeedRender.hpp
     tests/cpp/app/TestFeedRender.cpp
-    tests/cpp/app/TestChromeCache.hpp
-    tests/cpp/app/TestChromeCache.cpp
     tests/cpp/app/TestPublicApiUi.hpp
     tests/cpp/app/TestPublicApiUi.cpp
     tests/cpp/app/TestI18n.hpp
@@ -306,7 +356,9 @@ if(MIKAI_BUILD_PROBES)
   target_compile_definitions(mikai_tests PRIVATE
     MIKAI_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
   )
-  target_link_libraries(mikai_tests PRIVATE mikai_player mikai_app mikai_backend Qt6::Test Qt6::Widgets)
+  target_link_libraries(mikai_tests PRIVATE mikai_player mikai_app mikai_backend
+    mikai_player_quick Qt6::Test Qt6::Widgets Qt6::Quick Qt6::QuickControls2 Qt6::Qml)
+  mikai_add_player_app_module(mikai_tests)
   if(TARGET mikai_test_aji_dispatcher)
     add_dependencies(mikai_tests mikai_test_aji_dispatcher)
     target_compile_definitions(mikai_tests PRIVATE
@@ -337,10 +389,53 @@ if(MIKAI_BUILD_PROBES)
   # toolchain's trio next to the staged executable, where the loader looks
   # first. Empty on Linux and when the compiler is not a path; the launcher
   # then keeps its previous behaviour.
+  #
+  # MIKAI_TEST_RUNTIME_BIN_DIR names the provider explicitly when the compiler
+  # directory is not a complete runtime. It is validated here (whole trio
+  # present) so a wrong provider fails configuration with the missing names
+  # instead of dying in child startup, and the value is the single directory
+  # handed to the launcher: no PATH lookup, no recursive/system fallback.
   set(_mikai_toolchain_bin_args)
   if(WIN32)
-    get_filename_component(_mikai_toolchain_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(_mikai_runtime_provider_named FALSE)
+    if(MIKAI_TEST_RUNTIME_BIN_DIR)
+      set(_mikai_toolchain_bin_dir "${MIKAI_TEST_RUNTIME_BIN_DIR}")
+      set(_mikai_runtime_provider_named TRUE)
+    else()
+      get_filename_component(_mikai_toolchain_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    endif()
     if(_mikai_toolchain_bin_dir)
+      if(_mikai_runtime_provider_named)
+        get_filename_component(_mikai_toolchain_bin_dir
+          "${_mikai_toolchain_bin_dir}" ABSOLUTE)
+      endif()
+      set(_mikai_runtime_missing_dlls)
+      foreach(_mikai_runtime_dll IN ITEMS
+          libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll)
+        if(NOT EXISTS "${_mikai_toolchain_bin_dir}/${_mikai_runtime_dll}")
+          list(APPEND _mikai_runtime_missing_dlls "${_mikai_runtime_dll}")
+        endif()
+      endforeach()
+      if(_mikai_runtime_missing_dlls)
+        string(REPLACE ";" ", " _mikai_runtime_missing_text
+          "${_mikai_runtime_missing_dlls}")
+        if(_mikai_runtime_provider_named)
+          message(FATAL_ERROR
+            "MIKAI_TEST_RUNTIME_BIN_DIR (${_mikai_toolchain_bin_dir}) is missing "
+            "${_mikai_runtime_missing_text}. Point it at the MinGW bin directory "
+            "that provides the runtime the tests load (for a Qt kit build, the "
+            "kit's own bin next to Qt6Core.dll), e.g. "
+            "-DMIKAI_TEST_RUNTIME_BIN_DIR=<qt>/bin.")
+        else()
+          message(FATAL_ERROR
+            "The Windows test runtime provider derived from the compiler "
+            "(${_mikai_toolchain_bin_dir}) is missing "
+            "${_mikai_runtime_missing_text}. This compiler directory is not a "
+            "complete runtime; name the directory that has the matching trio "
+            "explicitly with -DMIKAI_TEST_RUNTIME_BIN_DIR=<dir> (for a Qt kit "
+            "build, the kit's bin next to Qt6Core.dll).")
+        endif()
+      endif()
       set(_mikai_toolchain_bin_args --toolchain-bin-dir "${_mikai_toolchain_bin_dir}")
     endif()
   endif()
@@ -351,7 +446,7 @@ if(MIKAI_BUILD_PROBES)
     "${MIKAI_SELECTED_MPV_MODULE}"
     "$<TARGET_FILE_DIR:Qt6::Core>"
     "${MIKAI_TEST_QT_PLUGIN_DIR}"
-    "${CMAKE_BINARY_DIR}/_test-runs"
+    "${MIKAI_TEST_SCRATCH_ROOT}"
   )
   if(MIKAI_SELECTED_MPV_BUNDLED)
     list(APPEND _mikai_tests_launcher_args
@@ -401,6 +496,8 @@ if(MIKAI_BUILD_PROBES)
     TestPacingContract
     TestVideoScaling
     TestHoverPreview
+    TestQuickMenuModel
+    TestQuickIconProvider
     TestNativePrefs
     TestNativeMenu
     TestNativeUserRecipes
@@ -428,7 +525,6 @@ if(MIKAI_BUILD_PROBES)
     TestDiagnostics
     TestApiClient
     TestFeedRender
-    TestChromeCache
     TestUpdateFeed
     TestPublicApiUi
     TestRunner
@@ -523,7 +619,7 @@ if(MIKAI_BUILD_PROBES)
       "${MIKAI_SELECTED_MPV_MODULE}"
       "$<TARGET_FILE_DIR:Qt6::Core>"
       "${MIKAI_TEST_QT_PLUGIN_DIR}"
-      "${CMAKE_BINARY_DIR}/_test-runs"
+      "${MIKAI_TEST_SCRATCH_ROOT}"
       "${CMAKE_SOURCE_DIR}/tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4"
       "30"
       "${CMAKE_BINARY_DIR}/_hover-canary"
@@ -566,7 +662,7 @@ if(MIKAI_BUILD_PROBES)
       "${MIKAI_SELECTED_MPV_MODULE}"
       "$<TARGET_FILE_DIR:Qt6::Core>"
       "${MIKAI_TEST_QT_PLUGIN_DIR}"
-      "${CMAKE_BINARY_DIR}/_test-runs"
+      "${MIKAI_TEST_SCRATCH_ROOT}"
       "${CMAKE_SOURCE_DIR}/probes"
       --isolate --list
     )
@@ -599,7 +695,7 @@ if(MIKAI_BUILD_PROBES)
       "${MIKAI_SELECTED_MPV_MODULE}"
       "$<TARGET_FILE_DIR:Qt6::Core>"
       "${MIKAI_TEST_QT_PLUGIN_DIR}"
-      "${CMAKE_BINARY_DIR}/_test-runs"
+      "${MIKAI_TEST_SCRATCH_ROOT}"
       --video-scaling-smoke
     )
     # Without the staged mpv runtime dir the launcher stages only libmpv.so.2

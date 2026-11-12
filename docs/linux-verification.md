@@ -175,3 +175,18 @@ the same way: no paced sample, so the paused-hover p95 is unmeasured on both pla
 - `release-artifacts/` holds the Linux packages built at `6ee0c15`; the two fixes
   (`b05a90f`, `a7bed6c`) postdate them, so those packages do not contain the
   settings-width change.
+
+## Scope after the historical Linux runs
+
+The final Qt Quick player integration has separate deployment and verification requirements from
+the native playback core. A native core-only composition/resize/paused/live-resource probe passed
+on Windows and Linux; that result covers the exercised core path only. It does not verify the Quick
+scene, its Qt Declarative/QML import and plugin closure, production window integration, a packaged
+Linux artifact, or frontend parity.
+
+The current final Linux and broad build/package gates are user-deferred. No new Linux package test
+is recorded here. Before treating a future deployed Quick player as verified, test the actual
+Linux package's Qt Qml/Quick/QuickControls2 imports (including the Basic Controls style), QML
+plugin dependency closure, relocatable `qt.conf`/QmlImports path, and native playback/window behavior
+on the target environment. Do not transfer the historical 2026-11-05 package observations above
+to the current source tree.

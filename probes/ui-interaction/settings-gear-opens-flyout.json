@@ -1,6 +1,6 @@
 {
-  "name": "settings-gear-opens-flyout",
-  "description": "Clicking the gear in the player's top dock row opens the settings flyout, and that flyout is the one on screen.",
+  "name": "settings-button-opens-quick-settings",
+  "description": "Clicking the Quick settings button opens the actual PlayerSettings scene panel.",
   "category": "ui-interaction",
   "surface": "player_dialog",
   "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
@@ -11,35 +11,35 @@
       "kind": "wait_for",
       "name": "hasVideo",
       "timeout_ms": 10000,
-      "note": "The dock gear is reachable before the stream is up, but a flyout opened over a dialog that has not loaded yet is not the behaviour under test."
+      "note": "The scene control is available before media playback, but this probe opens the menu over a live session."
     },
     {
       "kind": "click",
-      "target": "playerSettingsButton",
-      "note": "playerSettingsButton is the gear at PlayerShell.cpp:346, wired to openSettings()."
+      "target": "player.settings.button",
+      "note": "Click the real Quick settings menu button."
     },
     {
       "kind": "wait_for",
-      "name": "widgetVisible",
-      "target": "playerSettingsFlyout",
+      "name": "objectVisible",
+      "target": "player.settings",
       "timeout_ms": 5000,
-      "note": "openSettings() shows the flyout synchronously, so this only has to cover the click being delivered."
+      "note": "The PlayerSettings scene panel becomes visible for the settings menu id."
     }
   ],
   "assertions": [
     {
       "kind": "qt_property",
-      "target": "playerSettingsFlyout",
+      "target": "player.settings",
       "property": "visible",
       "expected": true,
-      "note": "The flyout is constructed hidden (ShellWidgets.cpp:146 hide()), so widget_exists alone would pass on a build where the gear did nothing at all. The visibility read is what makes this fail when the click is dropped."
+      "note": "PlayerSettings is a real in-scene panel and visibility confirms the menu was presented."
     },
     {
       "kind": "qt_property",
-      "target": "playerEnhancementsPopup",
-      "property": "visible",
-      "expected": false,
-      "note": "openSettings() calls dismissOverlay() first, so the two overlays are mutually exclusive. This is the assertion that says the gear opened the flyout and not the enhancement tree - without it, any overlay appearing would satisfy a bare 'something opened' reading."
+      "target": "playerController",
+      "property": "menuStackVisible",
+      "expected": true,
+      "note": "The controller observes the actual Quick menu stack as visible."
     }
   ]
 }

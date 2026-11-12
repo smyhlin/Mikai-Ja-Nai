@@ -1,7 +1,7 @@
 // Native status polling, probe alignment, prepared plan admission, and
-// software reference-frame capture state machine for VideoSurface.
+// software reference-frame capture state machine for VideoSession.
 
-#include "VideoSurface.hpp"
+#include "VideoSession.hpp"
 
 #include "MpvApi.hpp"
 #include "MpvHandle.hpp"
@@ -190,7 +190,7 @@ bool nativeStatusEquals(const native::NativePlaybackController::Status& a,
 }  // namespace
 
 // ── native status ─────────────────────────────────────────────────────────
-const char* VideoSurface::nativePlaybackStateName(
+const char* VideoSession::nativePlaybackStateName(
     native::NativePlaybackController::State state) {
     using State = native::NativePlaybackController::State;
     switch (state) {
@@ -206,7 +206,7 @@ const char* VideoSurface::nativePlaybackStateName(
     return "Unknown";
 }
 
-void VideoSurface::setNativeStatusPolling(bool enabled) {
+void VideoSession::setNativeStatusPolling(bool enabled) {
     // A call here is a request-state change: it re-arms a poll that a terminal
     // state or an absent filter had stopped. Nothing is read synchronously -
     // the next pump step is what issues the request, so a caller on the GUI
@@ -215,7 +215,7 @@ void VideoSurface::setNativeStatusPolling(bool enabled) {
     nativeStatusPolling_ = enabled;
 }
 
-bool VideoSurface::nativeStatusShouldPoll() const {
+bool VideoSession::nativeStatusShouldPoll() const {
     // A transition in flight must be observed or its verdict can never arrive -
     // an explicit off/drain would otherwise sit unacknowledged once the caller
     // stopped asking for the status. The caller's own request still decides
@@ -224,7 +224,7 @@ bool VideoSurface::nativeStatusShouldPoll() const {
     return (nativeStatusPolling_ || transitionPending) && !nativeStatusHalted_;
 }
 
-void VideoSurface::pollNativeStatus() {
+void VideoSession::pollNativeStatus() {
     if (!mpv_) return;
     // The reader is ticked even when it will not issue a request: the tick
     // still abandons a timed-out one and keeps the current source epoch in
@@ -234,7 +234,7 @@ void VideoSurface::pollNativeStatus() {
                        nativeStatusShouldPoll());
 }
 
-void VideoSurface::resetNativeStatusReader(bool reattach) {
+void VideoSession::resetNativeStatusReader(bool reattach) {
     // Cancels any in-flight request and clears the published view, so a plan
     // from the old source cannot keep reading as current. detach() is safe on a
     // reader that was never attached, which is what a close() before open()
@@ -248,7 +248,7 @@ void VideoSurface::resetNativeStatusReader(bool reattach) {
 
 // ── native playback ───────────────────────────────────────────────────────
 
-void VideoSurface::syncNativeSource() {
+void VideoSession::syncNativeSource() {
     if (mpv_ == nullptr || !nativeSourceActive_) return;
     const uint64_t epoch = mpv_->sourceEpoch();
     if (epoch == nativeBoundEpoch_) return;
@@ -282,7 +282,7 @@ void VideoSurface::syncNativeSource() {
     resetNativeStatusReader(nativeStatus_.attached());
 }
 
-void VideoSurface::armNativeObservation() {
+void VideoSession::armNativeObservation() {
     // An explicit native request is a request-state change, which is exactly
     // what re-arms a poll an absent filter or a terminal state had stopped.
     // Without this the admission would time out against a stale halt. The next
@@ -291,7 +291,7 @@ void VideoSurface::armNativeObservation() {
     nativeSnapshotSeen_ = false;
 }
 
-void VideoSurface::armNativeProbe(native::Backend backend) {
+void VideoSession::armNativeProbe(native::Backend backend) {
     const QString unavailable = privateNativeRuntimeUnavailableReason();
     if (!unavailable.isEmpty()) {
         emit nativeProcessingFailure(QStringLiteral("native.runtimeUnavailable"), unavailable);
@@ -313,9 +313,9 @@ void VideoSurface::armNativeProbe(native::Backend backend) {
     beginNativeProbeAlignment({backend, mpv_->sourceEpoch(), backendHwdec(backend)});
 }
 
-QString VideoSurface::hwdecForBackend(native::Backend backend) { return backendHwdec(backend); }
+QString VideoSession::hwdecForBackend(native::Backend backend) { return backendHwdec(backend); }
 
-void VideoSurface::beginNativeProbeAlignment(const NativeProbeAlignment& alignment) {
+void VideoSession::beginNativeProbeAlignment(const NativeProbeAlignment& alignment) {
     if (mpv_ == nullptr) return;
     // One alignment at a time: a second request while one is proving something
     // would leave two answers to compare against a single decoder.
@@ -372,7 +372,7 @@ void VideoSurface::beginNativeProbeAlignment(const NativeProbeAlignment& alignme
                        });
 }
 
-void VideoSurface::applyNativeProbeAlignmentReply(const NativeProbeRead& read) {
+void VideoSession::applyNativeProbeAlignmentReply(const NativeProbeRead& read) {
     if (mpv_ == nullptr || !nativeProbeAlign_.has_value()) return;
     const NativeProbeAlignment alignment = *nativeProbeAlign_;
     // A reply for another source, or for another backend's alignment, answers
@@ -400,7 +400,7 @@ void VideoSurface::applyNativeProbeAlignmentReply(const NativeProbeRead& read) {
     finishNativeProbeAlignment(accepted, read.hwdec, &reasonKey, &reason);
 }
 
-void VideoSurface::finishNativeProbeAlignment(bool accepted,
+void VideoSession::finishNativeProbeAlignment(bool accepted,
                                               const QString& observedDecoder,
                                               QString* reasonKey, QString* reason) {
     const std::optional<NativeProbeAlignment> alignment = nativeProbeAlign_;
@@ -431,7 +431,7 @@ void VideoSurface::finishNativeProbeAlignment(bool accepted,
     applyNativeDecision(nativePlayback_.attach());
 }
 
-void VideoSurface::cancelNativeProbeAlignment(const QString& reasonKey, const QString& reason) {
+void VideoSession::cancelNativeProbeAlignment(const QString& reasonKey, const QString& reason) {
     if (nativeProbeAlignRequest_.valid() && mpv_ != nullptr) {
         mpv_->cancelAsync(nativeProbeAlignRequest_);
     }
@@ -440,7 +440,7 @@ void VideoSurface::cancelNativeProbeAlignment(const QString& reasonKey, const QS
     if (!reasonKey.isEmpty()) emit nativeProcessingFailure(reasonKey, reason);
 }
 
-void VideoSurface::requestNativeAdmission(const native::PreparedAdmissionRequest& request) {
+void VideoSession::requestNativeAdmission(const native::PreparedAdmissionRequest& request) {
     const QString unavailable = privateNativeRuntimeUnavailableReason();
     if (!unavailable.isEmpty()) {
         emit nativeProcessingFailure(QStringLiteral("native.runtimeUnavailable"), unavailable);
@@ -474,31 +474,31 @@ void VideoSurface::requestNativeAdmission(const native::PreparedAdmissionRequest
     applyNativeDecision(nativePlayback_.requestAdmission(request, nativePlaybackNowMs()));
 }
 
-void VideoSurface::turnNativeOff() {
+void VideoSession::turnNativeOff() {
     syncNativeSource();
     armNativeObservation();
     applyNativeDecision(nativePlayback_.requestOff(nativePlaybackNowMs()));
 }
 
-void VideoSurface::suspendNativeProcessing() {
+void VideoSession::suspendNativeProcessing() {
     syncNativeSource();
     armNativeObservation();
     applyNativeDecision(nativePlayback_.suspend(nativePlaybackNowMs()));
 }
 
-void VideoSurface::resumeNativeProcessing() {
+void VideoSession::resumeNativeProcessing() {
     syncNativeSource();
     armNativeObservation();
     applyNativeDecision(nativePlayback_.resume(nativePlaybackNowMs()));
 }
 
-void VideoSurface::drainNativeProcessing() {
+void VideoSession::drainNativeProcessing() {
     syncNativeSource();
     armNativeObservation();
     applyNativeDecision(nativePlayback_.drain(nativePlaybackNowMs()));
 }
 
-bool VideoSurface::settleNativeForTeardown(int timeoutMs) {
+bool VideoSession::settleNativeForTeardown(int timeoutMs) {
     if (mpv_ == nullptr) return true;
     if (nativeTeardownSettling_) {
         // A reentrant settle (the wait below spins the event loop) must not start
@@ -514,7 +514,7 @@ bool VideoSurface::settleNativeForTeardown(int timeoutMs) {
     nativeStatusPolling_ = true;
     armNativeObservation();
     // The wait spins the event loop, so the surface can be destroyed under it.
-    QPointer<VideoSurface> guard(this);
+    QPointer<VideoSession> guard(this);
     QElapsedTimer clock;
     clock.start();
     const auto settlePending = [&]() {
@@ -575,30 +575,30 @@ bool VideoSurface::settleNativeForTeardown(int timeoutMs) {
 
 // ── native plan lock ──────────────────────────────────────────────────────
 
-VideoSurface::NativePlanLock::NativePlanLock(NativePlanLock&& other) noexcept
-    : surface_(other.surface_) {
-    other.surface_.clear();
+VideoSession::NativePlanLock::NativePlanLock(NativePlanLock&& other) noexcept
+    : session_(other.session_) {
+    other.session_.clear();
 }
 
-VideoSurface::NativePlanLock& VideoSurface::NativePlanLock::operator=(
+VideoSession::NativePlanLock& VideoSession::NativePlanLock::operator=(
     NativePlanLock&& other) noexcept {
     if (this == &other) return *this;
     release();
-    surface_ = other.surface_;
-    other.surface_.clear();
+    session_ = other.session_;
+    other.session_.clear();
     return *this;
 }
 
-VideoSurface::NativePlanLock::~NativePlanLock() { release(); }
+VideoSession::NativePlanLock::~NativePlanLock() { release(); }
 
-void VideoSurface::NativePlanLock::release() {
-    if (surface_.isNull()) return;
-    VideoSurface* surface = surface_.data();
-    surface_.clear();
-    surface->releaseNativePlanLock();
+void VideoSession::NativePlanLock::release() {
+    if (session_.isNull()) return;
+    VideoSession* session = session_.data();
+    session_.clear();
+    session->releaseNativePlanLock();
 }
 
-std::optional<VideoSurface::NativePlanLock> VideoSurface::acquireNativePlanLock(
+std::optional<VideoSession::NativePlanLock> VideoSession::acquireNativePlanLock(
     QString* reasonKey, QString* reason) {
     const auto refuse = [reasonKey, reason](const QString& key, const QString& text) {
         if (reasonKey != nullptr) *reasonKey = key;
@@ -623,7 +623,7 @@ std::optional<VideoSurface::NativePlanLock> VideoSurface::acquireNativePlanLock(
     return std::optional<NativePlanLock>(NativePlanLock(this));
 }
 
-void VideoSurface::releaseNativePlanLock() {
+void VideoSession::releaseNativePlanLock() {
     const bool wasLocked = nativePlayback_.planLocked();
     const native::NativePlaybackController::Decision decision =
         nativePlayback_.unlockPlan(nativePlaybackNowMs());
@@ -635,7 +635,7 @@ void VideoSurface::releaseNativePlanLock() {
     applyNativeDecision(decision);
 }
 
-void VideoSurface::deliverNativeCommand(const native::NativePlaybackCommand& command) {
+void VideoSession::deliverNativeCommand(const native::NativePlaybackCommand& command) {
     if (command.kind == native::NativePlaybackCommandKind::Attach ||
         command.kind == native::NativePlaybackCommandKind::Admit) {
         const QString unavailable = privateNativeRuntimeUnavailableReason();
@@ -729,7 +729,7 @@ void VideoSurface::deliverNativeCommand(const native::NativePlaybackCommand& com
     });
 }
 
-void VideoSurface::applyNativeDecision(const native::NativePlaybackController::Decision& decision) {
+void VideoSession::applyNativeDecision(const native::NativePlaybackController::Decision& decision) {
     if (decision.outcome == native::NativePlaybackController::Outcome::Removed) {
         nativeFilterBound_ = false;
     }
@@ -740,7 +740,7 @@ void VideoSurface::applyNativeDecision(const native::NativePlaybackController::D
     publishNativePlaybackStatus();
 }
 
-void VideoSurface::publishNativePlaybackStatus() {
+void VideoSession::publishNativePlaybackStatus() {
     const native::NativePlaybackController::Status& status = nativePlayback_.status();
     if (nativeStatusPublished_ && nativeStatusEquals(status, lastNativeStatus_)) return;
     lastNativeStatus_ = status;
@@ -748,7 +748,7 @@ void VideoSurface::publishNativePlaybackStatus() {
     emit nativePlaybackStatusChanged(status);
 }
 
-std::optional<native::NativePreparationContext> VideoSurface::nativePreparationContext() const {
+std::optional<native::NativePreparationContext> VideoSession::nativePreparationContext() const {
     if (mpv_ == nullptr) return std::nullopt;
     const std::optional<native::StatusSnapshot>& snapshot = nativeStatus_.snapshot();
     if (!snapshot.has_value() || !snapshot->probe.has_value()) return std::nullopt;
@@ -786,8 +786,8 @@ namespace {
 /// is a measured rational the producer published, never a default frame rate: a
 /// source whose cadence was never observed has no honest interval, and the
 /// caller is told that instead of being handed one.
-std::optional<native::Rational> observedSourceCadence(const VideoSurface& surface) {
-    const auto& view = surface.nativeStatus();
+std::optional<native::Rational> observedSourceCadence(const VideoSession& session) {
+    const auto& view = session.nativeStatus();
     if (!view.snapshot.has_value() || !view.snapshot->probe.has_value()) return std::nullopt;
     const std::optional<native::SourceGeometry>& source = view.snapshot->probe->source;
     if (!source.has_value() || !source->fps.has_value()) return std::nullopt;
@@ -823,7 +823,7 @@ bool restoreHasSettled(double observed, double target,
 
 }  // namespace
 
-void VideoSurface::requestNativeReferenceFrame(int frameIndex) {
+void VideoSession::requestNativeReferenceFrame(int frameIndex) {
     if (frameIndex < 0) {
         emit nativeReferenceFrameFailed(QStringLiteral("native.reference.frameIndex"),
                                         tr("A reference capture cannot be asked for frame %1.")
@@ -936,7 +936,7 @@ void VideoSurface::requestNativeReferenceFrame(int frameIndex) {
     }
 }
 
-void VideoSurface::readNativeReferencePosition(uint64_t epoch, int frameIndex) {
+void VideoSession::readNativeReferencePosition(uint64_t epoch, int frameIndex) {
     if (mpv_ == nullptr) return;
     // T-308: the capture's position read - same dedicated slot as above.
     nativeReferenceReadRequest_ = mpv_->getPropertyAsync(
@@ -981,7 +981,7 @@ void VideoSurface::readNativeReferencePosition(uint64_t epoch, int frameIndex) {
     }
 }
 
-void VideoSurface::stepToAdjacentNativeFrame(double restore, double adjacent,
+void VideoSession::stepToAdjacentNativeFrame(double restore, double adjacent,
                                             int frameIndex) {
     if (mpv_ == nullptr) return;
     const uint64_t epoch = mpv_->sourceEpoch();
@@ -1020,7 +1020,7 @@ void VideoSurface::stepToAdjacentNativeFrame(double restore, double adjacent,
         });
 }
 
-void VideoSurface::issueNativeReferenceCapture(uint64_t epoch, int frameIndex,
+void VideoSession::issueNativeReferenceCapture(uint64_t epoch, int frameIndex,
                                               double position) {
     if (mpv_ == nullptr) return;
     nativeReferenceRequest_ = mpv_->commandAsync(
@@ -1099,7 +1099,7 @@ void VideoSurface::issueNativeReferenceCapture(uint64_t epoch, int frameIndex,
 /// while the core is still somewhere else. A capture is published only from
 /// here, so `nativeReferenceFrameReady` can no longer name a position the viewer
 /// has already left.
-void VideoSurface::awaitNativeReferenceRestore(uint64_t epoch, int frameIndex, double restore,
+void VideoSession::awaitNativeReferenceRestore(uint64_t epoch, int frameIndex, double restore,
                                               std::optional<native::Rational> cadence,
                                               std::shared_ptr<const native::FrameFixture> frame,
                                               std::optional<double> decodedPosition,
@@ -1151,7 +1151,7 @@ void VideoSurface::awaitNativeReferenceRestore(uint64_t epoch, int frameIndex, d
     }
 }
 
-void VideoSurface::pollNativeReferenceRestore(uint64_t epoch, int frameIndex, double restore,
+void VideoSession::pollNativeReferenceRestore(uint64_t epoch, int frameIndex, double restore,
                                              std::optional<native::Rational> cadence,
                                              std::shared_ptr<const native::FrameFixture> frame,
                                              std::optional<double> decodedPosition,
@@ -1275,7 +1275,7 @@ void VideoSurface::pollNativeReferenceRestore(uint64_t epoch, int frameIndex, do
     }
 }
 
-void VideoSurface::announceRestoredPosition(double confirmed) {
+void VideoSession::announceRestoredPosition(double confirmed) {
     // The reading settled the restore, so it is finite by construction - but the
     // cache is not written from anything it has not checked, and a NaN reaching
     // position() would make every later comparison meaningless.
@@ -1293,7 +1293,7 @@ void VideoSurface::announceRestoredPosition(double confirmed) {
     emit positionChanged(position_);
 }
 
-void VideoSurface::refuseNativeReferenceRestore(const QString& reasonKey, const QString& reason,
+void VideoSession::refuseNativeReferenceRestore(const QString& reasonKey, const QString& reason,
                                                 int frameIndex, uint64_t epoch) {
     Q_UNUSED(epoch);
     if (nativeReferenceRestoreRequest_.valid() && mpv_ != nullptr) {
@@ -1308,7 +1308,7 @@ void VideoSurface::refuseNativeReferenceRestore(const QString& reasonKey, const 
     emit nativeReferenceFrameFailed(reasonKey, reason, frameIndex);
 }
 
-void VideoSurface::emitNativeReferenceCaptureReady(const native::FrameFixture& frame,
+void VideoSession::emitNativeReferenceCaptureReady(const native::FrameFixture& frame,
                                                    uint64_t epoch, double position,
                                                    int frameIndex, const QByteArray& digest) {
     nativeReferenceLastHash_ = digest;
@@ -1325,7 +1325,7 @@ void VideoSurface::emitNativeReferenceCaptureReady(const native::FrameFixture& f
 
 /// Ends a capture whose result cannot be used, restoring the position this
 /// surface moved the core to before anything is reported.
-void VideoSurface::finishNativeReferenceCapture(const QString& reasonKey,
+void VideoSession::finishNativeReferenceCapture(const QString& reasonKey,
                                                 const QString& reason, int frameIndex) {
     const std::optional<double> resume = nativeProbeResumePosition_;
     nativeReferenceStepping_ = false;
@@ -1345,7 +1345,7 @@ void VideoSurface::finishNativeReferenceCapture(const QString& reasonKey,
     emit nativeReferenceFrameFailed(reasonKey, reason, frameIndex);
 }
 
-void VideoSurface::abandonNativeReferenceFrame(const QString& reasonKey, const QString& reason) {
+void VideoSession::abandonNativeReferenceFrame(const QString& reasonKey, const QString& reason) {
     // Only a capture actually in flight can be abandoned; anything else is not this
     // call's to answer. A read that is part of preparing one is retired with it, so
     // a position or seekability answer for a source that just went away cannot go on
@@ -1381,7 +1381,7 @@ void VideoSurface::abandonNativeReferenceFrame(const QString& reasonKey, const Q
     emit nativeReferenceFrameFailed(reasonKey, reason, nativeReferenceFrameIndex_);
 }
 
-void VideoSurface::discardNativeReferenceStep(const QString& reasonKey, const QString& reason) {
+void VideoSession::discardNativeReferenceStep(const QString& reasonKey, const QString& reason) {
     const std::optional<double> resume = nativeProbeResumePosition_;
     nativeReferenceStepping_ = false;
     nativeProbeResumePosition_.reset();

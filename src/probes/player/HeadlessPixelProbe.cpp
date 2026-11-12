@@ -315,6 +315,12 @@ int main(int argc, char** argv) {
         note(QStringLiteral("RESULT: FAIL (the render call failed %1 times)").arg(renderErrors));
         return 1;
     }
+    if (glErrors > 0) {
+        note(QStringLiteral("RESULT: FAIL (OpenGL reported %1 errors; first 0x%2)")
+                 .arg(glErrors)
+                 .arg(firstGlError, 0, 16));
+        return 1;
+    }
     if (videoWidth <= 0 || videoHeight <= 0) {
         note(QStringLiteral("RESULT: FAIL (no video dimensions)"));
         return 1;

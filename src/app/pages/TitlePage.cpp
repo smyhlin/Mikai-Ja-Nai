@@ -24,7 +24,8 @@
 #include "widgets/RateLimitLabel.hpp"
 #include "workers/Runner.hpp"
 
-#include <PlayerDialog.hpp>
+#include <player/quick/PlayerController.hpp>
+#include <player/shell/ShellTheme.hpp>
 #include <backend/MikaiClient.hpp>
 #include <backend/Releases.hpp>
 #include <backend/Streams.hpp>

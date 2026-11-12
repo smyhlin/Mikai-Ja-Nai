@@ -32,7 +32,7 @@
 //    measured - an absent fact is a named refusal, never a default.
 //
 // It is deliberately not a service: one free worker function and one free
-// binding function, wired per dialog. No singleton, no event bus, no QObject
+// binding function, wired per controller. No singleton, no event bus, no QObject
 // parent chain.
 
 #pragma once
@@ -56,9 +56,9 @@ class Runner;
 
 }  // namespace mikai::app
 
-namespace mplayer::shell {
-class PlayerDialog;
-}  // namespace mplayer::shell
+namespace mplayer::quick {
+class PlayerController;
+}  // namespace mplayer::quick
 
 namespace mikai::app {
 
@@ -72,6 +72,9 @@ struct NativeAssemblyRequest {
   /// discarded by its caller.
   QString requestId;
   qint64 revision = 0;
+  /// Source epoch of the core that announced this request. The assembly worker
+  /// cannot observe a live core; delivery must still belong to this epoch.
+  quint64 coreEpoch = 0;
 };
 
 /// The whole-assembly outcome. `request` is meaningful only when `ok` is true;
@@ -98,16 +101,16 @@ struct NativeAssemblyOutcome {
 /// refuse by their own stable key.
 NativeAssemblyOutcome assembleNativeAdmission(const NativeAssemblyRequest& request);
 
-/// Binds one dialog's `nativeAdmissionRequested` and `nativeAdmissionCancelled`
-/// to the app assembly.
+/// Binds one controller's `nativeAdmissionRequested` and
+/// `nativeAdmissionCancelled` to the app assembly.
 ///
 /// The work runs on `runner`; the assembled request is delivered on the GUI
-/// thread through the dialog, guarded by the dialog's QPointer and by the run's
-/// generation, so a result for a selection or an owning core that has since
-/// moved is discarded rather than applied. A refusal is reported through
-/// `PlayerDialog::reportNativeProcessingFailure`: it is never routed to a media
-/// retry, and it never re-extracts a URL or re-probes a quality.
-void bindNativePlaybackAssembly(Runner& runner, mplayer::shell::PlayerDialog& dialog);
+/// thread through the controller, guarded by its QPointer and the run's
+/// generation, so a result for a selection or owning core that has since moved
+/// is discarded rather than applied. A refusal is reported through
+/// `PlayerController::reportNativeProcessingFailure`: it is never routed to a
+/// media retry, and it never re-extracts a URL or re-probes a quality.
+void bindNativePlaybackAssembly(Runner& runner, mplayer::quick::PlayerController& controller);
 
 // ── P2-01 / D14: the one measured-identity helper set ────────────────────────
 // The preparation worker (NativeAssetsPanelWorkflow) and the playback

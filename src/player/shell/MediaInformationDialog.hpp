@@ -13,7 +13,7 @@ class QStackedWidget;
 class QTimer;
 
 namespace mplayer {
-class VideoSurface;
+class VideoSession;
 namespace shell {
 
 class MediaInformationOverview;
@@ -22,7 +22,7 @@ class MediaInformationTree;
 class MediaInformationDialog final : public QDialog {
     Q_OBJECT
 public:
-    explicit MediaInformationDialog(VideoSurface* surface, QWidget* parent = nullptr);
+    explicit MediaInformationDialog(VideoSession* session, QWidget* parent = nullptr);
     ~MediaInformationDialog() override;
 
 protected:
@@ -40,7 +40,7 @@ private:
     /// Called once at construction and again whenever the accent changes.
     void applyShellPalette();
 
-    QPointer<VideoSurface> surface_;
+    QPointer<VideoSession> session_;
     MediaInformation information_;
     MediaTrackSnapshot tracks_;
     QString sourceUrl_;

@@ -59,6 +59,7 @@
 #include <QTreeWidget>
 #include <QWindow>
 #include <QTest>
+#include <QQuickItem>
 #include "ProbeIsolation.hpp"
 #include "ProbeUi.hpp"
 #include "IdentityOnnxFixture.hpp"
@@ -83,9 +84,10 @@
 #include "widgets/ToggleSwitch.hpp"
 #include "player/compare/CompareCanvas.hpp"
 #include "player/compare/CompareWindow.hpp"
-#include "player/core/VideoSurface.hpp"
-#include "player/shell/PlayerPopups.hpp"
-#include "player/shell/PlayerShell.hpp"
+#include "player/core/VideoSession.hpp"
+#include "player/quick/PlayerController.hpp"
+#include "player/quick/PlayerMenuModel.hpp"
+#include "player/quick/PlayerWindow.hpp"
 #include "native/bundle/NativePrefs.hpp"
 #include "native/bundle/NativeRuntimeSelection.hpp"
 #include "native/components/NativeGpuProbe.hpp"
@@ -150,6 +152,43 @@ bool waitForUi(const auto& predicate, int timeoutMs) {
     QApplication::processEvents();
     return predicate();
 }
+bool quickPlayerSceneReady(mplayer::quick::PlayerController& controller) {
+    return waitForUi([&controller] {
+        auto* window = controller.window();
+        return window != nullptr && window->status() == QQuickView::Ready &&
+               window->videoItem() != nullptr;
+    }, 5000);
+}
+QQuickItem* quickMenuPanel(QQuickItem* root, const QString& menuId) {
+    if (root == nullptr) return nullptr;
+    for (QQuickItem* item : root->findChildren<QQuickItem*>()) {
+        if (item->property("menuId").toString() == menuId &&
+            item->property("menuModel").isValid() && item->isVisible()) {
+            return item;
+        }
+    }
+    return nullptr;
+}
+
+bool openQuickMenuFromScene(mplayer::quick::PlayerController& controller,
+                            const QString& buttonName, const QString& menuId) {
+    auto* window = controller.window();
+    auto* root = window != nullptr ? qobject_cast<QQuickItem*>(window->rootObject()) : nullptr;
+    if (window == nullptr || root == nullptr) return false;
+    auto* button = root->findChild<QQuickItem*>(buttonName);
+    if (button == nullptr || !button->isVisible() || !button->isEnabled()) return false;
+    const QPointF sceneCenter =
+        button->mapToScene(QPointF(button->width() / 2.0, button->height() / 2.0));
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      QPoint(qRound(sceneCenter.x()), qRound(sceneCenter.y())));
+    return waitForUi([&] {
+        auto* panel = quickMenuPanel(root, menuId);
+        return controller.menuStackVisible() && panel != nullptr &&
+               panel->property("menuModel").value<QObject*>() ==
+                   controller.menuModel(menuId);
+    }, 2000);
+}
+
 
 QLabel* statusSeverityLabel(QWidget& root) {
     for (QLabel* label : root.findChildren<QLabel*>()) {
@@ -669,32 +708,79 @@ bool presetCatalogueHas(const QString& id) {
     return false;
 }
 
-mplayer::shell::MenuPopup* enhancementLevelMenu(mplayer::shell::PlayerShell& player,
-                                                const QString& level) {
-    for (mplayer::shell::MenuPopup* menu :
-         player.findChildren<mplayer::shell::MenuPopup*>()) {
-        if (menu->property("enhancementLevel").toString() == level) return menu;
+mplayer::quick::PlayerMenuModel* enhancementLevelMenu(
+    mplayer::quick::PlayerController& player, const QString& level) {
+    const QStringList roots{QStringLiteral("enhancements"), QStringLiteral("picture"),
+                            QStringLiteral("settings"), QStringLiteral("remedies")};
+    QSet<QString> visited;
+    const auto find = [&player, &level, &visited](const auto& self, const QString& menuId,
+                                                  mplayer::quick::PlayerMenuModel* model)
+        -> mplayer::quick::PlayerMenuModel* {
+        if (model == nullptr || visited.contains(menuId)) return nullptr;
+        visited.insert(menuId);
+        if (menuId == level) return model;
+        for (int row = 0; row < model->rowCount(); ++row) {
+            const auto entry = model->row(row);
+            if (entry.action != mplayer::quick::PlayerMenuModel::Action::OpenMenu) continue;
+            auto* child = player.submenuModel(menuId, row);
+            if (entry.value == level) return child;
+            if (auto* nested = self(self, entry.value, child)) return nested;
+        }
+        return nullptr;
+    };
+    for (const QString& root : roots) {
+        if (auto* model = find(find, root, player.menuModel(root))) return model;
     }
     return nullptr;
 }
 
-bool menuHasPayload(mplayer::shell::MenuPopup* menu, const QString& payload) {
+bool menuHasPayload(mplayer::quick::PlayerMenuModel* menu, const QString& payload) {
     if (menu == nullptr) return false;
+    const QString value = payload.startsWith(QLatin1String("ajipreset|"))
+                              ? QStringLiteral("animejanai|") +
+                                    payload.mid(QStringLiteral("ajipreset|").size())
+                              : payload.startsWith(QLatin1String("level|"))
+                                    ? payload.mid(QStringLiteral("level|").size())
+                                    : payload;
     for (int index = 0; index < menu->rowCount(); ++index) {
-        if (menu->entryAt(index).payload.toString() == payload) return true;
+        const auto row = menu->row(index);
+        if (row.value == value || row.id == value) return true;
     }
     return false;
 }
 
-mplayer::shell::MenuEntry menuEntryForPayload(mplayer::shell::MenuPopup* menu,
-                                              const QString& payload) {
+mplayer::quick::PlayerMenuModel::Row menuEntryForPayload(
+    mplayer::quick::PlayerMenuModel* menu, const QString& payload) {
     if (menu != nullptr) {
+        const QString value = payload.startsWith(QLatin1String("ajipreset|"))
+                                  ? QStringLiteral("animejanai|") +
+                                        payload.mid(QStringLiteral("ajipreset|").size())
+                                  : payload;
         for (int index = 0; index < menu->rowCount(); ++index) {
-            const auto entry = menu->entryAt(index);
-            if (entry.payload.toString() == payload) return entry;
+            const auto row = menu->row(index);
+            if (row.value == value || row.id == value) return row;
         }
     }
     return {};
+}
+bool clickMenuPayload(mplayer::quick::PlayerController& controller,
+                      const QString& menuId, const QString& payload) {
+    auto* menu = controller.menuModel(menuId);
+    if (menu == nullptr) return false;
+    const QString value = payload.startsWith(QLatin1String("level|"))
+                              ? payload.mid(QStringLiteral("level|").size())
+                              : payload.startsWith(QLatin1String("ajipreset|"))
+                                    ? QStringLiteral("animejanai|") +
+                                          payload.mid(QStringLiteral("ajipreset|").size())
+                                    : payload;
+    for (int index = 0; index < menu->rowCount(); ++index) {
+        const auto row = menu->row(index);
+        if (row.value != value && row.id != value) continue;
+        if (!row.enabled || row.heading) return false;
+        controller.activateMenuRow(menuId, index);
+        return true;
+    }
+    return false;
 }
 bool compareMenuHasCandidate(mplayer::shell::CompareWindow& comparison,
                              const QString& candidateId, bool enabled) {
@@ -720,19 +806,6 @@ bool compareMenuHasCandidate(mplayer::shell::CompareWindow& comparison,
             return false;
         };
         if (findLeaf(findLeaf, root)) return true;
-    }
-    return false;
-}
-
-bool clickMenuPayload(mplayer::shell::MenuPopup* menu, const QString& payload) {
-    if (menu == nullptr) return false;
-    for (int index = 0; index < menu->rowCount(); ++index) {
-        if (menu->entryAt(index).payload.toString() != payload) continue;
-        QWidget* row = menu->rowWidget(index);
-        if (row == nullptr) return false;
-        QTest::mouseClick(row, Qt::LeftButton, Qt::NoModifier, row->rect().center());
-        QApplication::processEvents();
-        return true;
     }
     return false;
 }
@@ -1360,132 +1433,81 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
                  qPrintable(selectedRuntime.modulePath), selectedRuntime.loaded ? 1 : 0,
                  qPrintable(selectedRuntime.reason));
 
-    mplayer::shell::PlayerShell player;
-    player.resize(QSize(900, 640));
-    player.show();
-    QApplication::processEvents();
-    auto* enhancementButton =
-        player.findChild<QPushButton*>(QStringLiteral("playerEnhanceButton"));
-    auto* enhancementRoot =
-        player.findChild<mplayer::shell::MenuPopup*>(QStringLiteral("playerEnhancementsPopup"));
-    check(enhancementButton != nullptr && enhancementRoot != nullptr,
-          "the real player exposes its enhancement menu");
-    if (enhancementButton != nullptr && enhancementRoot != nullptr) {
-        enhancementButton->click();
-        QApplication::processEvents();
-        auto clickEntry = [](mplayer::shell::MenuPopup* menu,
-                             const std::function<bool(const mplayer::shell::MenuEntry&)>& match) {
-            if (menu == nullptr) return false;
-            for (int index = 0; index < menu->rowCount(); ++index) {
-                if (!match(menu->entryAt(index))) continue;
-                QWidget* row = menu->rowWidget(index);
-                if (row == nullptr) return false;
-                QTest::mouseClick(row, Qt::LeftButton, Qt::NoModifier, row->rect().center());
-                QApplication::processEvents();
-                return true;
-            }
-            return false;
-        };
-        auto levelMenu = [&player](const QString& level) {
-            for (mplayer::shell::MenuPopup* menu :
-                 player.findChildren<mplayer::shell::MenuPopup*>()) {
-                if (menu->property("enhancementLevel").toString() == level) return menu;
-            }
-            return static_cast<mplayer::shell::MenuPopup*>(nullptr);
-        };
-        bool restoreCategory = false;
-        bool upscaleCategory = false;
-        bool interpolationCategory = false;
-        bool backendCategory = false;
-        for (int index = 0; index < enhancementRoot->rowCount(); ++index) {
-            const QString payload = enhancementRoot->entryAt(index).payload.toString();
-            restoreCategory |= payload == QStringLiteral("level|processing:restore");
-            upscaleCategory |= payload == QStringLiteral("level|processing:upscale");
-            interpolationCategory |=
-                payload == QStringLiteral("level|processing:interpolation");
-            backendCategory |= payload == QStringLiteral("level|animejanai:backend");
+    mplayer::quick::PlayerController player(QStringLiteral("Native settings probe"),
+                                            QString());
+    player.showWindow();
+    const bool quickSceneReady = quickPlayerSceneReady(player);
+    auto* enhancementRoot = player.menuModel(QStringLiteral("enhancements"));
+    check(player.isWindowVisible() && quickSceneReady && enhancementRoot != nullptr,
+          "the real Quick player scene and enhancement model are available");
+    if (enhancementRoot == nullptr) return;
+    const bool settingsPanelOpened =
+        quickSceneReady && openQuickMenuFromScene(
+                               player, QStringLiteral("player.settings.button"),
+                               QStringLiteral("settings"));
+    check(settingsPanelOpened,
+          "the Quick settings control opens the visible QML menu bound to its controller model");
+    if (settingsPanelOpened) {
+        QTest::keyClick(player.window(), Qt::Key_Escape);
+        waitForUi([&player] { return !player.menuStackVisible(); }, 1000);
+    }
+    bool restoreCategory = false;
+    bool upscaleCategory = false;
+    bool interpolationCategory = false;
+    bool backendCategory = false;
+    for (int index = 0; index < enhancementRoot->rowCount(); ++index) {
+        const auto row = enhancementRoot->row(index);
+        restoreCategory |= row.value == QLatin1String("processing:restore");
+        upscaleCategory |= row.value == QLatin1String("processing:upscale");
+        interpolationCategory |= row.value == QLatin1String("processing:interpolation");
+        backendCategory |= row.value == QLatin1String("animejanai:backend");
+    }
+    check(restoreCategory && upscaleCategory && interpolationCategory && backendCategory,
+          "Restore, Upscale, Interpolation and independent backend menus are available");
+    const bool enteredUpscale =
+        clickMenuPayload(player, QStringLiteral("enhancements"),
+                         QStringLiteral("level|processing:upscale"));
+    auto* upscaleMenu =
+        enhancementLevelMenu(player, QStringLiteral("processing:upscale"));
+    const bool upscaleOpened = enteredUpscale && upscaleMenu != nullptr;
+    const bool enteredProfiles =
+        upscaleOpened && clickMenuPayload(player, QStringLiteral("processing:upscale"),
+                                         QStringLiteral("level|processing:upscale:profiles"));
+    auto* profilesMenu =
+        enhancementLevelMenu(player, QStringLiteral("processing:upscale:profiles"));
+    const bool profilesOpened = enteredProfiles && profilesMenu != nullptr;
+    bool customSlotPresent = menuHasPayload(
+        profilesMenu, QStringLiteral("ajipreset|builtin_slot:1"));
+    QStringList profilePagePayloads;
+    if (!customSlotPresent && profilesMenu != nullptr) {
+        const QString prefix = QStringLiteral("processing:upscale:profiles:page:");
+        for (int index = 0; index < profilesMenu->rowCount(); ++index) {
+            const auto row = profilesMenu->row(index);
+            if (row.value.startsWith(prefix)) profilePagePayloads.append(row.value);
         }
-        check(restoreCategory && upscaleCategory && interpolationCategory && backendCategory,
-              "Restore, Upscale, Interpolation and independent backend menus are available");
-        const bool enteredUpscale = clickEntry(
-            enhancementRoot, [](const mplayer::shell::MenuEntry& entry) {
-                return entry.payload.toString() ==
-                       QStringLiteral("level|processing:upscale");
-            });
-        const bool upscaleOpened = waitForUi(
-            [&player, &levelMenu] {
-                auto* menu = levelMenu(QStringLiteral("processing:upscale"));
-                return menu != nullptr && menu->isVisible();
-            },
-            3000);
-        auto* upscaleMenu = levelMenu(QStringLiteral("processing:upscale"));
-        const bool enteredProfiles = upscaleOpened && clickEntry(
-            upscaleMenu, [](const mplayer::shell::MenuEntry& entry) {
-                return entry.payload.toString() ==
-                       QStringLiteral("level|processing:upscale:profiles");
-            });
-        const bool profilesOpened = waitForUi(
-            [&player, &levelMenu] {
-                auto* menu = levelMenu(QStringLiteral("processing:upscale:profiles"));
-                return menu != nullptr && menu->isVisible();
-            },
-            3000);
-        const QString profilesBaseLevel = QStringLiteral("processing:upscale:profiles");
-        const QString profilesBasePayload = QStringLiteral("level|") + profilesBaseLevel;
-        auto* profilesMenu = levelMenu(profilesBaseLevel);
-        bool customSlotPresent = false;
-        const QString customSlotPayload = QStringLiteral("ajipreset|builtin_slot:1");
-        QStringList profilePagePayloads;
-        const auto inspectProfilesMenu = [&customSlotPresent, &customSlotPayload](
-                                             mplayer::shell::MenuPopup* menu) {
-            if (menu == nullptr || !menu->isVisible()) return;
-            for (int index = 0; index < menu->rowCount(); ++index) {
-                customSlotPresent |=
-                    menu->entryAt(index).payload.toString() == customSlotPayload;
-            }
-        };
-        inspectProfilesMenu(profilesMenu);
-        if (!customSlotPresent && profilesMenu != nullptr) {
-            const QString pagePrefix = QStringLiteral("level|") + profilesBaseLevel +
-                                       QStringLiteral(":page:");
-            for (int index = 0; index < profilesMenu->rowCount(); ++index) {
-                const QString payload = profilesMenu->entryAt(index).payload.toString();
-                if (payload.startsWith(pagePrefix)) profilePagePayloads.append(payload);
-            }
-        }
-        for (const QString& pagePayload : profilePagePayloads) {
-            const bool baseOpened = clickEntry(
-                upscaleMenu, [&profilesBasePayload](const mplayer::shell::MenuEntry& entry) {
-                    return entry.payload.toString() == profilesBasePayload;
-                });
-            const bool baseVisible = baseOpened && waitForUi(
-                [&levelMenu, &profilesBaseLevel] {
-                    auto* menu = levelMenu(profilesBaseLevel);
-                    return menu != nullptr && menu->isVisible();
-                },
-                3000);
-            profilesMenu = baseVisible ? levelMenu(profilesBaseLevel) : nullptr;
-            const bool pageOpened = profilesMenu != nullptr && clickEntry(
-                profilesMenu, [&pagePayload](const mplayer::shell::MenuEntry& entry) {
-                    return entry.payload.toString() == pagePayload;
-                });
-            const QString pageLevel = pagePayload.mid(QStringLiteral("level|").size());
-            const bool pageVisible = pageOpened && waitForUi(
-                [&levelMenu, &pageLevel] {
-                    auto* menu = levelMenu(pageLevel);
-                    return menu != nullptr && menu->isVisible();
-                },
-                3000);
-            inspectProfilesMenu(pageVisible ? levelMenu(pageLevel) : nullptr);
-            if (customSlotPresent) {
-                profilesMenu = levelMenu(pageLevel);
+    }
+    for (const QString& pageId : profilePagePayloads) {
+        auto* base = enhancementLevelMenu(player, QStringLiteral("processing:upscale:profiles"));
+        if (base == nullptr) continue;
+        int pageRow = -1;
+        for (int index = 0; index < base->rowCount(); ++index) {
+            if (base->row(index).value == pageId) {
+                pageRow = index;
                 break;
             }
         }
-        check(enteredUpscale && upscaleOpened && enteredProfiles && profilesOpened &&
-                  profilesMenu != nullptr && profilesMenu->isVisible() && customSlotPresent,
-              "Upscale profiles expose the custom slot by stable id");
+        if (pageRow < 0) continue;
+        player.activateMenuRow(QStringLiteral("processing:upscale:profiles"), pageRow);
+        auto* page = enhancementLevelMenu(player, pageId);
+        customSlotPresent |= menuHasPayload(page, QStringLiteral("ajipreset|builtin_slot:1"));
+        if (customSlotPresent) {
+            profilesMenu = page;
+            break;
+        }
     }
+    check(enteredUpscale && upscaleOpened && enteredProfiles && profilesOpened &&
+              profilesMenu != nullptr && customSlotPresent,
+          "Upscale profiles expose the custom slot by stable id");
 
     QImage compareFixture(64, 36, QImage::Format_RGB32);
     for (int y = 0; y < compareFixture.height(); ++y) {
@@ -1498,17 +1520,11 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
         QDir(fixtureDir.path()).filePath(QStringLiteral("compare-candidate-frame.png"));
     check(compareFixture.save(compareFixturePath),
           "a small static comparison frame fixture was written");
-    mplayer::VideoSurface* compareSurface = player.videoSurface();
-    const bool compareSourceOpened =
-        compareSurface != nullptr && compareSurface->open(compareFixturePath);
-    check(compareSourceOpened, "the player surface opened the static comparison frame");
-    const bool compareSourceReady =
-        compareSourceOpened &&
-        waitForUi([&] {
-            return compareSurface->hasVideo() && compareSurface->videoWidth() > 0 &&
-                   compareSurface->videoHeight() > 0;
-        }, 5000);
-    check(compareSourceReady, "the static comparison frame reached the player surface");
+    const bool compareSourceOpened = player.session()->open(compareFixturePath);
+    check(compareSourceOpened, "the player session opened the static comparison frame");
+    const bool compareSourceReady = compareSourceOpened &&
+        waitForUi([&] { return player.hasVideo() && player.sourceWidth() > 0; }, 5000);
+    check(compareSourceReady, "the static comparison frame reached the player session");
     QStringList shaderCandidates;
     const QString shaderRoot = mplayer::anime4k::findShadersDir();
     for (const auto& mode : mplayer::anime4k::availableModes()) {
@@ -1521,7 +1537,21 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
     check(shaderCandidates.size() >= 2,
           "two shader-only Compare candidates are available to avoid native inference");
     if (compareSourceReady && shaderCandidates.size() >= 2) {
-        mplayer::shell::CompareWindow comparison(compareSurface, shaderCandidate, &player);
+        player.openCompare();
+        mplayer::shell::CompareWindow* comparison = nullptr;
+        const bool compareOpened = waitForUi([&] {
+            for (QWidget* widget : QApplication::topLevelWidgets()) {
+                auto* candidate = qobject_cast<mplayer::shell::CompareWindow*>(widget);
+                if (candidate != nullptr && candidate->isVisible() &&
+                    candidate->frozenSourceEpoch() == player.session()->sourceEpoch()) {
+                    comparison = candidate;
+                    return true;
+                }
+            }
+            return false;
+        }, 10000);
+        check(compareOpened, "the controller opened its real Compare window");
+        if (comparison != nullptr) comparison->setCurrentCandidateId(shaderCandidate);
         bool hasInstalledFp32Upscaler = false;
         bool installedFp32UpscalerSelectable = false;
         for (const mplayer::native::UpscalerModel& model :
@@ -1532,21 +1562,20 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
             }
             hasInstalledFp32Upscaler = true;
             installedFp32UpscalerSelectable |=
-                comparison.candidateIds().contains(QStringLiteral("upscaler:") + model.fileName);
+                comparison != nullptr &&
+                comparison->candidateIds().contains(QStringLiteral("upscaler:") + model.fileName);
         }
         check(!hasInstalledFp32Upscaler || installedFp32UpscalerSelectable,
               "Compare selects an installed fp32 upscaler by its stable catalogue id");
-        comparison.resize(QSize(900, 600));
-        comparison.show();
-        const bool frameCaptured = waitForUi(
+        const bool frameCaptured = comparison != nullptr && waitForUi(
             [&] {
-                return !comparison.frozenFrame().isNull() &&
-                       !comparison.comparisonPending();
+                return !comparison->frozenFrame().isNull() &&
+                       !comparison->comparisonPending();
             },
             10000);
         check(frameCaptured, "Compare captured the static frame without an inference backend");
         if (frameCaptured) {
-            auto* canvas = comparison.findChild<mplayer::shell::CompareCanvas*>(
+            auto* canvas = comparison->findChild<mplayer::shell::CompareCanvas*>(
                 QStringLiteral("compareCanvas"));
             auto* badge = canvas != nullptr
                               ? canvas->findChild<QToolButton*>(
@@ -1581,7 +1610,7 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
                       "Compare's real candidate menu lists the imported custom spatial model");
             }
         }
-        comparison.close();
+        if (comparison != nullptr) comparison->close();
     }
 
     QTableWidget* modelTableForRemoval = customModelTable(*reloadedPanel);
@@ -1813,58 +1842,36 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
     check(selectedRuntime.loaded &&
               selectedRuntime.kind == mplayer::native::BundleKind::Standard,
           "the real Standard runtime is available for the live player and Compare surfaces");
-    mplayer::shell::PlayerShell player;
-    player.resize(QSize(900, 640));
-    player.show();
-    QApplication::processEvents();
-    auto* enhancementButton =
-        player.findChild<QPushButton*>(QStringLiteral("playerEnhanceButton"));
-    auto* enhancementRoot =
-        player.findChild<mplayer::shell::MenuPopup*>(QStringLiteral("playerEnhancementsPopup"));
-    check(enhancementButton != nullptr && enhancementRoot != nullptr,
-          "the player enhancement menu exists before the catalogue changes");
-    if (enhancementButton == nullptr || enhancementRoot == nullptr) return;
-    enhancementButton->click();
-    QApplication::processEvents();
+    mplayer::quick::PlayerController player(QStringLiteral("Native settings probe"),
+                                            QString());
+    player.showWindow();
+    const bool quickSceneReady = quickPlayerSceneReady(player);
+    auto* enhancementRoot = player.menuModel(QStringLiteral("enhancements"));
+    check(player.isWindowVisible() && quickSceneReady && enhancementRoot != nullptr,
+          "the Quick player scene and enhancement model exist before the catalogue changes");
+    if (enhancementRoot == nullptr) return;
     const bool enteredUpscale =
-        clickMenuPayload(enhancementRoot, QStringLiteral("level|processing:upscale"));
-    const bool upscaleOpened = waitForUi(
-        [&player] {
-            auto* menu = enhancementLevelMenu(player, QStringLiteral("processing:upscale"));
-            return menu != nullptr && menu->isVisible();
-        },
-        3000);
-    auto* upscaleRootMenu = enhancementLevelMenu(player, QStringLiteral("processing:upscale"));
+        clickMenuPayload(player, QStringLiteral("enhancements"),
+                         QStringLiteral("level|processing:upscale"));
+    auto* upscaleRootMenu =
+        enhancementLevelMenu(player, QStringLiteral("processing:upscale"));
+    const bool upscaleOpened = enteredUpscale && upscaleRootMenu != nullptr;
     const bool enteredSpatial =
-        upscaleOpened && upscaleRootMenu != nullptr &&
-        clickMenuPayload(upscaleRootMenu, QStringLiteral("level|processing:upscale:spatial"));
-    const bool spatialOpened = waitForUi(
-        [&player] {
-            auto* menu = enhancementLevelMenu(
-                player, QStringLiteral("processing:upscale:spatial"));
-            return menu != nullptr && menu->isVisible();
-        },
-        3000);
+        upscaleOpened && clickMenuPayload(player, QStringLiteral("processing:upscale"),
+                                          QStringLiteral("level|processing:upscale:spatial"));
     auto* spatialMenu =
         enhancementLevelMenu(player, QStringLiteral("processing:upscale:spatial"));
-    const bool spatialReady = waitForUi(
-        [&player] {
-            auto* menu = enhancementLevelMenu(
-                player, QStringLiteral("processing:upscale:spatial"));
-            return menu != nullptr && menu->isVisible() && menu->rowCount() > 0;
-        },
-        3000);
-    spatialMenu = enhancementLevelMenu(player, QStringLiteral("processing:upscale:spatial"));
-    mplayer::shell::MenuPopup* upscaleMenu = nullptr;
+    const bool spatialOpened = enteredSpatial && spatialMenu != nullptr;
+    const bool spatialReady = spatialMenu != nullptr && spatialMenu->rowCount() > 0;
+    mplayer::quick::PlayerMenuModel* upscaleMenu = nullptr;
     check(enteredUpscale && upscaleOpened && enteredSpatial && spatialOpened && spatialReady &&
-              spatialMenu != nullptr && spatialMenu->isVisible(),
+              spatialMenu != nullptr,
           "the player's Spatial models menu is open before the graph is pasted");
     if (spatialMenu == nullptr) return;
     check(!menuHasPayload(spatialMenu, QStringLiteral("ajipreset|") + rawPreset),
           "the Spatial models menu does not offer an unregistered raw paste");
-    auto* playerChip =
-        player.findChild<QLabel*>(QStringLiteral("playerAnimeJanaiStatus"));
-    check(playerChip != nullptr, "the player exposes its AnimeJaNai status chip");
+    check(player.property("animeJanaiChipText").isValid(),
+          "the controller exposes the AnimeJaNai HUD text");
 
     QImage compareFixture(64, 36, QImage::Format_RGB32);
     for (int y = 0; y < compareFixture.height(); ++y) {
@@ -1877,12 +1884,9 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
         QDir(workDir.path()).filePath(QStringLiteral("live-compare-frame.png"));
     check(compareFixture.save(compareFixturePath),
           "a static Compare frame was written for the live catalogue scenario");
-    mplayer::VideoSurface* compareSurface = player.videoSurface();
-    check(compareSurface != nullptr && compareSurface->open(compareFixturePath) &&
-              waitForUi([&] {
-                  return compareSurface->hasVideo() && compareSurface->videoWidth() > 0;
-              }, 5000),
-          "the player surface holds the static Compare frame before the change");
+    check(player.session()->open(compareFixturePath) &&
+              waitForUi([&] { return player.hasVideo() && player.sourceWidth() > 0; }, 5000),
+          "the player session holds the static Compare frame before the change");
     QStringList shaderCandidates;
     const QString shaderRoot = mplayer::anime4k::findShadersDir();
     for (const auto& mode : mplayer::anime4k::availableModes()) {
@@ -1894,9 +1898,23 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
     check(shaderCandidates.size() >= 2,
           "two shader-only Compare candidates avoid native inference in this scenario");
     if (shaderCandidates.size() < 2) return;
-    mplayer::shell::CompareWindow comparison(compareSurface, shaderCandidates.value(0), &player);
-    comparison.resize(QSize(900, 600));
-    comparison.show();
+    player.openCompare();
+    mplayer::shell::CompareWindow* comparisonWindow = nullptr;
+    const bool compareOpened = waitForUi([&] {
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            auto* candidate = qobject_cast<mplayer::shell::CompareWindow*>(widget);
+            if (candidate != nullptr && candidate->isVisible() &&
+                candidate->frozenSourceEpoch() == player.session()->sourceEpoch()) {
+                comparisonWindow = candidate;
+                return true;
+            }
+        }
+        return false;
+    }, 10000);
+    check(compareOpened, "the controller opened its real Compare window");
+    if (!compareOpened || comparisonWindow == nullptr) return;
+    mplayer::shell::CompareWindow& comparison = *comparisonWindow;
+    comparison.setCurrentCandidateId(shaderCandidates.value(0));
     const bool compareFrozen = waitForUi(
         [&] { return !comparison.frozenFrame().isNull() && !comparison.comparisonPending(); },
         10000);
@@ -2001,14 +2019,14 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
     const bool customModelsOffered = waitForUi(
         [&] { return menuHasPayload(spatialMenu, customModelsPayload); }, 15000);
     const bool enteredCustomModels =
-        customModelsOffered && clickMenuPayload(spatialMenu, customModelsPayload);
-    const bool customModelsOpened = waitForUi(
-        [&player] {
-            auto* menu = enhancementLevelMenu(
-                player, QStringLiteral("processing:upscale:spatial:custom"));
-            return menu != nullptr && menu->isVisible();
-        },
-        3000);
+        customModelsOffered &&
+        clickMenuPayload(player, QStringLiteral("processing:upscale:spatial"),
+                         customModelsPayload);
+    const bool customModelsOpened = waitForUi([&player] {
+        auto* menu = enhancementLevelMenu(
+            player, QStringLiteral("processing:upscale:spatial:custom"));
+        return menu != nullptr && menu->rowCount() > 0;
+    }, 3000);
     upscaleMenu = enhancementLevelMenu(
         player, QStringLiteral("processing:upscale:spatial:custom"));
     check(enteredCustomModels && customModelsOpened && upscaleMenu != nullptr,
@@ -2017,7 +2035,7 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
         [&] {
             const auto entry =
                 menuEntryForPayload(upscaleMenu, QStringLiteral("ajipreset|") + rawPreset);
-            return !entry.text.isEmpty() && !entry.disabled;
+            return !entry.label.isEmpty() && entry.enabled;
         },
         15000);
     check(playerSawOwned,
@@ -2084,7 +2102,7 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
           "the manager's live registered catalogue was captured");
     check(benchmarkDialog.grab().save(QStringLiteral("native-live-benchmark.png")),
           "Benchmark's live catalogue was captured");
-    check(player.grab().save(QStringLiteral("native-live-player-menu.png")),
+    check(player.window()->grabWindow().save(QStringLiteral("native-live-player-menu.png")),
           "the player's live Upscale menu was captured");
     check(comparison.grab().save(QStringLiteral("native-live-compare.png")),
           "Compare's live candidate surface was captured");
@@ -2220,7 +2238,7 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
                   [&] {
                       const auto entry = menuEntryForPayload(
                           upscaleMenu, QStringLiteral("ajipreset|") + externalPreset);
-                      return entry.text.isEmpty();
+                      return entry.label.isEmpty();
                   },
                   15000),
               "the open player Upscale menu dropped the replaced external graph");
@@ -2276,7 +2294,7 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
                   [&] {
                       const auto entry = menuEntryForPayload(
                           upscaleMenu, QStringLiteral("ajipreset|") + externalPreset);
-                      return !entry.text.isEmpty() && !entry.disabled;
+                      return !entry.label.isEmpty() && entry.enabled;
                   },
                   15000),
               "the open player menu offers the re-pinned replacement graph");
@@ -2392,11 +2410,9 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
             }
             const auto missing = menuEntryForPayload(
                 liveUpscaleMenu, QStringLiteral("ajipreset|") + rawPreset);
-            auto* liveChip =
-                player.findChild<QLabel*>(QStringLiteral("playerAnimeJanaiStatus"));
-            return missing.disabled && missing.current && liveChip != nullptr &&
-                   liveChip->isVisibleTo(&player) &&
-                   liveChip->accessibleName().contains(QStringLiteral("Unavailable"));
+            return !missing.enabled && missing.selected &&
+                   player.animeJanaiStatus().contains(QStringLiteral("Unavailable"),
+                                                     Qt::CaseInsensitive);
         },
         15000);
     check(playerMissingAfterRemoval,
@@ -2484,7 +2500,7 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
 
     check(managerDialog.grab().save(QStringLiteral("native-live-missing-model.png")),
           "the manager's explicit missing-model state was captured");
-    check(player.grab().save(QStringLiteral("native-live-player-missing.png")),
+    check(player.window()->grabWindow().save(QStringLiteral("native-live-player-missing.png")),
           "the player's explicit unavailable selection was captured");
     managerDialog.resize(managerInitialSize);
 
@@ -4456,7 +4472,7 @@ QJsonObject videoScalingPersistenceScenario(mikai::backend::MikaiClient& client,
                                             bool& restartVerified) {
     using mplayer::VideoScaleMode;
     using mplayer::VideoScalePolicy;
-    using mplayer::VideoSurface;
+    using mplayer::VideoSession;
 
     restartVerified = false;
     QJsonObject evidence;
@@ -4468,7 +4484,7 @@ QJsonObject videoScalingPersistenceScenario(mikai::backend::MikaiClient& client,
     // The store is this run's own empty temporary directory, but the process may
     // already have run other scenarios: normalise the static so "Cancel changed
     // nothing" is measured against a known value rather than an inherited one.
-    VideoSurface::setVideoScalePolicy(defaults);
+    VideoSession::setVideoScalePolicy(defaults);
     QApplication::processEvents();
 
     {
@@ -4476,7 +4492,7 @@ QJsonObject videoScalingPersistenceScenario(mikai::backend::MikaiClient& client,
         check(mplayer::videoScalePolicyFromSettings(settings) == defaults,
               "the empty isolated store reads the documented default display policy");
     }
-    check(VideoSurface::videoScalePolicy() == defaults,
+    check(VideoSession::videoScalePolicy() == defaults,
           "the process-wide display policy starts at that same default");
 
     VideoScalePolicy edited;
@@ -4517,7 +4533,7 @@ QJsonObject videoScalingPersistenceScenario(mikai::backend::MikaiClient& client,
         QApplication::processEvents();
         check(dialog.result() == static_cast<int>(QDialog::Rejected),
               "the real Cancel action closed the dialog without accepting");
-        check(VideoSurface::videoScalePolicy() == defaults,
+        check(VideoSession::videoScalePolicy() == defaults,
               "Cancel publishes no edited display policy to the live process");
         {
             QSettings settings;
@@ -4545,7 +4561,7 @@ QJsonObject videoScalingPersistenceScenario(mikai::backend::MikaiClient& client,
                                 "a dialog reopened after Cancel still shows the stored default policy");
         check(videoScaleSetControls(controls, edited),
               "the saved policy can be entered through the real controls");
-        check(VideoSurface::videoScalePolicy() == defaults,
+        check(VideoSession::videoScalePolicy() == defaults,
               "editing the controls publishes nothing before Save");
 
         // The seeded foreign store says uk while this probe process runs the
@@ -4593,7 +4609,7 @@ QJsonObject videoScalingPersistenceScenario(mikai::backend::MikaiClient& client,
               "Save stored the selected downscaler");
         check(stored == edited,
               "the production reader returns the complete saved policy");
-        check(VideoSurface::videoScalePolicy() == edited,
+        check(VideoSession::videoScalePolicy() == edited,
               "Save publishes the expected complete policy to the live process");
 
         // The consumer-visible effect: the saved policy owns all seven options.
@@ -4616,7 +4632,7 @@ QJsonObject videoScalingPersistenceScenario(mikai::backend::MikaiClient& client,
         evidence.insert(QStringLiteral("saved"), videoScalePolicyJson(stored));
         evidence.insert(QStringLiteral("savedOptions"), videoScaleOptionsJson(stored, {}));
         evidence.insert(QStringLiteral("livePolicy"),
-                        videoScalePolicyJson(VideoSurface::videoScalePolicy()));
+                        videoScalePolicyJson(VideoSession::videoScalePolicy()));
         dialog.reject();
         QApplication::processEvents();
     }
@@ -4705,7 +4721,7 @@ QJsonObject videoScalingRestartRead(mikai::backend::MikaiClient& client, Runner&
                                     const QString& evidencePath) {
     using mplayer::VideoScaleMode;
     using mplayer::VideoScalePolicy;
-    using mplayer::VideoSurface;
+    using mplayer::VideoSession;
 
     QJsonObject evidence;
     evidence.insert(QStringLiteral("scenario"), QStringLiteral("video_scaling_restart_read"));
@@ -4734,7 +4750,7 @@ QJsonObject videoScalingRestartRead(mikai::backend::MikaiClient& client, Runner&
           "the restart expectation names a valid mode, zoom and scaler pair");
     evidence.insert(QStringLiteral("expected"), videoScalePolicyJson(expected));
 
-    check(VideoSurface::videoScalePolicy() == VideoScalePolicy{},
+    check(VideoSession::videoScalePolicy() == VideoScalePolicy{},
           "a fresh process starts at the default policy before any store read");
     QSettings readSettings;
     const VideoScalePolicy read = mplayer::videoScalePolicyFromSettings(readSettings);

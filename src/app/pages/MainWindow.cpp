@@ -19,7 +19,9 @@
 #include <native/prepare/NativePreparationContext.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
 
-#include <PlayerDialog.hpp>
+#include <player/quick/PlayerController.hpp>
+#include <player/core/VideoSession.hpp>
+#include <player/quick/PlayerWindow.hpp>
 #include <QAbstractButton>
 #include <memory>
 #include <optional>
@@ -57,24 +59,21 @@ namespace mikai::app {
 namespace {
 
 /// The player that currently owns playback: the one on the page on screen when it
-/// has an active source, otherwise the standalone media player. Entering PiP
-/// hides the main dialog while it still owns the pooled float, so this asks the
-/// dialog's own liveness (`hasActiveSource()`) rather than visibility, and never
-/// retains a pointer: the answer is re-resolved on every call.
-mplayer::shell::PlayerDialog* owningPlaybackPlayer(QWidget* page,
-                                                   mplayer::shell::PlayerDialog* local) {
+/// has an active source, otherwise the standalone media player. PiP keeps that
+/// controller alive while its native window changes presentation, so liveness
+/// comes from `hasActiveSource()`, never visibility or child order.
+mplayer::quick::PlayerController* owningPlaybackPlayer(
+    QWidget* page, mplayer::quick::PlayerController* local) {
     if (page != nullptr) {
-        mplayer::shell::PlayerDialog* found = nullptr;
-        const QList<mplayer::shell::PlayerDialog*> players =
-            page->findChildren<mplayer::shell::PlayerDialog*>();
-        for (mplayer::shell::PlayerDialog* candidate : players) {
+        mplayer::quick::PlayerController* found = nullptr;
+        const QList<mplayer::quick::PlayerController*> players =
+            page->findChildren<mplayer::quick::PlayerController*>();
+        for (mplayer::quick::PlayerController* candidate : players) {
             if (candidate != nullptr && candidate->hasActiveSource()) {
                 found = candidate;
             }
         }
-        if (found != nullptr) {
-            return found;
-        }
+        if (found != nullptr) return found;
     }
     return local != nullptr && local->hasActiveSource() ? local : nullptr;
 }
@@ -84,7 +83,7 @@ mplayer::shell::PlayerDialog* owningPlaybackPlayer(QWidget* page,
 /// dialog is open, so they live in one shared value rather than in a captured
 /// pointer or a widget's label.
 struct SettingsNativeJob {
-    QPointer<mplayer::shell::PlayerDialog> core;
+    QPointer<mplayer::quick::PlayerController> core;
     quint64 generation = 0;
     int frameIndex = -1;
     QElapsedTimer deadline;
@@ -104,7 +103,8 @@ constexpr int kNativeContextWaitMs = 8000;
 /// and deletes it, so a player deleted from the shell's own close and
 /// navigation paths cannot take a dialog whose loop is still running. Stacking
 /// and placement only need the native relation.
-void attachPromptOwner(QDialog* prompt, QWidget* shell, bool preferActiveWindow) {
+void attachPromptOwner(QDialog* prompt, QWidget* shell, bool preferActiveWindow,
+                       QWindow* preferredWindow = nullptr) {
     QWidget* owner = preferActiveWindow ? QApplication::activeWindow() : nullptr;
     if (owner == shell) owner = nullptr;
     if (owner != nullptr &&
@@ -118,13 +118,20 @@ void attachPromptOwner(QDialog* prompt, QWidget* shell, bool preferActiveWindow)
     // above a fullscreen player and off the taskbar.
     prompt->winId();
     QWidget* nativeOwner = owner != nullptr ? owner : shell;
-    if (nativeOwner != nullptr && nativeOwner->windowHandle() != nullptr) {
-        prompt->windowHandle()->setTransientParent(nativeOwner->windowHandle());
+    QWindow* transientParent = preferredWindow;
+    if (transientParent == nullptr && nativeOwner != nullptr) {
+        transientParent = nativeOwner->windowHandle();
     }
-    // Centre on the owner's screen, not the shell's: a player fullscreen on
-    // another display must not put the ask where nobody is watching.
-    QScreen* placement = owner != nullptr ? owner->screen()
-                                          : (shell != nullptr ? shell->screen() : nullptr);
+    if (transientParent != nullptr) {
+        prompt->windowHandle()->setTransientParent(transientParent);
+    }
+    // Centre on the player's screen when it owns playback, otherwise the
+    // active window's screen, so a fullscreen player on another display keeps
+    // its modal decision in view.
+    QScreen* placement = preferredWindow != nullptr
+                             ? preferredWindow->screen()
+                             : (owner != nullptr ? owner->screen()
+                                                 : (shell != nullptr ? shell->screen() : nullptr));
     if (placement != nullptr) {
         prompt->adjustSize();
         const QRect available = placement->availableGeometry();
@@ -264,7 +271,7 @@ MainWindow::~MainWindow() {
     qualityCache_->flushNow();
 }
 
-mplayer::shell::PlayerDialog* MainWindow::currentMediaPlayer() const {
+mplayer::quick::PlayerController* MainWindow::currentMediaPlayer() const {
     return mediaPlayer_.data();
 }
 
@@ -295,7 +302,7 @@ QString MainWindow::enginePreparationSummary(bool ok) const {
 
 void MainWindow::restateEnginePreparation() {
     if (enginePreparationCore_.isNull()) return;
-    mplayer::shell::PlayerDialog* core = enginePreparationCore_.data();
+    mplayer::quick::PlayerController* core = enginePreparationCore_.data();
     if (!enginePreparationStarted_ || !core->enginePreparationVisible()) {
         // Nothing is on screen any more: the build was dismissed, its dialog
         // closed, or it settled and left on its own.
@@ -379,15 +386,71 @@ void MainWindow::chooseMediaUrl() {
 }
 
 bool MainWindow::openMedia(const QString& source) {
+    const auto refuse = [this](const QString& detail) {
+        qWarning().noquote() << "mikai: media open refused:" << detail;
+        if (automaticSetupAllowed_) {
+            QMessageBox prompt(QMessageBox::Warning, tr("Cannot open video"), detail,
+                               QMessageBox::Ok, this);
+            mplayer::quick::PlayerController* player = owningPlaybackPlayer(
+                stack_ != nullptr ? stack_->currentWidget() : nullptr, mediaPlayer_.data());
+            attachPromptOwner(&prompt, this, /*preferActiveWindow=*/true,
+                              player != nullptr ? player->window() : nullptr);
+            prompt.exec();
+        }
+        return false;
+    };
+    if (source.isEmpty()) {
+        return refuse(tr("Choose a video file or enter a stream URL."));
+    }
+
     // add-by-URL treats bare input as web input, which is what a typed
     // "example.com/x.m3u8" needs. A relative path is not web input: the first
     // segment would become a host ("http://videos/clip.mp4"), so an existing
     // path wins over that interpretation.
     const QUrl typed = QUrl::fromUserInput(source, {}, QUrl::AssumeLocalFile);
+    const QFileInfo sourceInfo(source);
+    if (!source.contains(QLatin1String("://")) && sourceInfo.exists() && !sourceInfo.isFile()) {
+        return refuse(tr("The selected path is not a video file."));
+    }
     const bool pathExistsOffline = !typed.isLocalFile() && !source.contains(QLatin1String("://")) &&
-                                   QFileInfo::exists(source);
-    const QUrl url = pathExistsOffline ? QUrl::fromLocalFile(QFileInfo(source).absoluteFilePath())
-                                       : typed;
+                                   sourceInfo.isFile();
+    const QString sourceSuffix = sourceInfo.suffix().toLower();
+    const bool videoPathSuffix =
+        sourceSuffix == QLatin1String("mkv") || sourceSuffix == QLatin1String("mp4") ||
+        sourceSuffix == QLatin1String("webm") || sourceSuffix == QLatin1String("avi") ||
+        sourceSuffix == QLatin1String("mov") || sourceSuffix == QLatin1String("m4v") ||
+        sourceSuffix == QLatin1String("ts") || sourceSuffix == QLatin1String("m2ts") ||
+        sourceSuffix == QLatin1String("mpeg") || sourceSuffix == QLatin1String("mpg");
+    const bool hasPathSeparator =
+        source.contains(QLatin1Char('/')) || source.contains(QLatin1Char('\\'));
+    const bool looksLikeRelativePath =
+        hasPathSeparator && typed.host().indexOf(QLatin1Char('.')) < 0 &&
+        typed.host() != QLatin1String("localhost");
+    const bool looksLikeVideoFilename = !hasPathSeparator && videoPathSuffix;
+    const bool missingPath = !typed.isLocalFile() &&
+                             !source.contains(QLatin1String("://")) &&
+                             (looksLikeRelativePath || looksLikeVideoFilename);
+    if (missingPath && !pathExistsOffline) {
+        return refuse(tr("The video file does not exist or cannot be read."));
+    }
+    const QUrl url = pathExistsOffline
+                         ? QUrl::fromLocalFile(sourceInfo.absoluteFilePath())
+                         : typed;
+    if (!url.isValid()) {
+        return refuse(tr("The video path or URL is not valid."));
+    }
+    if (url.isLocalFile()) {
+        const QFileInfo file(url.toLocalFile());
+        if (!file.isFile() || !file.isReadable()) {
+            return refuse(tr("The video file does not exist or cannot be read."));
+        }
+    } else {
+        const QString scheme = url.scheme().toLower();
+        if ((scheme != QLatin1String("http") && scheme != QLatin1String("https")) ||
+            url.host().isEmpty()) {
+            return refuse(tr("Only local files and HTTP or HTTPS stream URLs are supported."));
+        }
+    }
     const QString media = url.isLocalFile() ? url.toLocalFile() : url.toString(QUrl::FullyEncoded);
     QString caption = url.fileName();
     if (caption.isEmpty()) {
@@ -400,37 +463,31 @@ bool MainWindow::openMedia(const QString& source) {
         qWarning().noquote() << "mikai: media open refused (native stop unsettled)";
         return false;
     }
-    // closeMedia() deleted the replaced player synchronously: with mpv a
-    // closed dialog's core would otherwise keep its failed end-file event and
-    // its retry chip alive until the deferred delete, and any later lookup
-    // reads the old window's state instead of the new stream's.
-    mediaPlayer_ = new mplayer::shell::PlayerDialog(caption, media, this);
-    // Core creation can report failure synchronously from startPlayer().
-    connect(mediaPlayer_, &mplayer::shell::PlayerDialog::runtimeRequested, this,
-            [this] { requestMediaRuntime(); });
-    // A processing-failure remedy from the standalone player opens this app's
-    // existing Processing surface, aimed at this dialog while it still owns a
-    // stream. The pointer is guarded on every use, so a replaced player is never
-    // asked for anything.
-    connect(mediaPlayer_, &mplayer::shell::PlayerDialog::processingSettingsRequested, this,
-            [this](mplayer::shell::ProcessingSettingsIntent intent) {
-                openSettingsForIntent(intent, mediaPlayer_);
+    // closeMedia() deleted the replaced controller synchronously. A deferred
+    // deletion would let old end-file events or retry callbacks address the
+    // replacement source.
+    mediaPlayer_ = new mplayer::quick::PlayerController(caption, media, this);
+    connect(mediaPlayer_, &mplayer::quick::PlayerController::runtimeRequested,
+            this, &MainWindow::requestMediaRuntime);
+    const QPointer<mplayer::quick::PlayerController> openedPlayer = mediaPlayer_;
+    connect(openedPlayer.data(),
+            &mplayer::quick::PlayerController::processingSettingsRequested,
+            this, [this, openedPlayer](mplayer::shell::ProcessingSettingsIntent intent) {
+                if (openedPlayer.isNull() || !openedPlayer->hasActiveSource()) return;
+                openSettingsForIntent(intent, openedPlayer);
             });
-    connect(mediaPlayer_, &mplayer::shell::PlayerDialog::componentSetupRequested,
-            this, [this] { offerAnimeJanaiSetup(); });
-    connect(mediaPlayer_, &mplayer::shell::PlayerDialog::upscalersRequested, this,
-            &MainWindow::openUpscalerSettings);
-    // The app-owned assembly answers this dialog's native requests: it reads the
-    // owned model store, the requested recipe and the measured machine identity
-    // off the GUI thread and submits the whole request back through the dialog.
+    connect(mediaPlayer_, &mplayer::quick::PlayerController::componentSetupRequested,
+            this, &MainWindow::offerAnimeJanaiSetup);
+    connect(mediaPlayer_, &mplayer::quick::PlayerController::upscalersRequested,
+            this, &MainWindow::openUpscalerSettings);
     bindNativePlaybackAssembly(*runner_, *mediaPlayer_);
-    mediaPlayer_->show();
+    mediaPlayer_->showWindow();
     mediaPlayer_->startPlayer();
     return true;
 }
 
 bool MainWindow::closeMedia(bool forced) {
-    const bool accepted = mediaPlayer_.isNull() || mediaPlayer_->close();
+    const bool accepted = mediaPlayer_.isNull() || mediaPlayer_->requestClose();
     if (!accepted && !forced) {
         return false;
     }
@@ -440,7 +497,7 @@ bool MainWindow::closeMedia(bool forced) {
     releaseRuntimeResolution();
     if (!accepted) {
         // Visible GL teardown has faulted the driver; forced destruction must hide first.
-        if (mediaPlayer_) mediaPlayer_->hide();
+        if (mediaPlayer_) mediaPlayer_->hideWindow();
         qWarning().noquote()
             << "mikai: forced media teardown (destruction cannot be refused; native claims "
                "are released only after the core is destroyed)";
@@ -459,7 +516,7 @@ void MainWindow::requestMediaRuntime() {
     // The requested source is shown first, whatever happens below: the viewer
     // asked for this file and the window must not look empty while the runtime
     // is being settled.
-    dialog->show();
+    dialog->showWindow();
     if (mplayer::native::runtimeSelected()) {
         // A module is pinned already, so the only reason this player has no core
         // is the same open the dialog will retry itself.
@@ -507,7 +564,7 @@ void MainWindow::requestMediaRuntime() {
 void MainWindow::runMediaRuntimeResolution() {
     const int seq = ++runtimeSeq_;
     const QPointer<MainWindow> self(this);
-    const QPointer<mplayer::shell::PlayerDialog> target(mediaPlayer_.data());
+    const QPointer<mplayer::quick::PlayerController> target(mediaPlayer_.data());
     const mplayer::native::ResolutionLease lease = runtimeResolution_;
     // Validate the bundle off-thread; load the process-pinned module on the GUI thread.
     runner_->run(
@@ -568,7 +625,7 @@ void MainWindow::answerRuntimeWhenSettled() {
         mediaPlayer_->showRuntimePendingStatus();
     }
     const int seq = runtimeSeq_;
-    const QPointer<mplayer::shell::PlayerDialog> target(mediaPlayer_);
+    const QPointer<mplayer::quick::PlayerController> target(mediaPlayer_);
     mplayer::native::whenRuntimeResolutionFinishes(this, [this, seq, target] {
         if (seq != runtimeSeq_ || target.isNull() || target != mediaPlayer_) return;
         answerMediaRuntimeResolved();
@@ -593,7 +650,7 @@ void MainWindow::answerMediaRuntimeResolved() {
         return;
     }
     runtimePending_ = false;
-    const QPointer<mplayer::shell::PlayerDialog> dialog = mediaPlayer_;
+    const QPointer<mplayer::quick::PlayerController> dialog = mediaPlayer_;
     if (dialog.isNull()) {
         return;
     }
@@ -738,8 +795,9 @@ void MainWindow::openUpscalerSettings() {
     if (settingsDialog_ != nullptr) settingsDialog_->showPage(QStringLiteral("upscalers"));
 }
 
-void MainWindow::openSettingsForIntent(mplayer::shell::ProcessingSettingsIntent intent,
-                                       QPointer<mplayer::shell::PlayerDialog> core) {
+void MainWindow::openSettingsForIntent(
+    mplayer::shell::ProcessingSettingsIntent intent,
+    QPointer<mplayer::quick::PlayerController> core) {
     openSettingsImpl(intent, core);
 }
 
@@ -805,7 +863,10 @@ void MainWindow::showAnimeJanaiSetupPrompt(SettingsDialog* settings) {
     install->setDefault(true);
 
     // Native ownership and placement only; see attachPromptOwner.
-    attachPromptOwner(dialog, this, /*preferActiveWindow=*/true);
+    const mplayer::quick::PlayerController* askingPlayer = owningPlaybackPlayer(
+        stack_ != nullptr ? stack_->currentWidget() : nullptr, mediaPlayer_.data());
+    attachPromptOwner(dialog, this, /*preferActiveWindow=*/true,
+                      askingPlayer != nullptr ? askingPlayer->window() : nullptr);
 
     setupPromptOffered_ = true;
     bool installChosen = false;
@@ -859,12 +920,15 @@ void MainWindow::pausePlaybackForComponentAsk(bool releaseAnimeJanai) {
         // back over. Keep the original decision untouched.
         return;
     }
-    mplayer::shell::PlayerDialog* player = owningPlaybackPlayer(
+    mplayer::quick::PlayerController* player = owningPlaybackPlayer(
         stack_ != nullptr ? stack_->currentWidget() : nullptr, mediaPlayer_.data());
     const bool paused = player != nullptr && player->pauseIfPlaying();
     if (!paused && !releaseAnimeJanai) return;
     componentAskHeld_ = true;
     componentAskPlayer_ = player;
+    componentAskMediaPath_ = player != nullptr ? player->mediaPath() : QString();
+    componentAskSourceEpoch_ =
+        player != nullptr && player->session() != nullptr ? player->session()->sourceEpoch() : 0;
     componentAskPausedPlayback_ = paused;
     componentAskReleaseAnimeJanai_ = releaseAnimeJanai;
 }
@@ -873,12 +937,17 @@ void MainWindow::resumePlaybackAfterComponentAsk() {
     if (!componentAskHeld_) return;
     const bool releaseAnimeJanai = componentAskReleaseAnimeJanai_;
     const bool paused = componentAskPausedPlayback_;
-    const QPointer<mplayer::shell::PlayerDialog> player = componentAskPlayer_;
+    const QPointer<mplayer::quick::PlayerController> player = componentAskPlayer_;
     componentAskHeld_ = false;
     componentAskPausedPlayback_ = false;
     componentAskReleaseAnimeJanai_ = false;
     componentAskPlayer_.clear();
-    if (player.isNull()) return;
+    const QString heldMediaPath = std::exchange(componentAskMediaPath_, QString());
+    const quint64 heldSourceEpoch = std::exchange(componentAskSourceEpoch_, quint64{0});
+    if (player.isNull() || player->mediaPath() != heldMediaPath ||
+        player->session() == nullptr || player->session()->sourceEpoch() != heldSourceEpoch) {
+        return;
+    }
     // Clear the missing AnimeJaNai request before playback resumes, so the
     // failure row does not come back over a shader the viewer is watching.
     if (releaseAnimeJanai) player->applyAnimeJanaiRequest(QString());
@@ -939,7 +1008,7 @@ void MainWindow::noteComponentAcquisitionIdle() {
 }
 
 void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettingsIntent> intent,
-                                  QPointer<mplayer::shell::PlayerDialog> preferredCore,
+                                  QPointer<mplayer::quick::PlayerController> preferredCore,
                                   bool showComponentsFirst,
                                   bool installAnimeJanaiRecommended) {
     if (!settingsDialog_.isNull()) {
@@ -990,25 +1059,28 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
     // callable rather than a value.
     const QPointer<SettingsDialog> settings(&dialog);
     auto job = std::make_shared<SettingsNativeJob>();
-    const auto owningCore = [this, preferredCore, intent]() -> mplayer::shell::PlayerDialog* {
-        // The dialog that raised the remedy answers for itself, while it still
-        // owns a stream.
+    const auto owningCore = [this, preferredCore, intent]() -> mplayer::quick::PlayerController* {
         if (!preferredCore.isNull() && preferredCore->hasActiveSource()) {
             return preferredCore.data();
         }
-        if (intent.has_value()) {
-            // No fallback for an explicit remedy. The dialog that asked for it is
-            // gone or no longer playing, and preparing some other core instead
-            // would start work on a movie the viewer did not ask about. Every
-            // handler below turns this null into a named "no core owns the source"
-            // refusal, which is the honest answer.
-            return nullptr;
-        }
-        // Plain settings keep the existing convention: whatever owns playback on
-        // screen, the page's dialog first.
+        if (intent.has_value()) return nullptr;
         return owningPlaybackPlayer(stack_ != nullptr ? stack_->currentWidget() : nullptr,
                                     mediaPlayer_.data());
     };
+    if (!preferredCore.isNull() && preferredCore->hasActiveSource()) {
+        const bool paused = preferredCore->pauseIfPlaying();
+        if (paused) {
+            componentAskHeld_ = true;
+            componentAskPlayer_ = preferredCore;
+            componentAskMediaPath_ = preferredCore->mediaPath();
+            componentAskSourceEpoch_ =
+                preferredCore->session() != nullptr ? preferredCore->session()->sourceEpoch() : 0;
+            componentAskPausedPlayback_ = true;
+            componentAskReleaseAnimeJanai_ = false;
+        }
+    } else {
+        pausePlaybackForComponentAsk(false);
+    }
 
     // The backend an explicit preparation should align the core to, read live at
     // the moment it is asked for: the settings panel's UNSAVED provider choice
@@ -1025,7 +1097,7 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
     // Readiness: a real playing or paused source exists, so Prepare may be armed
     // before any device fact has been observed. This arms nothing.
     dialog.setNativePreparationSourcePresence([owningCore](QString* reasonKey, QString* reason) {
-        mplayer::shell::PlayerDialog* player = owningCore();
+        mplayer::quick::PlayerController* player = owningCore();
         if (player != nullptr && player->hasActiveSource()) {
             return true;
         }
@@ -1039,7 +1111,7 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
     // A context already observed is pulled straight from the owning core; this is
     // never a cached value and never a guess.
     dialog.setNativePreparationContextProvider([owningCore]() {
-        mplayer::shell::PlayerDialog* player = owningCore();
+        mplayer::quick::PlayerController* player = owningCore();
         return player != nullptr
                    ? player->nativePreparationContext()
                    : std::optional<mplayer::native::NativePreparationContext>{};
@@ -1056,7 +1128,7 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
             contextTimer->stop();
             return;
         }
-        mplayer::shell::PlayerDialog* player = owningCore();
+        mplayer::quick::PlayerController* player = owningCore();
         if (player == nullptr || !player->hasActiveSource()) {
             contextTimer->stop();
             settings->failNativePreparationContext(
@@ -1096,7 +1168,7 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
         contextTimer->start();
     });
 
-    // One capture per request, through the dialog's own forward so it follows the
+    // One capture per request, through the controller's own forward so it follows the
     // owning core across PiP. An interpolation stage's second frame must be a
     // different observation of the SAME source: an unchanged position is a
     // duplicate and a changed source epoch is a different episode of the same
@@ -1110,7 +1182,7 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
                 QObject::disconnect(connection);
             }
             job->frameConnections.clear();
-            mplayer::shell::PlayerDialog* player = owningCore();
+            mplayer::quick::PlayerController* player = owningCore();
             if (player == nullptr || !player->hasActiveSource()) {
                 settings->failNativePreparationFrame(
                     frameIndex, QStringLiteral("native.reference.noCore"),
@@ -1120,14 +1192,16 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
             job->frameIndex = frameIndex;
             job->generation = generation;
             job->core = player;
-            const QPointer<mplayer::shell::PlayerDialog> core(player);
+            const QPointer<mplayer::quick::PlayerController> core(player);
             job->frameConnections.append(QObject::connect(
-                player, &mplayer::shell::PlayerDialog::nativeReferenceFrameReady, settings.data(),
-                [job, settings, core, frameIndex](const mplayer::native::FrameFixture& frame,
-                                                  quint64 sourceEpoch, double framePosition,
-                                                  int reportedIndex,
-                                                  std::optional<mplayer::native::Rational> frameFps) {
-                    if (settings.isNull() || core != job->core || frameIndex != job->frameIndex) {
+                player, &mplayer::quick::PlayerController::nativeReferenceFrameReady, settings.data(),
+                [job, settings, core, owningCore, frameIndex, generation](
+                    const mplayer::native::FrameFixture& frame, quint64 sourceEpoch,
+                    double framePosition, int reportedIndex,
+                    std::optional<mplayer::native::Rational> frameFps) {
+                    if (settings.isNull() || core.isNull() || core != job->core ||
+                        frameIndex != job->frameIndex || generation != job->generation ||
+                        !core->hasActiveSource() || owningCore() != core.data()) {
                         return;
                     }
                     // The index is echoed back; a mismatch means this answer belongs
@@ -1161,10 +1235,12 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
                                                             framePosition);
                 }));
             job->frameConnections.append(QObject::connect(
-                player, &mplayer::shell::PlayerDialog::nativeReferenceFrameFailed, settings.data(),
-                [job, settings, core, frameIndex](const QString& reasonKey, const QString& reason,
-                                                  int reportedIndex) {
-                    if (settings.isNull() || core != job->core || frameIndex != job->frameIndex) {
+                player, &mplayer::quick::PlayerController::nativeReferenceFrameFailed, settings.data(),
+                [job, settings, core, owningCore, frameIndex, generation](
+                    const QString& reasonKey, const QString& reason, int reportedIndex) {
+                    if (settings.isNull() || core.isNull() || core != job->core ||
+                        frameIndex != job->frameIndex || generation != job->generation ||
+                        !core->hasActiveSource() || owningCore() != core.data()) {
                         return;
                     }
                     if (reportedIndex != job->frameIndex) {
@@ -1183,32 +1259,58 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
     // viewer keeps seeing the picture and the work at the same time, and the
     // window outlives the dialog because the core it belongs to does.
     //
-    // The core is resolved at each event rather than captured once: the dialog is
-    // modal, but PiP can hand the float the stream while it is open, and the
-    // window must follow whichever surface owns playback.
-    connect(&dialog, &SettingsDialog::nativePreparationStarted, this, [this, owningCore] {
-        if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
+    // The player that starts a build owns its preparation window through progress,
+    // completion and dismissal. PiP changes presentation on that same controller;
+    // a later playback owner must not receive this build's events.
+    connect(&dialog, &SettingsDialog::nativePreparationStarted, &dialog, [this, owningCore, &dialog] {
+        if (mplayer::quick::PlayerController* core = owningCore(); core != nullptr) {
             // Retained with the surface it reached, so a language switch re-words
             // the window that is up instead of starting anything.
             enginePreparationStarted_ = true;
             enginePreparationSettled_ = false;
             enginePreparationOk_ = false;
             enginePreparationCore_ = core;
+            if (enginePreparationVisibilityConnection_) {
+                disconnect(enginePreparationVisibilityConnection_);
+            }
+            const QPointer<mplayer::quick::PlayerController> target(core);
+            enginePreparationVisibilityConnection_ =
+                connect(core, &mplayer::quick::PlayerController::preparationChanged, this,
+                        [this, target] {
+                            if (target.isNull() || enginePreparationCore_ != target ||
+                                target->enginePreparationVisible() || enginePreparationSettled_) {
+                                return;
+                            }
+                            enginePreparationStarted_ = false;
+                            enginePreparationSettled_ = false;
+                            enginePreparationCore_.clear();
+                            enginePreparationVisibilityConnection_ = {};
+                        });
+            connect(core, &mplayer::quick::PlayerController::enginePreparationCancelRequested,
+                    &dialog, &SettingsDialog::cancelNativePreparation, Qt::UniqueConnection);
             core->beginEnginePreparation(enginePreparationTitle());
         }
     });
     connect(&dialog, &SettingsDialog::nativePreparationProgress, this,
-            [owningCore](int stageIndex, int stageCount, const QString& phase,
-                         const QString& detail) {
-                if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
+            [this](int stageIndex, int stageCount, const QString& phase,
+                   const QString& detail) {
+                mplayer::quick::PlayerController* core = enginePreparationCore_.data();
+                if (enginePreparationStarted_ && core != nullptr &&
+                    core->enginePreparationVisible()) {
                     core->updateEnginePreparation(stageIndex, stageCount, phase, detail);
                 }
             });
-    connect(&dialog, &SettingsDialog::nativePreparationFinished, this, [this, owningCore](bool ok) {
-        if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
+    connect(&dialog, &SettingsDialog::nativePreparationFinished, this, [this](bool ok) {
+        mplayer::quick::PlayerController* core = enginePreparationCore_.data();
+        if (enginePreparationStarted_ && core != nullptr &&
+            core->enginePreparationVisible()) {
             enginePreparationSettled_ = true;
             enginePreparationOk_ = ok;
             core->endEnginePreparation(ok, enginePreparationSummary(ok));
+        } else {
+            enginePreparationStarted_ = false;
+            enginePreparationSettled_ = false;
+            enginePreparationCore_.clear();
         }
     });
     // The context wait ends with the preparation, whoever ended it: a cancelled
@@ -1220,8 +1322,8 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
 
     // The window's Cancel reaches the build's own cancellation gate through the
     // dialog that owns it. The core on screen is the one that raised it.
-    if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
-        connect(core, &mplayer::shell::PlayerDialog::enginePreparationCancelRequested, &dialog,
+    if (mplayer::quick::PlayerController* core = owningCore(); core != nullptr) {
+        connect(core, &mplayer::quick::PlayerController::enginePreparationCancelRequested, &dialog,
                 &SettingsDialog::cancelNativePreparation, Qt::UniqueConnection);
     }
 
@@ -1241,12 +1343,26 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
         });
     }
 
+    // Bind the modal Settings window to the actual native player window, not
+    // only to MainWindow's QWidget parent. This preserves stacking across
+    // fullscreen and auxiliary player windows.
+    mplayer::quick::PlayerController* settingsOwner = owningPlaybackPlayer(
+        stack_ != nullptr ? stack_->currentWidget() : nullptr, mediaPlayer_.data());
+    if (settingsOwner == nullptr && mediaPlayer_ && mediaPlayer_->isWindowVisible()) {
+        settingsOwner = mediaPlayer_.data();
+    }
+    if (settingsOwner != nullptr && settingsOwner->window() != nullptr) {
+        dialog.winId();
+        if (dialog.windowHandle() != nullptr) {
+            dialog.windowHandle()->setTransientParent(settingsOwner->window());
+        }
+    }
     // Since 25bc266 Save commits without closing, exec() never returns
     // Accepted, so there is no post-accept refresh left to do here.
     dialog.exec();
     settingsDialog_.clear();
     resumePlaybackAfterComponentAsk();
-    if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
+    if (mplayer::quick::PlayerController* core = owningCore(); core != nullptr) {
         core->refreshStoredSettings();
     }
 }
@@ -1283,9 +1399,9 @@ bool MainWindow::openTitle(const QString& ref, const QString& poster, bool prese
     // The pointer is only used as a QPointer, so a closed or replaced player is
     // never asked for preparation facts.
     connect(title_, &TitlePage::playerProcessingSettingsRequested, this,
-            [this](mplayer::shell::PlayerDialog* player,
+            [this](mplayer::quick::PlayerController* player,
                    mplayer::shell::ProcessingSettingsIntent intent) {
-                openSettingsForIntent(intent, QPointer<mplayer::shell::PlayerDialog>(player));
+                openSettingsForIntent(intent, QPointer<mplayer::quick::PlayerController>(player));
             });
     connect(title_, &TitlePage::playerComponentSetupRequested,
             this, [this] { offerAnimeJanaiSetup(); });

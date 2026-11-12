@@ -77,6 +77,9 @@ GlApi loadGlApi() {
 MpvRenderContext::MpvRenderContext(MpvHandle& mpv, const GlApi& gl, std::function<void()> onUpdate,
                                    bool advancedControl)
     : mpv_(mpv.raw()), gl_(gl), onUpdate_(std::move(onUpdate)) {
+    // Recorded before anything is created: every later call into this render
+    // context (update/render/report_swap/free) must run on this context.
+    creatingContext_ = QOpenGLContext::currentContext();
     MpvApi& api = MpvApi::instance();
     if (!api.loaded()) {
         throw MpvError("no mpv runtime is selected: a render context cannot be created before "

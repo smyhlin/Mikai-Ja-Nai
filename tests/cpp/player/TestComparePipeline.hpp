@@ -17,4 +17,5 @@ private slots:
     void pipelineSpecMatchesThePlayersDecoderAndFilter();
     void pipelineSpecIsEmptyForADisabledPlan();
     void decoderVerdictRequiresADeviceFramesDecoder();
+    void controllerDestructionClosesAuxiliariesBeforeReleasingSession();
 };

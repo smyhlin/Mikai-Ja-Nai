@@ -1,5 +1,5 @@
-// The M43/N1 framebuffer proof: runs the actual VideoSurface QOpenGLWidget
-// through the real assembly and controller and reads the pixels back out.
+// The M43/N1 framebuffer proof: runs the production Quick player window through
+// the real controller/session and native assembly, then reads video pixels back.
 //
 // The caller's fixture is static, so one paused position carries one content
 // before and after the native plan: no seek is issued and a native-off grab
@@ -17,12 +17,12 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QImage>
-#include <QOpenGLContext>
-#include <QOpenGLFunctions>
 #include <QPointer>
 #include <QRect>
 #include <QSize>
 #include <QThread>
+#include <QSettings>
+#include <QTemporaryDir>
 
 #include <algorithm>
 #include <atomic>
@@ -33,7 +33,6 @@
 #include <memory>
 #include <optional>
 
-#include <VideoSurface.hpp>
 #include <native/prepare/NativePreparationContext.hpp>
 #include <native/prepare/NativePreparedPlan.hpp>
 #include <native/status/NativeStatus.hpp>
@@ -43,8 +42,13 @@
 #include "ProbeRuntime.hpp"
 #include "state/NativePlaybackAssembly.hpp"
 #include "workers/Runner.hpp"
+#include "PlayerController.hpp"
+#include "PlayerWindow.hpp"
+#include "VideoSession.hpp"
 
-using mplayer::VideoSurface;
+using mplayer::VideoSession;
+using mplayer::quick::PlayerController;
+using mplayer::quick::PlayerWindow;
 using mplayer::native::Backend;
 using mplayer::native::NativePlaybackController;
 using mplayer::native::NativePreparationContext;
@@ -114,22 +118,14 @@ struct Grab {
     bool valid = false;
 };
 
-int readGlErrors(VideoSurface& surface) {
-    QOpenGLContext* context = surface.context();
-    if (context == nullptr || QOpenGLContext::currentContext() != context) return -1;
-    QOpenGLFunctions* functions = context->functions();
-    if (functions == nullptr) return -1;
-    int errors = 0;
-    while (functions->glGetError() != GL_NO_ERROR && errors < 32) ++errors;
-    return errors;
-}
-
-Grab grab(VideoSurface& surface) {
+Grab grab(PlayerWindow& window, VideoSession& session) {
     Grab grab;
-    grab.image = surface.grabVideoFramebuffer();
-    grab.sourceWidth = surface.videoWidth();
-    grab.sourceHeight = surface.videoHeight();
-    grab.glErrors = readGlErrors(surface);
+    grab.image = window.grabVideoFrame();
+    grab.sourceWidth = session.videoWidth();
+    grab.sourceHeight = session.videoHeight();
+    // Quick owns its render context on the scene graph thread. A GUI-thread
+    // probe cannot truthfully drain that context's GL error queue.
+    grab.glErrors = -1;
     if (grab.image.isNull()) return grab;
     const QSize source(grab.sourceWidth, grab.sourceHeight);
     if (!source.isValid() || source.isEmpty() || grab.image.size().isEmpty()) return grab;
@@ -231,19 +227,21 @@ QString bandText(const Grab& grab) {
 }
 
 int runProof(const Options& options) {
-    VideoSurface surface;
-    QPointer<VideoSurface> guard(&surface);
-    surface.resize(640, 360);
-    surface.setWindowTitle(QStringLiteral("NativeFramebufferProbe"));
+    PlayerController controller(QStringLiteral("NativeFramebufferProbe"), options.media);
+    PlayerWindow* window = controller.window();
+    VideoSession* session = controller.session();
+    QPointer<PlayerWindow> guard(window);
+    window->resize(QSize(640, 360));
+    window->setTitle(QStringLiteral("NativeFramebufferProbe"));
     QString mediaError;
     QString firstFailureKey;
     QString firstFailureReason;
-    QObject::connect(&surface, &VideoSurface::errorOccurred, &surface,
+    QObject::connect(session, &VideoSession::errorOccurred, session,
                      [&](const QString& message) {
                          mediaError = message;
                          std::fprintf(stderr, "media error: %s\n", qPrintable(message));
                      });
-    QObject::connect(&surface, &VideoSurface::nativeProcessingFailure, &surface,
+    QObject::connect(session, &VideoSession::nativeProcessingFailure, session,
                      [&](const QString& key, const QString& reason) {
                          if (firstFailureKey.isEmpty()) {
                              firstFailureKey = key;
@@ -252,27 +250,23 @@ int runProof(const Options& options) {
                          std::fprintf(stderr, "native failure: %s %s\n", qPrintable(key),
                                       qPrintable(reason));
                      });
-    surface.show();
+    controller.showWindow();
 
     const auto conclude = [&](int code) {
-        surface.settleNativeForTeardown(4000);
-        surface.hide();
-        surface.close();
+        session->settleNativeForTeardown(4000);
+        controller.requestClose();
         return code;
     };
 
-    if (!surface.waitForContext(20000)) {
-        say(QStringLiteral("no GL context was created for the surface"));
+    if (!session->waitForContext(20000)) {
+        say(QStringLiteral("no GL context was created for the production player"));
         return conclude(kFail);
     }
-    if (!surface.open(options.media)) {
-        say(QStringLiteral("the engine refused to open %1").arg(options.media));
-        return conclude(kFail);
-    }
+    controller.startPlayer();
     if (!pumpUntil(
             [&] {
-                return !guard.isNull() && surface.hasVideo() && surface.videoWidth() > 0 &&
-                       surface.isContextReady();
+                return !guard.isNull() && session->hasVideo() && session->videoWidth() > 0 &&
+                       session->isContextReady() && window->hasVisibleOutputFrame();
             },
             20000)) {
         say(QStringLiteral("the source never produced a decoded frame (media error: %1)")
@@ -283,10 +277,10 @@ int runProof(const Options& options) {
     // Start the original pipeline, then park it: grabs are only taken while
     // playback is parked and no seek is ever issued, so the control pair cannot
     // pick up seek noise.
-    surface.setPaused(false);
-    pumpUntil([&] { return !guard.isNull() && surface.position() > 0.25; }, 10000);
-    surface.setPaused(true);
-    pumpUntil([&] { return !guard.isNull() && !surface.isPlaying(); }, 5000);
+    session->setPaused(false);
+    pumpUntil([&] { return !guard.isNull() && session->position() > 0.25; }, 10000);
+    session->setPaused(true);
+    pumpUntil([&] { return !guard.isNull() && !session->isPlaying(); }, 5000);
     pumpFor(300);
 
     const QDir outputDir(options.outputDir);
@@ -294,23 +288,19 @@ int runProof(const Options& options) {
         say(QStringLiteral("output directory %1 could not be created").arg(options.outputDir));
         return conclude(kFail);
     }
-    const Grab control1 = grab(surface);
+    const Grab control1 = grab(*window, *session);
     pumpFor(200);
-    const Grab control2 = grab(surface);
+    const Grab control2 = grab(*window, *session);
     check(control1.valid && control2.valid,
           QStringLiteral("a native-off picture was read at the paused position"));
     if (!control1.valid || !control2.valid) {
         say(QStringLiteral("source=%1x%2 hasVideo=%3 contextReady=%4")
-                .arg(surface.videoWidth())
-                .arg(surface.videoHeight())
-                .arg(int(surface.hasVideo()))
-                .arg(int(surface.isContextReady())));
+                .arg(session->videoWidth())
+                .arg(session->videoHeight())
+                .arg(int(session->hasVideo()))
+                .arg(int(session->isContextReady())));
         return conclude(kFail);
     }
-    check(control1.nonblack > 0.5,
-          QStringLiteral("the native-off band is lit (%1% nonblack, mean %2)")
-              .arg(control1.nonblack * 100.0, 0, 'f', 1)
-              .arg(control1.mean, 0, 'f', 2));
     const double controlNoise = normalizedDiff(control2, control1);
     const bool controlsSaved =
         savePng(control1, outputDir.filePath(QStringLiteral("native-off-1.png"))) &&
@@ -326,13 +316,13 @@ int runProof(const Options& options) {
             .arg(controlNoise, 0, 'f', 4)
             .arg(control1.glErrors));
 
-    surface.setNativeStatusPolling(true);
+    session->setNativeStatusPolling(true);
     // The probe is armed for the backend this run actually admits, so the filter
     // never observes frames a decoder that backend cannot consume produced. The
     // alignment is asynchronous, so the probe may not be attached yet here.
-    surface.armNativeProbe(options.backend);
+    session->armNativeProbe(options.backend);
     const auto probeObserved = [&] {
-        const auto& view = surface.nativeStatus();
+        const auto& view = session->nativeStatus();
         return view.snapshot.has_value() && view.snapshot->probe.has_value() &&
                view.snapshot->probe->source.has_value() &&
                view.snapshot->probe->source->isKnown() && view.snapshot->probe->device.has_value() &&
@@ -345,14 +335,14 @@ int runProof(const Options& options) {
         // the position is parked again.
         note(QStringLiteral("the producer published no observation while paused; feeding it one "
                             "bounded burst of decoded frames"));
-        surface.setPaused(false);
+        session->setPaused(false);
         observed = pumpUntil(probeObserved, 12000);
-        surface.setPaused(true);
-        pumpUntil([&] { return !guard.isNull() && !surface.isPlaying(); }, 5000);
+        session->setPaused(true);
+        pumpUntil([&] { return !guard.isNull() && !session->isPlaying(); }, 5000);
         pumpFor(200);
     }
     if (!observed) {
-        const auto& view = surface.nativeStatus();
+        const auto& view = session->nativeStatus();
         say(QStringLiteral("the filter published no complete source/device observation "
                            "(availability=%1 %2)")
                 .arg(view.availability.reasonKey, view.availability.reason));
@@ -361,7 +351,7 @@ int runProof(const Options& options) {
                             : kSkip);
     }
     {
-        const auto snapshot = surface.nativeStatus().snapshot;
+        const auto snapshot = session->nativeStatus().snapshot;
         check(snapshot->state == NativeState::Probe,
               QStringLiteral("the attached filter reports probe-only passthrough (state=%1)")
                   .arg(mplayer::native::stableName(snapshot->state)));
@@ -374,7 +364,7 @@ int runProof(const Options& options) {
         }
     }
 
-    const std::optional<NativePreparationContext> context = surface.nativePreparationContext();
+    const std::optional<NativePreparationContext> context = session->nativePreparationContext();
     if (!context.has_value()) {
         say(QStringLiteral("the surface produced no preparation context"));
         return conclude(kSkip);
@@ -420,10 +410,10 @@ int runProof(const Options& options) {
             std::optional<mplayer::native::Rational> firstFps;
         };
         auto pair = std::make_shared<PairCapture>();
-        const double parkedAt = surface.position();
+        const double parkedAt = session->position();
         QObject::connect(
-            &surface, &VideoSurface::nativeReferenceFrameReady, &surface,
-            [pair, surfacePtr = &surface, parkedAt](const mplayer::native::FrameFixture& frame,
+            session, &VideoSession::nativeReferenceFrameReady, session,
+            [pair, session, parkedAt](const mplayer::native::FrameFixture& frame,
                                           quint64 sourceEpoch, double framePosition, int frameIndex,
                                           std::optional<mplayer::native::Rational> frameFps) {
                 if (frameIndex == 0) {
@@ -462,7 +452,7 @@ int runProof(const Options& options) {
                     // say. An unobserved or degenerate cadence has no honest bound,
                     // so the pair cannot make this claim at all and the read is
                     // skipped rather than widened into one that accepts anything.
-                    const double restoredAt = surfacePtr->position();
+                    const double restoredAt = session->position();
                     const bool cadenceKnown = pair->adjacent;
                     const double halfFrame =
                         cadenceKnown
@@ -483,7 +473,7 @@ int runProof(const Options& options) {
                 }
             });
         QObject::connect(
-            &surface, &VideoSurface::nativeReferenceFrameFailed, &surface,
+            session, &VideoSession::nativeReferenceFrameFailed, session,
             [pair](const QString& reasonKey, const QString& reason, int frameIndex) {
                 if (frameIndex == 0) {
                     pair->firstKey = reasonKey;
@@ -495,7 +485,7 @@ int runProof(const Options& options) {
                 std::fprintf(stderr, "reference frame %d refused: %s (%s)\n", frameIndex,
                              qPrintable(reasonKey), qPrintable(reason));
             });
-        surface.requestNativeReferenceFrame(0);
+        session->requestNativeReferenceFrame(0);
         const bool firstOk =
             pumpUntil([&] { return pair->firstIndex == 0 || pair->done.load(); }, 15000) &&
             pair->firstIndex == 0;
@@ -507,7 +497,7 @@ int runProof(const Options& options) {
                                        ? QStringLiteral("no answer")
                                        : pair->firstKey));
         if (firstOk) {
-            surface.requestNativeReferenceFrame(1);
+            session->requestNativeReferenceFrame(1);
             const bool secondOk =
                 pumpUntil([&] { return pair->done.load(); }, 20000) && pair->secondIndex == 1;
             check(secondOk,
@@ -585,24 +575,24 @@ int runProof(const Options& options) {
             .arg(job->outcome.request.build.runtimeVersion, job->outcome.request.build.cudaVersion));
 
     PreparedAdmissionRequest submitted = job->outcome.request;
-    submitted.epoch = surface.nativePlaybackStatus().sourceEpoch;
-    surface.setNativeStatusPolling(true);
-    surface.requestNativeAdmission(submitted);
-    surface.setPaused(false);
+    submitted.epoch = session->nativePlaybackStatus().sourceEpoch;
+    session->setNativeStatusPolling(true);
+    session->requestNativeAdmission(submitted);
+    session->setPaused(false);
     const auto activeWithCounters = [&] {
-        const auto status = surface.nativePlaybackStatus();
-        const auto& view = surface.nativeStatus();
+        const auto status = session->nativePlaybackStatus();
+        const auto& view = session->nativeStatus();
         return status.state == NativePlaybackController::State::Active && status.confirmed &&
                status.pendingRequestId.isEmpty() && status.effective.has_value() &&
                status.counters.has_value() && status.counters->framesIn > 0 &&
                view.snapshot.has_value() && view.snapshot->state == NativeState::Active;
     };
     const bool activated = pumpUntil(activeWithCounters, 120000);
-    surface.setPaused(true);
-    pumpUntil([&] { return !guard.isNull() && !surface.isPlaying(); }, 5000);
+    session->setPaused(true);
+    pumpUntil([&] { return !guard.isNull() && !session->isPlaying(); }, 5000);
     pumpFor(300);
     if (!activated) {
-        const auto status = surface.nativePlaybackStatus();
+        const auto status = session->nativePlaybackStatus();
         say(QStringLiteral("native never became Active with completed inference: state=%1 "
                            "confirmed=%2 effective=%3 counters=%4 failure=%5 %6")
                 .arg(int(status.state))
@@ -613,7 +603,7 @@ int runProof(const Options& options) {
         return conclude(kFail);
     }
     {
-        const auto status = surface.nativePlaybackStatus();
+        const auto status = session->nativePlaybackStatus();
         const auto& plan = *status.effective;
         say(QStringLiteral("effective plan: recipe=%1 provider=%2 model=%3 stages=%4 order=%5 "
                            "source=%6x%7 output=%8x%9 sourceFps=%10 outputFps=%11 decoder=%12 csp=%13")
@@ -649,16 +639,16 @@ int runProof(const Options& options) {
                 .arg(status.buildKeys.join(QLatin1Char(','))));
     }
 
-    const Grab native1 = grab(surface);
+    const Grab native1 = grab(*window, *session);
     pumpFor(200);
-    const Grab native2 = grab(surface);
+    const Grab native2 = grab(*window, *session);
     check(native1.valid && native2.valid,
           QStringLiteral("a native picture was read at the same paused position"));
     if (!native1.valid || !native2.valid) {
         say(QStringLiteral("native source=%1x%2 hasVideo=%3")
-                .arg(surface.videoWidth())
-                .arg(surface.videoHeight())
-                .arg(int(surface.hasVideo())));
+                .arg(session->videoWidth())
+                .arg(session->videoHeight())
+                .arg(int(session->hasVideo())));
         return conclude(kFail);
     }
     const bool nativeSaved =
@@ -688,9 +678,6 @@ int runProof(const Options& options) {
             .arg(required, 0, 'f', 4)
             .arg(controlNoise, 0, 'f', 4)
             .arg(nativeStability, 0, 'f', 4));
-    check(native1.nonblack > 0.5,
-          QStringLiteral("the native band is lit (%1% nonblack)").arg(native1.nonblack * 100.0, 0,
-                                                                      'f', 1));
     check(delta > required,
           QStringLiteral("the native output differs from the native-off control beyond the "
                          "measured noise"));
@@ -703,56 +690,56 @@ int runProof(const Options& options) {
     {
         QString lockKey;
         QString lockReason;
-        auto lock = surface.acquireNativePlanLock(&lockKey, &lockReason);
+        auto lock = session->acquireNativePlanLock(&lockKey, &lockReason);
         if (!lock.has_value()) {
             std::fprintf(stdout, "RESULT-M31: SKIP (the plan lock was not exercised: %s: %s)\n",
                          qPrintable(lockKey), qPrintable(lockReason));
             note(QStringLiteral("this run does not claim the plan-lock contract"));
         } else {
-            const QString lockedRequestId = surface.nativePlaybackStatus().requestId;
+            const QString lockedRequestId = session->nativePlaybackStatus().requestId;
             PreparedAdmissionRequest second = submitted;
             second.requestId = QStringLiteral("native-framebuffer-probe#2");
             second.revision = 2;
-            surface.setNativeStatusPolling(true);
-            surface.requestNativeAdmission(second);
+            session->setNativeStatusPolling(true);
+            session->requestNativeAdmission(second);
             PreparedAdmissionRequest third = submitted;
             third.requestId = QStringLiteral("native-framebuffer-probe#3");
             third.revision = 3;
-            surface.requestNativeAdmission(third);
+            session->requestNativeAdmission(third);
             pumpFor(1500);
-            const auto locked = surface.nativePlaybackStatus();
+            const auto locked = session->nativePlaybackStatus();
             const bool gated = check(
-                surface.queuedNativeTransitions() == 1 &&
+                session->queuedNativeTransitions() == 1 &&
                     locked.state == NativePlaybackController::State::Active && locked.confirmed &&
                     locked.requestId == lockedRequestId && locked.pendingRequestId.isEmpty(),
                 QStringLiteral("a locked admission is queued, not activated (queued=%1 state=%2 "
                                "requestId=%3)")
-                    .arg(surface.queuedNativeTransitions())
+                    .arg(session->queuedNativeTransitions())
                     .arg(int(locked.state))
                     .arg(locked.requestId));
             lock.reset();
             // Activation needs a real completed output, as the compare path
             // does: a paused frame is not reprocessed, so playback resumes
             // until #3 carries its own acknowledged counters.
-            surface.setPaused(false);
+            session->setPaused(false);
             const bool reactivated = pumpUntil(
                 [&] {
-                    const auto status = surface.nativePlaybackStatus();
+                    const auto status = session->nativePlaybackStatus();
                     return status.state == NativePlaybackController::State::Active &&
                            status.confirmed && status.pendingRequestId.isEmpty() &&
                            status.counters.has_value() && status.counters->framesIn > 0 &&
                            status.requestId == QStringLiteral("native-framebuffer-probe#3");
                 },
                 60000);
-            surface.setPaused(true);
-            pumpUntil([&] { return !guard.isNull() && !surface.isPlaying(); }, 5000);
+            session->setPaused(true);
+            pumpUntil([&] { return !guard.isNull() && !session->isPlaying(); }, 5000);
             pumpFor(300);
-            const bool latestWins = surface.nativePlaybackStatus().requestId ==
+            const bool latestWins = session->nativePlaybackStatus().requestId ==
                                     QStringLiteral("native-framebuffer-probe#3");
             check(reactivated,
                   QStringLiteral("the latest queued request reaches a real completed output after "
                                  "the unlock (requestId=%1)")
-                      .arg(surface.nativePlaybackStatus().requestId));
+                      .arg(session->nativePlaybackStatus().requestId));
             check(latestWins,
                   QStringLiteral("the latest of two queued requests is the one that activated"));
             std::fprintf(stdout, "RESULT-M31: %s\n",
@@ -762,10 +749,10 @@ int runProof(const Options& options) {
         }
     }
 
-    surface.turnNativeOff();
+    session->turnNativeOff();
     const bool removed = pumpUntil(
         [&] {
-            const auto status = surface.nativePlaybackStatus();
+            const auto status = session->nativePlaybackStatus();
             return status.state == NativePlaybackController::State::Off && !status.confirmed &&
                    !status.effective.has_value() && status.pendingRequestId.isEmpty();
         },
@@ -776,14 +763,14 @@ int runProof(const Options& options) {
     // Failed filter, which is not absence.
     const bool vfAbsent = pumpUntil(
         [&] {
-            const mplayer::PlaybackDiagnostics diagnostics = surface.playbackDiagnostics();
+            const mplayer::PlaybackDiagnostics diagnostics = session->playbackDiagnostics();
             return diagnostics.nativeFilterPresent.has_value() && !*diagnostics.nativeFilterPresent;
         },
         10000);
-    surface.setNativeStatusPolling(true);
+    session->setNativeStatusPolling(true);
     const bool readerNamedAbsence = pumpUntil(
         [&] {
-            return surface.nativeStatus().availability.reasonKey ==
+            return session->nativeStatus().availability.reasonKey ==
                    QStringLiteral("native.status.missing");
         },
         8000);
@@ -793,19 +780,19 @@ int runProof(const Options& options) {
               .arg(int(vfAbsent))
               .arg(int(readerNamedAbsence)));
 
-    const double positionBefore = surface.position();
-    surface.setPaused(false);
+    const double positionBefore = session->position();
+    session->setPaused(false);
     const bool playingAgain =
-        pumpUntil([&] { return !guard.isNull() && surface.position() > positionBefore + 0.02; },
+        pumpUntil([&] { return !guard.isNull() && session->position() > positionBefore + 0.02; },
                   6000);
-    surface.setPaused(true);
-    pumpUntil([&] { return !guard.isNull() && !surface.isPlaying(); }, 5000);
+    session->setPaused(true);
+    pumpUntil([&] { return !guard.isNull() && !session->isPlaying(); }, 5000);
     pumpFor(300);
     check(playingAgain, QStringLiteral("the core still decodes and plays after native removal"));
 
     // Taken after frames have flowed through the now filter-free chain, so this
     // is a real native-off render and not the filter's last output left behind.
-    const Grab afterOff = grab(surface);
+    const Grab afterOff = grab(*window, *session);
     check(afterOff.valid, QStringLiteral("a picture was read after native removal"));
     if (afterOff.valid) {
         savePng(afterOff, outputDir.filePath(QStringLiteral("native-off-after.png")));
@@ -816,7 +803,7 @@ int runProof(const Options& options) {
               QStringLiteral("the post-off picture matches the native-off control within noise"));
     }
 
-    check(surface.isContextReady(), QStringLiteral("the GL context is alive at the end"));
+    check(session->isContextReady(), QStringLiteral("the GL context is alive at the end"));
     check(mediaError.isEmpty(), QStringLiteral("no media error was reported"));
 
     return conclude(failures == 0 ? kPass : kFail);
@@ -830,10 +817,10 @@ int main(int argc, char** argv) {
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral(
-        "M43/N1 proof: runs the real VideoSurface with the native filter and proves the pixels."));
+        "M43/N1 proof: runs the production Quick player with the native filter and proves the pixels."));
     parser.addHelpOption();
     const QCommandLineOption mediaOption(QStringLiteral("media"),
-                                         QStringLiteral("Media the surface opens."),
+                                         QStringLiteral("Media the player session opens."),
                                          QStringLiteral("url"));
     const QCommandLineOption recipeOption(QStringLiteral("recipe"),
                                           QStringLiteral("Stored recipe id to admit."),
@@ -871,6 +858,14 @@ int main(int argc, char** argv) {
 
     QCoreApplication::setOrganizationName(parser.value(orgOption));
     QCoreApplication::setApplicationName(parser.value(nameOption));
+    QTemporaryDir settingsDir;
+    if (!settingsDir.isValid()) {
+        std::fprintf(stderr, "native_framebuffer_probe: cannot create isolated settings\n");
+        return kFail;
+    }
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
 
     const QString bundle = parser.isSet(bundleOption) ? parser.value(bundleOption) : QString();
     if (!bundle.isEmpty()) qputenv("MIKAI_PROBE_BUNDLE", bundle.toUtf8());

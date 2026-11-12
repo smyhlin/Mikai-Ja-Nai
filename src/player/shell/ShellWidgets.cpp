@@ -12,7 +12,6 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
-#include <QPaintEngine>
 #include <QPointF>
 #include <QPushButton>
 #include <QTimer>
@@ -22,20 +21,13 @@
 #include <cmath>
 
 #include "ShellSliders.hpp"
+#include "player/core/VideoSession.hpp"
 #include "gui/SystemDefaultPlayer.hpp"
 #include "gui/UiProfile.hpp"
-#include "../core/VideoSurface.hpp"
 
 namespace mplayer {
 namespace shell {
 namespace {
-
-/// Device pixels the chrome raster cache may hold, the shared fallback raster
-/// included. Every control carries its own image, so this is a ceiling on the
-/// overlay as a whole rather than on one frame's allocation: past it a control
-/// is rasterised into the shared scratch a tile at a time instead of the cache
-/// growing to the size of the window.
-constexpr qint64 kChromeCacheBudgetBytes = 8 * 1024 * 1024;
 
 /// Python's `%g`: up to six significant digits with trailing zeros stripped.
 QString formatG(double value) {
@@ -121,17 +113,6 @@ ChromeHost* chromeHostOf(QWidget* widget) {
     return nullptr;
 }
 
-bool deviceAlignedTransform(const QTransform& toDevice, qreal ratio) {
-    return toDevice.isInvertible() && qFuzzyCompare(toDevice.m11(), ratio) &&
-           qFuzzyCompare(toDevice.m22(), ratio) && qFuzzyIsNull(toDevice.m12()) &&
-           qFuzzyIsNull(toDevice.m21());
-}
-
-QPointF deviceAlignedOrigin(const QTransform& toDevice, const QPointF& logicalOrigin) {
-    const QPointF mapped = toDevice.map(logicalOrigin);
-    return toDevice.inverted().map(QPointF(qRound(mapped.x()), qRound(mapped.y())));
-}
-
 void chromeUpdate(QWidget* widget, const QRect& rect) {
     if (widget == nullptr) {
         return;
@@ -148,428 +129,6 @@ void chromeUpdate(QWidget* widget, const QRect& rect) {
     if (ChromeHost* host = chromeHostOf(widget)) {
         mikai::gui::uiprofile::noteChromeDirtyRequest();
         host->chromeDirty(widget, rect);
-    }
-}
-
-void ChromeList::adopt(QWidget* root, QObject* watcher) {
-    entries_.clear();
-    cachedBytes_ = 0;
-    // The fallback raster survives: it is shared storage, not a control's.
-    mikai::gui::uiprofile::noteChromeCacheHeld(scratchBytes_);
-    addSubtree(root, watcher);
-}
-
-ChromeList::~ChromeList() {
-    for (const QMetaObject::Connection& connection : tracked_) {
-        QObject::disconnect(connection);
-    }
-}
-
-void ChromeList::track(QWidget* widget, QObject* watcher) {
-    // A list row is deleted on every rebuild, and an entry pointing at freed
-    // memory is dereferenced on the next paint.
-    if (widget == nullptr || watcher == nullptr) return;
-    tracked_.append(
-        QObject::connect(widget, &QObject::destroyed, watcher, [this, widget] { forget(widget); }));
-}
-
-void ChromeList::forget(QWidget* widget) {
-    for (qsizetype index = entries_.size() - 1; index >= 0; --index) {
-        if (entries_.at(index).widget != widget) continue;
-        dropCache(entries_[index]);
-        entries_.removeAt(index);
-    }
-}
-
-void ChromeList::adoptLater(QWidget* widget, QObject* watcher) {
-    if (widget == nullptr || widget->isWindow()) {
-        return;
-    }
-    auto* painted = dynamic_cast<ChromePaint*>(widget);
-    if (painted != nullptr) {
-        const bool recorded =
-            std::any_of(entries_.cbegin(), entries_.cend(),
-                        [widget](const Entry& entry) { return entry.widget == widget; });
-        if (!recorded) {
-            if (!painted->surfacePainted()) {
-                painted->setSurfacePainted(true);
-                widget->setAttribute(Qt::WA_TranslucentBackground, true);
-                widget->setAttribute(Qt::WA_StyledBackground, false);
-                widget->setAutoFillBackground(false);
-                if (watcher != nullptr) {
-                    widget->installEventFilter(watcher);
-                }
-                track(widget, watcher);
-            }
-            entries_.append(Entry{widget, painted, {}, {}, {}});
-        }
-    }
-    addSubtree(widget, watcher);
-}
-
-void ChromeList::addSubtree(QWidget* root, QObject* watcher) {
-    if (root == nullptr) {
-        return;
-    }
-    // The reference, not a copy: adopting never creates or destroys a widget,
-    // and this runs once per host rather than per frame.
-    const QObjectList& children = root->children();
-    for (QObject* object : children) {
-        auto* child = qobject_cast<QWidget*>(object);
-        if (child == nullptr || child->isWindow()) {
-            continue;
-        }
-        if (auto* painted = dynamic_cast<ChromePaint*>(child)) {
-            // A widget already adopted keeps its attributes and its filter: a
-            // second pass only records it again.
-            if (!painted->surfacePainted()) {
-                painted->setSurfacePainted(true);
-                // Translucent, so the window still paints the part of this
-                // widget that falls outside the picture; the two background
-                // attributes go with it, or Qt fills a slab behind the chrome.
-                child->setAttribute(Qt::WA_TranslucentBackground, true);
-                child->setAttribute(Qt::WA_StyledBackground, false);
-                child->setAutoFillBackground(false);
-                if (watcher != nullptr) {
-                    child->installEventFilter(watcher);
-                }
-                track(child, watcher);
-            }
-            entries_.append(Entry{child, painted, {}, {}, {}});
-        }
-        addSubtree(child, watcher);
-    }
-}
-
-void chromeRepaintEvent(ChromeHost* host, QObject* watched, QEvent* event) {
-    if (host == nullptr || event == nullptr) {
-        return;
-    }
-    auto* widget = qobject_cast<QWidget*>(watched);
-    if (widget == nullptr) {
-        return;
-    }
-    // Only an adopted widget: a surface that asked for its own repaint is
-    // already painting (routing that back would be the repaint loop this
-    // mechanism exists to avoid), and a popover covers what is under it.
-    auto* adopted = dynamic_cast<ChromePaint*>(widget);
-    if (adopted == nullptr || !adopted->surfacePainted()) {
-        return;
-    }
-    // Deliberately not QEvent::UpdateRequest: a control over a QOpenGLWidget is
-    // repainted again whenever the picture under it is, and that arrives as a
-    // paint, not a request - routing requests too would hang a repaint of the
-    // picture off every extra invalidation, which is the paused-picture loop to
-    // avoid. Every state change the chrome has routes itself through
-    // chromeUpdate() instead.
-    switch (event->type()) {
-        case QEvent::Show:
-        case QEvent::Hide:
-        case QEvent::EnabledChange:
-        case QEvent::FontChange:
-        case QEvent::PaletteChange:
-        case QEvent::StyleChange:
-            host->chromeDirty(widget, QRect());
-            break;
-        case QEvent::Move:
-            host->chromeMoved(widget);
-            break;
-        case QEvent::Resize:
-            host->chromeDirty(widget, QRect());
-            break;
-        default:
-            break;
-    }
-}
-
-void ChromeList::dropCache(Entry& entry) {
-    entry.valid = false;
-    entry.stamp = 0;
-    if (entry.cache.isNull()) {
-        return;
-    }
-    cachedBytes_ -= qint64(entry.cache.width()) * qint64(entry.cache.height()) * 4;
-    entry.cache = QPixmap();
-    mikai::gui::uiprofile::noteChromeCacheHeld(cachedBytes_ + scratchBytes_);
-}
-
-void ChromeList::markStale(Entry& entry) {
-    // The buffer stays: a control whose own state changed is a repaint, and the
-    // next paint renders it into the pixmap this entry already owns.
-    entry.valid = false;
-}
-
-QRect ChromeList::damage(const QWidget* widget) const {
-    for (const Entry& entry : entries_) {
-        if (entry.widget == widget) return entry.paintedBox;
-    }
-    return QRect();
-}
-
-QRect ChromeList::invalidate(const QWidget* widget) {
-    QRect vacated;
-    for (Entry& entry : entries_) {
-        if (entry.widget != widget) continue;
-        // The box is paint history, not cache validity: a control painted
-        // without a cache (budget fallback) still leaves pixels behind when it
-        // moves.
-        vacated = entry.paintedBox;
-        markStale(entry);
-    }
-    return vacated;
-}
-
-void ChromeList::invalidateAll() {
-    // Every control keeps its buffer and its box; the new generation is what
-    // says that none of those pixels may be reused.
-    ++generation_;
-}
-
-int ChromeList::fallbackTileSide() const {
-    // The largest square tile the remaining budget can hold, capped at 1024
-    // device pixels (4 MiB): a control too big for the caches is the one place a
-    // whole-control raster would be an oversized allocation. The floor is the
-    // reserve cache admission leaves, so this always returns something.
-    const qint64 available = kChromeCacheBudgetBytes - cachedBytes_;
-    int side = 1024;
-    while (side > 64 && qint64(side) * side * 4 > available) {
-        side /= 2;
-    }
-    return side;
-}
-
-void ChromeList::ensureScratch(int side, qreal ratio) {
-    if (!scratch_.isNull() && scratch_.width() >= side) {
-        if (!qFuzzyCompare(scratch_.devicePixelRatio(), ratio)) {
-            scratch_.setDevicePixelRatio(ratio);
-        }
-        return;
-    }
-    // Released before the replacement is taken, so the pair never holds more
-    // than one tile's worth.
-    scratch_ = QImage();
-    scratchBytes_ = 0;
-    scratch_ = QImage(side, side, QImage::Format_ARGB32_Premultiplied);
-    scratch_.setDevicePixelRatio(ratio);
-    scratchBytes_ = qint64(side) * side * 4;
-    mikai::gui::uiprofile::noteChromeCacheHeld(cachedBytes_ + scratchBytes_);
-}
-
-void ChromeList::paintFallback(QPainter& painter, Entry& entry, const QRect& box,
-                               const QPoint& at, const QRect& clip) {
-    // Phase comes from the control's box, never from this repaint's damage clip.
-    const QRect visible = box.intersected(clip);
-    if (visible.isEmpty()) {
-        return;
-    }
-    const QTransform toDevice = painter.deviceTransform();
-    const qreal ratio =
-        painter.device() != nullptr ? painter.device()->devicePixelRatio() : qreal(1.0);
-    const auto paintDirect = [&]() {
-        painter.save();
-        painter.translate(at);
-        painter.setClipRect(visible.translated(-at), Qt::IntersectClip);
-        entry.painted->paintChrome(painter);
-        painter.restore();
-    };
-    if (!toDevice.isInvertible() || !(ratio > 0.0) ||
-        !deviceAlignedTransform(toDevice, ratio)) {
-        // No device grid to map a tile by; the shell's painters never produce
-        // this, and a copy cannot be made exact.
-        paintDirect();
-        return;
-    }
-    const int side = fallbackTileSide();
-    ensureScratch(side, ratio);
-    if (scratch_.isNull()) {
-        // A failed allocation leaves no raster to copy; the direct path is all
-        // that is left (the buffer is the size of one tile, so this is a
-        // severely constrained machine, not a layout case).
-        paintDirect();
-        return;
-    }
-    const QTransform fromDevice = toDevice.inverted();
-
-    // Invariant, the phase the cached blit uses: a tile's device pixel is
-    // round(toDevice(box.topLeft())) + ratio * (local + at - box.topLeft()).
-    const QPointF deviceBox = toDevice.map(QPointF(box.topLeft()));
-    const QPoint deviceOrigin(qRound(deviceBox.x()), qRound(deviceBox.y()));
-    const QRectF visibleDevice(deviceOrigin.x() + ratio * (visible.x() - box.x()),
-                               deviceOrigin.y() + ratio * (visible.y() - box.y()),
-                               ratio * visible.width(), ratio * visible.height());
-    const QRect cover = visibleDevice.toAlignedRect();
-
-    for (int top = cover.top(); top <= cover.bottom(); top += side) {
-        const int tileHeight = std::min(side, cover.bottom() - top + 1);
-        for (int left = cover.left(); left <= cover.right(); left += side) {
-            const int tileWidth = std::min(side, cover.right() - left + 1);
-            const QPoint tileOffset(left, top);
-            const QPointF tileOrigin = fromDevice.map(QPointF(tileOffset));
-
-            {
-                QPainter tile(&scratch_);
-                tile.setRenderHint(QPainter::Antialiasing, true);
-                tile.setRenderHint(QPainter::TextAntialiasing, true);
-                tile.setRenderHint(QPainter::SmoothPixmapTransform, true);
-                // Only the tile's own pixels are cleared; the rest of the shared
-                // buffer is never copied out.
-                tile.setCompositionMode(QPainter::CompositionMode_Source);
-                tile.fillRect(QRectF(0.0, 0.0, tileWidth / ratio, tileHeight / ratio),
-                              Qt::transparent);
-                tile.setCompositionMode(QPainter::CompositionMode_SourceOver);
-                tile.setWorldTransform(QTransform::fromTranslate(
-                    (at.x() - box.left()) + qreal(deviceOrigin.x() - left) / ratio,
-                    (at.y() - box.top()) + qreal(deviceOrigin.y() - top) / ratio));
-                // The transform's input is the control's own (widget-local)
-                // coordinate system; the visible box is given in the root's.
-                tile.setClipRect(QRectF(visible.translated(-at)), Qt::IntersectClip);
-                entry.painted->paintChrome(tile);
-            }
-            painter.drawImage(tileOrigin, scratch_, QRectF(0, 0, tileWidth, tileHeight));
-        }
-    }
-}
-
-void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) {
-    if (root == nullptr) return;
-    const mikai::gui::uiprofile::ScopedTimer timer;
-    const qreal ratio =
-        painter.device() != nullptr ? painter.device()->devicePixelRatio() : qreal(1.0);
-    // The blit transform, read from the painter rather than assumed: the
-    // surface half of the shell paints through a painter translated by the
-    // surface's own offset, and a cache copied at the wrong phase is a blurred
-    // copy at every fractional ratio. In the aligned case the cache's ratio is
-    // exactly the painter's scale, so the copy needs no filter at all; the
-    // filter is kept only for a transform that would scale the copy.
-    const QTransform toDevice = painter.deviceTransform();
-    const bool oneToOne = deviceAlignedTransform(toDevice, ratio);
-    // The GL painter resolves QPainter::Antialiasing for paths only through the
-    // framebuffer's multisample, and these surfaces are single-sample: a control
-    // that cannot be cached is rasterised on the CPU there, never painted
-    // straight into the picture.
-    const bool glDevice = painter.paintEngine() != nullptr &&
-                          painter.paintEngine()->type() == QPaintEngine::OpenGL2;
-    quint64 painted = 0;
-    quint64 cached = 0;
-    const bool counted = mikai::gui::uiprofile::countersEnabled();
-    painter.save();
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setRenderHint(QPainter::TextAntialiasing, true);
-    painter.setRenderHint(QPainter::SmoothPixmapTransform, !oneToOne);
-    for (Entry& entry : entries_) {
-        QWidget* widget = entry.widget;
-        if (widget == nullptr || !widget->isVisible()) {
-            dropCache(entry);
-            continue;
-        }
-        const QPoint at = widget->mapTo(root, QPoint(0, 0));
-        QRect box(at, widget->size());
-        for (QWidget* parent = widget->parentWidget(); parent != nullptr && parent != root;
-             parent = parent->parentWidget()) {
-            box = box.intersected(QRect(parent->mapTo(root, QPoint(0, 0)), parent->size()));
-            if (box.isEmpty()) break;
-        }
-        if (box.isEmpty() || !box.intersects(clip)) continue;
-
-        const QRect local = box.translated(-at);
-        const QSize deviceSize(static_cast<int>(std::ceil(box.width() * ratio)),
-                               static_cast<int>(std::ceil(box.height() * ratio)));
-        int missReason = 0;
-        if (entry.valid) {
-            if (entry.localBox != local || entry.cache.size() != deviceSize) missReason = 1;
-            else if (entry.devicePixelRatio != ratio) missReason = 2;
-            else if (entry.stamp != generation_) missReason = 3;
-        }
-        const bool reusable = entry.valid && entry.localBox == local &&
-                              entry.cache.size() == deviceSize &&
-                              entry.devicePixelRatio == ratio && entry.stamp == generation_;
-        if (!reusable) {
-            const qint64 bytes = qint64(deviceSize.width()) * deviceSize.height() * 4;
-            const qint64 held = qint64(entry.cache.width()) * entry.cache.height() * 4;
-            if (!deviceSize.isEmpty() &&
-                cachedBytes_ - held + bytes + cacheReservation() <= kChromeCacheBudgetBytes) {
-                if (entry.cache.isNull() || entry.cache.size() != deviceSize) {
-                    dropCache(entry);
-                    entry.cache = QPixmap(deviceSize);
-                    cachedBytes_ += bytes;
-                }
-                entry.cache.setDevicePixelRatio(ratio);
-                entry.cache.fill(Qt::transparent);
-                {
-                    QPainter cachePainter(&entry.cache);
-                    cachePainter.setRenderHint(QPainter::Antialiasing, true);
-                    cachePainter.setRenderHint(QPainter::TextAntialiasing, true);
-                    cachePainter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-                    cachePainter.translate(at - box.topLeft());
-                    cachePainter.setClipRect(box.translated(-at), Qt::IntersectClip);
-                    const qint64 rasterStart = counted ? mikai::gui::uiprofile::nowNs() : 0;
-                    entry.painted->paintChrome(cachePainter);
-                    if (counted) {
-                        mikai::gui::uiprofile::noteChromeCacheRaster(
-                            (mikai::gui::uiprofile::nowNs() - rasterStart) / 1000);
-                    }
-                }
-                if (counted) mikai::gui::uiprofile::noteChromeCacheMiss(missReason);
-                mikai::gui::uiprofile::noteChromeCacheRender();
-                mikai::gui::uiprofile::noteChromeCacheHeld(cachedBytes_ + scratchBytes_);
-                entry.localBox = local;
-                entry.devicePixelRatio = ratio;
-                entry.stamp = generation_;
-                entry.valid = true;
-            } else {
-                if (counted) mikai::gui::uiprofile::noteChromeCacheMiss(4);
-                dropCache(entry);
-            }
-        }
-        if (entry.valid) {
-            // The cache is one device pixel per texel; only its origin can be
-            // fractional, so the origin is what gets snapped. Both halves of
-            // the shell paint through their own painter, so the snap follows
-            // that painter's transform instead of assuming the window's.
-            const QPointF origin = oneToOne ? deviceAlignedOrigin(toDevice, QPointF(box.topLeft()))
-                                            : QPointF(box.topLeft());
-            const qint64 blitStart = counted ? mikai::gui::uiprofile::nowNs() : 0;
-            painter.drawPixmap(origin, entry.cache);
-            if (counted) {
-                mikai::gui::uiprofile::noteChromeCacheBlit(
-                    (mikai::gui::uiprofile::nowNs() - blitStart) / 1000);
-            }
-            if (reusable) ++cached;
-        } else if (glDevice) {
-            // Past the budget on the picture's own device: the same pixels, but
-            // rasterised where an antialiasing hint means something.
-            paintFallback(painter, entry, box, at, clip);
-        } else {
-            // Past the budget on a raster device the paint routines rasterise
-            // their own antialiasing, so the control can draw straight in. The
-            // origin is snapped like the cached blit, so dropping below the
-            // budget does not move the control by half a device pixel.
-            painter.save();
-            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-            const QPointF origin =
-                oneToOne ? deviceAlignedOrigin(toDevice, QPointF(at)) : QPointF(at);
-            painter.translate(origin);
-            painter.setClipRect(QRectF(box).translated(-origin), Qt::IntersectClip);
-            entry.painted->paintChrome(painter);
-            painter.restore();
-        }
-        entry.paintedBox = box;
-        entry.localBox = local;
-        ++painted;
-    }
-    painter.restore();
-    if (timer.measured()) {
-        mikai::gui::uiprofile::noteChromePaint(painted, cached, timer.micros());
-        if (mikai::gui::uiprofile::enabled()) {
-            mikai::gui::uiprofile::log(
-                "chrome.list.paint",
-                QStringLiteral("entries=%1 painted=%2 cached=%3 bytes=%4 elapsed_us=%5")
-                    .arg(static_cast<qulonglong>(entries_.size()))
-                    .arg(painted)
-                    .arg(cached)
-                    .arg(cachedBytes_ + scratchBytes_)
-                    .arg(timer.micros()));
-        }
     }
 }
 
@@ -905,6 +464,9 @@ void paintPopoverCard(QPainter& painter, const QWidget& card) {
 SettingsFlyout::SettingsFlyout(QWidget* parent)
     : QFrame(parent), quality_(QStringLiteral("HD")) {
     setObjectName(QStringLiteral("playerSettingsFlyout"));
+    // Marks a panel that stands over the picture: the host raises its paint
+    // order when it appears, exactly as Qt z-order used to.
+    setProperty("chromePanel", true);
     setFocusPolicy(Qt::StrongFocus);
     hide();
 
@@ -1514,6 +1076,7 @@ constexpr int kKeyCapMinWidth = 68;
 
 KeyHints::KeyHints(QWidget* parent) : QFrame(parent) {
     setObjectName(QStringLiteral("playerKeyHints"));
+    setProperty("chromePanel", true);
     setFocusPolicy(Qt::StrongFocus);
     // The keycaps are an accent wash read at paint time, so a live accent
     // change only has to mark the card for a repaint.

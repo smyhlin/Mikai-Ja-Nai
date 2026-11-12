@@ -15,35 +15,38 @@
     },
     {
       "kind": "click",
-      "target": "playerEnhanceButton",
-      "note": "playerEnhanceButton is the spark IconButton at PlayerShell.cpp:341, connected to openEnhancements()."
+      "target": "player.enhancements.button",
+      "note": "Click the real Quick enhancement menu button."
     },
     {
       "kind": "wait_for",
-      "name": "widgetVisible",
-      "target": "playerEnhancementsPopup",
+      "name": "menuOpen",
+      "target": "enhancements",
       "timeout_ms": 5000
     }
   ],
   "assertions": [
     {
       "kind": "qt_property",
-      "target": "playerEnhancementsPopup",
-      "property": "visible",
+      "target": "playerController",
+      "property": "menuStackVisible",
       "expected": true,
-      "note": "All five enhancement panels are built up front (PlayerShell.cpp:390-405) and only shown on demand, so existence proves nothing - openEnhancements() calls collapseEnhancementTree(0) and then shows the root. Visibility is the assertion that carries this."
+      "note": "The controller reports its real Quick menu stack visible after the enhancement button's menuId request."
     },
     {
       "kind": "qt_property",
-      "target": "playerSettingsFlyout",
+      "target": "player.settings",
       "property": "visible",
       "expected": false,
-      "note": "The spark and the gear are neighbours in the same actionHost and both call dismissOverlay() before opening. If the spark were ever wired to openSettings, this is the assertion that would catch it."
+      "note": "The settings panel remains closed; the requested menu id is enhancements."
     },
     {
-      "kind": "widget_exists",
-      "target": "playerEnhancementLevelPopup",
-      "note": "The tree is a real drill-down, not one flat list: the deeper levels are the panels named playerEnhancementLevelPopup (PlayerShell.cpp:391-392), and they only exist because openEnhancements() collapsed back to the root of a five-level tree."
+      "kind": "qt_property",
+      "target": "menu:enhancements",
+      "property": "rowCount",
+      "comparison": "greater_than",
+      "expected": 0,
+      "note": "The actual cached enhancement model has selectable rows for the opened CascadingMenu."
     }
   ]
 }

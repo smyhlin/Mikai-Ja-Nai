@@ -34,6 +34,7 @@
 #include "ProbePicture.hpp"
 #include "ProbeRuntime.hpp"
 #include "VideoSurface.hpp"
+#include "VideoSession.hpp"
 
 namespace {
 
@@ -86,8 +87,8 @@ struct Options {
     bool noLoop = false;
     bool naturalMedia = false;
     bool fullscreen = false;
-    mplayer::VideoSurface::HdrToneMappingPolicy hdrPolicy =
-        mplayer::VideoSurface::HdrToneMappingPolicy::Auto;
+    mplayer::VideoSession::HdrToneMappingPolicy hdrPolicy =
+        mplayer::VideoSession::HdrToneMappingPolicy::Auto;
     bool requireAudio = false;
 };
 
@@ -153,7 +154,7 @@ bool readCenterRgb(mplayer::VideoSurface& surface, std::array<unsigned char, 3>&
     const int height = qRound(surface.height() * dpr);
     if (width <= 0 || height <= 0) return false;
     const QRect videoRect = mplayer::probes::pictureRect(
-        QSize(width, height), surface.videoWidth(), surface.videoHeight());
+        QSize(width, height), surface.session()->videoWidth(), surface.session()->videoHeight());
     if (videoRect.isEmpty()) return false;
     const int x = videoRect.center().x();
     const int y = height - 1 - videoRect.center().y();
@@ -189,7 +190,7 @@ bool readFrameIdentity(mplayer::VideoSurface& surface, int& identity) {
     const int height = qRound(surface.height() * dpr);
     if (width <= 0 || height <= 0) return false;
     const QRect videoRect = mplayer::probes::pictureRect(
-        QSize(width, height), surface.videoWidth(), surface.videoHeight());
+        QSize(width, height), surface.session()->videoWidth(), surface.session()->videoHeight());
     if (videoRect.isEmpty()) return false;
     const int xStart = videoRect.left() + qRound(40.0 * videoRect.width() / 1280.0);
     const int xEnd = videoRect.left() + qRound(208.0 * videoRect.width() / 1280.0);
@@ -431,22 +432,22 @@ void Soak::recordDropObservations(const mplayer::PlaybackDiagnostics& diagnostic
 void Soak::sampleAudioClock(qint64 nowMs) {
     if (!options_.requireAudio || audioProbeBusy_ || nowMs < nextAudioClockSampleAtMs_) return;
     audioProbeBusy_ = true;
-    const auto track = surface_.probeMpvProperty(QStringLiteral("aid"),
+    const auto track = surface_.session()->probeMpvProperty(QStringLiteral("aid"),
                                                   mplayer::ProbePropertyKind::Number);
-    const auto rate = surface_.probeMpvProperty(QStringLiteral("audio-params/samplerate"),
+    const auto rate = surface_.session()->probeMpvProperty(QStringLiteral("audio-params/samplerate"),
                                                  mplayer::ProbePropertyKind::Number);
-    const auto audioPts = surface_.probeMpvProperty(QStringLiteral("audio-pts"),
+    const auto audioPts = surface_.session()->probeMpvProperty(QStringLiteral("audio-pts"),
                                                      mplayer::ProbePropertyKind::Number);
-    const auto avsync = surface_.probeMpvProperty(QStringLiteral("avsync"),
+    const auto avsync = surface_.session()->probeMpvProperty(QStringLiteral("avsync"),
                                                   mplayer::ProbePropertyKind::Number);
-    const auto currentAo = surface_.probeMpvProperty(QStringLiteral("current-ao"),
+    const auto currentAo = surface_.session()->probeMpvProperty(QStringLiteral("current-ao"),
                                                       mplayer::ProbePropertyKind::Text);
     audioProbeBusy_ = false;
     if (finished_) return;
     nextAudioClockSampleAtMs_ = wall_.elapsed() + kAudioClockSampleIntervalMs;
     if (!audioRuntimeLogged_) {
         audioRuntimeLogged_ = true;
-        const auto version = surface_.probeMpvProperty(QStringLiteral("mpv-version"),
+        const auto version = surface_.session()->probeMpvProperty(QStringLiteral("mpv-version"),
                                                         mplayer::ProbePropertyKind::Text);
         if (finished_) return;
         recordTimingLine(QStringLiteral("audio_runtime mpv_version=%1")
@@ -483,7 +484,7 @@ void Soak::sampleAudioClock(qint64 nowMs) {
         audioPtsProgressed_ = true;
     }
     lastAudioPts_ = audioPts->asNumber();
-    const double skew = std::abs(audioPts->asNumber() - surface_.position());
+    const double skew = std::abs(audioPts->asNumber() - surface_.session()->position());
     ++audioClockSamples_;
     verdict_.require(skew <= kMaxAudioClockSkewSeconds,
                      QStringLiteral("audio PTS stays within %1 s of mpv time-pos (skew %2 s)")
@@ -493,7 +494,7 @@ void Soak::sampleAudioClock(qint64 nowMs) {
                                     "skew_s=%4 sample_rate=%5 track_id=%6 progressed=%7")
                          .arg(wall_.elapsed())
                          .arg(audioPts->asNumber(), 0, 'f', 3)
-                         .arg(surface_.position(), 0, 'f', 3)
+                         .arg(surface_.session()->position(), 0, 'f', 3)
                          .arg(skew, 0, 'f', 3)
                          .arg(audioSampleRate_)
                          .arg(audioTrackId_)
@@ -501,8 +502,8 @@ void Soak::sampleAudioClock(qint64 nowMs) {
 }
 
 void Soak::onSurfacePainted() {
-    if (finished_ || !segment_.videoSeen || !surface_.hasVideo() ||
-        !surface_.isPlaying() || surface_.pauseObserved()) {
+    if (finished_ || !segment_.videoSeen || !surface_.session()->hasVideo() ||
+        !surface_.session()->isPlaying() || surface_.session()->pauseObserved()) {
         return;
     }
     if (options_.naturalMedia) {
@@ -521,9 +522,9 @@ void Soak::onSurfacePainted() {
                                          "render_serial=%3 rgb=%4,%5,%6 luma=%7 "
                                          "black_candidate=%8")
                                          .arg(nowMs)
-                                         .arg(surface_.position(), 0, 'f', 3)
+                                         .arg(surface_.session()->position(), 0, 'f', 3)
                                          .arg(static_cast<qulonglong>(
-                                             surface_.playbackDiagnostics().renderedOutputFrames))
+                                             surface_.session()->playbackDiagnostics().renderedOutputFrames))
                                          .arg(rgb[0])
                                          .arg(rgb[1])
                                          .arg(rgb[2])
@@ -535,11 +536,11 @@ void Soak::onSurfacePainted() {
             }
         }
     } else {
-        const quint64 renderSerial = surface_.playbackDiagnostics().renderedOutputFrames;
+        const quint64 renderSerial = surface_.session()->playbackDiagnostics().renderedOutputFrames;
         if (renderSerial == 0 || renderSerial == lastIdentityCaptureSerial_) return;
         lastIdentityCaptureSerial_ = renderSerial;
         cachedBarcodeSerial_ = renderSerial;
-        cachedBarcodeEpoch_ = surface_.sourceEpoch();
+        cachedBarcodeEpoch_ = surface_.session()->sourceEpoch();
         QElapsedTimer readbackClock;
         readbackClock.start();
         int identity = -1;
@@ -568,9 +569,9 @@ void Soak::onSurfacePainted() {
     pendingContentFrame_ = framebuffer;
     pendingContentIsRetry_ = contentCaptureIsRetry_;
     pendingContentSegment_ = segmentIndex_;
-    pendingContentEpoch_ = surface_.sourceEpoch();
+    pendingContentEpoch_ = surface_.session()->sourceEpoch();
     pendingContentCapturedAtMs_ = wall_.elapsed();
-    pendingContentSourcePosition_ = surface_.position();
+    pendingContentSourcePosition_ = surface_.session()->position();
     pendingContentCaptureElapsedUs_ =
         timingLog_ ? contentCaptureClock.nsecsElapsed() / 1000 : 0;
     if (timingLog_) {
@@ -587,9 +588,9 @@ void Soak::onSurfacePainted() {
 }
 
 void Soak::onFrameSwapped() {
-    if (finished_ || !segment_.videoSeen || !surface_.hasVideo() ||
-        !surface_.isPlaying() || surface_.pauseObserved()) return;
-    const quint64 renderSerial = surface_.playbackDiagnostics().renderedOutputFrames;
+    if (finished_ || !segment_.videoSeen || !surface_.session()->hasVideo() ||
+        !surface_.session()->isPlaying() || surface_.session()->pauseObserved()) return;
+    const quint64 renderSerial = surface_.session()->playbackDiagnostics().renderedOutputFrames;
     if (renderSerial == 0 ||
         (hasIdentityRenderSerial_ && renderSerial == lastIdentityRenderSerial_)) {
         return;
@@ -611,7 +612,7 @@ void Soak::onFrameSwapped() {
     segment_.lastIdentityAtMs = swapAtMs;
     if (options_.naturalMedia) return;
     if (!cachedBarcodeRead_ || cachedBarcodeSerial_ != renderSerial ||
-        cachedBarcodeEpoch_ != surface_.sourceEpoch()) {
+        cachedBarcodeEpoch_ != surface_.session()->sourceEpoch()) {
         verdict_.require(false,
                          QStringLiteral("displayed frame identity was captured during paint "
                                         "for the swapped output frame and source"));
@@ -628,7 +629,7 @@ void Soak::onFrameSwapped() {
                                  .arg(segment_.lastFrameIdentity)
                                  .arg(identity)
                                  .arg(segmentIndex_)
-                                 .arg(surface_.position(), 0, 'f', 3));
+                                 .arg(surface_.session()->position(), 0, 'f', 3));
         }
         if (identity != segment_.lastFrameIdentity) {
             segment_.lastIdentityAdvanceAtMs = nowMs;
@@ -638,7 +639,7 @@ void Soak::onFrameSwapped() {
                                             "for %2 s while source time was %3 s")
                                  .arg(identity)
                                  .arg((nowMs - segment_.lastIdentityAdvanceAtMs) / 1000.0, 0, 'f', 1)
-                                 .arg(surface_.position(), 0, 'f', 3));
+                                 .arg(surface_.session()->position(), 0, 'f', 3));
             segment_.lastIdentityAdvanceAtMs = nowMs;
         }
     }
@@ -649,7 +650,7 @@ void Soak::onFrameSwapped() {
                                         "render_serial=%4 source_epoch=%5 readbacks=%6 "
                                         "readback_total_us=%7 readback_max_us=%8")
                              .arg(nowMs)
-                             .arg(surface_.position(), 0, 'f', 3)
+                             .arg(surface_.session()->position(), 0, 'f', 3)
                              .arg(identity)
                              .arg(static_cast<qulonglong>(cachedBarcodeSerial_))
                              .arg(static_cast<qulonglong>(cachedBarcodeEpoch_))
@@ -660,7 +661,7 @@ void Soak::onFrameSwapped() {
 }
 
 void Soak::requestContentSample(bool isRetry) {
-    if (!surface_.hasVideo() || !surface_.isPlaying() || surface_.pauseObserved() ||
+    if (!surface_.session()->hasVideo() || !surface_.session()->isPlaying() || surface_.session()->pauseObserved() ||
         contentSampleInFlight_) {
         return;
     }
@@ -672,7 +673,7 @@ void Soak::requestContentSample(bool isRetry) {
 void Soak::processCapturedContentSample() {
     if (finished_) return;
     if (pendingContentFrame_.isNull() || pendingContentSegment_ != segmentIndex_ ||
-        pendingContentEpoch_ != surface_.sourceEpoch()) {
+        pendingContentEpoch_ != surface_.session()->sourceEpoch()) {
         pendingContentFrame_ = {};
         contentSampleInFlight_ = false;
         return;
@@ -739,7 +740,7 @@ void Soak::pollContentHash() {
 
 void Soak::processContentHashResult(HashedContentSample result) {
     contentSampleInFlight_ = false;
-    if (result.segment != segmentIndex_ || result.epoch != surface_.sourceEpoch()) return;
+    if (result.segment != segmentIndex_ || result.epoch != surface_.session()->sourceEpoch()) return;
     if (timingLog_) {
         recordTimingLine(QStringLiteral("content_hash capture_elapsed_ms=%1 source_time_s=%2 "
                                         "capture_us=%3 flip_us=%4 hash_elapsed_us=%5 bytes=%6")
@@ -831,7 +832,7 @@ void Soak::onMediaEnded() {
     }
     // Finalize this segment's drop reading while the ending file is still the
     // loaded one - after a reopen the counters belong to the next file.
-    const mplayer::PlaybackDiagnostics diagnostics = surface_.playbackDiagnostics();
+    const mplayer::PlaybackDiagnostics diagnostics = surface_.session()->playbackDiagnostics();
     recordDropObservations(diagnostics);
     DropDelta delta;
     delta.segment = segmentIndex_;
@@ -846,7 +847,7 @@ void Soak::onMediaEnded() {
                                     "decoder drops %4, vo drops %5")
                         .arg(segmentIndex_)
                         .arg((wall_.elapsed() - segment_.becameLiveAtMs) / 1000.0, 0, 'f', 1)
-                        .arg(surface_.position(), 0, 'f', 3)
+                        .arg(surface_.session()->position(), 0, 'f', 3)
                         .arg(delta.decoder.has_value()
                                  ? QString::number(static_cast<long long>(*delta.decoder))
                                  : QStringLiteral("unavailable"))
@@ -879,8 +880,8 @@ void Soak::finish() {
     if (finished_) return;
     finished_ = true;
     pump_.stop();
-    surface_.setPaused(true);
-    const mplayer::PlaybackDiagnostics diagnostics = surface_.playbackDiagnostics();
+    surface_.session()->setPaused(true);
+    const mplayer::PlaybackDiagnostics diagnostics = surface_.session()->playbackDiagnostics();
     const qint64 elapsedMs = wall_.elapsed();
     if (contentHashFuture_.valid()) {
         contentHashFuture_.wait();
@@ -1077,7 +1078,7 @@ void Soak::finish() {
                             : QStringLiteral("composited-screen capture returned actual pixels"));
     }
     surface_.hide();
-    surface_.close();
+    surface_.session()->close();
     if (!options_.artifactsDirectory.isEmpty()) {
         const QString firstPath = QDir(options_.artifactsDirectory).filePath(
             QStringLiteral("first-frame.png"));
@@ -1111,13 +1112,13 @@ void Soak::finish() {
 void Soak::tick() {
     if (finished_) return;
     qint64 nowMs = wall_.elapsed();
-    const mplayer::PlaybackDiagnostics diagnostics = surface_.playbackDiagnostics();
-    const bool playing = surface_.hasVideo() && surface_.isPlaying() && !surface_.pauseObserved();
+    const mplayer::PlaybackDiagnostics diagnostics = surface_.session()->playbackDiagnostics();
+    const bool playing = surface_.session()->hasVideo() && surface_.session()->isPlaying() && !surface_.session()->pauseObserved();
 
     recordTimingLine(QStringLiteral("tick elapsed_ms=%1 position=%2 rendered=%3 "
                                     "decoder_drops=%4 vo_drops=%5 playing=%6")
                          .arg(nowMs)
-                         .arg(surface_.position(), 0, 'f', 3)
+                         .arg(surface_.session()->position(), 0, 'f', 3)
                          .arg(static_cast<qulonglong>(diagnostics.renderedOutputFrames))
                          .arg(diagnostics.decoderDropCount.has_value()
                                   ? QString::number(
@@ -1153,8 +1154,8 @@ void Soak::tick() {
             startSeekAtMs_ = nowMs;
             recordTimingLine(QStringLiteral("start_seek requested_s=%1 pre_seek_position_s=%2")
                                  .arg(options_.startSeconds, 0, 'f', 3)
-                                 .arg(surface_.position(), 0, 'f', 3));
-            surface_.seek(options_.startSeconds);
+                                 .arg(surface_.session()->position(), 0, 'f', 3));
+            surface_.session()->seek(options_.startSeconds);
             return;
         }
         if (nowMs - startSeekAtMs_ > kSegmentStartupGraceMs) {
@@ -1164,7 +1165,7 @@ void Soak::tick() {
                               .arg(static_cast<qint64>(kSegmentStartupGraceMs)));
             return;
         }
-        const double position = surface_.position();
+        const double position = surface_.session()->position();
         if (!std::isfinite(position) || std::abs(position - options_.startSeconds) > 1.5) return;
         actualStartPosition_ = position;
         startPositionReady_ = true;
@@ -1183,7 +1184,7 @@ void Soak::tick() {
         segment_.videoSeen = true;
         segment_.becameLiveAtMs = nowMs;
         if (actualStartPosition_ < 0.0) {
-            actualStartPosition_ = surface_.position();
+            actualStartPosition_ = surface_.session()->position();
             recordTimingLine(QStringLiteral("start_position requested_s=%1 actual_s=%2")
                                  .arg(options_.startSeconds, 0, 'f', 3)
                                  .arg(actualStartPosition_, 0, 'f', 3));
@@ -1191,7 +1192,7 @@ void Soak::tick() {
         segment_.renderedBaseline = diagnostics.renderedOutputFrames;
         segment_.lastRendered = diagnostics.renderedOutputFrames;
         segment_.lastAdvanceAtMs = nowMs;
-        segment_.lastSourcePosition = surface_.position();
+        segment_.lastSourcePosition = surface_.session()->position();
         segment_.lastSourceProgressAtMs = nowMs;
         segment_.lastIdentityAtMs = nowMs;
         segment_.lastIdentityAdvanceAtMs = nowMs;
@@ -1199,15 +1200,15 @@ void Soak::tick() {
         segment_.voAtLive = diagnostics.voDropCount;
         segment_.lastFrameIdentity = -1;
         std::fprintf(stderr, "segment %d live at %lld ms (position %.3f s)\n", segmentIndex_,
-                     static_cast<long long>(nowMs), surface_.position());
+                     static_cast<long long>(nowMs), surface_.session()->position());
     }
 
     recordDropObservations(diagnostics);
 
     // The decoded source clock must move independently of the output-frame
-    // counter. It is the mpv time-pos value exposed by VideoSurface, not a
+    // counter. It is the mpv time-pos value exposed by VideoSession, not a
     // wall-clock estimate; unexplained rewinds and stalls are failures.
-    const double sourcePosition = surface_.position();
+    const double sourcePosition = surface_.session()->position();
     sampleAudioClock(nowMs);
     if (!std::isfinite(sourcePosition) || sourcePosition < 0.0) {
         verdict_.require(false, QStringLiteral("mpv source time-pos is unavailable while playing"));
@@ -1271,7 +1272,7 @@ void Soak::tick() {
                              .arg((nowMs - segment_.lastAdvanceAtMs) / 1000.0, 0, 'f', 1)
                              .arg(segmentIndex_)
                              .arg(static_cast<qulonglong>(segment_.lastRendered))
-                             .arg(surface_.position(), 0, 'f', 3));
+                             .arg(surface_.session()->position(), 0, 'f', 3));
         segment_.lastAdvanceAtMs = nowMs;
     }
 
@@ -1289,7 +1290,7 @@ int Soak::run() {
     if (!options_.frameTimingLog.isEmpty()) {
         // Refuse before minutes are spent: a soak whose evidence cannot be
         // written must fail at once, not after half an hour.
-        mplayer::VideoSurface::setFrameTimingLogPath(options_.frameTimingLog);
+        mplayer::VideoSession::setFrameTimingLogPath(options_.frameTimingLog);
         const QString observationPath = options_.frameTimingLog + QStringLiteral(".probe");
         timingLog_ = std::make_unique<QFile>(observationPath);
         if (!timingLog_->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -1299,9 +1300,9 @@ int Soak::run() {
             return 2;
         }
         const QString hdrPolicyName =
-            options_.hdrPolicy == mplayer::VideoSurface::HdrToneMappingPolicy::Stable
+            options_.hdrPolicy == mplayer::VideoSession::HdrToneMappingPolicy::Stable
                 ? QStringLiteral("stable")
-                : options_.hdrPolicy == mplayer::VideoSurface::HdrToneMappingPolicy::Vivid
+                : options_.hdrPolicy == mplayer::VideoSession::HdrToneMappingPolicy::Vivid
                       ? QStringLiteral("vivid")
                       : QStringLiteral("auto");
         recordTimingLine(QStringLiteral("frame_order_soak media=%1 minutes=%2 start_s=%3 "
@@ -1332,7 +1333,7 @@ int Soak::run() {
         surface_.show();
     }
 
-    QObject::connect(&surface_, &mplayer::VideoSurface::errorOccurred, &surface_,
+    QObject::connect(surface_.session(), &mplayer::VideoSession::errorOccurred, surface_.session(),
                      [this](const QString& message) {
                          if (finished_) return;
                          mediaError_ = message;
@@ -1344,7 +1345,7 @@ int Soak::run() {
     // evidence for the timing log; the soak asserts on drop counters and
     // content hashes, which are the signatures a frame-order regression
     // actually leaves.
-    QObject::connect(&surface_, &mplayer::VideoSurface::streamStatsChanged, &surface_,
+    QObject::connect(surface_.session(), &mplayer::VideoSession::streamStatsChanged, surface_.session(),
                      [this](double bytesPerSecond, double framesPerSecond,
                             mplayer::StreamFpsSource source) {
                          const char* provenance =
@@ -1360,16 +1361,16 @@ int Soak::run() {
                                               .arg(QString::fromLatin1(provenance)));
                      });
 
-    QObject::connect(&surface_, &mplayer::VideoSurface::mediaEnded, &surface_,
+    QObject::connect(surface_.session(), &mplayer::VideoSession::mediaEnded, surface_.session(),
                      [this]() { onMediaEnded(); });
     QObject::connect(&surface_, &QOpenGLWidget::frameSwapped, &surface_,
                      [this]() { onFrameSwapped(); });
 
-    if (!surface_.open(options_.media)) {
+    if (!surface_.session()->open(options_.media)) {
         std::fprintf(stderr, "frame_order_soak: open refused %s\n", qPrintable(options_.media));
         return 2;
     }
-    surface_.setMuted(true);
+    surface_.session()->setMuted(true);
     nextSampleAtMs = 0;
 
     pump_.setInterval(kPumpIntervalMs);
@@ -1398,7 +1399,7 @@ int Soak::run() {
             recordTimingLine(QStringLiteral("segment_start segment=%1 elapsed_ms=%2")
                                  .arg(segmentIndex_)
                                  .arg(nowMs));
-            if (!surface_.open(options_.media)) {
+            if (!surface_.session()->open(options_.media)) {
                 failAndFinish(QStringLiteral("reopening the source for segment %1 was refused")
                            .arg(segmentIndex_));
                 return;
@@ -1563,11 +1564,11 @@ int main(int argc, char** argv) {
     if (parser.isSet(hdrPolicyOpt)) {
         const QString policy = parser.value(hdrPolicyOpt).toLower();
         if (policy == QStringLiteral("auto")) {
-            options.hdrPolicy = mplayer::VideoSurface::HdrToneMappingPolicy::Auto;
+            options.hdrPolicy = mplayer::VideoSession::HdrToneMappingPolicy::Auto;
         } else if (policy == QStringLiteral("stable")) {
-            options.hdrPolicy = mplayer::VideoSurface::HdrToneMappingPolicy::Stable;
+            options.hdrPolicy = mplayer::VideoSession::HdrToneMappingPolicy::Stable;
         } else if (policy == QStringLiteral("vivid")) {
-            options.hdrPolicy = mplayer::VideoSurface::HdrToneMappingPolicy::Vivid;
+            options.hdrPolicy = mplayer::VideoSession::HdrToneMappingPolicy::Vivid;
         } else {
             std::fprintf(stderr,
                          "frame_order_soak: --hdr-policy must be auto, stable, or vivid\n");
@@ -1577,9 +1578,9 @@ int main(int argc, char** argv) {
     options.requireAudio = parser.isSet(requireAudioOpt);
 
     const char* hdrPolicyName =
-        options.hdrPolicy == mplayer::VideoSurface::HdrToneMappingPolicy::Stable
+        options.hdrPolicy == mplayer::VideoSession::HdrToneMappingPolicy::Stable
             ? "stable"
-            : options.hdrPolicy == mplayer::VideoSurface::HdrToneMappingPolicy::Vivid ? "vivid"
+            : options.hdrPolicy == mplayer::VideoSession::HdrToneMappingPolicy::Vivid ? "vivid"
                                                                                      : "auto";
     std::fprintf(stderr, "frame_order_soak: media=%s minutes=%s start=%s max-drops=%d "
                          "sample-interval=%ds no-loop=%d natural-media=%d barcode-order=%s "
@@ -1591,7 +1592,7 @@ int main(int argc, char** argv) {
                  options.naturalMedia ? "unavailable" : "enabled", hdrPolicyName,
                  int(options.fullscreen), int(options.requireAudio));
 
-    mplayer::VideoSurface::setHdrToneMappingPolicy(options.hdrPolicy);
+    mplayer::VideoSession::setHdrToneMappingPolicy(options.hdrPolicy);
     Soak soak(options, app);
     return soak.run();
 }

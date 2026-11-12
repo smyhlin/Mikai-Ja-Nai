@@ -22,7 +22,8 @@
 #include <QtCore/QVariant>
 #include <QtCore/QVector>
 
-#include <PlayerDialog.hpp>
+#include "quick/PlayerController.hpp"
+#include "player/core/VideoSession.hpp"
 
 #include <backend/Downloads.hpp>
 
@@ -785,9 +786,9 @@ NativeAssemblyOutcome assembleNativeAdmission(const NativeAssemblyRequest& input
   request.backend = plan.backend;
   request.requestId = input.requestId;
   request.revision = input.revision < 0 ? 0 : static_cast<quint64>(input.revision);
-  // The owning core stamps the source epoch at submission; nothing here can know
-  // it, and a value guessed here would be a request for another source.
-  request.epoch = 0;
+  // This request is tied to the source epoch captured by its announcing core.
+  // Delivery checks the same core and epoch again before this can be submitted.
+  request.epoch = input.coreEpoch;
 
   // Prove the whole plan and lease every artifact it names, off the GUI thread.
   // The same resolver the controller runs is used, so the worker's verdict and
@@ -813,7 +814,7 @@ NativeAssemblyOutcome assembleNativeAdmission(const NativeAssemblyRequest& input
 
 namespace {
 
-/// One dialog's assembly identity. The generation is bumped when a request is
+/// One controller's assembly identity. The generation is bumped when a request is
 /// announced and when a request is cancelled, so a worker's result is only
 /// delivered while it still describes the selection and owning core that asked.
 struct AssemblyState {
@@ -822,9 +823,13 @@ struct AssemblyState {
 };
 
 void deliverAssembly(const std::shared_ptr<AssemblyState>& state,
-                     const QPointer<mplayer::shell::PlayerDialog>& guard, quint64 generation,
-                     const std::shared_ptr<NativeAssemblyOutcome>& outcome) {
-  if (guard.isNull()) return;
+                     const QPointer<mplayer::quick::PlayerController>& guard,
+                     const QPointer<mplayer::VideoSession>& coreGuard, quint64 coreEpoch,
+                     quint64 generation, const std::shared_ptr<NativeAssemblyOutcome>& outcome) {
+  if (guard.isNull() || coreGuard.isNull() || guard->session() != coreGuard.data() ||
+      coreGuard->sourceEpoch() != coreEpoch) {
+    return;
+  }
   if (state->generation.load() != generation) {
     // The selection or the owning core moved while this was in flight. The
     // result describes a request nobody wants any more.
@@ -839,42 +844,45 @@ void deliverAssembly(const std::shared_ptr<AssemblyState>& state,
 
 }  // namespace
 
-void bindNativePlaybackAssembly(Runner& runner, mplayer::shell::PlayerDialog& dialog) {
+void bindNativePlaybackAssembly(Runner& runner, mplayer::quick::PlayerController& controller) {
   auto state = std::make_shared<AssemblyState>();
-  const QPointer<mplayer::shell::PlayerDialog> guard(&dialog);
+  const QPointer<mplayer::quick::PlayerController> guard(&controller);
   QPointer<Runner> runnerGuard(&runner);
 
-  // The connection's context is the dialog itself, so both die together and no
+  // The connection's context is the controller itself, so both die together and no
   // QObject chain is created.
   QObject::connect(
-      &dialog, &mplayer::shell::PlayerDialog::nativeAdmissionRequested, &dialog,
+      &controller, &mplayer::quick::PlayerController::nativeAdmissionRequested, &controller,
       [state, guard, runnerGuard](const mplayer::native::SelectionState& selection,
                                   const mplayer::native::NativePreparationContext& context) {
-        if (guard.isNull() || runnerGuard.isNull()) return;
+        if (guard.isNull() || runnerGuard.isNull() || guard->session() == nullptr) return;
+        const QPointer<mplayer::VideoSession> coreGuard(guard->session());
+        const quint64 coreEpoch = coreGuard->sourceEpoch();
         const quint64 generation = state->generation.fetch_add(1) + 1;
         NativeAssemblyRequest request;
         request.selection = selection;
         request.context = context;
         request.requestId = QStringLiteral("mikai.assembly.%1").arg(generation);
         request.revision = state->revision.fetch_add(1) + 1;
+        request.coreEpoch = coreEpoch;
         auto outcome = std::make_shared<NativeAssemblyOutcome>();
         runnerGuard->run(
             [request, outcome]() -> QVariant {
               *outcome = assembleNativeAdmission(request);
               return QVariant();
             },
-            [state, guard, generation, outcome](const QVariant&) {
-              deliverAssembly(state, guard, generation, outcome);
+            [state, guard, coreGuard, coreEpoch, generation, outcome](const QVariant&) {
+              deliverAssembly(state, guard, coreGuard, coreEpoch, generation, outcome);
             },
-            [state, guard, generation, outcome](const backend::Failure&) {
+            [state, guard, coreGuard, coreEpoch, generation, outcome](const backend::Failure&) {
               // The pool failed to run the work at all; there is no assembled
               // request, and the refusal is still delivered under the same
-              // guards rather than silently dropped.
-              deliverAssembly(state, guard, generation, outcome);
+              // core/epoch and generation guards rather than silently dropped.
+              deliverAssembly(state, guard, coreGuard, coreEpoch, generation, outcome);
             });
       });
 
-  QObject::connect(&dialog, &mplayer::shell::PlayerDialog::nativeAdmissionCancelled, &dialog,
+  QObject::connect(&controller, &mplayer::quick::PlayerController::nativeAdmissionCancelled, &controller,
                    [state]() { state->generation.fetch_add(1); });
 }
 

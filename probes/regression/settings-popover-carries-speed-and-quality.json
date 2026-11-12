@@ -1,6 +1,6 @@
 {
-  "name": "settings-popover-carries-speed-and-quality",
-  "description": "The gear opens the speed-and-quality popover specifically - the defect just fixed, pinned so the gear cannot quietly open a different overlay again.",
+  "name": "settings-menu-exposes-speed-and-quality-options",
+  "description": "The Quick settings panel exposes its speed rows while the independent quality menu is populated for the manifest's single stream.",
   "category": "regression",
   "surface": "player_dialog",
   "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
@@ -14,44 +14,45 @@
     },
     {
       "kind": "click",
-      "target": "playerSettingsButton",
-      "note": "The gear at PlayerShell.cpp:346. The defect this pins was the gear not opening the popover that carries speed and quality."
+      "target": "player.settings.button",
+      "note": "Click the real Quick settings button."
     },
     {
       "kind": "wait_for",
-      "name": "widgetVisible",
-      "target": "playerSettingsFlyout",
+      "name": "objectVisible",
+      "target": "player.settings",
       "timeout_ms": 5000
     }
   ],
   "assertions": [
     {
       "kind": "qt_property",
-      "target": "playerSettingsFlyout",
+      "target": "player.settings",
       "property": "visible",
       "expected": true,
-      "note": "The popover itself is hidden at construction (ShellWidgets.cpp:146), so visibility - not existence - is what says the click landed."
+      "note": "The real PlayerSettings scene item is visible after the button opens the settings menu."
     },
     {
       "kind": "qt_property",
-      "target": "playerSpeedSlider",
-      "property": "visible",
-      "expected": true,
-      "note": "The SPEED half. playerSpeedSlider lives inside the flyout (ShellWidgets.cpp:167) and is not shown independently, so this can only pass when the speed-and-quality popover is the one on screen."
+      "target": "player.settings.row.settings.speed.1",
+      "property": "menuRowId",
+      "comparison": "equals",
+      "expected": "settings.speed.1",
+      "note": "This concrete Quick delegate comes from the settings menu's stable speed row identity."
     },
     {
       "kind": "qt_property",
-      "target": "playerQualitySection",
-      "property": "visible",
-      "expected": true,
-      "note": "The QUALITY half, and the reason this manifest exists. qualitySection_ is built hidden (ShellWidgets.cpp:224) and only shown when options exist - setQualityOptions() sets it visible from !qualityOptions_.isEmpty() (ShellWidgets.cpp:284). The player is built with one quality entry at the manifest height, so a build that opened a flyout without its quality list fails here rather than passing on 'an overlay appeared'."
+      "target": "menu:quality",
+      "property": "rowCount",
+      "expected": 1,
+      "note": "Quality is a separate cached controller menu in Quick, and the runner seeded exactly one actual quality entry."
     },
     {
       "kind": "qt_property",
-      "target": "playerEnhancementsPopup",
-      "property": "visible",
-      "expected": false,
-      "note": "The discriminating check. The gear and the spark sit side by side in the same actionHost, and either press starts by dismissing the other overlay - so if the gear were wired to the enhancement tree, the positive assertions could still pass on a flyout left visible from an earlier interaction. This says the tree did not open."
+      "target": "playerController",
+      "property": "menuStackVisible",
+      "expected": true,
+      "note": "The settings menu is open through the Quick scene's actual menu stack."
     }
   ]
 }

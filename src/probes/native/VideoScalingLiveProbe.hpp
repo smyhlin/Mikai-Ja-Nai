@@ -27,11 +27,11 @@ struct VideoScalingLiveOptions {
     int holdMs = 0;
 };
 
-/// Runs a visible, real native-player check of the display-scaling setting:
-/// Settings Save/Cancel, the player flyout rows, paused adoption, PiP
-/// inheritance and a fresh-process store read. It shows only this process's own
-/// windows and never activates another application, moves the pointer or sends
-/// global input.
+/// Runs a visible check through the real PlayerController, PlayerWindow and
+/// VideoSession: Settings Save/Cancel, in-scene player flyout rows, paused
+/// adoption, same-window/same-session PiP and a fresh-process store read. It
+/// shows only this process's own windows and never activates another
+/// application, moves the pointer or sends global input.
 ///
 /// Returns 0 only when every check passed and the evidence file was written.
 int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,

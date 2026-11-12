@@ -16,11 +16,11 @@
       "kind": "wait_for",
       "name": "playing",
       "timeout_ms": 10000,
-      "note": "mpv always brings a fresh file up playing (PlayerDialog.cpp:1974-1976), so a player dialog opens mid-playback. The scenario therefore pauses first and then presses play, which is the only way to test that play STARTS playback from a known paused state rather than testing that a paused file resumes by accident."
+      "note": "The Quick session starts this direct media load playing; pause first so the next gesture proves a real resume from a known state."
     },
     {
       "kind": "click",
-      "target": "playerPlayToggle",
+      "target": "player.playPause",
       "note": "First press pauses, putting the player into the state the rest of the scenario starts from."
     },
     {
@@ -30,7 +30,7 @@
     },
     {
       "kind": "click",
-      "target": "playerPlayToggle",
+      "target": "player.playPause",
       "note": "The press under test."
     },
     {
@@ -65,7 +65,7 @@
     {
       "kind": "signal_emitted",
       "property": "playingChanged",
-      "note": "setPlaying is announced, not just recorded (VideoSurface.cpp:677-680), because the state pump compares the core against that very flag. Counting starts once the surface has settled, so this is emitted by the press under test."
+      "note": "The VideoSession announces the changed playback state after the actual control gesture."
     }
   ]
 }

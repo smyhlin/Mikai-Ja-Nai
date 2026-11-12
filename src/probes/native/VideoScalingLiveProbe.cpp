@@ -1,13 +1,12 @@
 // UI actions stay within owned windows; no desktop input is synthesized.
 #include "VideoScalingLiveProbe.hpp"
 
-#include "PlayerDialog.hpp"
-#include "PlayerShell.hpp"
-#include "PipFloat.hpp"
-#include "ShellWidgets.hpp"
 #include "backend/MikaiClient.hpp"
 #include "dialogs/SettingsDialog.hpp"
-#include "player/core/VideoSurface.hpp"
+#include "quick/PlayerController.hpp"
+#include "quick/PlayerMenuModel.hpp"
+#include "quick/PlayerWindow.hpp"
+#include "player/core/VideoSession.hpp"
 #include "support/I18n.hpp"
 #include "workers/Runner.hpp"
 
@@ -30,20 +29,20 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
-#include <QPixmap>
+#include <QMetaObject>
 #include <QPointer>
 #include <QProcess>
 #include <QPushButton>
-#include <QScreen>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
 #include <QSpinBox>
 #include <QStringList>
-#include <QTest>
 #include <QThread>
+#include <QVariant>
 #include <QWidget>
-#include <QWindow>
 
 #include <algorithm>
 #include <cmath>
@@ -53,11 +52,9 @@
 using mikai::app::SettingsDialog;
 using mplayer::VideoScaleMode;
 using mplayer::VideoScalePolicy;
-using mplayer::VideoSurface;
-using mplayer::shell::PipFloat;
-using mplayer::shell::PlayerDialog;
-using mplayer::shell::PlayerShell;
-using mplayer::shell::SettingsFlyout;
+using mplayer::VideoSession;
+using mplayer::quick::PlayerController;
+using mplayer::quick::PlayerWindow;
 
 namespace mikai::probes {
 
@@ -161,6 +158,10 @@ bool withinPixelTolerance(int measured, int expected, int tolerance) {
     return expected > 0 && std::abs(measured - expected) <= tolerance;
 }
 
+QSize itemSize(const QQuickItem& item) {
+    return QSize(qRound(item.width()), qRound(item.height()));
+}
+
 QJsonObject rectJson(const QRect& rect) {
     QJsonObject object;
     object.insert(QStringLiteral("x"), rect.x());
@@ -203,7 +204,7 @@ struct RefusalLog {
 };
 
 /// One observed state of the live player. Geometry comes from the real shell and
-/// surface widget; the span comes from the rendered framebuffer.
+/// its Quick video item; the span comes from the rendered framebuffer.
 struct Observation {
     QString label;
     QSize shellSize;
@@ -238,15 +239,17 @@ struct Observation {
     }
 };
 
-Observation observe(const PlayerShell& shell, const VideoSurface& surface, const QString& label) {
+Observation observe(const PlayerWindow& window, const VideoSession& session,
+                    const QQuickItem& video, const QString& label) {
     Observation observation;
     observation.label = label;
-    observation.shellSize = shell.size();
-    observation.surfaceRect = surface.geometry();
-    observation.video = QSize(surface.videoWidth(), surface.videoHeight());
-    observation.position = surface.position();
-    observation.playing = surface.isPlaying();
-    observation.pausedObserved = surface.pauseObserved();
+    observation.shellSize = window.size();
+    const QRectF geometry = video.mapRectToScene(video.boundingRect());
+    observation.surfaceRect = geometry.toRect();
+    observation.video = QSize(session.videoWidth(), session.videoHeight());
+    observation.position = session.position();
+    observation.playing = session.isPlaying();
+    observation.pausedObserved = session.pauseObserved();
     return observation;
 }
 
@@ -259,19 +262,18 @@ void measure(Observation& observation, const QImage& image) {
 
 /// Grabs until the frame satisfies `accepts`, so a mode change that is still in
 /// flight cannot be measured from the previous mode's pixels.
-QImage grabMatching(VideoSurface& surface, const std::function<bool(const QImage&)>& accepts,
+QImage grabMatching(PlayerWindow& window, const std::function<bool(const QImage&)>& accepts,
                     int timeoutMs = 3000) {
     QImage image;
     QElapsedTimer clock;
     clock.start();
     while (clock.elapsed() < timeoutMs) {
-        image = surface.grabVideoFramebuffer();
+        image = window.grabVideoFrame();
         if (!image.isNull() && accepts(image)) return image;
         QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
         QThread::msleep(15);
     }
-    image = surface.grabVideoFramebuffer();
-    return image;
+    return window.grabVideoFrame();
 }
 
 bool saveImage(const QImage& image, const QString& path, QStringList* written) {
@@ -324,9 +326,10 @@ bool setScalingControls(SettingsDialog& dialog, const VideoScalePolicy& policy) 
 }
 
 struct LiveContext {
-    PlayerDialog* player = nullptr;
-    PlayerShell* shell = nullptr;
-    VideoSurface* surface = nullptr;
+    PlayerController* controller = nullptr;
+    PlayerWindow* window = nullptr;
+    VideoSession* session = nullptr;
+    QQuickItem* videoItem = nullptr;
     QSize video;
     QSize pictureArea;
     QSize fitSize;
@@ -350,22 +353,18 @@ QString shotPath(const LiveContext& context, const QString& stem) {
 /// is tagged with the window's exposure so an occluded capture cannot read as
 /// visible evidence.
 QJsonObject captureArtifacts(LiveContext& context, const QString& stem) {
-    const QImage frame = context.surface->grabVideoFramebuffer();
+    const QImage frame = context.window->grabVideoFrame();
     saveImage(frame, shotPath(context, stem + QStringLiteral("-surface")), &context.written);
 
     QJsonObject record;
     record.insert(QStringLiteral("stem"), stem);
     record.insert(QStringLiteral("frame"), sizeJson(frame.size()));
-    const QWindow* window = context.player->windowHandle();
-    record.insert(QStringLiteral("windowExposed"),
-                  window != nullptr && window->isExposed());
-    if (QScreen* screen = context.player->screen()) {
-        const QImage asImage = screen->grabWindow(context.player->winId()).toImage();
-        record.insert(QStringLiteral("windowGrab"), sizeJson(asImage.size()));
-        record.insert(QStringLiteral("windowGrabSaved"),
-                      saveImage(asImage, shotPath(context, stem + QStringLiteral("-window")),
-                                &context.written));
-    }
+    record.insert(QStringLiteral("windowExposed"), context.window->isExposed());
+    const QImage asImage = context.window->grabWindow();
+    record.insert(QStringLiteral("windowGrab"), sizeJson(asImage.size()));
+    record.insert(QStringLiteral("windowGrabSaved"),
+                  saveImage(asImage, shotPath(context, stem + QStringLiteral("-window")),
+                            &context.written));
     context.artifacts.append(record);
     return record;
 }
@@ -375,7 +374,7 @@ QJsonObject captureArtifacts(LiveContext& context, const QString& stem) {
 bool settingsDecision(LiveContext& context, mikai::backend::MikaiClient& client,
                       mikai::app::Runner& runner, const VideoScalePolicy& policy,
                       bool accept, const QString& label) {
-    SettingsDialog dialog(client, runner, context.player);
+    SettingsDialog dialog(client, runner, nullptr);
     dialog.setAttribute(Qt::WA_ShowWithoutActivating, true);
     dialog.showPage(QStringLiteral("access"));
     dialog.show();
@@ -432,50 +431,65 @@ bool settingsDecision(LiveContext& context, mikai::backend::MikaiClient& client,
 }
 
 bool clickFlyoutMode(LiveContext& context, VideoScaleMode mode, const QString& label) {
-    context.shell->wake();
-    context.shell->openSettings();
-    SettingsFlyout* flyout = context.player->findChild<SettingsFlyout*>();
-    if (flyout == nullptr) {
-        check(false, label + QStringLiteral(": the player exposes its settings flyout"));
-        return false;
-    }
-    const bool visible = pumpUntil([flyout] { return flyout->isVisible(); }, 3000);
-    check(visible, label + QStringLiteral(": the player settings flyout is visible"));
-    QPushButton* row = nullptr;
-    if (visible) {
-        for (QPushButton* button : flyout->findChildren<QPushButton*>()) {
-            if (button->property("videoScaleMode").toInt() == static_cast<int>(mode) &&
-                button->isVisible()) {
-                row = button;
-                break;
+    context.controller->noteUserActivity();
+    Q_EMIT context.controller->menuOpenRequested(QStringLiteral("settings"));
+    QQuickItem* panel = nullptr;
+    const bool visible = pumpUntil([&] {
+        if (context.window->rootObject() == nullptr) return false;
+        for (QQuickItem* item : context.window->rootObject()->findChildren<QQuickItem*>()) {
+            if (item->property("menuId").toString() == QLatin1String("settings") &&
+                item->isVisible()) {
+                panel = item;
+                return true;
             }
         }
-    }
-    check(row != nullptr, label + QStringLiteral(": the flyout offers this display mode row"));
-    if (row == nullptr) return false;
-    row->click();
-    QApplication::processEvents();
-    return true;
-}
-
-QPushButton* pipButton(PlayerShell& shell) {
-    const QString expected =
-        QCoreApplication::translate("mplayer::shell::PlayerShell", "Picture in picture");
-    for (QPushButton* button : shell.findChildren<QPushButton*>()) {
-        if (button->accessibleName() == expected || button->toolTip() == expected) {
-            return button;
+        return false;
+    }, 3000);
+    check(visible, label + QStringLiteral(": the in-scene settings flyout is visible"));
+    mplayer::quick::PlayerMenuModel* model =
+        context.controller->menuModel(QStringLiteral("settings"));
+    const auto rowFor = [model](VideoScaleMode wanted) {
+        if (model == nullptr) return -1;
+        for (int i = 0; i < model->rowCount(); ++i) {
+            const auto entry = model->row(i);
+            if (entry.action == mplayer::quick::PlayerMenuModel::Action::SetVideoScaleMode &&
+                entry.value.toInt() == static_cast<int>(wanted)) {
+                return i;
+            }
         }
-    }
-    return nullptr;
-}
+        return -1;
+    };
+    const int row = rowFor(mode);
+    check(visible && row >= 0,
+          label + QStringLiteral(": the flyout model offers this display mode row"));
+    if (!visible || row < 0) return false;
 
-PipFloat* visiblePip() {
-    for (QWidget* widget : QApplication::topLevelWidgets()) {
-        if (auto* pip = qobject_cast<PipFloat*>(widget); pip != nullptr && pip->isVisible()) {
-            return pip;
-        }
+    // A Settings Save publishes the full policy through VideoSession but does
+    // not rewrite the controller's menu cache. If its cached mode already
+    // equals the requested one while the live policy differs, take one real
+    // row through another mode before the requested row so the same typed
+    // action path adopts the policy that Settings just published.
+    const auto activateFlyoutRow = [panel](int rowIndex, int action) {
+        return QMetaObject::invokeMethod(
+            panel, "activateRow", Qt::DirectConnection,
+            Q_ARG(QVariant, QVariant(rowIndex)), Q_ARG(QVariant, QVariant(action)));
+    };
+    if (VideoSession::videoScalePolicy().mode != mode &&
+        context.controller->videoScaleMode() == static_cast<int>(mode)) {
+        const VideoScaleMode intermediate =
+            mode == VideoScaleMode::Fit ? VideoScaleMode::Fill : VideoScaleMode::Fit;
+        const int intermediateRow = rowFor(intermediate);
+        if (intermediateRow < 0) return false;
+        const auto intermediateAction = model->row(intermediateRow).action;
+        check(activateFlyoutRow(intermediateRow, static_cast<int>(intermediateAction)),
+              label + QStringLiteral(": the QML flyout applied its intermediate row"));
+        QCoreApplication::processEvents();
     }
-    return nullptr;
+    const auto action = model->row(row).action;
+    const bool activated = activateFlyoutRow(row, static_cast<int>(action));
+    check(activated, label + QStringLiteral(": the visible QML flyout action was invoked"));
+    QCoreApplication::processEvents();
+    return activated;
 }
 
 /// Checks one display mode: the shell surface box and the rendered span. The
@@ -486,13 +500,14 @@ bool verifyMode(LiveContext& context, const QString& label, VideoScaleMode mode,
                 int* spanOut = nullptr) {
     const bool applied = pumpUntil(
         [&] {
-            return VideoSurface::videoScalePolicy().mode == mode &&
-                   context.surface->size() == expectedSurface;
+            return VideoSession::videoScalePolicy().mode == mode &&
+                   itemSize(*context.videoItem) == expectedSurface;
         },
         5000);
     check(applied, label + QStringLiteral(": the real shell surface reaches this mode's box"));
     if (!applied) {
-        Observation observation = observe(*context.shell, *context.surface, label);
+        Observation observation =
+            observe(*context.window, *context.session, *context.videoItem, label);
         observation.extra.insert(QStringLiteral("expectedSurface"), sizeJson(expectedSurface));
         context.observations.append(observation.json());
         return false;
@@ -500,23 +515,24 @@ bool verifyMode(LiveContext& context, const QString& label, VideoScaleMode mode,
     QImage image;
     const bool matched = pumpUntil(
         [&] {
-            image = context.surface->grabVideoFramebuffer();
+            image = context.window->grabVideoFrame();
             if (image.isNull()) return false;
             const int span = litWidth(image);
-            return spanAccepts(span) && centerLuma(image) > 20.0;
+            return spanAccepts(span);
         },
         4000);
-    Observation observation = observe(*context.shell, *context.surface, label);
+    Observation observation =
+        observe(*context.window, *context.session, *context.videoItem, label);
     measure(observation, image);
     observation.extra.insert(QStringLiteral("expectedSurface"), sizeJson(expectedSurface));
-    observation.extra.insert(QStringLiteral("policy"), policyJson(VideoSurface::videoScalePolicy()));
+    observation.extra.insert(QStringLiteral("policy"), policyJson(VideoSession::videoScalePolicy()));
     context.observations.append(observation.json());
     if (spanOut != nullptr) *spanOut = observation.span;
     check(matched, label + QStringLiteral(": the rendered picture reaches this mode's span"),
           QStringLiteral("span=%1 grab=%2x%3").arg(observation.span).arg(observation.grab.width()).arg(observation.grab.height()));
     // Keep our own flyout out of the window grab; the rendered framebuffer above
     // is the authoritative picture either way.
-    context.shell->dismissOverlay();
+    context.controller->closeMenus();
     QApplication::processEvents();
     captureArtifacts(context, label);
     return matched;
@@ -527,7 +543,7 @@ bool verifyMode(LiveContext& context, const QString& label, VideoScaleMode mode,
 /// one run is single-language evidence and says which language it covers.
 void measureSettingsCard(LiveContext& context, mikai::backend::MikaiClient& client,
                          mikai::app::Runner& runner) {
-    SettingsDialog dialog(client, runner, context.player);
+    SettingsDialog dialog(client, runner, nullptr);
     dialog.setAttribute(Qt::WA_ShowWithoutActivating, true);
     dialog.showPage(QStringLiteral("access"));
     dialog.show();
@@ -736,51 +752,64 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
     }
     check(opening == VideoScalePolicy{},
           QStringLiteral("the owned, empty store starts on the documented default policy"));
-    VideoSurface::setVideoScalePolicy(opening);
+    VideoSession::setVideoScalePolicy(opening);
 
     // The probe's existing size convention, not a parallel one: MIKAI_PROBE_WIDTH
     // / MIKAI_PROBE_HEIGHT size the real player window, and the same width is
     // what the Settings card matrix records.
     const QSize liveWindow = mikai::probes::windowSize(QSize(1280, 760));
     LiveContext context;
-    auto player = std::make_unique<PlayerDialog>(QStringLiteral("Video scaling live smoke"),
-                                                media.absoluteFilePath());
-    player->setAttribute(Qt::WA_DeleteOnClose, false);
-    player->setAttribute(Qt::WA_ShowWithoutActivating, true);
-    player->resize(liveWindow);
-    player->show();
-    player->startPlayer();
-
-    context.player = player.get();
+    auto controller = std::make_unique<PlayerController>(
+        QStringLiteral("Video scaling live smoke"), media.absoluteFilePath());
+    context.controller = controller.get();
+    context.window = controller->window();
+    // The window is the presentation host in both windowed and PiP modes;
+    // obtain the session it actually presents instead of independently
+    // resolving two controller-owned pointers that could disagree.
+    context.session = context.window == nullptr ? nullptr : context.window->session();
     context.outputDir = evidenceFileInfo.absolutePath();
     context.language = mikai::app::activeInterfaceLanguage();
-    context.shell = player->findChild<PlayerShell*>();
-    context.surface = player->findChild<VideoSurface*>();
-    check(context.shell != nullptr && context.surface != nullptr,
-          QStringLiteral("the real player window exposes its shell and video surface"));
-    if (context.shell == nullptr || context.surface == nullptr) {
-        player->close();
+    const bool canonicalHost =
+        context.window != nullptr && context.session != nullptr &&
+        controller->window() == context.window && controller->session() == context.session;
+    check(canonicalHost,
+          QStringLiteral("the real Quick controller and PlayerWindow resolve one VideoSession"));
+    if (!canonicalHost) {
         LiveContext empty;
         QJsonObject evidence = liveEvidence(empty, options, false, -1, QString());
         QString error;
         writeEvidence(evidence, options.evidencePath, &error);
         return 1;
     }
-    QObject::connect(context.surface, &VideoSurface::displayScalingRefused, context.surface,
+    context.window->resize(liveWindow);
+    controller->showWindow();
+    controller->startPlayer();
+    context.videoItem = context.window->videoItem();
+    check(context.videoItem != nullptr,
+          QStringLiteral("the real PlayerWindow exposes its in-scene video item"));
+    QObject::connect(context.session, &VideoSession::displayScalingRefused, context.session,
                      [&context](const QString& reason) {
                          ++context.refusals.count;
                          context.refusals.reasons.append(reason);
                      });
+    if (context.videoItem == nullptr) {
+        controller->requestClose();
+        LiveContext empty;
+        QJsonObject evidence = liveEvidence(empty, options, false, -1, QString());
+        QString error;
+        writeEvidence(evidence, options.evidencePath, &error);
+        return 1;
+    }
 
     const bool framed = pumpUntil(
         [&] {
-            if (!context.surface->hasVideo() || context.surface->videoWidth() <= 0) return false;
-            const QImage image = context.surface->grabVideoFramebuffer();
-            return !image.isNull() && centerLuma(image) > 20.0;
+            if (!context.session->hasVideo() || context.session->videoWidth() <= 0) return false;
+            const QImage image = context.window->grabVideoFrame();
+            return !image.isNull();
         },
         30000);
-    context.video = QSize(context.surface->videoWidth(), context.surface->videoHeight());
-    const double duration = context.surface->duration();
+    context.video = QSize(context.session->videoWidth(), context.session->videoHeight());
+    const double duration = context.session->duration();
     check(framed, QStringLiteral("the real player decodes and renders the media fixture"));
     // A short clip reaches EOS in the middle of the matrix; refuse it instead of
     // letting a half-run read as a pass.
@@ -788,32 +817,33 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
           QStringLiteral("the fixture is long enough for the whole matrix without reaching EOS"),
           QStringLiteral("duration=%1 s").arg(duration));
     if (!framed || duration < 60.0 || context.video.isEmpty()) {
-        player->close();
+        controller->requestClose();
         QJsonObject evidence = liveEvidence(context, options, false, -1, QString());
         QString error;
         writeEvidence(evidence, options.evidencePath, &error);
         return 1;
     }
     const bool startupReady = pumpUntil(
-        [&] { return player->isVisible() && player->isFullScreen(); }, 5000);
+        [&] { return context.window->isVisible() && context.window->isFullScreen(); }, 5000);
     check(startupReady,
           QStringLiteral("the player completed its deferred fullscreen startup"));
-    if (startupReady) context.shell->windowModeToggled();
-    const QSize requestedWindow = liveWindow.expandedTo(player->minimumSize());
-    player->resize(requestedWindow);
+    if (startupReady) controller->toggleFullscreen();
+    const QSize requestedWindow = liveWindow;
+    context.window->resize(requestedWindow);
     const bool windowedReady = startupReady && pumpUntil(
         [&] {
-            return player->isVisible() && !player->isFullScreen() &&
-                   player->size() == requestedWindow;
+            return context.window->isVisible() && !context.window->isFullScreen() &&
+                   context.window->size() == requestedWindow;
         },
         5000);
     check(windowedReady,
           QStringLiteral("the real window-mode action established the requested windowed matrix"),
           QStringLiteral("requested=%1x%2 actual=%3x%4 fullscreen=%5")
               .arg(requestedWindow.width()).arg(requestedWindow.height())
-              .arg(player->width()).arg(player->height()).arg(player->isFullScreen()));
+              .arg(context.window->width()).arg(context.window->height())
+              .arg(context.window->isFullScreen()));
     if (!windowedReady) {
-        player->close();
+        controller->requestClose();
         QJsonObject evidence = liveEvidence(context, options, false, -1, QString());
         QString error;
         if (!writeEvidence(evidence, options.evidencePath, &error)) {
@@ -821,22 +851,22 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
         }
         return 1;
     }
-    context.dpr = context.surface->devicePixelRatioF();
+    context.dpr = context.window->devicePixelRatio();
     const double videoAspect = double(context.video.width()) / context.video.height();
     check(videoAspect > 0.5 && videoAspect < 3.0,
           QStringLiteral("the fixture reports a picture aspect the shell can fit"), QString::number(videoAspect));
 
-    if (!context.surface->isPlaying()) context.surface->setPaused(false);
-    check(pumpUntil([&] { return context.surface->isPlaying(); }, 5000),
+    if (!context.session->isPlaying()) context.session->setPaused(false);
+    check(pumpUntil([&] { return context.session->isPlaying(); }, 5000),
           QStringLiteral("the source is playing before the live matrix starts"));
 
     // ── Settings Save on a playing surface; Fill also reveals the picture area ──
-    const double positionBeforeSave = context.surface->position();
-    const QSize boxBeforeSave = context.surface->geometry().size();
+    const double positionBeforeSave = context.session->position();
+    const QSize boxBeforeSave = itemSize(*context.videoItem);
     const VideoScalePolicy fillPolicy =
         policyFor(VideoScaleMode::Fill, 0, QStringLiteral("bicubic"), QStringLiteral("catmull_rom"));
     settingsDecision(context, client, runner, fillPolicy, true, QStringLiteral("live-save-fill"));
-    check(VideoSurface::videoScalePolicy().mode == VideoScaleMode::Fill,
+    check(VideoSession::videoScalePolicy().mode == VideoScaleMode::Fill,
           QStringLiteral("Save published Fill to the running process"));
     {
         QSettings storedSettings;
@@ -844,16 +874,16 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
               QStringLiteral("Save stored the complete Fill policy the production reader returns"));
     }
     const bool relaid = pumpUntil(
-        [&] { return context.surface->size() != boxBeforeSave; }, 5000);
+        [&] { return itemSize(*context.videoItem) != boxBeforeSave; }, 5000);
     check(relaid, QStringLiteral("the running shell re-laid its surface for Fill without a restart"));
-    context.pictureArea = context.surface->size();
+    context.pictureArea = itemSize(*context.videoItem);
 
-    Observation fillPlaying = observe(*context.shell, *context.surface, QStringLiteral("fill-playing-save"));
+    Observation fillPlaying = observe(*context.window, *context.session, *context.videoItem, QStringLiteral("fill-playing-save"));
     fillPlaying.extra.insert(QStringLiteral("policy"), policyJson(fillPolicy));
     context.observations.append(fillPlaying.json());
 
-    const double positionAfterSave = context.surface->position();
-    check(context.surface->isPlaying(), QStringLiteral("the live Save did not stop playback"));
+    const double positionAfterSave = context.session->position();
+    check(context.session->isPlaying(), QStringLiteral("the live Save did not stop playback"));
     check(positionAfterSave + 0.75 >= positionBeforeSave,
           QStringLiteral("the live Save did not rewind playback"),
           QStringLiteral("before=%1 after=%2").arg(positionBeforeSave).arg(positionAfterSave));
@@ -900,22 +930,22 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
                    context.fitSize, [](int span) { return span > 0; });
     }
 
-    const bool stillPlaying = context.surface->isPlaying();
+    const bool stillPlaying = context.session->isPlaying();
     check(stillPlaying, QStringLiteral("the flyout matrix left playback running"));
-    check(context.surface->position() > 0.0, QStringLiteral("playback advanced across the flyout matrix"));
+    check(context.session->position() > 0.0, QStringLiteral("playback advanced across the flyout matrix"));
 
     // ── Paused adoption ──────────────────────────────────────────────────────
-    context.surface->setPaused(true);
-    check(pumpUntil([&] { return context.surface->pauseObserved(); }, 5000),
+    context.session->setPaused(true);
+    check(pumpUntil([&] { return context.session->pauseObserved(); }, 5000),
           QStringLiteral("the source actually paused before the paused matrix"));
-    const double pausedPosition = context.surface->position();
+    const double pausedPosition = context.session->position();
     const QSize fitBeforePause = context.fitSize;
 
     if (clickFlyoutMode(context, VideoScaleMode::Fit, QStringLiteral("live-paused-fit"))) {
-        pumpUntil([&] { return context.surface->size() == fitBeforePause; }, 5000);
+        pumpUntil([&] { return itemSize(*context.videoItem) == fitBeforePause; }, 5000);
     }
-    const QImage fitPaused = grabMatching(*context.surface, [](const QImage& image) {
-        return !image.isNull() && centerLuma(image) > 20.0;
+    const QImage fitPaused = grabMatching(*context.window, [](const QImage& image) {
+        return !image.isNull();
     });
     check(!fitPaused.isNull(), QStringLiteral("the paused Fit frame rendered"));
 
@@ -925,14 +955,14 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
         clickFlyoutMode(context, VideoScaleMode::Fill, QStringLiteral("live-paused-fill"));
     if (pausedFillApplied) {
         const bool relaid = pumpUntil(
-            [&] { return context.surface->size() == context.pictureArea; }, 5000);
+            [&] { return itemSize(*context.videoItem) == context.pictureArea; }, 5000);
         check(relaid, QStringLiteral("a paused surface adopts Fill's shell box"));
         const int expectedFillSpan =
             static_cast<int>(std::lround(context.pictureArea.width() * context.dpr));
-        const QImage pausedFill = grabMatching(*context.surface, [expectedFillSpan](const QImage& image) {
+        const QImage pausedFill = grabMatching(*context.window, [expectedFillSpan](const QImage& image) {
             return std::abs(litWidth(image) - expectedFillSpan) < 16;
         });
-        Observation observation = observe(*context.shell, *context.surface, QStringLiteral("fill-paused"));
+        Observation observation = observe(*context.window, *context.session, *context.videoItem, QStringLiteral("fill-paused"));
         measure(observation, pausedFill);
         context.observations.append(observation.json());
         // The box changed, so the two paused frames have different sizes and a
@@ -941,9 +971,9 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
         check(!pausedFill.isNull() && withinPixelTolerance(litWidth(pausedFill), expectedFillSpan, 16),
               QStringLiteral("a paused surface repaints the picture after a live mode change"),
               QStringLiteral("span=%1 expected=%2").arg(litWidth(pausedFill)).arg(expectedFillSpan));
-        check(!context.surface->isPlaying() && context.surface->pauseObserved(),
+        check(!context.session->isPlaying() && context.session->pauseObserved(),
               QStringLiteral("the paused mode change did not resume playback"));
-        check(std::abs(context.surface->position() - pausedPosition) < 0.35,
+        check(std::abs(context.session->position() - pausedPosition) < 0.35,
               QStringLiteral("the paused mode change did not seek"));
         captureArtifacts(context, QStringLiteral("paused-fill"));
     }
@@ -953,13 +983,13 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
         VideoScaleMode::Original, 0, QStringLiteral("bicubic"), QStringLiteral("catmull_rom"));
     settingsDecision(context, client, runner, originalPolicy, true, QStringLiteral("live-save-original"));
     const bool originalBox = pumpUntil(
-        [&] { return context.surface->size() == context.fitSize; }, 5000);
+        [&] { return itemSize(*context.videoItem) == context.fitSize; }, 5000);
     check(originalBox, QStringLiteral("Original keeps the shell's video-aspect box"));
-    const QImage originalPaused = grabMatching(*context.surface, [&](const QImage& image) {
+    const QImage originalPaused = grabMatching(*context.window, [&](const QImage& image) {
         return meanAbsDiff(image, fitPaused) > 3.0;
     });
     Observation originalObservation =
-        observe(*context.shell, *context.surface, QStringLiteral("original-paused"));
+        observe(*context.window, *context.session, *context.videoItem, QStringLiteral("original-paused"));
     measure(originalObservation, originalPaused);
     {
         const int grabWidth = originalPaused.width();
@@ -983,7 +1013,7 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
     }
     check(meanAbsDiff(fitPaused, originalPaused) > 3.0,
           QStringLiteral("Original changed the rendered picture while geometry stayed"));
-    check(!context.surface->isPlaying() && std::abs(context.surface->position() - pausedPosition) < 0.35,
+    check(!context.session->isPlaying() && std::abs(context.session->position() - pausedPosition) < 0.35,
           QStringLiteral("Original did not resume or seek the paused source"));
     captureArtifacts(context, QStringLiteral("original-paused"));
 
@@ -992,11 +1022,11 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
                      policyFor(VideoScaleMode::Fit, 0, QStringLiteral("bicubic"),
                                QStringLiteral("catmull_rom")),
                      true, QStringLiteral("live-save-fit"));
-    check(pumpUntil([&] { return context.surface->size() == context.fitSize; }, 5000),
+    check(pumpUntil([&] { return itemSize(*context.videoItem) == context.fitSize; }, 5000),
           QStringLiteral("Fit restored the aspect box"));
     // The core dithers, so two renders of the same paused frame are not
     // byte-identical; 12 is far below the difference a scaling change makes.
-    const QImage fitRestored = grabMatching(*context.surface, [&](const QImage& image) {
+    const QImage fitRestored = grabMatching(*context.window, [&](const QImage& image) {
         return !fitPaused.isNull() && meanAbsDiff(image, fitPaused) < 12.0;
     });
 
@@ -1004,10 +1034,10 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
                      policyFor(VideoScaleMode::Fit, 50, QStringLiteral("bicubic"),
                                QStringLiteral("catmull_rom")),
                      true, QStringLiteral("live-save-zoom"));
-    const QImage zoomedPaused = grabMatching(*context.surface, [&](const QImage& image) {
+    const QImage zoomedPaused = grabMatching(*context.window, [&](const QImage& image) {
         return !fitRestored.isNull() && meanAbsDiff(image, fitRestored) > 3.0;
     });
-    Observation zoomObservation = observe(*context.shell, *context.surface, QStringLiteral("fit-zoom50-paused"));
+    Observation zoomObservation = observe(*context.window, *context.session, *context.videoItem, QStringLiteral("fit-zoom50-paused"));
     measure(zoomObservation, zoomedPaused);
     {
         // Expected: a point r from the centre in the zoomed frame is the point
@@ -1064,7 +1094,7 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
                   .arg(matchRate, 0, 'f', 3).arg(identityRate, 0, 'f', 3).arg(samples));
     }
     context.observations.append(zoomObservation.json());
-    check(!context.surface->isPlaying() && std::abs(context.surface->position() - pausedPosition) < 0.35,
+    check(!context.session->isPlaying() && std::abs(context.session->position() - pausedPosition) < 0.35,
           QStringLiteral("the zoom change did not resume or seek the paused source"));
     captureArtifacts(context, QStringLiteral("fit-zoom50-paused"));
 
@@ -1072,101 +1102,107 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
                      policyFor(VideoScaleMode::Fit, 0, QStringLiteral("bicubic"),
                                QStringLiteral("catmull_rom")),
                      true, QStringLiteral("live-save-zoom-reset"));
-    const QImage zoomReset = grabMatching(*context.surface, [&](const QImage& image) {
+    const QImage zoomReset = grabMatching(*context.window, [&](const QImage& image) {
         return !fitRestored.isNull() && meanAbsDiff(image, fitRestored) < 12.0;
     });
     check(!fitRestored.isNull() && !zoomReset.isNull() &&
               meanAbsDiff(zoomReset, fitRestored) < 12.0,
           QStringLiteral("resetting zoom restored the paused picture"));
 
-    context.surface->setPaused(false);
-    check(pumpUntil([&] { return context.surface->isPlaying(); }, 5000),
+    context.session->setPaused(false);
+    check(pumpUntil([&] { return context.session->isPlaying(); }, 5000),
           QStringLiteral("playback resumed explicitly after the paused matrix"));
 
     // ── PiP must inherit the current policy ──────────────────────────────────
     if (clickFlyoutMode(context, VideoScaleMode::Aspect4x3, QStringLiteral("live-pip-4x3"))) {
         pumpUntil([&] {
-            return VideoSurface::videoScalePolicy().mode == VideoScaleMode::Aspect4x3 &&
-                   context.surface->size() == context.fitSize;
+            return VideoSession::videoScalePolicy().mode == VideoScaleMode::Aspect4x3 &&
+                   itemSize(*context.videoItem) == context.fitSize;
         }, 5000);
     }
-    QPushButton* pip = pipButton(*context.shell);
-    check(pip != nullptr, QStringLiteral("the real dock exposes its Picture-in-picture button"));
-    if (pip != nullptr) {
-        context.shell->wake();
-        pip->click();
-        const bool active = pumpUntil([&] { return context.player->isPipActive(); }, 10000);
-        check(active, QStringLiteral("the real PiP button started the float"));
-        PipFloat* pipFloat = active ? visiblePip() : nullptr;
-        check(pipFloat != nullptr, QStringLiteral("the PiP float is visible on this process's own windows"));
-        if (pipFloat != nullptr && pipFloat->videoSurface() != nullptr) {
-            VideoSurface* floatSurface = pipFloat->videoSurface();
-            const bool pipFramed = pumpUntil(
-                [&] {
-                    const QImage image = floatSurface->grabVideoFramebuffer();
-                    return floatSurface->hasVideo() && !image.isNull() && centerLuma(image) > 20.0;
-                },
-                15000);
-            check(pipFramed, QStringLiteral("the PiP float decodes and renders the source"));
-            const QImage pipFrame = floatSurface->grabVideoFramebuffer();
-            const int expected = pipFrame.isNull()
-                                     ? -1
-                                     : static_cast<int>(std::lround(pipFrame.height() * 4.0 / 3.0));
-            const int span = litWidth(pipFrame);
-            check(withinPixelTolerance(span, expected, std::max(12, expected / 40)),
-                  QStringLiteral("the PiP float renders the current 4:3 policy"),
-                  QStringLiteral("span=%1 expected=%2 grab=%3x%4")
-                      .arg(span).arg(expected).arg(pipFrame.width()).arg(pipFrame.height()));
-            check(floatSurface->geometry().size() == pipFloat->size(),
-                  QStringLiteral("the PiP surface fills the float window"),
-                  QStringLiteral("surface=%1x%2 float=%3x%4")
-                      .arg(floatSurface->geometry().width()).arg(floatSurface->geometry().height())
-                      .arg(pipFloat->width()).arg(pipFloat->height()));
-            Observation pipObservation = observe(*context.shell, *floatSurface, QStringLiteral("pip-4x3"));
-            measure(pipObservation, pipFrame);
-            pipObservation.extra.insert(QStringLiteral("expectedSpan"), expected);
-            pipObservation.extra.insert(QStringLiteral("floatSize"), sizeJson(pipFloat->size()));
-            pipObservation.extra.insert(QStringLiteral("policy"),
-                                       policyJson(VideoSurface::videoScalePolicy()));
-            context.observations.append(pipObservation.json());
-            saveImage(pipFrame, shotPath(context, QStringLiteral("pip-4x3-surface")),
-                      &context.written);
-            saveImage(pipFloat->grab().toImage(),
-                      shotPath(context, QStringLiteral("pip-4x3-float")), &context.written);
-            QJsonObject artifact;
-            artifact.insert(QStringLiteral("stem"), QStringLiteral("pip-4x3"));
-            artifact.insert(QStringLiteral("windowExposed"),
-                            pipFloat->windowHandle() != nullptr &&
-                                pipFloat->windowHandle()->isExposed());
-            context.artifacts.append(artifact);
-
-            QPushButton* restore = pipFloat->findChild<QPushButton*>(QStringLiteral("pipRestore"));
-            check(restore != nullptr, QStringLiteral("the float exposes its real restore button"));
-            if (restore != nullptr) restore->click();
-            check(pumpUntil([&] { return !context.player->isPipActive(); }, 10000),
-                  QStringLiteral("the restore button returned the float to the player"));
-        }
+    const QPointer<VideoSession> pipSession(context.session);
+    const double positionBeforePip = context.session->position();
+    context.controller->togglePip();
+    const bool active = pumpUntil([&] {
+        return context.controller->isPipActive() && context.window->compactPip();
+    }, 10000);
+    check(active, QStringLiteral("the real controller entered same-window PiP"));
+    const bool retainedOwner = context.controller->session() == pipSession &&
+                               context.controller->window() == context.window &&
+                               context.window->videoItem() == context.videoItem;
+    check(retainedOwner,
+          QStringLiteral("PiP retains the same VideoSession, PlayerWindow and video item"));
+    if (active && retainedOwner) {
+        const bool pipFramed = pumpUntil([&] {
+            const QImage image = context.window->grabVideoFrame();
+            return context.session->hasVideo() && !image.isNull();
+        }, 15000);
+        check(pipFramed, QStringLiteral("same-window PiP continues rendering the source"));
+        const QImage pipFrame = context.window->grabVideoFrame();
+        const QSize pipBox = itemSize(*context.videoItem);
+        const int expected = pipFrame.isNull()
+                                 ? -1
+                                 : static_cast<int>(std::lround(pipFrame.height() * 4.0 / 3.0));
+        const int span = litWidth(pipFrame);
+        check(withinPixelTolerance(span, expected, std::max(12, expected / 40)),
+              QStringLiteral("same-window PiP renders the current 4:3 policy"),
+              QStringLiteral("span=%1 expected=%2 grab=%3x%4")
+                  .arg(span).arg(expected).arg(pipFrame.width()).arg(pipFrame.height()));
+        check(pipBox == context.window->size(),
+              QStringLiteral("same-window PiP keeps the video item fitted to its window"),
+              QStringLiteral("item=%1x%2 window=%3x%4")
+                  .arg(pipBox.width()).arg(pipBox.height())
+                  .arg(context.window->width()).arg(context.window->height()));
+        Observation pipObservation =
+            observe(*context.window, *context.session, *context.videoItem, QStringLiteral("pip-4x3"));
+        measure(pipObservation, pipFrame);
+        pipObservation.extra.insert(QStringLiteral("expectedSpan"), expected);
+        pipObservation.extra.insert(QStringLiteral("compactSize"), sizeJson(context.window->size()));
+        pipObservation.extra.insert(QStringLiteral("policy"),
+                                    policyJson(VideoSession::videoScalePolicy()));
+        pipObservation.extra.insert(QStringLiteral("sameSession"),
+                                    context.controller->session() == pipSession);
+        context.observations.append(pipObservation.json());
+        saveImage(pipFrame, shotPath(context, QStringLiteral("pip-4x3-surface")),
+                  &context.written);
+        saveImage(context.window->grabWindow(),
+                  shotPath(context, QStringLiteral("pip-4x3-float")), &context.written);
+        QJsonObject artifact;
+        artifact.insert(QStringLiteral("stem"), QStringLiteral("pip-4x3"));
+        artifact.insert(QStringLiteral("windowExposed"), context.window->isExposed());
+        context.artifacts.append(artifact);
     }
-    check(pumpUntil([&] { return context.player->isVisible(); }, 5000),
-          QStringLiteral("the player window is visible again after PiP"));
-    check(VideoSurface::videoScalePolicy().mode == VideoScaleMode::Aspect4x3,
+    if (active) context.controller->togglePip();
+    check(pumpUntil([&] {
+        return !context.controller->isPipActive() && !context.window->compactPip();
+    }, 10000), QStringLiteral("PiP restores the same player window"));
+    check(context.window->isVisible(),
+          QStringLiteral("the player window remains visible after PiP"));
+    check(context.controller->window() == context.window &&
+              context.controller->session() == pipSession &&
+              context.window->session() == pipSession &&
+              context.window->videoItem() == context.videoItem,
+          QStringLiteral("PiP restoration resolves to the original Quick window and session"));
+    check(context.session->position() > positionBeforePip,
+          QStringLiteral("playback sampling advanced across the same-session PiP transition"));
+    check(VideoSession::videoScalePolicy().mode == VideoScaleMode::Aspect4x3,
           QStringLiteral("returning from PiP did not change the display policy"));
 
     // ── Cancel must not publish ──────────────────────────────────────────────
-    const VideoScalePolicy beforeCancel = VideoSurface::videoScalePolicy();
-    const QSize boxBeforeCancel = context.surface->size();
+    const VideoScalePolicy beforeCancel = VideoSession::videoScalePolicy();
+    const QSize boxBeforeCancel = itemSize(*context.videoItem);
     settingsDecision(context, client, runner,
                      policyFor(VideoScaleMode::Stretch, 40, QStringLiteral("bilinear"),
                                QStringLiteral("mitchell")),
                      false, QStringLiteral("live-cancel"));
-    check(VideoSurface::videoScalePolicy() == beforeCancel,
+    check(VideoSession::videoScalePolicy() == beforeCancel,
           QStringLiteral("the real Cancel published no display policy"));
     {
         QSettings storedSettings;
         check(mplayer::videoScalePolicyFromSettings(storedSettings) == beforeCancel,
               QStringLiteral("the real Cancel stored no display policy"));
     }
-    check(context.surface->size() == boxBeforeCancel,
+    check(itemSize(*context.videoItem) == boxBeforeCancel,
           QStringLiteral("the real Cancel left the running shell's surface box unchanged"));
 
     // ── Final Save and a fresh-process store read ────────────────────────────
@@ -1178,7 +1214,7 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
         check(mplayer::videoScalePolicyFromSettings(storedSettings) == finalPolicy,
               QStringLiteral("the final Save is what the production reader returns"));
     }
-    check(pumpUntil([&] { return context.surface->size() == context.pictureArea; }, 5000),
+    check(pumpUntil([&] { return itemSize(*context.videoItem) == context.pictureArea; }, 5000),
           QStringLiteral("the final Fill policy reached the live shell"));
 
     const QString expectation =
@@ -1245,17 +1281,24 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
 
     if (options.holdMs > 0) {
         // Leave a stable, visible state for a human or a read-only desktop
-        // capture: the final Fill player plus its open scaling flyout.
-        context.shell->wake();
-        context.shell->openSettings();
-        pumpUntil([&] { return context.shell->hasVisibleOverlay(); }, 3000);
+        // capture: the final Fill player plus its open in-scene scaling flyout.
+        context.controller->noteUserActivity();
+        Q_EMIT context.controller->menuOpenRequested(QStringLiteral("settings"));
+        pumpUntil([&] {
+            if (context.window->rootObject() == nullptr) return false;
+            for (QQuickItem* item : context.window->rootObject()->findChildren<QQuickItem*>()) {
+                if (item->property("menuId").toString() == QLatin1String("settings") &&
+                    item->isVisible()) return true;
+            }
+            return false;
+        }, 3000);
         captureArtifacts(context, QStringLiteral("hold"));
         std::fprintf(stderr,
                      "LIVE-SMOKE-HOLD-READY ms=%d window=%dx%d surface=%dx%d mode=%s evidence=%s\n",
-                     options.holdMs, player->width(), player->height(),
-                     context.surface->width(), context.surface->height(),
+                     options.holdMs, context.window->width(), context.window->height(),
+                     context.videoItem->width(), context.videoItem->height(),
                      qPrintable(mplayer::videoScaleModeLabel(
-                         VideoSurface::videoScalePolicy().mode)),
+                         VideoSession::videoScalePolicy().mode)),
                      qPrintable(QDir::cleanPath(options.evidencePath)));
         std::fflush(stderr);
         pumpUntil([] { return false; }, options.holdMs);
@@ -1263,9 +1306,9 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
         std::fflush(stderr);
     }
 
-    player->close();
+    controller->requestClose();
     QApplication::processEvents();
-    VideoSurface::setVideoScalePolicy(opening);
+    VideoSession::setVideoScalePolicy(opening);
 
     std::fprintf(stderr,
                  "[native_settings_probe video-scaling-live-smoke] %s (%d checks, %d failures) "

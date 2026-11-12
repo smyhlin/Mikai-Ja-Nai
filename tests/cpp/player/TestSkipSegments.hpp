@@ -2,13 +2,19 @@
 
 #include <QtTest/QTest>
 
+#include <QString>
+
 class TestSkipSegments : public QObject {
     Q_OBJECT
 
 private slots:
-    void thePositionDecidesWhichOverlappingSegmentsAreOffered();
-    void eachOverlappingOfferIsActionableAndSeeksToItsOwnEnd();
-    void aListThatArrivesLateIsOfferedAtTheCurrentPosition();
-    void offersSurviveAnAutoHiddenHudAndStayAboveTheDock();
-    void aMalformedSegmentIsNotAnOffer();
+    void initTestCase();
+    void theClockControlsOverlappingSkipOffers();
+    void aLateSkipListUsesTheCurrentPlaybackPosition();
+    void activatingAnOfferSeeksTheRealSessionToItsEnd();
+
+private:
+    bool requireRuntime();
+    QString runtimeError_;
+    bool runtimeUnavailable_ = false;
 };

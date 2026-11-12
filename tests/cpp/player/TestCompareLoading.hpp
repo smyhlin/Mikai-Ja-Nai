@@ -6,8 +6,8 @@ class TestCompareLoading : public QObject {
     Q_OBJECT
 
 private slots:
-    void centeredIndicatorRendersAndIsAccessible();
-    void loadingSurvivesHudPlaybackAndMediaChangesThenRestoresLatestGlyph();
-    void selectorLabelRefitsAfterBadgeResize();
-    void unshownCanvasBadgeKeepsFullName();
+    void openingIndicatorEndsOnPresentedFrame();
+    void openingIndicatorTracksSourceReplacement();
+    void durationPositionAndPlayingFanOut();
+    void failedOpenIsNamedOnceAndRecovered();
 };

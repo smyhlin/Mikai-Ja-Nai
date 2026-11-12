@@ -1,23 +1,23 @@
 # Building from source
 
-This guide describes the repository's current CMake paths. Build outputs belong under `build/`; do not place tests or probes in a populated deployment. The project uses C++20, Qt Widgets and desktop OpenGL; it does not use Qt Quick/RHI.
+This guide describes the repository's current CMake paths. Build outputs belong under `build/`; do not place tests or probes in a populated deployment. The project uses C++20, Qt Widgets, a player-only Qt Quick scene and a native desktop-OpenGL playback bridge shared by the player presentations.
 
 ## Platforms and prerequisites
 
 | Target | Toolchain | Qt | Playback runtime |
 |---|---|---|---|
-| Windows x64 | MinGW-w64, MinGW Makefiles. CI pins the Qt kit's GCC 13.1.0; a local build uses any MinGW matching the installed Qt kit | Qt 6.12.0 `win64_mingw` kit and LinguistTools | Pinned mpv DEV archive provides headers, import library and `libmpv-2.dll`; the separate CLI/updater archive is not used |
-| Linux x86_64 | GCC or Clang, Unix Makefiles | Qt 6.12+ (`Core`, `Gui`, `Widgets`, `OpenGL`, `OpenGLWidgets`, `Network`, `LinguistTools`; `Test` when probes/tests enabled) | Developer builds need libmpv 0.35+ (client API 2) headers and a `libmpv.so.2` library. Runtime may use configured host `libmpv.so.2` or the opt-in pinned private bundle |
+| Windows x64 | MinGW-w64, MinGW Makefiles. CI pins the Qt kit's GCC 13.1.0; a local build uses any MinGW matching the installed Qt kit | Qt 6.12.0 `win64_mingw` kit with Core, Gui, Widgets, OpenGL, OpenGLWidgets, Network, LinguistTools, Qml, Quick and QuickControls2 | Pinned mpv DEV archive provides headers, import library and `libmpv-2.dll`; the separate CLI/updater archive is not used |
+| Linux x86_64 | GCC or Clang, Unix Makefiles | Qt 6.12+ (`Core`, `Gui`, `Widgets`, `OpenGL`, `OpenGLWidgets`, `Network`, `LinguistTools`, `Qml`, `Quick`, `QuickControls2`; `Test` when probes/tests enabled) | Developer builds need libmpv 0.35+ (client API 2) headers and a `libmpv.so.2` library. Runtime may use configured host `libmpv.so.2` or the opt-in pinned private bundle |
 
 - `project(mikai VERSION 0.2.2)` and `find_package(Qt6 6.12 REQUIRED ...)` in `CMakeLists.txt` are the authority for the version and minimum Qt; `CMakePresets.json` is schema v6 with `cmake_minimum_required(VERSION 3.25)`.
 - The Windows compiler must match the Qt kit it links against. The CI lane provisions Qt's own MinGW 13.1.0 (`packaging/ci/provision.py`); the recorded local package payload was built with GNU 16.2.0 from a w64devkit recipe, as `packaging/provenance/windows-runtime.json` states under `build.mingw`. The public packaging path deploys `libgcc_s_seh-1.dll`, `libstdc++-6.dll` and `libwinpthread-1.dll` from the Qt SDK when they exist there and only then falls back to the compiler directory, so the shipped runtime is the kit's, not an arbitrary PATH copy.
 
-Both targets need a desktop OpenGL-capable environment. Optional AI paths require separate GPU-specific components and do not define the baseline player's requirements.
+Both targets need a desktop OpenGL-capable environment. The player-only Qt Quick scene uses Qt's scene graph and shares the native OpenGL playback bridge; it does not add a second decoder or CPU frame-copy path. Optional AI paths require separate GPU-specific components and do not define the baseline player's requirements.
 
 On Debian/Ubuntu, install the compiler/build tools, desktop OpenGL development headers, Qt tools and mpv development headers/library. Even the bundled-runtime profile still needs development headers when compiling; add the distro mpv development package, for example:
 
 ```bash
-sudo apt-get install build-essential cmake qt6-base-dev qt6-tools-dev qt6-tools-dev-tools libgl1-mesa-dev libmpv-dev p7zip-full
+sudo apt-get install build-essential cmake qt6-base-dev qt6-declarative-dev qt6-tools-dev qt6-tools-dev-tools libgl1-mesa-dev libmpv-dev p7zip-full
 ```
 
 The opt-in `-DMIKAI_LINUX_BUNDLE_MPV=ON` profile needs build-only `patchelf` to set private-library `$ORIGIN` RUNPATHs. On Debian/Ubuntu, install it when enabling that profile:
@@ -73,6 +73,14 @@ The Windows CI build also passes `-DMIKAI_DISABLE_IPO=ON`: GCC 13.1 MinGW's LTO 
 - The Windows kit's official repository metadata identifies MinGW 13.1.0; its matching compiler package is `qt.tools.win64_mingw1310` from tool group `tools_mingw1310`.
 - The corresponding Qt repository is [Qt 6.12.0 MinGW](https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6120/qt6_6120_mingw/), and the compiler is published in [Qt's MinGW 13.1.0 tools repository](https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_mingw1310/).
 - The pinned acquisition client is documented at [aqtinstall](https://aqtinstall.readthedocs.io/en/latest/cli.html); it retrieves Qt archives from Qt's repositories and does not provide …
+
+## Player-only Qt Quick integration
+
+CMake builds the reusable `Mikai.Player` QML module as the static `mikai_player_quick` target. The production `mikai` executable carries the `Mikai.App` root QML module containing `PlayerEntry.qml` through `mikai_add_player_app_module(mikai)`; the helper imports the generated static player plugin and connects that root module to `Mikai.Player`. The player module links `mikai_player`, Qt Qml, Quick and QuickControls2. An additional executable hosting `PlayerWindow` must register its own root module with the same helper and retain its module/resource registration and QML deployment scan.
+
+`PlayerWindow` presents the existing QObject `VideoSession` through the shared `VideoRenderBridge`; use the typed `PlayerController` API. Do not add arbitrary mpv command/property access, a QWidget playback owner, a second core/decoder, or a live-frame CPU copy. Quick PiP is a compact presentation in the same window/session. Widgets remain supported for auxiliary workflows such as Clip preview, Compare and Media Information.
+
+The application entrypoint and title-page callers are wired to the Quick player, but end-to-end production runtime proof is still pending. Windows is the current integration priority; Linux builds and broad full-suite checks are deferred at the user's request. This status does not imply a verified runtime or performance result.
 
 ## Configure and build
 

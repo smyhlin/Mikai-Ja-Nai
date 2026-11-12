@@ -1,4 +1,4 @@
-#include "VideoSurface.hpp"
+#include "VideoSession.hpp"
 
 #include <array>
 #include <cmath>
@@ -7,7 +7,7 @@
 
 namespace mplayer {
 
-void VideoSurface::cancelMediaInformation() {
+void VideoSession::cancelMediaInformation() {
     ++mediaInformationGeneration_;
     if (mpv_ != nullptr) {
         for (const AsyncRequestId id : mediaInformationRequests_) mpv_->cancelAsync(id);
@@ -15,7 +15,7 @@ void VideoSurface::cancelMediaInformation() {
     mediaInformationRequests_.clear();
 }
 
-bool VideoSurface::requestMediaInformation(
+bool VideoSession::requestMediaInformation(
     std::function<void(const MediaInformation&)> callback) {
     cancelMediaInformation();
     if (mpv_ == nullptr || !mediaTracksLoaded_ ||

@@ -14,8 +14,9 @@
 #include <QMap>
 #include <QMimeData>
 #include <QPointer>
+#include <QPixmap>
 #include <QProcess>
-#include <QPushButton>
+#include <QScreen>
 #include <QSettings>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -27,6 +28,7 @@
 #include <QJsonObject>
 #include <cstdio>
 #include <functional>
+#include <memory>
 #ifdef Q_OS_WIN
 #include <QtCore/qt_windows.h>
 #endif
@@ -38,17 +40,16 @@
 #include "pages/SearchPage.hpp"
 #include "theme/Theme.hpp"
 #include "widgets/TitleCard.hpp"
-#include "PlayerDialog.hpp"
-#include "PlayerPopups.hpp"
-#include "PlayerShell.hpp"
+#include "PlayerController.hpp"
+#include "PlayerMenuModel.hpp"
+#include "PlayerWindow.hpp"
 #include "CompareWindow.hpp"
-#include "ShellTheme.hpp"
-#include "ShellWidgets.hpp"
-#include "VideoSurface.hpp"
+#include "VideoSession.hpp"
 #include "ProbeRuntime.hpp"
 #include "ProbePicture.hpp"
 
-using namespace mplayer::shell;
+using mplayer::quick::PlayerController;
+using mplayer::quick::PlayerMenuModel;
 
 namespace {
 int failures = 0;
@@ -65,55 +66,16 @@ bool until(const std::function<bool()>& predicate, int timeout = 10000) {
     return predicate();
 }
 
-bool anyVisibleGlyphButton(QWidget* root, IconFn glyph) {
-    for (auto* button : root->findChildren<QPushButton*>()) {
-        auto* icon = qobject_cast<IconButton*>(button);
-        if (icon != nullptr && icon->icon() == glyph && icon->isVisible()) return true;
-    }
-    return false;
-}
-
-QPushButton* buttonWithGlyph(QWidget* root, IconFn glyph) {
-    for (auto* button : root->findChildren<QPushButton*>()) {
-        auto* icon = qobject_cast<IconButton*>(button);
-        if (icon != nullptr && icon->icon() == glyph) return button;
-    }
-    return nullptr;
-}
-
-// Quality rows are nested; speed presets are direct children.
-bool flyoutOffersQuality(const SettingsFlyout* flyout) {
-    for (const auto* button : flyout->findChildren<QPushButton*>()) {
-        if (button->parentWidget() != flyout && button->isVisible()) return true;
-    }
-    return false;
-}
-
-// Menu payloads are stable across translations.
-bool pressMenuRow(QWidget* root, const QString& action) {
-    for (auto* panel : root->findChildren<MenuPopup*>()) {
-        if (!panel->isVisible()) continue;
-        for (int spot = 0; spot < panel->rowCount(); ++spot) {
-            if (panel->entryAt(spot).payload.toString() != action) continue;
-            if (auto* button = qobject_cast<QPushButton*>(panel->rowWidget(spot));
-                button != nullptr && button->isVisible() && button->isEnabled()) {
-                button->click();
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-bool enhancementCatalogueVisible(QWidget* root) {
-    for (auto* panel : root->findChildren<MenuPopup*>()) {
-        if (!panel->isVisible()) continue;
-        for (int spot = 0; spot < panel->rowCount(); ++spot) {
-            const QString payload = panel->entryAt(spot).payload.toString();
-            if (payload.startsWith(QLatin1String("level|")) ||
-                payload.startsWith(QLatin1String("preset|"))) {
-                return true;
-            }
+bool activateMenuAction(PlayerController* player, const QString& menuId,
+                        PlayerMenuModel::Action action) {
+    if (player == nullptr) return false;
+    PlayerMenuModel* model = player->menuModel(menuId);
+    if (model == nullptr) return false;
+    const auto& rows = model->rows();
+    for (int index = 0; index < rows.size(); ++index) {
+        if (rows[index].enabled && rows[index].action == action) {
+            player->activateMenuRow(menuId, index);
+            return true;
         }
     }
     return false;
@@ -131,7 +93,7 @@ struct FileDialogOutcome {
 };
 
 // A failed request can retain its player; creation order is not ownership.
-PlayerDialog* activePlayer(mikai::app::MainWindow* window) {
+PlayerController* activePlayer(mikai::app::MainWindow* window) {
     return window != nullptr ? window->currentMediaPlayer() : nullptr;
 }
 
@@ -248,33 +210,30 @@ FileDialogOutcome driveFileDialog(const QString& path, const std::function<void(
     return outcome;
 }
 
-bool videoOnly(PlayerDialog* player) {
-    if (!player) return false;
-    auto* shell = player->findChild<PlayerShell*>();
-    if (!shell) return false;
-    shell->wake();
+bool videoOnly(PlayerController* player) {
+    if (player == nullptr || !player->isDirectMedia() ||
+        player->hasPreviousEpisode() || player->hasNextEpisode() ||
+        player->currentHeight() != 0) return false;
     player->toggleSeries();
-    auto* series = player->findChild<QPushButton*>(QStringLiteral("playerSeriesToggle"));
-    bool clean = series && !series->isVisible();
-    clean = clean && !anyVisibleGlyphButton(shell, IconPainter::chevronLeft);
-    clean = clean && !anyVisibleGlyphButton(shell, IconPainter::chevronRight);
-    shell->openSettings();
-    QTest::qWait(150);
-    auto* settings = player->findChild<SettingsFlyout*>();
-    if (!settings || !settings->isVisible()) return false;
-    clean = clean && !flyoutOffersQuality(settings);
-    shell->dismissOverlay();
-    return clean;
+    if (player->seriesExpanded()) return false;
+    PlayerMenuModel* settings = player->menuModel(QStringLiteral("settings"));
+    if (settings == nullptr) return false;
+    for (const auto& row : settings->rows()) {
+        if (row.action == PlayerMenuModel::Action::SelectQuality) return false;
+    }
+    return true;
 }
 
-bool playback(PlayerDialog* player) {
-    if (!player) return false;
-    auto* surface = player->findChild<mplayer::VideoSurface*>();
-    if (!surface || !until([surface] { return surface->hasVideo() && surface->duration() > 10.0; })) return false;
-    surface->setPaused(true);
+bool playback(PlayerController* player) {
+    if (!player || player->session() == nullptr || player->window() == nullptr ||
+        !until([player] {
+            return player->session()->hasVideo() && player->session()->duration() > 10.0;
+        })) return false;
+    player->session()->setPaused(true);
     QTest::qWait(300);
-    const QImage image = surface->grabVideoFramebuffer();
-    if (image.isNull() || surface->videoWidth() != 320 || surface->videoHeight() != 180) return false;
+    const QImage image = player->window()->grabVideoFrame();
+    if (image.isNull() || player->session()->videoWidth() != 320 ||
+        player->session()->videoHeight() != 180) return false;
     int colorful = 0;
     for (int y = image.height() / 4; y < image.height() * 3 / 4; y += 8) {
         for (int x = image.width() / 4; x < image.width() * 3 / 4; x += 8) {
@@ -284,6 +243,12 @@ bool playback(PlayerDialog* player) {
         }
     }
     return colorful > 100;
+}
+
+bool capturePlayer(PlayerController* player, const QString& path) {
+    return player != nullptr && player->window() != nullptr &&
+           player->window()->isVisible() && player->window()->screen() != nullptr &&
+           player->window()->screen()->grabWindow(player->window()->winId()).save(path);
 }
 
 bool triggerCardAction(mikai::app::TitleCard* card, const QString& caption) {
@@ -676,41 +641,30 @@ int playerClipboardFailureProbe(const QString& clip) {
     if (!mplayer::probes::selectRuntime()) return 2;
     qApp->setStyleSheet(mikai::app::theme::buildStylesheet());
 
-    QPointer<PlayerDialog> player = new PlayerDialog(
+    auto player = std::make_unique<PlayerController>(
         QStringLiteral("Clipboard refusal fixture"), file);
-    player->resize(960, 600);
-    player->show();
+    player->window()->resize(960, 600);
+    player->showWindow();
     player->startPlayer();
-    QPointer<PlayerShell> shell = player->findChild<PlayerShell*>();
-    QPointer<mplayer::VideoSurface> surface =
-        player->findChild<mplayer::VideoSurface*>();
+    auto* session = player->session();
     const bool decoded = until([&] {
-        return player && surface && surface->hasVideo() && surface->videoWidth() > 0 &&
-               surface->videoHeight() > 0 && surface->position() > 0.1;
+        return session != nullptr && session->hasVideo() && session->videoWidth() > 0 &&
+               session->videoHeight() > 0 && session->position() > 0.1;
     }, 20000);
-    if (decoded) surface->setPaused(true);
+    if (decoded) session->setPaused(true);
     const bool lit = decoded && until([&] {
-        return surface && surface->pauseObserved() && !mplayer::probes::measurePicture(
-            surface->grabVideoFramebuffer(), surface->videoWidth(),
-            surface->videoHeight()).isMostlyBlack();
+        const QImage frame = player->window()->grabVideoFrame();
+        return session->pauseObserved() && !mplayer::probes::measurePicture(
+            frame, session->videoWidth(), session->videoHeight()).isMostlyBlack();
     }, 5000);
-    check(lit, "hostless player decodes a real lit frame before clipboard refusal");
-    QPointer<QLabel> status = player ? player->findChild<QLabel*>(
-        QStringLiteral("playerStatusText")) : nullptr;
-    if (!lit || shell == nullptr || status == nullptr) {
-        if (player) delete player;
-        return 1;
-    }
+    check(lit, "Quick player decodes a real lit frame before clipboard refusal");
+    if (!lit) return 1;
     const ClipboardSnapshot before = ClipboardSnapshot::capture();
     check(before.valid, "all MIME and native clipboard formats are snapshotted without seeding");
-    if (!before.valid) {
-        delete player;
-        return 2;
-    }
+    if (!before.valid) return 2;
     ClipboardLock lock;
     if (!lock.acquire()) {
         check(false, "separate Win32 process owns the clipboard");
-        delete player;
         return 2;
     }
     check(true, "separate Win32 process owns the clipboard");
@@ -726,56 +680,44 @@ int playerClipboardFailureProbe(const QString& clip) {
     } else {
         std::fputs("INFO identical-image case unavailable: original clipboard has no image\n", stderr);
     }
-    for (const QString& payload : {QStringLiteral("copy"), QStringLiteral("frame")}) {
-        if (!player || !shell || !surface || !status) {
-            check(false, "player remains alive for both clipboard actions");
+    for (const auto action : {PlayerMenuModel::Action::CopyMediaLink,
+                              PlayerMenuModel::Action::CaptureFrame}) {
+        if (!player || session == nullptr) {
+            check(false, "Quick player remains alive for both clipboard actions");
             break;
         }
-        const QString previous = status->text();
-        shell->wake();
-        QTest::mouseClick(surface, Qt::RightButton, Qt::NoModifier, QPoint(60, 60));
-        const bool menuVisible = until([&] {
-            if (!player) return false;
-            for (auto* menu : player->findChildren<MenuPopup*>()) {
-                if (menu->isVisible()) return true;
-            }
-            return false;
-        }, 3000);
-        bool action = false;
-        bool feedback = false;
-        {
-            AccessibleAlertCapture alert(status);
-            action = menuVisible && pressMenuRow(player, payload);
-            QCoreApplication::processEvents();
-            const QString expectedFailure = QCoreApplication::translate(
-                "mplayer::shell::PlayerDialog",
-                payload == QLatin1String("copy") ? "Failed to copy link" : "Failed to copy frame");
-            feedback = statusFeedbackChanged(
-                status, previous, QStringLiteral("player-%1-refusal.png").arg(payload),
-                alert.observed()) && status && status->text() == expectedFailure;
-        }
-        check(action, qPrintable(QStringLiteral("visible picture menu invokes %1").arg(payload)));
-        check(feedback, qPrintable(QStringLiteral(
-            "%1 refusal renders named accessible failure, never success").arg(payload)));
-        check(player && surface && player->isVisible() && player->hasActiveSource() &&
-              surface->hasVideo(),
-              "player remains visible with its decoded source after refusal");
+        bool alertObserved = false;
+        QObject::connect(player.get(), &PlayerController::alertRequested, player.get(),
+                         [&alertObserved](const QString&) { alertObserved = true; },
+                         Qt::SingleShotConnection);
+        const bool invoked = activateMenuAction(player.get(), QStringLiteral("picture"), action);
+        QCoreApplication::processEvents();
+        const QString status = player->statusText();
+        const QString expected = action == PlayerMenuModel::Action::CopyMediaLink
+            ? QStringLiteral("Failed to copy link") : QStringLiteral("Failed to copy frame");
+        const bool feedback = invoked && status == expected && alertObserved &&
+            capturePlayer(player.get(), QStringLiteral("player-%1-refusal.png")
+                              .arg(action == PlayerMenuModel::Action::CopyMediaLink
+                                       ? QStringLiteral("copy") : QStringLiteral("frame")));
+        check(invoked, "Quick picture menu dispatches the requested clipboard action");
+        check(feedback, "clipboard refusal reports an accessible failure and captures Quick feedback");
+        check(player->isWindowVisible() && player->hasActiveSource() && session->hasVideo(),
+              "Quick player remains visible with its decoded source after refusal");
         check(GetClipboardSequenceNumber() == before.sequence,
               "refused action leaves the exact native clipboard sequence unchanged");
     }
     check(lock.release(), "clipboard holder exits cleanly");
     check(before.unchanged(),
           "untouched original retains exact sequence, all native formats, MIME bytes and image pixels");
-    check(player && surface && player->isVisible() && surface->hasVideo() &&
-          !mplayer::probes::measurePicture(surface->grabVideoFramebuffer(),
-              surface->videoWidth(), surface->videoHeight()).isMostlyBlack(),
-          "player still renders the real frame after both refused actions");
-    if (player) delete player;
+    check(player && player->isWindowVisible() && session->hasVideo() &&
+          !mplayer::probes::measurePicture(player->window()->grabVideoFrame(),
+              session->videoWidth(), session->videoHeight()).isMostlyBlack(),
+          "Quick player still renders the real frame after both refused actions");
     std::fprintf(stderr, "RESULT player clipboard refusal: %s\n", failures ? "FAIL" : "PASS");
     return failures ? 1 : 0;
 #else
     Q_UNUSED(clip);
-    std::fprintf(stderr, "FAIL player clipboard refusal requires Windows OpenClipboard\n");
+    std::fprintf(stderr, "FAIL refused clipboard path requires Windows OpenClipboard ownership\n");
     return 2;
 #endif
 }
@@ -985,30 +927,81 @@ int main(int argc, char** argv) {
           "the file picker opened, accepted, and returned the requested video");
 
     // HTTP and retry phases remain independent of a failed local-file handoff.
-    QPointer<PlayerDialog> local = activePlayer(&main);
+    QPointer<PlayerController> local = activePlayer(&main);
     if (local) {
+        check(local->window() != nullptr && local->window()->isVisible() &&
+                  activePlayer(&main) == local &&
+                  local->caption() == QFileInfo(file).fileName(),
+              "file picker creates the single visible direct player with the source caption");
         check(playback(local), "file picker opens real 320x180 video and renders colored pixels");
         check(videoOnly(local), "local video has no anime quality, episode, or release controls");
-        auto* shell = local->findChild<PlayerShell*>();
-        emit shell->copyLinkRequested();
+        local->openSubtitleSearch();
+        const bool subtitleSearchSeeded = local->subtitleSearchVisible() &&
+            local->subtitleSearchQuery() == QFileInfo(file).fileName();
+        check(subtitleSearchSeeded,
+              "OpenSubtitles opens for direct media with the source title as its search query");
+        local->setSubtitleSearchQuery(QString());
+        local->searchSubtitles();
+        check(local->subtitleSearchVisible() &&
+                  local->subtitleSearchStatus() ==
+                      QStringLiteral("Enter a title or release name."),
+              "OpenSubtitles rejects an empty query visibly without making a provider request");
+        local->closeSubtitleSearch();
+        const QString subtitleFixture = settingsDir.filePath(QStringLiteral("external-track.srt"));
+        QFile subtitleFile(subtitleFixture);
+        const QByteArray subtitleBytes =
+            "1\\n00:00:00,000 --> 00:00:00,100\\nexternal subtitle probe\\n";
+        const bool subtitleWritten = subtitleFile.open(QIODevice::WriteOnly) &&
+                                     subtitleFile.write(subtitleBytes) == subtitleBytes.size();
+        subtitleFile.close();
+        check(subtitleWritten, "a real temporary SRT fixture is available for the track picker");
+        if (subtitleWritten) {
+            const FileDialogOutcome subtitlePick = driveFileDialog(
+                subtitleFixture, [&local] {
+                    if (local != nullptr) local->requestExternalTrack(true);
+                });
+            const bool subtitleAttached = subtitlePick.sawDialog && subtitlePick.accepted &&
+                local != nullptr && until([&local, &subtitleFixture] {
+                    if (local == nullptr || local->session() == nullptr) return false;
+                    for (const mplayer::MediaTrack& track : local->session()->mediaTracks().tracks) {
+                        if (track.type == mplayer::MediaTrackType::Subtitle && track.external &&
+                            QFileInfo(track.externalFilename).absoluteFilePath() ==
+                                QFileInfo(subtitleFixture).absoluteFilePath()) {
+                            return true;
+                        }
+                    }
+                    return false;
+                });
+            check(subtitleAttached,
+                  "Quick external-subtitle picker attaches a real track to the current media");
+        }
+        local->copyMediaLink();
         check(app.clipboard()->text() == file,
               "standalone copy uses the currently playing file path");
-        shell->wake();
-        local->grab().save(QStringLiteral("external-media-player.png"));
-        if (auto* enhance = buttonWithGlyph(local, IconPainter::spark); enhance != nullptr) {
-            enhance->click();
+        capturePlayer(local, QStringLiteral("external-media-player.png"));
+        bool hasAnime4K = false;
+        if (PlayerMenuModel* enhancements = local->menuModel(QStringLiteral("enhancements"))) {
+            for (const auto& row : enhancements->rows()) {
+                if (row.action == PlayerMenuModel::Action::SetEnhancement) {
+                    hasAnime4K = true;
+                    break;
+                }
+            }
         }
-        QTest::qWait(200);
-        check(enhancementCatalogueVisible(local),
-              "standalone media retains the Anime4K enhancement catalogue");
-        shell->dismissOverlay();
+        check(hasAnime4K, "standalone media retains the Anime4K enhancement catalogue");
 
-        QTest::mouseClick(shell->videoSurface(), Qt::RightButton, Qt::NoModifier, QPoint(120, 120));
-        QTest::qWait(150);
-        check(pressMenuRow(local, QStringLiteral("compare")),
-              "the picture menu offers a compare action");
+        const bool compareAction = activateMenuAction(
+            local, QStringLiteral("picture"), PlayerMenuModel::Action::OpenCompare);
         QTest::qWait(250);
-        auto* compare = local->findChild<CompareWindow*>();
+        CompareWindow* compare = nullptr;
+        for (QWidget* top : QApplication::topLevelWidgets()) {
+            if (auto* candidate = qobject_cast<CompareWindow*>(top);
+                candidate != nullptr && candidate->isVisible()) {
+                compare = candidate;
+                break;
+            }
+        }
+        check(compareAction, "the Quick picture menu offers a compare action");
         check(compare && compare->isVisible() && compare->captureError().isEmpty() &&
               !compare->frozenFrame().isNull(),
               "standalone Compare captures the actual video frame");
@@ -1019,7 +1012,11 @@ int main(int argc, char** argv) {
 
     answerInput(remote, true);
     openUrl->trigger();
-    QPointer<PlayerDialog> streamed = activePlayer(&main);
+    QPointer<PlayerController> streamed = activePlayer(&main);
+    check(streamed && streamed->window() != nullptr && streamed->window()->isVisible() &&
+              activePlayer(&main) == streamed &&
+              streamed->caption() == QUrl(remote).fileName(),
+          "URL prompt replaces the prior direct player with one visible player and the URL caption");
     if (local) {
         check(until([&local] { return local.isNull(); }),
               "opening URL disposes the previous local player");
@@ -1027,13 +1024,12 @@ int main(int argc, char** argv) {
     check(playback(streamed), "URL input opens real HTTP video and renders colored pixels");
     check(videoOnly(streamed), "HTTP playback has no anime quality, episode, or release controls");
     if (streamed) {
-        auto* remoteShell = streamed->findChild<PlayerShell*>();
-        emit remoteShell->copyLinkRequested();
+        streamed->copyMediaLink();
         check(app.clipboard()->text() == remote,
               "standalone copy uses the actual HTTP media URL");
-        streamed->close();
-        check(until([&streamed] { return streamed.isNull(); }),
-              "closing standalone player destroys it safely");
+        check(streamed->requestClose(), "closing standalone player is acknowledged");
+        check(until([&main] { return activePlayer(&main) == nullptr; }),
+              "closing standalone player retires it safely");
     }
 
     QUrl retryUrl(remote);
@@ -1041,36 +1037,43 @@ int main(int argc, char** argv) {
     answerInput(retryUrl.toString(), true);
     openUrl->trigger();
     // Wait for mpv's failure, not just the dialog's creation.
-    QPointer<PlayerDialog> failed;
-    QPushButton* retry = nullptr;
-    const bool failedArrived = until([&main, &failed, &retry] {
+    QPointer<PlayerController> failed;
+    const bool failedArrived = until([&main, &failed] {
         failed = activePlayer(&main);
-        if (failed == nullptr) return false;
-        retry = failed->findChild<QPushButton*>(QStringLiteral("playerRetryButton"));
-        return retry != nullptr && retry->isVisible();
+        return failed != nullptr && failed->retryVisible();
     });
     check(failed, "failed media URL keeps the player window open");
     check(failedArrived, "failed media URL reports a playback error without an anime host");
-    if (failedArrived && retry != nullptr) {
-        retry->click();
-        check(playback(failed), "retry reopens the same URL and recovers actual video playback");
+    if (failedArrived) {
+        failed->retryPlayback();
+        check(playback(failed), "Quick retry reopens the same URL and recovers actual video playback");
         check(videoOnly(failed), "retry does not introduce anime quality or episode controls");
         // A direct-media retry must replay the same source, not re-extract or
         // silently switch to a different URL.
-        auto* failedShell = failed->findChild<PlayerShell*>();
-        if (failedShell) {
-            emit failedShell->copyLinkRequested();
-            check(app.clipboard()->text() == retryUrl.toString(),
-                  "direct-media retry keeps the same source URL");
-        }
+        failed->copyMediaLink();
+        check(app.clipboard()->text() == retryUrl.toString(),
+              "direct-media retry keeps the same source URL");
     }
 
     answerInput(QUrl::fromLocalFile(file).toString(), true);
     openUrl->trigger();
-    QPointer<PlayerDialog> reopened = activePlayer(&main);
+    QPointer<PlayerController> reopened = activePlayer(&main);
     check(playback(reopened), "file URL opens after close and is normalized for mpv");
+    check(reopened && reopened->requestClose(),
+          "file-URL player accepts close before invalid-source validation");
+    check(until([&main] { return activePlayer(&main) == nullptr; }),
+          "file-URL player is retired before invalid-source validation");
+    const QString missingMedia =
+        settingsDir.filePath(QStringLiteral("missing-external-media-does-not-exist.mp4"));
+    const bool missingAccepted = main.openMedia(missingMedia);
+    check(!missingAccepted && activePlayer(&main) == nullptr,
+          "nonexistent local media is rejected without creating a player window");
+    if (PlayerController* unexpected = activePlayer(&main); unexpected != nullptr) {
+        unexpected->requestClose();
+        until([&main] { return activePlayer(&main) == nullptr; });
+    }
     main.close();
-    check(until([&reopened] { return reopened.isNull(); }),
+    check(until([&main] { return activePlayer(&main) == nullptr; }),
           "closing home closes its standalone video player");
     check(clipboardRestore.restore(),
           "ordinary media flow restores original Qt-exposed formats, text and image data");

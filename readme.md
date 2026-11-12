@@ -108,7 +108,7 @@ publication hold.
 
 ## Platform support
 
-The project has Windows x64 MinGW and Linux x86_64 build/package paths using Qt 6.12+, C++20 and desktop OpenGL. Linux can optionally deploy Qt and/or bundle a pinned private `libmpv`; otherwise the configured runtime uses host Qt and system `libmpv`.
+The project has Windows x64 MinGW and Linux x86_64 build/package paths using Qt 6.12+, Qt Quick/QML, C++20 and desktop OpenGL. Linux can optionally deploy Qt and/or bundle a pinned private `libmpv`; otherwise the configured runtime uses host Qt and system `libmpv`. The player presentation is built with Qt Quick and a C++ controller over the existing `VideoSession`/libmpv core; PiP keeps that same window and session. Compare, Clip, Media Information, Settings and Components remain separate Widgets interfaces.
 
 These options do not establish broad distribution portability: host glibc/loader, graphics drivers and audio remain relevant, and graphics support varies by machine. Windows development uses the pinned mpv DEV archive containing headers/import library/`libmpv-2.dll`; the separate CLI/updater archive is not used or bundled.
 

@@ -1,28 +1,37 @@
 
 #include "MpvApi.hpp"
-#include "ProbePicture.hpp"
-#include "VideoSurface.hpp"
+#include "PlayerController.hpp"
+#include "PlayerWindow.hpp"
+#include "VideoSession.hpp"
 #include "native/bundle/NativeBundle.hpp"
 #include "native/bundle/NativeRuntimeSelection.hpp"
 
 #include <backend/Runtime.hpp>
 
 #include <QApplication>
+#include <QColor>
 #include <QDir>
 #include <QDirIterator>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QImage>
+#include <QRect>
 #include <QSettings>
+#include <QSize>
 #include <QStringList>
 #include <QTemporaryDir>
 #include <QThread>
 
 #include <cstdio>
 #include <optional>
+#include <utility>
 
 using mplayer::MpvApi;
-using mplayer::VideoSurface;
+using mplayer::VideoSession;
+using mplayer::quick::PlayerController;
+using mplayer::quick::PlayerWindow;
 using mplayer::native::Bundle;
 using mplayer::native::BundleKind;
 using mplayer::native::RuntimeChoice;
@@ -34,6 +43,33 @@ int failures = 0;
 /// Set when a fact could not be established on this machine. Reported as a skip
 /// after every observation, never instead of one.
 bool inconclusive = false;
+
+struct PictureMeasure {
+    long lit = 0;
+    long sampled = 0;
+
+    double litFraction() const { return sampled > 0 ? double(lit) / double(sampled) : 0.0; }
+    bool isMostlyBlack() const { return sampled == 0 || lit * 2 <= sampled; }
+};
+
+PictureMeasure measurePicture(const QImage& frame, int videoWidth, int videoHeight) {
+    PictureMeasure result;
+    if (frame.isNull() || videoWidth <= 0 || videoHeight <= 0) return result;
+    const QSize fitted = QSize(videoWidth, videoHeight)
+                             .scaled(frame.size(), Qt::KeepAspectRatio)
+                             .expandedTo(QSize(1, 1));
+    const QRect band(QPoint((frame.width() - fitted.width()) / 2,
+                            (frame.height() - fitted.height()) / 2),
+                     fitted);
+    for (int y = band.top(); y <= band.bottom(); y += 2) {
+        for (int x = band.left(); x <= band.right(); x += 2) {
+            ++result.sampled;
+            const QColor pixel = frame.pixelColor(x, y);
+            if (pixel.red() + pixel.green() + pixel.blue() > 12) ++result.lit;
+        }
+    }
+    return result;
+}
 
 void check(bool ok, const QString& what) {
     std::printf("%s %s\n", ok ? "ok  " : "FAIL", what.toUtf8().constData());
@@ -145,38 +181,86 @@ void checkPublishedAndLoaded(const RuntimeSelection& selection, const QString& p
 }
 
 /// The published module is a working core, not a file that merely validated: a
-/// real frame from the surface's own framebuffer is the only evidence that
-/// counts here.
-void checkRendersRealFrames(VideoSurface& surface) {
-    surface.resize(640, 360);
-    surface.show();
-    if (!surface.waitForContext(8000)) {
-        ++failures;
-        return;
-    }
+/// real frame from the production Quick window's own video target is the only
+/// evidence that counts here.
+void checkRendersRealFrames() {
+    PlayerController controller(QStringLiteral("RuntimeRecoveryProbe"),
+                                QStringLiteral("av://lavfi:testsrc2=size=320x180:rate=25"));
+    PlayerWindow* window = controller.window();
+    VideoSession* session = controller.session();
     QString mediaError;
-    QObject::connect(&surface, &VideoSurface::errorOccurred,
+    QObject::connect(window, &PlayerWindow::sceneLoadFailed, &controller,
                      [&mediaError](const QString& message) { mediaError = message; });
-    if (!surface.open(QStringLiteral("av://lavfi:testsrc2=size=320x180:rate=25"))) {
+    QObject::connect(session, &VideoSession::errorOccurred, &controller,
+                     [&mediaError](const QString& message) { mediaError = message; });
+
+    controller.showWindow();
+    if (!session->waitForContext(8000)) {
         ++failures;
-        reportInconclusive(QStringLiteral("the published module refused to create a core"));
+        controller.requestClose();
         return;
     }
+    controller.startPlayer();
 
-    mplayer::probes::PlaybackSampler sampler(surface);
+    struct Sample {
+        QImage framebuffer;
+        double position = -1.0;
+        int videoWidth = 0;
+        int videoHeight = 0;
+        QSize surfaceSize;
+        double devicePixelRatio = 1.0;
+        bool contextReady = false;
+        bool hasVideo = false;
+    };
+    const auto capture = [&] {
+        Sample sample;
+        sample.framebuffer = window->grabVideoFrame();
+        sample.position = session->position();
+        sample.videoWidth = session->videoWidth();
+        sample.videoHeight = session->videoHeight();
+        sample.surfaceSize = window->size();
+        sample.devicePixelRatio = window->devicePixelRatio();
+        sample.contextReady = session->isContextReady() && window->hasVisibleOutputFrame();
+        sample.hasVideo = session->hasVideo();
+        return sample;
+    };
+
+    Sample earlier;
+    Sample later;
     QElapsedTimer waited;
     waited.start();
-    while (!sampler.complete() && waited.elapsed() < 20000) {
-        QCoreApplication::processEvents();
-        QThread::msleep(40);
-        sampler.tick();
+    QElapsedTimer interval;
+    interval.start();
+    while (waited.elapsed() < 20000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        if (!mediaError.isEmpty()) break;
+        if (!session->isPlaying() || !window->hasVisibleOutputFrame() || !session->hasVideo()) {
+            QThread::msleep(20);
+            continue;
+        }
+        Sample sample = capture();
+        if (sample.framebuffer.isNull() || sample.position <= 0.0) {
+            QThread::msleep(20);
+            continue;
+        }
+        if (earlier.position < 0.0) {
+            earlier = std::move(sample);
+            interval.restart();
+        } else if (interval.elapsed() >= 500) {
+            later = std::move(sample);
+            break;
+        }
+        QThread::msleep(20);
     }
-    check(sampler.complete(),
-          QStringLiteral("the published core rendered on the media clock (%1 s)").arg(surface.position()));
-    if (!sampler.complete()) return;
 
-    const mplayer::probes::PlaybackSample& earlier = sampler.earlier();
-    const mplayer::probes::PlaybackSample& later = sampler.later();
+    check(later.position > earlier.position,
+          QStringLiteral("the published core rendered on the media clock (%1 s)")
+              .arg(session->position()));
+    if (later.position <= earlier.position) {
+        controller.requestClose();
+        return;
+    }
+
     check(mediaError.isEmpty(), QStringLiteral("playback reported no media error (%1)").arg(mediaError));
     check(later.contextReady, QStringLiteral("the render context is ready"));
     check(later.hasVideo, QStringLiteral("the core reports a video track"));
@@ -186,14 +270,14 @@ void checkRendersRealFrames(VideoSurface& surface) {
               .arg(later.videoHeight));
     check(!later.framebuffer.isNull() && later.framebuffer.width() > 0 &&
               later.framebuffer.height() > 0,
-          QStringLiteral("the surface framebuffer was captured (%1x%2)")
+          QStringLiteral("the production video target was captured (%1x%2)")
               .arg(later.framebuffer.width())
               .arg(later.framebuffer.height()));
     const QSize expected(qRound(later.surfaceSize.width() * later.devicePixelRatio),
                          qRound(later.surfaceSize.height() * later.devicePixelRatio));
     check(qAbs(later.framebuffer.width() - expected.width()) <= 1 &&
               qAbs(later.framebuffer.height() - expected.height()) <= 1,
-          QStringLiteral("the frame is the surface's own, not a widget grab (%1x%2 vs %3x%4)")
+          QStringLiteral("the frame is the QQuick video target, not a window grab (%1x%2 vs %3x%4)")
               .arg(later.framebuffer.width())
               .arg(later.framebuffer.height())
               .arg(expected.width())
@@ -205,14 +289,15 @@ void checkRendersRealFrames(VideoSurface& surface) {
 
     check(later.framebuffer.save(QStringLiteral("runtime_recovery_published.png")),
           QStringLiteral("the rendered frame saves to runtime_recovery_published.png"));
-    const mplayer::probes::Picture picture =
-        mplayer::probes::measurePicture(later.framebuffer, later.videoWidth, later.videoHeight);
+    const PictureMeasure picture =
+        measurePicture(later.framebuffer, later.videoWidth, later.videoHeight);
     if (picture.isMostlyBlack()) {
         check(false, QStringLiteral("the known testsrc2 fixture rendered a black picture"));
-        return;
+    } else {
+        check(true, QStringLiteral("the picture band carries real content (%1% lit)")
+                          .arg(100.0 * picture.litFraction(), 0, 'f', 1));
     }
-    check(true, QStringLiteral("the picture band carries real content (%1% lit)")
-                      .arg(100.0 * picture.litFraction(), 0, 'f', 1));
+    controller.requestClose();
 }
 
 /// ── scenario: startup-missing ────────────────────────────────────────────
@@ -402,8 +487,7 @@ void runPublish(const QString& scratch, const QString& module) {
     const RuntimeSelection committed = mplayer::native::commitRuntime(resolved);
     checkPublishedAndLoaded(committed, publishedRoot);
 
-    VideoSurface surface;
-    checkRendersRealFrames(surface);
+    checkRendersRealFrames();
 
     // One module per process: recovery must refuse a second attempt now.
     check(!mplayer::native::beginRecovery(),

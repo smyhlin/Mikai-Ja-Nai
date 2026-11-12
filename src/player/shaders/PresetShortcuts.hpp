@@ -1,6 +1,6 @@
 // The shared contract for Anime4K preset shortcuts: where bindings live in
 // QSettings, which player keys are reserved, and how duplicate assignments are
-// rejected by both the settings dialog and the player.
+// rejected by settings and playback.
 
 #pragma once
 
@@ -23,11 +23,8 @@ inline constexpr char kPresetShortcutSettingsGroup[] = "player/presetShortcuts";
 /// keystroke, and an empty or multi-key sequence either means nothing or means
 /// something no shortcut can stand for.
 ///
-/// Also true for the keys the player already acts on. Both PlayerShell's and
-/// PlayerDialog's key handlers switch on the key alone and ignore the modifiers,
-/// so Ctrl+S would toggle the episode drawer exactly like a bare S. The keys are
-/// therefore reserved in every form, which is why this takes a sequence and not
-/// a key code.
+/// Reservations match the key regardless of modifiers, so check the full
+/// sequence rather than only accepting a particular modifier combination.
 inline bool isReservedPresetShortcut(const QKeySequence& sequence) {
     if (sequence.count() != 1) {
         return true;
@@ -55,7 +52,7 @@ inline bool isReservedPresetShortcut(const QKeySequence& sequence) {
     }
 }
 
-/// Who already holds a combination. Reserved player keys are answered by
+/// Who already holds a combination. Reserved keys are answered by
 /// `isReservedPresetShortcut()` rather than stored as claims.
 enum class ShortcutOwnerKind { Reserved, Preset };
 
@@ -90,7 +87,7 @@ QString shortcutClaimKey(const QKeySequence& sequence);
 
 /// The one collision check used while loading and editing preset bindings.
 ///
-/// A reserved player key is refused first, then a combination some other claim
+/// A reserved key is refused first, then a combination some other claim
 /// already holds. Callers skip an empty sequence before asking; an empty
 /// sequence reads as reserved here, exactly as it does in
 /// `isReservedPresetShortcut()`.

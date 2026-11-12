@@ -14,7 +14,7 @@
 
 #include "CompareLayout.hpp"
 #include "PlayerPopups.hpp"
-#include "VideoSurface.hpp"
+#include "VideoSession.hpp"
 
 class QAction;
 class QComboBox;
@@ -48,7 +48,7 @@ class CompareWindow : public QDialog {
     Q_OBJECT
 
 public:
-    CompareWindow(mplayer::VideoSurface* surface, const QString& currentCandidateId,
+    CompareWindow(mplayer::VideoSession* session, const QString& currentCandidateId,
                   QWidget* parent = nullptr,
                   native::Backend ajiBackend = native::Backend::TensorRT);
     ~CompareWindow() override;
@@ -88,7 +88,7 @@ public:
     QString captureError() const { return captureError_; }
     QString lockError() const { return lockError_; }
     int queuedNativeChanges() const {
-        return surface_ != nullptr ? surface_->queuedNativeTransitions() : 0;
+        return session_ != nullptr ? session_->queuedNativeTransitions() : 0;
     }
     void captureNow();
     void setAjiBackend(native::Backend backend);
@@ -171,7 +171,7 @@ private:
     QString sideB() const;
     QString labelFor(const QString& id) const;
 
-    QPointer<mplayer::VideoSurface> surface_;
+    QPointer<mplayer::VideoSession> session_;
     CompareCanvas* canvas_ = nullptr;
     CompareGrid* grid_ = nullptr;
     QStackedWidget* stack_ = nullptr;
@@ -256,7 +256,7 @@ private:
     CompareMode mode_ = CompareMode::SideBySide;
     bool flickerShowA_ = true;
 
-    std::optional<mplayer::VideoSurface::NativePlanLock> nativeLock_;
+    std::optional<mplayer::VideoSession::NativePlanLock> nativeLock_;
     /// Held while the window owns the captured picture: the panes must be
     /// comparable whatever display mode the viewer saved (GOAL-H2).
     std::optional<mplayer::VideoScaleFitLock> scaleFitLock_;

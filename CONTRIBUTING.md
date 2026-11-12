@@ -1,6 +1,6 @@
 # Contributing
 
-Mikai is a C++20 / Qt Widgets desktop client. Before making a change, read the relevant user/build documentation and existing code conventions. Keep changes focused, preserve platform-specific behavior, and do not commit generated builds, release packages, local runtime stores, credentials, or personal media.
+Mikai is a C++20 / Qt Widgets and Qt Quick desktop client. Before making a change, read the relevant user/build documentation and existing code conventions. Keep changes focused, preserve platform-specific behavior, and do not commit generated builds, release packages, local runtime stores, credentials, or personal media.
 
 ## Naming
 
@@ -39,6 +39,10 @@ Mikai is a C++20 / Qt Widgets desktop client. Before making a change, read the r
 ## Build and checks
 
 Use [Building Mikai Ja Nai](docs/building.md) for prerequisites and platform-specific configure/build/test commands.
+The Qt SDK must include `Qml`, `Quick`, and `QuickControls2` (including the
+`QtQuick.Controls.Basic` QML import), alongside the existing Widgets/OpenGL
+modules. Linux Arch builds require `qt6-base`, `qt6-declarative`, `qt6-tools`,
+and `libglvnd`; `qt6-tools` supplies the Qt LinguistTools build tools.
 
 The release assembly entry points are `cmake --build <build> --target dist`, `packaging/windows/package.ps1` (with `-BuildDir` and `-OutputDir`), and `packaging/linux/package.sh` (build and output directories). Read [Releasing Mikai Ja Nai](docs/releasing.md) before changing packaging or release workflows. Do not commit generated output from these commands.
 
