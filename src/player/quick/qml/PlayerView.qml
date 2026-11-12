@@ -280,50 +280,25 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 4
 
-            Item {
-                id: episodeTitleItem
-                visible: root.controller.episodeLabel !== ""
-                width: episodeTitleRow.implicitWidth
-                height: episodeTitleRow.implicitHeight
-
-                Row {
-                    id: episodeTitleRow
-                    spacing: 4
-                    anchors.fill: parent
-
-                    Label {
-                        text: root.controller.episodeLabel
-                        color: root.controller.darkTheme ? "#f4f4f5" : "#18181b"
-                        font.pixelSize: 12
-                        font.weight: Font.DemiBold
-                        elide: Text.ElideRight
-                    }
-
-                    Text {
-                        visible: !root.controller.directMedia
-                        text: "\u203A"
-                        color: episodeArea.containsMouse ? root.controller.accentColor : (root.controller.darkTheme ? "#a1a1aa" : "#71717a")
-                        font.pixelSize: 15
-                        font.bold: true
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
-
-                MouseArea {
-                    id: episodeArea
-                    anchors.fill: parent
-                    enabled: !root.controller.directMedia
-                    hoverEnabled: true
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: {
-                        root.controller.noteUserActivity()
-                        root.controller.toggleSeries()
-                    }
-                }
-            }
-
             Row {
                 spacing: 6
+
+                Label {
+                    visible: root.controller.episodeLabel !== ""
+                    text: root.controller.episodeLabel
+                    color: root.controller.darkTheme ? "#f4f4f5" : "#18181b"
+                    font.pixelSize: 12
+                    font.weight: Font.DemiBold
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                Rectangle {
+                    visible: root.controller.episodeLabel !== "" && (root.controller.videoBadges.length > 0 || root.controller.sourceWidth > 0)
+                    width: 1
+                    height: 18
+                    color: root.controller.darkTheme ? "#a1a1aa" : "#52525b"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
 
                 Repeater {
                     model: root.controller.videoBadges
@@ -374,6 +349,38 @@ Item {
                 font.weight: Font.DemiBold
                 elide: Text.ElideRight
                 width: Math.min(root.width - 52, implicitWidth)
+            }
+        }
+    }
+
+    Rectangle {
+        id: episodeButton
+        visible: root.chromeVisible && !root.pipMode && !root.controller.directMedia
+        anchors.left: infoChip.left
+        anchors.top: infoChip.bottom
+        anchors.topMargin: 8
+        width: 36
+        height: 32
+        radius: infoChip.radius
+        color: infoChip.color
+        border.width: infoChip.border.width
+        border.color: infoChip.border.color
+        z: 12
+
+        PlayerButton {
+            controller: root.controller
+            anchors.fill: parent
+            iconName: root.controller.seriesExpanded ? "chevron-left" : "chevron-right"
+            toolTip: qsTr("Episodes")
+            compact: true
+            onClicked: {
+                root.controller.noteUserActivity()
+                if (root.controller.seriesExpanded) {
+                    overlay.dismissAll()
+                } else {
+                    overlay.openMenu("series", Qt.rect(episodeButton.x, episodeButton.y,
+                                                       episodeButton.width, episodeButton.height))
+                }
             }
         }
     }
@@ -665,6 +672,7 @@ Item {
 
     OverlayRoot {
         id: overlay
+        seriesAnchor: Qt.rect(episodeButton.x, episodeButton.y, episodeButton.width, episodeButton.height)
         controller: root.controller
         anchors.fill: parent
         z: 20

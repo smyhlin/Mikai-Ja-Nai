@@ -30,10 +30,10 @@ PlayerPanel {
     readonly property real sceneHeight: sceneItem ? sceneItem.height : 720
     readonly property real panelWidth: Math.min(360, Math.max(1, sceneWidth - edgeMargin * 2))
 
-    x: edgeMargin
-    y: edgeMargin
+    x: Math.max(edgeMargin, Math.min(anchorRect.x, sceneWidth - edgeMargin - width))
+    y: Math.min(anchorRect.y + anchorRect.height + 8, sceneHeight - edgeMargin - height)
     width: panelWidth
-    height: Math.max(1, sceneHeight - edgeMargin * 2)
+    height: Math.max(1, Math.min(400, sceneHeight - edgeMargin - anchorRect.y - anchorRect.height - 8))
     padding: 8
     z: 20
 

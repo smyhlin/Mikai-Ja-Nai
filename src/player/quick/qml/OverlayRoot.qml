@@ -16,6 +16,7 @@ Item {
     }
     property string rootMenuId: ""
     property rect rootAnchor: Qt.rect(0, 0, 0, 0)
+    property rect seriesAnchor: Qt.rect(0, 0, 0, 0)
 
     Accessible.role: Accessible.Pane
     Accessible.name: qsTr("Player menus")
@@ -154,7 +155,7 @@ Item {
     }
 
     function onOpenRequested(menuId) {
-        const anchor = Qt.rect(width * 0.5, height * 0.5, 0, 0)
+        const anchor = menuId === "series" ? seriesAnchor : Qt.rect(width * 0.5, height * 0.5, 0, 0)
         openMenu(menuId, anchor)
     }
 
@@ -255,6 +256,7 @@ Item {
         id: episodes
         controller: root.controller
         sceneItem: root
+        anchorRect: root.seriesAnchor
         visible: false
         z: 20
         onCloseRequested: root.dismissAll()
