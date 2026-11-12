@@ -996,7 +996,11 @@ void PlayerShell::buildDock() {
     timeline->addWidget(lblRemaining_);
     dockLayout->addLayout(timeline);
 
-    QWidget* overlayHost = parentWidget() != nullptr ? parentWidget() : this;
+    // The shell, not the window: a panel parented to the window is outside the
+    // subtree the chrome walk covers, so its rows would paint their own backing
+    // store over the picture again. The shell fills that window, so the
+    // coordinates these panels are given do not move.
+    QWidget* overlayHost = this;
     flyout_ = new SettingsFlyout(overlayHost);
     connect(flyout_, &SettingsFlyout::speedSelected, this, &PlayerShell::onRate);
     connect(flyout_, &SettingsFlyout::qualitySelected, this, &PlayerShell::qualityRequested);
@@ -1137,7 +1141,7 @@ void PlayerShell::buildFooter() {
     info->addLayout(videoInfoLayout_);
     footerLeft_->setFixedHeight(kInfoChipHeight);
 
-    QWidget* overlayHost = parentWidget() != nullptr ? parentWidget() : this;
+    QWidget* overlayHost = this;
     keys_ = new KeyHints(overlayHost);
     registerOverlay(keys_);
 }
@@ -1145,7 +1149,7 @@ void PlayerShell::buildFooter() {
 void PlayerShell::buildPictureMenu() {
     // Built once and reused: a menu rebuilt on every right-click allocates a
     // popover and its rows each time, and this one is opened often.
-    QWidget* overlayHost = parentWidget() != nullptr ? parentWidget() : this;
+    QWidget* overlayHost = this;
     pictureMenu_ = new MenuPopup(QString(), overlayHost);
     pictureMenu_->setObjectName(QStringLiteral("playerPictureMenu"));
     pictureMenu_->hide();
@@ -1299,7 +1303,7 @@ QString PlayerShell::localMediaFolder() const {
 
 void PlayerShell::openPictureSubtitlesMenu() {
     if (pictureSubtitlesMenu_ == nullptr) {
-        QWidget* overlayHost = parentWidget() != nullptr ? parentWidget() : this;
+        QWidget* overlayHost = this;
         pictureSubtitlesMenu_ = new MenuPopup(tr("Subtitles"), overlayHost);
         pictureSubtitlesMenu_->setObjectName(QStringLiteral("playerSubtitlesMenu"));
         pictureSubtitlesMenu_->hide();
@@ -1463,6 +1467,11 @@ void PlayerShell::registerOverlay(QWidget* overlay) {
         return;
     }
     overlays_.append(overlay);
+    // Panels that stand over the picture are children of the window, not of this
+    // shell, so the adoption walk in the constructor never reached them: the
+    // surface has to be told about each one or it paints its own backing store
+    // over the GL picture.
+    chromeAdopt(overlay);
 }
 
 bool PlayerShell::dismissOverlay() {
@@ -3247,6 +3256,15 @@ void PlayerShell::chromeMoved(QWidget* widget) {
     const QRegion beside = QRegion(dirty) - QRegion(picture);
     if (!beside.isEmpty()) update(beside);
     mikai::gui::uiprofile::noteChromeDirtyApplied();
+}
+
+void PlayerShell::chromeAdopt(QWidget* widget) {
+    if (widget == nullptr) return;
+    chrome_.adoptLater(widget, this);
+    // A control that has just appeared has no cache entry, and the box it covers
+    // still holds the picture, so that box - not every other control's cache -
+    // is what has to be repainted.
+    chromeDirty(widget, QRect());
 }
 
 void PlayerShell::chromeDirtyAll() {

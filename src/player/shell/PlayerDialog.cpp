@@ -120,90 +120,111 @@ constexpr int kChipRadius = 8;
 // to carry are gone so the two cannot drift.
 constexpr int kStripMargin = 8;
 
-// The sheet paints the bed and its rounding; the chip adds the hairline itself,
-// because a stylesheet border on a 30 px rounded control is a different weight at
-// every display ratio and its corners break up at fractional scales.
-QString chipQss() {
-    return QStringLiteral(
-               "QPushButton {"
-               "  color: %1;"
-               "  background: rgba(11, 11, 15, 0.72);"
-               "  border: none;"
-               "  border-radius: %2px;"
-               "  padding: 0 8px;"
-               "  font-size: 12px;"
-               "}"
-               "QPushButton:hover {"
-               "  background: rgba(%3, 0.18);"
-               "}")
-        .arg(kText)
-        .arg(kChipRadius)
-        .arg(rgbaTriplet(accent()));
-}
-
-class ChipButton : public QPushButton {
+// The chip's bed, rounding and hairline are painted by the surface: a
+// stylesheet border on a 30 px rounded control is a different weight at every
+// display ratio, and a chip painted by Qt sits on top of the GL picture, which
+// is what made the picture repaint whenever one of them appeared.
+class ChromeChip : public QPushButton, public ChromePaint {
 public:
-    explicit ChipButton(QWidget* parent = nullptr) : QPushButton(parent) {}
-
-protected:
-    void enterEvent(QEnterEvent* event) override {
-        hovered_ = true;
-        QPushButton::enterEvent(event);
-        update();
+    explicit ChromeChip(QWidget* parent = nullptr) : QPushButton(parent) {
+        setAttribute(Qt::WA_StyledBackground, false);
+        setProperty("shellChip", true);
     }
 
-    void leaveEvent(QEvent* event) override {
-        hovered_ = false;
-        QPushButton::leaveEvent(event);
-        update();
-    }
-
-    void paintEvent(QPaintEvent* event) override {
-        QPushButton::paintEvent(event);
-        const bool hovered = hovered_ && isEnabled();
-        const QColor tint = accent();
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing, true);
+    void paintChrome(QPainter& painter) override {
+        enableChromeAntialiasing(painter);
+        const bool hovered = underMouse() && isEnabled();
         // One logical pixel in from the edge: the stroke then sits entirely inside
         // the widget at every ratio and cannot lose its last row to the device
         // clip, which is what a border drawn on the edge did at 1.75.
         const QRectF frame = QRectF(rect()).adjusted(1.0, 1.0, -1.0, -1.0);
         QPainterPath shape;
         shape.addRoundedRect(frame, kChipRadius - 1.0, kChipRadius - 1.0);
-        painter.setBrush(Qt::NoBrush);
+        const QColor tint = accent();
+        QColor bed(11, 11, 15, 184);
+        if (hovered) {
+            bed = tint;
+            bed.setAlphaF(0.18);
+        }
         painter.setPen(QPen(hovered ? QColor(tint.red(), tint.green(), tint.blue(), 140)
                                     : QColor(kBorder),
                             1.0));
+        painter.setBrush(bed);
         painter.drawPath(shape);
+        const QRect inner = rect().adjusted(kChipRadius, 0, -kChipRadius, 0);
+        int textLeft = inner.left();
+        if (!icon().isNull()) {
+            const int requested = iconSize().width() > 0 ? iconSize().width() : inner.height();
+            const int side = std::min(inner.height(), requested);
+            const QRect iconBox(inner.left(), inner.center().y() - side / 2, side, side);
+            icon().paint(&painter, iconBox, Qt::AlignCenter,
+                         isEnabled() ? QIcon::Normal : QIcon::Disabled);
+            textLeft = iconBox.right() + kSpacingXS;
+        }
+        const QString label = text();
+        if (label.isEmpty()) return;
+        QFont chipFont = font();
+        chipFont.setPixelSize(12);
+        painter.setFont(chipFont);
+        painter.setPen(isEnabled() ? QColor(kText) : QColor(kIconDisabled));
+        painter.drawText(QRect(textLeft, inner.top(), inner.right() - textLeft, inner.height()),
+                         Qt::AlignLeft | Qt::AlignVCenter, label);
     }
 
-private:
-    bool hovered_ = false;
+protected:
+    void paintEvent(QPaintEvent*) override { paintOwnBackingStore(this); }
+
+    void enterEvent(QEnterEvent* event) override {
+        QPushButton::enterEvent(event);
+        chromeUpdate(this);
+    }
+
+    void leaveEvent(QEvent* event) override {
+        QPushButton::leaveEvent(event);
+        chromeUpdate(this);
+    }
 };
 
-QString panelQss() {
-    return QStringLiteral(
-               "QFrame[chromePanel=\"true\"] {"
-               "  background-color: rgba(11, 11, 15, 0.92);"
-               "  border: 1px solid %1;"
-               "  border-radius: 10px;"
-               "}")
-        .arg(kBorder);
-}
+/// The status card: a rounded bed the surface paints, with chips drawn on it.
+class ChromeStatusPanel : public QFrame, public ChromePaint {
+public:
+    explicit ChromeStatusPanel(QWidget* parent = nullptr) : QFrame(parent) {
+        setAttribute(Qt::WA_StyledBackground, false);
+    }
 
-QString statusTextQss() { return QStringLiteral("color: %1; background: transparent;").arg(kText); }
+    void paintChrome(QPainter& painter) override {
+        enableChromeAntialiasing(painter);
+        const QRectF frame = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+        painter.setPen(QPen(QColor(kBorder), 1.0));
+        painter.setBrush(QColor(11, 11, 15, 235));
+        painter.drawRoundedRect(frame, 10.0, 10.0);
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override { paintOwnBackingStore(this); }
+};
+
+/// A container with no bed of its own: the chips it lays out are what shows.
+class ChromeStrip : public QWidget, public ChromePaint {
+public:
+    explicit ChromeStrip(QWidget* parent = nullptr) : QWidget(parent) {
+        setAttribute(Qt::WA_StyledBackground, false);
+    }
+
+    void paintChrome(QPainter&) override {}
+
+protected:
+    void paintEvent(QPaintEvent*) override { paintOwnBackingStore(this); }
+};
 
 QPushButton* makeChip(QWidget* parent, const QString& name, const QString& text) {
-    auto* button = new ChipButton(parent);
+    auto* button = new ChromeChip(parent);
     button->setText(text);
     button->setObjectName(name);
-    // Marks the accent-derived chips so one accent change can restate them all.
-    button->setProperty("shellChip", true);
     button->setFixedHeight(kStripHeight);
     button->setCursor(Qt::PointingHandCursor);
     // A focused button would swallow Space, and Space is play/pause.
     button->setFocusPolicy(Qt::NoFocus);
-    button->setStyleSheet(chipQss());
     return button;
 }
 
@@ -364,10 +385,11 @@ PlayerDialog::PlayerDialog(const QString& caption,
     setObjectName(QStringLiteral("playerWindow"));
     // The feature strip's chips carry the accent in their hover; a window that
     // is already open when the accent changes restates them here.
+    // A chip reads the accent in its own painter, so a token change is stale
+    // cached pixels rather than a stylesheet rewrite.
     connect(&accentNotifier(), &AccentNotifier::changed, this, [this] {
-        const QString sheet = chipQss();
         for (QPushButton* chip : findChildren<QPushButton*>()) {
-            if (chip->property("shellChip").toBool()) chip->setStyleSheet(sheet);
+            if (chip->property("shellChip").toBool()) chromeUpdate(chip);
         }
     });
     setWindowTitle(tr("Player — %1").arg(caption_));
@@ -470,17 +492,29 @@ PlayerDialog::PlayerDialog(const QString& caption,
     connect(surface_, &VideoSurface::errorOccurred, this,
             [this](const QString&) { hideOpeningOverlay(); });
 
-    seriesDrawer_ = new SeriesDrawer(this);
-    audioPopup_ = new MenuPopup(tr("AUDIO"), this);
+    // Children of the shell, not of the dialog: the shell owns the painter the
+    // chrome over the picture goes into, so a panel parented to the dialog
+    // would paint its own backing store over the GL surface - every row it
+    // shows would repaint the picture. The shell fills this dialog with no
+    // margins, so the coordinates these panels are given are unchanged.
+    seriesDrawer_ = new SeriesDrawer(shell_);
+    audioPopup_ = new MenuPopup(tr("AUDIO"), shell_);
     audioPopup_->setObjectName(QStringLiteral("playerAudioPopup"));
-    subtitlesPopup_ = new MenuPopup(tr("SUBTITLES"), this);
+    subtitlesPopup_ = new MenuPopup(tr("SUBTITLES"), shell_);
     subtitlesPopup_->setObjectName(QStringLiteral("playerSubtitlesPopup"));
     // These two are the dialog's, but they are overlays all the same: a click
     // on the picture has to dismiss them, and one left open has to keep the
-    // chrome awake. They are children of the dialog and are built after the
-    // shell exists, so the shell cannot register them itself.
+    // chrome awake. They are built after the shell exists, so the shell cannot
+    // register them itself.
     shell_->registerOverlay(audioPopup_);
     shell_->registerOverlay(subtitlesPopup_);
+    // The shell walked its tree before these existed, so the panels the surface
+    // paints are adopted explicitly.
+    shell_->chromeAdopt(seriesDrawer_);
+    shell_->chromeAdopt(audioPopup_);
+    shell_->chromeAdopt(subtitlesPopup_);
+    shell_->chromeAdopt(strip_);
+    shell_->chromeAdopt(statusPanel_);
 
     connect(audioPopup_, &MenuPopup::picked, this, &PlayerDialog::onTrackPicked);
     connect(subtitlesPopup_, &MenuPopup::picked, this, &PlayerDialog::onTrackPicked);
@@ -601,23 +635,20 @@ PlayerDialog::~PlayerDialog() {
 // ── construction ─────────────────────────────────────────────────────────
 
 void PlayerDialog::buildStrip() {
-    strip_ = new QWidget(this);
+    strip_ = new ChromeStrip(shell_);
     strip_->setObjectName(QStringLiteral("playerFeatureStrip"));
-    strip_->setAttribute(Qt::WA_TranslucentBackground);
 
     auto* row = new QHBoxLayout(strip_);
     row->setContentsMargins(0, 0, 0, 0);
     row->setSpacing(kSpacingXS);
 
-    seriesButton_ = new ChipButton(strip_);
+    seriesButton_ = new ChromeChip(strip_);
     seriesButton_->setObjectName(QStringLiteral("playerSeriesToggle"));
-    seriesButton_->setProperty("shellChip", true);
     seriesButton_->setFixedSize(kStripHeight, kStripHeight);
     seriesButton_->setCursor(Qt::PointingHandCursor);
     seriesButton_->setToolTip(tr("Episode list (S)"));
     seriesButton_->setAccessibleName(tr("Episode list"));
     seriesButton_->setFocusPolicy(Qt::NoFocus);
-    seriesButton_->setStyleSheet(chipQss());
     connect(seriesButton_, &QPushButton::clicked, this, &PlayerDialog::toggleSeries);
     updateSeriesToggle();
     row->addWidget(seriesButton_);
@@ -625,19 +656,20 @@ void PlayerDialog::buildStrip() {
 }
 
 void PlayerDialog::buildStatus() {
-    statusPanel_ = new QFrame(this);
+    statusPanel_ = new ChromeStatusPanel(shell_);
     statusPanel_->setObjectName(QStringLiteral("playerStatusPanel"));
     statusPanel_->setProperty("chromePanel", true);
-    statusPanel_->setStyleSheet(panelQss());
 
     auto* row = new QHBoxLayout(statusPanel_);
     row->setContentsMargins(kSpacingSmall, kSpacingXS, kSpacingXS, kSpacingXS);
     row->setSpacing(kSpacingSmall);
 
-    statusLabel_ = new QLabel(QString(), statusPanel_);
+    statusLabel_ = new ChromeLabel(QString(), uiFont(10), QColor(kText), statusPanel_);
     statusLabel_->setObjectName(QStringLiteral("playerStatusText"));
-    statusLabel_->setStyleSheet(statusTextQss());
+    // Both: the QLabel property is what gives the layout a height for the
+    // wrapped text, the chrome flag is what makes the painter wrap as well.
     statusLabel_->setWordWrap(true);
+    statusLabel_->setChromeWordWrap(true);
     statusLabel_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     row->addWidget(statusLabel_, 1);
 

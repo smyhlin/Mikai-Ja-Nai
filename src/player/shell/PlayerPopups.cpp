@@ -18,7 +18,6 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScreen>
-#include <QScrollArea>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -41,10 +40,17 @@ constexpr int kUnlimited = 16777215;
 const char* const kPopupText = "#f0f0f5";
 const char* const kPopupMuted = "#9a9aa6";
 
-constexpr auto kPanelQss =
-    "QFrame[chromePanel=\"true\"] {"
-    "  background-color: transparent;"
-    "  border: none; }";
+/// The muted ink the popover's captions, headings and inactive rows share.
+QColor popupMuted() { return QColor(0x9a, 0x9a, 0xa6); }
+
+/// A caption/heading face: the pixel sizes, the bold weight and the tracking
+/// the popover's caption QSS carried, on the same UI family as the chrome.
+QFont popupFont(int pixelSize) {
+    QFont font = uiFont(11, true);
+    font.setPixelSize(pixelSize);
+    font.setLetterSpacing(QFont::AbsoluteSpacing, 0.5);
+    return font;
+}
 
 /// The choice menu's selection follows the pushed accent, so the player's menus
 /// agree with the window's chips. Rebuilt per menu because the token can change
@@ -80,11 +86,6 @@ QString choiceMenuQss() {
         .arg(accent.name(QColor::HexRgb), shell::inkOn(accent).name(QColor::HexRgb));
 }
 
-/// `rgba()` from the accent, so a wash states only its alpha.
-QString accentWash(qreal alpha) {
-    return QStringLiteral("rgba(%1, %2)").arg(shell::rgbaTriplet(shell::accent())).arg(alpha);
-}
-
 QString rowQss(const QString& foreground, const QString& fill) {
     return QStringLiteral(
                "QPushButton {"
@@ -99,10 +100,6 @@ QString rowQss(const QString& foreground, const QString& fill) {
         .arg(kSpacingSmall);
 }
 
-/// The currently-playing row: an accent wash, so the shade a viewer reads as
-/// "this one" is the accent they chose.
-QString currentRowQss() { return rowQss(QStringLiteral("#ffffff"), accentWash(0.40)); }
-
 /// The engine-build progress chunk, in the pushed accent.
 QString progressQss() {
     return QStringLiteral("QProgressBar {"
@@ -111,25 +108,6 @@ QString progressQss() {
                           "QProgressBar::chunk {"
                           "  background-color: %1; border-radius: 3px; }")
         .arg(shell::accent().name(QColor::HexRgb));
-}
-
-/// A row that is shown but cannot be chosen. No hover rule on purpose: a
-/// highlight promises a click that this row will not answer.
-QString disabledRowQss() {
-    return QStringLiteral(
-               "QPushButton {"
-               "  color: %1;"
-               "  background: rgba(255, 255, 255, 0.03);"
-               "  border: 1px solid transparent; border-radius: 6px; text-align: left;"
-               "  padding: 0 %2px; min-height: 28px; font-size: 13px; font-weight: 500; }")
-        .arg(QLatin1String(kPopupMuted))
-        .arg(kSpacingSmall);
-}
-
-QString captionQss(int size) {
-    return QStringLiteral("color: %1; font-size: %2px; font-weight: 700; background: transparent; letter-spacing: 0.5px;")
-        .arg(QLatin1String(kPopupMuted))
-        .arg(size);
 }
 
 }  // namespace
@@ -243,21 +221,24 @@ void markChoice(const QVector<QAction*>& leaves, const QVector<ChoiceEntry>& ent
 MenuPopup::MenuPopup(const QString& title, QWidget* parent) : QFrame(parent) {
     setObjectName(QStringLiteral("playerMenuPopup"));
     setProperty("chromePanel", true);
-    setProperty("playerOverlay", true);
     setFocusPolicy(Qt::StrongFocus);
-    setStyleSheet(QString::fromLatin1(kPanelQss));
     // An open popup keeps painting its row washes from the previous accent
-    // unless the current row is restated.
-    connect(&accentNotifier(), &AccentNotifier::changed, this, [this] { paintRows(); });
+    // unless the rows are restated and their cached pixels dropped: a row reads
+    // the accent at paint time, not at build time.
+    connect(&accentNotifier(), &AccentNotifier::changed, this, [this] {
+        paintRows();
+        for (ChromeRow* row : rows_) {
+            chromeUpdate(row);
+        }
+    });
     hide();
 
     auto* outer = new QVBoxLayout(this);
     outer->setContentsMargins(kSpacingSmall, kSpacingSmall, kSpacingSmall, kSpacingXs);
     outer->setSpacing(kSpacingXs);
 
-    caption_ = new QLabel(title, this);
+    caption_ = new ChromeLabel(title, popupFont(11), popupMuted(), this);
     caption_->setObjectName(QStringLiteral("playerMenuCaption"));
-    caption_->setStyleSheet(captionQss(11));
     outer->addWidget(caption_);
 
     body_ = new QVBoxLayout();
@@ -267,12 +248,20 @@ MenuPopup::MenuPopup(const QString& title, QWidget* parent) : QFrame(parent) {
 
     // A long hint would set the popover's width, and a quality list two rows
     // high does not want to be 500 px wide.
-    auto* hint = new QLabel(QStringLiteral("↑↓ · Enter · Esc"), this);
+    auto* hint = new ChromeLabel(QStringLiteral("↑↓ · Enter · Esc"), popupFont(10), popupMuted(),
+                                 this);
     hint->setObjectName(QStringLiteral("playerMenuHint"));
-    hint->setStyleSheet(captionQss(10));
     outer->addWidget(hint);
 
     setToolTip(tr("Controls: ↑ ↓ — select, Enter — confirm, Esc — close"));
+
+    // A popover is created long after the host walked its tree, so the card and
+    // its caption/hint are adopted here, in build order: the card has to be in
+    // the paint list before the rows that sit on it. Rows are adopted by
+    // setEntries() as it creates them.
+    if (ChromeHost* host = chromeHostOf(this)) {
+        host->chromeAdopt(this);
+    }
 }
 
 int MenuPopup::rowCount() const {
@@ -308,36 +297,49 @@ void MenuPopup::setEntries(const QVector<MenuEntry>& entries) {
     rowEntries_.clear();
     highlight_ = -1;
 
+    // The popover outlives its rows and the host walked it before they existed,
+    // so every row built here is adopted explicitly, or it would paint its own
+    // backing store over the picture again.
+    ChromeHost* host = chromeHostOf(this);
+
     for (const MenuEntry& entry : entries) {
         if (!entry.heading.isEmpty()) {
-            auto* label = new QLabel(entry.heading, this);
+            auto* label = new ChromeLabel(entry.heading, popupFont(11), popupMuted(), this);
             label->setObjectName(QStringLiteral("playerMenuHeading"));
-            label->setStyleSheet(captionQss(11) + QStringLiteral(" padding: 4px 6px;"));
+            label->setChromePadding(6, 4);
+            // The label paints inside that inset but measures without it, so
+            // the box it is given has to carry the padding or the heading is
+            // clipped by exactly the inset it was drawn with.
+            const QSize hint = label->sizeHint();
+            label->setMinimumSize(hint.width() + 12, hint.height() + 8);
             body_->addWidget(label);
+            if (host != nullptr) host->chromeAdopt(label);
             label->show();
             continue;
         }
         const QString text = entry.text;
-        auto* button = new QPushButton(text, this);
-        button->setObjectName(QStringLiteral("playerMenuRow"));
-        button->setToolTip(entry.tooltip.isEmpty() ? text : entry.tooltip);
-        button->setAccessibleName(text);
-        button->setCursor(entry.disabled ? Qt::ArrowCursor : Qt::PointingHandCursor);
-        button->setFocusPolicy(Qt::NoFocus);
-        button->setFixedHeight(kRowHeight);
-        button->setEnabled(!entry.disabled);
+        auto* row = new ChromeRow(text, this);
+        row->setObjectName(QStringLiteral("playerMenuRow"));
+        row->setToolTip(entry.tooltip.isEmpty() ? text : entry.tooltip);
+        row->setAccessibleName(text);
+        row->setCursor(entry.disabled ? Qt::ArrowCursor : Qt::PointingHandCursor);
+        row->setFixedHeight(kRowHeight);
+        row->setRowPadding(kSpacingSmall);
+        row->setSubmenu(entry.submenu);
+        row->setEnabled(!entry.disabled);
         // A disabled row is still added to rows_ and rowEntries_ so the two
         // stay index-aligned; it is only the click that it does not have.
         if (!entry.disabled) {
             const int spot = rows_.size();
-            connect(button, &QPushButton::clicked, this, [this, spot] { activate(spot); });
+            connect(row, &ChromeRow::clicked, this, [this, spot] { activate(spot); });
         }
-        body_->addWidget(button);
-        rows_.append(button);
+        body_->addWidget(row);
+        rows_.append(row);
         rowEntries_.append(entry);
+        if (host != nullptr) host->chromeAdopt(row);
         // Qt does not show a widget created after its parent is already visible,
         // and a drill-down rebuilds the rows of an open popover.
-        button->show();
+        row->show();
     }
     paintRows();
     fitToHint();
@@ -348,8 +350,8 @@ void MenuPopup::setTitle(const QString& title) {
         return;
     }
     caption_->setText(title);
-    // The caption is what the captionQss letter-spacing and size are tuned for,
-    // so the popover is re-fitted: a longer title must not be clipped.
+    // The caption's font and tracking are what its size is tuned for, so the
+    // popover is re-fitted: a longer title must not be clipped.
     fitToHint();
 }
 
@@ -415,13 +417,14 @@ void MenuPopup::popupBeside(const QRect& anchor, bool preferLeft, int gap) {
     setFocus(Qt::OtherFocusReason);
 }
 
-void MenuPopup::paintEvent(QPaintEvent*) {
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
+void MenuPopup::paintChrome(QPainter& p) {
+    enableChromeAntialiasing(p);
     p.setPen(QPen(QColor(255, 255, 255, 45), 1));
     p.setBrush(QColor(20, 21, 27));
     p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), 10.0, 10.0);
 }
+
+void MenuPopup::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 void MenuPopup::keyPressEvent(QKeyEvent* event) {
     switch (event->key()) {
@@ -519,15 +522,17 @@ void MenuPopup::activate(int spot) {
 }
 
 void MenuPopup::paintRows() {
+    // The row paints its own standing look from its role, and the keyboard
+    // cursor outranks it; a disabled row is never highlighted.
     for (int index = 0; index < rows_.size(); ++index) {
-        if (index < rowEntries_.size() && rowEntries_.at(index).disabled)
-            rows_.at(index)->setStyleSheet(disabledRowQss());
-        else if (index < rowEntries_.size() && rowEntries_.at(index).current)
-            rows_.at(index)->setStyleSheet(currentRowQss());
-        else if (index == highlight_)
-            rows_.at(index)->setStyleSheet(rowQss("#ffffff", "rgba(255, 255, 255, 0.12)"));
-        else
-            rows_.at(index)->setStyleSheet(rowQss("#e0e0e6", "rgba(255, 255, 255, 0.05)"));
+        if (index >= rowEntries_.size())
+            continue;
+        const MenuEntry& entry = rowEntries_.at(index);
+        ChromeRow* row = rows_.at(index);
+        row->setRole(entry.disabled ? ChromeRow::Role::Disabled
+                                    : (entry.current ? ChromeRow::Role::Current
+                                                     : ChromeRow::Role::Choice));
+        row->setHighlighted(!entry.disabled && index == highlight_);
     }
 }
 
@@ -537,51 +542,51 @@ void MenuPopup::paintRows() {
 //  SERIES DRAWER
 // ═══════════════════════════════════════════════════════════════════════════
 
-void SeriesDrawer::paintEvent(QPaintEvent*) {
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
+void SeriesDrawer::paintChrome(QPainter& p) {
+    enableChromeAntialiasing(p);
     p.setPen(QPen(QColor(255, 255, 255, 45), 1));
     p.setBrush(QColor(20, 21, 27));
     p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), 10.0, 10.0);
 }
 
+void SeriesDrawer::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
+
 SeriesDrawer::SeriesDrawer(QWidget* parent) : QFrame(parent) {
     setObjectName(QStringLiteral("playerSeriesDrawer"));
     setProperty("chromePanel", true);
-    setStyleSheet(QString::fromLatin1(kPanelQss));
 
+    // The rows sit straight in the drawer, with no scroll area between them and
+    // the picture: a scroll area paints a viewport of its own over the frame the
+    // surface is drawing. A drawer taller than the screen is sized by its owners
+    // from contentHeight(), not scrolled by this widget.
     auto* outer = new QVBoxLayout(this);
     outer->setContentsMargins(kSpacingXs, kSpacingXs, kSpacingXs, kSpacingXs);
     outer->setSpacing(kSpacingXs);
 
-    caption_ = new QLabel(tr("SERIES"), this);
+    caption_ = new ChromeLabel(tr("SERIES"), popupFont(11), popupMuted(), this);
     caption_->setObjectName(QStringLiteral("playerSeriesCaption"));
-    caption_->setStyleSheet(captionQss(11));
     outer->addWidget(caption_);
 
-    auto* scroll = new QScrollArea(this);
-    scroll->setObjectName(QStringLiteral("playerSeriesScroll"));
-    scroll->setStyleSheet(QStringLiteral("background: transparent; border: none;"));
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    auto* content = new QWidget();
-    content->setObjectName(QStringLiteral("playerSeriesList"));
-    content->setStyleSheet(QStringLiteral("background: transparent;"));
-    rowsLayout_ = new QVBoxLayout(content);
+    rowsLayout_ = new QVBoxLayout();
     rowsLayout_->setContentsMargins(0, 0, 0, 0);
     rowsLayout_->setSpacing(2);
-    scroll->setWidget(content);
-    outer->addWidget(scroll, 1);
-    // The current row is an accent wash; a live accent change repaints the rows
-    // that already exist instead of waiting for the next setEntries().
+    outer->addLayout(rowsLayout_);
+    // The current row is an accent wash, read at paint time; a live accent
+    // change drops the cached pixels of the rows that already exist instead of
+    // waiting for the next setEntries().
     connect(&accentNotifier(), &AccentNotifier::changed, this, [this] {
-        for (QPushButton* row : rows_) {
+        for (ChromeRow* row : rows_) {
             if (row == nullptr) continue;
-            const bool current = row->objectName() == QLatin1String("playerSeriesItemCurrent");
-            row->setStyleSheet(current ? currentRowQss() : rowQss(kPopupMuted, "transparent"));
+            chromeUpdate(row);
         }
     });
+
+    // Created after the host's last walk: the card and its caption are adopted
+    // here, so the card is in the paint list ahead of the rows setEntries()
+    // adopts. A drawer with no host keeps painting its own backing store.
+    if (ChromeHost* host = chromeHostOf(this)) {
+        host->chromeAdopt(this);
+    }
 }
 
 void SeriesDrawer::setEntries(const QStringList& labels, int current) {
@@ -593,24 +598,25 @@ void SeriesDrawer::setEntries(const QStringList& labels, int current) {
         delete item;
     }
     rows_.clear();
+    // Adopted one by one: the drawer is rebuilt after the host last walked it,
+    // and an unadopted row would paint its own backing store over the picture.
+    ChromeHost* host = chromeHostOf(this);
     for (int spot = 0; spot < labels.size(); ++spot) {
         const QString label = labels.at(spot);
-        auto* button = new QPushButton(label, this);
-        button->setObjectName(spot == current ? QStringLiteral("playerSeriesItemCurrent")
-                                              : QStringLiteral("playerSeriesItem"));
-        button->setCursor(Qt::PointingHandCursor);
-        button->setToolTip(label);
-        button->setAccessibleName(label);
-        // A focused button would swallow Space, and Space is play/pause.
-        button->setFocusPolicy(Qt::NoFocus);
-        button->setFixedHeight(kRowHeight);
-        connect(button, &QPushButton::clicked, this, [this, spot] { emit picked(spot); });
-        rowsLayout_->addWidget(button);
-        rows_.append(button);
-        button->setStyleSheet(spot == current ? currentRowQss()
-                                              : rowQss(kPopupMuted, "transparent"));
+        auto* row = new ChromeRow(label, this);
+        row->setObjectName(spot == current ? QStringLiteral("playerSeriesItemCurrent")
+                                           : QStringLiteral("playerSeriesItem"));
+        row->setToolTip(label);
+        row->setAccessibleName(label);
+        row->setFixedHeight(kRowHeight);
+        row->setRowPadding(kSpacingSmall);
+        row->setRole(spot == current ? ChromeRow::Role::Current : ChromeRow::Role::Choice);
+        connect(row, &ChromeRow::clicked, this, [this, spot] { emit picked(spot); });
+        rowsLayout_->addWidget(row);
+        rows_.append(row);
+        if (host != nullptr) host->chromeAdopt(row);
+        row->show();
     }
-    rowsLayout_->addStretch(1);
 }
 
 int SeriesDrawer::contentHeight() const {

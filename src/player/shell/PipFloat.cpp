@@ -436,6 +436,12 @@ void PipFloat::chromeMoved(QWidget* widget) {
     surface_->update(region);
 }
 
+void PipFloat::chromeAdopt(QWidget* widget) {
+    if (widget == nullptr) return;
+    chrome_.adoptLater(widget, this);
+    chromeDirty(widget, QRect());
+}
+
 void PipFloat::chromeDirtyAll() {
     chrome_.invalidateAll();
     if (surface_ == nullptr) {

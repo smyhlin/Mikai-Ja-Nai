@@ -1,8 +1,11 @@
 // The three panels the shell has no room for: the quality list, the dub/sub
 // picker and the episode drawer.
 //
-// Unlike the rest of the chrome these are stylesheet-driven rather than
-// self-painted, because the strip and the status panel around them are too.
+// The menu popover and the episode drawer stand over the picture, so their
+// pixels belong to the surface's painter like the rest of the chrome: they are
+// ChromePaint widgets whose content is ChromeLabel/ChromeRow rather than
+// stylesheet-driven Qt children. The preparation window is a native tool
+// window and keeps painting itself.
 
 #pragma once
 
@@ -14,6 +17,8 @@
 #include <QVariant>
 #include <QVector>
 #include <QWidget>
+
+#include "ShellWidgets.hpp"
 
 QT_BEGIN_NAMESPACE
 class QAction;
@@ -99,10 +104,12 @@ void markChoice(const QVector<QAction*>& leaves, const QVector<ChoiceEntry>& ent
 /// and Space belongs to the shell as play/pause. The popover takes focus itself
 /// and drives the rows with the arrow keys, so it stays keyboard reachable
 /// without taking a key the player cannot spare.
-class MenuPopup : public QFrame {
+class MenuPopup : public QFrame, public ChromePaint {
     Q_OBJECT
 public:
     explicit MenuPopup(const QString& title, QWidget* parent = nullptr);
+
+    void paintChrome(QPainter& painter) override;
 
     /// Rebuilds from scratch: a swapped stream replaces the whole packet behind
     /// a row, so repainting the standing rows would show the qualities of
@@ -146,20 +153,22 @@ private:
     void activate(int spot);
     void paintRows();
 
-    QLabel* caption_ = nullptr;
+    ChromeLabel* caption_ = nullptr;
     QVBoxLayout* body_ = nullptr;
-    QVector<QPushButton*> rows_;
+    QVector<ChromeRow*> rows_;
     QVector<MenuEntry> rowEntries_;
     int highlight_ = -1;
 };
 
-class SeriesDrawer : public QFrame {
+class SeriesDrawer : public QFrame, public ChromePaint {
     Q_OBJECT
 public:
     explicit SeriesDrawer(QWidget* parent = nullptr);
 
+    void paintChrome(QPainter& painter) override;
+
     void setEntries(const QStringList& labels, int current);
-    /// Natural height of the scrolled list, for the dialog to size the drawer.
+    /// Natural height of the whole list, for the dialog to size the drawer.
     int contentHeight() const;
 
 signals:
@@ -172,9 +181,9 @@ protected:
 private:
     void retranslateUi();
 
-    QLabel* caption_ = nullptr;
+    ChromeLabel* caption_ = nullptr;
     QVBoxLayout* rowsLayout_ = nullptr;
-    QVector<QPushButton*> rows_;
+    QVector<ChromeRow*> rows_;
 };
 
 /// The engine-preparation window: what the player shows while a TensorRT engine

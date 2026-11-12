@@ -80,6 +80,8 @@ class Host : public QWidget, public ChromeHost {
   /// A move damages the old and new box and keeps the pixels - the tests paint
   /// with an explicit damage rect, so nothing has to be requested here.
   void chromeMoved(QWidget*) override {}
+  /// A control created after adopt() ran: the rows of a rebuilt list.
+  void chromeAdopt(QWidget* widget) override { chrome.adoptLater(widget, this); }
 
   ChromeList chrome;
 };

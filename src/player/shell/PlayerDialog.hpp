@@ -641,7 +641,7 @@ private:
     QWidget* strip_ = nullptr;
     QFrame* statusPanel_ = nullptr;
     QPushButton* seriesButton_ = nullptr;
-    QLabel* statusLabel_ = nullptr;
+    ChromeLabel* statusLabel_ = nullptr;
     QPushButton* retryButton_ = nullptr;
     QPushButton* processingPrepareButton_ = nullptr;
     QPushButton* processingProvidersButton_ = nullptr;

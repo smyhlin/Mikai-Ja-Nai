@@ -115,6 +115,8 @@ protected:
     /// describe, so everything the surface carries is redrawn.
     void chromeDirtyAll() override;
     void chromeMoved(QWidget* widget) override;
+    /// Adopts a control created after the float walked its tree.
+    void chromeAdopt(QWidget* widget) override;
 
 private:
     void buildChrome();

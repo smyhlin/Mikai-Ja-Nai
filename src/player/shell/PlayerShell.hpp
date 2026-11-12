@@ -119,6 +119,7 @@ public:
     void chromeDirty(QWidget* widget, const QRect& rect) override;
     void chromeDirtyAll() override;
     void chromeMoved(QWidget* widget) override;
+    void chromeAdopt(QWidget* widget) override;
 
     /// The widget mpv renders into. It is a plain QOpenGLWidget child: the host
     /// hands the URL to VideoSurface::open(), there is no winId() handshake.

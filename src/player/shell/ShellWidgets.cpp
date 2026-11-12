@@ -6,14 +6,15 @@
 #include <QCoreApplication>
 #include <QEnterEvent>
 #include <QEvent>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPaintEngine>
 #include <QPointF>
 #include <QPushButton>
-#include <QScrollArea>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -35,16 +36,6 @@ namespace {
 /// is rasterised into the shared scratch a tile at a time instead of the cache
 /// growing to the size of the window.
 constexpr qint64 kChromeCacheBudgetBytes = 8 * 1024 * 1024;
-
-/// `rgba(r,g,b,a)` for a colour, so a stylesheet fragment is built from the
-/// same tokens the paint routines use.
-QString rgba(const QColor& color) {
-    return QStringLiteral("rgba(%1,%2,%3,%4)")
-        .arg(color.red())
-        .arg(color.green())
-        .arg(color.blue())
-        .arg(color.alpha());
-}
 
 /// Python's `%g`: up to six significant digits with trailing zeros stripped.
 QString formatG(double value) {
@@ -90,13 +81,6 @@ void paintRoundedBrush(QPainter& painter, const QRectF& rect, double radius, con
     painter.setPen(border.isValid() ? QPen(border, borderWidth) : QPen(Qt::NoPen));
     painter.setBrush(fill);
     painter.drawRoundedRect(rect, radius, radius);
-}
-
-/// True for a widget that paints itself and covers what is under it: the
-/// popovers. They are the chrome's opaque cards, so they are not adopted into
-/// the surface painter and neither is anything they own.
-bool selfPaintedChrome(const QWidget* widget) {
-    return widget->property("playerOverlay").toBool();
 }
 
 /// Keeps a popover that re-measured itself inside its host without moving a
@@ -175,6 +159,54 @@ void ChromeList::adopt(QWidget* root, QObject* watcher) {
     addSubtree(root, watcher);
 }
 
+ChromeList::~ChromeList() {
+    for (const QMetaObject::Connection& connection : tracked_) {
+        QObject::disconnect(connection);
+    }
+}
+
+void ChromeList::track(QWidget* widget, QObject* watcher) {
+    // A list row is deleted on every rebuild, and an entry pointing at freed
+    // memory is dereferenced on the next paint.
+    if (widget == nullptr || watcher == nullptr) return;
+    tracked_.append(
+        QObject::connect(widget, &QObject::destroyed, watcher, [this, widget] { forget(widget); }));
+}
+
+void ChromeList::forget(QWidget* widget) {
+    for (qsizetype index = entries_.size() - 1; index >= 0; --index) {
+        if (entries_.at(index).widget != widget) continue;
+        dropCache(entries_[index]);
+        entries_.removeAt(index);
+    }
+}
+
+void ChromeList::adoptLater(QWidget* widget, QObject* watcher) {
+    if (widget == nullptr || widget->isWindow()) {
+        return;
+    }
+    auto* painted = dynamic_cast<ChromePaint*>(widget);
+    if (painted != nullptr) {
+        const bool recorded =
+            std::any_of(entries_.cbegin(), entries_.cend(),
+                        [widget](const Entry& entry) { return entry.widget == widget; });
+        if (!recorded) {
+            if (!painted->surfacePainted()) {
+                painted->setSurfacePainted(true);
+                widget->setAttribute(Qt::WA_TranslucentBackground, true);
+                widget->setAttribute(Qt::WA_StyledBackground, false);
+                widget->setAutoFillBackground(false);
+                if (watcher != nullptr) {
+                    widget->installEventFilter(watcher);
+                }
+                track(widget, watcher);
+            }
+            entries_.append(Entry{widget, painted, {}, {}, {}});
+        }
+    }
+    addSubtree(widget, watcher);
+}
+
 void ChromeList::addSubtree(QWidget* root, QObject* watcher) {
     if (root == nullptr) {
         return;
@@ -184,7 +216,7 @@ void ChromeList::addSubtree(QWidget* root, QObject* watcher) {
     const QObjectList& children = root->children();
     for (QObject* object : children) {
         auto* child = qobject_cast<QWidget*>(object);
-        if (child == nullptr || child->isWindow() || selfPaintedChrome(child)) {
+        if (child == nullptr || child->isWindow()) {
             continue;
         }
         if (auto* painted = dynamic_cast<ChromePaint*>(child)) {
@@ -201,6 +233,7 @@ void ChromeList::addSubtree(QWidget* root, QObject* watcher) {
                 if (watcher != nullptr) {
                     child->installEventFilter(watcher);
                 }
+                track(child, watcher);
             }
             entries_.append(Entry{child, painted, {}, {}, {}});
         }
@@ -565,6 +598,134 @@ void Panel::paintChrome(QPainter& painter) {
 void Panel::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  ROW
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace {
+/// One row's colours, read from the tokens at paint time: an accent change
+/// must reach an already built row without rebuilding the list.
+QColor rowInk(ChromeRow::Role role, bool hovered, bool highlighted) {
+    if (role == ChromeRow::Role::Disabled) return QColor(0x9a, 0x9a, 0xa6);
+    if (highlighted || hovered) return QColor(0xff, 0xff, 0xff);
+    return role == ChromeRow::Role::Current ? QColor(0xff, 0xff, 0xff)
+                                            : QColor(0xe0, 0xe0, 0xe6);
+}
+
+QColor rowFill(ChromeRow::Role role, bool hovered, bool highlighted) {
+    if (role == ChromeRow::Role::Disabled) return QColor(255, 255, 255, 8);
+    if (hovered || highlighted) return QColor(255, 255, 255, 31);
+    if (role == ChromeRow::Role::Current) {
+        QColor wash = shell::accent();
+        wash.setAlphaF(0.40);
+        return wash;
+    }
+    return QColor(255, 255, 255, 13);
+}
+}  // namespace
+
+ChromeRow::ChromeRow(const QString& text, QWidget* parent) : QPushButton(text, parent) {
+    setAttribute(Qt::WA_StyledBackground, false);
+    setFocusPolicy(Qt::NoFocus);
+    setCursor(Qt::PointingHandCursor);
+    setMinimumHeight(28);
+    QFont rowFont = font();
+    rowFont.setPixelSize(13);
+    rowFont.setWeight(QFont::Medium);
+    setFont(rowFont);
+}
+
+void ChromeRow::setRole(Role role) {
+    if (role_ == role) return;
+    role_ = role;
+    chromeUpdate(this);
+}
+
+void ChromeRow::setHighlighted(bool highlighted) {
+    if (highlighted_ == highlighted) return;
+    highlighted_ = highlighted;
+    chromeUpdate(this);
+}
+
+void ChromeRow::setSubmenu(bool submenu) {
+    if (submenu_ == submenu) return;
+    submenu_ = submenu;
+    chromeUpdate(this);
+}
+
+void ChromeRow::setRowPadding(int horizontal) {
+    if (padX_ == horizontal) return;
+    padX_ = horizontal;
+    chromeUpdate(this);
+}
+
+void ChromeRow::paintChrome(QPainter& painter) {
+    enableChromeAntialiasing(painter);
+    const Role role = isEnabled() ? role_ : Role::Disabled;
+    // The pointer state belongs to this widget, and a surface paint is exactly
+    // the repaint a hover would have caused on its own backing store.
+    const bool hovered = underMouse() && role != Role::Disabled;
+    const bool highlighted = highlighted_ && role != Role::Disabled;
+    const QRectF box = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+    painter.setPen(QPen(hovered ? QColor(255, 255, 255, 51) : QColor(0, 0, 0, 0), 1.0));
+    painter.setBrush(rowFill(role, hovered, highlighted));
+    painter.drawRoundedRect(box, 6.0, 6.0);
+    const QColor ink = rowInk(role, hovered, highlighted);
+    painter.setFont(font());
+    painter.setPen(ink);
+    const int chevron = (submenu_ && role != Role::Disabled) ? 14 : 0;
+    const QRect textBox = rect().adjusted(padX_, 0, -padX_ - chevron, 0);
+    painter.drawText(textBox, Qt::AlignLeft | Qt::AlignVCenter,
+                     fontMetrics().elidedText(text(), Qt::ElideRight, textBox.width()));
+    if (chevron == 0) return;
+    // The classic menu chevron: a small stroke, not a glyph, so it carries the
+    // row's own ink.
+    const QPointF tip(box.right() - padX_ + 1.0, box.center().y() + 0.5);
+    QPainterPath path;
+    path.moveTo(tip.x() - 5.0, tip.y() - 3.0);
+    path.lineTo(tip.x(), tip.y() + 1.0);
+    path.lineTo(tip.x() - 5.0, tip.y() + 5.0);
+    painter.setBrush(Qt::NoBrush);
+    painter.setPen(QPen(ink, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.drawPath(path);
+}
+
+void ChromeRow::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
+
+void ChromeRow::enterEvent(QEnterEvent* event) {
+    QPushButton::enterEvent(event);
+    chromeUpdate(this);
+}
+
+void ChromeRow::leaveEvent(QEvent* event) {
+    QPushButton::leaveEvent(event);
+    chromeUpdate(this);
+}
+
+void ChromeRow::mousePressEvent(QMouseEvent* event) {
+    QPushButton::mousePressEvent(event);
+    chromeUpdate(this);
+}
+
+void ChromeRow::mouseReleaseEvent(QMouseEvent* event) {
+    QPushButton::mouseReleaseEvent(event);
+    chromeUpdate(this);
+}
+
+void ChromeRow::changeEvent(QEvent* event) {
+    QPushButton::changeEvent(event);
+    switch (event->type()) {
+        case QEvent::EnabledChange:
+        case QEvent::FontChange:
+        case QEvent::PaletteChange:
+        case QEvent::StyleChange:
+            chromeUpdate(this);
+            break;
+        default:
+            break;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  ICON BUTTON
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -729,36 +890,22 @@ void SkipButton::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 //  SETTINGS FLYOUT
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// The shortcut card's keycaps: an accent wash with a visible edge, so a hint
-/// reads as part of the same colour system as the rest of the chrome.
-QString keyHintsQss() {
-    return QStringLiteral(
-               "KeyHints { background: transparent; }"
-               "QLabel#playerKeyHintKey {"
-               "  color: %1;"
-               "  background: rgba(%2, 0.18);"
-               "  border: 1px solid rgba(%2, 0.42);"
-               "  border-radius: 4px;"
-               "  padding: 2px 6px;"
-               "  font-weight: 600;"
-               "}")
-        .arg(rgba(white(235)), rgbaTriplet(accent()));
+namespace {
+/// The opaque card both popovers are: the fill and hairline the stylesheet used
+/// to give them, painted by the card's own painter instead.
+void paintPopoverCard(QPainter& painter, const QWidget& card) {
+    enableChromeAntialiasing(painter);
+    painter.setPen(QPen(QColor(255, 255, 255, 45), 1));
+    painter.setBrush(QColor(20, 21, 27));
+    painter.drawRoundedRect(QRectF(0.5, 0.5, card.width() - 1.0, card.height() - 1.0), 10.0,
+                            10.0);
 }
-
-/// The speed badge: the pushed accent behind a contrast-derived ink, so a very
-/// dark accent still carries a legible label.
-QString badgeQss() {
-    return QStringLiteral("background:%1; color:%2; border-radius:4px; padding:1px 6px;"
-                          " font-weight:700;")
-        .arg(accent().name(QColor::HexRgb), inkOn(accent()).name(QColor::HexRgb));
-}
+}  // namespace
 
 SettingsFlyout::SettingsFlyout(QWidget* parent)
     : QFrame(parent), quality_(QStringLiteral("HD")) {
     setObjectName(QStringLiteral("playerSettingsFlyout"));
-    setProperty("playerOverlay", true);
     setFocusPolicy(Qt::StrongFocus);
-    setStyleSheet(QStringLiteral("SettingsFlyout { background: transparent; }"));
     hide();
 
     auto* lay = new QVBoxLayout(this);
@@ -766,14 +913,15 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     lay->setSpacing(5);
 
     auto* head = new QHBoxLayout();
-    speedCaption_ = new QLabel(tr("SPEED"));
-    speedCaption_->setFont(monoFont(8));
-    speedCaption_->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
+    speedCaption_ = new ChromeLabel(tr("SPEED"), monoFont(8, true), QColor(0x9a, 0x9a, 0xa6), this);
     head->addWidget(speedCaption_);
     head->addStretch();
-    badge_ = new QLabel(QStringLiteral("1.0x"));
-    badge_->setFont(monoFont(9));
-    badge_->setStyleSheet(badgeQss());
+    // The pill behind this label is this card's own paint: a ChromeLabel draws
+    // text only, which keeps the accent wash from becoming a widget of its own.
+    badge_ = new ChromeLabel(QStringLiteral("1.0x"), monoFont(9, true), inkOn(accent()), this);
+    badge_->setAlignment(Qt::AlignCenter);
+    badge_->setContentsMargins(6, 1, 6, 1);
+    badge_->setChromePadding(6, 1);
     head->addWidget(badge_);
     lay->addLayout(head);
 
@@ -783,27 +931,29 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     connect(slider_, &RangeSlider::valueChanged, this, &SettingsFlyout::onSlider);
     lay->addWidget(slider_);
 
-    auto* sep = new QFrame(this);
-    sep->setFixedHeight(1);
-    sep->setStyleSheet(QStringLiteral("background: rgba(255, 255, 255, 0.10);"));
-    lay->addWidget(sep);
+    // A hairline is this card's paint, not a widget's: a QFrame with a styled
+    // background would paint its own strip over the picture.
+    const auto addSeparator = [this, lay] {
+        auto* sep = new QWidget(this);
+        sep->setFixedHeight(1);
+        sep->setAttribute(Qt::WA_TransparentForMouseEvents);
+        lay->addWidget(sep);
+        separators_.append(sep);
+        return sep;
+    };
+    addSeparator();
 
     for (const SpeedPreset& preset : kSpeedPresets) {
-        auto* btn = new QPushButton(this);
-        btn->setFont(uiFont(10));
-        btn->setCursor(Qt::PointingHandCursor);
+        auto* btn = new ChromeRow(QString(), this);
         btn->setFixedHeight(26);
-        btn->setFocusPolicy(Qt::NoFocus);
+        btn->setRowPadding(10);
         const double speed = preset.speed;
         connect(btn, &QPushButton::clicked, this, [this, speed] { pick(speed); });
         lay->addWidget(btn);
         rows_.append(std::make_pair(speed, btn));
     }
 
-    auto* sep2 = new QFrame(this);
-    sep2->setFixedHeight(1);
-    sep2->setStyleSheet(QStringLiteral("background: rgba(255, 255, 255, 0.10);"));
-    lay->addWidget(sep2);
+    addSeparator();
 
     // Quality lives here rather than in a chip over the picture: the gear is
     // where a viewer looks for stream settings, and the strip is for things
@@ -811,23 +961,19 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     qualitySection_ = new QWidget(this);
     qualitySection_->setObjectName(QStringLiteral("playerQualitySection"));
     qualitySection_->setAccessibleName(tr("Quality"));
-    qualitySection_->setStyleSheet(QStringLiteral("background: transparent;"));
     auto* qlay = new QVBoxLayout(qualitySection_);
     qlay->setContentsMargins(0, 0, 0, 0);
     qlay->setSpacing(5);
 
     auto* qrow = new QHBoxLayout();
-    qualityCaption_ = new QLabel(tr("QUALITY"));
+    qualityCaption_ = new ChromeLabel(tr("QUALITY"), monoFont(8, true), QColor(0x9a, 0x9a, 0xa6),
+                                      qualitySection_);
     qualityCaption_->setObjectName(QStringLiteral("playerQualityCaption"));
-    qualityCaption_->setFont(monoFont(8));
-    qualityCaption_->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
     qrow->addWidget(qualityCaption_);
     qrow->addStretch();
-    qualityLabel_ = new QLabel(QStringLiteral("HD"));
+    qualityLabel_ = new ChromeLabel(QStringLiteral("HD"), monoFont(9, true), green(),
+                                    qualitySection_);
     qualityLabel_->setObjectName(QStringLiteral("playerQualityLabel"));
-    qualityLabel_->setFont(monoFont(9));
-    qualityLabel_->setStyleSheet(
-        QStringLiteral("color:%1; font-weight:700;").arg(green().name()));
     qrow->addWidget(qualityLabel_);
     qlay->addLayout(qrow);
 
@@ -844,26 +990,21 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     // not a quick switch, and Fit is the way back from every row here.
     scaleSection_ = new QWidget(this);
     scaleSection_->setObjectName(QStringLiteral("playerScaleSection"));
-    scaleSection_->setStyleSheet(QStringLiteral("background: transparent;"));
     auto* slay = new QVBoxLayout(scaleSection_);
     slay->setContentsMargins(0, 0, 0, 0);
     slay->setSpacing(2);
-    scaleCaption_ = new QLabel(tr("SCALING"));
+    scaleCaption_ = new ChromeLabel(tr("SCALING"), monoFont(8, true), QColor(0x9a, 0x9a, 0xa6),
+                                    scaleSection_);
     scaleCaption_->setObjectName(QStringLiteral("playerScaleCaption"));
-    scaleCaption_->setFont(monoFont(8));
-    scaleCaption_->setStyleSheet(
-        QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
     slay->addWidget(scaleCaption_);
     const mplayer::VideoScaleMode kQuickModes[] = {
         mplayer::VideoScaleMode::Fit, mplayer::VideoScaleMode::Fill,
         mplayer::VideoScaleMode::Stretch, mplayer::VideoScaleMode::Aspect16x9,
         mplayer::VideoScaleMode::Aspect4x3};
     for (const mplayer::VideoScaleMode mode : kQuickModes) {
-        auto* btn = new QPushButton(this);
-        btn->setFont(uiFont(10));
-        btn->setCursor(Qt::PointingHandCursor);
+        auto* btn = new ChromeRow(QString(), scaleSection_);
         btn->setFixedHeight(26);
-        btn->setFocusPolicy(Qt::NoFocus);
+        btn->setRowPadding(10);
         const int value = static_cast<int>(mode);
         // The row carries the mode it selects, so the order of this list is not
         // also the meaning of the value the refresh loop reads back.
@@ -877,55 +1018,32 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     }
     lay->addWidget(scaleSection_);
 
-    auto* defaultSeparator = new QFrame(this);
-    defaultSeparator->setFixedHeight(1);
-    defaultSeparator->setStyleSheet(QStringLiteral("background: %1;").arg(rgba(w10())));
-    lay->addWidget(defaultSeparator);
+    addSeparator();
 
-    defaultPlayerButton_ = new QPushButton(this);
+    defaultPlayerButton_ = new ChromeRow(QString(), this);
     defaultPlayerButton_->setObjectName(QStringLiteral("playerDefaultVideoPlayerButton"));
     defaultPlayerButton_->setFont(uiFont(10));
     defaultPlayerButton_->setFocusPolicy(Qt::StrongFocus);
-    defaultPlayerButton_->setCursor(Qt::PointingHandCursor);
+    defaultPlayerButton_->setRowPadding(10);
+    defaultPlayerButton_->setMinimumHeight(34);
     defaultPlayerButton_->setEnabled(mikai::gui::systemDefaultPlayerSupported());
-    // A wrapping label keeps the full action readable in narrow windows and
-    // longer translations. The button owns focus and the accessible name.
-    auto* defaultLayout = new QVBoxLayout(defaultPlayerButton_);
-    defaultLayout->setContentsMargins(10, 6, 10, 6);
-    defaultPlayerLabel_ = new QLabel(defaultPlayerButton_);
-    defaultPlayerLabel_->setFont(uiFont(10));
-    defaultPlayerLabel_->setWordWrap(true);
-    defaultPlayerLabel_->setAttribute(Qt::WA_TransparentForMouseEvents);
-    defaultPlayerLabel_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-    defaultLayout->addWidget(defaultPlayerLabel_);
     lay->addWidget(defaultPlayerButton_);
     connect(defaultPlayerButton_, &QPushButton::clicked, this, [this] {
         close();
         emit defaultPlayerRequested();
     });
-    // The badge, the speed track and the selected rows carry the accent; a live
-    // change restates them instead of waiting for the flyout to be rebuilt.
+    // The badge, the speed track and the selection washes carry the accent; a
+    // live change restates them instead of waiting for the flyout to be rebuilt.
     connect(&accentNotifier(), &AccentNotifier::changed, this, [this] {
-        badge_->setStyleSheet(badgeQss());
+        badge_->setChromeColor(inkOn(accent()));
         slider_->setAccent(accent());
+        // The badge pill and every row's wash are painted from the tokens at
+        // paint time; the card itself only needs to be marked for a repaint.
+        chromeUpdate(this);
         refresh();
     });
 
     retranslate();
-}
-
-QString rowQss(bool current) {
-    const QString accentRgb = rgbaTriplet(accent());
-    return QStringLiteral(
-               "QPushButton { color: %1; background: %2; border: 1px solid %3; border-radius: 6px;"
-               " text-align: left; padding: 0 10px; font-size: 13px; font-weight: 500; min-height: 26px; }"
-               "QPushButton:hover { background: rgba(255, 255, 255, 0.12); color: #ffffff;"
-               " border-color: rgba(255, 255, 255, 0.20); }")
-        .arg(current ? QStringLiteral("#ffffff") : QStringLiteral("#e0e0e6"),
-             current ? QStringLiteral("rgba(%1, 0.40)").arg(accentRgb)
-                     : QStringLiteral("rgba(255, 255, 255, 0.05)"),
-             current ? QStringLiteral("rgba(%1, 0.60)").arg(accentRgb)
-                     : QStringLiteral("transparent"));
 }
 
 void SettingsFlyout::setRate(double rate) {
@@ -954,17 +1072,20 @@ void SettingsFlyout::setQualityOptions(const QVector<QualityOption>& options) {
 
     for (int i = 0; i < qualityOptions_.size(); ++i) {
         const int height = qualityOptions_[i].height;
-        auto* btn = new QPushButton(this);
-        btn->setFont(uiFont(10));
-        btn->setCursor(Qt::PointingHandCursor);
+        auto* btn = new ChromeRow(QString(), qualitySection_);
         btn->setFixedHeight(26);
-        btn->setFocusPolicy(Qt::NoFocus);
+        btn->setRowPadding(10);
         connect(btn, &QPushButton::clicked, this, [this, height] {
             close();
             emit qualitySelected(height);
         });
         qualityBody_->addWidget(btn);
         qualityRows_.append(btn);
+        // Created after the host walked the tree, so it is not in the adopted
+        // list yet. A rebuild happens while the popover may already be open.
+        if (ChromeHost* host = chromeHostOf(this)) {
+            host->chromeAdopt(btn);
+        }
     }
     qualitySection_->setVisible(!qualityOptions_.isEmpty());
     refresh();
@@ -991,7 +1112,10 @@ void SettingsFlyout::retranslate() {
     qualitySection_->setAccessibleName(tr("Quality"));
     scaleSection_->setAccessibleName(tr("Video scaling"));
     const QString defaultText = tr("Set as default video player…");
-    defaultPlayerLabel_->setText(defaultText);
+    if (defaultPlayerButton_->text() != defaultText) {
+        defaultPlayerButton_->setText(defaultText);
+        chromeUpdate(defaultPlayerButton_);
+    }
     defaultPlayerButton_->setAccessibleName(defaultText);
 #ifdef Q_OS_LINUX
     const QString defaultDescription = tr("Registers Mikai Ja Nai and opens desktop settings so you can choose it under Default Applications. Your defaults are not changed automatically.");
@@ -1002,11 +1126,6 @@ void SettingsFlyout::retranslate() {
 #endif
     defaultPlayerButton_->setToolTip(defaultDescription);
     defaultPlayerButton_->setAccessibleDescription(defaultDescription);
-    defaultPlayerButton_->setStyleSheet(rowQss(false)
-        + QStringLiteral("QPushButton:focus { border-color: %1; }").arg(rgba(w70())));
-    defaultPlayerLabel_->setStyleSheet(
-        QStringLiteral("background: transparent; color: %1;")
-            .arg(rgba(defaultPlayerButton_->isEnabled() ? w90() : w45())));
     // refresh() rewrites the translated preset rows from rate_ and the
     // caller-held quality options: neither selection moves.
     refresh();
@@ -1018,17 +1137,29 @@ void SettingsFlyout::retranslate() {
     // would be clipped by it. The anchor is gone by now, so the corner stays.
     resizeToContents();
     clampInsideHost(this);
-    update();
+    chromeUpdate(this);
 }
 
-void SettingsFlyout::paintEvent(QPaintEvent*) {
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
-    // 100% solid, fully opaque dark card background with crisp border
-    p.setPen(QPen(QColor(255, 255, 255, 45), 1));
-    p.setBrush(QColor(20, 21, 27));
-    p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), 10.0, 10.0);
+void SettingsFlyout::paintChrome(QPainter& painter) {
+    paintPopoverCard(painter, *this);
+    // The hairlines and the badge's pill are part of this card's paint: their
+    // boxes come from the layout, so they follow the rows that move.
+    enableChromeAntialiasing(painter);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(w10());
+    for (QWidget* sep : separators_) {
+        if (sep == nullptr || !sep->isVisible()) {
+            continue;
+        }
+        painter.drawRect(sep->geometry());
+    }
+    if (badge_ != nullptr && badge_->isVisible()) {
+        painter.setBrush(accent());
+        painter.drawRoundedRect(QRectF(badge_->geometry()), 4.0, 4.0);
+    }
 }
+
+void SettingsFlyout::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 void SettingsFlyout::resizeToContents() {
     // Drop the previous fixed bounds before measuring translated/wrapped text.
@@ -1091,13 +1222,17 @@ void SettingsFlyout::onSlider(double fraction) {
 
 void SettingsFlyout::refresh() {
     // refresh() runs on every slider tick, so a drag produces dozens of calls
-    // in which only the badge and the slider move. Writing a QLabel/QPushButton
-    // re-lays it out and invalidates it, and setStyleSheet re-parses the sheet
-    // and re-polishes the button - so each row is written only when its text
-    // or its selected state actually differs from what is on screen.
+    // in which only the badge and the slider move. Writing a row re-lays it
+    // out, so each row's text and role are written only when they differ from
+    // what is on screen. A ChromeRow's own setters repaint the surface.
     const QString badgeText = formatG(rate_) + QStringLiteral("x");
     if (badge_->text() != badgeText) {
         badge_->setText(badgeText);
+        // The pill is drawn over this label's box, and the label only draws text
+        // inside its own padding, so the box carries the padding here.
+        const QFontMetrics badgeMetrics(badge_->font());
+        badge_->setFixedSize(badgeMetrics.horizontalAdvance(badgeText) + 12,
+                             badgeMetrics.height() + 2);
     }
     if (qualityLabel_->text() != quality_) {
         qualityLabel_->setText(quality_);
@@ -1106,18 +1241,16 @@ void SettingsFlyout::refresh() {
 
     for (int i = 0; i < qualityRows_.size() && i < qualityOptions_.size(); ++i) {
         const QualityOption& option = qualityOptions_[i];
-        QPushButton* btn = qualityRows_[i];
+        ChromeRow* btn = qualityRows_[i];
         const QString text = (option.current ? QStringLiteral("✓  ") : QString()) + option.label;
         if (btn->text() != text) {
             btn->setText(text);
+            chromeUpdate(btn);
         }
-        const QString sheet = rowQss(option.current);
-        if (btn->styleSheet() != sheet) {
-            btn->setStyleSheet(sheet);
-        }
+        btn->setRole(option.current ? ChromeRow::Role::Current : ChromeRow::Role::Choice);
     }
     for (int i = 0; i < scaleRows_.size(); ++i) {
-        QPushButton* btn = scaleRows_[i];
+        ChromeRow* btn = scaleRows_[i];
         // A mode outside this list (Original 1:1, chosen in Settings) simply
         // ticks nothing here.
         const int mode = btn->property("videoScaleMode").toInt();
@@ -1126,25 +1259,21 @@ void SettingsFlyout::refresh() {
             + mplayer::videoScaleModeLabel(static_cast<mplayer::VideoScaleMode>(mode));
         if (btn->text() != text) {
             btn->setText(text);
+            chromeUpdate(btn);
         }
-        const QString sheet = rowQss(selected);
-        if (btn->styleSheet() != sheet) {
-            btn->setStyleSheet(sheet);
-        }
+        btn->setRole(selected ? ChromeRow::Role::Current : ChromeRow::Role::Choice);
     }
     for (int i = 0; i < rows_.size(); ++i) {
         const double speed = rows_[i].first;
-        QPushButton* btn = rows_[i].second;
+        ChromeRow* btn = rows_[i].second;
         const bool selected = std::abs(rate_ - speed) < 0.026;
         const QString text = (selected ? QStringLiteral("✓  ") : QString())
             + QStringLiteral("%1x   %2").arg(formatG(speed), presetLabel(i));
         if (btn->text() != text) {
             btn->setText(text);
+            chromeUpdate(btn);
         }
-        const QString sheet = rowQss(selected);
-        if (btn->styleSheet() != sheet) {
-            btn->setStyleSheet(sheet);
-        }
+        btn->setRole(selected ? ChromeRow::Role::Current : ChromeRow::Role::Choice);
     }
 }
 
@@ -1175,11 +1304,28 @@ void ChromeLabel::setChromeColor(const QColor& color) {
     chromeUpdate(this);
 }
 
+void ChromeLabel::setChromePadding(int horizontal, int vertical) {
+    if (padX_ == horizontal && padY_ == vertical) {
+        return;
+    }
+    padX_ = horizontal;
+    padY_ = vertical;
+    chromeUpdate(this);
+}
+
+void ChromeLabel::setChromeWordWrap(bool wrap) {
+    if (wrap_ == wrap) return;
+    wrap_ = wrap;
+    chromeUpdate(this);
+}
+
 void ChromeLabel::paintChrome(QPainter& painter) {
     enableChromeAntialiasing(painter);
     painter.setFont(font());
     painter.setPen(color_);
-    painter.drawText(rect(), alignment(), text());
+    int flags = static_cast<int>(alignment());
+    if (wrap_) flags |= Qt::TextWordWrap;
+    painter.drawText(rect().adjusted(padX_, padY_, -padX_, -padY_), flags, text());
 }
 
 void ChromeLabel::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
@@ -1357,54 +1503,64 @@ QVector<std::pair<QString, QString>> KeyHints::shortcutTable() {
     };
 }
 
+namespace {
+// The keycap inset and minimum column width the shortcut card was laid out
+// with. The wash behind a key is the card's own paint, sized from the key
+// label's box, so both stay in one place.
+constexpr int kKeyCapPadX = 6;
+constexpr int kKeyCapPadY = 2;
+constexpr int kKeyCapMinWidth = 68;
+}  // namespace
+
 KeyHints::KeyHints(QWidget* parent) : QFrame(parent) {
     setObjectName(QStringLiteral("playerKeyHints"));
-    setProperty("playerOverlay", true);
     setFocusPolicy(Qt::StrongFocus);
-    setStyleSheet(keyHintsQss());
-    // The keycaps are an accent wash (the ghost role's "keyboard hints"), so a
-    // live accent change restates them from one place.
-    connect(&accentNotifier(), &AccentNotifier::changed, this,
-            [this] { setStyleSheet(keyHintsQss()); });
+    // The keycaps are an accent wash read at paint time, so a live accent
+    // change only has to mark the card for a repaint.
+    connect(&accentNotifier(), &AccentNotifier::changed, this, [this] { chromeUpdate(this); });
     hide();
 
     auto* lay = new QVBoxLayout(this);
     lay->setContentsMargins(12, 10, 12, 10);
     lay->setSpacing(4);
-    caption_ = new QLabel(tr("KEYBOARD SHORTCUTS"));
-    caption_->setFont(monoFont(8));
-    caption_->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent; letter-spacing: 0.5px;"));
+    QFont captionFont = monoFont(8, true);
+    // The caption was letter-spaced by a stylesheet rule; the painter gets the
+    // same spacing from the font instead.
+    captionFont.setLetterSpacing(QFont::AbsoluteSpacing, 0.5);
+    caption_ = new ChromeLabel(tr("KEYBOARD SHORTCUTS"), captionFont, QColor(0x9a, 0x9a, 0xa6), this);
     lay->addWidget(caption_);
     lay->addSpacing(2);
 
-    rows_ = new QScrollArea(this);
-    rows_->setFrameShape(QFrame::NoFrame);
-    rows_->setWidgetResizable(true);
-    rows_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    rows_->setStyleSheet(QStringLiteral("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }"));
-    auto* content = new QWidget(rows_);
-    auto* rowsLayout = new QVBoxLayout(content);
+    // A plain layout widget, not a scroll area: a viewport would be a second
+    // raster over the picture, which is the repaint this card must not cause.
+    content_ = new QWidget(this);
+    auto* rowsLayout = new QVBoxLayout(content_);
     rowsLayout->setContentsMargins(0, 0, 0, 0);
     rowsLayout->setSpacing(4);
-    rows_->setWidget(content);
-    lay->addWidget(rows_);
+    lay->addWidget(content_);
 
     const QVector<std::pair<QString, QString>> table = shortcutTable();
+    keys_.reserve(table.size());
     descriptions_.reserve(table.size());
     for (const auto& entry : table) {
         auto* row = new QHBoxLayout();
         row->setSpacing(8);
-        auto* key = new QLabel(entry.first);
-        key->setFont(monoFont(8));
+        auto* key = new ChromeLabel(entry.first, monoFont(8, true), white(235), content_);
         key->setObjectName(QStringLiteral("playerKeyHintKey"));
         key->setAlignment(Qt::AlignCenter);
-        key->setMinimumWidth(68);
-        auto* action = new QLabel(entry.second);
-        action->setFont(uiFont(9));
-        action->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(rgba(white(180))));
+        key->setContentsMargins(kKeyCapPadX, kKeyCapPadY, kKeyCapPadX, kKeyCapPadY);
+        key->setChromePadding(kKeyCapPadX, kKeyCapPadY);
+        // The painted text is inset by the keycap padding, so the box must be
+        // big enough for the glyphs plus that inset.
+        const QFontMetrics keyMetrics(key->font());
+        key->setMinimumWidth(
+            qMax(kKeyCapMinWidth, keyMetrics.horizontalAdvance(entry.first) + 2 * kKeyCapPadX));
+        key->setMinimumHeight(keyMetrics.height() + 2 * kKeyCapPadY);
+        auto* action = new ChromeLabel(entry.second, uiFont(9), white(180), content_);
         row->addWidget(key);
-        descriptions_.append(action);
+        keys_.append(key);
         row->addWidget(action, 1);
+        descriptions_.append(action);
         rowsLayout->addLayout(row);
     }
 }
@@ -1431,29 +1587,43 @@ void KeyHints::retranslate() {
     // clipped by that frozen width.
     layout()->invalidate();
     layout()->activate();
-    const QSize contentSize = rows_->widget()->sizeHint();
+    const QSize contentSize = content_->sizeHint();
     const QSize hostSize = parentWidget() != nullptr ? parentWidget()->size() : QSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
     setFixedSize(qMin(hostSize.width() - 8, contentSize.width() + 48),
                  qMin(hostSize.height() - 8, contentSize.height() + caption_->sizeHint().height() + 32));
     layout()->activate();
     clampInsideHost(this);
-    update();
+    chromeUpdate(this);
 }
 
-void KeyHints::paintEvent(QPaintEvent*) {
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
-    p.setPen(QPen(QColor(255, 255, 255, 45), 1));
-    p.setBrush(QColor(20, 21, 27));
-    p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), 10.0, 10.0);
+void KeyHints::paintChrome(QPainter& painter) {
+    paintPopoverCard(painter, *this);
+    // The keycap wash: one rounded box per key column, behind the label the
+    // surface paints on top of it.
+    enableChromeAntialiasing(painter);
+    QColor wash = accent();
+    wash.setAlphaF(0.18);
+    QColor edge = accent();
+    edge.setAlphaF(0.42);
+    painter.setPen(QPen(edge, 1.0));
+    painter.setBrush(wash);
+    for (ChromeLabel* key : keys_) {
+        if (key == nullptr || !key->isVisible()) {
+            continue;
+        }
+        const QRect box(key->mapTo(this, QPoint(0, 0)), key->size());
+        painter.drawRoundedRect(QRectF(box).adjusted(0.5, 0.5, -0.5, -0.5), 4.0, 4.0);
+    }
 }
+
+void KeyHints::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 void KeyHints::popupNear(const QPoint& anchorGlobal) {
     show();
     ensurePolished();
     layout()->invalidate();
     layout()->activate();
-    const QSize contentSize = rows_->widget()->sizeHint();
+    const QSize contentSize = content_->sizeHint();
     const QSize hostSize = parentWidget() != nullptr ? parentWidget()->size() : QSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
     setFixedSize(qMin(hostSize.width() - 8, contentSize.width() + 48),
                  qMin(hostSize.height() - 8, contentSize.height() + caption_->sizeHint().height() + 32));
