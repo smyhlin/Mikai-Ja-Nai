@@ -947,8 +947,13 @@ void TitlePage::buildHero() {
     heroWatchButton_->setEnabled(false);
     heroWatchButton_->setToolTip(tr("Select an available episode to watch"));
     connect(heroWatchButton_, &QPushButton::clicked, this, [this] {
-        if (watchEntry_ != nullptr) {
-            playEpisode(watchEntry_);
+        EpisodeEntry* target = watchEntry_;
+        if (target == nullptr && tabs_ != nullptr) {
+            target = preferredEntry(tabs_->currentIndex());
+        }
+        if (target != nullptr) {
+            selectWatchEntry(target);
+            playEpisode(target);
         }
     });
     auto* heroActionsHost = new QWidget(hero_);
@@ -1205,8 +1210,13 @@ void TitlePage::buildEpisodeWorkspace() {
     watchButton_->setFixedHeight(theme::kWatchCtaHeight);
     watchButton_->setCursor(Qt::PointingHandCursor);
     connect(watchButton_, &QPushButton::clicked, this, [this] {
-        if (watchEntry_ != nullptr) {
-            playEpisode(watchEntry_);
+        EpisodeEntry* target = watchEntry_;
+        if (target == nullptr && tabs_ != nullptr) {
+            target = preferredEntry(tabs_->currentIndex());
+        }
+        if (target != nullptr) {
+            selectWatchEntry(target);
+            playEpisode(target);
         }
     });
     auto* watchActions = new QWidget(watchPanel_);

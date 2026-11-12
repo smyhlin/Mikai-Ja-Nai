@@ -200,6 +200,7 @@ void PlayerWindow::loadPlayerScene() {
             applyWindowMode();
             show();
             applyWindowMode();
+            raise();
             requestActivate();
         }
         emit sceneReady();

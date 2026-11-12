@@ -162,8 +162,22 @@ bool TitlePage::isLiveSession(PlayerSession* session) {
 
 
 void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualities) {
-    const int height = maxQuality(qualities);
-    if (height <= 0) {
+    if (qualities.isEmpty()) {
+        flashStatus(tr("Could not find a stream for this episode"), true);
+        return;
+    }
+    int height = maxQuality(qualities);
+    QString url = qualities.value(height);
+    if (url.trimmed().isEmpty()) {
+        for (auto it = qualities.constBegin(); it != qualities.constEnd(); ++it) {
+            if (!it.value().trimmed().isEmpty()) {
+                height = it.key();
+                url = it.value();
+                break;
+            }
+        }
+    }
+    if (url.trimmed().isEmpty()) {
         flashStatus(tr("Could not find a stream for this episode"), true);
         return;
     }
@@ -179,9 +193,11 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
     const quint64 sessionId = session->id;
     sessions_.push_back(std::move(owned));
 
+    const QString caption = height > 0
+                                ? QStringLiteral("%1 · %2p").arg(entry->label).arg(height)
+                                : entry->label;
     session->controller = new mplayer::quick::PlayerController(
-        QStringLiteral("%1 · %2p").arg(entry->label).arg(height), qualities.value(height),
-        toQualities(qualities), height, session->host.get(), this);
+        caption, url, toQualities(qualities), height, session->host.get(), this);
     // Core creation can report failure synchronously from startPlayer().
     connect(session->controller, &mplayer::quick::PlayerController::runtimeRequested, this,
             [this, sessionId] {
