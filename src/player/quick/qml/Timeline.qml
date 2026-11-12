@@ -65,8 +65,8 @@ Item {
         root.controller.seekTo(Math.max(0, Math.min(root.mediaDuration, current + delta)))
     }
 
-    function pointerAnchor(x, y) {
-        return root.mapToItem(null, x, y)
+    function pointerAnchor(x) {
+        return root.mapToItem(null, x, 0)
     }
 
     Rectangle {
@@ -176,7 +176,7 @@ Item {
         cursorShape: root.seekable ? Qt.PointingHandCursor : Qt.ArrowCursor
 
         function requestPreview() {
-            root.previewRequested(root.secondsAt(mouseX), root.pointerAnchor(mouseX, mouseY))
+            root.previewRequested(root.secondsAt(mouseX), root.pointerAnchor(mouseX))
         }
 
         onEntered: {
@@ -188,7 +188,7 @@ Item {
             dragStarted = true
             root.controller.seekTo(root.secondsAt(mouse.x))
             root.previewRequested(root.secondsAt(mouse.x),
-                                  root.pointerAnchor(mouse.x, mouse.y))
+                                  root.pointerAnchor(mouse.x))
             mouse.accepted = true
         }
         onPositionChanged: mouse => {
@@ -197,17 +197,17 @@ Item {
                 // the drag began.
                 root.controller.seekTo(root.secondsAt(mouse.x))
                 root.previewRequested(root.secondsAt(mouse.x),
-                                      root.pointerAnchor(mouse.x, mouse.y))
+                                      root.pointerAnchor(mouse.x))
                 return
             }
             if (containsMouse) root.previewRequested(root.secondsAt(mouse.x),
-                                                     root.pointerAnchor(mouse.x, mouse.y))
+                                                     root.pointerAnchor(mouse.x))
         }
         onReleased: {
             dragStarted = false
             if (containsMouse && root.seekable) {
                 root.previewRequested(root.secondsAt(mouseX),
-                                      root.pointerAnchor(mouseX, mouseY))
+                                      root.pointerAnchor(mouseX))
             } else {
                 root.previewDismissed()
             }

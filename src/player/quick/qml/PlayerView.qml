@@ -654,7 +654,7 @@ Item {
         ignoreUnknownSignals: true
 
         function onPreviewRequested(seconds, anchorPoint) {
-            hoverPreview.anchor = anchorPoint
+            hoverPreview.anchor = root.mapFromItem(null, anchorPoint.x, anchorPoint.y)
             root.controller.noteUserActivity()
             root.controller.showHoverPreview(seconds)
         }
@@ -667,7 +667,6 @@ Item {
     HoverPreview {
         id: hoverPreview
         controller: root.controller
-        timelineItem: root.timeline
         z: 15
     }
 

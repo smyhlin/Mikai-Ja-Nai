@@ -117,6 +117,29 @@ void TestHoverPreview::theQuickTimelineHoverDragLeaveAndReloadUseDecodedFrames()
     const QString hoveredTime = controller.hoverPreviewTime();
     QVERIFY(!hoveredTime.isEmpty());
 
+    auto* preview = root->findChild<QQuickItem*>(QStringLiteral("player.timeline.preview"));
+    QVERIFY(preview != nullptr);
+    QVERIFY(preview->isVisible());
+    const QPointF timelineTop = timeline->mapToScene(QPointF(0, 0));
+    const QPointF previewTop = preview->mapToScene(QPointF(0, 0));
+    const QPoint hoverPoint = windowPoint(timeline, 0.2);
+    QVERIFY2(qAbs(previewTop.y() + preview->height() - timelineTop.y() + 10.0) < 2.0,
+             "the preview must sit just above the timeline");
+    QVERIFY2(qAbs(previewTop.x() + preview->width() / 2.0 - hoverPoint.x()) < 2.0,
+             "the preview must follow the hovered timeline position");
+
+    QTest::mouseMove(window, windowPoint(timeline, 0.95));
+    QVERIFY2(settleUntil([&] {
+                 const QPointF position = preview->mapToScene(QPointF(0, 0));
+                 return preview->isVisible() &&
+                        qAbs(position.x() + preview->width() / 2.0 -
+                             windowPoint(timeline, 0.95).x()) < 2.0;
+             }, 2000),
+             "the preview must follow pointer movement along the timeline");
+    const QPointF movedTop = preview->mapToScene(QPointF(0, 0));
+    QVERIFY(movedTop.x() >= 0.0);
+    QVERIFY(movedTop.x() + preview->width() <= window->width());
+
     // A drag requests previews at the moving playhead rather than retaining the
     // frame from the initial hover. The controller's time is the decoder's
     // reported frame time once the latest request settles.

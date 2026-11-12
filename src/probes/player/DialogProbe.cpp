@@ -490,6 +490,53 @@ RunResult runPlayer(const QString& url, const QString& videoName, const QString&
     }
 
     waitFor([&] { return session->duration() > 0.0; }, 5000);
+    if (qEnvironmentVariableIntValue("MIKAI_DIALOG_HOVER_FIXTURE") == 1) {
+        auto* timeline = qobject_cast<QQuickItem*>(
+            result.window->rootObject()->property("timeline").value<QObject*>());
+        verdict.require(timeline != nullptr && timeline->isVisible(),
+                        QStringLiteral("timeline is visible for preview"));
+        if (timeline != nullptr) {
+            const auto pointAt = [timeline](qreal fraction) {
+                return timeline->mapToScene(QPointF(timeline->width() * fraction,
+                                                     timeline->height() / 2)).toPoint();
+            };
+            const QPoint point = pointAt(0.35);
+            QTest::mouseMove(result.window, point);
+            QQuickItem* preview = nullptr;
+            const bool visiblePreview = waitFor([&] {
+                preview = findVisualItem(result.window->rootObject(), [](QQuickItem* item) {
+                    return item->objectName() == QLatin1String("player.timeline.preview")
+                           && item->isVisible();
+                });
+                return preview != nullptr;
+            }, 10000);
+            verdict.require(visiblePreview, QStringLiteral("timeline preview opens"));
+            if (visiblePreview) {
+                verdict.require(waitFor([&] {
+                    auto* frame = preview->findChild<QQuickItem*>(
+                        QStringLiteral("player.timeline.preview.frame"));
+                    return frame != nullptr && frame->property("status").toInt() == 1;
+                }, 5000), QStringLiteral("preview frame is decoded and displayed"));
+                const QPointF top = preview->mapToScene(QPointF(0, 0));
+                const QPointF timelineTop = timeline->mapToScene(QPointF(0, 0));
+                verdict.require(qAbs(top.y() + preview->height() - timelineTop.y() + 10.0) < 2.0,
+                                QStringLiteral("preview sits immediately above the timeline"));
+                verdict.require(qAbs(top.x() + preview->width() / 2.0 - point.x()) < 2.0,
+                                QStringLiteral("preview is centered at the hovered position"));
+                saveImage(result.window->grabWindow(), QStringLiteral("dialog_probe_hover.png"));
+                const QPoint moved = pointAt(0.65);
+                QTest::mouseMove(result.window, moved);
+                verdict.require(waitFor([&] {
+                    const QPointF position = preview->mapToScene(QPointF(0, 0));
+                    return preview->isVisible() &&
+                           qAbs(position.x() + preview->width() / 2.0 - moved.x()) < 2.0;
+                }, 2000), QStringLiteral("preview follows the pointer along the timeline"));
+                QTest::mouseMove(result.window, QPoint(8, 8));
+                verdict.require(waitFor([&] { return !preview->isVisible(); }, 2000),
+                                QStringLiteral("preview closes when leaving the timeline"));
+            }
+        }
+    }
     if (episodeFixture) {
         QQuickItem* button = findVisualItem(result.window->rootObject(), [](QQuickItem* item) {
             return item->objectName() == QLatin1String("player.episodes.button") && item->isVisible();

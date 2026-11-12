@@ -2,20 +2,12 @@ import QtQuick
 import QtQuick.Controls.Basic
 import Mikai.Player
 
-// The timeline hover card. The decoded frame is never produced here: the
-// controller's FramePreviewService decodes on demand and publishes
-// `image://mikai-hover/<token>`; this item only loads that URL and shows the
-// controller's own time/label. Placement is anchored to the timeline and
-// clamped inside the view, and the card takes no input at all.
 Item {
     id: root
 
     required property PlayerController controller
 
-    /// Pointer anchor in the view glue's coordinate space (the view root).
     property point anchor: Qt.point(0, 0)
-    /// The timeline this card describes; the card sits just above it.
-    property Item timelineItem: null
 
     readonly property bool shown: controller.hoverPreviewVisible
                                   && controller.hoverPreviewSource.toString() !== ""
@@ -27,16 +19,13 @@ Item {
                                                               : Qt.rgba(0, 0, 0, 0.14)
 
     readonly property real cardRadius: Math.max(2, controller.cornerRadius)
-    readonly property real timelineTop: timelineItem
-                                        ? timelineItem.mapToItem(parent, 0, 0).y
-                                        : parent.height - 120
-
+    objectName: "player.timeline.preview"
     visible: shown
     width: Math.min(208, Math.max(0, parent.width - 16))
     height: Math.min(Math.max(0, parent.height - 16),
-                     imageFrame.height + labelBar.height)
+                     Math.round(width * 9 / 16) + labelBar.height)
     x: Math.max(8, Math.min(parent.width - width - 8, anchor.x - width / 2))
-    y: Math.max(8, Math.min(parent.height - height - 8, timelineTop - height - 10))
+    y: Math.max(8, Math.min(parent.height - height - 8, anchor.y - height - 10))
     z: 15
 
     Accessible.role: Accessible.ToolTip
@@ -59,17 +48,18 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            height: Math.round(width * 9 / 16)
+            height: Math.min(Math.round(width * 9 / 16), Math.max(0, root.height - labelBar.height))
             color: Qt.rgba(0, 0, 0, 0.35)
             clip: true
 
             Image {
                 id: frame
+                objectName: "player.timeline.preview.frame"
                 anchors.fill: parent
                 source: root.controller.hoverPreviewSource
                 asynchronous: true
                 cache: false
-                fillMode: Image.PreserveAspectCrop
+                fillMode: Image.PreserveAspectFit
                 visible: status === Image.Ready
             }
         }
