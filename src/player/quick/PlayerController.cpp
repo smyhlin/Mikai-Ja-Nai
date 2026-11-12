@@ -243,6 +243,7 @@ void PlayerController::connectSession() {
         sourceHeight_ = height;
         if (width > 0 && height > 0) aspectRatio_ = double(width) / double(height);
         emit sourceSizeChanged();
+        emit mediaChanged();
         emit aspectRatioChanged();
     });
     connect(session_, &VideoSession::displayAspectRatioChanged, this, [this](double ratio) {

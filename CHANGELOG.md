@@ -35,6 +35,7 @@ This release introduces the player-only Qt Quick/QML frontend while retaining th
   - Remove the duplicate fullscreen button from the bottom player controls and place the top-right window buttons on a themed surface for visibility over video.
   - Separate the episode-list control from the video information chip.
   - Refresh the player speed, quality and scaling flyout with live appearance colors and corner radii.
+  - Restore right-click access to the picture menu and enable the clip control when video becomes available.
   - Refine antialias settings controls, make episode buttons more compact and remove the redundant Episodes button from the title hero.
   - The focused Windows production-player smoke passed 87 checks covering fullscreen auto-hide/wake, nested hover menus, click containment, uninterrupted fixture playback and close/reopen. Linux and broad workflow verification remain deferred.
 

@@ -464,6 +464,66 @@ RunResult runPlayer(const QString& url, const QString& videoName, const QString&
         return result;
     }
 
+    waitFor([&] { return session->duration() > 0.0; }, 5000);
+    QQuickItem* clipButton = nullptr;
+    waitFor([&] {
+        clipButton = findVisualItem(result.window->rootObject(), [](QQuickItem* item) {
+            return item->property("iconName").toString() == QLatin1String("clapperboard")
+                   && item->isVisible() && item->isEnabled();
+        });
+        return clipButton != nullptr;
+    }, 2000);
+    verdict.require(clipButton != nullptr, QStringLiteral("clip button is visible"));
+    if (clipButton != nullptr) {
+        QTest::mouseClick(result.window, Qt::LeftButton, Qt::NoModifier,
+                          clipButton->mapToScene(QPointF(clipButton->width() / 2,
+                                                        clipButton->height() / 2)).toPoint());
+        const bool clipVisible = waitFor([] {
+            for (QWidget* widget : QApplication::topLevelWidgets()) {
+                if (widget->isVisible() && widget->inherits("mplayer::shell::ClipDialog"))
+                    return true;
+            }
+            return false;
+        }, 5000);
+        verdict.require(clipVisible, QStringLiteral("clip dialog is visible"));
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (widget->inherits("mplayer::shell::ClipDialog")) widget->close();
+        }
+        result.window->requestActivate();
+    }
+    QTest::mouseClick(result.window, Qt::RightButton, Qt::NoModifier,
+                      QPoint(result.window->width() / 2, result.window->height() / 2));
+    const bool contextOpened = waitFor([&] {
+        return menuPanel(result.window->rootObject(), QStringLiteral("picture")) != nullptr;
+    }, 2000);
+    verdict.require(contextOpened, QStringLiteral("right click opens picture menu"));
+    if (contextOpened) {
+        QQuickItem* compareRow = findVisualItem(
+            menuPanel(result.window->rootObject(), QStringLiteral("picture")), [](QQuickItem* item) {
+                return item->property("rowAction").toInt() == int(PlayerMenuModel::Action::OpenCompare)
+                       && item->isVisible();
+            });
+        verdict.require(compareRow != nullptr, QStringLiteral("compare action is visible"));
+        if (compareRow != nullptr) {
+            QTest::mouseClick(result.window, Qt::LeftButton, Qt::NoModifier,
+                              compareRow->mapToScene(QPointF(compareRow->width() / 2,
+                                                              compareRow->height() / 2)).toPoint());
+            const bool compareVisible = waitFor([] {
+                for (QWidget* widget : QApplication::topLevelWidgets()) {
+                    if (widget->isVisible() && widget->inherits("mplayer::shell::CompareWindow"))
+                        return true;
+                }
+                return false;
+            }, 10000);
+            verdict.require(compareVisible, QStringLiteral("compare window is visible"));
+            for (QWidget* widget : QApplication::topLevelWidgets()) {
+                if (widget->inherits("mplayer::shell::CompareWindow")) widget->close();
+            }
+        }
+    }
+    if (!session->isPlaying()) session->setPaused(false);
+    result.window->requestActivate();
+
     QQuickItem* settingsButton = findVisualItem(result.window->rootObject(), [](QQuickItem* item) {
         return item->objectName() == QLatin1String("player.settings.button") && item->isVisible();
     });
