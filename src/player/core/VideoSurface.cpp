@@ -2151,6 +2151,9 @@ QImage VideoSurface::grabVideoFramebuffer() {
 }
 
 void VideoSurface::seek(double seconds) {
+    // A viewer seek supersedes a captured animejanai reconfigure position: the
+    // picture they moved to is where the rebuild must land, not where it began.
+    animeJanaiReconfigurePositionValid_ = false;
     if (!mpv_) return;
     // A seek before a file is loaded is normal during startup, so a refusal is
     // tolerated here - the same tolerance the synchronous call had.
@@ -2159,7 +2162,18 @@ void VideoSurface::seek(double seconds) {
     emit seekRequested();
 }
 
+void VideoSurface::seekExact(double seconds) {
+    animeJanaiReconfigurePositionValid_ = false;
+    if (!mpv_) return;
+    // A position put back after the engine moved it must be the position, not
+    // the keyframe the core would otherwise re-decode from.
+    issueCoreCommand({"seek", mpvNumber(seconds), "absolute+exact"}, "seek",
+                     /*reportRefusal=*/false);
+    emit seekRequested();
+}
+
 void VideoSurface::seekRelative(double delta) {
+    animeJanaiReconfigurePositionValid_ = false;
     if (!mpv_) return;
     // `relative` lets the core resolve the step against the position it is at
     // right now instead of one the caller sampled a pump interval ago, and

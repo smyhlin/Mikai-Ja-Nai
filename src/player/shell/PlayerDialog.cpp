@@ -1004,7 +1004,21 @@ void PlayerDialog::onEngineDuration(double seconds) {
     if (episodeSeekPending_ > 0.0 && seconds > 0.0) {
         const double target = std::min(episodeSeekPending_, seconds - 5.0);
         episodeSeekPending_ = 0.0;
-        if (target > 0.0) offerResume(target);
+        if (target > 0.0) {
+            // Never from inside open(): mpv reports the duration while the load
+            // is still running, and a modal loop there lets the queued plan
+            // application, a host retry and the prompt interleave.
+            const quint64 token = episodeMediaToken();
+            QMetaObject::invokeMethod(
+                this,
+                [this, target, token] {
+                    if (closed_ || token != episodeMediaToken()) return;
+                    if (resumeOfferedToken_ == token) return;
+                    resumeOfferedToken_ = token;
+                    offerResume(target);
+                },
+                Qt::QueuedConnection);
+        }
     }
     // The shell's timeline is a scrub bar over a known length: a position fed
     // before mpv reports one only paints 0:00 / -0:00.
@@ -2585,6 +2599,11 @@ int askResumeChoice(QWidget* parent, const QString& clock) {
         dialog.accept();
     });
     dialog.adjustSize();
+    // An owned dialog is above its owner but not above a topmost sibling such
+    // as the preparation panel; being active is also what tells that panel to
+    // give the band up, so the box is raised and activated before it runs.
+    dialog.raise();
+    dialog.activateWindow();
     resume->setFocus(Qt::OtherFocusReason);
     dialog.exec();
     return answer;
@@ -2597,13 +2616,21 @@ void PlayerDialog::offerResume(double seconds) {
     // whether to jump. Pausing first keeps the audio from running under the box,
     // and both answers resume playback because the load always starts playing.
     if (closed_) return;
+    // A swap can put the picture in the floating window; the answer belongs to
+    // whichever surface owns playback when the box opens.
+    VideoSurface* target = playbackSurface();
+    if (target == nullptr) target = surface_;
+    if (target == nullptr) return;
+    const quint64 token = episodeMediaToken();
     const QString label = formatTime(seconds);
-    const bool wasPlaying = !surface_->playbackPauseIntent();
-    if (wasPlaying) surface_->setPaused(true);
+    const bool wasPlaying = !target->playbackPauseIntent();
+    if (wasPlaying) target->setPaused(true);
     const int answer = askResumeChoice(this, label);
-    if (closed_) return;
+    // The answer belongs to the load that asked: a swap, retry or close during
+    // the modal must not receive this seek or this pause.
+    if (closed_ || token != episodeMediaToken()) return;
     if (answer == 1) {
-        surface_->seek(seconds);
+        target->seekExact(seconds);
         shell_->setPosition(seconds);
         flashStatus(tr("Continued from %1").arg(label));
     } else if (answer == 0) {
@@ -2612,7 +2639,7 @@ void PlayerDialog::offerResume(double seconds) {
     }
     // A dismissed box (Escape, close button) is neither answer: playback keeps
     // running from the beginning and the stored position stays for next time.
-    if (wasPlaying) surface_->setPaused(false);
+    if (wasPlaying) target->setPaused(false);
 }
 
 void PlayerDialog::layoutPanels() {

@@ -276,6 +276,9 @@ public:
     quint64 pauseRequestGeneration() const { return pauseRequestGeneration_; }
     /// Absolute seek to a timeline position (scrub, resume, chapter jump).
     void seek(double seconds);
+    /// Seek that lands on the requested timestamp instead of the nearest
+    /// keyframe. Used to put back a position the engine moved on its own.
+    void seekExact(double seconds);
     /// Seeks by `delta` seconds from wherever the core actually is. A transport
     /// step is a distance, not a position: the last observed position can be up
     /// to one state pump old, which is what makes absolute steps land short.
@@ -819,6 +822,8 @@ private:
     void updateStreamStats();
     void cancelAnimeJanaiOperation();
     void processAnimeJanaiPlan();
+    void beginAnimeJanaiReconfigureHold();
+    void settleAnimeJanaiReconfigurePosition();
     void animeJanaiFail(const QString& reasonKey, const QString& reason);
     /// Records the opening state and announces a change. Every transition goes
     /// through here, because a consumer's overlay can only follow what it was told.
@@ -1349,6 +1354,10 @@ private:
     quint64 animeJanaiGeneration_ = 0;
     uint64_t animeJanaiEpoch_ = 0;
     QString animeJanaiPreviousHwdec_;
+    /// Playhead captured when a plan reconfigure starts, and put back once the
+    /// engine stops moving it (hwdec re-init re-seeks to a keyframe).
+    double animeJanaiReconfigurePosition_ = 0.0;
+    bool animeJanaiReconfigurePositionValid_ = false;
     /// The official @mikai_aji label only; independent of private mikai_native membership.
     bool animeJanaiFilterBound_ = false;
     bool animeJanaiBusy_ = false;

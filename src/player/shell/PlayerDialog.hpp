@@ -773,6 +773,10 @@ private:
     // known. Kept apart from resumePending_, which carries a position across a
     // stream swap inside one episode.
     double episodeResumeSeconds_ = 0.0;
+    /// Media token whose resume box has already been offered, so a re-entered
+    /// or re-armed load cannot ask the same episode again. Starts at "none":
+    /// direct media reports token 0, which must still be offerable once.
+    quint64 resumeOfferedToken_ = static_cast<quint64>(-1);
     double episodeSeekPending_ = 0.0;
     // Throttles episodeProgress: the core reports position far too often to
     // persist, and every write costs a settings sync.

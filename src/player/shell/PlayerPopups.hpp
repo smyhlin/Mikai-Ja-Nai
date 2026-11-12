@@ -225,6 +225,9 @@ protected:
 
 private:
     void maintainTopmost();
+    /// Drops the topmost band while a modal box the viewer must answer is up,
+    /// because a child dialog cannot be raised above a topmost window.
+    void yieldForModal();
     void syncStackingTimer();
     void stopStackingTimer();
 
@@ -252,6 +255,9 @@ private:
     bool cancelPending_ = false;
 #ifdef Q_OS_WIN
     bool stackingFailureReported_ = false;
+    bool yieldedForModal_ = false;
+#else
+    bool yieldedForModal_ = false;
 #endif
     /// The caller's own words, kept only so the app-owned wrapper around them -
     /// "Stage n of m" - can be rebuilt. They are re-emitted verbatim; this window

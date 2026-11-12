@@ -14,6 +14,7 @@
 #include <QRegularExpression>
 #include <QTimer>
 
+#include <cmath>
 #include <string>
 #include <utility>
 
@@ -164,7 +165,12 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
     const bool processingConfigurationChanged =
         planWillReconfigureOutput && mpv_ != nullptr && currentSourceEpoch != 0 &&
         animeJanaiSourceRequested_ && !pendingOpen_ && !url_.isEmpty();
-    if (processingConfigurationChanged) setEngineFrameHold(true);
+    if (processingConfigurationChanged) {
+        // A new user request re-bases the position: an abandoned attempt's
+        // capture would otherwise seek the viewer back to where it started.
+        animeJanaiReconfigurePositionValid_ = false;
+        setEngineFrameHold(true);
+    }
     const native::Backend previousBackend = animeJanaiPlan_.backend;
     cancelAnimeJanaiOperation();
     animeJanaiPlan_ = plan;
@@ -216,6 +222,7 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
         if (!animeJanaiFilterBound_ && !animeJanaiEngineBuildActive_) {
             if (animeJanaiStageBuildLease_) animeJanaiStageBuildLease_->release();
             animeJanaiStageBuildLease_.reset();
+            settleAnimeJanaiReconfigurePosition();
             setEngineFrameHold(false);
             restoreAnimeJanaiHwdec(epoch, generation);
             return;
@@ -231,6 +238,7 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
                     .arg(animeJanaiPlan_.backend == native::Backend::TensorRTRTX
                              ? VideoSurface::tr("TensorRT for RTX")
                              : VideoSurface::tr("TensorRT")));
+            settleAnimeJanaiReconfigurePosition();
             setEngineFrameHold(false);
             restoreAnimeJanaiHwdec(epoch, generation);
         });
@@ -326,6 +334,7 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
         const quint64 generation = animeJanaiGeneration_;
         const std::string spec(plan.filterSpec.constData(),
                                static_cast<size_t>(plan.filterSpec.size()));
+        beginAnimeJanaiReconfigureHold();
         animeJanaiBusy_ = true;
         animeJanaiReportPending_ = true;
         animeJanaiRequest_ = mpv_->commandAsync(
@@ -345,6 +354,7 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
                 animeJanaiBoundFilterLabels_ = animeJanaiFilterLabels(animeJanaiPlan_);
                 setAnimeJanaiStatus(QStringLiteral("Configured; waiting for Anime4K output"));
                 refreshRenderState();
+                settleAnimeJanaiReconfigurePosition();
                 setEngineFrameHold(false);
             });
         if (!animeJanaiRequest_.valid()) {
@@ -832,6 +842,29 @@ void VideoSurface::cancelAnimeJanaiOperation() {
     animeJanaiReconfigureAfterRestore_ = false;
 }
 
+void VideoSurface::beginAnimeJanaiReconfigureHold() {
+    if (!animeJanaiReconfigurePositionValid_) {
+        animeJanaiReconfigurePosition_ = position_ > 0.0 ? position_ : 0.0;
+        animeJanaiReconfigurePositionValid_ = animeJanaiReconfigurePosition_ > 0.0;
+    }
+    // Keep the current picture up while the decoder rebuilds: capturing later,
+    // after the hwdec write, captures the gap instead of the frame.
+    setEngineFrameHold(true);
+}
+
+void VideoSurface::settleAnimeJanaiReconfigurePosition() {
+    if (!animeJanaiReconfigurePositionValid_) return;
+    const double target = animeJanaiReconfigurePosition_;
+    animeJanaiReconfigurePosition_ = 0.0;
+    animeJanaiReconfigurePositionValid_ = false;
+    if (mpv_ == nullptr || url_.isEmpty() || !(target > 0.0)) return;
+    // mpv's own keyframe landing is allowed this much slack; anything larger is
+    // the jump the viewer would see, and only then is a seek worth issuing.
+    constexpr double kRestoreTolerance = 0.35;
+    if (std::abs(position_ - target) <= kRestoreTolerance) return;
+    seekExact(target);
+}
+
 void VideoSurface::processAnimeJanaiPlan() {
     if (!mpv_ || !animeJanaiPlan_.enabled || !animeJanaiPlan_.available) return;
     // Unknown transfer metadata is not proof of SDR; the explicit override
@@ -860,6 +893,7 @@ void VideoSurface::processAnimeJanaiPlan() {
         setAnimeJanaiStatus(QStringLiteral("Configured; filter retained (inference not observed)"));
         return;
     }
+    beginAnimeJanaiReconfigureHold();
     const uint64_t epoch = mpv_->sourceEpoch();
     const quint64 generation = animeJanaiGeneration_;
     animeJanaiBusy_ = true;
@@ -981,6 +1015,7 @@ void VideoSurface::processAnimeJanaiPlan() {
                                     // a paused one produces no frame to rebuild
                                     // it on, so the render state is refreshed.
                                     refreshRenderState();
+                                    settleAnimeJanaiReconfigurePosition();
                                     if (!animeJanaiEngineBuildActive_) {
                                         setEngineFrameHold(false);
                                         if (animeJanaiStageBuildLease_) {
@@ -1024,8 +1059,9 @@ void VideoSurface::restoreAnimeJanaiHwdec(uint64_t epoch, quint64 generation) {
             setEngineFrameHold(true);
             animeJanaiReconfigureAfterRestore_ = false;
             processAnimeJanaiPlan();
-        } else if (!animeJanaiPlan_.enabled) {
-            setAnimeJanaiStatus(QStringLiteral("Off"));
+        } else {
+            settleAnimeJanaiReconfigurePosition();
+            if (!animeJanaiPlan_.enabled) setAnimeJanaiStatus(QStringLiteral("Off"));
         }
         return;
     }
@@ -1047,8 +1083,9 @@ void VideoSurface::restoreAnimeJanaiHwdec(uint64_t epoch, quint64 generation) {
                 setEngineFrameHold(true);
                 animeJanaiReconfigureAfterRestore_ = false;
                 processAnimeJanaiPlan();
-            } else if (!animeJanaiPlan_.enabled) {
-                setAnimeJanaiStatus(QStringLiteral("Off"));
+            } else {
+                settleAnimeJanaiReconfigurePosition();
+                if (!animeJanaiPlan_.enabled) setAnimeJanaiStatus(QStringLiteral("Off"));
             }
         });
     if (!animeJanaiRequest_.valid()) {

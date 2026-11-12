@@ -846,24 +846,58 @@ void ProcessingOverlay::maintainTopmost() {
     // underneath the thing it explains. The timer keeps running, so the band is
     // taken back the moment the popup closes.
     if (QApplication::activePopupWidget() != nullptr || QToolTip::isVisible()) return;
+    // A modal box is a child of the player and cannot outrank a topmost window,
+    // so the band has to be given up while one is up - otherwise the question
+    // the viewer must answer is drawn underneath this panel. The timer keeps
+    // running and takes the band back as soon as the box is answered.
+    if (QApplication::activeModalWidget() != nullptr) {
+        yieldForModal();
+        return;
+    }
 #ifdef Q_OS_WIN
     const HWND window = reinterpret_cast<HWND>(winId());
-    if (window != nullptr) {
-        if (SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
-                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER)) {
-            stackingFailureReported_ = false;
-        } else if (!stackingFailureReported_) {
-            const DWORD error = GetLastError();
-            qWarning() << "ProcessingOverlay could not reassert HWND_TOPMOST for HWND"
-                       << static_cast<void*>(window) << "; Win32 error" << error;
-            stackingFailureReported_ = true;
-        }
+    if (window == nullptr) return;
+    if (yieldedForModal_) {
+        // Coming out of a modal box: the band was released, so it has to be
+        // requested again rather than assumed.
+        yieldedForModal_ = false;
+    } else if ((GetWindowLongPtrW(window, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) {
+        // Already where this timer exists to keep it. A repeated SetWindowPos
+        // for the same band is a compositor round-trip per tick, and on a GL
+        // window that is a repaint the viewer sees.
+        stackingFailureReported_ = false;
+        return;
+    }
+    if (SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER)) {
+        stackingFailureReported_ = false;
+    } else if (!stackingFailureReported_) {
+        const DWORD error = GetLastError();
+        qWarning() << "ProcessingOverlay could not reassert HWND_TOPMOST for HWND"
+                   << static_cast<void*>(window) << "; Win32 error" << error;
+        stackingFailureReported_ = true;
     }
 #else
     // QWidget::raise() is non-activating on X11; the timer is not created on
     // Wayland, where the compositor alone controls global stacking.
     raise();
 #endif
+}
+
+void ProcessingOverlay::yieldForModal() {
+    if (yieldedForModal_) return;
+#ifdef Q_OS_WIN
+    const HWND window = reinterpret_cast<HWND>(winId());
+    if (window != nullptr) {
+        SetWindowPos(window, HWND_NOTOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+    }
+#else
+    // X11 stacking is raised, not banded: leaving raise() out of the next tick
+    // is the whole yield, and the modal's own window is above this tool window
+    // as soon as its owner raises it.
+#endif
+    yieldedForModal_ = true;
 }
 
 void ProcessingOverlay::renderElapsed() {
