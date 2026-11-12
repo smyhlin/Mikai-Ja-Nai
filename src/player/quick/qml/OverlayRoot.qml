@@ -231,9 +231,9 @@ Item {
 
     TrackPanels {
         id: tracks
-        anchors.fill: parent
         controller: root.controller
         sceneItem: root
+        anchorRect: root.rootAnchor
         visible: false
         z: 20
         onCloseRequested: root.dismissAll()
