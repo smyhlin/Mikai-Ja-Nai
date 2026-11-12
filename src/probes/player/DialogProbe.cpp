@@ -29,6 +29,7 @@
 #include "PlayerController.hpp"
 #include "PlayerMenuModel.hpp"
 #include "PlayerIconProvider.hpp"
+#include "CompareWindow.hpp"
 #include "MpvVideoItem.hpp"
 #include "PlayerWindow.hpp"
 #include "ProbePicture.hpp"
@@ -655,16 +656,39 @@ RunResult runPlayer(const QString& url, const QString& videoName, const QString&
             QTest::mouseClick(result.window, Qt::LeftButton, Qt::NoModifier,
                               compareRow->mapToScene(QPointF(compareRow->width() / 2,
                                                               compareRow->height() / 2)).toPoint());
-            const bool compareVisible = waitFor([] {
+            QPointer<mplayer::shell::CompareWindow> compare;
+            const bool compareVisible = waitFor([&] {
                 for (QWidget* widget : QApplication::topLevelWidgets()) {
-                    if (widget->isVisible() && widget->inherits("mplayer::shell::CompareWindow"))
+                    auto* candidate = qobject_cast<mplayer::shell::CompareWindow*>(widget);
+                    if (candidate != nullptr && candidate->isVisible()) {
+                        compare = candidate;
                         return true;
+                    }
                 }
                 return false;
             }, 10000);
             verdict.require(compareVisible, QStringLiteral("compare window is visible"));
-            for (QWidget* widget : QApplication::topLevelWidgets()) {
-                if (widget->inherits("mplayer::shell::CompareWindow")) widget->close();
+            if (compare != nullptr) {
+                const bool captured = waitFor([&] {
+                    return compare == nullptr || (!compare->comparisonPending() &&
+                           (!compare->frozenFrame().isNull() || !compare->captureError().isEmpty()));
+                }, 30000);
+                verdict.require(captured && compare != nullptr && !compare->frozenFrame().isNull(),
+                                QStringLiteral("compare freezes a real playback frame%1")
+                                    .arg(compare != nullptr && !compare->captureError().isEmpty()
+                                             ? QStringLiteral(" (%1)").arg(compare->captureError())
+                                             : QString()));
+                if (compare != nullptr) {
+                    verdict.require(!compare->renderedSideA().isNull() &&
+                                        !compare->renderedSideB().isNull(),
+                                    QStringLiteral("compare displays both candidate pictures"));
+                    verdict.require(compare->playbackHeld(),
+                                    QStringLiteral("compare holds playback at the captured frame"));
+                    saveImage(compare->grab().toImage(), QStringLiteral("dialog_probe_compare.png"));
+                    compare->close();
+                }
+                verdict.require(waitFor([&] { return session->isPlaying(); }, 5000),
+                                QStringLiteral("closing compare resumes playing video"));
             }
         }
     }

@@ -1884,7 +1884,7 @@ void CompareWindow::captureFrame() {
         return;
     }
     if (!session_->hasVideo() || session_->presenter() == nullptr ||
-        !session_->presenter()->hasRetainedPicture()) {
+        (!session_->hasVisibleOutputFrame() && !session_->hasRetainedPicture())) {
         captureError_ = tr("No video to compare");
         return;
     }
