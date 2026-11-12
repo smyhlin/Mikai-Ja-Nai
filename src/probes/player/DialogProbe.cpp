@@ -28,6 +28,7 @@
 
 #include "PlayerController.hpp"
 #include "PlayerMenuModel.hpp"
+#include "PlayerIconProvider.hpp"
 #include "MpvVideoItem.hpp"
 #include "PlayerWindow.hpp"
 #include "ProbePicture.hpp"
@@ -615,6 +616,35 @@ RunResult runPlayer(const QString& url, const QString& videoName, const QString&
     }, 2000);
     verdict.require(contextOpened, QStringLiteral("right click opens picture menu"));
     if (contextOpened) {
+        PlayerIconProvider iconProvider;
+        for (const QString& menuId : {QStringLiteral("picture"), QStringLiteral("picture.scale"),
+                                      QStringLiteral("picture.subtitles")}) {
+            PlayerMenuModel* model = controller->menuModel(menuId);
+            bool iconsVisible = model != nullptr && model->rowCount() > 0;
+            if (model != nullptr) {
+                for (const PlayerMenuModel::Row& row : model->rows()) {
+                    if (row.heading) continue;
+                    QSize size;
+                    const QImage image = iconProvider.requestImage(
+                        row.icon + QStringLiteral("?size=16&dpr=1&color=%23ffffff"), &size, {});
+                    bool hasInk = false;
+                    for (int y = 0; y < image.height() && !hasInk; ++y) {
+                        for (int x = 0; x < image.width(); ++x) {
+                            if (image.pixelColor(x, y).alpha() > 0) {
+                                hasInk = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (row.icon.isEmpty() || !hasInk) {
+                        iconsVisible = false;
+                        verdict.metric(QStringLiteral("missing icon for %1").arg(row.id));
+                    }
+                }
+            }
+            verdict.require(iconsVisible, QStringLiteral("all %1 actions have visible icons").arg(menuId));
+        }
+        saveImage(result.window->grabWindow(), QStringLiteral("dialog_probe_picture_menu.png"));
         QQuickItem* compareRow = findVisualItem(
             menuPanel(result.window->rootObject(), QStringLiteral("picture")), [](QQuickItem* item) {
                 return item->property("rowAction").toInt() == int(PlayerMenuModel::Action::OpenCompare)

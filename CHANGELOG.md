@@ -35,6 +35,7 @@ This release introduces the player-only Qt Quick/QML frontend while retaining th
   - Remove the duplicate fullscreen button from the bottom player controls and place the top-right window buttons on a themed surface for visibility over video.
   - Separate the episode-list control from the video information chip and make its list compact, opaque and focused on the current episode.
   - Anchor timeline frame previews above the hovered position, keeping them inside the player and preserving the frame's aspect ratio.
+  - Give picture-menu actions consistent, descriptive icons, including local-file actions and video scaling.
   - Refresh the player speed, quality and scaling flyout with live appearance colors and corner radii.
   - Restore right-click access to the picture menu and enable the clip control when video becomes available.
   - Refine antialias settings controls, make episode buttons more compact and remove the redundant Episodes button from the title hero.

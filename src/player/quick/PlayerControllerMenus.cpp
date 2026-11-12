@@ -160,7 +160,7 @@ QVector<PlayerMenuModel::Row> PlayerController::capturePictureRows() const {
     Row frame;
     frame.id = QStringLiteral("picture.frame");
     frame.label = tr("Copy frame");
-    frame.icon = QStringLiteral("download");
+    frame.icon = QStringLiteral("camera");
     frame.action = Action::CaptureFrame;
     frame.value = QString::number(static_cast<qulonglong>(
         session_ != nullptr ? session_->sourceEpoch() : 0));
@@ -169,7 +169,7 @@ QVector<PlayerMenuModel::Row> PlayerController::capturePictureRows() const {
     Row compare;
     compare.id = QStringLiteral("picture.compare");
     compare.label = tr("Compare quality");
-    compare.icon = QStringLiteral("more");
+    compare.icon = QStringLiteral("compare");
     compare.action = Action::OpenCompare;
     compare.value = frame.value;
     rows.append(compare);
@@ -177,6 +177,7 @@ QVector<PlayerMenuModel::Row> PlayerController::capturePictureRows() const {
     Row link;
     link.id = QStringLiteral("picture.copyLink");
     link.label = tr("Copy link");
+    link.icon = QStringLiteral("link");
     link.action = Action::CopyMediaLink;
     rows.append(link);
 
@@ -184,6 +185,7 @@ QVector<PlayerMenuModel::Row> PlayerController::capturePictureRows() const {
         Row folder;
         folder.id = QStringLiteral("picture.folder");
         folder.label = tr("Open containing folder");
+        folder.icon = QStringLiteral("folder");
         folder.tooltip = QFileInfo(QUrl::fromUserInput(url_).toLocalFile()).absolutePath();
         folder.action = Action::OpenContainingFolder;
         rows.append(folder);
@@ -191,6 +193,7 @@ QVector<PlayerMenuModel::Row> PlayerController::capturePictureRows() const {
         Row information;
         information.id = QStringLiteral("picture.information");
         information.label = tr("Media information");
+        information.icon = QStringLiteral("information");
         information.action = Action::OpenMediaInformation;
         rows.append(information);
     }
@@ -205,6 +208,7 @@ QVector<PlayerMenuModel::Row> PlayerController::capturePictureRows() const {
     Row scale;
     scale.id = QStringLiteral("picture.scale");
     scale.label = tr("Video scaling");
+    scale.icon = QStringLiteral("expand");
     scale.submenu = true;
     scale.action = Action::OpenMenu;
     scale.value = QStringLiteral("picture.scale");
@@ -230,6 +234,7 @@ QVector<PlayerMenuModel::Row> PlayerController::capturePictureRows() const {
     Row exit;
     exit.id = QStringLiteral("picture.exit");
     exit.label = tr("Exit  (Esc)");
+    exit.icon = QStringLiteral("exit");
     exit.action = Action::ExitPlayer;
     rows.append(exit);
     return rows;
@@ -245,6 +250,7 @@ QVector<PlayerMenuModel::Row> PlayerController::videoScaleModeRows() const {
         const int ordinal = static_cast<int>(mode);
         row.id = QStringLiteral("scale.") + QString::number(ordinal);
         row.label = videoScaleModeLabel(mode);
+        row.icon = QStringLiteral("expand");
         row.selected = videoScaleMode_ == ordinal;
         row.action = Action::SetVideoScaleMode;
         row.value = QString::number(ordinal);
@@ -846,7 +852,7 @@ void PlayerController::rebuildSubtitleMenus() {
         Row disk;
         disk.id = QStringLiteral("subtitles.disk");
         disk.label = tr("From disk…");
-        disk.icon = QStringLiteral("download");
+        disk.icon = QStringLiteral("folder");
         disk.action = Action::LoadExternalTrack;
         disk.value = QStringLiteral("sub");
         rows.append(disk);
