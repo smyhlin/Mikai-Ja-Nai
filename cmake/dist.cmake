@@ -299,6 +299,19 @@ if(MIKAI_PUBLIC_RELEASE)
   # windeployqt scans source but can deploy modules outside the reviewed file
   # list. Rebuild only the staged QML tree from named manifest entries below.
   file(REMOVE_RECURSE "${DIST_DIR}/qml")
+  set(dist_qt_runtime_modules
+    Qt6Core.dll Qt6Gui.dll Qt6Widgets.dll Qt6Network.dll
+    Qt6OpenGL.dll Qt6OpenGLWidgets.dll Qt6Qml.dll Qt6QmlCore.dll
+    Qt6QmlModels.dll Qt6QmlWorkerScript.dll Qt6Quick.dll
+    Qt6QuickControls2.dll Qt6QuickControls2Basic.dll
+    Qt6QuickControls2BasicStyleImpl.dll Qt6QuickTemplates2.dll Qt6QuickLayouts.dll)
+  # QML can load modules that are absent from the executable's PE imports.
+  foreach(module IN LISTS dist_qt_runtime_modules)
+    if(NOT EXISTS "${qt_bin_dir}/${module}")
+      message(FATAL_ERROR "dist: required Qt runtime module is missing: ${qt_bin_dir}/${module}")
+    endif()
+    file(COPY_FILE "${qt_bin_dir}/${module}" "${DIST_DIR}/${module}" ONLY_IF_DIFFERENT)
+  endforeach()
 endif()
 foreach(qml_relative IN LISTS qml_manifest_files)
   set(qml_source "${qt_prefix}/${qml_relative}")
@@ -614,12 +627,7 @@ if(MIKAI_PUBLIC_RELEASE)
     endif()
   endforeach()
 
-  foreach(required Qt6Core.dll Qt6Gui.dll Qt6Widgets.dll Qt6Network.dll
-      Qt6OpenGL.dll Qt6OpenGLWidgets.dll Qt6Qml.dll Qt6QmlCore.dll
-      Qt6QmlModels.dll Qt6QmlWorkerScript.dll Qt6Quick.dll
-      Qt6QuickControls2.dll Qt6QuickControls2Basic.dll
-      Qt6QuickControls2BasicStyleImpl.dll
-      Qt6QuickTemplates2.dll Qt6QuickLayouts.dll platforms/qwindows.dll
+  foreach(required ${dist_qt_runtime_modules} platforms/qwindows.dll
       imageformats/qjpeg.dll imageformats/qwebp.dll tls/qschannelbackend.dll
       libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll mpv/libmpv-2.dll
       qml/QtQml/qmldir qml/QtQuick/qmldir qml/QtQuick/Window/qmldir
