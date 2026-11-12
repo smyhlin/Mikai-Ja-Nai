@@ -33,7 +33,7 @@ This release introduces the player-only Qt Quick/QML frontend while retaining th
   - Remove vertical scrollbar from discovery feed for clean full-width display; vertical scrolling supported via mouse wheel and explicit Alt + mouse wheel.
   - Group processing controls into Restore, Upscale and Interpolation; improve Anime4K shader selection.
   - Remove the duplicate fullscreen button from the bottom player controls and place the top-right window buttons on a themed surface for visibility over video.
-  - Separate the episode-list control from the video information chip.
+  - Separate the episode-list control from the video information chip and make its list compact, opaque and focused on the current episode.
   - Refresh the player speed, quality and scaling flyout with live appearance colors and corner radii.
   - Restore right-click access to the picture menu and enable the clip control when video becomes available.
   - Refine antialias settings controls, make episode buttons more compact and remove the redundant Episodes button from the title hero.

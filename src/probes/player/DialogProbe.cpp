@@ -39,6 +39,19 @@ using namespace mplayer::quick;
 
 namespace {
 
+class EpisodeFixtureHost final : public shell::PlayerHost {
+public:
+    int requestedEpisode = -1;
+    void requestVariant(const QString&, const QString&) override {}
+    void requestEpisode(int index) override { requestedEpisode = index; }
+    void requestTrackProbe(const QString&) override {}
+    void requestCopyStreamUrl() override {}
+    void playerClosed() override {}
+    void playbackFailed() override {}
+};
+
+EpisodeFixtureHost episodeFixtureHost;
+
 QString evidenceDir() {
     const QString requested = qEnvironmentVariable("MIKAI_DIALOG_PROBE_OUTPUT_DIR");
     if (requested.isEmpty()) return QDir::current().absolutePath();
@@ -396,7 +409,19 @@ struct RunResult {
 RunResult runPlayer(const QString& url, const QString& videoName, const QString& screenName,
                     bool exerciseMenus, mplayer::probes::Verdict& verdict) {
     RunResult result;
-    auto* controller = new PlayerController(QStringLiteral("dialog probe"), url);
+    const bool episodeFixture = qEnvironmentVariableIntValue("MIKAI_DIALOG_EPISODE_FIXTURE") == 1;
+    auto* controller = episodeFixture
+                           ? new PlayerController(QStringLiteral("Episode 1"), url,
+                                                  {{720, url}}, 720, &episodeFixtureHost)
+                           : new PlayerController(QStringLiteral("dialog probe"), url);
+    if (episodeFixture) {
+        QVector<QVariantMap> playlist;
+        for (int i = 1; i <= 6; ++i) {
+            playlist.append({{QStringLiteral("label"), QStringLiteral("Episode %1").arg(i)},
+                             {QStringLiteral("number"), QString::number(i)}});
+        }
+        controller->setPlaylist(playlist, 0);
+    }
     result.controller = controller;
     result.window = controller->window();
 
@@ -465,6 +490,51 @@ RunResult runPlayer(const QString& url, const QString& videoName, const QString&
     }
 
     waitFor([&] { return session->duration() > 0.0; }, 5000);
+    if (episodeFixture) {
+        QQuickItem* button = findVisualItem(result.window->rootObject(), [](QQuickItem* item) {
+            return item->objectName() == QLatin1String("player.episodes.button") && item->isVisible();
+        });
+        verdict.require(button != nullptr, QStringLiteral("episode list button is visible"));
+        if (button != nullptr) {
+            QTest::mouseClick(result.window, Qt::LeftButton, Qt::NoModifier,
+                              button->mapToScene(QPointF(button->width() / 2,
+                                                         button->height() / 2)).toPoint());
+            QQuickItem* drawer = nullptr;
+            const bool opened = waitFor([&] {
+                drawer = findVisualItem(result.window->rootObject(), [](QQuickItem* item) {
+                    return item->objectName() == QLatin1String("player.episodes.drawer")
+                           && item->isVisible();
+                });
+                return drawer != nullptr;
+            }, 3000);
+            verdict.require(opened, QStringLiteral("episode drawer opens"));
+            if (opened) {
+                QQuickItem* firstRow = findVisualItem(drawer, [](QQuickItem* item) {
+                    return item->objectName() == QLatin1String("player.episodes.row.episode.0")
+                           && item->isVisible();
+                });
+                verdict.require(firstRow != nullptr, QStringLiteral("current episode is visible"));
+                verdict.require(drawer->height() < result.window->height(),
+                                QStringLiteral("episode drawer fits its content"));
+                saveImage(result.window->grabWindow(), QStringLiteral("dialog_probe_episodes.png"));
+                QQuickItem* secondRow = findVisualItem(drawer, [](QQuickItem* item) {
+                    return item->objectName() == QLatin1String("player.episodes.row.episode.1")
+                           && item->isVisible();
+                });
+                verdict.require(secondRow != nullptr, QStringLiteral("next episode is visible"));
+                if (secondRow != nullptr) {
+                    episodeFixtureHost.requestedEpisode = -1;
+                    QTest::mouseClick(result.window, Qt::LeftButton, Qt::NoModifier,
+                                      secondRow->mapToScene(QPointF(secondRow->width() / 2,
+                                                                   secondRow->height() / 2)).toPoint());
+                    verdict.require(waitFor([&] { return episodeFixtureHost.requestedEpisode == 1; }, 2000),
+                                    QStringLiteral("episode selection reaches its host"));
+                }
+                verdict.require(waitFor([&] { return !drawer->isVisible(); }, 2000),
+                                QStringLiteral("episode drawer dismisses after selection"));
+            }
+        }
+    }
     QQuickItem* clipButton = nullptr;
     waitFor([&] {
         clipButton = findVisualItem(result.window->rootObject(), [](QQuickItem* item) {

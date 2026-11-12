@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Basic
+import Mikai.Player
 
 // Episode drawer: the playlist level of the series menu as a bounded side
 // panel in the same scene. Picking an episode commits through the typed row
@@ -18,7 +19,7 @@ PlayerPanel {
     objectName: "player.episodes.drawer"
     readonly property string menuId: "series"
     readonly property var menuModel: controller.seriesMenu
-    readonly property int rowHeight: 40
+    readonly property int rowHeight: 42
     readonly property int edgeMargin: 8
     readonly property color textColor: controller.darkTheme ? "#f4f4f5" : "#101014"
     readonly property color mutedColor: controller.darkTheme ? "#a1a1aa" : "#5a5a63"
@@ -28,13 +29,15 @@ PlayerPanel {
                                                 controller.darkTheme ? 0.18 : 0.12)
     readonly property real sceneWidth: sceneItem ? sceneItem.width : 640
     readonly property real sceneHeight: sceneItem ? sceneItem.height : 720
-    readonly property real panelWidth: Math.min(360, Math.max(1, sceneWidth - edgeMargin * 2))
+    readonly property real panelWidth: Math.min(300, Math.max(1, sceneWidth - edgeMargin * 2))
 
     x: Math.max(edgeMargin, Math.min(anchorRect.x, sceneWidth - edgeMargin - width))
     y: Math.min(anchorRect.y + anchorRect.height + 8, sceneHeight - edgeMargin - height)
     width: panelWidth
-    height: Math.max(1, Math.min(400, sceneHeight - edgeMargin - anchorRect.y - anchorRect.height - 8))
-    padding: 8
+    height: Math.max(1, Math.min(400, sceneHeight - edgeMargin - anchorRect.y - anchorRect.height - 8,
+                                 drawerHeader.height + Math.max(rowHeight, list.contentHeight) + padding * 2))
+    padding: 10
+    opaqueSurface: true
     z: 20
 
     Accessible.role: Accessible.PopupMenu
@@ -44,10 +47,15 @@ PlayerPanel {
         if (!visible) return;
         if (list.count > 0) {
             list.forceActiveFocus();
-            if (list.currentIndex < 0) {
-                list.currentIndex = Math.max(0, list.count - 1);
-                list.positionViewAtEnd();
+            let selected = -1;
+            for (let i = 0; i < list.count; ++i) {
+                if (menuModel.data(menuModel.index(i, 0), PlayerMenuModel.SelectedRole)) {
+                    selected = i;
+                    break;
+                }
             }
+            list.currentIndex = selected >= 0 ? selected : 0;
+            list.positionViewAtIndex(list.currentIndex, ListView.Contain);
         } else {
             drawer.forceActiveFocus();
         }
@@ -110,31 +118,18 @@ PlayerPanel {
     Item {
         id: drawerHeader
         width: drawer.width - drawer.padding * 2
-        height: 46
+        height: 38
 
         Text {
             anchors.left: parent.left
             anchors.right: closeButton.left
             anchors.rightMargin: 8
-            anchors.top: parent.top
+            anchors.verticalCenter: parent.verticalCenter
             elide: Text.ElideRight
             text: qsTr("Episodes")
             color: drawer.textColor
-            font.pixelSize: 12
+            font.pixelSize: 13
             font.weight: Font.DemiBold
-            font.letterSpacing: 0.6
-        }
-
-        Text {
-            anchors.left: parent.left
-            anchors.right: closeButton.left
-            anchors.rightMargin: 8
-            anchors.top: parent.top
-            anchors.topMargin: 18
-            elide: Text.ElideRight
-            text: drawer.controller.episodeLabel
-            color: drawer.mutedColor
-            font.pixelSize: 11
         }
 
         PlayerButton {
@@ -162,11 +157,11 @@ PlayerPanel {
         keyNavigationEnabled: false
         currentIndex: -1
 
+        ScrollBar.vertical: ScrollBar {
+            policy: list.contentHeight > list.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+        }
+
         Accessible.role: Accessible.List
-
-        Component.onCompleted: positionViewAtEnd()
-
-        onModelChanged: positionViewAtEnd()
 
         Keys.onPressed: function(event) {
             switch (event.key) {
@@ -208,12 +203,19 @@ PlayerPanel {
 
             Rectangle {
                 anchors.fill: parent
-                anchors.margins: 2
-                radius: Math.min(6, drawer.controller.cornerRadius)
-                color: !rowItem.headingRole
-                       && (hoverHandler.hovered || list.currentIndex === rowItem.index
-                           || rowItem.model.selected || tapHandler.pressed)
-                       ? drawer.hoverColor : "transparent"
+                anchors.leftMargin: 0
+                anchors.rightMargin: 0
+                anchors.topMargin: 2
+                anchors.bottomMargin: 2
+                radius: Math.max(0, Math.min(drawer.controller.cornerRadius, height / 2))
+                color: rowItem.model.selected && !rowItem.headingRole
+                       ? Qt.rgba(drawer.controller.accentColor.r, drawer.controller.accentColor.g,
+                                 drawer.controller.accentColor.b, drawer.controller.darkTheme ? 0.26 : 0.18)
+                       : !rowItem.headingRole && (hoverHandler.hovered || list.activeFocus && list.currentIndex === rowItem.index || tapHandler.pressed)
+                         ? drawer.hoverColor : "transparent"
+                border.width: rowItem.model.selected && !rowItem.headingRole ? 1 : 0
+                border.color: Qt.rgba(drawer.controller.accentColor.r, drawer.controller.accentColor.g,
+                                      drawer.controller.accentColor.b, 0.65)
             }
 
             Rectangle {
@@ -240,18 +242,6 @@ PlayerPanel {
                 font.pixelSize: rowItem.headingRole ? 11 : 13
                 font.weight: rowItem.model.selected || rowItem.headingRole ? Font.DemiBold : Font.Normal
                 font.letterSpacing: rowItem.headingRole ? 0.6 : 0
-            }
-
-            Text {
-                visible: !rowItem.headingRole && rowItem.model.detail !== ""
-                anchors.left: labelText.left
-                anchors.right: labelText.right
-                anchors.top: labelText.bottom
-                anchors.topMargin: 2
-                elide: Text.ElideRight
-                text: rowItem.model.detail
-                color: drawer.mutedColor
-                font.pixelSize: 11
             }
 
             HoverHandler {

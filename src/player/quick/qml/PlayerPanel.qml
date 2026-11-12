@@ -14,6 +14,7 @@ Item {
 
     property string title
     property real padding: 12
+    property bool opaqueSurface: false
 
     /// The padded content host: a bound width and height live here, never a
     /// layout of its own, so children keep full control of their placement.
@@ -25,8 +26,8 @@ Item {
     // surface in light. Accent and radius are the controller's live tokens.
     readonly property color textColor: controller.darkTheme ? "#f4f4f5" : "#18181b"
     readonly property color cardColor: controller.darkTheme ? Qt.rgba(20 / 255, 21 / 255,
-                                                                     27 / 255, 0.97)
-                                                           : Qt.rgba(0.98, 0.98, 0.985, 0.98)
+                                                                     27 / 255, opaqueSurface ? 1 : 0.97)
+                                                           : Qt.rgba(0.98, 0.98, 0.985, opaqueSurface ? 1 : 0.98)
     readonly property color edgeColor: controller.darkTheme ? Qt.rgba(1, 1, 1, 0.18)
                                                             : Qt.rgba(0, 0, 0, 0.12)
     readonly property real cardRadius: Math.max(0, Math.min(controller.cornerRadius,

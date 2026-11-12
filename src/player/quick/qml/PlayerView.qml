@@ -369,6 +369,7 @@ Item {
 
         PlayerButton {
             controller: root.controller
+            objectName: "player.episodes.button"
             anchors.fill: parent
             iconName: root.controller.seriesExpanded ? "chevron-left" : "chevron-right"
             toolTip: qsTr("Episodes")
