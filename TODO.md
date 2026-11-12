@@ -8,10 +8,10 @@
 
 - [ ] player black blink fix
 - [ ] fix elements hide under player screen
-- [ ] fix video screenshot resets playback and reloads stream ("Відкриття потоку...")
 ## Done
 
 - [x] cpp fixes
+- [x] fix video screenshot resets playback and reloads stream ("Відкриття потоку...")
 - [x] cut clip (clapperboard) button invokes and activates clip dialog
 - [x] add episode list expand chevron (">") to top-left episode chip
 - [x] fix compare quality window invocation from menu
