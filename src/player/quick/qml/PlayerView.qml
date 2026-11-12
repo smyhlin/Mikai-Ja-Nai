@@ -280,26 +280,33 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 4
 
-            Row {
-                id: episodeTitleRow
-                spacing: 4
+            Item {
+                id: episodeTitleItem
                 visible: root.controller.episodeLabel !== ""
+                width: episodeTitleRow.implicitWidth
+                height: episodeTitleRow.implicitHeight
 
-                Label {
-                    text: root.controller.episodeLabel
-                    color: root.controller.darkTheme ? "#f4f4f5" : "#18181b"
-                    font.pixelSize: 12
-                    font.weight: Font.DemiBold
-                    elide: Text.ElideRight
-                }
+                Row {
+                    id: episodeTitleRow
+                    spacing: 4
+                    anchors.fill: parent
 
-                Text {
-                    visible: !root.controller.directMedia
-                    text: "\u203A"
-                    color: episodeArea.containsMouse ? root.controller.accentColor : (root.controller.darkTheme ? "#a1a1aa" : "#71717a")
-                    font.pixelSize: 15
-                    font.bold: true
-                    anchors.verticalCenter: parent.verticalCenter
+                    Label {
+                        text: root.controller.episodeLabel
+                        color: root.controller.darkTheme ? "#f4f4f5" : "#18181b"
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                        elide: Text.ElideRight
+                    }
+
+                    Text {
+                        visible: !root.controller.directMedia
+                        text: "\u203A"
+                        color: episodeArea.containsMouse ? root.controller.accentColor : (root.controller.darkTheme ? "#a1a1aa" : "#71717a")
+                        font.pixelSize: 15
+                        font.bold: true
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
                 }
 
                 MouseArea {

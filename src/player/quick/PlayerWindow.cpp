@@ -87,11 +87,8 @@ private:
 
 PlayerWindow::PlayerWindow(PlayerController* controller, QWindow* transientParent)
     : controller_(controller) {
+    Q_UNUSED(transientParent);
     setObjectName(QStringLiteral("playerWindow"));
-    // A transient relationship, not a native QWindow parent and never a QWidget.
-    if (transientParent != nullptr) {
-        setTransientParent(transientParent);
-    }
     setFlags(Qt::Window | Qt::WindowTitleHint | Qt::WindowSystemMenuHint |
              Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
 
@@ -197,8 +194,11 @@ void PlayerWindow::loadPlayerScene() {
         setVideoItem(item);
         sceneLoaded_ = true;
         if (showRequested_) {
-            applyWindowMode();
-            show();
+            if (fullscreenIntent_) {
+                showFullScreen();
+            } else {
+                showNormal();
+            }
             applyWindowMode();
             raise();
             requestActivate();
@@ -257,9 +257,9 @@ void PlayerWindow::showWindowed() {
     if (!compactPip_) windowModeRequestPending_ = true;
     if (!sceneLoaded_) loadPlayerScene();
     if (!sceneLoaded_) return;
+    showNormal();
     applyWindowMode();
-    if (!isVisible()) show();
-    applyWindowMode();
+    raise();
     requestActivate();
 }
 
@@ -269,9 +269,9 @@ void PlayerWindow::showFullscreen() {
     if (!compactPip_) windowModeRequestPending_ = true;
     if (!sceneLoaded_) loadPlayerScene();
     if (!sceneLoaded_) return;
+    showFullScreen();
     applyWindowMode();
-    if (!isVisible()) show();
-    applyWindowMode();
+    raise();
     requestActivate();
 }
 
