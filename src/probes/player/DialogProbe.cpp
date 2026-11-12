@@ -464,6 +464,39 @@ RunResult runPlayer(const QString& url, const QString& videoName, const QString&
         return result;
     }
 
+    QQuickItem* settingsButton = findVisualItem(result.window->rootObject(), [](QQuickItem* item) {
+        return item->objectName() == QLatin1String("player.settings.button") && item->isVisible();
+    });
+    verdict.require(settingsButton != nullptr, QStringLiteral("settings button is visible"));
+    if (settingsButton != nullptr) {
+        const QPoint point = settingsButton->mapToScene(
+            QPointF(settingsButton->width() / 2, settingsButton->height() / 2)).toPoint();
+        QTest::mouseClick(result.window, Qt::LeftButton, Qt::NoModifier, point);
+        const bool opened = waitFor([&] {
+            QQuickItem* item = findVisualItem(result.window->rootObject(), [](QQuickItem* child) {
+                return child->objectName() == QLatin1String("player.settings") && child->isVisible();
+            });
+            return item != nullptr;
+        }, 2000);
+        verdict.require(opened, QStringLiteral("settings flyout opens"));
+        if (opened) {
+            QQuickItem* preset = findVisualItem(result.window->rootObject(), [](QQuickItem* item) {
+                return item->objectName() == QLatin1String("player.speed.1.2") && item->isVisible();
+            });
+            verdict.require(preset != nullptr, QStringLiteral("speed preset is visible"));
+            if (preset != nullptr) {
+                const QPoint presetPoint = preset->mapToScene(
+                    QPointF(preset->width() / 2, preset->height() / 2)).toPoint();
+                QTest::mouseClick(result.window, Qt::LeftButton, Qt::NoModifier, presetPoint);
+                verdict.require(waitFor([&] { return std::abs(controller->rate() - 1.2) < 0.01; }, 2000),
+                                QStringLiteral("speed preset changes playback rate"));
+                controller->setRate(1.0);
+            }
+            saveImage(result.window->grabWindow(), QStringLiteral("dialog_probe_settings.png"));
+            QTest::keyClick(result.window, Qt::Key_Escape);
+        }
+    }
+
     PlaybackSample earlier;
     PlaybackSample later;
     int validSamples = 0;

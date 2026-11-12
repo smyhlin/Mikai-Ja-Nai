@@ -34,6 +34,7 @@ This release introduces the player-only Qt Quick/QML frontend while retaining th
   - Group processing controls into Restore, Upscale and Interpolation; improve Anime4K shader selection.
   - Remove the duplicate fullscreen button from the bottom player controls and place the top-right window buttons on a themed surface for visibility over video.
   - Separate the episode-list control from the video information chip.
+  - Refresh the player speed, quality and scaling flyout with live appearance colors and corner radii.
   - Refine antialias settings controls, make episode buttons more compact and remove the redundant Episodes button from the title hero.
   - The focused Windows production-player smoke passed 87 checks covering fullscreen auto-hide/wake, nested hover menus, click containment, uninterrupted fixture playback and close/reopen. Linux and broad workflow verification remain deferred.
 

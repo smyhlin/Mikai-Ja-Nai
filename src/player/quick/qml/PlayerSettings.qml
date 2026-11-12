@@ -18,7 +18,7 @@ PlayerPanel {
     objectName: "player.settings"
     readonly property string menuId: "settings"
     readonly property PlayerMenuModel menuModel: controller.settingsMenu
-    readonly property int rowHeight: 34
+    readonly property int rowHeight: 40
     readonly property int edgeMargin: 8
     readonly property color textColor: controller.darkTheme ? "#f4f4f5" : "#101014"
     readonly property color mutedColor: controller.darkTheme ? "#a1a1aa" : "#5a5a63"
@@ -28,7 +28,7 @@ PlayerPanel {
                                                 controller.darkTheme ? 0.18 : 0.12)
     readonly property real sceneWidth: sceneItem ? sceneItem.width : 640
     readonly property real sceneHeight: sceneItem ? sceneItem.height : 720
-    readonly property real panelWidth: Math.min(260, Math.max(1, sceneWidth - edgeMargin * 2))
+    readonly property real panelWidth: Math.min(340, Math.max(1, sceneWidth - edgeMargin * 2))
     readonly property int maxBodyHeight: Math.max(1, sceneHeight - edgeMargin * 2
                                                   - speedControl.height - 8 - padding * 2)
     width: panelWidth
@@ -133,14 +133,23 @@ PlayerPanel {
     Item {
         id: speedControl
         width: panel.width - panel.padding * 2
-        height: 32
+        height: 140
         Accessible.name: qsTr("Playback speed")
 
         Text {
-            id: speedLabel
             anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            text: Number(panel.controller.rate).toFixed(1) + "x"
+            anchors.top: parent.top
+            text: qsTr("Playback speed")
+            color: panel.mutedColor
+            font.pixelSize: 12
+            font.weight: Font.DemiBold
+        }
+
+        Text {
+            id: speedLabel
+            anchors.right: parent.right
+            anchors.top: parent.top
+            text: Number(panel.controller.rate).toFixed(2).replace(/0+$/, "").replace(/\.$/, "") + "×"
             color: panel.textColor
             font.pixelSize: 13
             font.weight: Font.DemiBold
@@ -148,10 +157,10 @@ PlayerPanel {
 
         Slider {
             id: speedSlider
-            anchors.left: speedLabel.right
-            anchors.leftMargin: 12
+            anchors.left: parent.left
             anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.top: parent.top
+            anchors.topMargin: 18
             from: 0.25
             to: 2.0
             stepSize: 0.05
@@ -184,7 +193,47 @@ PlayerPanel {
                 implicitHeight: 10
                 radius: 5
                 color: panel.controller.accentColor
-                visible: speedSlider.hovered || speedSlider.pressed
+            }
+        }
+
+        Grid {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            columns: 3
+            spacing: 4
+
+            Repeater {
+                model: [0.5, 1.0, 1.2, 1.5, 1.7, 2.0]
+                delegate: Button {
+                    id: speedPreset
+                    required property real modelData
+                    objectName: "player.speed." + modelData
+                    width: Math.max(1, (parent.width - 8) / 3)
+                    height: 32
+                    text: Number(modelData).toFixed(1).replace(/\.0$/, "") + "×"
+                    Accessible.name: text
+                    onClicked: panel.controller.setRate(modelData)
+
+                    background: Rectangle {
+                        radius: Math.max(0, Math.min(panel.controller.cornerRadius, height / 2))
+                        color: Math.abs(panel.controller.rate - speedPreset.modelData) < 0.025
+                               ? Qt.rgba(panel.controller.accentColor.r, panel.controller.accentColor.g,
+                                         panel.controller.accentColor.b, panel.controller.darkTheme ? 0.32 : 0.22)
+                               : (speedPreset.hovered ? panel.hoverColor
+                                  : Qt.rgba(panel.textColor.r, panel.textColor.g, panel.textColor.b, 0.06))
+                        border.width: Math.abs(panel.controller.rate - speedPreset.modelData) < 0.025 ? 1 : 0
+                        border.color: panel.controller.accentColor
+                    }
+                    contentItem: Text {
+                        text: speedPreset.text
+                        color: panel.textColor
+                        font.pixelSize: 12
+                        font.weight: Font.Medium
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
             }
         }
     }
@@ -205,6 +254,16 @@ PlayerPanel {
         height: list.count > 0 ? Math.min(contentHeight, panel.maxBodyHeight)
                                : Math.max(44, emptyLabel.implicitHeight + 16)
         model: panel.menuModel
+        header: Text {
+            visible: panel.controller.currentHeight > 0
+            width: list.width
+            height: visible ? 28 : 0
+            text: qsTr("Quality")
+            color: panel.mutedColor
+            font.pixelSize: 12
+            font.weight: Font.DemiBold
+            verticalAlignment: Text.AlignVCenter
+        }
         clip: true
         reuseItems: true
         cacheBuffer: 600
@@ -257,9 +316,17 @@ PlayerPanel {
 
             Rectangle {
                 anchors.fill: parent
-                radius: Math.min(6, panel.controller.cornerRadius)
-                color: !rowItem.headingRole && (hoverHandler.hovered || list.currentIndex === rowItem.index)
-                       ? panel.hoverColor : "transparent"
+                anchors.bottomMargin: rowItem.headingRole ? 0 : 4
+                radius: Math.max(0, Math.min(panel.controller.cornerRadius, height / 2))
+                color: rowItem.headingRole ? "transparent"
+                       : rowItem.isSelected
+                         ? Qt.rgba(panel.controller.accentColor.r, panel.controller.accentColor.g,
+                                   panel.controller.accentColor.b, panel.controller.darkTheme ? 0.32 : 0.22)
+                         : (hoverHandler.hovered || list.currentIndex === rowItem.index)
+                           ? panel.hoverColor
+                           : Qt.rgba(panel.textColor.r, panel.textColor.g, panel.textColor.b, 0.06)
+                border.width: rowItem.isSelected ? 1 : 0
+                border.color: panel.controller.accentColor
             }
 
             PlayerIcon {
@@ -283,7 +350,7 @@ PlayerPanel {
                 anchors.verticalCenter: parent.verticalCenter
                 elide: Text.ElideRight
                 text: rowItem.model.label
-                color: rowItem.isSelected ? panel.controller.accentColor : panel.textColor
+                color: rowItem.headingRole ? panel.mutedColor : panel.textColor
                 font.pixelSize: rowItem.headingRole ? 11 : 13
                 font.weight: rowItem.headingRole || rowItem.isSelected ? Font.DemiBold : Font.Normal
                 font.letterSpacing: rowItem.headingRole ? 0.6 : 0
