@@ -1020,6 +1020,13 @@ void TestFeedRender::theEngineBuildGateWithholdsMeasurementUntilTheSlotIsConfigu
   QVERIFY(!gate.readyToMeasure());
   QVERIFY(gate.buildActive());
   QCOMPARE(gate.observeLog(QStringLiteral("aji"), configured, Backend::TensorRT, kPlanSlot),
+            AnimeJanaiBuildLogEvent::None);
+  QVERIFY(gate.buildActive());
+  QVERIFY(!gate.readyToMeasure());
+  gate.observeLog(QStringLiteral("animejanai"),
+                  QStringLiteral("background engine build finished; reconfiguring"),
+                  Backend::TensorRT, kPlanSlot);
+  QCOMPARE(gate.observeLog(QStringLiteral("aji"), configured, Backend::TensorRT, kPlanSlot),
             AnimeJanaiBuildLogEvent::SlotConfigured);
   QVERIFY(gate.readyToMeasure());
 
@@ -1060,6 +1067,21 @@ void TestFeedRender::theEngineBuildGateWithholdsMeasurementUntilTheSlotIsConfigu
   QCOMPARE(rtx.observeLog(QStringLiteral("aji"), configured, Backend::TensorRTRTX, kPlanSlot),
            AnimeJanaiBuildLogEvent::SlotConfigured);
   QVERIFY(rtx.readyToMeasure());
+
+  AnimeJanaiBuildGate cached;
+  const QString warmup = QStringLiteral("[aji] background engine warm-up: %1").arg(rtxEngine);
+  QCOMPARE(cached.observeLog(QStringLiteral("animejanai"), warmup, Backend::TensorRTRTX, kPlanSlot),
+           AnimeJanaiBuildLogEvent::TensorRtEnginePrepStarted);
+  QVERIFY(cached.buildActive());
+  QCOMPARE(cached.observeLog(QStringLiteral("animejanai"), configured, Backend::TensorRTRTX,
+                             kPlanSlot), AnimeJanaiBuildLogEvent::None);
+  QVERIFY(!cached.readyToMeasure());
+  cached.observeLog(QStringLiteral("animejanai"),
+                    QStringLiteral("background engine build finished; reconfiguring"),
+                    Backend::TensorRTRTX, kPlanSlot);
+  QCOMPARE(cached.observeLog(QStringLiteral("animejanai"), configured, Backend::TensorRTRTX,
+                             kPlanSlot), AnimeJanaiBuildLogEvent::SlotConfigured);
+  QVERIFY(cached.readyToMeasure());
 
   // The upstream dispatcher substituting classic TensorRT is a named failure of
   // the requested RTX backend, never an RTX success, and it has no build log to

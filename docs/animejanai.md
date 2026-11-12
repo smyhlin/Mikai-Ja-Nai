@@ -140,6 +140,14 @@ verified digests in `components/aji/<version>/` must stay as installed.
 
 The Upscalers page offers four downloaded ONNX graphs (4× Real-ESRGAN AnimeVideo v3 in fp32/fp16, 2× HFA2kCompact and its multijpg variant) as one-step chains. They enter the same custom-model store as an imported graph, so they plan, verify, cache engines and appear in Compare exactly like a spatial model; the chain carries the graph's own factor, and the first render at a new size builds an engine before it can show a frame.
 
+A fast preparation is not by itself evidence of failure or of a new build. The fork logs
+`background engine build` for compilation and `background engine warm-up` when loading a cached
+RTX engine. The matching `.rtxengine.build.log` records the graph, input shape and actual generation
+time; the session log records engine deserialization, slot geometry and CUDA-graph capture. A
+configured slot alone is not a quality or throughput measurement. During background preparation,
+the player, Compare and Benchmark wait for the fork's completion and subsequent slot configuration
+before reporting the stage ready.
+
 Two pane-specific notes, both fixed but worth knowing when reading an older log: a comparison pane's core has to preload the backend closure with `RTLD_GLOBAL` (the player's surface does that itself), and preloading a second copy of an already resident `libnvinfer`/`libcudart` soname must be skipped — two runtime images in one process corrupt the heap. Teardown of a pane's filter is synchronous for the same reason: removing the filter is what joins the fork's builder thread.
 
 ## 6a. The Compare pane's native replay

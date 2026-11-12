@@ -176,13 +176,14 @@ Rectangle {
         }
 
         Text {
+            objectName: "player.preparation.elapsed"
             Layout.fillWidth: true
             visible: root.running
             text: root.view !== null
                   ? qsTr("Elapsed: %1:%2:%3")
-                    .arg(Math.floor(root.view.elapsedSeconds / 3600), 2, 10, "0")
-                    .arg(Math.floor(root.view.elapsedSeconds / 60) % 60, 2, 10, "0")
-                    .arg(root.view.elapsedSeconds % 60, 2, 10, "0")
+                    .arg(String(Math.floor(root.view.elapsedSeconds / 3600)).padStart(2, "0"))
+                    .arg(String(Math.floor(root.view.elapsedSeconds / 60) % 60).padStart(2, "0"))
+                    .arg(String(root.view.elapsedSeconds % 60).padStart(2, "0"))
                   : ""
             color: root.mutedColor
             font.pixelSize: 12

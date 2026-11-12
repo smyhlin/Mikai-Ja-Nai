@@ -295,7 +295,9 @@ inline AnimeJanaiBuildLogEvent classifyAnimeJanaiBuildLog(QStringView prefix,
         return AnimeJanaiBuildLogEvent::TensorRtBuildStarted;
     }
 
-    if (tensorRtFamily && lower.contains(QLatin1String("preparing tensorrt-rtx engine for "))) {
+    if (backend == Backend::TensorRTRTX &&
+        (lower.contains(QLatin1String("preparing tensorrt-rtx engine for ")) ||
+         lower.contains(QLatin1String("background engine warm-up:")))) {
         return AnimeJanaiBuildLogEvent::TensorRtEnginePrepStarted;
     }
 
@@ -329,6 +331,12 @@ public:
         const AnimeJanaiBuildLogEvent event =
             classifyAnimeJanaiBuildLog(prefix, line, backend, slot);
         if (animeJanaiEnginePrepEvent(event)) {
+            const bool alreadyBuilding = buildActive();
+            const bool background = line.contains(QLatin1String("background engine build:"),
+                                                  Qt::CaseInsensitive) ||
+                                    line.contains(QLatin1String("background engine warm-up:"),
+                                                  Qt::CaseInsensitive);
+            backgroundWork_ = background || (alreadyBuilding && backgroundWork_);
             state_ = AnimeJanaiBuildGateState::Building;
             rifeActive_ = false;
             backgroundBuildFinished_ = false;
@@ -347,8 +355,11 @@ public:
             if (failureLogPath_.isEmpty())
                 failureLogPath_ = animeJanaiEngineFailedLogPath(line);
         } else if (event == AnimeJanaiBuildLogEvent::SlotConfigured) {
-            if (!isTensorRtFamily(backend)) return AnimeJanaiBuildLogEvent::None;
+            if (!isTensorRtFamily(backend) ||
+                (buildActive() && backgroundWork_ && !backgroundBuildFinished_))
+                return AnimeJanaiBuildLogEvent::None;
             state_ = AnimeJanaiBuildGateState::Ready;
+            backgroundWork_ = false;
             rifeActive_ = false;
         } else if (isTensorRtFamily(backend)) {
             const QStringView text = line.trimmed();
@@ -392,6 +403,7 @@ private:
     bool backendSubstituted_ = false;
     QString warmupLogPath_;
     bool rifeActive_ = false;
+    bool backgroundWork_ = false;
     bool backgroundBuildFinished_ = false;
     QString failureLogPath_;
 };

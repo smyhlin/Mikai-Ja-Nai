@@ -762,12 +762,10 @@ void PlayerController::restateAnimeJanaiBuildLanguage() {
     // issue a command, bump a generation, restart the elapsed timer or cancel
     // anything, and the stage keeps the index and count the build supplied.
     const bool rtx = animeJanaiPlan_.backend == native::Backend::TensorRTRTX;
-    retitleEnginePreparation(rtx ? tr("Building TensorRT for RTX engine")
-                                 : tr("Building TensorRT engine"));
+    const QString backend = rtx ? QStringLiteral("TensorRT-RTX") : QStringLiteral("TensorRT");
+    retitleEnginePreparation(tr("Preparing…") + QStringLiteral(" · ") + backend);
     updateEnginePreparation(animeJanaiBuildStageIndex_, animeJanaiBuildStageCount_,
-                            rtx ? tr("TensorRT for RTX compilation")
-                                : tr("TensorRT compilation"),
-                            animeJanaiBuildDetailText());
+                            tr("Preparing…"), animeJanaiBuildDetailText());
 }
 
 void PlayerController::handleAnimeJanaiEngineBuildChanged(VideoSession* owner, bool active,
@@ -778,9 +776,10 @@ void PlayerController::handleAnimeJanaiEngineBuildChanged(VideoSession* owner, b
         if (enginePreparationGeneration_ == 0 ||
             animeJanaiBuildGeneration_ != enginePreparationGeneration_) {
             const native::AnimeJanaiPlan plan = owner->animeJanaiPlan();
-            beginEnginePreparation(plan.backend == native::Backend::TensorRTRTX
-                                       ? tr("Building TensorRT for RTX engine")
-                                       : tr("Building TensorRT engine"));
+            beginEnginePreparation(tr("Preparing…") + QStringLiteral(" · ") +
+                                   (plan.backend == native::Backend::TensorRTRTX
+                                        ? QStringLiteral("TensorRT-RTX")
+                                        : QStringLiteral("TensorRT")));
             animeJanaiBuildGeneration_ = enginePreparationGeneration_;
             // The operation's preset is captured as its catalogue identity,
             // once, when the operation starts. The label recorded beside it is
@@ -801,10 +800,7 @@ void PlayerController::handleAnimeJanaiEngineBuildChanged(VideoSession* owner, b
         if (!enginePreparationActive_) beginEnginePreparation(preparationTitle_);
         updateEnginePreparation(
             animeJanaiBuildStageIndex_, animeJanaiBuildStageCount_,
-            animeJanaiPlan_.backend == native::Backend::TensorRTRTX
-                ? tr("TensorRT for RTX compilation")
-                : tr("TensorRT compilation"),
-            animeJanaiBuildDetailText());
+            tr("Preparing…"), animeJanaiBuildDetailText());
         return;
     }
     if (!owner->animeJanaiEngineBuildActive()) owner->setEngineFrameHold(false);
@@ -881,32 +877,13 @@ QString PlayerController::animeJanaiChipText() const {
         return QStringLiteral("%1 · %2").arg(backendShort, tr("Unavailable · %1").arg(id));
     }
     QString visibleStatus = animeJanaiStatus_;
+    if (visibleStatus.startsWith(QLatin1String("Configured · "))) {
+        visibleStatus.replace(QStringLiteral(" · %1 · ").arg(id),
+                              QStringLiteral(" · %1 · ").arg(presetLabel));
+        return visibleStatus;
+    }
     if (visibleStatus.startsWith(QLatin1String("Configured;"))) {
-        if (id.startsWith(QLatin1String("rife:"), Qt::CaseInsensitive)) {
-            const double srcFps = streamFramesPerSecond_ > 0.0 ? streamFramesPerSecond_ : 23.98;
-            const double outFps = srcFps * 2.0;
-            if (sourceHeight_ > 0) {
-                visibleStatus = QStringLiteral("%1 · %2 · %3p · %4 → %5 FPS")
-                                    .arg(backendShort, presetLabel)
-                                    .arg(sourceHeight_)
-                                    .arg(srcFps, 0, 'f', 2)
-                                    .arg(outFps, 0, 'f', 2);
-            } else {
-                visibleStatus =
-                    QStringLiteral("%1 · %2 · %3").arg(backendShort, presetLabel, tr("Preparing…"));
-            }
-        } else if (sourceHeight_ > 0) {
-            const int outH = sourceHeight_ * 2;
-            const int outW = (sourceWidth_ > 0 ? sourceWidth_ : (sourceHeight_ * 16 / 9)) * 2;
-            visibleStatus = QStringLiteral("%1 · %2 · %3p → %4p (%5×%4)")
-                                .arg(backendShort, presetLabel)
-                                .arg(sourceHeight_)
-                                .arg(outH)
-                                .arg(outW);
-        } else {
-            visibleStatus =
-                QStringLiteral("%1 · %2 · %3").arg(backendShort, presetLabel, tr("Preparing…"));
-        }
+        return QStringLiteral("%1 · %2 · %3").arg(backendShort, presetLabel, visibleStatus);
     }
     const bool alreadyPrefixed =
         visibleStatus.startsWith(QLatin1String("TRT-RTX ")) ||

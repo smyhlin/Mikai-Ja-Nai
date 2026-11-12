@@ -11,6 +11,7 @@
 #include <QImage>
 #include <QMetaObject>
 #include <QPointer>
+#include <QRegularExpression>
 #include <QQmlError>
 #include <QQuickItem>
 #include <QScopedValueRollback>
@@ -32,6 +33,7 @@
 #include "CompareWindow.hpp"
 #include "MpvVideoItem.hpp"
 #include "PlayerWindow.hpp"
+#include "PreparationWindow.hpp"
 #include "ProbePicture.hpp"
 #include "ProbeRuntime.hpp"
 #include "VideoSession.hpp"
@@ -492,6 +494,31 @@ RunResult runPlayer(const QString& url, const QString& videoName, const QString&
     }
 
     waitFor([&] { return session->duration() > 0.0; }, 5000);
+    if (qEnvironmentVariableIntValue("MIKAI_DIALOG_PREPARATION_FIXTURE") == 1) {
+        controller->beginEnginePreparation(QStringLiteral("Preparing engine"));
+        QPointer<PreparationWindow> preparation;
+        const bool opened = waitFor([&] {
+            for (QWindow* window : QGuiApplication::topLevelWindows()) {
+                auto* candidate = qobject_cast<PreparationWindow*>(window);
+                if (candidate != nullptr && candidate->isVisible() && candidate->rootObject()) {
+                    preparation = candidate;
+                    return true;
+                }
+            }
+            return false;
+        }, 5000);
+        verdict.require(opened, QStringLiteral("engine preparation window is visible"));
+        if (preparation != nullptr) {
+            auto* elapsed = preparation->rootObject()->findChild<QObject*>(
+                QStringLiteral("player.preparation.elapsed"));
+            const QRegularExpression pattern(QStringLiteral("\\d{2,}:\\d{2}:\\d{2}$"));
+            verdict.require(elapsed != nullptr && pattern.match(
+                                elapsed->property("text").toString()).hasMatch(),
+                            QStringLiteral("preparation elapsed time has padded fields"));
+            saveImage(preparation->grabWindow(), QStringLiteral("dialog_probe_preparation.png"));
+        }
+        controller->endEnginePreparation(true, QStringLiteral("Complete"));
+    }
     if (qEnvironmentVariableIntValue("MIKAI_DIALOG_HOVER_FIXTURE") == 1) {
         auto* timeline = qobject_cast<QQuickItem*>(
             result.window->rootObject()->property("timeline").value<QObject*>());

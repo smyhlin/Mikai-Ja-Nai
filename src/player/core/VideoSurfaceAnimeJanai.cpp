@@ -535,6 +535,7 @@ void VideoSession::observeAnimeJanaiBackendLog(const QString& prefix, const QStr
         animeJanaiBackgroundBuildFinished_ = true;
     }
     if (native::animeJanaiEnginePrepEvent(buildLogEvent)) {
+        resetAnimeJanaiObservation();
         ++animeJanaiPendingAjiBuildCount_;
         if (!animeJanaiEngineBuildActive_) {
             animeJanaiBuildPollingRefused_ = false;
@@ -547,7 +548,10 @@ void VideoSession::observeAnimeJanaiBackendLog(const QString& prefix, const QStr
                 ? tr("Preparing the selected model for this session.")
                 : tr("Compiling the selected model for this video resolution.");
         setEngineFrameHold(true);
-        setAnimeJanaiStatus(tr("Building %1 engine…").arg(product));
+        setAnimeJanaiStatus(
+            buildLogEvent == native::AnimeJanaiBuildLogEvent::TensorRtEnginePrepStarted
+                ? tr("Preparing the selected model for this session.")
+                : tr("Building %1 engine…").arg(product));
         emit animeJanaiEngineBuildChanged(true, false, detail);
     }
     if (buildLogEvent == native::AnimeJanaiBuildLogEvent::SlotConfigured) {
