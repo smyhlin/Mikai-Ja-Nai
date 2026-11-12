@@ -280,14 +280,39 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 4
 
-            Label {
+            Row {
+                id: episodeTitleRow
+                spacing: 4
                 visible: root.controller.episodeLabel !== ""
-                width: Math.min(root.width - 52, implicitWidth)
-                text: root.controller.episodeLabel
-                color: root.controller.darkTheme ? "#f4f4f5" : "#18181b"
-                font.pixelSize: 12
-                font.weight: Font.DemiBold
-                elide: Text.ElideRight
+
+                Label {
+                    text: root.controller.episodeLabel
+                    color: root.controller.darkTheme ? "#f4f4f5" : "#18181b"
+                    font.pixelSize: 12
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    visible: !root.controller.directMedia
+                    text: "\u203A"
+                    color: episodeArea.containsMouse ? root.controller.accentColor : (root.controller.darkTheme ? "#a1a1aa" : "#71717a")
+                    font.pixelSize: 15
+                    font.bold: true
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                MouseArea {
+                    id: episodeArea
+                    anchors.fill: parent
+                    enabled: !root.controller.directMedia
+                    hoverEnabled: true
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: {
+                        root.controller.noteUserActivity()
+                        root.controller.toggleSeries()
+                    }
+                }
             }
 
             Row {
