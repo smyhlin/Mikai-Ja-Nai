@@ -52,8 +52,11 @@ The installed Windows player's historical `mikai.log` and corresponding
 `1920×1080 → 7680×4320` configured slot and CUDA-graph capture. These are observations of
 that specific run, not an independent output-quality test or throughput benchmark. A
 subsequent code change distinguishes cached-engine warm-up from compilation and does not
-treat a pre-completion background slot as ready; no new hardware build was launched to
-verify that change.
+treat a pre-completion background slot as ready. A later
+[isolated video-ABI hardware check](../bench_results.md#2026-11-13--tensorrt-rtx-cold-build-and-cache-verification)
+at source revision `0d151d2` verified an empty-cache 1080p RTX build, cached reuse, separate
+720p/1080p engines and GPU-readback luma. It bypassed mpv and the preparation popup, so it
+does not establish the frontend state machine, playback quality or sustained throughput.
 
 ## What remains open
 

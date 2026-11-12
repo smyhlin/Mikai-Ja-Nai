@@ -23,6 +23,50 @@ Measured results from **Settings → Benchmark**, grouped by machine and model. 
 
 > **Workload limitation:** the historical clips are synthetic black-frame H.264 fixtures, not anime footage. These measurements describe that fixture workload; they are **not a guarantee of real-scene playback performance**. Black frames omit motion, scene changes, and real-scene complexity. A runtime refusal is not evidence that a GPU lacks performance or VRAM.
 
+## 2026-11-13 — TensorRT-RTX cold-build and cache verification
+
+Functional engine verification, not a Settings throughput sample or a change to the historical
+matrix. Local date: 2026-11-13; evidence timestamp: `2026-11-12T23:34:51Z`.
+Machine/backend: Windows x64, NVIDIA GeForce RTX 5090, AnimeJaNai v0.24.0 ABI 9,
+TensorRT-RTX 1.7.1. Model: 4× Real-ESRGAN AnimeVideo v3 fp32, SHA-256
+`78baa685a1a92cac6e14ab2af2a8ad0ef56fa48629563b1414e3a7acc54d86e2`.
+
+The probe loaded the installed dispatcher and RTX backend after checking their DLL hashes
+against `install.json`. It copied the graph and exact generated profile to a disposable
+directory, initially with no serialized engines or JIT caches. It used the **video ABI**:
+`aji_create` with `async_build=1`, `aji_configure`, `aji_poll`, then reconfiguration after
+background completion. Settings were `--builderOptimizationLevel=5
+--optShapes=input:1x3x1080x1920` at 1080p, and the corresponding 720p shape.
+
+| Case | Input | Configured output | Preparation | Builder-reported generation |
+|---|---|---|---:|---:|
+| Empty cache | 1920×1080 | 7680×4320 | 0.622 s | 0.171558 s |
+| New process, cached engine | 1920×1080 | 7680×4320 | 0.181 s | Reused, no compilation |
+| New shape, no matching engine | 1280×720 | 5120×2880 | 0.565 s | 0.177592 s |
+
+Preparation measures initial configure through successful post-poll configure, including
+background build/warm-up and engine loading; it excludes context creation and frame inference.
+Each initial configure returned passthrough while background work was pending. Cold-build logs
+recorded ONNX parsing, engine serialization and successful GPU warm-up. The 1080p engine was
+3,075,892 bytes. Cached reuse left its engine and build-log size/mtime unchanged; it logged
+`background engine warm-up`, not a new build. Resolution-dependent settings CRCs were
+`1979389216` at 1080p and `1488174108` at 720p, producing separate engine files.
+
+For each case, two distinct synthetic NV12 checker patterns were uploaded to actual CUDA
+buffers, with explicit upload completion before inference on a nonblocking stream.
+`aji_infer` succeeded; a nonzero `aji_flush` completion ticket was awaited before reading
+output luma back from the GPU. Both outputs were non-flat, differed from nearest-neighbor
+passthrough and changed with the input. The two 1080p luma hashes matched between cold and
+cached runs. This establishes actual model execution and cache reuse for this graph/shape,
+not perceptual quality, chroma fidelity, sustained playback rate or every model/backend.
+
+No installed model, configuration or engine cache was modified. Temporary scripts, copied
+graphs and test engines were removed. Local, unversioned logs/configuration and JSON remain at
+`.probe-out/trt-verification-20261113-013451/`; the source trace was at `0d151d2`.
+The probe bypassed mpv, the player controller and its preparation popup; those frontend paths
+were not re-verified. Classic TensorRT and Linux were not hardware-tested here. No
+build-duration defect was found and no artificial delay or compiler setting change was made.
+
 ## 2026-10-18 — RTX 5090 integration smoke
 
 A bounded Settings run verified automatic JSON export, not a replacement matrix.

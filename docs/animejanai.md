@@ -148,6 +148,14 @@ configured slot alone is not a quality or throughput measurement. During backgro
 the player, Compare and Benchmark wait for the fork's completion and subsequent slot configuration
 before reporting the stage ready.
 
+TensorRT-RTX is not classic TensorRT's ahead-of-time tactic search. NVIDIA documents
+[two-phase compilation and first-use JIT optimization](https://docs.nvidia.com/deeplearning/tensorrt-rtx/latest/installing-tensorrt-rtx/example-deployment.html);
+a small graph can genuinely build and warm up in less than a second on an RTX 5090.
+The engine targets a model and input shape, not the entire video or its duration.
+The [2026-11-13 isolated video-ABI verification](../bench_results.md#2026-11-13--tensorrt-rtx-cold-build-and-cache-verification)
+used an empty engine/JIT-cache directory, then confirmed cached reuse, separate 720p/1080p
+engines and real GPU output. It is not a classic-TensorRT, frontend or playback-quality test.
+
 Two pane-specific notes, both fixed but worth knowing when reading an older log: a comparison pane's core has to preload the backend closure with `RTLD_GLOBAL` (the player's surface does that itself), and preloading a second copy of an already resident `libnvinfer`/`libcudart` soname must be skipped — two runtime images in one process corrupt the heap. Teardown of a pane's filter is synchronous for the same reason: removing the filter is what joins the fork's builder thread.
 
 ## 6a. The Compare pane's native replay
