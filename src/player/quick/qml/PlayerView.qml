@@ -247,7 +247,8 @@ Item {
         visible: root.chromeVisible && !root.pipMode
                  && (root.controller.episodeLabel !== ""
                      || root.controller.videoBadges.length > 0
-                     || root.controller.sourceWidth > 0)
+                     || root.controller.sourceWidth > 0
+                     || upscaleLabel.upscaleText !== "")
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.margins: 16
