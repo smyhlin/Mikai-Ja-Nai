@@ -6,6 +6,7 @@
 #include "quick/PlayerController.hpp"
 #include "quick/PlayerMenuModel.hpp"
 #include "quick/PlayerWindow.hpp"
+#include "quick/MpvVideoItem.hpp"
 #include "player/core/VideoSession.hpp"
 #include "support/I18n.hpp"
 #include "workers/Runner.hpp"
@@ -824,7 +825,7 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
         return 1;
     }
     const bool startupReady = pumpUntil(
-        [&] { return context.window->isVisible() && context.window->isFullScreen(); }, 5000);
+        [&] { return context.window->isVisible() && (context.window->visibility() == QWindow::FullScreen); }, 5000);
     check(startupReady,
           QStringLiteral("the player completed its deferred fullscreen startup"));
     if (startupReady) controller->toggleFullscreen();
@@ -832,7 +833,7 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
     context.window->resize(requestedWindow);
     const bool windowedReady = startupReady && pumpUntil(
         [&] {
-            return context.window->isVisible() && !context.window->isFullScreen() &&
+            return context.window->isVisible() && !(context.window->visibility() == QWindow::FullScreen) &&
                    context.window->size() == requestedWindow;
         },
         5000);
@@ -841,7 +842,7 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
           QStringLiteral("requested=%1x%2 actual=%3x%4 fullscreen=%5")
               .arg(requestedWindow.width()).arg(requestedWindow.height())
               .arg(context.window->width()).arg(context.window->height())
-              .arg(context.window->isFullScreen()));
+              .arg((context.window->visibility() == QWindow::FullScreen)));
     if (!windowedReady) {
         controller->requestClose();
         QJsonObject evidence = liveEvidence(context, options, false, -1, QString());
@@ -1294,7 +1295,7 @@ int runVideoScalingLiveSmoke(mikai::backend::MikaiClient& client,
         }, 3000);
         captureArtifacts(context, QStringLiteral("hold"));
         std::fprintf(stderr,
-                     "LIVE-SMOKE-HOLD-READY ms=%d window=%dx%d surface=%dx%d mode=%s evidence=%s\n",
+                     "LIVE-SMOKE-HOLD-READY ms=%d window=%dx%d surface=%.0fx%.0f mode=%s evidence=%s\n",
                      options.holdMs, context.window->width(), context.window->height(),
                      context.videoItem->width(), context.videoItem->height(),
                      qPrintable(mplayer::videoScaleModeLabel(

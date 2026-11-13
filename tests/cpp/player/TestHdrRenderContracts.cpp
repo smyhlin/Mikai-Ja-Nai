@@ -1,6 +1,7 @@
 #include "TestHdrRenderContracts.hpp"
 
 #include "player/core/VideoSession.hpp"
+#include "player/core/VideoRenderBridge.hpp"
 
 using mplayer::VideoSession;
 

@@ -582,11 +582,13 @@ int runQuickHoverCanary(mplayer::quick::PlayerController* controller, int second
             {"guiGapBounded",maxGap<=250},{"chromeInteracted",gestures>0},
             {"noChromeOnlyDisarms",summary.chromeOnlyDisarms==0},
             {"skipsExplained",unexplained==0},{"paintDelayWithinBudget",
-             summary.pacedSamples>0&&p95<=250.0}},
+             summary.pacedSamples>0&&p95<=250.0}}},
         {"surfaceAtEnd",surfaceState(session)},{"scope","real Quick QML input and live session sampling"},
         {"error",*error}});
     return passed?0:1;
 }
+
+constexpr int kVisibleCompositionDeadlineMs = 2500;
 
 int runQuickFocusSwitchMode(mplayer::quick::PlayerController* controller, bool knownBright,
                             int seconds, const std::function<void(QJsonObject)>& record,
@@ -895,7 +897,7 @@ int runQuickBaselineMode(mplayer::quick::PlayerController* controller,const QStr
         const qint64 begin=mikai::gui::uiprofile::nowNs();
         window->raiseWindow();window->requestActivate();peer.sendToBack();
         QElapsedTimer wait;wait.start();
-        while(!frame&&wait.elapsed()<2500) spinFor(5);
+        while(!frame&&wait.elapsed()<kVisibleCompositionDeadlineMs) spinFor(5);
         QObject::disconnect(connection);
         const bool owns=ensureForeground(window);
         activation+=owns&&away;
@@ -1360,7 +1362,6 @@ int runQuickQaMatrix(mplayer::quick::PlayerController* controller, const QString
         pump(250);
         pipControls = paused && absoluteSeek && relativeSeek && audioControls &&
                       !session->playbackPauseIntent() && session->isPlaying();
-⟧
     }
     const quint64 returnPauseGeneration = session->pauseRequestGeneration();
     const double returnPosition = session->position();
@@ -1382,7 +1383,6 @@ int runQuickQaMatrix(mplayer::quick::PlayerController* controller, const QString
                           controller->anime4kChainId() == pipAnime4K &&
                           controller->animeJanaiPresetId() == pipAnimeJanai &&
                           session->mediaTrackSelection() == pipTracks;
-⟧
     pipVerified = compactPresentation && pipControlSurfaceVisible &&
                   pipPlayPauseUiVerified && pipControls && returned;
     record({{"event", "qaMatrixPresentationSeams"}, {"fullscreenTransitions", fullscreenTransitions},

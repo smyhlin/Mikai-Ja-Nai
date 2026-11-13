@@ -246,7 +246,7 @@ void TestPlaybackControls::qualityMenuSortsAvailableHeightsDescendingAndMaintain
         {360, QStringLiteral("stream-360")},
     };
     PlayerController controller(QStringLiteral("quality menu"), QStringLiteral("stream-720"),
-                                qualities, 720);
+                                qualities, 720, nullptr);
 
     const auto* menu = controller.qualityMenu();
     QVERIFY(menu != nullptr);
@@ -267,13 +267,13 @@ void TestPlaybackControls::qualityMenuSortsAvailableHeightsDescendingAndMaintain
     }
 
     controller.selectQuality(480);
-    QCOMPARE(controller.isAutoQuality(), false);
+    QCOMPARE(controller.autoQuality(), false);
     QCOMPARE(controller.currentHeight(), 480);
     QCOMPARE(menu->row(0).selected, false);
     QCOMPARE(menu->row(3).selected, true);
 
     controller.selectQuality(0);
-    QCOMPARE(controller.isAutoQuality(), true);
+    QCOMPARE(controller.autoQuality(), true);
     QCOMPARE(menu->row(0).selected, true);
     QCOMPARE(menu->row(3).selected, false);
 }

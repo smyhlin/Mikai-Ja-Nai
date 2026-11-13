@@ -3,6 +3,7 @@
 #include "MpvApi.hpp"
 #include "player/quick/PlayerController.hpp"
 #include "player/quick/PlayerWindow.hpp"
+#include "player/core/VideoSession.hpp"
 
 #include <QCoreApplication>
 #include <QDir>

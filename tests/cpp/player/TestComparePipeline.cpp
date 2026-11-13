@@ -5,6 +5,7 @@
 #include "player/compare/PictureMetrics.hpp"
 #include "player/compare/CompareWindow.hpp"
 #include "player/quick/PlayerController.hpp"
+#include "player/quick/PlayerWindow.hpp"
 #include "player/shell/ClipDialog.hpp"
 #include "player/shell/MediaInformationDialog.hpp"
 #include "../QuickPlayerTestSupport.hpp"

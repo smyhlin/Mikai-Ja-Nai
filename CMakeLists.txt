@@ -484,12 +484,14 @@ function(mikai_add_player_app_module target)
   set_source_files_properties("${MIKAI_PLAYER_ENTRY_QML}"
     TARGET_DIRECTORY ${target}
     PROPERTIES QT_RESOURCE_ALIAS "PlayerEntry.qml")
+  qt_policy(SET QTP0005 NEW)
   qt_add_qml_module(${target}
     URI Mikai.App
     VERSION 1.0
     RESOURCE_PREFIX /qt/qml
+    NO_GENERATE_QTCONF
     QML_FILES "${MIKAI_PLAYER_ENTRY_QML}"
-    IMPORTS Mikai.Player
+    IMPORTS TARGET mikai_player_quick
   )
   # The Mikai.Player plugin is a static plugin on a shared Qt build, so nothing
   # references it and its types would never register. Import the plugin class

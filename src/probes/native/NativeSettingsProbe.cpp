@@ -2056,11 +2056,12 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
     if (ownedBenchmarkRow != nullptr) ownedBenchmarkRow->setCheckState(0, Qt::Checked);
     QApplication::processEvents();
 
-    player.setAnimeJanaiSelection(rawPreset, QStringLiteral("Configured; live probe"));
+    const bool selectedRegistered = clickMenuPayload(
+        player, QStringLiteral("processing:upscale:spatial:custom"),
+        QStringLiteral("ajipreset|") + rawPreset);
     QApplication::processEvents();
-    check(playerChip != nullptr && playerChip->isVisibleTo(&player) &&
-              !playerChip->accessibleName().contains(QStringLiteral("Unavailable")),
-          "the player chip shows the registered selection");
+    check(selectedRegistered && player.animeJanaiPresetId() == rawPreset,
+          "the player applies the registered selection through its live menu");
 
     check(panel.currentConfig() == draftConfig && panel.isDirty() &&
               profileName->text() == draftProfileName,

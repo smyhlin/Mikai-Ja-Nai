@@ -127,7 +127,7 @@ void TestWindowRaise::nativePlayerPipKeepsItsQuickWindowAndForegroundIntent() {
     QCOMPARE(pipChanges.takeFirst().at(0).toBool(), true);
     QVERIFY(player.compactPip());
     QVERIFY(player.topmostIntent());
-    QCOMPARE(player.windowFlags().testFlag(Qt::WindowStaysOnTopHint),
+    QCOMPARE(player.flags().testFlag(Qt::WindowStaysOnTopHint),
              QGuiApplication::platformName() != QStringLiteral("wayland"));
     if (activationIsObservable()) QCOMPARE(QGuiApplication::focusWindow(), &player);
 #ifdef Q_OS_WIN
@@ -157,7 +157,7 @@ void TestWindowRaise::nativePlayerPipKeepsItsQuickWindowAndForegroundIntent() {
     QCOMPARE(pipChanges.takeFirst().at(0).toBool(), false);
     QVERIFY(!player.compactPip());
     QVERIFY(!player.topmostIntent());
-    QVERIFY(!player.windowFlags().testFlag(Qt::WindowStaysOnTopHint));
+    QVERIFY(!player.flags().testFlag(Qt::WindowStaysOnTopHint));
     player.hideWindow();
 }
 
@@ -177,12 +177,12 @@ void TestWindowRaise::fullscreenIntentTracksTheNativeWindowState() {
     player.setWindowStates(player.windowStates() | Qt::WindowFullScreen);
     QTRY_VERIFY(player.fullscreenIntent());
     QCOMPARE(fullscreenChanges.count(), 1);
-    QCOMPARE(fullscreenChanges.takeFirst().at(0).at(0).toBool(), true);
+    QCOMPARE(fullscreenChanges.takeFirst().at(0).toBool(), true);
 
     player.setWindowStates(player.windowStates() & ~Qt::WindowFullScreen);
     QTRY_VERIFY(!player.fullscreenIntent());
     QCOMPARE(fullscreenChanges.count(), 1);
-    QCOMPARE(fullscreenChanges.takeFirst().at(0).at(0).toBool(), false);
+    QCOMPARE(fullscreenChanges.takeFirst().at(0).toBool(), false);
 
     player.hideWindow();
 }
@@ -211,8 +211,8 @@ void TestWindowRaise::preparationWindowRemainsNonactivatingAndStopsStackingWhenH
 
     preparation.present();
     QVERIFY(preparation.isVisible());
-    QVERIFY(preparation.windowFlags().testFlag(Qt::WindowStaysOnTopHint));
-    QVERIFY(preparation.windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus));
+    QVERIFY(preparation.flags().testFlag(Qt::WindowStaysOnTopHint));
+    QVERIFY(preparation.flags().testFlag(Qt::WindowDoesNotAcceptFocus));
     if (activationIsObservable()) QCOMPARE(QGuiApplication::focusWindow(), activeBefore);
 
     const QString platform = QGuiApplication::platformName();

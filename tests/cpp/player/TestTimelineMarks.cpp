@@ -67,7 +67,7 @@ bool TestTimelineMarks::requireRuntime() {
 void TestTimelineMarks::quickTimelineProjectsControllerMarksAndKeepsTheirBoundaries() {
     if (!requireRuntime()) return;
     const QString media = mikai_test::quick::benchmarkVideoPath();
-    QVERIFY2(QFileInfo::isFile(media), qPrintable(media));
+    QVERIFY2(QFileInfo(media).isFile(), qPrintable(media));
 
     mplayer::quick::PlayerController controller(QStringLiteral("Timeline marks test"), media);
     auto* window = controller.window();

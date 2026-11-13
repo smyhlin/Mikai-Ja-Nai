@@ -20,6 +20,7 @@
 #include <cmath>
 #include <functional>
 
+using mplayer::VideoSession;
 using mplayer::VideoScaleMode;
 using mplayer::VideoScaleOption;
 using mplayer::VideoScalePolicy;
