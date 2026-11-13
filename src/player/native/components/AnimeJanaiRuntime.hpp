@@ -35,6 +35,10 @@ struct AnimeJanaiInstallation {
     QString reasonKey;
     QString reason;
     bool heavyRifeSupported = false;
+    bool sharedRuntime = false;
+    bool localFilesPresent = false;
+    QStringList backendLibDirs{};
+    QString trtexecPath{};
 };
 
 /// One still-missing acquisition item, priced at its pinned transfer size.

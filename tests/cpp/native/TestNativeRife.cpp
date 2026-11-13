@@ -321,7 +321,6 @@ void TestNativeRife::allPinnedGraphsHaveDistinctExactDigests() {
         QVERIFY(!names.contains(name));
         names.insert(name);
 
-        // Both lookups are the pin's own identity, round-tripping exactly.
         const RifeModelPin* byName = rifeModelPinForName(name);
         QVERIFY(byName != nullptr);
         QCOMPARE(byName->graphSha256, pin.graphSha256);
@@ -334,7 +333,7 @@ void TestNativeRife::allPinnedGraphsHaveDistinctExactDigests() {
     QCOMPARE(names.size(), 47);
     QVERIFY(rifeModelPin(RifeVersion::V4_14, RifeVariant::Lite, true) != nullptr);
     QCOMPARE(rifeModelPin(RifeVersion::V4_14, RifeVariant::Lite, true)->graphSha256,
-             QStringLiteral("9486d87ca17a83a1594ac54b254b6fb1be6fa52f5dd11a31e4a602d124ea8b1b"));
+             QStringLiteral("d8834c6a34959936c2ece52e80cb49216ce653b158a3b80e7282c7a75cc6620f"));
     QCOMPARE(rifeModelName(RifeVersion::V4_7, RifeVariant::Full, false),
              QStringLiteral("rife_v4.7"));
     QCOMPARE(rifeModelName(RifeVersion::V4_14, RifeVariant::Lite, true),

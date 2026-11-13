@@ -47,7 +47,7 @@ namespace {
 
 QString fixtureRoot() {
     return QDir(nativeSubdirectory(QStringLiteral("components")))
-        .filePath(QStringLiteral("aji/v0.24.0"));
+        .filePath(QStringLiteral("aji/v0.27.0"));
 }
 
 QString runtimePath(Backend backend = Backend::TensorRT) {
@@ -212,7 +212,8 @@ QStringList required(Backend backend) {
         return {QStringLiteral("libaji.so"), QStringLiteral("libaji_trt.so"),
                 QStringLiteral("libcudart.so.13"), QStringLiteral("libnvinfer.so.11"),
                 QStringLiteral("libnvinfer_plugin.so.11"), QStringLiteral("libnvonnxparser.so.11"),
-                resource->resourceFile, QStringLiteral("trtexec")};
+                resource->resourceFile, QStringLiteral("trtexec"),
+                QStringLiteral("CUDA_LICENSE.txt"), QStringLiteral("TensorRT_Acknowledgements.txt")};
     }
 #endif
     QStringList files{QStringLiteral("aji.dll"), backend == Backend::TensorRT ? QStringLiteral("aji_trt.dll") : QStringLiteral("aji_dml.dll")};
@@ -220,7 +221,7 @@ QStringList required(Backend backend) {
         files << QStringLiteral("cudart64_13.dll") << QStringLiteral("nvinfer_11.dll")
               << QStringLiteral("nvinfer_plugin_11.dll") << QStringLiteral("nvonnxparser_11.dll")
               << QStringLiteral("nvinfer_builder_resource_sm120_11.dll") << QStringLiteral("trtexec.exe")
-              << QStringLiteral("CUDA_LICENSE.txt") << QStringLiteral("DirectML_LICENSE.txt");
+              << QStringLiteral("CUDA_LICENSE.txt") << QStringLiteral("TensorRT_Acknowledgements.txt");
     } else {
         files << QStringLiteral("onnxruntime.dll") << QStringLiteral("DirectML.dll")
               << QStringLiteral("DirectML_LICENSE.txt");
@@ -257,7 +258,7 @@ bool writeRecord(Backend backend, const QString& recordedBackend = {},
     }
     QJsonObject record;
     record.insert(QStringLiteral("schema"), QStringLiteral("mikai.native.animejanai/3"));
-    record.insert(QStringLiteral("version"), QStringLiteral("v0.24.0"));
+    record.insert(QStringLiteral("version"), QStringLiteral("v0.27.0"));
     const QString backendToken = backend == Backend::TensorRT ? QStringLiteral("trt")
                                    : backend == Backend::TensorRTRTX ? QStringLiteral("trtrtx")
                                                                      : QStringLiteral("dml");
@@ -635,16 +636,22 @@ void TestAnimeJanaiRuntime::directRunRefusesExistingNativeTreeWithoutMutation() 
 void TestAnimeJanaiRuntime::rtxRuntimeClosureAndPlatformContract() {
     const QString root = runtimePath(Backend::TensorRTRTX);
 #ifdef Q_OS_WIN
-    // The queue is the pinned standard archive plus the NVIDIA overlay, with no
-    // classic TensorRT pack, CUDA pack, builder resource or DirectML row.
     const QVector<AnimeJanaiMissingDownload> missing =
         animeJanaiMissingDownloads(Backend::TensorRTRTX);
-    QCOMPARE(missing.size(), 2);
-    QCOMPARE(missing.at(0).label, QStringLiteral("aji-v0.24.0"));
-    QCOMPARE(missing.at(0).bytes, qint64(930847));
-    QCOMPARE(missing.at(1).label, QStringLiteral("aji-trtrtx-v0.24.0"));
-    QCOMPARE(missing.at(1).bytes, qint64(95347435));
-    QCOMPARE(animeJanaiMissingDownloadBytes(Backend::TensorRTRTX), qint64(96278282));
+    QCOMPARE(missing.size(), 5);
+    QStringList queued;
+    qint64 queuedBytes = 0;
+    for (const auto& item : missing) {
+        queued.append(item.label);
+        QVERIFY(item.bytes > 0);
+        queuedBytes += item.bytes;
+    }
+    QVERIFY(queued.contains(QStringLiteral("aji-runtime-v0.2.1")));
+    QVERIFY(queued.contains(QStringLiteral("trtrtx-runtime")));
+    QVERIFY(!queued.contains(QStringLiteral("trt-runtime")));
+    QVERIFY(!queued.contains(QStringLiteral("directml-1.15.4")));
+    QVERIFY(queuedBytes < 70 * 1024 * 1024);
+    QCOMPARE(animeJanaiMissingDownloadBytes(Backend::TensorRTRTX), queuedBytes);
 
     QVERIFY(writeRecord(Backend::TensorRTRTX));
     const AnimeJanaiInstallation installed = describeAnimeJanaiInstallation(Backend::TensorRTRTX);
@@ -952,7 +959,7 @@ void TestAnimeJanaiRuntime::unsupportedDispatcherIsNotReady() {
     const auto oldVersion = describeAnimeJanaiInstallation(fixtureBackend(), true);
     QVERIFY(!oldVersion.installed);
     QCOMPARE(oldVersion.reasonKey, QStringLiteral("animejanai.installation.recordInvalid"));
-    object.insert(QStringLiteral("version"), QStringLiteral("v0.24.0"));
+    object.insert(QStringLiteral("version"), QStringLiteral("v0.27.0"));
     object.insert(QStringLiteral("schema"), QStringLiteral("unknown"));
     QVERIFY(writeFile(record.fileName(), QJsonDocument(object).toJson(QJsonDocument::Compact)));
     const auto result = describeAnimeJanaiInstallation(fixtureBackend(), true);

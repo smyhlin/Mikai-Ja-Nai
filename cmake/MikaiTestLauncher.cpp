@@ -825,6 +825,11 @@ int stageAndRun(const QStringList& arguments, const QString& directory,
 
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
     environment.remove(QStringLiteral("MIKAI_NATIVE_ROOT"));
+    environment.insert(QStringLiteral("AJI_RUNTIME_STORE"),
+                       QDir(directory).filePath(QStringLiteral("shared-aji-runtime")));
+    environment.remove(QStringLiteral("AJI_RUNTIME_JSON"));
+    environment.remove(QStringLiteral("APPIMAGE"));
+    environment.remove(QStringLiteral("APPDIR"));
 #ifdef Q_OS_WIN
     // The staged DLLs cover the test child itself, but tests that spawn their
     // own children build those children's environment from the ambient

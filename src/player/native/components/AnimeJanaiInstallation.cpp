@@ -1,5 +1,6 @@
 #include <utility>
 #include "AnimeJanaiRuntime.hpp"
+#include "AnimeJanaiRuntimeStore.hpp"
 
 #include "backend/Cancellation.hpp"
 #include "backend/Downloads.hpp"
@@ -41,8 +42,8 @@
 namespace mplayer::native {
 
 namespace {
-constexpr auto kLinuxAjiDispatcherSha = "ca93742f4ac152343b3f3cb9dce76aa033b31c46f280cdda0d21a9891cc0407d";
-constexpr auto kLinuxAjiTrtSha = "3261b26327b971e946a76cfbfee6da14e87a421105a135f7e999297af25935f2";
+constexpr auto kLinuxAjiDispatcherSha = "6dd2119af3c4b8469399fcf50b955ddda350bbf1758d7b36aa797b608491755b";
+constexpr auto kLinuxAjiTrtSha = "9f55b88491a0bf3bb44faa82342b468d8513b5ca44f023ec82fe60bb6c5818be";
 }
 
 bool detail::matchesPinnedLinuxAjiPair(const QString& dispatcherSha256, const QString& backendSha256) {
@@ -159,37 +160,30 @@ bool detail::validateAnimeJanaiArchiveListing(const QString& listing, bool allow
 namespace {
 
 #ifdef Q_OS_WIN
-constexpr auto kAjiBytes = qint64(930847);
-constexpr auto kAjiSha = "8a90d23c356be59cd21cc90761d47001717afd35c891c024e19b099e95a685c8";
-constexpr auto kAjiUrl = "https://github.com/the-database/animejanai-inference/releases/download/v0.24.0/aji-windows-x64.zip";
+constexpr auto kAjiBytes = qint64(953548);
+constexpr auto kAjiSha = "1ae2a0d16be2a660d8197fe4f64e8be7cf7637d7842b19994636e42309ab17b2";
+constexpr auto kAjiUrl = "https://github.com/the-database/animejanai-inference/releases/download/v0.27.0/aji-windows-x64.zip";
 constexpr auto kAjiArchiveName = "aji-windows-x64.zip";
 #else
-constexpr auto kAjiBytes = qint64(435064);
-constexpr auto kAjiSha = "98baeb3712783eab88c60300156c16a6d599dfe0576f6ca95f8f7efcea8e287f";
-constexpr auto kAjiUrl = "https://github.com/the-database/animejanai-inference/releases/download/v0.24.0/aji-linux-x64.tar.zst";
+constexpr auto kAjiBytes = qint64(449466);
+constexpr auto kAjiSha = "044a9cc652fa7660218597c1faa01b7c0abdd97f10a644b0250a0a42321ac0f5";
+constexpr auto kAjiUrl = "https://github.com/the-database/animejanai-inference/releases/download/v0.27.0/aji-linux-x64.tar.zst";
 constexpr auto kAjiArchiveName = "aji-linux-x64.tar.zst";
 #endif
 constexpr qint64 kOrtBytes = 12458649;
 constexpr qint64 kDirectMlBytes = 202292617;
 constexpr auto kAjiSchema = "mikai.native.animejanai/3";
-constexpr auto kAjiVersion = "v0.24.0";
-/// The dispatcher acquisition's name in every record and progress event. It is
-/// derived from the version pin rather than written out, because a record whose
-/// acquisition name disagrees with the pinned source list is rejected by
-/// verification: a v0.22.2 label left behind after the v0.24.0 bump made every
-/// classic-TensorRT and DirectML install unverifiable.
+constexpr auto kAjiVersion = "v0.27.0";
+// Acquisition identity and installation path must share the archive's version pin.
 QString ajiDispatcherLabel() {
     static const QString label = QStringLiteral("aji-") + QString::fromLatin1(kAjiVersion);
     return label;
 }
-// Windows-only NVIDIA TensorRT-for-RTX overlay. It is merged flat over the
-// standard asset, which supplies the dispatcher; the overlay carries only the
-// RTX backend and its two mandatory notices.
-constexpr qint64 kRtxOverlayBytes = 95347435;
-constexpr auto kRtxOverlaySha = "7b7b35c49d3d0bf8746b61a0137786adb6fe6d6fd1f4fae8f53e0b485d4141c3";
-constexpr auto kRtxOverlayUrl = "https://github.com/the-database/animejanai-inference/releases/download/v0.24.0/aji-trtrtx-windows-x64.zip";
-constexpr auto kRtxOverlayArchiveName = "aji-trtrtx-windows-x64.zip";
-constexpr auto kRtxOverlayLabel = "aji-trtrtx-v0.24.0";
+constexpr qint64 kRtxBackendBytes = 440346;
+constexpr auto kRtxBackendSha = "13417fd2a061bc4539ea2509c1ced5023b947d561431a9b527c718c89a00ca35";
+constexpr auto kRtxBackendUrl = "https://github.com/the-database/animejanai-inference/releases/download/v0.27.0/aji-trtrtx-backend-windows-x64.zip";
+constexpr auto kRtxBackendArchiveName = "aji-trtrtx-backend-windows-x64.zip";
+constexpr auto kRtxBackendLabel = "aji-trtrtx-v0.27.0";
 QMutex g_installMutex;
 bool g_installRunning = false;
 
@@ -198,7 +192,8 @@ QString backendName(Backend backend);
 QString installationRoot(Backend backend) {
     const QString components = nativeSubdirectory(QStringLiteral("components"));
     return components.isEmpty() ? QString{} :
-        QDir(components).filePath(QStringLiteral("aji/v0.24.0/") + backendName(backend));
+        QDir(components).filePath(
+            QStringLiteral("aji/%1/").arg(QString::fromLatin1(kAjiVersion)) + backendName(backend));
 }
 QString translated(const char* text) {
     return QCoreApplication::translate("AnimeJanaiInstallation", text);
@@ -257,7 +252,7 @@ QStringList windowsClosureFiles(Backend backend, const ComponentPack* resource =
               << QStringLiteral("nvinfer_plugin_11.dll") << QStringLiteral("nvonnxparser_11.dll");
         if (resource != nullptr) files << resource->resourceFile;
         files << QStringLiteral("trtexec.exe") << QStringLiteral("CUDA_LICENSE.txt")
-              << QStringLiteral("DirectML_LICENSE.txt");
+              << QStringLiteral("TensorRT_Acknowledgements.txt");
     } else {
         files << QStringLiteral("onnxruntime.dll") << QStringLiteral("DirectML.dll")
               << QStringLiteral("DirectML_LICENSE.txt");
@@ -276,7 +271,8 @@ QStringList linuxClosureFiles(Backend backend, const ComponentPack* resource = n
                       QStringLiteral("libcudart.so.13"), QStringLiteral("libnvinfer.so.11"),
                       QStringLiteral("libnvinfer_plugin.so.11"), QStringLiteral("libnvonnxparser.so.11")};
     if (resource != nullptr) files << resource->resourceFile;
-    files << QStringLiteral("trtexec");
+    files << QStringLiteral("trtexec") << QStringLiteral("CUDA_LICENSE.txt")
+          << QStringLiteral("TensorRT_Acknowledgements.txt");
     return files;
 }
 
@@ -301,9 +297,21 @@ bool directoryUsesLinuxClosure(const QString& directory) {
     return QFileInfo::exists(QDir(directory).filePath(QStringLiteral("libaji.so")));
 }
 
+QStringList sharedClosureFiles(Backend backend, bool linuxClosure) {
+    return {linuxClosure ? QStringLiteral("libaji.so") : QStringLiteral("aji.dll"),
+            linuxClosure ? QStringLiteral("libaji_trt.so") : backendDll(backend),
+            QStringLiteral("aji-runtime.json")};
+}
+
+bool hasSharedMapping(const QString& directory) {
+    return QFileInfo::exists(QDir(directory).filePath(QStringLiteral("aji-runtime.json")));
+}
+
 QStringList recordedClosureFiles(const QString& directory, Backend backend, const ComponentPack* resource) {
     const bool linuxClosure = directoryUsesLinuxClosure(directory) ||
         (resource != nullptr && resource->resourceFile.endsWith(QLatin1String(".so")));
+    if (isTensorRtFamily(backend) && hasSharedMapping(directory))
+        return sharedClosureFiles(backend, linuxClosure);
     QStringList files = closureFiles(backend, resource, linuxClosure);
     for (const QString& notice : optionalNoticeFiles(backend)) {
         if (files.contains(notice)) continue;
@@ -370,32 +378,21 @@ bool noReparse(const QString& root, const QString& path) {
     return info.exists() && !info.isSymLink() && pathWithinRoot(root, info.absoluteFilePath()) &&
            pathHasNoReparsePoints(root, info.absoluteFilePath());
 }
-QString resolveExtractedSource(const QString& root, const QString& path) {
-    const QFileInfo info(path);
-    if (!info.exists()) return path;
-    if (info.isSymLink()) {
-        const QString canonical = info.canonicalFilePath();
-        if (!canonical.isEmpty() && pathWithinRoot(root, canonical)) {
-            return canonical;
-        }
-    }
-    return path;
-}
 QString pinnedOfficialAjiDigest(const QString& name) {
     if (name == QLatin1String("libaji.so"))
         return QString::fromLatin1(kLinuxAjiDispatcherSha);
     if (name == QLatin1String("libaji_trt.so"))
         return QString::fromLatin1(kLinuxAjiTrtSha);
     if (name == QLatin1String("aji.dll"))
-        return QStringLiteral("76f3223c4e8828b2e1ec8d00d2df2b6fea63f6c67882dabd8b1315d18d32114d");
+        return QStringLiteral("095d18018b2ae7f40d9b7e814a9891867f6028ea94d3e06048d2d40276e63b45");
     if (name == QLatin1String("aji_trt.dll"))
-        return QStringLiteral("86a715d1e72f37ad95cf88c9c44e3489ef0c968284f7eff43afea7289641474e");
+        return QStringLiteral("a681d572073dc0c0229a8f93a563aa8210dd283403d83ea175217ac23fde8a92");
     if (name == QLatin1String("aji_dml.dll"))
-        return QStringLiteral("78b575113a9cc012414cb46c98edac639364b2a8b171d8371f29c95e92d526a9");
+        return QStringLiteral("57ca026d5c1acebd541c7080efbcfd7c7b46f03d8d9411f667fed049f2236642");
     // The RTX dispatcher has no aji_api_version export either, so these per-file
     // pins are the only identity gate for an official RTX acquisition.
     if (name == QLatin1String("aji_trtrtx.dll"))
-        return QStringLiteral("53a1ac0d931f1973d6e6fe196a87e158648d66c954431dfe6ecb7ec47e85f458");
+        return QStringLiteral("405c3e0e2bf2fce24e0e3f16a1de04bc52cf4fdb012e3bfb94d3a68cdf33f9c4");
     if (name == QLatin1String("tensorrt_rtx_1_7.dll"))
         return QStringLiteral("7b8a06d4b66dfe7da7f1ff48a994ad9dcf107cd28b4822d6f25453528c0db6dd");
     if (name == QLatin1String("tensorrt_onnxparser_rtx_1_7.dll"))
@@ -719,19 +716,16 @@ QJsonObject acquisition(const QString& name, const QString& url, qint64 bytes, c
     return item;
 }
 
-QJsonArray officialAcquisitions(Backend backend, const ComponentPack* resource) {
+QJsonArray officialAcquisitions(Backend backend) {
     QJsonArray result;
-    result.append(acquisition(QStringLiteral("aji-v0.24.0"), QString::fromLatin1(kAjiUrl),
+    result.append(acquisition(ajiDispatcherLabel(), QString::fromLatin1(kAjiUrl),
                               kAjiBytes, QString::fromLatin1(kAjiSha)));
-    if (backend == Backend::TensorRT) {
-        const ComponentPack* runtime = tensorRtRuntimePack();
-        if (runtime != nullptr) result.append(acquisition(runtime->name, runtime->url, runtime->assetBytes, runtime->assetSha256));
-        if (resource != nullptr) result.append(acquisition(resource->name, resource->url, resource->assetBytes, resource->assetSha256));
-    } else if (backend == Backend::TensorRTRTX) {
-        // The RTX runtime is the standard dispatcher plus the NVIDIA overlay; no
-        // TensorRT pack, builder resource or DirectML package is ever fetched.
-        result.append(acquisition(QString::fromLatin1(kRtxOverlayLabel), QString::fromLatin1(kRtxOverlayUrl),
-                                  kRtxOverlayBytes, QString::fromLatin1(kRtxOverlaySha)));
+    if (isTensorRtFamily(backend)) {
+        if (backend == Backend::TensorRTRTX)
+            result.append(acquisition(QString::fromLatin1(kRtxBackendLabel), QString::fromLatin1(kRtxBackendUrl),
+                                      kRtxBackendBytes, QString::fromLatin1(kRtxBackendSha)));
+        for (const QJsonValue& source : animeJanaiSharedRuntimeAcquisitions(backend))
+            result.append(source);
     } else {
         result.append(acquisition(QStringLiteral("Microsoft.ML.OnnxRuntime.DirectML/1.24.4"),
             QStringLiteral("https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.24.4/microsoft.ml.onnxruntime.directml.1.24.4.nupkg"),
@@ -791,13 +785,13 @@ bool recordAndVerify(const QString& stage, Backend backend, const QStringList& f
         const QString officialDigest = pinnedOfficialAjiDigest(name);
         if (provenance == QLatin1String("official-download") &&
             !officialDigest.isEmpty() && digest != officialDigest) {
-            *error = translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The downloaded Aji binary does not match its pinned v0.24.0 identity: %1")).arg(name);
+            *error = translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The downloaded Aji binary does not match its pinned v0.27.0 identity: %1")).arg(name);
             return false;
         }
         QJsonObject e; e.insert(QStringLiteral("path"), name); e.insert(QStringLiteral("bytes"), bytes); e.insert(QStringLiteral("sha256"), digest); entries.append(e);
     }
     int abi = 0; bool heavy = false;
-    // The official v0.24.0 dispatcher has no version-query export. Its pinned
+    // The official v0.27.0 dispatcher has no version-query export. Its pinned
     // dispatcher/backend pair establishes ABI 9; custom dispatchers must report it.
     // Both upstream backend model-name mappings turn code 4262 into rife_v4.26,
     // not rife_v4.26_heavy, so the official pair cannot select the heavy graph.
@@ -808,11 +802,11 @@ bool recordAndVerify(const QString& stage, Backend backend, const QStringList& f
         const bool hasVersionExport = runtimeExports(dispPath, &abi, &heavy);
         if ((hasVersionExport && abi != 9) ||
             (!hasVersionExport && !matchesPinnedOfficialAbi(stage, backend))) {
-            *error = translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The imported AnimeJaNai dispatcher does not report ABI 9 and is not the pinned official v0.24.0 x64 backend pair."));
+            *error = translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The imported AnimeJaNai dispatcher does not report ABI 9 and is not the pinned official v0.27.0 x64 backend pair."));
             return false;
         }
         if (!matchesCompatibleBackend(stage, backend)) {
-            *error = translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The imported AnimeJaNai backend does not report ABI 9 and is not the pinned official v0.24.0 backend."));
+            *error = translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The imported AnimeJaNai backend does not report ABI 9 and is not the pinned official v0.27.0 backend."));
             return false;
         }
         if (!hasVersionExport) heavy = false;
@@ -821,114 +815,76 @@ bool recordAndVerify(const QString& stage, Backend backend, const QStringList& f
     return writeInstallRecord(stage, backend, entries, provenance, heavy, acquisitions, error);
 }
 
-#ifdef Q_OS_WIN
-// TensorRT for RTX is Windows-only and its overlay is not a standalone runtime:
-// the standard Windows asset supplies the dispatcher and exactly five overlay
-// members supply the RTX backend plus its two mandatory NVIDIA notices. Nothing
-// else is staged, so the classic aji_trt.dll upstream falls back to can never be
-// present in the managed RTX root.
-ComponentProvisionResult provisionRtxRuntime(const QString& scratchDir, const QString& sevenZip,
-    const std::function<void(const ComponentProvisionProgress&)>& progress,
+ComponentProvisionResult provisionSharedRuntime(
+    const QString& scratchDir, const QString& sevenZip, const QString& ajiRoot, Backend backend,
+    [[maybe_unused]] bool reuseExistingShims, const std::function<void(const ComponentProvisionProgress&)>& progress,
     const std::function<bool()>& cancelled) {
-    const auto isCancelled = [&] { return cancelled && cancelled(); };
-    const QString dispatcherLabel = QStringLiteral("aji-v0.24.0");
-    const QString overlayLabel = QString::fromLatin1(kRtxOverlayLabel);
-    const QSet<QString> dispatcherMembers{QStringLiteral("aji.dll"), QStringLiteral("aji_trt.dll"),
-        QStringLiteral("aji_dml.dll"), QStringLiteral("aji_encode.exe"),
-        QStringLiteral("aji_harness_dml.exe"), QStringLiteral("aji_harness.exe"),
-        QStringLiteral("aji_kernel_test.exe")};
-    const QSet<QString> overlayMembers{QStringLiteral("aji_trtrtx.dll"),
-        QStringLiteral("tensorrt_rtx_1_7.dll"), QStringLiteral("tensorrt_onnxparser_rtx_1_7.dll"),
-        QStringLiteral("TensorRT-RTX-NOTICE.txt"), QStringLiteral("TensorRT-RTX-Acknowledgements.txt")};
+    const auto isCancelled = [&] {
+        return (cancelled && cancelled()) ||
+               mikai::backend::WorkCancellationScope::cancellationRequested();
+    };
     QString error;
-
-    const QString ajiArchive = QDir(scratchDir).filePath(QString::fromLatin1(kAjiArchiveName));
-    if (!mikai::backend::downloadToFile(QUrl(QString::fromLatin1(kAjiUrl)), ajiArchive,
-        kAjiBytes, QString::fromLatin1(kAjiSha),
-        [&](qint64 received, qint64 total) { if (progress) progress({dispatcherLabel, received, total, ComponentProvisionStage::Downloading}); },
-        cancelled, &error)) {
-        const bool wasCancelled = isCancelled();
-        return failed(wasCancelled ? QStringLiteral("animejanai.installation.cancelled") : QStringLiteral("animejanai.installation.download"),
-                      error, wasCancelled);
+    QString backendRoot = ajiRoot;
+#ifdef Q_OS_WIN
+    if (backend == Backend::TensorRTRTX && !reuseExistingShims) {
+        const QString archive = QDir(scratchDir).filePath(QString::fromLatin1(kRtxBackendArchiveName));
+        if (!mikai::backend::downloadToFile(QUrl(QString::fromLatin1(kRtxBackendUrl)), archive,
+                kRtxBackendBytes, QString::fromLatin1(kRtxBackendSha),
+                [&](qint64 got, qint64 total) {
+                    if (progress) progress({QString::fromLatin1(kRtxBackendLabel), got, total,
+                                            ComponentProvisionStage::Downloading});
+                }, isCancelled, &error))
+            return failed(QStringLiteral("animejanai.installation.download"), error, isCancelled());
+        const QSet<QString> members{QStringLiteral("aji_trtrtx.dll")};
+        if (!validateArchiveListing(sevenZip, archive, QString(), members, 1, &error))
+            return failed(QStringLiteral("animejanai.installation.archive"), error);
+        backendRoot = QDir(scratchDir).filePath(QStringLiteral("rtx-backend-extract"));
+        if (!QDir().mkpath(backendRoot) ||
+            !mikai::backend::extractArchive(sevenZip, archive, backendRoot, &error))
+            return failed(QStringLiteral("animejanai.installation.extract"), error, isCancelled());
     }
-    if (isCancelled()) return failed(QStringLiteral("animejanai.installation.cancelled"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")), true);
-    if (progress) progress({dispatcherLabel, 0, 0, ComponentProvisionStage::Extracting});
-    if (!validateArchiveListing(sevenZip, ajiArchive, QString(), dispatcherMembers, 7, &error))
-        return failed(QStringLiteral("animejanai.installation.archive"), error);
-    const QString ajiExtract = QDir(scratchDir).filePath(QStringLiteral("aji-extract"));
-    if (!QDir().mkpath(ajiExtract) || !mikai::backend::extractArchive(sevenZip, ajiArchive, ajiExtract, &error))
-        return failed(QStringLiteral("animejanai.installation.extract"), error);
-    const QString dispatcherRoot = sourceRuntimeDirectory(ajiExtract);
-    if (isCancelled()) return failed(QStringLiteral("animejanai.installation.cancelled"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")), true);
-
-    const QString overlayArchive = QDir(scratchDir).filePath(QString::fromLatin1(kRtxOverlayArchiveName));
-    if (!mikai::backend::downloadToFile(QUrl(QString::fromLatin1(kRtxOverlayUrl)), overlayArchive,
-        kRtxOverlayBytes, QString::fromLatin1(kRtxOverlaySha),
-        [&](qint64 received, qint64 total) { if (progress) progress({overlayLabel, received, total, ComponentProvisionStage::Downloading}); },
-        cancelled, &error)) {
-        const bool wasCancelled = isCancelled();
-        return failed(wasCancelled ? QStringLiteral("animejanai.installation.cancelled") : QStringLiteral("animejanai.installation.download"),
-                      error, wasCancelled);
-    }
-    if (isCancelled()) return failed(QStringLiteral("animejanai.installation.cancelled"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")), true);
-    if (progress) progress({overlayLabel, 0, 0, ComponentProvisionStage::Extracting});
-    if (!validateArchiveListing(sevenZip, overlayArchive, QString(), overlayMembers, 5, &error))
-        return failed(QStringLiteral("animejanai.installation.archive"), error);
-    const QString overlayExtract = QDir(scratchDir).filePath(QStringLiteral("rtx-overlay-extract"));
-    if (!QDir().mkpath(overlayExtract) || !mikai::backend::extractArchive(sevenZip, overlayArchive, overlayExtract, &error))
-        return failed(QStringLiteral("animejanai.installation.extract"), error);
-    const QString overlayRoot = sourceRuntimeDirectory(overlayExtract);
-    if (isCancelled()) return failed(QStringLiteral("animejanai.installation.cancelled"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")), true);
-
-    const QString stageParent = QFileInfo(installationRoot(Backend::TensorRTRTX)).absolutePath();
-    if (!pathWithinRoot(nativeRoot(), stageParent) || !QDir().mkpath(stageParent) ||
-        !pathHasNoReparsePoints(nativeRoot(), stageParent))
-        return failed(QStringLiteral("animejanai.installation.stage"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The app-owned runtime directory is not a safe staging location.")));
-    QTemporaryDir stage(QDir(stageParent).filePath(QStringLiteral("aji-stage-XXXXXX")));
-    if (!stage.isValid()) return failed(QStringLiteral("animejanai.installation.stage"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An AnimeJaNai staging directory could not be created.")));
-
-    if (progress) {
-        progress({dispatcherLabel, 0, 0, ComponentProvisionStage::Installing});
-        progress({overlayLabel, 0, 0, ComponentProvisionStage::Installing});
-    }
-    const QStringList staged = windowsClosureFiles(Backend::TensorRTRTX);
-    for (qsizetype i = 0; i < staged.size(); ++i) {
-        const QString& name = staged.at(i);
-        const QString originRoot = i == 0 ? dispatcherRoot : overlayRoot;
+#endif
+    const QString parent = QFileInfo(installationRoot(backend)).absolutePath();
+    QTemporaryDir stage(QDir(parent).filePath(QStringLiteral("aji-stage-XXXXXX")));
+    if (!stage.isValid())
+        return failed(QStringLiteral("animejanai.installation.stage"),
+                      translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An AnimeJaNai staging directory could not be created.")));
+#ifdef Q_OS_WIN
+    const QString dispatcher = QStringLiteral("aji.dll");
+    const QString selected = backendDll(backend);
+#else
+    const QString dispatcher = QStringLiteral("libaji.so");
+    const QString selected = QStringLiteral("libaji_trt.so");
+#endif
+    for (const QString& name : {dispatcher, selected}) {
+        const QString originRoot = name == dispatcher ? ajiRoot : backendRoot;
         const QString origin = QDir(originRoot).filePath(name);
         if (!noReparse(originRoot, origin) ||
-            !copyFile(origin, stage.filePath(name), &error, cancelled)) {
-            const bool wasCancelled = isCancelled();
-            return failed(wasCancelled ? QStringLiteral("animejanai.installation.cancelled") : QStringLiteral("animejanai.installation.dependency"),
-                          wasCancelled ? translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")) :
-                              (error.isEmpty() ? translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The verified TensorRT for RTX archive is missing a required member.")) : error), wasCancelled);
-        }
+            !copyFile(origin, stage.filePath(name), &error, isCancelled))
+            return failed(QStringLiteral("animejanai.installation.dependency"), error, isCancelled());
     }
-
-    QJsonArray acquisitions;
-    acquisitions.append(acquisition(dispatcherLabel, QString::fromLatin1(kAjiUrl), kAjiBytes, QString::fromLatin1(kAjiSha)));
-    acquisitions.append(acquisition(overlayLabel, QString::fromLatin1(kRtxOverlayUrl), kRtxOverlayBytes, QString::fromLatin1(kRtxOverlaySha)));
+    auto result = provisionAnimeJanaiSharedRuntime(backend, stage.path(), progress, isCancelled);
+    if (!result.ok) return result;
     bool heavy = false;
-    if (progress) {
-        progress({dispatcherLabel, 0, 0, ComponentProvisionStage::Verifying});
-        progress({overlayLabel, 0, 0, ComponentProvisionStage::Verifying});
-    }
-    if (!recordAndVerify(stage.path(), Backend::TensorRTRTX,
-                         recordedClosureFiles(stage.path(), Backend::TensorRTRTX, nullptr),
-                         QStringLiteral("official-download"), true, acquisitions, &error, &heavy))
-        return failed(QStringLiteral("animejanai.installation.invalid"), error);
-    if (heavy) return failed(QStringLiteral("animejanai.installation.capabilityInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The official Aji v0.24.0 asset unexpectedly reports heavy RIFE support.")));
-    if (isCancelled()) return failed(QStringLiteral("animejanai.installation.cancelled"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")), true);
-    if (!publishStage(stage.path(), Backend::TensorRTRTX, &error)) return failed(QStringLiteral("animejanai.installation.publish"), error);
-    if (progress) {
-        progress({dispatcherLabel, 0, 0, ComponentProvisionStage::Installed});
-        progress({overlayLabel, 0, 0, ComponentProvisionStage::Installed});
-    }
-    ComponentProvisionResult result; result.ok = true;
-    result.installedPacks << dispatcherLabel << overlayLabel;
+    if (progress) progress({ajiDispatcherLabel(), 0, 0, ComponentProvisionStage::Verifying});
+    if (!recordAndVerify(stage.path(), backend, recordedClosureFiles(stage.path(), backend, nullptr),
+                         QStringLiteral("official-download"), true, officialAcquisitions(backend),
+                         &error, &heavy))
+        return failed(QStringLiteral("animejanai.installation.invalid"), error, isCancelled());
+    const auto dependencies = describeAnimeJanaiSharedRuntime(backend, stage.path(), true, isCancelled);
+    if (!dependencies.installed)
+        return failed(QStringLiteral("animejanai.installation.dependency"), dependencies.reason, isCancelled());
+    if (isCancelled())
+        return failed(QStringLiteral("animejanai.installation.cancelled"),
+                      translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")), true);
+    if (!publishStage(stage.path(), backend, &error))
+        return failed(QStringLiteral("animejanai.installation.publish"), error);
+    result.installedPacks.prepend(ajiDispatcherLabel());
+    if (backend == Backend::TensorRTRTX)
+        result.installedPacks.append(QString::fromLatin1(kRtxBackendLabel));
+    if (progress) progress({ajiDispatcherLabel(), 0, 0, ComponentProvisionStage::Installed});
     return result;
 }
-#endif
 
 } // namespace
 
@@ -1005,7 +961,8 @@ AnimeJanaiInstallation describeAnimeJanaiInstallation(Backend backend, bool reha
             return refuse(QStringLiteral("animejanai.installation.fallbackBackend"),
                           translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The installed TensorRT for RTX runtime contains the classic TensorRT backend, which the dispatcher would silently fall back to.")));
     }
-    if (backend == Backend::TensorRT) {
+    const bool shared = isTensorRtFamily(backend) && hasSharedMapping(result.root);
+    if (backend == Backend::TensorRT && !shared) {
         auto matchCatalog = [&](const QVector<ComponentPack>& catalog) -> bool {
             for (const QJsonValue& item : files) {
                 if (!item.isObject()) continue;
@@ -1029,17 +986,27 @@ AnimeJanaiInstallation describeAnimeJanaiInstallation(Backend backend, bool reha
         if (capability.nvidia && (selected == nullptr || resource->name != selected->name))
             return refuse(QStringLiteral("animejanai.installation.resourceMismatch"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The installed TensorRT builder resource does not match the observed GPU.")));
     }
-    const QStringList required = closureFiles(backend, resource, linuxRecordClosure);
+    if (shared && backend == Backend::TensorRT) {
+        resource = selectedTensorRtResource();
+        if (resource == nullptr)
+            return refuse(QStringLiteral("animejanai.installation.gpuUnsupported"),
+                          translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The observed GPU has no compatible TensorRT builder pack.")));
+    }
+    const QStringList required = shared ? sharedClosureFiles(backend, linuxRecordClosure)
+                                       : closureFiles(backend, resource, linuxRecordClosure);
     const QStringList optional = optionalNoticeFiles(backend);
     const QString provenance = rec.value(QStringLiteral("provenance")).toString();
     const QJsonArray acquisitionRecords = rec.value(QStringLiteral("acquisitions")).toArray();
+    if (provenance == QLatin1String("official-download") && isTensorRtFamily(backend) && !shared)
+        return refuse(QStringLiteral("animejanai.installation.recordInvalid"),
+                      translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The managed TensorRT runtime is missing its shared-pack mapping.")));
     if ((provenance == QStringLiteral("local") &&
          (!acquisitionRecords.isEmpty() || rec.value(QStringLiteral("archiveBytes")).toVariant().toLongLong() != 0 ||
           !rec.value(QStringLiteral("archiveSha256")).toString().isEmpty())) ||
         (provenance == QStringLiteral("official-download") &&
          (rec.value(QStringLiteral("archiveBytes")).toVariant().toLongLong() != kAjiBytes ||
           rec.value(QStringLiteral("archiveSha256")).toString() != QLatin1String(kAjiSha) ||
-          acquisitionRecords != officialAcquisitions(backend, resource))) ||
+          acquisitionRecords != officialAcquisitions(backend))) ||
         (provenance != QStringLiteral("local") && provenance != QStringLiteral("official-download")))
         return refuse(QStringLiteral("animejanai.installation.recordInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The AnimeJaNai installation acquisition record does not match its pinned release sources.")));
     QMap<QString, QJsonObject> records;
@@ -1075,7 +1042,7 @@ AnimeJanaiInstallation describeAnimeJanaiInstallation(Backend backend, bool reha
         const QString officialDigest = pinnedOfficialAjiDigest(name);
         if (provenance == QLatin1String("official-download") &&
             !officialDigest.isEmpty() && entry.value(QStringLiteral("sha256")).toString() != officialDigest)
-            return refuse(QStringLiteral("animejanai.installation.fileInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An official Aji library does not match the pinned v0.24.0 release.")));
+            return refuse(QStringLiteral("animejanai.installation.fileInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An official Aji library does not match the pinned v0.27.0 release.")));
         if (isBinaryFileName(name) && !validBinaryImageX64(name, path)) return refuse(QStringLiteral("animejanai.installation.peInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An AnimeJaNai runtime dependency is not a valid x64 binary image: %1")).arg(name));
 #ifndef Q_OS_WIN
         if (name == QLatin1String("trtexec") && !info.isExecutable())
@@ -1087,7 +1054,7 @@ AnimeJanaiInstallation describeAnimeJanaiInstallation(Backend backend, bool reha
         return refuse(QStringLiteral("animejanai.installation.recordInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The AnimeJaNai installation record does not describe the exact selected backend closure.")));
     result.heavyRifeSupported = rec.value(QStringLiteral("heavyRifeSupported")).toBool();
     if (provenance == QLatin1String("official-download") && result.heavyRifeSupported)
-        return refuse(QStringLiteral("animejanai.installation.capabilityInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "Official Aji v0.24.0 does not map the heavy RIFE model.")));
+        return refuse(QStringLiteral("animejanai.installation.capabilityInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "Official Aji v0.27.0 does not map the heavy RIFE model.")));
     if (rehash && provenance == QLatin1String("local")) {
         int abi = 0; bool heavy = false;
         const QString dispPath = linuxRecordClosure
@@ -1096,12 +1063,31 @@ AnimeJanaiInstallation describeAnimeJanaiInstallation(Backend backend, bool reha
         const bool hasVersionExport = runtimeExports(dispPath, &abi, &heavy);
         if ((hasVersionExport && abi != 9) ||
             (!hasVersionExport && !matchesPinnedOfficialAbi(result.root, backend)))
-            return refuse(QStringLiteral("animejanai.installation.abiInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The installed AnimeJaNai dispatcher does not report ABI 9 and does not match the pinned official v0.24.0 x64 backend pair.")));
+            return refuse(QStringLiteral("animejanai.installation.abiInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The installed AnimeJaNai dispatcher does not report ABI 9 and does not match the pinned official v0.27.0 x64 backend pair.")));
         if (!matchesCompatibleBackend(result.root, backend))
-            return refuse(QStringLiteral("animejanai.installation.abiInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The installed AnimeJaNai backend does not report ABI 9 and does not match the pinned official v0.24.0 backend.")));
+            return refuse(QStringLiteral("animejanai.installation.abiInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The installed AnimeJaNai backend does not report ABI 9 and does not match the pinned official v0.27.0 backend.")));
         if (!hasVersionExport) heavy = false;
         if (result.heavyRifeSupported != heavy)
             return refuse(QStringLiteral("animejanai.installation.capabilityInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The recorded AnimeJaNai capability does not match the dispatcher export.")));
+    }
+    result.localFilesPresent = true;
+    if (shared) {
+        const AnimeJanaiSharedRuntime runtime = describeAnimeJanaiSharedRuntime(backend, result.root, rehash);
+        if (!runtime.installed)
+            return refuse(QStringLiteral("animejanai.installation.sharedRuntime"), runtime.reason);
+        result.sharedRuntime = true;
+        result.backendLibDirs = runtime.libraryDirs;
+        result.trtexecPath = runtime.trtexecPath;
+    } else {
+        result.backendLibDirs.append(result.root);
+        if (backend == Backend::TensorRT) {
+            result.trtexecPath = QDir(result.root).filePath(
+#ifdef Q_OS_WIN
+                QStringLiteral("trtexec.exe"));
+#else
+                QStringLiteral("trtexec"));
+#endif
+        }
     }
     result.installed = true;
     return result;
@@ -1109,26 +1095,17 @@ AnimeJanaiInstallation describeAnimeJanaiInstallation(Backend backend, bool reha
 
 QVector<AnimeJanaiMissingDownload> animeJanaiMissingDownloads(Backend backend) {
 #ifndef Q_OS_WIN
-    if (backend == Backend::DirectML) return {};
-    if (backend == Backend::TensorRTRTX) return {};
+    if (backend == Backend::DirectML || backend == Backend::TensorRTRTX) return {};
 #endif
-    QVector<AnimeJanaiMissingDownload> missing;
     const AnimeJanaiInstallation installation = describeAnimeJanaiInstallation(backend, false);
-    if (!installation.installed) missing.append({QStringLiteral("aji-v0.24.0"), kAjiBytes});
-    if (backend == Backend::TensorRT) {
-        const ComponentStore store = componentStore();
-        const ComponentPack* runtime = tensorRtRuntimePack();
-        if (runtime != nullptr && !storedPack(store, *runtime).installed)
-            missing.append({runtime->name, runtime->assetBytes});
-        const ComponentPack* resource = selectedTensorRtResource();
-        if (resource != nullptr && !storedPack(store, *resource).installed)
-            missing.append({resource->name, resource->assetBytes});
-    } else if (backend == Backend::TensorRTRTX) {
-        // A verified RTX install already covers both archives, so a complete
-        // install reports no missing download at all.
-        if (!installation.installed)
-            missing.append({QString::fromLatin1(kRtxOverlayLabel), kRtxOverlayBytes});
-    } else if (!installation.installed) {
+    if (installation.installed) return {};
+    QVector<AnimeJanaiMissingDownload> missing;
+    if (!installation.localFilesPresent) missing.append({ajiDispatcherLabel(), kAjiBytes});
+    if (isTensorRtFamily(backend)) {
+        if (backend == Backend::TensorRTRTX && !installation.localFilesPresent)
+            missing.append({QString::fromLatin1(kRtxBackendLabel), kRtxBackendBytes});
+        missing.append(animeJanaiSharedRuntimeMissingDownloads(backend));
+    } else {
         missing.append({QStringLiteral("onnxruntime-directml-1.24.4"), kOrtBytes});
         missing.append({QStringLiteral("directml-1.15.4"), kDirectMlBytes});
     }
@@ -1183,9 +1160,9 @@ ComponentProvisionResult importAnimeJanaiRuntime(const QString& sourceDir, Backe
             return failed(QStringLiteral("animejanai.installation.resourceMismatch"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The imported TensorRT builder resource does not match the observed GPU.")));
     }
     const QString stageParent = QFileInfo(installationRoot(backend)).absolutePath();
-    if (!pathWithinRoot(nativeRoot(), stageParent) || !QDir().mkpath(stageParent) ||
-        !pathHasNoReparsePoints(nativeRoot(), stageParent))
-        return failed(QStringLiteral("animejanai.installation.stage"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The app-owned runtime directory is not a safe staging location.")));
+    QString directoryError;
+    if (!ensureOwnedNativeDirectory(stageParent, &directoryError))
+        return failed(QStringLiteral("animejanai.installation.stage"), directoryError);
     QTemporaryDir temp(QDir(stageParent).filePath(QStringLiteral("aji-import-XXXXXX")));
     if (!temp.isValid()) return failed(QStringLiteral("animejanai.installation.stage"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An AnimeJaNai staging directory could not be created.")));
     QStringList imported = recordedClosureFiles(source, backend, resource);
@@ -1214,9 +1191,8 @@ ComponentProvisionResult importAnimeJanaiRuntime(const QString& sourceDir, Backe
     if (cancelled && cancelled()) return failed(QStringLiteral("animejanai.installation.cancelled"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")), true);
     if (!publishStage(temp.path(), backend, &error)) return failed(QStringLiteral("animejanai.installation.publish"), error);
     if (progress) progress({localRuntimeId, copiedBytes, totalBytes, ComponentProvisionStage::Installed});
-    ComponentProvisionResult result; result.ok = true; result.installedPacks << QStringLiteral("aji-v0.24.0");
-    // A local RTX import adopts the same two-artefact contract as a download.
-    result.installedPacks << (backend == Backend::TensorRTRTX ? QString::fromLatin1(kRtxOverlayLabel)
+    ComponentProvisionResult result; result.ok = true; result.installedPacks << QStringLiteral("aji-v0.27.0");
+    result.installedPacks << (backend == Backend::TensorRTRTX ? QString::fromLatin1(kRtxBackendLabel)
                                                               : backendName(backend));
     return result;
 }
@@ -1226,10 +1202,15 @@ ComponentProvisionResult provisionAnimeJanaiRuntime(Backend backend,
     const std::function<bool()>& cancelled) {
     {
         QMutexLocker lock(&g_installMutex);
-        if (g_installRunning) return failed(QStringLiteral("animejanai.installation.busy"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An AnimeJaNai runtime installation is already running.")));
+        if (g_installRunning)
+            return failed(QStringLiteral("animejanai.installation.busy"),
+                          translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An AnimeJaNai runtime installation is already running.")));
         g_installRunning = true;
     }
-    const auto releaseRun = qScopeGuard([] { QMutexLocker lock(&g_installMutex); g_installRunning = false; });
+    const auto releaseRun = qScopeGuard([] {
+        QMutexLocker lock(&g_installMutex);
+        g_installRunning = false;
+    });
 #ifndef Q_OS_WIN
     if (backend == Backend::DirectML)
         return failed(QStringLiteral("animejanai.provision.platformUnsupported"),
@@ -1238,336 +1219,165 @@ ComponentProvisionResult provisionAnimeJanaiRuntime(Backend backend,
         return failed(QStringLiteral("animejanai.provision.platformUnsupported"),
                       translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "TensorRT for RTX is available only on Windows.")));
 #endif
+    const auto isCancelled = [&] {
+        return (cancelled && cancelled()) ||
+               mikai::backend::WorkCancellationScope::cancellationRequested();
+    };
+    if (isCancelled())
+        return failed(QStringLiteral("animejanai.installation.cancelled"),
+                      translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")), true);
     const AnimeJanaiInstallation current = describeAnimeJanaiInstallation(backend, true);
     if (current.installed) {
-        ComponentProvisionResult r; r.ok = true; r.installedPacks << QStringLiteral("aji-v0.24.0");
-        if (backend == Backend::TensorRTRTX) r.installedPacks << QString::fromLatin1(kRtxOverlayLabel);
-        return r;
+        ComponentProvisionResult result;
+        result.ok = true;
+        result.installedPacks.append(ajiDispatcherLabel());
+        if (backend == Backend::TensorRTRTX)
+            result.installedPacks.append(QString::fromLatin1(kRtxBackendLabel));
+        return result;
     }
-    const auto isCancelled = [&] { return cancelled && cancelled(); };
-    if (isCancelled()) return failed(QStringLiteral("animejanai.installation.cancelled"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")), true);
+    if (backend == Backend::TensorRT && selectedTensorRtResource() == nullptr)
+        return failed(QStringLiteral("animejanai.provision.gpuUnsupported"),
+                      translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The observed GPU has no compatible TensorRT builder pack.")));
 
     const QString scratchRoot = nativeSubdirectory(QStringLiteral("scratch"));
-    if (scratchRoot.isEmpty() || !QDir().mkpath(scratchRoot))
-        return failed(QStringLiteral("animejanai.installation.scratch"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The AnimeJaNai scratch directory is unavailable.")));
+    QString directoryError;
+    if (!ensureOwnedNativeDirectory(scratchRoot, &directoryError))
+        return failed(QStringLiteral("animejanai.installation.scratch"), directoryError);
     QTemporaryDir scratch(QDir(scratchRoot).filePath(QStringLiteral("aji-runtime-XXXXXX")));
-    if (!scratch.isValid()) return failed(QStringLiteral("animejanai.installation.scratch"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "A temporary AnimeJaNai acquisition directory could not be created.")));
-
+    if (!scratch.isValid())
+        return failed(QStringLiteral("animejanai.installation.scratch"),
+                      translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "A temporary AnimeJaNai acquisition directory could not be created.")));
     QString sevenZip;
     try {
         sevenZip = mikai::backend::ensureSevenZip(nativeToolsDirectory());
     } catch (const std::exception& error) {
-        return failed(QStringLiteral("animejanai.installation.extractor"), QString::fromLocal8Bit(error.what()));
+        return failed(QStringLiteral("animejanai.installation.extractor"),
+                      QString::fromLocal8Bit(error.what()), isCancelled());
     }
-    if (sevenZip.isEmpty()) return failed(QStringLiteral("animejanai.installation.extractor"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "7-Zip is not available to unpack the AnimeJaNai runtime.")));
+    if (sevenZip.isEmpty())
+        return failed(QStringLiteral("animejanai.installation.extractor"),
+                      translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "7-Zip is not available to unpack the AnimeJaNai runtime.")));
 
 #ifdef Q_OS_WIN
-    // The RTX closure is the shared dispatcher plus the NVIDIA overlay only; it
-    // never enters the TensorRT pack, builder-resource or trtexec paths below.
-    if (backend == Backend::TensorRTRTX)
-        return provisionRtxRuntime(scratch.path(), sevenZip, progress, cancelled);
+    const QStringList shimNames{QStringLiteral("aji.dll"), backendDll(backend)};
+#else
+    const QStringList shimNames{QStringLiteral("libaji.so"), QStringLiteral("libaji_trt.so")};
 #endif
-
-    const ComponentPack* trtResource = nullptr;
-    QVector<const ComponentPack*> trtPacks;
-    if (backend == Backend::TensorRT) {
-        const GpuComputeCapability& capability = observeComputeCapability();
-        if (!capability.nvidia) return failed(QStringLiteral("animejanai.provision.gpuUnavailable"),
-            capability.reason.isEmpty() ? translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "TensorRT requires an observed NVIDIA GPU capability.")) : capability.reason);
-        trtPacks = compatiblePacksFor(capability.smMajor, capability.smMinor);
-        trtResource = tensorRtResourcePackFor(capability.smMajor, capability.smMinor);
-        if (tensorRtRuntimePack() == nullptr || trtResource == nullptr || trtPacks.size() != 2)
-            return failed(QStringLiteral("animejanai.provision.gpuUnsupported"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The observed NVIDIA GPU has no pinned TensorRT runtime and builder-resource closure.")));
-    }
-
+    bool reuseExistingShims = !current.root.isEmpty();
+    for (const QString& name : shimNames)
+        reuseExistingShims = reuseExistingShims && noReparse(current.root, QDir(current.root).filePath(name));
+    reuseExistingShims = reuseExistingShims && matchesPinnedOfficialAbi(current.root, backend);
+    QString ajiRoot = current.root;
     QString error;
-    const QString ajiArchive = scratch.filePath(QString::fromLatin1(kAjiArchiveName));
-    const bool gotAji = mikai::backend::downloadToFile(QUrl(QString::fromLatin1(kAjiUrl)), ajiArchive,
-        kAjiBytes, QString::fromLatin1(kAjiSha),
-        [&](qint64 received, qint64 total) { if (progress) progress({ajiDispatcherLabel(), received, total, ComponentProvisionStage::Downloading}); },
-        cancelled, &error);
-    if (!gotAji) {
-        const bool wasCancelled = isCancelled();
-        return failed(wasCancelled ? QStringLiteral("animejanai.installation.cancelled") : QStringLiteral("animejanai.installation.download"),
-                      error, wasCancelled);
-    }
-    if (progress) progress({ajiDispatcherLabel(), 0, 0, ComponentProvisionStage::Extracting});
+    if (!reuseExistingShims) {
+        const QString archive = scratch.filePath(QString::fromLatin1(kAjiArchiveName));
+        if (!mikai::backend::downloadToFile(QUrl(QString::fromLatin1(kAjiUrl)), archive,
+                kAjiBytes, QString::fromLatin1(kAjiSha),
+                [&](qint64 got, qint64 total) {
+                    if (progress) progress({ajiDispatcherLabel(), got, total, ComponentProvisionStage::Downloading});
+                }, isCancelled, &error))
+            return failed(QStringLiteral("animejanai.installation.download"), error, isCancelled());
+        if (progress) progress({ajiDispatcherLabel(), 0, 0, ComponentProvisionStage::Extracting});
 #ifdef Q_OS_WIN
-    const QSet<QString> ajiMembers{QStringLiteral("aji.dll"), QStringLiteral("aji_trt.dll"), QStringLiteral("aji_dml.dll"),
-        QStringLiteral("aji_encode.exe"), QStringLiteral("aji_harness_dml.exe"),
-        QStringLiteral("aji_harness.exe"), QStringLiteral("aji_kernel_test.exe")};
-    if (!validateArchiveListing(sevenZip, ajiArchive, QString(), ajiMembers, 7, &error))
-        return failed(QStringLiteral("animejanai.installation.archive"), error);
+        const QSet<QString> members{QStringLiteral("aji.dll"), QStringLiteral("aji_trt.dll"),
+            QStringLiteral("aji_dml.dll"), QStringLiteral("aji_encode.exe"),
+            QStringLiteral("aji_harness_dml.exe"), QStringLiteral("aji_harness.exe"),
+            QStringLiteral("aji_kernel_test.exe")};
+        if (!validateArchiveListing(sevenZip, archive, QString(), members, 7, &error))
+            return failed(QStringLiteral("animejanai.installation.archive"), error);
 #else
-    const QSet<QString> ajiMembers{QStringLiteral("libaji.so"), QStringLiteral("libaji_trt.so"),
-                                   QStringLiteral("aji_harness"), QStringLiteral("aji_kernel_test")};
-    if (!validateSafeArchive(sevenZip, ajiArchive, &error, false, cancelled, ajiMembers))
-        return failed(isCancelled() ? QStringLiteral("animejanai.installation.cancelled")
-                                   : QStringLiteral("animejanai.installation.archive"), error, isCancelled());
+        const QSet<QString> members{QStringLiteral("libaji.so"), QStringLiteral("libaji_trt.so"),
+            QStringLiteral("aji_harness"), QStringLiteral("aji_kernel_test")};
+        if (!validateSafeArchive(sevenZip, archive, &error, false, isCancelled, members))
+            return failed(QStringLiteral("animejanai.installation.archive"), error, isCancelled());
 #endif
-    const QString ajiExtract = scratch.filePath(QStringLiteral("aji-extract"));
-    if (!QDir().mkpath(ajiExtract) || !mikai::backend::extractArchive(sevenZip, ajiArchive, ajiExtract, &error))
-        return failed(QStringLiteral("animejanai.installation.extract"), error);
-    const QString ajiRoot = sourceRuntimeDirectory(ajiExtract);
-    if (isCancelled()) return failed(QStringLiteral("animejanai.installation.cancelled"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")), true);
+        const QString extracted = scratch.filePath(QStringLiteral("aji-extract"));
+        if (!QDir().mkpath(extracted) ||
+            !mikai::backend::extractArchive(sevenZip, archive, extracted, &error))
+            return failed(QStringLiteral("animejanai.installation.extract"), error, isCancelled());
+        ajiRoot = sourceRuntimeDirectory(extracted);
+    }
+    if (isCancelled())
+        return failed(QStringLiteral("animejanai.installation.cancelled"),
+                      translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")), true);
+    const QString parent = QFileInfo(installationRoot(backend)).absolutePath();
+    if (!ensureOwnedNativeDirectory(parent, &error))
+        return failed(QStringLiteral("animejanai.installation.stage"), error);
+    if (isTensorRtFamily(backend))
+        return provisionSharedRuntime(scratch.path(), sevenZip, ajiRoot, backend,
+                                      reuseExistingShims, progress, isCancelled);
 
-    const QString stageParent = QFileInfo(installationRoot(backend)).absolutePath();
-    if (!pathWithinRoot(nativeRoot(), stageParent) || !QDir().mkpath(stageParent) ||
-        !pathHasNoReparsePoints(nativeRoot(), stageParent))
-        return failed(QStringLiteral("animejanai.installation.stage"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The app-owned runtime directory is not a safe staging location.")));
-
-    const ComponentStore store = componentStore();
-    QJsonArray acquisitions;
-    acquisitions.append(acquisition(ajiDispatcherLabel(), QString::fromLatin1(kAjiUrl),
-                                    kAjiBytes, QString::fromLatin1(kAjiSha)));
-    const ComponentPack* resource = nullptr;
-    const QString packageExtract = scratch.filePath(QStringLiteral("package-extract"));
-    if (backend == Backend::TensorRT) {
-        const QVector<const ComponentPack*>& selected = trtPacks;
-        const ComponentPack* runtime = tensorRtRuntimePack();
-        resource = trtResource;
-        QVector<ComponentPack> missingPacks;
-        QSet<QString> verifiedPacks;
-        for (const ComponentPack* pack : selected) {
-            if (pack == nullptr) return failed(QStringLiteral("animejanai.provision.gpuUnsupported"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The observed NVIDIA GPU has no pinned TensorRT runtime and builder-resource closure.")));
-            const StoredPack present = storedPack(store, *pack);
-            if (!present.installed) {
-                missingPacks.append(*pack);
-                continue;
-            }
-            if (verifyPack(store, *pack).installed) verifiedPacks.insert(pack->name);
-            else missingPacks.append(*pack);
-        }
-        // One archive serves two consumers - the pack install and the trtexec
-        // extraction - so a missing runtime pack is fetched once here and handed
-        // to provisioning, which then leaves the file in place for extraction.
-        const QString runtimeArchive = scratch.filePath(runtime->asset);
-        bool runtimeArchiveReady = false;
-        for (const ComponentPack& missing : missingPacks) {
-            if (missing.name != runtime->name) continue;
-            if (!mikai::backend::downloadToFile(QUrl(runtime->url), runtimeArchive,
-                runtime->exactAssetBytes ? runtime->assetBytes : 0,
-                runtime->assetSha256, [&](qint64 received, qint64 total) {
-                    if (progress) progress({QStringLiteral("trt-runtime"), received, total, ComponentProvisionStage::Downloading});
-                }, cancelled, &error)) {
-                const bool wasCancelled = isCancelled();
-                return failed(wasCancelled ? QStringLiteral("animejanai.installation.cancelled") : QStringLiteral("animejanai.installation.download"),
-                              error, wasCancelled);
-            }
-            runtimeArchiveReady = true;
-            break;
-        }
-        if (!missingPacks.isEmpty()) {
-            const VerifiedComponentArchive reuse{runtime->name, runtimeArchive};
-            ComponentProvisionResult dependencies = provisionTensorRtComponents(
-                store, missingPacks, scratch.path(), progress, cancelled,
-                runtimeArchiveReady ? &reuse : nullptr);
-            if (!dependencies.ok) return dependencies;
-        }
-        for (const ComponentPack* pack : selected) {
-            if (!verifiedPacks.contains(pack->name) && !verifyPack(store, *pack).installed)
-                return failed(QStringLiteral("animejanai.provision.dependencyIntegrity"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "A pinned TensorRT dependency failed store verification.")));
-        }
-        const StoredPack verifiedRuntime = storedPack(store, *runtime);
-        const StoredPack verifiedResource = storedPack(store, *resource);
-        if (!verifiedRuntime.installed || !verifiedResource.installed)
-            return failed(QStringLiteral("animejanai.provision.dependencyIntegrity"),
-                          !verifiedRuntime.installed ? verifiedRuntime.reason : verifiedResource.reason);
-        for (const ComponentPack* pack : selected)
-            acquisitions.append(acquisition(pack->name, pack->url, pack->assetBytes, pack->assetSha256));
-
-#ifdef Q_OS_WIN
-        const QString expectedTrtexec = QStringLiteral("trtexec.exe");
-#else
-        const QString expectedTrtexec = QStringLiteral("trtexec");
-#endif
-        const QString storeDir = componentReleaseDirectory(store);
-        const bool storeHasTrtexec = noReparse(storeDir, QDir(storeDir).filePath(expectedTrtexec));
-        if (!storeHasTrtexec) {
-            if (!runtimeArchiveReady &&
-                !mikai::backend::downloadToFile(QUrl(runtime->url), runtimeArchive,
-                    runtime->exactAssetBytes ? runtime->assetBytes : 0,
-                    runtime->assetSha256, [&](qint64 received, qint64 total) {
-                        if (progress) progress({QStringLiteral("trt-runtime-trtexec"), received, total, ComponentProvisionStage::Downloading});
-                    }, cancelled, &error)) {
-                const bool wasCancelled = isCancelled();
-                return failed(wasCancelled ? QStringLiteral("animejanai.installation.cancelled") : QStringLiteral("animejanai.installation.download"),
-                              error, wasCancelled);
-            }
-#ifdef Q_OS_WIN
-            QSet<QString> runtimeMembers;
-            for (const QString& file : runtime->files) runtimeMembers.insert(file);
-            runtimeMembers.insert(QStringLiteral("trtexec.exe"));
-            if (!validateArchiveListing(sevenZip, runtimeArchive, QStringLiteral("animejanai/inference/"),
-                                        runtimeMembers, runtimeMembers.size(), &error))
-                return failed(QStringLiteral("animejanai.installation.archive"), error);
-#else
-            if (!validateSafeArchive(sevenZip, runtimeArchive, &error, true, cancelled))
-                return failed(isCancelled() ? QStringLiteral("animejanai.installation.cancelled")
-                                           : QStringLiteral("animejanai.installation.archive"), error, isCancelled());
-#endif
-            if (!mikai::backend::extractArchive(sevenZip, runtimeArchive, packageExtract, &error))
-                return failed(QStringLiteral("animejanai.installation.extract"), error);
-        }
-    } else {
-        constexpr auto kOrtSha = "57e9f11b73437bef7a309496135d4c1f96b1a8e9ddba60013fa27bfc1d788681";
-        constexpr auto kDirectMlSha = "4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9";
-        const QString ortUrl = QStringLiteral("https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.24.4/microsoft.ml.onnxruntime.directml.1.24.4.nupkg");
-        const QString directMlUrl = QStringLiteral("https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg");
-        const QString ortArchive = scratch.filePath(QStringLiteral("onnxruntime-directml.nupkg"));
-        const QString directMlArchive = scratch.filePath(QStringLiteral("directml.nupkg"));
-        for (const auto& asset : {std::make_pair(ortUrl, std::make_pair(kOrtBytes, QString::fromLatin1(kOrtSha))),
-                                  std::make_pair(directMlUrl, std::make_pair(kDirectMlBytes, QString::fromLatin1(kDirectMlSha)))}) {
-            const QString path = asset.first == ortUrl ? ortArchive : directMlArchive;
-            const QString name = asset.first == ortUrl ? QStringLiteral("onnxruntime-directml-1.24.4") : QStringLiteral("directml-1.15.4");
-            if (!mikai::backend::downloadToFile(QUrl(asset.first), path, asset.second.first, asset.second.second,
-                [&](qint64 received, qint64 total) { if (progress) progress({name, received, total, ComponentProvisionStage::Downloading}); },
-                cancelled, &error)) {
-                const bool wasCancelled = isCancelled();
-                return failed(wasCancelled ? QStringLiteral("animejanai.installation.cancelled") : QStringLiteral("animejanai.installation.download"),
-                              error, wasCancelled);
-            }
-            if (!validateSafeArchive(sevenZip, path, &error, false, cancelled))
-                return failed(isCancelled() ? QStringLiteral("animejanai.installation.cancelled")
-                                           : QStringLiteral("animejanai.installation.archive"), error, isCancelled());
-        }
-        if (progress) {
-            progress({QStringLiteral("onnxruntime-directml-1.24.4"), 0, 0, ComponentProvisionStage::Extracting});
-            progress({QStringLiteral("directml-1.15.4"), 0, 0, ComponentProvisionStage::Extracting});
-        }
-        const QString ortExtract = scratch.filePath(QStringLiteral("ort-extract"));
-        const QString directMlExtract = scratch.filePath(QStringLiteral("directml-extract"));
-        if (!mikai::backend::extractArchive(sevenZip, ortArchive, ortExtract, &error) ||
-            !mikai::backend::extractArchive(sevenZip, directMlArchive, directMlExtract, &error))
-            return failed(QStringLiteral("animejanai.installation.extract"), error);
-        acquisitions.append(acquisition(QStringLiteral("Microsoft.ML.OnnxRuntime.DirectML/1.24.4"), ortUrl,
-                                        kOrtBytes, QString::fromLatin1(kOrtSha)));
-        acquisitions.append(acquisition(QStringLiteral("Microsoft.AI.DirectML/1.15.4"), directMlUrl,
-                                        kDirectMlBytes, QString::fromLatin1(kDirectMlSha)));
-        QTemporaryDir stage(QDir(QFileInfo(installationRoot(backend)).absolutePath()).filePath(QStringLiteral("aji-stage-XXXXXX")));
-        if (!stage.isValid()) return failed(QStringLiteral("animejanai.installation.stage"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An AnimeJaNai staging directory could not be created.")));
-        if (progress) {
-            progress({ajiDispatcherLabel(), 0, 0, ComponentProvisionStage::Installing});
-            progress({QStringLiteral("onnxruntime-directml-1.24.4"), 0, 0, ComponentProvisionStage::Installing});
-            progress({QStringLiteral("directml-1.15.4"), 0, 0, ComponentProvisionStage::Installing});
-        }
-        for (const QString& name : {QStringLiteral("aji.dll"), backendDll(backend)}) {
-            const QString source = QDir(ajiRoot).filePath(name);
-            if (!noReparse(ajiRoot, source) || !copyFile(source, stage.filePath(name), &error, cancelled)) {
-                const bool wasCancelled = isCancelled();
-                return failed(wasCancelled ? QStringLiteral("animejanai.installation.cancelled") : QStringLiteral("animejanai.installation.dependency"),
-                              wasCancelled ? translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")) :
-                                  (error.isEmpty() ? translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The verified Aji archive is missing a required dispatcher DLL.")) : error), wasCancelled);
-            }
-        }
-        const QStringList staged{
-            QStringLiteral("onnxruntime.dll"), QStringLiteral("DirectML.dll"),
-            QStringLiteral("DirectML_LICENSE.txt"), QStringLiteral("ORT_LICENSE.txt"),
-            QStringLiteral("ORT_ThirdPartyNotices.txt"), QStringLiteral("DirectML_LICENSE_CODE.txt"),
-            QStringLiteral("DirectML_ThirdPartyNotices.txt")};
-        const QStringList origins{
-            QDir(ortExtract).filePath(QStringLiteral("runtimes/win-x64/native/onnxruntime.dll")),
-            QDir(directMlExtract).filePath(QStringLiteral("bin/x64-win/DirectML.dll")),
-            QDir(directMlExtract).filePath(QStringLiteral("LICENSE.txt")),
-            QDir(ortExtract).filePath(QStringLiteral("LICENSE")),
-            QDir(ortExtract).filePath(QStringLiteral("ThirdPartyNotices.txt")),
-            QDir(directMlExtract).filePath(QStringLiteral("LICENSE-CODE.txt")),
-            QDir(directMlExtract).filePath(QStringLiteral("ThirdPartyNotices.txt"))};
-        for (qsizetype i = 0; i < staged.size(); ++i) {
-            const QString& originRoot = i == 0 || i == 3 || i == 4 ? ortExtract : directMlExtract;
-            const bool optionalNotice = i >= 3;
-            if (optionalNotice && !QFileInfo::exists(origins.at(i))) continue;
-            if (!noReparse(originRoot, origins.at(i)) ||
-                !copyFile(origins.at(i), stage.filePath(staged.at(i)), &error, cancelled)) {
-                const bool wasCancelled = isCancelled();
-                return failed(wasCancelled ? QStringLiteral("animejanai.installation.cancelled") : QStringLiteral("animejanai.installation.dependency"),
-                              wasCancelled ? translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")) :
-                                  (error.isEmpty() ? translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "A pinned DirectML package member is missing.")) : error), wasCancelled);
-            }
-        }
-        bool heavy = false;
-        if (progress) {
-            progress({ajiDispatcherLabel(), 0, 0, ComponentProvisionStage::Verifying});
-            progress({QStringLiteral("onnxruntime-directml-1.24.4"), 0, 0, ComponentProvisionStage::Verifying});
-            progress({QStringLiteral("directml-1.15.4"), 0, 0, ComponentProvisionStage::Verifying});
-        }
-        if (!recordAndVerify(stage.path(), backend, recordedClosureFiles(stage.path(), backend, nullptr), QStringLiteral("official-download"), true,
-                             acquisitions, &error, &heavy))
-            return failed(QStringLiteral("animejanai.installation.invalid"), error);
-        if (heavy) return failed(QStringLiteral("animejanai.installation.capabilityInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The official Aji v0.24.0 asset unexpectedly reports heavy RIFE support.")));
-        if (isCancelled()) return failed(QStringLiteral("animejanai.installation.cancelled"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")), true);
-        if (!publishStage(stage.path(), backend, &error)) return failed(QStringLiteral("animejanai.installation.publish"), error);
-        if (progress) {
-            progress({ajiDispatcherLabel(), 0, 0, ComponentProvisionStage::Installed});
-            progress({QStringLiteral("onnxruntime-directml-1.24.4"), 0, 0, ComponentProvisionStage::Installed});
-            progress({QStringLiteral("directml-1.15.4"), 0, 0, ComponentProvisionStage::Installed});
-        }
-        ComponentProvisionResult result; result.ok = true; result.installedPacks << ajiDispatcherLabel() << QStringLiteral("onnxruntime-directml-1.24.4") << QStringLiteral("directml-1.15.4"); return result;
+    constexpr auto kOrtSha = "57e9f11b73437bef7a309496135d4c1f96b1a8e9ddba60013fa27bfc1d788681";
+    constexpr auto kDirectMlSha = "4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9";
+    const QString ortUrl = QStringLiteral("https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.24.4/microsoft.ml.onnxruntime.directml.1.24.4.nupkg");
+    const QString directMlUrl = QStringLiteral("https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg");
+    const QString ortArchive = scratch.filePath(QStringLiteral("onnxruntime-directml.nupkg"));
+    const QString directMlArchive = scratch.filePath(QStringLiteral("directml.nupkg"));
+    for (const auto& asset : {std::make_pair(ortUrl, std::make_pair(kOrtBytes, QString::fromLatin1(kOrtSha))),
+                             std::make_pair(directMlUrl, std::make_pair(kDirectMlBytes, QString::fromLatin1(kDirectMlSha)))}) {
+        const QString path = asset.first == ortUrl ? ortArchive : directMlArchive;
+        const QString name = asset.first == ortUrl ? QStringLiteral("onnxruntime-directml-1.24.4")
+                                                   : QStringLiteral("directml-1.15.4");
+        if (!mikai::backend::downloadToFile(QUrl(asset.first), path, asset.second.first, asset.second.second,
+                [&](qint64 got, qint64 total) {
+                    if (progress) progress({name, got, total, ComponentProvisionStage::Downloading});
+                }, isCancelled, &error))
+            return failed(QStringLiteral("animejanai.installation.download"), error, isCancelled());
+        if (!validateSafeArchive(sevenZip, path, &error, false, isCancelled))
+            return failed(QStringLiteral("animejanai.installation.archive"), error, isCancelled());
     }
-
-    QTemporaryDir stage(QDir(QFileInfo(installationRoot(backend)).absolutePath()).filePath(QStringLiteral("aji-stage-XXXXXX")));
-    if (!stage.isValid()) return failed(QStringLiteral("animejanai.installation.stage"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An AnimeJaNai staging directory could not be created.")));
-#ifdef Q_OS_WIN
-    const QStringList ajiStageNames{QStringLiteral("aji.dll"), backendDll(backend)};
-#else
-    const QStringList ajiStageNames{QStringLiteral("libaji.so"), QStringLiteral("libaji_trt.so")};
-#endif
-    if (progress) progress({ajiDispatcherLabel(), 0, 0, ComponentProvisionStage::Installing});
-    for (const QString& name : ajiStageNames) {
-        const QString source = resolveExtractedSource(ajiExtract, QDir(ajiRoot).filePath(name));
-        if (!noReparse(ajiExtract, source) || !copyFile(source, stage.filePath(name), &error))
-            return failed(QStringLiteral("animejanai.installation.dependency"), error.isEmpty() ? translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The verified Aji archive is missing a required dispatcher library.")) : error);
+    const QString ortExtract = scratch.filePath(QStringLiteral("ort-extract"));
+    const QString directMlExtract = scratch.filePath(QStringLiteral("directml-extract"));
+    if (!mikai::backend::extractArchive(sevenZip, ortArchive, ortExtract, &error) ||
+        !mikai::backend::extractArchive(sevenZip, directMlArchive, directMlExtract, &error))
+        return failed(QStringLiteral("animejanai.installation.extract"), error, isCancelled());
+    QTemporaryDir stage(QDir(parent).filePath(QStringLiteral("aji-stage-XXXXXX")));
+    if (!stage.isValid())
+        return failed(QStringLiteral("animejanai.installation.stage"),
+                      translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An AnimeJaNai staging directory could not be created.")));
+    for (const QString& name : shimNames) {
+        const QString source = QDir(ajiRoot).filePath(name);
+        if (!noReparse(ajiRoot, source) || !copyFile(source, stage.filePath(name), &error, isCancelled))
+            return failed(QStringLiteral("animejanai.installation.dependency"), error, isCancelled());
     }
-    const ComponentPack* runtime = tensorRtRuntimePack();
-    const QString storeDir = componentReleaseDirectory(store);
-    QStringList storeCopyFiles = runtime->files;
-    storeCopyFiles.append(resource->resourceFile);
-    for (const QString& name : storeCopyFiles) {
-        const QString source = QDir(storeDir).filePath(name);
-        if (!noReparse(storeDir, source) || !copyFile(source, stage.filePath(name), &error, cancelled)) {
-            const bool wasCancelled = isCancelled();
-            return failed(wasCancelled ? QStringLiteral("animejanai.installation.cancelled") : QStringLiteral("animejanai.installation.dependency"),
-                          wasCancelled ? translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")) :
-                              (error.isEmpty() ? translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The verified TensorRT store is missing a selected dependency.")) : error), wasCancelled);
-        }
-    }
-    const QString extractedInferenceDir =
-        QFileInfo::exists(packageExtract) ? sourceRuntimeDirectory(packageExtract) : storeDir;
-    const QString extractedRoot =
-        QFileInfo::exists(packageExtract) ? packageExtract : storeDir;
-    for (const QString& notice : optionalNoticeFiles(backend)) {
-        if (QFileInfo::exists(stage.filePath(notice))) continue;
-        const QString source = resolveExtractedSource(extractedRoot, QDir(extractedInferenceDir).filePath(notice));
-        if (!QFileInfo::exists(source)) continue;
-        if (!noReparse(extractedRoot, source) || !copyFile(source, stage.filePath(notice), &error, cancelled)) {
-            const bool wasCancelled = isCancelled();
-            return failed(wasCancelled ? QStringLiteral("animejanai.installation.cancelled") : QStringLiteral("animejanai.installation.dependency"),
-                          wasCancelled ? translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")) :
-                              (error.isEmpty() ? translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An upstream runtime notice could not be copied.")) : error), wasCancelled);
-        }
-    }
-#ifdef Q_OS_WIN
-    const QString trtexecName = QStringLiteral("trtexec.exe");
-#else
-    const QString trtexecName = QStringLiteral("trtexec");
-#endif
-    const QString trtexec = resolveExtractedSource(extractedRoot, QDir(extractedInferenceDir).filePath(trtexecName));
-    if (!noReparse(extractedRoot, trtexec) || !copyFile(trtexec, stage.filePath(trtexecName), &error, cancelled)) {
-        const bool wasCancelled = isCancelled();
-        return failed(wasCancelled ? QStringLiteral("animejanai.installation.cancelled") : QStringLiteral("animejanai.installation.dependency"),
-                      wasCancelled ? translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")) :
-                          (error.isEmpty() ? translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The verified upstream TensorRT archive is missing trtexec.")) : error), wasCancelled);
+    const QStringList staged{QStringLiteral("onnxruntime.dll"), QStringLiteral("DirectML.dll"),
+        QStringLiteral("DirectML_LICENSE.txt"), QStringLiteral("ORT_LICENSE.txt"),
+        QStringLiteral("ORT_ThirdPartyNotices.txt"), QStringLiteral("DirectML_LICENSE_CODE.txt"),
+        QStringLiteral("DirectML_ThirdPartyNotices.txt")};
+    const QStringList origins{
+        QDir(ortExtract).filePath(QStringLiteral("runtimes/win-x64/native/onnxruntime.dll")),
+        QDir(directMlExtract).filePath(QStringLiteral("bin/x64-win/DirectML.dll")),
+        QDir(directMlExtract).filePath(QStringLiteral("LICENSE.txt")),
+        QDir(ortExtract).filePath(QStringLiteral("LICENSE")),
+        QDir(ortExtract).filePath(QStringLiteral("ThirdPartyNotices.txt")),
+        QDir(directMlExtract).filePath(QStringLiteral("LICENSE-CODE.txt")),
+        QDir(directMlExtract).filePath(QStringLiteral("ThirdPartyNotices.txt"))};
+    for (qsizetype index = 0; index < staged.size(); ++index) {
+        const bool optional = index >= 3;
+        if (optional && !QFileInfo::exists(origins[index])) continue;
+        const QString& originRoot = index == 0 || index == 3 || index == 4 ? ortExtract : directMlExtract;
+        if (!noReparse(originRoot, origins[index]) ||
+            !copyFile(origins[index], stage.filePath(staged[index]), &error, isCancelled))
+            return failed(QStringLiteral("animejanai.installation.dependency"), error, isCancelled());
     }
     bool heavy = false;
-    if (progress) progress({ajiDispatcherLabel(), 0, 0, ComponentProvisionStage::Verifying});
-    if (!recordAndVerify(stage.path(), backend, recordedClosureFiles(stage.path(), backend, resource), QStringLiteral("official-download"), true,
-                         acquisitions, &error, &heavy))
-        return failed(QStringLiteral("animejanai.installation.invalid"), error);
-    if (heavy) return failed(QStringLiteral("animejanai.installation.capabilityInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The official Aji v0.24.0 asset unexpectedly reports heavy RIFE support.")));
-    if (isCancelled()) return failed(QStringLiteral("animejanai.installation.cancelled"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")), true);
-    if (!publishStage(stage.path(), backend, &error)) return failed(QStringLiteral("animejanai.installation.publish"), error);
-    if (progress) progress({ajiDispatcherLabel(), 0, 0, ComponentProvisionStage::Installed});
-    ComponentProvisionResult result; result.ok = true; result.installedPacks << ajiDispatcherLabel() << runtime->name << resource->name; return result;
+    if (!recordAndVerify(stage.path(), backend, recordedClosureFiles(stage.path(), backend, nullptr),
+                         QStringLiteral("official-download"), true, officialAcquisitions(backend),
+                         &error, &heavy))
+        return failed(QStringLiteral("animejanai.installation.invalid"), error, isCancelled());
+    if (isCancelled())
+        return failed(QStringLiteral("animejanai.installation.cancelled"),
+                      translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")), true);
+    if (!publishStage(stage.path(), backend, &error))
+        return failed(QStringLiteral("animejanai.installation.publish"), error);
+    ComponentProvisionResult result;
+    result.ok = true;
+    result.installedPacks = {ajiDispatcherLabel(), QStringLiteral("onnxruntime-directml-1.24.4"),
+                             QStringLiteral("directml-1.15.4")};
+    if (progress)
+        for (const QString& name : result.installedPacks)
+            progress({name, 0, 0, ComponentProvisionStage::Installed});
+    return result;
 }
 
 QString detail::officialAjiDigest(const QString& fileName) { return pinnedOfficialAjiDigest(fileName); }

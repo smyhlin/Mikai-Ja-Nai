@@ -6,6 +6,7 @@
 #include "workers/Runner.hpp"
 
 #include "native/components/NativeComponentCatalog.hpp"
+#include "native/components/AnimeJanaiRuntimeStore.hpp"
 #include "native/components/NativeComponentStore.hpp"
 #include "native/components/NativeComponentProvisioning.hpp"
 #include "native/components/NativeComponentToolchain.hpp"
@@ -36,6 +37,7 @@
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QLocale>
 #include <QtCore/QTimer>
+#include <QtCore/QProcess>
 #include <QtCore/qscopeguard.h>
 #include <QtWidgets/QAbstractButton>
 #include <QtWidgets/QApplication>
@@ -166,7 +168,157 @@ QString resourceNameOf(const ComponentPack* pack) {
     return pack == nullptr ? QString() : builderResourceFileName(*pack);
 }
 
+ComponentPack sharedFixturePack() {
+    ComponentPack pack;
+    pack.name = QStringLiteral("trt-runtime");
+    pack.version = QStringLiteral("fixture-v1");
+    pack.assetSha256 = QString(64, QLatin1Char('1'));
+    const QByteArray payload = QByteArrayLiteral("verified runtime fixture\n");
+    pack.filePins.append({QStringLiteral("runtime.bin"), payload.size(), sha256Of(payload)});
+    return pack;
+}
+
+QString sharedFixtureDirectory(const QString& root, const ComponentPack& pack) {
+    return QDir(root).filePath(QStringLiteral("packs/%1/%2").arg(pack.name, pack.version));
+}
+
+bool populateSharedFixture(const QString& root, const ComponentPack& pack) {
+    const QString directory = sharedFixtureDirectory(root, pack);
+    const ComponentFilePin& pin = pack.filePins.first();
+    const QJsonArray files{QJsonObject{{QStringLiteral("path"), pin.path},
+        {QStringLiteral("bytes"), pin.bytes}, {QStringLiteral("sha256"), pin.sha256}}};
+    const QJsonObject record{{QStringLiteral("format"), 1},
+        {QStringLiteral("name"), pack.name}, {QStringLiteral("version"), pack.version},
+        {QStringLiteral("kind"), QStringLiteral("trt")},
+#ifdef Q_OS_WIN
+        {QStringLiteral("platform"), QStringLiteral("windows-x64")},
+#else
+        {QStringLiteral("platform"), QStringLiteral("linux-x64")},
+#endif
+        {QStringLiteral("sha256"), QString(64, QLatin1Char('0'))},
+        {QStringLiteral("files"), files}};
+    return writeBytes(QDir(directory).filePath(pin.path), QByteArrayLiteral("verified runtime fixture\n")) &&
+           writeBytes(QDir(directory).filePath(QStringLiteral(".pack.json")),
+                      QJsonDocument(record).toJson(QJsonDocument::Compact));
+}
+
+bool createDirectoryLink(const QString& link, const QString& target) {
+#ifdef Q_OS_WIN
+    QProcess process;
+    process.setNativeArguments(QStringLiteral("/d /c mklink /J \"%1\" \"%2\"")
+        .arg(QDir::toNativeSeparators(link), QDir::toNativeSeparators(target)));
+    process.start(QStringLiteral("cmd.exe"), QStringList{});
+    return process.waitForStarted(5000) && process.waitForFinished(5000) &&
+           process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+#else
+    return QFile::link(target, link);
+#endif
+}
+
 }  // namespace
+
+void TestNativeComponents::sharedPackAcceptsIdenticalFilesAfterArchiveRepack() {
+    QTemporaryDir store;
+    QVERIFY(store.isValid());
+    const auto pack = sharedFixturePack();
+    QVERIFY(populateSharedFixture(store.path(), pack));
+    const auto present = describeSharedAnimeJanaiRuntimePack(store.path(), pack);
+    QVERIFY2(present.installed, qPrintable(present.reason));
+    const auto verified = describeSharedAnimeJanaiRuntimePack(store.path(), pack, true);
+    QVERIFY2(verified.installed, qPrintable(verified.reason));
+}
+
+void TestNativeComponents::sharedPackVerificationCatchesReplacedBytes() {
+    QTemporaryDir store;
+    QVERIFY(store.isValid());
+    const auto pack = sharedFixturePack();
+    QVERIFY(populateSharedFixture(store.path(), pack));
+    const QString file = QDir(sharedFixtureDirectory(store.path(), pack)).filePath(QStringLiteral("runtime.bin"));
+    QVERIFY(writeBytes(file, QByteArray(pack.filePins.first().bytes, 'x')));
+    QVERIFY(describeSharedAnimeJanaiRuntimePack(store.path(), pack).installed);
+    const auto verified = describeSharedAnimeJanaiRuntimePack(store.path(), pack, true);
+    QVERIFY(!verified.installed);
+    QVERIFY(verified.reason.contains(QStringLiteral("runtime.bin")));
+}
+
+void TestNativeComponents::sharedPackRefusesUnexpectedInventory() {
+    QTemporaryDir store;
+    QVERIFY(store.isValid());
+    const auto pack = sharedFixturePack();
+    QVERIFY(populateSharedFixture(store.path(), pack));
+    const QString directory = sharedFixtureDirectory(store.path(), pack);
+    const QString extra = QDir(directory).filePath(QStringLiteral("unpinned.dll"));
+    QVERIFY(writeBytes(extra, QByteArrayLiteral("untrusted library")));
+    const auto unexpected = describeSharedAnimeJanaiRuntimePack(store.path(), pack);
+    QVERIFY(!unexpected.installed);
+    QVERIFY(!unexpected.reason.isEmpty());
+    QVERIFY(QFile::remove(extra));
+    const QString metadata = QDir(directory).filePath(QStringLiteral(".pack.json"));
+    QFile file(metadata);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    auto record = QJsonDocument::fromJson(file.readAll()).object();
+    file.close();
+    auto files = record.value(QStringLiteral("files")).toArray();
+    auto identity = files.first().toObject();
+    identity.insert(QStringLiteral("sha256"), QString(64, QLatin1Char('f')));
+    files.replace(0, identity);
+    record.insert(QStringLiteral("files"), files);
+    QVERIFY(writeBytes(metadata, QJsonDocument(record).toJson(QJsonDocument::Compact)));
+    const auto changedIdentity = describeSharedAnimeJanaiRuntimePack(store.path(), pack);
+    QVERIFY(!changedIdentity.installed);
+    QVERIFY(changedIdentity.reason.contains(QStringLiteral("runtime.bin")));
+}
+
+void TestNativeComponents::sharedStoreRootMayRelocateButPackDirectoriesCannot() {
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const auto pack = sharedFixturePack();
+    const QString physical = fixture.filePath(QStringLiteral("physical"));
+    const QString logical = fixture.filePath(QStringLiteral("logical"));
+    QVERIFY(populateSharedFixture(physical, pack));
+    QVERIFY(writeBytes(QDir(physical).filePath(QStringLiteral("store.json")), QByteArrayLiteral("{\"format\":1}")));
+    QVERIFY(createDirectoryLink(logical, physical));
+    const auto relocated = describeSharedAnimeJanaiRuntimePack(logical, pack, true);
+    QVERIFY2(relocated.installed, qPrintable(relocated.reason));
+    const QByteArray previousStore = qgetenv("AJI_RUNTIME_STORE");
+    const auto restoreEnvironment = qScopeGuard([&] {
+        if (previousStore.isNull()) qunsetenv("AJI_RUNTIME_STORE");
+        else qputenv("AJI_RUNTIME_STORE", previousStore);
+    });
+    qputenv("AJI_RUNTIME_STORE", logical.toUtf8());
+    const auto location = describeAnimeJanaiRuntimeStorage();
+    QVERIFY2(location.available, qPrintable(location.reason));
+    QVERIFY(location.moved);
+    QCOMPARE(location.location, QDir(physical).absolutePath());
+
+    const QString untrusted = fixture.filePath(QStringLiteral("untrusted"));
+    const QString linkedPack = sharedFixtureDirectory(untrusted, pack);
+    QVERIFY(QDir().mkpath(QFileInfo(linkedPack).absolutePath()));
+    QVERIFY(createDirectoryLink(linkedPack, sharedFixtureDirectory(physical, pack)));
+    const auto escaped = describeSharedAnimeJanaiRuntimePack(untrusted, pack);
+    QVERIFY(!escaped.installed);
+    QVERIFY(!escaped.reason.isEmpty());
+}
+
+void TestNativeComponents::ownedDirectoryCreationRefusesForeignAndRedirectedPaths() {
+    QTemporaryDir foreign;
+    QVERIFY(foreign.isValid());
+    QString reason;
+    const QString outside = foreign.filePath(QStringLiteral("must-not-exist"));
+    QVERIFY(!ensureOwnedNativeDirectory(outside, &reason));
+    QVERIFY(!reason.isEmpty());
+    QVERIFY(!QFileInfo::exists(outside));
+
+    const QString scratch = nativeSubdirectory(QStringLiteral("scratch"));
+    QVERIFY2(ensureOwnedNativeDirectory(scratch, &reason), qPrintable(reason));
+    QTemporaryDir owned(QDir(scratch).filePath(QStringLiteral("directory-policy-XXXXXX")));
+    QVERIFY(owned.isValid());
+    const QString link = owned.filePath(QStringLiteral("redirect"));
+    QVERIFY(createDirectoryLink(link, foreign.path()));
+    QVERIFY(!ensureOwnedNativeDirectory(QDir(link).filePath(QStringLiteral("must-not-exist")), &reason));
+    QVERIFY(!reason.isEmpty());
+    QVERIFY(!QFileInfo::exists(outside));
+}
 
 void TestNativeComponents::componentProgressSeparatesCardsAndAggregatesSpatialGraphs() {
     mikai::app::Runner runner;
@@ -737,13 +889,10 @@ void TestNativeComponents::selectionUsesTheExactPack() {
     };
     const Generation generations[] = {{12, 0, "trt-sm120"}, {7, 5, "trt-sm75"}, {8, 6, "trt-sm86"},
                                      {9, 0, "trt-sm90"},  {10, 0, "trt-sm100"}};
-    // The 3.7.0 packs ship a fully versioned builder resource per generation:
-    // animejanai/inference/libnvinfer_builder_resource_sm120.so.11.3.0 (the
-    // Windows DLL keeps the short "_11" name).
 #ifdef Q_OS_WIN
     const QString pattern = QStringLiteral("nvinfer_builder_resource_sm%1%2_11.dll");
 #else
-    const QString pattern = QStringLiteral("libnvinfer_builder_resource_sm%1%2.so.11.3.0");
+    const QString pattern = QStringLiteral("libnvinfer_builder_resource_sm%1%2.so.11.4.0");
 #endif
     for (const Generation& generation : generations) {
         const ComponentPack* selected =
@@ -764,11 +913,11 @@ void TestNativeComponents::selectionFallsBackToPtxWhenTheReleasePublishesNoPack(
         int smMajor;
         int smMinor;
     };
-    const Shape shapes[] = {{6, 1}, {10, 1}};
+    const Shape shapes[] = {{10, 1}, {12, 1}};
 #ifdef Q_OS_WIN
     const QString expectedPtx = QStringLiteral("nvinfer_builder_resource_ptx_11.dll");
 #else
-    const QString expectedPtx = QStringLiteral("libnvinfer_builder_resource_ptx.so.11.3.0");
+    const QString expectedPtx = QStringLiteral("libnvinfer_builder_resource_ptx.so.11.4.0");
 #endif
     for (const Shape& shape : shapes) {
         const ComponentPack* selected = tensorRtResourcePackFor(shape.smMajor, shape.smMinor);
@@ -778,11 +927,12 @@ void TestNativeComponents::selectionFallsBackToPtxWhenTheReleasePublishesNoPack(
     }
 }
 
-void TestNativeComponents::selectionRefusesADoubleDigitMinor() {
-    // `trt-sm1210` is a name no release publishes, and approximating it onto
-    // trt-sm120 would hand another generation's builder resource to this GPU.
+void TestNativeComponents::selectionRefusesUnsupportedComputeCapabilities() {
     QVERIFY(tensorRtResourcePackFor(12, 10) == nullptr);
     QVERIFY(tensorRtResourcePackFor(0, 0) == nullptr);
+    QVERIFY(tensorRtResourcePackFor(6, 1) == nullptr);
+    QVERIFY(tensorRtResourcePackFor(7, 0) == nullptr);
+    QVERIFY(tensorRtResourcePackFor(7, 4) == nullptr);
 }
 
 static QStringList packNameOf(const QVector<const ComponentPack*>& packs) {
@@ -802,6 +952,8 @@ void TestNativeComponents::compatiblePacksNameRuntimeAndThisGpuOnly() {
 
 void TestNativeComponents::compatiblePacksAreEmptyWhenTheShapeIsUnusable() {
     QVERIFY(compatiblePacksFor(0, 0).isEmpty());
+    QVERIFY(compatiblePacksFor(6, 1).isEmpty());
+    QVERIFY(compatiblePacksFor(7, 0).isEmpty());
     QVERIFY(compatiblePacksFor(12, 10).isEmpty());
 }
 

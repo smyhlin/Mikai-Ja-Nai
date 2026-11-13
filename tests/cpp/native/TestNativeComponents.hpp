@@ -20,9 +20,7 @@ class TestNativeComponents : public QObject {
   void selectionUsesTheExactPack();
   void selectionFallsBackToPtxWhenTheReleasePublishesNoPack();
 
-  // `trt-sm{MA}{MI}` cannot express a double-digit minor, so that shape is
-  // refused rather than approximated onto a pack that fits another generation.
-  void selectionRefusesADoubleDigitMinor();
+  void selectionRefusesUnsupportedComputeCapabilities();
 
   // The tab lists only what one GPU may actually use: the runtime plus that
   // GPU's own resource pack, so other generations cannot offer downloads that
@@ -40,6 +38,11 @@ class TestNativeComponents : public QObject {
   void storeRefusesAnUnsafeRecordPath();
 
   void storeRejectsSymlinkedComponentFiles();
+  void sharedPackAcceptsIdenticalFilesAfterArchiveRepack();
+  void sharedPackVerificationCatchesReplacedBytes();
+  void sharedPackRefusesUnexpectedInventory();
+  void sharedStoreRootMayRelocateButPackDirectoriesCannot();
+  void ownedDirectoryCreationRefusesForeignAndRedirectedPaths();
 
   // The manual check behind the tab's Verify button re-hashes the bytes rather
   // than trusting the recorded size, so a file replaced in place is caught.

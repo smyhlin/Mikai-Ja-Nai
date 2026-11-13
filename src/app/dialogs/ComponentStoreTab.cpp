@@ -1,6 +1,7 @@
 #include "dialogs/ComponentStoreTabInternal.hpp"
 #include "state/SettingsKeys.hpp"
 #include "ComponentStoreTab.hpp"
+#include "AnimeJanaiStoragePanel.hpp"
 
 #include "dialogs/settings/SettingsUi.hpp"
 #include "state/NativeComponentProvisioner.hpp"
@@ -15,6 +16,7 @@
 #include <native/bundle/NativeBundle.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
 #include <native/components/AnimeJanaiRuntime.hpp>
+#include <native/components/AnimeJanaiRuntimeStore.hpp>
 #include <native/components/NativeComponentCatalog.hpp>
 #include <native/components/NativeComponentStore.hpp>
 #include <native/components/NativeComponentToolchain.hpp>
@@ -151,13 +153,15 @@ QVariantMap inventorySnapshot(const native::GpuComputeCapability& gpu, bool veri
     const std::optional<native::Bundle> bundle = installedNativeBundle();
     const native::TensorRtClosureStatus closure = native::tensorRtClosureStatus(
         store, bundle.has_value() ? &*bundle : nullptr, gpu.smMajor, gpu.smMinor);
-    // One predicate: the closure is usable when the store holds both packs or
-    // the installed bundle already declares this GPU's builder resource.
-    const bool componentDirsAvailable = closure.dirsAvailable;
-    const bool runtimeInstalled = trt.installed &&
-                                  (runtimeStored.installed || componentDirsAvailable);
-    const bool kernelsInstalled =
-        native::gpuResourceInstalledForThisDevice(kernelsPack, kernelsStored);
+    const QString sharedRoot = native::animeJanaiSharedRuntimeStoreRoot();
+    const native::StoredPack sharedRuntime = runtimePack != nullptr
+        ? native::describeSharedAnimeJanaiRuntimePack(sharedRoot, *runtimePack) : native::StoredPack{};
+    const native::StoredPack sharedKernels = kernelsPack != nullptr
+        ? native::describeSharedAnimeJanaiRuntimePack(sharedRoot, *kernelsPack) : native::StoredPack{};
+    const bool componentDirsAvailable = trt.installed || closure.dirsAvailable;
+    const bool runtimeInstalled = trt.installed;
+    const bool kernelsInstalled = kernelsPack != nullptr &&
+        (trt.installed || sharedKernels.installed || kernelsStored.installed);
     result.insert(QStringLiteral("trtInstalled"), trt.installed);
     result.insert(QStringLiteral("trtReasonKey"), trt.reasonKey);
     result.insert(QStringLiteral("trtReason"), trt.reason);
@@ -166,8 +170,9 @@ QVariantMap inventorySnapshot(const native::GpuComputeCapability& gpu, bool veri
     result.insert(QStringLiteral("directMlReason"), directMl.reason);
     result.insert(QStringLiteral("rtxInstalled"), rtx.installed);
     result.insert(QStringLiteral("rtxReason"), rtx.reason);
-    result.insert(QStringLiteral("runtimePackInstalled"), runtimeStored.installed);
-    result.insert(QStringLiteral("kernelsPackInstalled"), kernelsStored.installed);
+    result.insert(QStringLiteral("runtimePackInstalled"),
+                  trt.installed || sharedRuntime.installed || runtimeStored.installed);
+    result.insert(QStringLiteral("kernelsPackInstalled"), kernelsInstalled);
     result.insert(QStringLiteral("componentDirsAvailable"), componentDirsAvailable);
     result.insert(QStringLiteral("closureRuntimeStored"), closure.runtimeStored);
     result.insert(QStringLiteral("closureKernelsStored"), closure.kernelsStored);
@@ -180,8 +185,6 @@ QVariantMap inventorySnapshot(const native::GpuComputeCapability& gpu, bool veri
                   gpu.nvidia && kernelsPack != nullptr && !kernelsInstalled);
     result.insert(QStringLiteral("tensorRtClosureBytes"), native::animeJanaiMissingDownloadBytes(native::Backend::TensorRT));
     result.insert(QStringLiteral("directMlClosureBytes"), native::animeJanaiMissingDownloadBytes(native::Backend::DirectML));
-    // The dispatcher plus NVIDIA's overlay archive only: no classic TensorRT
-    // pack, CUDA pack or builder resource belongs to this queue.
     result.insert(QStringLiteral("rtxClosureBytes"),
                   native::animeJanaiMissingDownloadBytes(native::Backend::TensorRTRTX));
     result.insert(QStringLiteral("componentReasonKey"), dirs.reasonKey);
@@ -193,8 +196,12 @@ QVariantMap inventorySnapshot(const native::GpuComputeCapability& gpu, bool veri
                 result.insert(QStringLiteral("cancelled"), true);
                 return result;
             }
-            if (native::storedPack(store, *pack).installed && !native::verifyPack(store, *pack).installed)
-                componentFailures.append(pack->name);
+            const bool privateInvalid = native::storedPack(store, *pack).installed &&
+                                        !native::verifyPack(store, *pack).installed;
+            const bool sharedInvalid = !trt.installed &&
+                native::describeSharedAnimeJanaiRuntimePack(sharedRoot, *pack).installed &&
+                !native::describeSharedAnimeJanaiRuntimePack(sharedRoot, *pack, true, isCancelled).installed;
+            if (privateInvalid || sharedInvalid) componentFailures.append(pack->name);
         }
     }
     result.insert(QStringLiteral("componentFailures"), componentFailures);
@@ -340,7 +347,6 @@ void ComponentStoreTab::bumpRunGeneration(const QString& reason) {
     // A continuation that is waiting for an inventory snapshot would otherwise
     // start a run the user no longer asked for, under a generation nobody owns.
     pendingBackendWork_ = false;
-    pendingRuntimeClosure_ = false;
     pendingRifeArchive_ = false;
     componentStagePending_ = false;
     recommendedInstallPending_ = false;
@@ -856,6 +862,12 @@ void ComponentStoreTab::buildUi() {
                 updateControls();
             });
 
+    storagePanel_ = new AnimeJanaiStoragePanel(content);
+    root->addWidget(storagePanel_);
+    connect(storagePanel_, &AnimeJanaiStoragePanel::busyChanged,
+            this, &ComponentStoreTab::updateControls);
+    connect(storagePanel_, &AnimeJanaiStoragePanel::locationChanged,
+            this, &ComponentStoreTab::refresh);
     root->addStretch();
     scroll->setWidget(content);
     outer->addWidget(scroll);
@@ -1177,7 +1189,12 @@ bool ComponentStoreTab::downloadActive() const {
            upscalersDownloading_;
 }
 
+bool ComponentStoreTab::storageBusy() const {
+    return storagePanel_ != nullptr && storagePanel_->isBusy();
+}
+
 void ComponentStoreTab::refresh() {
+    if (storagePanel_ != nullptr) storagePanel_->refresh();
     if (gpuLabel_ != nullptr) {
         gpuLabel_->setText(tr("GPU: %1").arg(native::computeCapabilityText(native::observeComputeCapability())));
     }
@@ -1187,7 +1204,7 @@ void ComponentStoreTab::refresh() {
 }
 
 void ComponentStoreTab::scheduleInventoryRefresh() {
-    if (runner_ == nullptr || inventoryScanning_ || downloadActive() || verifyActive()) return;
+    if (runner_ == nullptr || inventoryScanning_ || downloadActive() || verifyActive() || storageBusy()) return;
     inventoryScanning_ = true;
     const bool acquisitionInventory = componentStagePending_;
     if (acquisitionInventory) {
@@ -1310,19 +1327,9 @@ int ComponentStoreTab::downloadedModelItemCount() const {
 }
 
 bool ComponentStoreTab::runtimeClosureInstalled() const {
-    // Each backend answers from its own record; RTX never borrows a classic
-    // pack's presence and is never satisfied by a DirectML closure. A stored
-    // runtime pack is a download, not readiness: on an NVIDIA GPU the classic
-    // card needs both the pack and the backend's own verified closure, which is
-    // what makes a half-provisioned store read as "not installed" everywhere
-    // instead of "installed" in the progress line and "not installed" in the
-    // badge at the same time.
-    const native::GpuComputeCapability& gpu = native::observeComputeCapability();
     switch (selectedBackend()) {
         case native::Backend::TensorRT:
-            return gpu.nvidia ? animeJanaiTensorRtInstalled_ &&
-                                    (runtimePackInstalled_ || componentDirsAvailable_)
-                              : animeJanaiTensorRtInstalled_;
+            return animeJanaiTensorRtInstalled_;
         case native::Backend::DirectML:
             return animeJanaiDirectMlInstalled_;
         case native::Backend::TensorRTRTX:
@@ -1421,8 +1428,7 @@ void ComponentStoreTab::updateRuntimeCardText() {
         case native::Backend::TensorRT:
             title = tr("TensorRT runtime");
 #ifdef Q_OS_WIN
-            description = tr("Fastest NVIDIA upscaling engine; without it NVIDIA falls back "
-                             "to DirectML.");
+            description = tr("NVIDIA TensorRT with a shared runtime and GPU-matched builder kernels.");
 #else
             description = tr("Required for AnimeJaNai on Linux with an NVIDIA GPU; DirectML "
                              "is Windows-only.");
@@ -1435,9 +1441,7 @@ void ComponentStoreTab::updateRuntimeCardText() {
             break;
         case native::Backend::TensorRTRTX:
             title = tr("TensorRT for RTX runtime");
-            description = tr("Runs AnimeJaNai in-process with NVIDIA TensorRT for RTX 1.7; "
-                             "installs the Aji dispatcher and NVIDIA's RTX overlay. No classic "
-                             "CUDA or kernel pack is used.");
+            description = tr("Builds engines in-process with NVIDIA TensorRT for RTX. Installs the selected backend and shared RTX runtime, not classic builder packs.");
             break;
     }
     if (auto* titleLabel = findChild<QLabel*>(cardId + QStringLiteral("Title")))
@@ -1452,40 +1456,16 @@ void ComponentStoreTab::updateRuntimeCardText() {
 }
 
 void ComponentStoreTab::queueRuntimeClosureRows() {
-    const QString cardId = QStringLiteral("tensorRtRuntimeCard");
-    clearProgressCard(cardId);
-    if (selectedBackend() == native::Backend::TensorRTRTX) {
-        // Exactly the two archives this product installs, each with its file
-        // name and size. No classic runtime, kernel or CUDA pack is queued.
-        // An empty queue on a platform without the binary is not an installed
-        // closure and not a transfer: the install attempt names the refusal in
-        // the status line instead of inventing a row nobody can download.
-        for (const native::AnimeJanaiMissingDownload& download :
-             native::animeJanaiMissingDownloads(native::Backend::TensorRTRTX)) {
-            if (download.bytes <= 0) continue;
-            setProgressItem(download.label, cardId, progressDisplayName(download.label),
-                            native::ComponentProvisionStage::Downloading, 0, download.bytes, true);
-        }
-        return;
-    }
-    if (pendingRuntimeClosure_) {
-        setProgressItem(QStringLiteral("pending:tensorRtRuntimeCard"), cardId,
-                        tr("AnimeJaNai runtime and backend dependencies"),
-                        native::ComponentProvisionStage::Downloading, 0, 0, true);
-        return;
-    }
-    const QVector<const native::ComponentPack*> packs =
-        native::compatiblePacksFor(native::observeComputeCapability().smMajor,
-                           native::observeComputeCapability().smMinor);
-    for (const native::ComponentPack* pack : packs) {
-        if (pack == nullptr || native::storedPack(native::componentStore(), *pack).installed) continue;
-        const QString packCardId = pack->name == QLatin1String("trt-runtime")
-                                       ? cardId
-                                       : QStringLiteral("tensorRtKernelsCard");
-        const QString identity = QStringLiteral("pending:") + pack->name;
-        setProgressItem(identity, packCardId,
-                        QStringLiteral("%1 (%2)").arg(pack->name, pack->asset),
-                        native::ComponentProvisionStage::Downloading, 0, pack->assetBytes, true);
+    clearProgressCard(QStringLiteral("tensorRtRuntimeCard"));
+    if (selectedBackend() == native::Backend::TensorRT)
+        clearProgressCard(QStringLiteral("tensorRtKernelsCard"));
+    for (const native::AnimeJanaiMissingDownload& download :
+         native::animeJanaiMissingDownloads(selectedBackend())) {
+        if (download.bytes <= 0) continue;
+        const QString card = progressCardForPack(download.label);
+        if (card.isEmpty()) continue;
+        setProgressItem(download.label, card, progressDisplayName(download.label),
+                        native::ComponentProvisionStage::Downloading, 0, download.bytes, true);
     }
 }
 
@@ -1548,19 +1528,12 @@ void ComponentStoreTab::updateCardStates() {
 
     const native::ComponentPack* kernelsPack =
         mplayer::native::tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
-    const native::StoredPack kernelsStored = kernelsPack != nullptr
-                                         ? native::storedPack(native::componentStore(), *kernelsPack)
-                                         : native::StoredPack{};
-    // Store truth only. Whether a downloaded pack is actually usable is a
-    // second question, answered by the closure, and the badge says so instead
-    // of letting an unusable pack read as installed.
-    const bool kernelsInstalled =
-        native::gpuResourceInstalledForThisDevice(kernelsPack, kernelsStored);
+    const bool kernelsInstalled = kernelsPack != nullptr && kernelsPackInstalled_;
     const bool kernelsUsable = kernelsInstalled && componentDirsAvailable_;
     // RTX builds in-process and has no GPU-matched builder-resource pack, so
     // the classic kernel card is neither offered nor recommended for it.
     const bool kernelsOffered = gpu.nvidia && kernelsPack != nullptr &&
-                                backend != native::Backend::TensorRTRTX;
+                                backend == native::Backend::TensorRT;
     const bool kernelsRecommended = kernelsOffered && kernelsRecommended_;
     if (!kernelsOffered) selectedPacks_.remove(QStringLiteral("component:kernels"));
     // Reuse the one runtime card with the selected product's own wording.
@@ -1651,8 +1624,8 @@ void ComponentStoreTab::updateCardStates() {
         // The card stays visible when no kernel pack is offered for this GPU,
         // so the badge states the fact instead of the card disappearing.
         setState(kernelsState_, tr("Unavailable"),
-                 backend == native::Backend::TensorRTRTX
-                     ? tr("TensorRT for RTX builds the kernels in-process.")
+                 backend != native::Backend::TensorRT
+                     ? tr("This backend does not use classic TensorRT kernel packs.")
                      : tr("No TensorRT kernel pack is offered for this GPU."));
     } else if (kernelsInstalled && !kernelsUsable) {
         setState(kernelsState_, tr("downloaded"),
@@ -1818,7 +1791,7 @@ void ComponentStoreTab::verifyAll() {
     // One run at a time. A second click while a run is hashing is refused by
     // the disabled control, and refused again here so no re-entrant path
     // (a keyboard activation, a shortcut, a test) can start a parallel run.
-    if (verifyActive()) return;
+    if (verifyActive() || storageBusy()) return;
     if (runner_ == nullptr) {
         applyStatus(QStringLiteral("native.components.noRunner"),
                     StatusReason{.kind = StatusReason::Kind::VerifyNeedsRunner});
@@ -1853,10 +1826,8 @@ QString ComponentStoreTab::progressCardForPack(const QString& pack) const {
     if (pack == rife.name || pack == rife.asset)
         return QStringLiteral("rifeModelsCard");
 
-    // The RTX overlay is part of the runtime closure, not a GPU-kernel pack,
-    // so it renders on the runtime card like the dispatcher it accompanies.
-    if (pack == QLatin1String("aji-v0.24.0") ||
-        pack == QLatin1String("aji-trtrtx-v0.24.0") ||
+    if (pack.startsWith(QLatin1String("aji-")) ||
+        pack == QLatin1String("trtrtx-runtime") ||
         pack == QLatin1String("onnxruntime-directml-1.24.4") ||
         pack == QLatin1String("directml-1.15.4") ||
         pack == QLatin1String("trt-runtime-trtexec") ||
@@ -1876,15 +1847,18 @@ QString ComponentStoreTab::progressDisplayName(const QString& pack) const {
         if (component.files.contains(pack)) return pack;
     }
 
-    if (pack == QLatin1String("aji-v0.24.0")) {
+    if (pack.startsWith(QLatin1String("aji-v")))
+        return pack + QStringLiteral(" (aji-") +
 #ifdef Q_OS_WIN
-        return QStringLiteral("aji-v0.24.0 (aji-windows-x64.zip)");
+               QStringLiteral("windows-x64.zip)");
 #else
-        return QStringLiteral("aji-v0.24.0 (aji-linux-x64.tar.zst)");
+               QStringLiteral("linux-x64.tar.zst)");
 #endif
-    }
-    if (pack == QLatin1String("aji-trtrtx-v0.24.0"))
-        return QStringLiteral("aji-trtrtx-v0.24.0 (aji-trtrtx-windows-x64.zip)");
+    if (pack.startsWith(QLatin1String("aji-trtrtx-v")))
+        return pack + QStringLiteral(" (aji-trtrtx-backend-windows-x64.zip)");
+    if (pack == QLatin1String("trtrtx-runtime")) return tr("Shared TensorRT for RTX runtime");
+    if (pack == QLatin1String("aji-runtime-v0.2.1")) return tr("Shared runtime manager");
+    if (pack == QLatin1String("aji-runtime-index")) return tr("Runtime pack index");
     if (pack == QLatin1String("onnxruntime-directml-1.24.4"))
         return QStringLiteral("Microsoft.ML.OnnxRuntime.DirectML/1.24.4 "
                               "(microsoft.ml.onnxruntime.directml.1.24.4.nupkg)");

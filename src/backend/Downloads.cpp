@@ -102,22 +102,8 @@ QString findSevenZip(const QString& toolsDirectory) {
             return bundled;
         }
     }
-    for (const QString& name : {QStringLiteral("7zz"), QStringLiteral("7z"), QStringLiteral("7za")}) {
-        const QString found = QStandardPaths::findExecutable(name);
-        if (!found.isEmpty()) {
-            return found;
-        }
-    }
-    for (const QString& candidate : {QStringLiteral("/usr/bin/7zz"),
-                                     QStringLiteral("/usr/bin/7z"),
-                                     QStringLiteral("/usr/local/bin/7zz"),
-                                     QStringLiteral("/usr/local/bin/7z")}) {
-        const QFileInfo info(candidate);
-        if (info.isFile() && info.isExecutable()) {
-            return candidate;
-        }
-    }
-    qWarning() << "mikai: findSevenZip: no 7z executable found";
+    // Distribution builds can lack Zstd; the pinned extractor supports every runtime archive.
+    qWarning() << "mikai: findSevenZip: no bundled 7z executable found";
     return {};
 #endif
 }

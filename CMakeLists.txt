@@ -126,6 +126,8 @@ add_library(mikai_native_support STATIC
   src/player/native/components/AnimeJanaiCatalogWatcher.hpp
   src/player/native/components/AnimeJanaiInstallation.cpp
   src/player/native/components/AnimeJanaiRuntime.cpp
+  src/player/native/components/AnimeJanaiRuntimeStore.cpp
+  src/player/native/components/AnimeJanaiRuntimeStore.hpp
   src/player/native/components/AnimeJanaiRuntime.hpp
   src/player/native/components/AnimeJanaiConfig.cpp
   src/player/native/components/AnimeJanaiConfig.hpp
@@ -551,6 +553,8 @@ set(APP_SOURCES
   src/app/widgets/CarouselButton.hpp
   src/app/widgets/ToggleSwitch.cpp
   src/app/dialogs/ComponentStoreTab.cpp
+  src/app/dialogs/AnimeJanaiStoragePanel.cpp
+  src/app/dialogs/AnimeJanaiStoragePanel.hpp
   src/app/dialogs/ComponentStoreTabAcquisition.cpp
   src/app/dialogs/CoverViewer.cpp
   src/app/dialogs/NativeAssetsPanel.cpp

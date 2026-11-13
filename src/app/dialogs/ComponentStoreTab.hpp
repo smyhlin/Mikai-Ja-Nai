@@ -30,6 +30,7 @@ class QCheckBox;
 namespace mikai::app {
 
 class ActionGrid;
+class AnimeJanaiStoragePanel;
 // Forward-declared: only passed by pointer and held as a QPointer; the
 // include lives in ComponentStoreTab.cpp.
 class NativeComponentProvisioner;
@@ -77,7 +78,7 @@ public:
     bool inventoryReady() const { return inventoryReady_; }
     bool acquisitionRunning() const {
         return acquisitionSequenceActive_ || acquisitionChecking_ || inventoryScanning_ ||
-               downloadActive() || verifyActive();
+               downloadActive() || verifyActive() || storageBusy();
     }
 
     /// The manual check: re-hashes both AnimeJaNai closures and every installed
@@ -139,6 +140,7 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
 
 private:
+    bool storageBusy() const;
     void buildUi();
     void retranslateUi();
     void renderCards();
@@ -394,6 +396,7 @@ private:
     QWidget* scrollViewport_ = nullptr;
     QWidget* scrollContent_ = nullptr;
     QLabel* status_ = nullptr;
+    AnimeJanaiStoragePanel* storagePanel_ = nullptr;
     struct ProgressItem {
         enum class Outcome { Active, Installed, Failed, Cancelled };
 
@@ -462,12 +465,7 @@ private:
     qint64 tensorRtClosureBytes_ = 0;
     qint64 directMlClosureBytes_ = 0;
     bool pendingRifeArchive_ = false;
-    /// The selected backend closure still has to be installed by this run, and
-    /// whether installing the AnimeJaNai runtime is what provides it. Copied
-    /// from the off-GUI check so the concurrent launcher can start the backend
-    /// unit without re-reading the inventory.
     bool pendingBackendWork_ = false;
-    bool pendingRuntimeClosure_ = false;
     bool componentStagePending_ = false;
     bool recommendedInstallPending_ = false;
     bool modelCancelled_ = false;

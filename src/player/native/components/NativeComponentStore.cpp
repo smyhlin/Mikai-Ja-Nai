@@ -512,7 +512,8 @@ RifeArchiveStore rifeArchiveStore() {
     const ComponentStore components = componentStore();
     return {components.root.isEmpty()
                 ? QString()
-                : QDir(components.root).filePath(QStringLiteral("rife/3.7.0"))};
+                : QDir(components.root).filePath(
+                      QStringLiteral("rife/%1").arg(componentReleaseTag()))};
 }
 
 StoredRifeGraph storedRifeGraph(const RifeArchiveStore& store, const RifeModelPin& pin) {

@@ -783,11 +783,7 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
         }
     }
     if (backend == Backend::TensorRT && hasAji) {
-#ifdef Q_OS_WIN
-        plan.trtexecPath = QDir(installation.root).filePath(QStringLiteral("trtexec.exe"));
-#else
-        plan.trtexecPath = QDir(installation.root).filePath(QStringLiteral("trtexec"));
-#endif
+        plan.trtexecPath = installation.trtexecPath;
         if (!regularFile(plan.trtexecPath)) {
             fail(plan, QStringLiteral("animejanai.runtime.trtexecMissing"),
                  RuntimeText::tr("The installed TensorRT closure does not include its verified upstream trtexec executable."));
@@ -800,11 +796,11 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
 #else
         plan.libraryPath = QDir(installation.root).filePath(QStringLiteral("libaji.so"));
 #endif
-        if (backend != Backend::TensorRTRTX)
+        if (backend == Backend::TensorRT && !installation.sharedRuntime)
             plan.trtexecLibDir = detail::shellSafeLibDir(installation.root);
 #ifndef Q_OS_WIN
         if (backend == Backend::TensorRT)
-            plan.backendLibDirs.append(installation.root);
+            plan.backendLibDirs = installation.backendLibDirs;
 #endif
     }
 
@@ -1169,10 +1165,10 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
             {QStringLiteral("conf"), configPath},
             {QStringLiteral("model-dir"), modelDir},
             {QStringLiteral("rife-model-dir"), rifeModelDir}};
-        // RTX builds in-process: the fork must not receive trtexec options.
-        if (backend != Backend::TensorRTRTX) {
+        if (backend == Backend::TensorRT) {
             options.append({QStringLiteral("trtexec"), plan.trtexecPath});
-            options.append({QStringLiteral("trtexec-libdir"), plan.trtexecLibDir});
+            if (!plan.trtexecLibDir.isEmpty())
+                options.append({QStringLiteral("trtexec-libdir"), plan.trtexecLibDir});
         }
         options.append({QStringLiteral("slot"), QString::number(generatedSlot)});
         options.append({QStringLiteral("stats"), statsPath});
@@ -1388,21 +1384,17 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
     plan.rifeModelDir = QDir(ownedRoot).filePath(QStringLiteral("models/rife"));
     plan.statsPath = QDir(ownedRoot).filePath(QStringLiteral("stats/") + safeConfigName(presetId) + QStringLiteral(".txt"));
     plan.slot = preset != nullptr ? preset->slot : 0;
-    if (backend != Backend::TensorRTRTX)
+    if (backend == Backend::TensorRT && !installation.sharedRuntime)
         plan.trtexecLibDir = detail::shellSafeLibDir(installation.root);
 #ifndef Q_OS_WIN
     if (backend == Backend::TensorRT)
-        plan.backendLibDirs.append(installation.root);
+        plan.backendLibDirs = installation.backendLibDirs;
 #endif
     plan.cacheKeys = {
         QDir::cleanPath(QFileInfo(plan.modelDir).absoluteFilePath()),
         QDir::cleanPath(QFileInfo(plan.rifeModelDir).absoluteFilePath())};
     if (backend == Backend::TensorRT) {
-#ifdef Q_OS_WIN
-        plan.trtexecPath = QDir(installation.root).filePath(QStringLiteral("trtexec.exe"));
-#else
-        plan.trtexecPath = QDir(installation.root).filePath(QStringLiteral("trtexec"));
-#endif
+        plan.trtexecPath = installation.trtexecPath;
         if (!regularFile(plan.trtexecPath)) {
             fail(plan, QStringLiteral("animejanai.runtime.trtexecMissing"),
                  RuntimeText::tr("The installed TensorRT closure does not include its verified upstream trtexec executable."));
@@ -1719,10 +1711,10 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
         {QStringLiteral("conf"), plan.configPath},
         {QStringLiteral("model-dir"), plan.modelDir},
         {QStringLiteral("rife-model-dir"), plan.rifeModelDir}};
-    // RTX builds in-process: the fork must not receive trtexec options.
-    if (backend != Backend::TensorRTRTX) {
+    if (backend == Backend::TensorRT) {
         options.append({QStringLiteral("trtexec"), plan.trtexecPath});
-        options.append({QStringLiteral("trtexec-libdir"), plan.trtexecLibDir});
+        if (!plan.trtexecLibDir.isEmpty())
+            options.append({QStringLiteral("trtexec-libdir"), plan.trtexecLibDir});
     }
     options.append({QStringLiteral("slot"), QString::number(plan.slot)});
     options.append({QStringLiteral("stats"), plan.statsPath});

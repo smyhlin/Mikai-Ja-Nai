@@ -1,6 +1,7 @@
 #include "dialogs/ComponentStoreTabInternal.hpp"
 #include "state/SettingsKeys.hpp"
 #include "ComponentStoreTab.hpp"
+#include "AnimeJanaiStoragePanel.hpp"
 
 #include "state/NativeComponentProvisioner.hpp"
 #include "workers/Runner.hpp"
@@ -133,7 +134,7 @@ void ComponentStoreTab::downloadMissing() {
 }
 
 void ComponentStoreTab::installRecommended() {
-    if (acquisitionChecking_ || downloadActive() || verifyActive()) return;
+    if (acquisitionChecking_ || downloadActive() || verifyActive() || storageBusy()) return;
     const native::GpuComputeCapability& gpu = native::observeComputeCapability();
     // The player persists its backend before it can fail and ask for setup, so
     // the stored value is the exact product this flow has to install. Prefer
@@ -215,7 +216,7 @@ void ComponentStoreTab::finishRecommendedInstall() {
 
 void ComponentStoreTab::downloadMissing(bool showReview) {
     if (acquisitionChecking_ || acquisitionSequenceActive_ || downloadActive() ||
-        verifyActive()) {
+        verifyActive() || storageBusy()) {
         return;
     }
     if (runner_ == nullptr) {
@@ -247,8 +248,7 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
         [backend, gpu, cancelled] {
             return component_store_detail::inventorySnapshot(gpu, true, false, cancelled.get());
         },
-        [this, live, generation, cancelled, backend, selected, showReview,
-         gpu](const QVariant& value) {
+        [this, live, generation, cancelled, backend, selected, showReview](const QVariant& value) {
             if (!live->load() || generation != runGeneration_) return;
             if (cancelled->load()) {
                 acquisitionChecking_ = false;
@@ -281,12 +281,10 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
             }
             const bool runtimeSelected = selected.contains(QStringLiteral("component:runtime"));
             const bool kernelsSelected = selected.contains(QStringLiteral("component:kernels"));
-            // The GPU-matched builder packs belong to classic TensorRT only.
-            const bool componentMissing = backend == native::Backend::TensorRT &&
-                (runtimeSelected || kernelsSelected) && gpu.smMajor > 0 &&
-                !inventory.value(QStringLiteral("componentDirsAvailable")).toBool();
             const bool backendInstalled = installationInstalledIn(inventory, backend);
-            const bool backendWork = (runtimeSelected && !backendInstalled) || componentMissing;
+            const bool backendSelected = runtimeSelected ||
+                (backend == native::Backend::TensorRT && kernelsSelected);
+            const bool backendWork = backendSelected && !backendInstalled;
             const bool selectedRifeMissing = selected.contains(QStringLiteral("rife:archive")) &&
                 !inventory.value(QStringLiteral("rifeVerified")).toBool();
             QStringList review;
@@ -297,7 +295,7 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
             for (const mplayer::native::UpscalerModel& model : pendingUpscalers_)
                 review.append(model.displayName);
             if (selectedRifeMissing)
-                review.append(tr("RIFE 3.7.0 archive pack (all 47 graphs)"));
+                review.append(tr("RIFE %1 archive pack (all 47 graphs)").arg(native::componentReleaseTag()));
             if (review.isEmpty()) {
                 acquisitionChecking_ = false;
                 acquisitionSequenceActive_ = false;
@@ -342,12 +340,6 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
             acquisitionFailures_.clear();
             acquisitionFailureKey_.clear();
             pendingBackendWork_ = backendWork;
-            // RTX has no separate store packs: the runtime installer owns its
-            // whole closure, so it never takes the provisioner pack path.
-            pendingRuntimeClosure_ =
-                backend == native::Backend::TensorRTRTX
-                    ? backendWork
-                    : (runtimeSelected && !backendInstalled);
             pendingRifeArchive_ = selectedRifeMissing;
             downloadRemainingComponents();
         },
@@ -509,43 +501,11 @@ void ComponentStoreTab::downloadRemainingComponents() {
                             model.bytes, true);
         }
     }
-    // The independent units run at the same time: the backend closure, the RIFE
-    // archive and the spatial graphs share no scratch, no destination and no
-    // record, so serialising them only made the whole acquisition as slow as the
-    // sum of its parts. The run is over when the last unit settles, which is
-    // what keeps the window's aggregate activity hint honest while several
-    // transfers run at once.
-    //
-    // The backend closure is a single unit, not two: the AnimeJaNai runtime
-    // installer and the component provisioner both drive
-    // `provisionTensorRtComponents`, whose process-wide gate allows one run, so
-    // the runtime path owns the packs whenever it has to fetch them.
-    // Every unit is counted before any starts: a unit that refuses synchronously
-    // settles its own count immediately, and counting first keeps that refusal
-    // from ending a run whose other units have not been handed their work yet.
     if (pendingBackendWork_) noteAcquisitionUnitStarted();
     if (pendingRifeArchive_) noteAcquisitionUnitStarted();
     if (!pendingModels_.isEmpty()) noteAcquisitionUnitStarted();
     if (!pendingUpscalers_.isEmpty()) noteAcquisitionUnitStarted();
-    if (pendingBackendWork_) {
-        if (pendingRuntimeClosure_) {
-            downloadAnimeJanaiRuntime();
-        } else if (provisioner_ == nullptr) {
-            finishAcquisitionUnit(
-                tr("The compatible TensorRT component pack is missing, but no component "
-                   "provisioner is available."),
-                false);
-        } else {
-            QString reason;
-            if (!provisioner_->ensureStore(&reason)) {
-                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), false, false, reason);
-                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), false, false, reason);
-                finishAcquisitionUnit(reason, false);
-            } else {
-                updateControls();
-            }
-        }
-    }
+    if (pendingBackendWork_) downloadAnimeJanaiRuntime();
     if (pendingRifeArchive_) downloadRifeArchive();
     if (!pendingModels_.isEmpty()) downloadNextModel();
     if (!pendingUpscalers_.isEmpty()) downloadNextUpscaler();
@@ -948,20 +908,22 @@ void ComponentStoreTab::updateControls() {
     // Every long-running state, including the verification itself, disables the
     // actions that would start another one: the surface is non-reentrant while
     // any worker is alive.
-    const bool busy = provisioning || animeJanaiRuntimeDownloading_ || rifeDownloading_ ||
-                      modelsDownloading_ || verifyActive() || acquisitionChecking_ ||
-                      inventoryScanning_ || acquisitionSequenceActive_;
+    const bool activity = provisioning || animeJanaiRuntimeDownloading_ || rifeDownloading_ ||
+                          modelsDownloading_ || verifyActive() || acquisitionChecking_ ||
+                          inventoryScanning_ || acquisitionSequenceActive_;
+    if (storagePanel_ != nullptr) storagePanel_->setExternalBusy(activity);
+    const bool busy = activity || storageBusy();
     refreshSelectionSummary();
     // Nothing selected is nothing to install: the emphasised action dims instead
     // of starting a run that would find no work.
     const bool hasSelection = downloadButton_->property("hasSelection").toBool();
     downloadButton_->setEnabled(!busy && hasSelection);
     verifyButton_->setEnabled(!busy);
-    cancelButton_->setEnabled(busy);
+    cancelButton_->setEnabled(activity);
     // Visible only while there is something to stop: the dialog's own footer
     // already offers Cancel, and a permanently visible second one reads as a
     // duplicate rather than as "stop this download".
-    cancelButton_->setVisible(busy);
+    cancelButton_->setVisible(activity);
     if (runtimeCheck_ != nullptr) runtimeCheck_->setEnabled(!busy);
     if (rifeCheck_ != nullptr) rifeCheck_->setEnabled(!busy);
     if (spatialCheck_ != nullptr) spatialCheck_->setEnabled(!busy);

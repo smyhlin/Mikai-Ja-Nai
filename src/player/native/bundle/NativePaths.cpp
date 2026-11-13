@@ -439,6 +439,32 @@ QString nativeToolsDirectory() {
     return root.isEmpty() ? QString{} : QDir(root).filePath(QStringLiteral("tools/7zip-26.03"));
 }
 
+bool ensureOwnedNativeDirectory(const QString& directory, QString* reason) {
+    if (reason) reason->clear();
+    const QString root = nativeRoot();
+    const NativePathTrust trust = nativePathTrust(directory, true);
+    const QString anchor = nearestExistingAncestor(QFileInfo(root).absolutePath());
+    const QString ancestor = nearestExistingAncestor(directory);
+    if (root.isEmpty() || !trust.trusted || trust.form != NativePathForm::Local ||
+        !pathWithinRoot(root, directory) || anchor.isEmpty() || ancestor.isEmpty() ||
+        !pathHasNoReparsePoints(anchor, ancestor)) {
+        if (reason) *reason = QCoreApplication::translate("NativePaths",
+            "The app-owned directory is unavailable or redirected: %1").arg(directory);
+        return false;
+    }
+    if (!QDir().mkpath(directory)) {
+        if (reason) *reason = QCoreApplication::translate("NativePaths",
+            "The app-owned directory could not be created: %1").arg(directory);
+        return false;
+    }
+    if (!pathHasNoReparsePoints(anchor, directory)) {
+        if (reason) *reason = QCoreApplication::translate("NativePaths",
+            "The app-owned directory was redirected while being created: %1").arg(directory);
+        return false;
+    }
+    return true;
+}
+
 QStringList pruneNativeStore(const QString& rootOverride) {
     const QString root = rootOverride.isEmpty() ? nativeRoot() : QDir::cleanPath(rootOverride);
     if (root.isEmpty() || !QFileInfo(root).isDir()) return {};

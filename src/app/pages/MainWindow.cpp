@@ -8,6 +8,7 @@
 #include "state/NativeComponentProvisioner.hpp"
 
 #include <native/components/NativeComponentCatalog.hpp>
+#include <native/components/AnimeJanaiRuntimeStore.hpp>
 #include <native/components/NativeGpuProbe.hpp>
 #include "state/NativePlaybackAssembly.hpp"
 #include "state/QualityCache.hpp"
@@ -322,6 +323,10 @@ void MainWindow::restateEnginePreparation() {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+    if (mplayer::native::animeJanaiRuntimeRelocationInProgress()) {
+        event->ignore();
+        return;
+    }
     // A player that has not acknowledged its own native stop refuses its close,
     // and the shell must not go while a core is still stopping work: the close is
     // ignored and the window stays usable for a retry. The same holds for a

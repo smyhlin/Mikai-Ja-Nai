@@ -1189,6 +1189,52 @@
         <source>The verified upstream TensorRT archive is missing trtexec.</source>
         <translation>У перевіреному архіві TensorRT від розробників відсутній trtexec.</translation>
     </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="788"/>
+        <source>The downloaded Aji binary does not match its pinned v0.27.0 identity: %1</source>
+        <translation>Завантажений файл Aji не відповідає зафіксованій версії v0.27.0: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="805"/>
+        <source>The imported AnimeJaNai dispatcher does not report ABI 9 and is not the pinned official v0.27.0 x64 backend pair.</source>
+        <translation>Імпортований диспетчер AnimeJaNai не повідомляє ABI 9 і не належить до зафіксованої офіційної пари рушія v0.27.0 x64.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="809"/>
+        <source>The imported AnimeJaNai backend does not report ABI 9 and is not the pinned official v0.27.0 backend.</source>
+        <translation>Імпортований рушій AnimeJaNai не повідомляє ABI 9 і не відповідає зафіксованому офіційному рушію v0.27.0.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="993"/>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="1240"/>
+        <source>The observed GPU has no compatible TensorRT builder pack.</source>
+        <translation>Для виявленого GPU немає сумісного пакета збирача TensorRT.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="1002"/>
+        <source>The managed TensorRT runtime is missing its shared-pack mapping.</source>
+        <translation>У керованому середовищі TensorRT відсутнє зіставлення зі спільними пакетами.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="1045"/>
+        <source>An official Aji library does not match the pinned v0.27.0 release.</source>
+        <translation>Офіційна бібліотека Aji не відповідає зафіксованому випуску v0.27.0.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="1057"/>
+        <source>Official Aji v0.27.0 does not map the heavy RIFE model.</source>
+        <translation>Офіційний Aji v0.27.0 не підтримує зіставлення з важкою моделлю RIFE.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="1066"/>
+        <source>The installed AnimeJaNai dispatcher does not report ABI 9 and does not match the pinned official v0.27.0 x64 backend pair.</source>
+        <translation>Установлений диспетчер AnimeJaNai не повідомляє ABI 9 і не відповідає зафіксованій офіційній парі рушія v0.27.0 x64.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiInstallation.cpp" line="1068"/>
+        <source>The installed AnimeJaNai backend does not report ABI 9 and does not match the pinned official v0.27.0 backend.</source>
+        <translation>Установлений рушій AnimeJaNai не повідомляє ABI 9 і не відповідає зафіксованому офіційному рушію v0.27.0.</translation>
+    </message>
 </context>
 <context>
     <name>AnimeJanaiRuntime</name>
@@ -5947,6 +5993,41 @@ Continue?</source>
         <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1717"/>
         <source>optional</source>
         <translation>необов’язково</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1431"/>
+        <source>NVIDIA TensorRT with a shared runtime and GPU-matched builder kernels.</source>
+        <translation>NVIDIA TensorRT зі спільним середовищем і ядрами збирача, підібраними для GPU.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1444"/>
+        <source>Builds engines in-process with NVIDIA TensorRT for RTX. Installs the selected backend and shared RTX runtime, not classic builder packs.</source>
+        <translation>Компілює рушії в процесі застосунку через NVIDIA TensorRT for RTX. Установлює вибраний бекенд і спільне середовище RTX, а не класичні пакети збирача.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1628"/>
+        <source>This backend does not use classic TensorRT kernel packs.</source>
+        <translation>Цей рушій не використовує класичні пакети ядер TensorRT.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1859"/>
+        <source>Shared TensorRT for RTX runtime</source>
+        <translation>Спільне середовище TensorRT for RTX</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1860"/>
+        <source>Shared runtime manager</source>
+        <translation>Менеджер спільних середовищ</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTab.cpp" line="1861"/>
+        <source>Runtime pack index</source>
+        <translation>Індекс пакетів середовищ</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/ComponentStoreTabAcquisition.cpp" line="298"/>
+        <source>RIFE %1 archive pack (all 47 graphs)</source>
+        <translation>Архівний пакет RIFE %1 (усі 47 графів)</translation>
     </message>
 </context>
 <context>
@@ -13113,6 +13194,315 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
         <location filename="../src/player/core/VideoSession.cpp" line="240"/>
         <source>Original size (1:1)</source>
         <translation>Оригінальний розмір (1:1)</translation>
+    </message>
+</context>
+<context>
+    <name>AnimeJanaiRuntimeStore</name>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="105"/>
+        <source>Cannot read runtime metadata %1: %2</source>
+        <translation>Не вдалося прочитати метадані середовища %1: %2</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="111"/>
+        <source>Invalid runtime metadata %1: %2</source>
+        <translation>Некоректні метадані середовища %1: %2</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="123"/>
+        <source>TensorRT for RTX has no published Linux runtime.</source>
+        <translation>Середовище TensorRT for RTX для Linux не опубліковано.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="128"/>
+        <source>Shared runtime storage is used by TensorRT backends only.</source>
+        <translation>Спільне сховище середовищ використовують лише рушії TensorRT.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="134"/>
+        <source>TensorRT requires an NVIDIA GPU with compute capability 7.5 or newer.</source>
+        <translation>Для TensorRT потрібен GPU NVIDIA з обчислювальною здатністю 7.5 або новішою.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="201"/>
+        <source>The app-owned runtime tools directory is unavailable.</source>
+        <translation>Власний каталог інструментів середовища застосунку недоступний.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="231"/>
+        <source>7-Zip is unavailable to unpack the runtime manager.</source>
+        <translation>7-Zip недоступний для розпакування менеджера середовищ.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="241"/>
+        <source>The runtime manager does not match its verified executable and license inventory.</source>
+        <translation>Виконуваний файл або ліцензія менеджера середовищ не відповідають перевіреному складу пакета.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="247"/>
+        <source>Cannot make the verified runtime manager executable.</source>
+        <translation>Не вдалося надати перевіреному менеджеру середовищ право виконання.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="254"/>
+        <source>An unfinished runtime-manager replacement must be resolved first: %1</source>
+        <translation>Спочатку потрібно завершити попередню заміну менеджера середовищ: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="260"/>
+        <source>Cannot preserve the previous runtime manager: %1</source>
+        <translation>Не вдалося зберегти попередній менеджер середовищ: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="265"/>
+        <source>Cannot restore the runtime manager from %1</source>
+        <translation>Не вдалося відновити менеджер середовищ із %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="266"/>
+        <source>Cannot publish the verified runtime manager: %1</source>
+        <translation>Не вдалося розмістити перевірений менеджер середовищ: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="270"/>
+        <source>Cannot remove the previous runtime manager: %1</source>
+        <translation>Не вдалося видалити попередній менеджер середовищ: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="299"/>
+        <source>The runtime index cache is redirected: %1</source>
+        <translation>Шлях кешу індексу середовищ переспрямовано: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="305"/>
+        <source>Cannot publish the verified runtime index: %1</source>
+        <translation>Не вдалося розмістити перевірений індекс середовищ: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="386"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="660"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="662"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="706"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="707"/>
+        <source>Runtime storage operation was cancelled.</source>
+        <translation>Операцію зі сховищем середовищ скасовано.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="387"/>
+        <source>The runtime manager exceeded its operation deadline.</source>
+        <translation>Менеджер середовищ перевищив граничний час виконання операції.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="422"/>
+        <source>Shared runtime storage requires an absolute local folder: %1</source>
+        <translation>Для спільного сховища середовищ потрібен абсолютний шлях до локального каталогу: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="443"/>
+        <source>Shared TensorRT runtime storage is not installed or its drive is unavailable.</source>
+        <translation>Спільне сховище середовища TensorRT не встановлено або його диск недоступний.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="449"/>
+        <source>The shared runtime store format is not supported.</source>
+        <translation>Формат спільного сховища середовищ не підтримується.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="465"/>
+        <source>Shared runtime pack is missing or redirected: %1</source>
+        <translation>Пакет спільного середовища відсутній або його шлях переспрямовано: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="478"/>
+        <source>Shared runtime pack metadata does not match the pinned index: %1</source>
+        <translation>Метадані пакета спільного середовища не відповідають зафіксованому індексу: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="488"/>
+        <source>Shared runtime pack has an unexpected file inventory: %1</source>
+        <translation>Пакет спільного середовища має неочікуваний склад файлів: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="498"/>
+        <source>Shared runtime pack has an unknown or repeated file: %1</source>
+        <translation>Пакет спільного середовища містить невідомий або повторений файл: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="508"/>
+        <source>Shared runtime file does not match the pinned index: %1</source>
+        <translation>Файл спільного середовища не відповідає зафіксованому індексу: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="512"/>
+        <source>Runtime verification was cancelled.</source>
+        <translation>Перевірку середовища виконання скасовано.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="517"/>
+        <source>The shared TensorRT trtexec is not executable: %1</source>
+        <translation>Спільний trtexec TensorRT не має права виконання: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="526"/>
+        <source>Shared runtime file failed SHA-256 verification: %1. %2</source>
+        <translation>Файл спільного середовища не пройшов перевірку SHA-256: %1. %2</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="541"/>
+        <source>The shared runtime has no live reference for this application.</source>
+        <translation>У спільному середовищі немає чинного посилання на цей застосунок.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="548"/>
+        <source>The shared runtime reference is missing or out of date for this application.</source>
+        <translation>Посилання спільного середовища на цей застосунок відсутнє або застаріле.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="557"/>
+        <source>The shared runtime reference does not retain the required backend packs.</source>
+        <translation>Посилання спільного середовища не утримує потрібні пакети рушія.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="574"/>
+        <source>AJI_RUNTIME_JSON overrides the managed backend mapping. Unset it before using managed TensorRT.</source>
+        <translation>AJI_RUNTIME_JSON перевизначає кероване зіставлення рушія. Приберіть цю змінну перед використанням керованого TensorRT.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="578"/>
+        <source>The app-owned shared runtime mapping is missing or redirected.</source>
+        <translation>Власне зіставлення спільного середовища застосунку відсутнє або його шлях переспрямовано.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="591"/>
+        <source>The shared runtime mapping does not match the pinned backend packs.</source>
+        <translation>Зіставлення спільного середовища не відповідає зафіксованим пакетам рушія.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="673"/>
+        <source>The runtime manager could not retain the backend packs: %1</source>
+        <translation>Менеджеру середовищ не вдалося утримати пакети рушія: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="683"/>
+        <source>The runtime manager did not publish a valid backend mapping.</source>
+        <translation>Менеджер середовищ не створив коректного зіставлення рушія.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="694"/>
+        <source>A shared runtime relocation is already running.</source>
+        <translation>Переміщення спільного середовища вже триває.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="702"/>
+        <source>Choose an absolute local folder for shared runtime storage: %1</source>
+        <translation>Виберіть абсолютний шлях до локального каталогу для спільного сховища середовищ: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="711"/>
+        <source>The runtime store could not be moved: %1</source>
+        <translation>Не вдалося перемістити сховище середовищ: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntimeStore.cpp" line="714"/>
+        <source>The runtime manager finished without a usable storage location.</source>
+        <translation>Менеджер середовищ завершив роботу, але придатне розташування сховища відсутнє.</translation>
+    </message>
+</context>
+<context>
+    <name>NativePaths</name>
+    <message>
+        <location filename="../src/player/native/bundle/NativePaths.cpp" line="451"/>
+        <source>The app-owned directory is unavailable or redirected: %1</source>
+        <translation>Власний каталог застосунку недоступний або його шлях переспрямовано: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/bundle/NativePaths.cpp" line="456"/>
+        <source>The app-owned directory could not be created: %1</source>
+        <translation>Не вдалося створити власний каталог застосунку: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/bundle/NativePaths.cpp" line="461"/>
+        <source>The app-owned directory was redirected while being created: %1</source>
+        <translation>Шлях власного каталогу застосунку переспрямовано під час створення: %1</translation>
+    </message>
+</context>
+<context>
+    <name>mikai::app::AnimeJanaiStoragePanel</name>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="69"/>
+        <source>Choose an empty local folder for shared TensorRT storage</source>
+        <translation>Виберіть порожній локальний каталог для спільного сховища TensorRT</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="98"/>
+        <source>Shared TensorRT storage</source>
+        <translation>Спільне сховище TensorRT</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="99"/>
+        <source>Shared by compatible AnimeJaNai applications. Moving the runtime does not move model files or compiled engines.</source>
+        <translation>Спільне для сумісних застосунків AnimeJaNai. Переміщення середовища не переміщує файли моделей або скомпільовані рушії.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="100"/>
+        <source>Current location</source>
+        <translation>Поточне розташування</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="101"/>
+        <source>Shared TensorRT runtime location</source>
+        <translation>Розташування спільного середовища TensorRT</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="102"/>
+        <source>Close other AnimeJaNai applications before moving. On Windows, restart this app first if an AI backend has been used in this session. Neither drive may be disconnected during the move.</source>
+        <translation>Перед переміщенням закрийте інші застосунки AnimeJaNai. У Windows спочатку перезапустіть цей застосунок, якщо в поточному сеансі використовувався ШІ-рушій. Не від’єднуйте жоден із дисків під час переміщення.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="103"/>
+        <source>Move to another drive…</source>
+        <translation>Перемістити на інший диск…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="104"/>
+        <source>Use default location</source>
+        <translation>Використати типове розташування</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="115"/>
+        <source>Another shared runtime storage operation is running.</source>
+        <translation>Триває інша операція зі спільним сховищем середовищ.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="116"/>
+        <source>Runtime storage location updated.</source>
+        <translation>Розташування сховища середовищ оновлено.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="128"/>
+        <source>Move shared TensorRT storage</source>
+        <translation>Переміщення спільного сховища TensorRT</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="129"/>
+        <source>This changes the shared location for all compatible AnimeJaNai applications. Close those applications first. Once copying starts, the move cannot be cancelled. Continue?</source>
+        <translation>Це змінить спільне розташування для всіх сумісних застосунків AnimeJaNai. Спочатку закрийте їх. Після початку копіювання переміщення неможливо скасувати. Продовжити?</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="134"/>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="166"/>
+        <source>Preparing runtime manager…</source>
+        <translation>Підготовка менеджера середовищ…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="166"/>
+        <source>Moving shared runtime…</source>
+        <translation>Переміщення спільного середовища…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiStoragePanel.cpp" line="173"/>
+        <source>%1 / %2</source>
+        <translation>%1 / %2</translation>
     </message>
 </context>
 </TS>

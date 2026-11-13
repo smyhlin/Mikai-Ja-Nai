@@ -15,6 +15,7 @@
 #include <backend/MikaiClient.hpp>
 #include <native/bundle/NativePaths.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
+#include <native/components/AnimeJanaiRuntimeStore.hpp>
 
 #include <QApplication>
 #include <QDebug>
@@ -32,6 +33,7 @@
 #include <QSurfaceFormat>
 #include <QStringList>
 #include <QTimer>
+#include <QThread>
 #include <QUrl>
 
 #include <cstdio>
@@ -392,12 +394,20 @@ int main(int argc, char** argv) {
     mikai::app::Runner startupRunner;
 
     app.setQuitOnLastWindowClosed(false);
-    QObject::connect(&app, &QGuiApplication::lastWindowClosed, &app, [&app] {
-        // Cancel and drain every pool the app owns. The completion arrives on
-        // the GUI thread once each has actually retired, and only then does the
-        // loop end - the backend objects a worker may still reference outlive
-        // the last task, and the GUI answers throughout.
-        mikai::app::Runner::shutdownAll([&app] { app.quit(); });
+    QTimer storageQuitGate;
+    storageQuitGate.setInterval(100);
+    QObject::connect(&storageQuitGate, &QTimer::timeout, &app, [&] {
+        if (mplayer::native::animeJanaiRuntimeRelocationInProgress()) return;
+        storageQuitGate.stop();
+        app.quit();
+    });
+    QObject::connect(&app, &QGuiApplication::lastWindowClosed, &app, [&] {
+        mikai::app::Runner::shutdownAll([&] {
+            if (mplayer::native::animeJanaiRuntimeRelocationInProgress())
+                storageQuitGate.start();
+            else
+                app.quit();
+        });
     });
 
     {
@@ -434,8 +444,11 @@ int main(int argc, char** argv) {
         mikai::app::Runner::shutdownAll([&workerDrainDone] { workerDrainDone = true; });
         QElapsedTimer workerDrainClock;
         workerDrainClock.start();
-        while (!workerDrainDone && workerDrainClock.elapsed() < 5000) {
+        // The upstream store relink cannot be interrupted safely.
+        while ((!workerDrainDone && workerDrainClock.elapsed() < 5000) ||
+               mplayer::native::animeJanaiRuntimeRelocationInProgress()) {
             QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            QThread::msleep(5);
         }
         if (!workerDrainDone) {
             qWarning("mikai: the runner drain did not finish before shutdown");

@@ -104,7 +104,7 @@ void waitUntil(const std::function<bool()>& condition, int timeoutMs = 5000) {
 
 /// The installation root the production predicate reads. describe() sets it
 /// even when no record exists yet, so the fixture never duplicates the
-/// "aji/v0.24.0/trt" layout.
+/// "aji/<version>/<backend>" layout.
 QString closureRoot() {
     return describeAnimeJanaiInstallation(Backend::TensorRT).root;
 }
@@ -128,11 +128,6 @@ QByteArray minimalBinaryImage() {
 #endif
 }
 
-/// The closure members describeAnimeJanaiInstallation requires for the
-/// selected backend: the dispatcher, the backend library, the CUDA/TensorRT
-/// libraries, the GPU-matched builder resource and trtexec (plus the two
-/// license notices, which are required members of the Windows closure).
-/// Mirrors TestAnimeJanaiRuntime::required().
 QStringList closureFileNames(const ComponentPack* resource) {
 #ifdef Q_OS_WIN
     QStringList files{QStringLiteral("aji.dll"), QStringLiteral("aji_trt.dll"),
@@ -141,7 +136,7 @@ QStringList closureFileNames(const ComponentPack* resource) {
                       QStringLiteral("nvonnxparser_11.dll")};
     if (resource != nullptr) files << resource->resourceFile;
     files << QStringLiteral("trtexec.exe") << QStringLiteral("CUDA_LICENSE.txt")
-          << QStringLiteral("DirectML_LICENSE.txt");
+          << QStringLiteral("TensorRT_Acknowledgements.txt");
     return files;
 #else
     QStringList files{QStringLiteral("libaji.so"), QStringLiteral("libaji_trt.so"),
@@ -149,23 +144,14 @@ QStringList closureFileNames(const ComponentPack* resource) {
                       QStringLiteral("libnvinfer_plugin.so.11"),
                       QStringLiteral("libnvonnxparser.so.11")};
     if (resource != nullptr) files << resource->resourceFile;
-    files << QStringLiteral("trtexec");
+    files << QStringLiteral("trtexec") << QStringLiteral("CUDA_LICENSE.txt")
+          << QStringLiteral("TensorRT_Acknowledgements.txt");
     return files;
 #endif
 }
 
-/// Creates the backend closure record (install.json + closure files) the way
-/// the installer would, so the runtime card exercises the real installed
-/// path: the inventory counts the card installed only when
-/// describeAnimeJanaiInstallation reports the closure installed, which
-/// needs the record's schema/version/backend/abi, the Linux/Windows closure
-/// files above (libaji.so/aji.dll present, the GPU-matched builder resource,
-/// trtexec executable on Linux) and matching sizes and hashes. The
-/// dispatcher and backend libraries are the real test dispatcher when the
-/// build provides it, so the record also survives the verify re-hash: a
-/// header-only image has no aji_api_version export and no pinned digest, so
-/// a re-hash would refuse it. Returns false when a record already exists,
-/// so a stale closure is never silently reused.
+// A loadable test dispatcher is required: a PE/ELF header alone cannot satisfy
+// the ABI export or pinned-shim identity checks during verification.
 bool populateClosure() {
     const QString root = closureRoot();
     if (root.isEmpty() || QFileInfo::exists(root)) return false;
@@ -213,7 +199,7 @@ bool populateClosure() {
     }
     QJsonObject record;
     record.insert(QStringLiteral("schema"), QStringLiteral("mikai.native.animejanai/3"));
-    record.insert(QStringLiteral("version"), QStringLiteral("v0.24.0"));
+    record.insert(QStringLiteral("version"), QStringLiteral("v0.27.0"));
     record.insert(QStringLiteral("backend"), QStringLiteral("trt"));
     record.insert(QStringLiteral("abi"), 9);
     record.insert(QStringLiteral("provenance"), QStringLiteral("local"));

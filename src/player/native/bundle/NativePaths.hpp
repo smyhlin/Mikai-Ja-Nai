@@ -133,6 +133,8 @@ QStringList nativeSubdirectoryNames();
 QString nativeSubdirectory(const QString& name, QString* reason = nullptr);
 QString nativeToolsDirectory();
 
+bool ensureOwnedNativeDirectory(const QString& directory, QString* reason = nullptr);
+
 /// Deletes the app-owned leftovers a killed install or download leaves behind:
 /// abandoned `scratch/` entries, `aji-stage-*` staging trees, `*.partial` copies
 /// and `*.previous` backups, each only once it is old enough that no live writer

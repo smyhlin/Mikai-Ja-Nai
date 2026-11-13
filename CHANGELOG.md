@@ -9,6 +9,8 @@ This release introduces the player-only Qt Quick/QML frontend while retaining th
 - Fix a fatal QML lifetime error when closing an episode player: the player is disposed after the close-button handler returns, leaving the title page open.
 - Update the pinned Windows and Linux mpv forks to the November 11/12 releases, deploy the enhanced-scene companion and its notices, and retain HTTPS support through the Linux FFmpeg TLS rebuild.
 - Restore Quick probe/test compilation and derive QML tooling imports from the player module target without replacing deployment-owned `qt.conf`.
+- Adopt AnimeJaNai 3.11.0 models and v0.27.0 ABI-9 shims on Windows and Linux, with pinned runtime-2 dependencies and explicit refusal of unsupported pre-SM-7.5 classic TensorRT GPUs.
+- Use aji-runtime v0.2.1 for shared TensorRT packs, live application references, bounded downloads and unchanged-file reuse after archive repacking. Add Components storage relocation without moving models or engine caches; normal shutdown waits for an active relink.
 
 - Upgrade Standard AnimeJaNai to v0.24.0 (ABI 9) across Windows and Linux, updating official runtime assets and SHA-256 cryptographic pins.
 - Add a Cut moment editor for selecting, previewing and exporting a short MP4:
