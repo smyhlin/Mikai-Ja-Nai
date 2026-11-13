@@ -110,6 +110,7 @@ struct AnimeJanaiChain {
     int rifeFactorNumerator = 2;
     int rifeFactorDenominator = 1;
     double rifeSceneDetectThreshold = 0.150;
+    bool rifeSceneDetectEnhanced = false;
     bool rifeEnsemble = false;
     bool rifeBeforeUpscale = true;
 

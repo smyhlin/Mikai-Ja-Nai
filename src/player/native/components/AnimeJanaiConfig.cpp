@@ -673,6 +673,8 @@ QVector<AnimeJanaiSlot> parseSlotsFromIni(const ParsedIni& ini, bool profileOnly
             chain.rifeSceneDetectThreshold = std::clamp(
                 toDouble(keys.value(prefix + QStringLiteral("rife_scene_detect_threshold")), 0.150),
                 0.0, 1.0);
+            chain.rifeSceneDetectEnhanced =
+                isYes(keys.value(prefix + QStringLiteral("rife_scene_detect_enhanced")));
             if (keys.contains(prefix + QStringLiteral("rife_model"))) {
                 chain.rifeModel = AnimeJanaiConfigStore::rifeValueToLabel(
                     keys.value(prefix + QStringLiteral("rife_model")));
@@ -1927,6 +1929,8 @@ QString AnimeJanaiConfigStore::serializeSlotSection(const AnimeJanaiSlot& slot,
                 QString::number(std::max(1, chain.rifeFactorDenominator)));
         putLine(output, p + QStringLiteral("rife_scene_detect_threshold"),
                 QLocale::c().toString(chain.rifeSceneDetectThreshold, 'g', 6));
+        putLine(output, p + QStringLiteral("rife_scene_detect_enhanced"),
+                chain.rifeSceneDetectEnhanced ? QStringLiteral("yes") : QStringLiteral("no"));
         putLine(output, p + QStringLiteral("rife_ensemble"),
                 chain.rifeEnsemble ? QStringLiteral("yes") : QStringLiteral("no"));
         putLine(output, p + QStringLiteral("rife_before_upscale"),

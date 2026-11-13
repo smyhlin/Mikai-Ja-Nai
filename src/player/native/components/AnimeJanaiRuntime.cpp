@@ -1022,7 +1022,8 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
                              QByteArray::number(selected->rifeFactorNumerator) + ':' +
                              QByteArray::number(selected->rifeFactorDenominator) + ':' +
                              QByteArray::number(selected->rifeEnsemble) + ':' +
-                             QByteArray::number(selected->rifeSceneDetectThreshold, 'g', 17);
+                             QByteArray::number(selected->rifeSceneDetectThreshold, 'g', 17) + ':' +
+                             QByteArray::number(selected->rifeSceneDetectEnhanced);
         }
         const QString stageKey = QStringLiteral("mixed_%1_s%2_%3")
                                      .arg(profileKey)
@@ -1145,6 +1146,9 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
                              .arg(code).arg(selected->rifeEnsemble ? QStringLiteral("yes") : QStringLiteral("no"))
                              .arg(QLocale::c().toString(selected->rifeSceneDetectThreshold, 'g', 6))
                              .arg(selected->rifeBeforeUpscale ? QStringLiteral("yes") : QStringLiteral("no"));
+            rifeConfig += QStringLiteral("chain_1_rife_scene_detect_enhanced=%1\n")
+                              .arg(selected->rifeSceneDetectEnhanced ? QStringLiteral("yes")
+                                                                    : QStringLiteral("no"));
         }
         const int generatedSlot = 1;
         QByteArray ini = globalIniHeader(managerConf, backend, iniSettings);

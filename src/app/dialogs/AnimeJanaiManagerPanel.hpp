@@ -208,6 +208,7 @@ private:
     QSpinBox* chainRifeDenSpin_ = nullptr;
     QLabel* chainRifeSceneLabel_ = nullptr;
     QDoubleSpinBox* chainRifeSceneSpin_ = nullptr;
+    QCheckBox* chainRifeEnhancedSceneCheck_ = nullptr;
     QCheckBox* chainRifeEnsembleCheck_ = nullptr;
     QCheckBox* chainRifeBeforeUpscaleCheck_ = nullptr;
     QList<ActionGrid*> actionRows_;

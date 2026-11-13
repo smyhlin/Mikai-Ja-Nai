@@ -819,6 +819,10 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   }
   QVERIFY(chainRife != nullptr);
   chainRife->setChecked(true);
+  auto* enhancedScene = manager->findChild<QCheckBox*>(QStringLiteral("ajiRifeEnhancedScene"));
+  QVERIFY(enhancedScene != nullptr);
+  QVERIFY(!enhancedScene->isChecked());
+  enhancedScene->setChecked(true);
   auto* addStep = manager->findChild<QPushButton*>(QStringLiteral("ajiAddStepButton"));
   QVERIFY(addStep != nullptr);
   addStep->click();
@@ -835,6 +839,7 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   QVERIFY(manager->isDirty());
   const auto managerBefore = manager->currentConfig();
   const auto mixedChain = managerBefore.customSlots.last().chains.last();
+  QVERIFY(mixedChain.rifeSceneDetectEnhanced);
   QCOMPARE(mixedChain.steps.size(), 2);
   QCOMPARE(mixedChain.steps.at(0).kind, mplayer::native::AnimeJanaiStepKind::OnnxModel);
   QCOMPARE(mixedChain.steps.at(1).kind, mplayer::native::AnimeJanaiStepKind::Anime4K);

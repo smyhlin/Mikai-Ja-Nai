@@ -1381,6 +1381,7 @@ void TestAnimeJanaiRuntime::managerConfigParsesAndSerializesMultiChainSlotsAndTr
     chain.rifeFactorNumerator = 2;
     chain.rifeFactorDenominator = 1;
     chain.rifeSceneDetectThreshold = 0.150;
+    chain.rifeSceneDetectEnhanced = true;
     chain.rifeEnsemble = true;
     chain.rifeBeforeUpscale = false;
     slot.chains.append(chain);
@@ -1419,6 +1420,8 @@ void TestAnimeJanaiRuntime::managerConfigParsesAndSerializesMultiChainSlotsAndTr
     QCOMPARE(roundTrip.customSlots.first().chains.first().rifeFactorNumerator, 2);
     QCOMPARE(roundTrip.customSlots.first().chains.first().rifeFactorDenominator, 1);
     QCOMPARE(roundTrip.customSlots.first().chains.first().rifeSceneDetectThreshold, 0.150);
+    QVERIFY(roundTrip.customSlots.first().chains.first().rifeSceneDetectEnhanced);
+    QVERIFY(!roundTrip.customSlots.first().chains.at(1).rifeSceneDetectEnhanced);
     QVERIFY(roundTrip.customSlots.first().chains.first().rifeEnsemble);
     QVERIFY(!roundTrip.customSlots.first().chains.first().rifeBeforeUpscale);
     QVERIFY(!roundTrip.customSlots.first().chains.first().upscaleEnabled);
@@ -1591,6 +1594,7 @@ void TestAnimeJanaiRuntime::mixedConfigStepsRoundTripAndRejectInvalidData() {
     QCOMPARE(legacy.customSlots.first().chains.first().steps.at(1).resizeHeightBeforeUpscale, 540);
     QCOMPARE(legacy.customSlots.first().chains.first().steps.at(1).resizeFactorBeforeUpscale, 75);
     QVERIFY(legacy.customSlots.first().chains.first().rifeBeforeUpscale);
+    QVERIFY(!legacy.customSlots.first().chains.first().rifeSceneDetectEnhanced);
     QVERIFY(legacy.customSlots.first().chains.first().upscaleEnabled);
     QCOMPARE(legacy.customSlots.first().chains.first().steps.first().frames, 0);
     QCOMPARE(legacy.customSlots.first().chains.first().steps.first().temporalSceneThreshold, 0.150);

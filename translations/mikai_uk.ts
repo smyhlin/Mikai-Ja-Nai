@@ -5191,6 +5191,18 @@ If a portable folder was moved, disable startup from the old location before mov
         <source>Classic TensorRT passes these to trtexec. TensorRT for RTX builds the ONNX graph in-process and honors only --minShapes, --optShapes, --maxShapes, --builderOptimizationLevel and --memPoolSize=workspace:. Precision comes from the ONNX graph, trtexec is not used, --skipInference does not apply to an in-process build and is removed from RTX plans, and any other flag is rejected for that backend instead of being silently ignored.</source>
         <translation>Класичний TensorRT передає їх trtexec. TensorRT for RTX збирає граф ONNX у процесі застосунку та враховує лише --minShapes, --optShapes, --maxShapes, --builderOptimizationLevel і --memPoolSize=workspace:. Точність береться з графа ONNX, trtexec не використовується, --skipInference не застосовується до збирання в процесі застосунку й вилучається з планів RTX, а будь-який інший прапорець для цього бекенду відхиляється, а не ігнорується мовчки.</translation>
     </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="707"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2166"/>
+        <source>Enhanced scene detection (experimental)</source>
+        <translation>Покращене виявлення зміни сцен (експериментальне)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="710"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="2168"/>
+        <source>Detects additional scene changes before RIFE interpolation. Uses extra CPU time; disabled by default.</source>
+        <translation>Виявляє додаткові зміни сцен перед інтерполяцією RIFE. Потребує додаткового часу CPU; типово вимкнено.</translation>
+    </message>
 </context>
 <context>
     <name>mikai::app::BenchmarkPlayback</name>

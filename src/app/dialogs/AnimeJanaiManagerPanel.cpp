@@ -553,6 +553,7 @@ void AnimeJanaiManagerPanel::buildUi() {
     chainToolbar->setContentsMargins(0, 0, 0, 0);
     chainToolbar->setSpacing(theme::kSpacingSmall);
     chainSelectCombo_ = new QComboBox(slotEditorContainer_);
+    chainSelectCombo_->setObjectName(QStringLiteral("ajiChainSelectCombo"));
     polishInteractiveControl(chainSelectCombo_);
     chainSelectLabel_ =
         makeFieldLabel(tr("Active chain"), slotEditorContainer_, chainSelectCombo_);
@@ -702,6 +703,13 @@ void AnimeJanaiManagerPanel::buildUi() {
     chainRifeSceneLabel_ =
         makeFieldLabel(tr("Scene change threshold"), chainRifeContainer_, chainRifeSceneSpin_);
 
+    chainRifeEnhancedSceneCheck_ =
+        new QCheckBox(tr("Enhanced scene detection (experimental)"), chainRifeContainer_);
+    chainRifeEnhancedSceneCheck_->setObjectName(QStringLiteral("ajiRifeEnhancedScene"));
+    chainRifeEnhancedSceneCheck_->setToolTip(
+        tr("Detects additional scene changes before RIFE interpolation. Uses extra CPU time; disabled by default."));
+    polishInteractiveControl(chainRifeEnhancedSceneCheck_, 0);
+
     chainRifeEnsembleCheck_ = new QCheckBox(tr("RIFE ensemble"), chainRifeContainer_);
     polishInteractiveControl(chainRifeEnsembleCheck_, 0);
     chainRifeBeforeUpscaleCheck_ =
@@ -711,6 +719,7 @@ void AnimeJanaiManagerPanel::buildUi() {
     rifeForm->addRow(chainRifeModelLabel_, chainRifeModelCombo_);
     rifeForm->addRow(chainRifeFactorLabel_, factorBox);
     rifeForm->addRow(chainRifeSceneLabel_, chainRifeSceneSpin_);
+    rifeForm->addRow(chainRifeEnhancedSceneCheck_);
     rifeForm->addRow(chainRifeEnsembleCheck_);
     rifeForm->addRow(chainRifeBeforeUpscaleCheck_);
     editorLayout->addWidget(chainRifeContainer_);
@@ -901,6 +910,7 @@ void AnimeJanaiManagerPanel::buildUi() {
     connect(chainRifeNumSpin_, &QSpinBox::valueChanged, this, bindChainFieldEdit);
     connect(chainRifeDenSpin_, &QSpinBox::valueChanged, this, bindChainFieldEdit);
     connect(chainRifeSceneSpin_, &QDoubleSpinBox::valueChanged, this, bindChainFieldEdit);
+    connect(chainRifeEnhancedSceneCheck_, &QCheckBox::toggled, this, bindChainFieldEdit);
     connect(chainRifeEnsembleCheck_, &QCheckBox::toggled, this, bindChainFieldEdit);
     connect(chainRifeBeforeUpscaleCheck_, &QCheckBox::toggled, this, bindChainFieldEdit);
 
@@ -1263,6 +1273,7 @@ void AnimeJanaiManagerPanel::loadSelectedChainIntoEditor() {
     chainRifeNumSpin_->setValue(std::max(1, chain.rifeFactorNumerator));
     chainRifeDenSpin_->setValue(std::max(1, chain.rifeFactorDenominator));
     chainRifeSceneSpin_->setValue(chain.rifeSceneDetectThreshold);
+    chainRifeEnhancedSceneCheck_->setChecked(chain.rifeSceneDetectEnhanced);
     chainRifeEnsembleCheck_->setChecked(chain.rifeEnsemble);
     chainRifeBeforeUpscaleCheck_->setChecked(chain.rifeBeforeUpscale);
 
@@ -1583,6 +1594,7 @@ void AnimeJanaiManagerPanel::commitCurrentChainFromEditor() {
     chain->rifeFactorNumerator = chainRifeNumSpin_->value();
     chain->rifeFactorDenominator = chainRifeDenSpin_->value();
     chain->rifeSceneDetectThreshold = chainRifeSceneSpin_->value();
+    chain->rifeSceneDetectEnhanced = chainRifeEnhancedSceneCheck_->isChecked();
     chain->rifeEnsemble = chainRifeEnsembleCheck_->isChecked();
     chain->rifeBeforeUpscale = chainRifeBeforeUpscaleCheck_->isChecked();
 }
@@ -2151,6 +2163,9 @@ void AnimeJanaiManagerPanel::retranslateUi() {
     chainRifeModelLabel_->setText(tr("Chain RIFE model"));
     chainRifeFactorLabel_->setText(tr("Interpolation FPS factor"));
     chainRifeSceneLabel_->setText(tr("Scene change threshold"));
+    chainRifeEnhancedSceneCheck_->setText(tr("Enhanced scene detection (experimental)"));
+    chainRifeEnhancedSceneCheck_->setToolTip(
+        tr("Detects additional scene changes before RIFE interpolation. Uses extra CPU time; disabled by default."));
     chainRifeEnsembleCheck_->setText(tr("RIFE ensemble"));
     chainRifeBeforeUpscaleCheck_->setText(tr("RIFE before upscaling"));
 
